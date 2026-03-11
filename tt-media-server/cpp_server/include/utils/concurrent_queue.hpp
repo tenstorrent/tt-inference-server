@@ -23,6 +23,11 @@ public:
         out.swap(pending_);
         return out;
     }
+    
+    size_t size() {
+        std::lock_guard lock(mutex_);
+        return pending_.size();
+    }
 
     ConcurrentQueue(const ConcurrentQueue&) = delete;
     ConcurrentQueue& operator=(const ConcurrentQueue&) = delete;

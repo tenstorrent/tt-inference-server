@@ -52,6 +52,11 @@ private:
         std::shared_ptr<domain::CompletionRequest> req_ptr,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
         bool is_chat) const;
+    
+    void handle_streaming_accumulated(
+        std::shared_ptr<domain::CompletionRequest> req_ptr,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+        bool is_chat) const;
 
     /**
      * Generate a unique completion ID (hex string).

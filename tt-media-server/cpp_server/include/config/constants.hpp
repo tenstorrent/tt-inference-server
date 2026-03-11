@@ -112,6 +112,7 @@ namespace defaults {
     constexpr uint16_t SOCKET_PORT = 9000;
     constexpr const char* SCHEDULING_POLICY = "prefill_first";  // "prefill_first" or "max_occupancy"
     constexpr const char* LLM_DEVICE_BACKEND = "mock";  // "mock", "ttrun", "llama"
+    constexpr size_t MAX_ACCUMULATED_TOKENS = 64;
 }
 
 }  // namespace tt::config

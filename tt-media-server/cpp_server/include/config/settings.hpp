@@ -74,6 +74,9 @@ std::string socket_host();
 /** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
 uint16_t socket_port();
 
+/** Max accumulated tokens from MAX_ACCUMULATED_TOKENS. Default: defaults::MAX_ACCUMULATED_TOKENS. */
+size_t max_accumulated_tokens();
+
 /** Scheduling policy from SCHEDULING_POLICY. Default: defaults::SCHEDULING_POLICY ("prefill_first"). */
 llm_engine::SchedulingPolicy scheduling_policy();
 
