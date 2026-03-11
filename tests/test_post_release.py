@@ -143,7 +143,7 @@ def test_build_updated_model_spec_content_applies_matching_release_updates():
     assert summary["applied_records"][0]["discarded_fields"] == []
 
 
-def test_build_updated_model_spec_content_discards_diverged_fields_but_updates_release_version():
+def test_build_updated_model_spec_content_discards_diverged_fields_without_updating_release_version():
     template_text = make_template_text(
         tt_metal_commit="ccccccc",
         vllm_commit="3333333",
@@ -174,11 +174,11 @@ def test_build_updated_model_spec_content_discards_diverged_fields_but_updates_r
     assert 'tt_metal_commit="ccccccc"' in updated_content
     assert 'vllm_commit="3333333"' in updated_content
     assert "status=ModelStatusTypes.TOP_PERF" in updated_content
-    assert 'release_version="0.9.0"' in updated_content
-    assert summary["updated_templates"] == 1
+    assert 'release_version="0.9.0"' not in updated_content
+    assert summary["updated_templates"] == 0
     assert summary["applied_records"][0]["applied_fields"] == []
     assert len(summary["applied_records"][0]["discarded_fields"]) == 3
-    assert summary["applied_records"][0]["release_version_updated"] is True
+    assert summary["applied_records"][0]["release_version_updated"] is False
 
 
 def test_build_updated_model_spec_content_skips_ambiguous_template_matches():

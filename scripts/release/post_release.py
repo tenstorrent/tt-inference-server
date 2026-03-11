@@ -177,6 +177,7 @@ def apply_record_to_template(
     vllm_commit_to_apply = None
     status_to_apply = None
     apply_vllm_optional_update = False
+    apply_release_version = False
 
     for field_name, before_key, after_key in FIELD_SPECS:
         before_value = record.get(before_key)
@@ -200,6 +201,7 @@ def apply_record_to_template(
         applied_fields.append(field_name)
         if field_name == "tt_metal_commit":
             tt_metal_commit_to_apply = after_value
+            apply_release_version = True
         elif field_name == "vllm_commit":
             vllm_commit_to_apply = after_value
             apply_vllm_optional_update = True
@@ -211,7 +213,7 @@ def apply_record_to_template(
         tt_metal_commit_to_apply,
         vllm_commit_to_apply,
         status_to_apply,
-        release_version=released_version,
+        release_version=released_version if apply_release_version else None,
     )
 
     if apply_vllm_optional_update:
