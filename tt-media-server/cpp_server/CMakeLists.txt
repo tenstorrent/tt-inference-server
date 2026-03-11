@@ -169,16 +169,16 @@ endif()
 set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/block_manager.cpp
     src/ipc/boost_ipc_task_queue.cpp
-    src/runners/llm_runner/shared_memory.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
     src/runners/llm_runner/mock_model_runner.cpp
-    src/runners/llm_runner/ttrun_model_runner.cpp
     src/runners/llm_runner/scheduler.cpp
     src/runners/llm_runner/sequence.cpp
     src/runners/llm_runner/sampling_params.cpp
     src/utils/logger.cpp
+    src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
+    src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
 )
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
