@@ -24,6 +24,7 @@ The script:
 - Validates that all devices in a template have consistent commits
 - Updates commits in-place (7-character hash format)
 - Updates status field based on perf_status (unless --ignore-perf-status is used)
+- Stamps release_version on updated templates
 - Skips templates with no CI data
 - Errors if different devices have conflicting commits
 """
@@ -489,8 +490,8 @@ def write_release_diff_outputs(update_records, output_dir):
     return markdown_path, json_path
 
 
-def extract_template_blocks(content):
-    """Extract raw `ModelSpecTemplate(...)` blocks from `model_spec.py` content."""
+def extract_template_block_spans(content):
+    """Extract raw `ModelSpecTemplate(...)` blocks and their spans."""
     blocks = []
     template_pattern = r"ModelSpecTemplate\("
 
@@ -509,12 +510,21 @@ def extract_template_blocks(content):
         if paren_count != 0:
             raise ValueError("Unbalanced parentheses while parsing ModelSpecTemplate")
 
-        template_text = content[start_pos:pos]
+        end_pos = pos
+        template_text = content[start_pos:end_pos]
         if pos < len(content) and content[pos] == ",":
             template_text += ","
-        blocks.append(template_text)
+            end_pos += 1
+        blocks.append((start_pos, end_pos, template_text))
 
     return blocks
+
+
+def extract_template_blocks(content):
+    """Extract raw `ModelSpecTemplate(...)` blocks from `model_spec.py` content."""
+    return [
+        template_text for _, _, template_text in extract_template_block_spans(content)
+    ]
 
 
 def load_model_spec_module_from_content(
@@ -712,6 +722,77 @@ def generate_release_diff_outputs_from_git(
         ci_metadata_by_occurrence=ci_metadata_by_occurrence,
     )
     return write_release_diff_outputs(update_records, output_dir)
+
+
+def apply_release_version_to_manual_updates_from_git(
+    model_spec_path: Path, current_content: str, release_version: str
+):
+    """Stamp release_version on templates whose tt_metal_commit changed in git."""
+    base_text = read_git_base_model_spec_content(model_spec_path)
+    before_snapshots = build_template_snapshots(
+        model_spec_path, base_text, "model_spec_release_version_before"
+    )
+    after_snapshots = build_template_snapshots(
+        model_spec_path, current_content, "model_spec_release_version_after"
+    )
+    template_spans = extract_template_block_spans(current_content)
+
+    if len(template_spans) != len(after_snapshots):
+        raise ValueError(
+            "Template block count does not match loaded spec_templates count"
+        )
+
+    before_by_identity = {
+        snapshot["identity_key"]: snapshot for snapshot in before_snapshots
+    }
+    matched_before_occurrence_keys = set()
+    unmatched_after_snapshots = []
+    indices_to_update = []
+
+    def maybe_mark_for_release_version(index, before_snapshot, after_snapshot):
+        before_commit = before_snapshot["tt_metal_commit"] if before_snapshot else None
+        after_commit = after_snapshot["tt_metal_commit"]
+        if not after_commit or before_commit == after_commit:
+            return
+        indices_to_update.append(index)
+
+    for index, after_snapshot in enumerate(after_snapshots):
+        before_snapshot = before_by_identity.get(after_snapshot["identity_key"])
+        if before_snapshot is None:
+            unmatched_after_snapshots.append((index, after_snapshot))
+            continue
+
+        matched_before_occurrence_keys.add(before_snapshot["occurrence_key"])
+        maybe_mark_for_release_version(index, before_snapshot, after_snapshot)
+
+    unmatched_before_by_occurrence = {
+        snapshot["occurrence_key"]: snapshot
+        for snapshot in before_snapshots
+        if snapshot["occurrence_key"] not in matched_before_occurrence_keys
+    }
+
+    for index, after_snapshot in unmatched_after_snapshots:
+        before_snapshot = unmatched_before_by_occurrence.get(
+            after_snapshot["occurrence_key"]
+        )
+        maybe_mark_for_release_version(index, before_snapshot, after_snapshot)
+
+    updated_content = current_content
+    release_version_updates = 0
+
+    for index in reversed(indices_to_update):
+        start_pos, end_pos, template_text = template_spans[index]
+        updated_template = update_template_fields(
+            template_text, None, None, None, release_version=release_version
+        )
+        if updated_template == template_text:
+            continue
+        updated_content = (
+            updated_content[:start_pos] + updated_template + updated_content[end_pos:]
+        )
+        release_version_updates += 1
+
+    return updated_content, release_version_updates
 
 
 def reload_and_export_model_specs_json(model_spec_path, output_json_path):
@@ -957,7 +1038,10 @@ def main():
     parser.add_argument(
         "--output-only",
         action="store_true",
-        help="Read model_spec.py and generate outputs (README.md table and model_spec.json) without modifying model_spec.py",
+        help=(
+            "Regenerate release outputs and stamp release_version for templates "
+            "whose tt_metal_commit changed in manual edits"
+        ),
     )
     parser.add_argument(
         "--readme-path",
@@ -992,13 +1076,29 @@ def main():
         if not model_spec_path.exists():
             raise FileNotFoundError(f"Error: File not found: {args.model_spec_path}")
 
-        print(
-            "Running in --output-only mode: generating outputs without modifying model_spec.py"
+        current_content = model_spec_path.read_text()
+        updated_content, release_version_updates = (
+            apply_release_version_to_manual_updates_from_git(
+                model_spec_path, current_content, VERSION
+            )
         )
 
-        release_output_dir = resolve_release_output_dir(args.out_root)
+        if updated_content != current_content:
+            model_spec_path.write_text(updated_content)
+            print(
+                "Running in --output-only mode: updated release_version for "
+                f"{release_version_updates} manually changed templates"
+            )
+        else:
+            print(
+                "Running in --output-only mode: no release_version updates were "
+                "needed for manual tt_metal_commit changes"
+            )
 
-        generate_release_diff_outputs_from_git(model_spec_path, release_output_dir)
+        release_output_dir = resolve_release_output_dir(args.out_root)
+        generate_release_diff_outputs_from_git(
+            model_spec_path, release_output_dir, current_content=updated_content
+        )
 
         # Update README.md Model Support section and regenerate docs/model_support/
         update_readme_model_support(model_spec_path, args.readme_path)
