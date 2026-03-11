@@ -974,6 +974,7 @@ llm_templates = [
                 default_impl=True,
                 env_vars={
                     "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid
+                    "TT_MM_THROTTLE_PERF": 2,
                 },
                 vllm_args={
                     "data_parallel_size": 4,
