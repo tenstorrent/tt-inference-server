@@ -395,8 +395,8 @@ void LLMService::process_streaming_request(
     }
 
     auto sequence = std::make_unique<llm_engine::Sequence>(
+        llm_engine::TaskID(task_id),
         tt::config::llm_engine_config().kvcache_block_size, std::move(token_ids));
-    sequence->task_id.id = task_id;
     sequence->num_prompt_tokens_ = prompt.size();
     sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(tt::utils::mapper::map_sampling_params(request));
     queue_manager_->task_queue->push(*std::move(sequence));
@@ -434,8 +434,8 @@ void LLMService::submit_decode_continuation(
     std::vector<int64_t> token_ids(prompt.begin(), prompt.end());
 
     auto sequence = std::make_unique<llm_engine::Sequence>(
+        llm_engine::TaskID(task_id),
         tt::config::llm_engine_config().kvcache_block_size, std::move(token_ids));
-    sequence->task_id.id = task_id;
     sequence->num_prompt_tokens_ = prompt.size();
     sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(
         tt::utils::mapper::map_sampling_params(request));

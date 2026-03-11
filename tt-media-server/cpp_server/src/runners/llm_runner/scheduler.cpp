@@ -37,8 +37,7 @@ bool Scheduler::is_finished() const {
 
 Sequence& Scheduler::add_request(TaskID task_id, std::vector<int64_t> prompt,
                                   const SamplingParams& params) {
-  auto seq = std::make_unique<Sequence>(block_size_, std::move(prompt), params);
-  seq->task_id = std::move(task_id);
+  auto seq = std::make_unique<Sequence>(std::move(task_id), block_size_, std::move(prompt), params);
   auto id = seq->task_id;
   add(*seq);
   sequences_[id] = std::move(seq);

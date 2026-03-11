@@ -65,8 +65,7 @@ TEST(PrefillFirstSchedulerTest, IsFinished_AfterAdd_ReturnsFalse) {
   Config config = make_config();
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get()};
-  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
-  seq.task_id = next_id();
+  Sequence seq{next_id(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
   sched.add(seq);
   EXPECT_FALSE(sched.is_finished());
 }
@@ -75,8 +74,7 @@ TEST(PrefillFirstSchedulerTest, Schedule_WithOneWaiting_ReturnsPrefillBatch) {
   Config config = make_config();
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get()};
-  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
-  seq.task_id = next_id();
+  Sequence seq{next_id(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
   TaskID expected_id = seq.task_id;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
@@ -104,8 +102,7 @@ TEST(PrefillFirstSchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecod
   Config config = make_config();
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get()};
-  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
-  seq.task_id = next_id();
+  Sequence seq{next_id(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
   TaskID expected_id = seq.task_id;
   sched.add(seq);
   auto [prefill_batch, is_prefill] = sched.schedule();
@@ -172,8 +169,7 @@ TEST(PrefillFirstSchedulerTest, Postprocess_WhenTokenReachesMaxTokens_MarksFinis
   PrefillFirstScheduler sched{config, queue.get()};
   SamplingParams params;
   params.max_tokens = 2;
-  Sequence seq{256, prompt(2), params};
-  seq.task_id = next_id();
+  Sequence seq{next_id(), 256, prompt(2), params};
   sched.add(seq);
   auto [batch1, _1] = sched.schedule();
   ASSERT_EQ(batch1.size(), 1u);
@@ -189,8 +185,7 @@ TEST(PrefillFirstSchedulerTest, Postprocess_WhenEosToken_MarksFinished) {
   Config config = make_config(32, 8, 256, 99, std::vector<int64_t>{99});
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get()};
-  Sequence seq{256, prompt(2), SamplingParams{.max_tokens = 100, .ignore_eos = false}};
-  seq.task_id = next_id();
+  Sequence seq{next_id(), 256, prompt(2), SamplingParams{.max_tokens = 100, .ignore_eos = false}};
   sched.add(seq);
   auto [batch, _] = sched.schedule();
   ASSERT_EQ(batch.size(), 1u);
@@ -202,8 +197,7 @@ TEST(PrefillFirstSchedulerTest, Preempt_MovesSequenceBackToWaiting) {
   Config config = make_config();
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get()};
-  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 10}};
-  seq.task_id = next_id();
+  Sequence seq{next_id(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
   TaskID expected_id = seq.task_id;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
@@ -221,10 +215,8 @@ TEST(PrefillFirstSchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
   Config config = make_config();
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get()};
-  Sequence seq1{256, prompt(4), SamplingParams{.max_tokens = 10}};
-  seq1.task_id = next_id();
-  Sequence seq2{256, prompt(4), SamplingParams{.max_tokens = 10}};
-  seq2.task_id = next_id();
+  Sequence seq1{next_id(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
+  Sequence seq2{next_id(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
   TaskID seq2_task_id = seq2.task_id;
   sched.add(seq1);
   auto [batch1, prefill1] = sched.schedule();
@@ -241,10 +233,8 @@ TEST(PrefillFirstSchedulerTest, Schedule_RespectsMaxNumBatchedTokens) {
   Config config = make_config(32, 8, 20, 0);
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get()};
-  Sequence seq1{256, prompt(15), SamplingParams{.max_tokens = 5}};
-  seq1.task_id = next_id();
-  Sequence seq2{256, prompt(15), SamplingParams{.max_tokens = 5}};
-  seq2.task_id = next_id();
+  Sequence seq1{next_id(), 256, prompt(15), SamplingParams{.max_tokens = 5}};
+  Sequence seq2{next_id(), 256, prompt(15), SamplingParams{.max_tokens = 5}};
   sched.add(seq1);
   sched.add(seq2);
   auto [batch, is_prefill] = sched.schedule();
@@ -256,12 +246,9 @@ TEST(PrefillFirstSchedulerTest, Schedule_RespectsHardcodedMaxNumSeqs) {
   Config config = make_config(32, 8, 256, 0);
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get()};
-  Sequence seq1{256, prompt(4), SamplingParams{.max_tokens = 5}};
-  seq1.task_id = next_id();
-  Sequence seq2{256, prompt(4), SamplingParams{.max_tokens = 5}};
-  seq2.task_id = next_id();
-  Sequence seq3{256, prompt(4), SamplingParams{.max_tokens = 5}};
-  seq3.task_id = next_id();
+  Sequence seq1{next_id(), 256, prompt(4), SamplingParams{.max_tokens = 5}};
+  Sequence seq2{next_id(), 256, prompt(4), SamplingParams{.max_tokens = 5}};
+  Sequence seq3{next_id(), 256, prompt(4), SamplingParams{.max_tokens = 5}};
   sched.add(seq1);
   sched.add(seq2);
   sched.add(seq3);
@@ -274,8 +261,7 @@ TEST(PrefillFirstSchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) 
   Config config = make_config();
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get()};
-  Sequence seq{256, prompt(2), SamplingParams{.max_tokens = 1}};
-  seq.task_id = next_id();
+  Sequence seq{next_id(), 256, prompt(2), SamplingParams{.max_tokens = 1}};
   sched.add(seq);
   auto [batch, _] = sched.schedule();
   sched.postprocess(batch, {1});
@@ -286,8 +272,7 @@ TEST(PrefillFirstSchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_
   Config config = make_config(1, 8, 256, 0);
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get()};
-  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 20}};
-  seq.task_id = next_id();
+  Sequence seq{next_id(), 256, prompt(4), SamplingParams{.max_tokens = 20}};
   sched.add(seq);
 
   auto [prefill_batch, is_prefill] = sched.schedule();
@@ -315,8 +300,7 @@ TEST(PrefillFirstSchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBl
   Config config = make_config(2, 8, 256, 0);
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get()};
-  Sequence seq{256, prompt(4), SamplingParams{.max_tokens = 20}};
-  seq.task_id = next_id();
+  Sequence seq{next_id(), 256, prompt(4), SamplingParams{.max_tokens = 20}};
   sched.add(seq);
 
   auto [prefill_batch, is_prefill] = sched.schedule();
@@ -345,10 +329,8 @@ TEST(PrefillFirstSchedulerTest, PrefillsAllBeforeDecode) {
   Config config = make_config();
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get()};
-  Sequence seq1{256, prompt(4), SamplingParams{.max_tokens = 10}};
-  seq1.task_id = next_id();
-  Sequence seq2{256, prompt(4), SamplingParams{.max_tokens = 10}};
-  seq2.task_id = next_id();
+  Sequence seq1{next_id(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
+  Sequence seq2{next_id(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
   TaskID seq2_id = seq2.task_id;
   sched.add(seq1);
   sched.add(seq2);

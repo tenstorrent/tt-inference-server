@@ -28,7 +28,7 @@ struct TokenResult {
 
 class Sequence {
  public:
-  Sequence(const int block_size, std::vector<int64_t> token_ids,
+  Sequence(TaskID task_id, int block_size, std::vector<int64_t> token_ids,
            const SamplingParams& sampling_params = SamplingParams());
 
   void serialize(std::ostream& os) const;
