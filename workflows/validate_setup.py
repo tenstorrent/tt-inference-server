@@ -5,8 +5,10 @@
 import grp
 import logging
 import os
+import re
 import stat
 from pathlib import Path
+from typing import Optional, Tuple
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
@@ -16,6 +18,7 @@ from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_repo_root_path,
+    get_version,
     run_command,
 )
 from workflows.workflow_types import (
@@ -26,6 +29,35 @@ from workflows.workflow_types import (
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
+
+
+def _parse_semantic_version(version: Optional[str]) -> Optional[Tuple[int, int, int]]:
+    """Return a comparable semantic version tuple or None."""
+    if not version:
+        return None
+
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version)
+    if not match:
+        return None
+
+    return tuple(int(part) for part in match.groups())
+
+
+def warn_if_release_version_is_older(model_spec) -> None:
+    """Warn when a ModelSpec was last released before the current repo version."""
+    release_version = getattr(model_spec, "release_version", None)
+    current_version = get_version()
+    release_parts = _parse_semantic_version(release_version)
+    current_parts = _parse_semantic_version(current_version)
+
+    if not release_parts or not current_parts:
+        return
+
+    if release_parts < current_parts:
+        logger.warning(
+            f"ModelSpec {model_spec.model_id} has release_version {release_version}, "
+            f"which is older than the current VERSION {current_version}."
+        )
 
 
 def validate_runtime_args(model_spec, runtime_config):
@@ -338,6 +370,7 @@ def validate_setup(model_spec, runtime_config, json_fpath):
     3. validate_bind_mount_permissions - Docker bind mount UID access (docker-server only)
     """
     validate_runtime_args(model_spec, runtime_config)
+    warn_if_release_version_is_older(model_spec)
     validate_local_setup(model_spec, runtime_config, json_fpath)
     if runtime_config.docker_server:
         validate_bind_mount_permissions(runtime_config)
