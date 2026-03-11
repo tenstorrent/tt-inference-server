@@ -83,7 +83,7 @@ class MultihostConfig:
     _auto_generated_config_pkl_dir: bool = field(default=False, repr=False)
 
 
-def _generate_config_pkl_dir(shared_storage_root: str) -> str:
+def _generate_config_pkl_path(shared_storage_root: str) -> str:
     """Generate a unique config pickle directory under shared storage root.
 
     Creates a session-specific directory for vLLM to write config pickle files.
@@ -166,7 +166,7 @@ def setup_multihost_config(
 
     Args:
         model_spec: ModelSpec object to determine model-specific config requirements
-        expected_num_hosts: Expected number of hosts based on device type (2 or 4)
+        expected_num_hosts: Expected number of hosts based on device type
         dry_run: If True, skip directory creation and .env writes (for --print-docker-cmd)
 
     Returns:
@@ -216,10 +216,9 @@ def setup_multihost_config(
     auto_generated = False
 
     if not config_pkl_dir:
-        # Auto-generate a unique directory under shared storage
-        config_pkl_dir = _generate_config_pkl_dir(shared_root)
+        # Auto-generate a unique path under shared storage
+        config_pkl_dir = _generate_config_pkl_path(shared_root)
         auto_generated = True
-        logger.info(f"Auto-generated {ENV_CONFIG_PKL_DIR}: {config_pkl_dir}")
 
     if not config_pkl_dir.startswith(shared_root):
         raise ValueError(f"{ENV_CONFIG_PKL_DIR} must be under {shared_root}")
@@ -227,7 +226,7 @@ def setup_multihost_config(
     if not dry_run:
         if auto_generated:
             # Create with world-writable permissions for container user (UID 1000)
-            logger.info(f"Creating config pickle directory: {config_pkl_dir}")
+            logger.info(f"Auto-generated {ENV_CONFIG_PKL_DIR}: {config_pkl_dir}")
             _create_config_pkl_dir_with_permissions(config_pkl_dir)
             atexit.register(_cleanup_config_pkl_dir, config_pkl_dir)
             logger.debug(f"Registered cleanup for auto-generated {ENV_CONFIG_PKL_DIR}")
