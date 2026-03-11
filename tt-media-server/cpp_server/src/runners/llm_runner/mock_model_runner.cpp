@@ -17,11 +17,11 @@ class MockModelRunner : public IModelRunner {
                                         << " batch_size=" << seqs.size() << std::endl;
     if (is_prefill) {
       for (Sequence* seq : seqs) {
-        decode_callback_({seq->task_id, kWhitespaceTokenId});
+        decode_callback_(TokenResult(seq->task_id, kWhitespaceTokenId));
       }
     } else {
       for (Sequence* seq : seqs) {
-        decode_callback_({seq->task_id, static_cast<uint64_t>(seq->last_token + 1)});
+        decode_callback_(TokenResult(seq->task_id, static_cast<uint64_t>(seq->last_token + 1)));
       }
     }
   }

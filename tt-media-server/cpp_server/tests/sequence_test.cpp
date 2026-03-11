@@ -12,7 +12,7 @@ namespace llm_engine {
 namespace {
 
 TEST(SequenceIDTest, SerializeDeserialize_RoundTrip) {
-  TaskID orig;
+  TaskID orig(TaskID("seq-id-test"));
 
   std::vector<char> buf = orig.ipc_serialize();
   ASSERT_EQ(buf.size(), 36);

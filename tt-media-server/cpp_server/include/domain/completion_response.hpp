@@ -64,7 +64,9 @@ struct CompletionChoice {
 /**
  * Full OpenAI-compatible completion response.
  */
-struct CompletionResponse: BaseResponse {
+struct CompletionResponse : BaseResponse {
+    using BaseResponse::BaseResponse;
+
     std::string id;
     std::string object = "text_completion";
     int64_t created;
@@ -99,7 +101,9 @@ struct CompletionResponse: BaseResponse {
 /**
  * Streaming chunk response (SSE format).
  */
-struct StreamingChunkResponse: BaseResponse {
+struct StreamingChunkResponse : BaseResponse {
+    using BaseResponse::BaseResponse;
+
     std::string id;
     std::string object = "text_completion";
     int64_t created;

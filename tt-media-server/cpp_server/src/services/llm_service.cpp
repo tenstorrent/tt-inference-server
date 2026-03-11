@@ -264,7 +264,8 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
                 pending_tasks_.fetch_sub(1);
             }
 
-            domain::StreamingChunkResponse response;
+            domain::StreamingChunkResponse response(
+                domain::TaskID(std::string(token.task_id)));
             response.id = std::string(token.task_id);
             response.created = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()
@@ -334,7 +335,7 @@ domain::CompletionResponse LLMService::process_request(domain::CompletionRequest
     std::unique_lock<std::mutex> lock(mtx);
     cv.wait(lock, [&] { return done; });
 
-    domain::CompletionResponse response;
+    domain::CompletionResponse response{domain::TaskID(task_id)};
     response.id = task_id;
     response.model = model;
     response.created = std::chrono::duration_cast<std::chrono::seconds>(
@@ -377,8 +378,7 @@ void LLMService::process_streaming_request(
             throw std::runtime_error("No prefill request callback configured");
         }
 
-        domain::PrefillRequest prefill_req;
-        prefill_req.task_id = domain::TaskID(task_id);
+        domain::PrefillRequest prefill_req{domain::TaskID(task_id)};
         prefill_req.token_ids = token_ids;
         prefill_req.max_tokens = request.max_tokens;
 
@@ -451,7 +451,7 @@ void LLMService::handle_connection_lost() {
 
     stream_callbacks_.for_each([](const std::string& task_id,
                                    std::function<void(domain::StreamingChunkResponse&, bool)>& callback) {
-        domain::StreamingChunkResponse error_response;
+        domain::StreamingChunkResponse error_response{domain::TaskID(task_id)};
         error_response.id = task_id;
         error_response.created = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch()

@@ -41,8 +41,7 @@ void SocketController::setup_prefill_mode_handlers() {
         [this](const tt::sockets::PrefillRequestMessage& message) {
             TT_LOG_INFO("[SocketController] Received prefill request {}", message.task_id.id);
 
-            domain::CompletionRequest request;
-            request.task_id = message.task_id;
+            domain::CompletionRequest request(message.task_id);
             if (!message.token_ids.empty()) {
                 std::vector<int> tokens(message.token_ids.begin(), message.token_ids.end());
                 request.prompt = std::move(tokens);
@@ -68,8 +67,7 @@ void SocketController::setup_prefill_mode_handlers() {
 
                     int remaining_tokens = original_max_tokens - 1;
 
-                    tt::sockets::PrefillResultMessage msg;
-                    msg.task_id = domain::TaskID(task_id);
+                    tt::sockets::PrefillResultMessage msg{domain::TaskID(task_id)};
                     msg.generated_text = text;
                     msg.token_ids = *token_ids_ptr;
                     msg.remaining_tokens = remaining_tokens;
@@ -106,7 +104,7 @@ void SocketController::setup_decode_mode_handlers() {
             }
             auto callback = std::move(taken.value());
 
-            domain::StreamingChunkResponse response;
+            domain::StreamingChunkResponse response{msg.task_id};
             response.id = msg.task_id.id;
             response.created = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()
@@ -118,8 +116,7 @@ void SocketController::setup_decode_mode_handlers() {
             callback(response, false);
 
             if (msg.remaining_tokens > 0 && !msg.token_ids.empty()) {
-                domain::CompletionRequest request;
-                request.task_id = msg.task_id;
+                domain::CompletionRequest request(msg.task_id);
                 std::vector<int> tokens(msg.token_ids.begin(), msg.token_ids.end());
                 request.prompt = std::move(tokens);
                 request.max_tokens = msg.remaining_tokens;
@@ -127,7 +124,7 @@ void SocketController::setup_decode_mode_handlers() {
                 llm_service_->submit_decode_continuation(
                     std::move(request), std::move(callback));
             } else {
-                domain::StreamingChunkResponse final_response;
+                domain::StreamingChunkResponse final_response{msg.task_id};
                 final_response.id = msg.task_id.id;
                 final_response.created = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::system_clock::now().time_since_epoch()

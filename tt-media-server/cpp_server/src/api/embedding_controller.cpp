@@ -137,8 +137,8 @@ void EmbeddingController::create_embedding(
     }
 
     // Build request
-    domain::EmbeddingRequest request = domain::EmbeddingRequest::from_json(*json);
-    request.task_id = domain::TaskID(generate_task_id());
+    domain::TaskID task_id(generate_task_id());
+    domain::EmbeddingRequest request = domain::EmbeddingRequest::from_json(*json, std::move(task_id));
 
     // Default model if not specified
     if (request.model.empty()) {

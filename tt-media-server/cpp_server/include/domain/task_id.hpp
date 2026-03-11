@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <functional>
@@ -19,8 +20,6 @@ namespace tt::domain {
 
 struct TaskID {
     static constexpr size_t kSerializedSize = 36;
-
-    TaskID() : id("") {}
 
     explicit TaskID(std::string task_id) : id(std::move(task_id)) {}
 
@@ -39,9 +38,8 @@ struct TaskID {
         return TaskID(std::string(data, actual_len));
     }
 
-    template <class Archive>
-    void serialize(Archive& ar) {
-        ar(id);
+    static std::string generate() {
+        return boost::uuids::to_string(boost::uuids::random_generator()());
     }
 };
 

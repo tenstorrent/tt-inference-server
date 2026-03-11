@@ -24,6 +24,11 @@ struct TokenResult {
   uint64_t token_id;
   std::optional<bool> finished;
   bool is_error = false;
+
+  TokenResult(TaskID task_id, uint64_t token_id,
+             std::optional<bool> finished = {}, bool is_error = false)
+      : task_id(std::move(task_id)), token_id(token_id),
+        finished(std::move(finished)), is_error(is_error) {}
 };
 
 class Sequence {

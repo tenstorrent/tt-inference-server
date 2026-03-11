@@ -100,22 +100,22 @@ class TtRunModelRunner : public IModelRunner {
         }
 
         // Extract task_id (first 36 bytes of payload)
-        TokenResult result;
-        result.task_id = TaskID::ipc_deserialize(
+        TaskID result_task_id = TaskID::ipc_deserialize(
             reinterpret_cast<const char*>(payload), TaskID::kSerializedSize);
 
+        uint64_t result_token_id = 0;
         // Extract first token_id if available (next 8 bytes after task_id)
         if (num_token_ids > 0 && payload_size >= TaskID::kSerializedSize + 8) {
           int64_t token_id;
           std::memcpy(&token_id, payload + TaskID::kSerializedSize, sizeof(int64_t));
-          result.token_id = token_id;
-          LLM_ENGINE_LOG("model_runner:ttrun") << "Decoded token: task_id=" << result.task_id.id
-                                               << " token_id=" << token_id << std::endl;
+          result_token_id = static_cast<uint64_t>(token_id);
+          LLM_ENGINE_LOG("model_runner:ttrun") << "Decoded token: task_id=" << result_task_id.id
+                                               << " token_id=" << result_token_id << std::endl;
         } else {
-          result.token_id = 0;
           LLM_ENGINE_LOG("model_runner:ttrun") << "No token_id in message" << std::endl;
         }
 
+        TokenResult result(result_task_id, result_token_id);
         decode_callback_(result);
       } else {
         std::this_thread::yield();
