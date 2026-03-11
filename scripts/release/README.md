@@ -11,9 +11,19 @@ A release is defined by:
 - pre-built and validated docker images with tt-metal, vLLM, and other libaries required to run inference
 - automatically generated documentation pointing to usage of the docker images
 
-A release is typically done for a single tt-metal commit from it's own `stable` branch, however a release can support multiple commits for different model-hardware combinations and corresponding different Docker images.
-The validation is typically done for a single commit however because of how testing
- is done in Models CI.
+A release is prepared from the `stable` branch at a chosen
+`tt-inference-server` commit. Most releases use one Nightly Models CI run to
+populate and validate the `workflows/model_spec.py` updates, or simply update these  manually from results of interactive development. plus one Release
+Models CI run to validate the final release Docker images.
+
+A single release can still include multiple `tt_metal_commit` values across
+different model and hardware combinations, and therefore multiple release
+Docker images, as long as those combinations are captured in
+`workflows/model_spec.py` and validated through the release process below.
+
+Where a ModelSpecTemplate has an older `release_version` than the current repo VERSION
+the user can be warned. In future the specific release code could be checked out and ran 
+to give a seamless transition to running the latest released version and Docker image for any previously released version without needing to rebuild and re-test a given commit combination.
 
 ## Branch roles
 
@@ -21,8 +31,8 @@ The validation is typically done for a single commit however because of how test
 - `stable`: release staging branch cut from `main`.
 - `<namett>/hot-fix-<description>`: hot-fix branch used when a fix must land on
   `main` and also be cherry-picked into `stable` or a patch branch.
-- `vX.Y.Z`: release branch cut from `stable`. Repo default branch, updated after every release.
-- `patch-vX.Y.Z`: staging branch for patching an older shipped release.
+- `vx.y.z`: release branch cut from `stable`. Repo default branch, updated after every release.
+- `patch-vx.y.z`: staging branch for patching an older shipped release.
 
 ## Git workflow diagram
 
@@ -95,12 +105,19 @@ manually edited templates whose `tt_metal_commit` changed. When CI references
 are available they are attached to the changed `ModelSpecTemplate` records;
 otherwise those entries render as `N/A` in the markdown output.
 
+When using `--models-ci-run-id` in this step, pass the Nightly Models CI
+workflow run ID.
+
 ```bash
-# process a specific workflow run_id to update passing models
+# process a specific Nightly Models CI workflow run_id to update passing models
 python3 scripts/release/update_model_spec.py --models-ci-run-id 19339722549
 ```
 
 ### [optional] step 2B: manual changes to model_spec.py
+
+Before starting Step 2, `workflows/model_spec.py` should be clean relative to
+`HEAD` on `stable`. After the CI-driven update has run, you may then make
+manual edits before running `--output-only`.
 
 Manually edit `model_spec.py`. After changes are added, re-run the helper to
 stamp `release_version` on templates whose `tt_metal_commit` changed, then
@@ -146,6 +163,9 @@ The two key release artifacts are:
 - Repo model support documentation (already updated during pre-release)
 - release notes
 
+When using `--models-ci-run-id` in this step, pass the Release Models CI
+workflow run ID from Step 4.
+
 ```bash
 python3 scripts/release/generate_release_artifacts.py --models-ci-run-id 29339722549 --release
 ```
@@ -179,6 +199,9 @@ images:
 python3 scripts/build_docker_images.py --push --release
 ```
 
+Re-run `scripts/release/generate_release_artifacts.py` after this manual image build
+step it should pick up the manually added docker images.
+
 ### Step 6: Make release
 
 ```bash
@@ -188,6 +211,10 @@ git push -u origin v${VERSION}
 ```
 
 Make [new release on GitHub repo](https://github.com/tenstorrent/tt-inference-server/releases/new)
+
+Use branch `vx.y.z` HEAD as the GitHub release tag target.
+Use `release_logs/v{VERSION}/release_notes_v{VERSION}.md` as the GitHub release
+body, and fill in any sections that were left blank by the generator.
 
 ## Post-release
 
@@ -209,8 +236,9 @@ released template updates from `stable` should be carried back onto `main`.
 For each matching template on `main`, commit or status fields are only updated
 when `main` still has the released starting value from the pre-release diff.
 If `main` has already been changed manually, that field update is discarded and
-reported in the PR draft. The template `release_version` is always updated to
-the version that was just released.
+reported in the PR draft. The template `release_version` is only updated when
+the released `tt_metal_commit` is also applied; if `main` has already diverged
+on `tt_metal_commit`, leave `release_version` unchanged.
 
 ```bash
 python3 scripts/release/post_release.py --increment minor
@@ -227,9 +255,9 @@ Open a PR from the post-release branch back to `main`. That PR carries the next
 development VERSION, any forward-looking `model_spec.py` commit updates, and the
 regenerated docs for the next release window.
 
-### Step 9: make release branch vX.Y.Z the default branch
+### Step 9: make release branch vx.y.z the default branch
 
-On GitHub repo select release branch vX.Y.Z (e.g. v0.11.0) as the default branch.
+On GitHub repo select release branch vx.y.z (e.g. v0.11.0) as the default branch.
 This is so new users are seamlessly directed to the latest and greatest released code.
 This will in turn direct them to correct and updated documentation and images with pre-built tt-metal artifacts required to serve inference and reproduce results from release testing.
 
@@ -241,12 +269,12 @@ If a fix is needed in the current release:
 2. PR the fix back to `main`.
 3. Cherry-pick the merged fix into `stable` if it must land in the current release (see Step 1B).
 4. If the issue affects an older shipped release, cherry-pick into the
-   appropriate `patch-vX.Y.Z` branch instead and see section below.
+   appropriate `patch-vx.y.z` branch instead and see section below.
 
 This keeps the fix anchored in the trunk branch while still allowing a
 release or patch branch to pick it up intentionally.
 
-If the fix cannot be done on `main` the fix can be PR direct to `stable` or `patch-vX.Y.Z`
+If the fix cannot be done on `main` the fix can be PR direct to `stable` or `patch-vx.y.z`
 
 ## Patching older releases
 
@@ -255,7 +283,7 @@ Older shipped versions are patched from dedicated patch branches, not from
 
 Typical flow:
 
-1. Create or update `patch-vX.Y.Z` from the shipped release branch or tag.
+1. Create or update `patch-vx.y.z` from the shipped release branch or tag.
 2. Cherry-pick the required fix or fixes.
 3. Increment VERSION patch number.
 4. Re-run artifact promotion and any required Docker builds.
