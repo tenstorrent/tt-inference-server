@@ -20,10 +20,7 @@ namespace tt::domain {
 struct TaskID {
     static constexpr size_t kSerializedSize = 36;
 
-    TaskID() : id("") {
-        // Default to empty string - no expensive UUID generation
-        // Task ID will be set explicitly by the caller after fromJson()
-    }
+    TaskID() : id("") {}
 
     explicit TaskID(std::string task_id) : id(std::move(task_id)) {}
 
