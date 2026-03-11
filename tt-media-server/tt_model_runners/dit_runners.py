@@ -17,11 +17,6 @@ def _log_import(msg):
     sys.stderr.flush()
 
 
-_log_import("dit_runners: importing ttnn...")
-_t = time.time()  # noqa: E402
-
-_log_import(f"dit_runners: ttnn imported in {time.time() - _t:.1f}s")
-
 from config.constants import ModelRunners, ModelServices, SupportedModels  # noqa: E402
 from config.settings import get_settings  # noqa: E402
 from domain.image_generate_request import ImageGenerateRequest  # noqa: E402

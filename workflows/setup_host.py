@@ -469,7 +469,9 @@ class HostSetupManager:
         # setup venv using uv
         venv_config = VENV_CONFIGS[WorkflowVenvType.HF_SETUP]
         venv_config.setup(model_spec=self.model_spec)
-        os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
+        # Allow configuration via env var, default to 300s (5 min) for better reliability
+        timeout = os.environ.get("HF_HUB_DOWNLOAD_TIMEOUT", "300")
+        os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = timeout
         os.environ["HF_TOKEN"] = self.hf_token
         # Require 'hf' CLI (no fallbacks). Ensure compatibility by installing huggingface_hub>=1.0.0.
         hf_exec = venv_config.venv_path / "bin" / "hf"

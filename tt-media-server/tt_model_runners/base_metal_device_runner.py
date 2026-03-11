@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 
-import ttnn
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 
@@ -22,6 +21,8 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
         return self.ttnn_device
 
     def close_device(self):
+        import ttnn
+
         try:
             self.logger.info(f"Device {self.device_id}: Closing mesh device...")
             if self.ttnn_device is not None:
@@ -40,6 +41,8 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
             ) from e
 
     def get_updated_device_params(self, device_params):
+        import ttnn
+
         if device_params is None:
             device_params = {}
 
@@ -72,6 +75,8 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
         return new_device_params
 
     def _mesh_device(self):
+        import ttnn
+
         try:
             # Get available devices
             device_ids = ttnn.get_device_ids()
@@ -106,6 +111,8 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
         return None
 
     def _initialize_mesh_device(self, mesh_shape, device_params, fabric_config):
+        import ttnn
+
         try:
             mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **device_params)
         except Exception as e:
