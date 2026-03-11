@@ -169,8 +169,8 @@ llm_engine::Config llm_engine_config() {
     llm_engine::Config cfg;
     cfg.stop_token_ids = utils::active_tokenizer().stop_token_ids();
     std::string backend = env_string_lower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
-    if (backend == "ttrun") {
-        cfg.runner_type = llm_engine::ModelRunnerType::TtRun;
+    if (backend == "pipeline") {
+        cfg.runner_type = llm_engine::ModelRunnerType::Pipeline;
     } else if (backend == "llama") {
         cfg.max_in_flight_count = 32;
         cfg.max_num_seqs = 32;

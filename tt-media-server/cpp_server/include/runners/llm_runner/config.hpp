@@ -8,7 +8,7 @@ namespace llm_engine {
 
 enum class ModelRunnerType {
   Mock,
-  TtRun,
+  Pipeline,
   Llama
 };
 
