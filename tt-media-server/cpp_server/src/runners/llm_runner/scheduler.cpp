@@ -5,6 +5,7 @@
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
 #include "runners/llm_runner/max_occupancy_scheduler.hpp"
 #include "runners/llm_runner/debug.hpp"
+#include "profiling/tracy.hpp"
 
 #include <cassert>
 
@@ -139,6 +140,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
 }
 
 void Scheduler::preempt(Sequence& seq) {
+  ZoneScopedN("Scheduler::preempt");
   LLM_ENGINE_LOG("scheduler") << "preempt task_id=" << seq.task_id << std::endl;
   seq.status_ = SequenceStatus::WAITING;
   block_manager_.deallocate(seq);
@@ -147,6 +149,7 @@ void Scheduler::preempt(Sequence& seq) {
 
 void Scheduler::postprocess(std::vector<Sequence*>& seqs,
                             const std::vector<int64_t>& token_ids) {
+  ZoneScopedN("Scheduler::postprocess");
   for (size_t i = 0; i < seqs.size(); ++i) {
     Sequence* seq = seqs[i];
     int64_t token_id = token_ids[i];
