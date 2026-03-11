@@ -35,9 +35,9 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
         return self.ttnn_device
 
     def close_device(self):
-        import ttnn
-
         try:
+            import ttnn
+
             self.logger.info(f"Device {self.device_id}: Closing mesh device...")
             if self.ttnn_device is not None:
                 ttnn.close_mesh_device(self.ttnn_device)
@@ -55,142 +55,167 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
             ) from e
 
     def get_updated_device_params(self, device_params):
-        import ttnn
-
-        if device_params is None:
-            device_params = {}
-
-        new_device_params = device_params.copy()
-
-        dispatch_core_axis = new_device_params.pop("dispatch_core_axis", None)
-        dispatch_core_type = new_device_params.pop("dispatch_core_type", None)
-        fabric_tensix_config = new_device_params.get("fabric_tensix_config", None)
-
-        if ttnn.device.is_blackhole():
-            # Only when both fabric_config and fabric_tensix_config are set, we can use ROW dispatch, otherwise force to use COL dispatch
-            fabric_config = new_device_params.get("fabric_config", None)
-            if not (fabric_config and fabric_tensix_config):
-                # When not both are set, force COL dispatch
-                if dispatch_core_axis == ttnn.DispatchCoreAxis.ROW:
-                    self.logger.warning(
-                        "ROW dispatch requires both fabric and tensix config, using DispatchCoreAxis.COL instead."
-                    )
-                    dispatch_core_axis = ttnn.DispatchCoreAxis.COL
-            elif fabric_config and fabric_tensix_config:
-                self.logger.warning(
-                    f"Blackhole with fabric_config and fabric_tensix_config enabled, using fabric_tensix_config={fabric_tensix_config}"
-                )
-
-        dispatch_core_config = ttnn.DispatchCoreConfig(
-            dispatch_core_type, dispatch_core_axis, fabric_tensix_config
-        )
-        new_device_params["dispatch_core_config"] = dispatch_core_config
-
-        return new_device_params
-
-    def _mesh_device(self):
-        self.logger.info(
-            f"Device {self.device_id}: _mesh_device() called, about to import ttnn..."
-        )
-        import ttnn
-
-        self.logger.info(f"Device {self.device_id}: ttnn imported successfully!")
-
         try:
-            self.logger.info(
-                f"Device {self.device_id}: calling ttnn.get_device_ids()..."
-            )
+            import ttnn
 
-            # Get available devices
-            device_ids = ttnn.get_device_ids()
-            if not device_ids:
-                raise RuntimeError("No TTNN devices available")
-            self.logger.info(
-                f"Device {self.device_id}: Found {len(device_ids)} available TTNN devices: {device_ids}"
-            )
+            if device_params is None:
+                device_params = {}
 
-            self.logger.info(
-                f"Device {self.device_id}: Creating mesh shape {self.settings.device_mesh_shape}..."
-            )
-            mesh_shape = ttnn.MeshShape(self.settings.device_mesh_shape)
-            self.logger.info(
-                f"Device {self.device_id}: Mesh shape created: {mesh_shape}"
-            )
+            new_device_params = device_params.copy()
 
-            self.logger.info(
-                f"Device {self.device_id}: Getting pipeline device params..."
-            )
-            device_params = self.get_pipeline_device_params()
-            self.logger.info(
-                f"Device {self.device_id}: Pipeline device params: {device_params}"
-            )
+            dispatch_core_axis = new_device_params.pop("dispatch_core_axis", None)
+            dispatch_core_type = new_device_params.pop("dispatch_core_type", None)
+            fabric_tensix_config = new_device_params.get("fabric_tensix_config", None)
 
-            self.logger.info(
-                f"Device {self.device_id}: Getting updated device params..."
-            )
-            updated_device_params = self.get_updated_device_params(device_params)
-            self.logger.info(
-                f"Device {self.device_id}: Updated device params: {list(updated_device_params.keys())}"
-            )
+            if ttnn.device.is_blackhole():
+                # Only when both fabric_config and fabric_tensix_config are set, we can use ROW dispatch, otherwise force to use COL dispatch
+                fabric_config = new_device_params.get("fabric_config", None)
+                if not (fabric_config and fabric_tensix_config):
+                    # When not both are set, force COL dispatch
+                    if dispatch_core_axis == ttnn.DispatchCoreAxis.ROW:
+                        self.logger.warning(
+                            "ROW dispatch requires both fabric and tensix config, using DispatchCoreAxis.COL instead."
+                        )
+                        dispatch_core_axis = ttnn.DispatchCoreAxis.COL
+                elif fabric_config and fabric_tensix_config:
+                    self.logger.warning(
+                        f"Blackhole with fabric_config and fabric_tensix_config enabled, using fabric_tensix_config={fabric_tensix_config}"
+                    )
 
-            self.logger.info(f"Device {self.device_id}: Configuring fabric...")
-            fabric_config = self._configure_fabric(updated_device_params)
-            self.logger.info(f"Device {self.device_id}: Fabric config: {fabric_config}")
-
-            self.logger.info(
-                f"Device {self.device_id}: About to call ttnn.open_mesh_device()..."
+            dispatch_core_config = ttnn.DispatchCoreConfig(
+                dispatch_core_type, dispatch_core_axis, fabric_tensix_config
             )
-            mesh_device = self._initialize_mesh_device(
-                mesh_shape, updated_device_params, fabric_config
-            )
-            self.logger.info(
-                f"Device {self.device_id}: ttnn.open_mesh_device() completed successfully"
-            )
-
-            self.logger.info(
-                f"Device {self.device_id}: Successfully created multidevice with {mesh_device.get_num_devices()} devices"
-            )
-            return mesh_device
+            new_device_params["dispatch_core_config"] = dispatch_core_config
+            return new_device_params
         except Exception as e:
             self.logger.error(
-                f"Device {self.device_id}: Unexpected error during device initialization: {e}"
+                f"Device {self.device_id}: Unexpected error during get_updated_device_params(): {e}"
             )
             raise RuntimeError(
-                f"Unexpected device initialization error: {str(e)}"
+                f"Unexpected get_updated_device_params() error: {str(e)}"
             ) from e
+
+    def _mesh_device(self):
+        try:
+            self.logger.info(
+                f"Device {self.device_id}: _mesh_device() called, about to import ttnn..."
+            )
+            import ttnn
+
+            self.logger.info(f"Device {self.device_id}: ttnn imported successfully!")
+
+            try:
+                self.logger.info(
+                    f"Device {self.device_id}: calling ttnn.get_device_ids()..."
+                )
+
+                # Get available devices
+                device_ids = ttnn.get_device_ids()
+                if not device_ids:
+                    raise RuntimeError("No TTNN devices available")
+                self.logger.info(
+                    f"Device {self.device_id}: Found {len(device_ids)} available TTNN devices: {device_ids}"
+                )
+
+                self.logger.info(
+                    f"Device {self.device_id}: Creating mesh shape {self.settings.device_mesh_shape}..."
+                )
+                mesh_shape = ttnn.MeshShape(self.settings.device_mesh_shape)
+                self.logger.info(
+                    f"Device {self.device_id}: Mesh shape created: {mesh_shape}"
+                )
+
+                self.logger.info(
+                    f"Device {self.device_id}: Getting pipeline device params..."
+                )
+                device_params = self.get_pipeline_device_params()
+                self.logger.info(
+                    f"Device {self.device_id}: Pipeline device params: {device_params}"
+                )
+
+                self.logger.info(
+                    f"Device {self.device_id}: Getting updated device params..."
+                )
+                updated_device_params = self.get_updated_device_params(device_params)
+                self.logger.info(
+                    f"Device {self.device_id}: Updated device params: {list(updated_device_params.keys())}"
+                )
+
+                self.logger.info(f"Device {self.device_id}: Configuring fabric...")
+                fabric_config = self._configure_fabric(updated_device_params)
+                self.logger.info(
+                    f"Device {self.device_id}: Fabric config: {fabric_config}"
+                )
+
+                self.logger.info(
+                    f"Device {self.device_id}: About to call ttnn.open_mesh_device()..."
+                )
+                mesh_device = self._initialize_mesh_device(
+                    mesh_shape, updated_device_params, fabric_config
+                )
+                self.logger.info(
+                    f"Device {self.device_id}: ttnn.open_mesh_device() completed successfully"
+                )
+
+                self.logger.info(
+                    f"Device {self.device_id}: Successfully created multidevice with {mesh_device.get_num_devices()} devices"
+                )
+                return mesh_device
+            except Exception as e:
+                self.logger.error(
+                    f"Device {self.device_id}: Unexpected error during device initialization: {e}"
+                )
+                raise RuntimeError(
+                    f"Unexpected device initialization error: {str(e)}"
+                ) from e
+        except Exception as e:
+            self.logger.error(
+                f"Device {self.device_id}: Unexpected error during _mesh_device(): {e}"
+            )
+            raise RuntimeError(f"Unexpected _mesh_device() error: {str(e)}") from e
 
     def _configure_fabric(self, updated_device_params):
         return None
 
     def _initialize_mesh_device(self, mesh_shape, device_params, fabric_config):
-        import ttnn
-
-        self.logger.info(
-            f"Device {self.device_id}: _initialize_mesh_device - "
-            f"mesh_shape={mesh_shape}, params={list(device_params.keys())}"
-        )
         try:
+            import ttnn
+
             self.logger.info(
-                f"Device {self.device_id}: Calling ttnn.open_mesh_device() with "
-                f"mesh_shape={mesh_shape}, device_params={device_params}"
-            )
-            mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **device_params)
-            self.logger.info(
-                f"Device {self.device_id}: ttnn.open_mesh_device() returned successfully"
-            )
-        except Exception as e:
-            self.logger.error(
-                f"Device {self.device_id}: ttnn.open_mesh_device() raised exception: {e}"
+                f"Device {self.device_id}: _initialize_mesh_device - "
+                f"mesh_shape={mesh_shape}, params={list(device_params.keys())}"
             )
             try:
-                if fabric_config:
-                    ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
-            except Exception as reset_error:
-                self.logger.warning(
-                    f"Device {self.device_id}: Failed to reset fabric after device initialization failure: {reset_error}"
+                self.logger.info(
+                    f"Device {self.device_id}: Calling ttnn.open_mesh_device() with "
+                    f"mesh_shape={mesh_shape}, device_params={device_params}"
                 )
+                mesh_device = ttnn.open_mesh_device(
+                    mesh_shape=mesh_shape, **device_params
+                )
+                self.logger.info(
+                    f"Device {self.device_id}: ttnn.open_mesh_device() returned successfully"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Device {self.device_id}: ttnn.open_mesh_device() raised exception: {e}"
+                )
+                try:
+                    if fabric_config:
+                        ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
+                except Exception as reset_error:
+                    self.logger.warning(
+                        f"Device {self.device_id}: Failed to reset fabric after device initialization failure: {reset_error}"
+                    )
+                self.logger.error(
+                    f"Device {self.device_id}: Mesh device initialization failed: {e}"
+                )
+                raise RuntimeError(
+                    f"Mesh device initialization failed: {str(e)}"
+                ) from e
+        except Exception as e:
             self.logger.error(
-                f"Device {self.device_id}: Mesh device initialization failed: {e}"
+                f"Device {self.device_id}: Unexpected error during _mesh_device(): {e}"
             )
-            raise RuntimeError(f"Mesh device initialization failed: {str(e)}") from e
+            raise RuntimeError(f"Unexpected _mesh_device() error: {str(e)}") from e
         return mesh_device

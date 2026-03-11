@@ -3,19 +3,9 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
-import logging
 import os
-import sys
 import time
 from abc import abstractmethod
-
-_import_log = logging.getLogger("TTLogger")
-
-
-def _log_import(msg):
-    _import_log.info(msg)
-    sys.stderr.flush()
-
 
 from config.constants import ModelRunners, ModelServices, SupportedModels  # noqa: E402
 from domain.image_generate_request import ImageGenerateRequest  # noqa: E402
@@ -26,8 +16,6 @@ from tt_model_runners.base_metal_device_runner import (  # noqa: E402
 )
 from utils.decorators import log_execution_time  # noqa: E402
 from utils.logger import log_exception_chain  # noqa: E402
-
-_log_import("dit_runners: all imports complete (pipeline imports are lazy per runner)")
 
 dit_runner_log_map = {
     ModelRunners.TT_SD3_5.value: "SD35",
@@ -43,20 +31,60 @@ dit_runner_log_map = {
 
 class TTDiTRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
-        self.logger.info(f"Device {device_id}: TTDiTRunner.__init__ started")
-        t0 = time.time()
-        super().__init__(device_id)
-        self.pipeline = None
-        self.logger.info(
-            f"Device {device_id}: TTDiTRunner.__init__ completed in {time.time() - t0:.1f}s"
-        )
+        try:
+            self.logger.info(f"Device {device_id}: TTDiTRunner.__init__ started")
+            t0 = time.time()
+            self.logger.info(
+                f"Device {device_id}: About to call super().__init__(device_id)..."
+            )
+            super().__init__(device_id)
+            self.logger.info(
+                f"Device {device_id}: super().__init__(device_id) completed"
+            )
+            self.pipeline = None
+            self.logger.info(
+                f"Device {device_id}: TTDiTRunner.__init__ completed in {time.time() - t0:.1f}s"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Device {device_id}: TTDiTRunner.__init__ failed with exception: {e}"
+            )
+            self.logger.error(f"Device {device_id}: Exception type: {type(e).__name__}")
+            import traceback
+
+            self.logger.error(
+                f"Device {device_id}: Traceback:\n{traceback.format_exc()}"
+            )
+            raise
 
     def _configure_fabric(self, updated_device_params):
         self.logger.info(
             f"Device {self.device_id}: _configure_fabric called with params: "
             f"{list(updated_device_params.keys())}"
         )
-        import ttnn
+
+        try:
+            self.logger.info(
+                f"Device {self.device_id}: About to import ttnn in _configure_fabric..."
+            )
+            import ttnn
+
+            self.logger.info(
+                f"Device {self.device_id}: ttnn imported successfully in _configure_fabric"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Device {self.device_id}: Failed to import ttnn in _configure_fabric: {e}"
+            )
+            self.logger.error(
+                f"Device {self.device_id}: Exception type: {type(e).__name__}"
+            )
+            import traceback
+
+            self.logger.error(
+                f"Device {self.device_id}: Traceback:\n{traceback.format_exc()}"
+            )
+            raise
 
         t0 = time.time()
         try:
@@ -122,7 +150,30 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         load_start = time.time()
 
         def distribute_block():
-            self.pipeline = self.create_pipeline()
+            try:
+                self.logger.info(
+                    f"Device {self.device_id}: distribute_block() starting..."
+                )
+                self.logger.info(
+                    f"Device {self.device_id}: About to call self.create_pipeline()..."
+                )
+                self.pipeline = self.create_pipeline()
+                self.logger.info(
+                    f"Device {self.device_id}: self.create_pipeline() completed successfully"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Device {self.device_id}: distribute_block() failed with exception: {e}"
+                )
+                self.logger.error(
+                    f"Device {self.device_id}: Exception type: {type(e).__name__}"
+                )
+                import traceback
+
+                self.logger.error(
+                    f"Device {self.device_id}: Traceback:\n{traceback.format_exc()}"
+                )
+                raise
 
         async def _heartbeat(interval=60):
             while True:
@@ -228,10 +279,10 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
 class TTSD35Runner(TTDiTRunner):
     def __init__(self, device_id: str):
-        _import_log.info(f"Device {device_id}: TTSD35Runner.__init__ started")
+        self.info(f"Device {device_id}: TTSD35Runner.__init__ started")
         t0 = time.time()
         super().__init__(device_id)
-        _import_log.info(
+        self.info(
             f"Device {device_id}: TTSD35Runner.__init__ completed in {time.time() - t0:.1f}s"
         )
 
@@ -278,37 +329,87 @@ class TTSD35Runner(TTDiTRunner):
 # Runner for Flux.1 dev and schnell. Model weights from settings.model_weights_path determine the exact model variant.
 class TTFlux1Runner(TTDiTRunner):
     def __init__(self, device_id: str):
-        _import_log.info(f"Device {device_id}: TTFlux1Runner.__init__ started")
-        t0 = time.time()
-        super().__init__(device_id)
-        _import_log.info(
-            f"Device {device_id}: TTFlux1Runner.__init__ completed in {time.time() - t0:.1f}s"
-        )
+        try:
+            self.info(f"Device {device_id}: TTFlux1Runner.__init__ started")
+            t0 = time.time()
+            self.info(
+                f"Device {device_id}: TTFlux1Runner about to call super().__init__..."
+            )
+            super().__init__(device_id)
+            self.info(f"Device {device_id}: TTFlux1Runner super().__init__ completed")
+            self.info(
+                f"Device {device_id}: TTFlux1Runner.__init__ completed in {time.time() - t0:.1f}s"
+            )
+        except Exception as e:
+            self.error(
+                f"Device {device_id}: TTFlux1Runner.__init__ failed with exception: {e}"
+            )
+            self.error(f"Device {device_id}: Exception type: {type(e).__name__}")
+            import traceback
+
+            self.error(f"Device {device_id}: Traceback:\n{traceback.format_exc()}")
+            raise
 
     def create_pipeline(self):
         try:
+            self.logger.info(f"Device {self.device_id}: create_pipeline() called")
             self.logger.info(f"Device {self.device_id}: Importing Flux1Pipeline...")
             t_imp = time.time()
-            from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 
-            self.logger.info(
-                f"Device {self.device_id}: Flux1Pipeline imported in {time.time() - t_imp:.1f}s"
-            )
+            try:
+                from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
+
+                self.logger.info(
+                    f"Device {self.device_id}: Flux1Pipeline imported in {time.time() - t_imp:.1f}s"
+                )
+            except Exception as import_e:
+                self.logger.error(
+                    f"Device {self.device_id}: Failed to import Flux1Pipeline: {import_e}"
+                )
+                self.logger.error(
+                    f"Device {self.device_id}: Import exception type: {type(import_e).__name__}"
+                )
+                import traceback
+
+                self.logger.error(
+                    f"Device {self.device_id}: Import traceback:\n{traceback.format_exc()}"
+                )
+                raise
+
             self.logger.info(
                 f"Device {self.device_id}: Creating Flux1 pipeline - "
                 f"checkpoint={self.settings.model_weights_path}, "
                 f"mesh_shape={tuple(self.ttnn_device.shape)}, "
                 f"num_devices={self.ttnn_device.get_num_devices()}"
             )
-            start = time.time()
-            pipeline = Flux1Pipeline.create_pipeline(
-                checkpoint_name=self.settings.model_weights_path,
-                mesh_device=self.ttnn_device,
-            )
             self.logger.info(
-                f"Device {self.device_id}: Flux1 pipeline created in {time.time() - start:.1f}s"
+                f"Device {self.device_id}: About to call Flux1Pipeline.create_pipeline()..."
             )
-            return pipeline
+            start = time.time()
+
+            try:
+                pipeline = Flux1Pipeline.create_pipeline(
+                    checkpoint_name=self.settings.model_weights_path,
+                    mesh_device=self.ttnn_device,
+                )
+                self.logger.info(
+                    f"Device {self.device_id}: Flux1 pipeline created in {time.time() - start:.1f}s"
+                )
+                return pipeline
+            except Exception as create_e:
+                self.logger.error(
+                    f"Device {self.device_id}: Flux1Pipeline.create_pipeline() failed: {create_e}"
+                )
+                self.logger.error(
+                    f"Device {self.device_id}: Create exception type: {type(create_e).__name__}"
+                )
+                import traceback
+
+                self.logger.error(
+                    f"Device {self.device_id}: Create traceback:\n{traceback.format_exc()}"
+                )
+                raise
+
         except Exception as e:
             log_exception_chain(
                 self.logger,
@@ -324,12 +425,10 @@ class TTFlux1Runner(TTDiTRunner):
 
 class TTMotifImage6BPreviewRunner(TTDiTRunner):
     def __init__(self, device_id: str):
-        _import_log.info(
-            f"Device {device_id}: TTMotifImage6BPreviewRunner.__init__ started"
-        )
+        self.info(f"Device {device_id}: TTMotifImage6BPreviewRunner.__init__ started")
         t0 = time.time()
         super().__init__(device_id)
-        _import_log.info(
+        self.info(
             f"Device {device_id}: TTMotifImage6BPreviewRunner.__init__ completed in {time.time() - t0:.1f}s"
         )
 
@@ -372,10 +471,10 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
 # Runner for Qwen-Image and Qwen-Image-2512. Model weights from settings.model_weights_path determine the exact model variant.
 class TTQwenImageRunner(TTDiTRunner):
     def __init__(self, device_id: str):
-        _import_log.info(f"Device {device_id}: TTQwenImageRunner.__init__ started")
+        self.info(f"Device {device_id}: TTQwenImageRunner.__init__ started")
         t0 = time.time()
         super().__init__(device_id)
-        _import_log.info(
+        self.info(
             f"Device {device_id}: TTQwenImageRunner.__init__ completed in {time.time() - t0:.1f}s"
         )
 
@@ -420,11 +519,11 @@ class TTQwenImageRunner(TTDiTRunner):
 
 class TTMochi1Runner(TTDiTRunner):
     def __init__(self, device_id: str):
-        _import_log.info(f"Device {device_id}: TTMochi1Runner.__init__ started")
+        self.info(f"Device {device_id}: TTMochi1Runner.__init__ started")
         t0 = time.time()
         super().__init__(device_id)
         os.environ["TT_DIT_CACHE_DIR"] = "/tmp/TT_DIT_CACHE"
-        _import_log.info(
+        self.info(
             f"Device {device_id}: TTMochi1Runner.__init__ completed in {time.time() - t0:.1f}s"
         )
 
@@ -489,10 +588,10 @@ class TTMochi1Runner(TTDiTRunner):
 
 class TTWan22Runner(TTDiTRunner):
     def __init__(self, device_id: str):
-        _import_log.info(f"Device {device_id}: TTWan22Runner.__init__ started")
+        self.info(f"Device {device_id}: TTWan22Runner.__init__ started")
         t0 = time.time()
         super().__init__(device_id)
-        _import_log.info(
+        self.info(
             f"Device {device_id}: TTWan22Runner.__init__ completed in {time.time() - t0:.1f}s"
         )
 
@@ -563,20 +662,41 @@ class TTWan22Runner(TTDiTRunner):
         return frames
 
     def get_pipeline_device_params(self):
-        import ttnn
+        try:
+            self.logger.info(
+                f"Device {self.device_id}: get_pipeline_device_params() called, about to import ttnn..."
+            )
+            import ttnn
 
-        device_params = {
-            "fabric_config": ttnn.FabricConfig.FABRIC_1D,
-        }
-        is_bh = ttnn.device.is_blackhole()
-        mesh_shape = tuple(self.settings.device_mesh_shape)
-        if is_bh:
-            device_params["fabric_tensix_config"] = ttnn.FabricTensixConfig.MUX
-            device_params["dispatch_core_axis"] = ttnn.device.DispatchCoreAxis.ROW
-        elif mesh_shape == (4, 8):
-            device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
-        self.logger.info(
-            f"Device {self.device_id}: Wan get_pipeline_device_params: "
-            f"is_blackhole={is_bh}, mesh_shape={mesh_shape}, params={device_params}"
-        )
-        return device_params
+            self.logger.info(
+                f"Device {self.device_id}: ttnn imported successfully in get_pipeline_device_params"
+            )
+
+            device_params = {
+                "fabric_config": ttnn.FabricConfig.FABRIC_1D,
+            }
+            is_bh = ttnn.device.is_blackhole()
+            mesh_shape = tuple(self.settings.device_mesh_shape)
+            if is_bh:
+                device_params["fabric_tensix_config"] = ttnn.FabricTensixConfig.MUX
+                device_params["dispatch_core_axis"] = ttnn.device.DispatchCoreAxis.ROW
+            elif mesh_shape == (4, 8):
+                device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
+            self.logger.info(
+                f"Device {self.device_id}: Wan get_pipeline_device_params: "
+                f"is_blackhole={is_bh}, mesh_shape={mesh_shape}, params={device_params}"
+            )
+            return device_params
+        except Exception as e:
+            self.logger.error(
+                f"Device {self.device_id}: get_pipeline_device_params() failed with exception: {e}"
+            )
+            self.logger.error(
+                f"Device {self.device_id}: Exception type: {type(e).__name__}"
+            )
+            import traceback
+
+            self.logger.error(
+                f"Device {self.device_id}: Traceback:\n{traceback.format_exc()}"
+            )
+            raise
