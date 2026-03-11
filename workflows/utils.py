@@ -315,13 +315,41 @@ def load_dotenv(dotenv_path=default_dotenv_path, logger=logger):
 
 
 def write_dotenv(env_vars, dotenv_path=default_dotenv_path, logger=logger):
-    """Writes environment variables to a .env file"""
+    """Writes environment variables to a .env file, merging with existing content.
+
+    If the .env file exists, existing values are preserved unless explicitly
+    overwritten by env_vars. New variables are appended.
+
+    Args:
+        env_vars: Dict of environment variables to write/update
+        dotenv_path: Path to the .env file (default: repo_root/.env)
+        logger: Logger instance
+
+    Returns:
+        True on success
+    """
     dotenv_path = Path(dotenv_path)
 
+    # Read existing content if file exists
+    existing_vars = {}
+    if dotenv_path.exists():
+        with open(dotenv_path, "r") as file:
+            for line in file:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    existing_vars[key.strip()] = value.strip()
+
+    # Merge: new values override existing
+    merged_vars = {**existing_vars, **env_vars}
+
+    # Write merged content
     with open(dotenv_path, "w") as file:
-        for key, value in env_vars.items():
+        for key, value in merged_vars.items():
             file.write(f"{key}={value}\n")
-            logger.info(f"writting env var to .env file: {key}")
+            if key in env_vars:
+                logger.info(f"writing env var to .env file: {key}")
+
     logger.info(f"Environment variables written to {dotenv_path}")
     return True
 
