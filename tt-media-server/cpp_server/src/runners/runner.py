@@ -110,6 +110,7 @@ def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
                 prompt_token_ids=msg.token_ids,
                 max_new_tokens=msg.max_tokens,
                 on_token=lambda tid: p2c.write_token(msg.task_id, tid),
+                eos_token_id=1,
             )
             print("Inference completed")
 
