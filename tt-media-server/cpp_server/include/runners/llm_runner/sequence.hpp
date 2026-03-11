@@ -57,6 +57,7 @@ class Sequence {
   void append_token(int64_t token_id);
 
   TaskID task_id;
+  int choice_index = 0;
   SequenceStatus status_ = SequenceStatus::WAITING;
   std::vector<int64_t> token_ids_;
   int64_t last_token = 0;
