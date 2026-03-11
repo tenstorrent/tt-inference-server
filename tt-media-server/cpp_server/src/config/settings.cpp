@@ -3,6 +3,7 @@
 
 #include "config/settings.hpp"
 #include "runners/llm_runner/config.hpp"
+#include "runners/sp_pipeline_runner/config.hpp"
 #include "utils/tokenizer.hpp"
 
 #include <algorithm>
@@ -180,6 +181,12 @@ llm_engine::Config llm_engine_config() {
         cfg.runner_type = llm_engine::ModelRunnerType::Mock;
     }
     cfg.scheduling_policy = scheduling_policy();
+    return cfg;
+}
+
+sp_pipeline::SpPipelineConfig sp_pipeline_config() {
+    sp_pipeline::SpPipelineConfig cfg;
+    cfg.stop_token_ids = utils::active_tokenizer().stop_token_ids();
     return cfg;
 }
 
