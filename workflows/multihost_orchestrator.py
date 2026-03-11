@@ -37,19 +37,10 @@ from workflows.multihost_config import (
     build_override_tt_config,
     generate_rankfile,
     generate_ssh_config,
-    get_mesh_device_for_hosts,
 )
 from workflows.utils import default_dotenv_path, load_dotenv, write_dotenv
 from workflows.workflow_types import DeviceTypes, WorkflowType
 
-# Multi-host device types
-MULTIHOST_DEVICE_TYPES = {DeviceTypes.DUAL_GALAXY, DeviceTypes.QUAD_GALAXY}
-
-# Mapping from device type to expected number of hosts
-DEVICE_TYPE_TO_NUM_HOSTS = {
-    DeviceTypes.DUAL_GALAXY: 2,
-    DeviceTypes.QUAD_GALAXY: 4,
-}
 
 
 def _short_uuid():
@@ -463,7 +454,7 @@ class MultiHostOrchestrator:
             "--mount", f"type=bind,src={remote_public_key_path},dst=/tmp/authorized_keys.pub,readonly",
             # Environment variables
             "-e", "MULTIHOST_ROLE=worker",
-            "-e", f"MESH_DEVICE={get_mesh_device_for_hosts(len(self.hosts))}",
+            "-e", f"MESH_DEVICE={DeviceTypes.from_string(self.runtime_config.device).to_mesh_device_str()}",
             "-e", "VLLM_TARGET_DEVICE=tt",
             "-e", f"SSH_PORT={WORKER_SSH_PORT}",
             # Use unified entrypoint script
@@ -488,7 +479,7 @@ class MultiHostOrchestrator:
             )
 
         container_name = f"tt-controller-{_short_uuid()}"
-        mesh_device = get_mesh_device_for_hosts(len(self.hosts))
+        mesh_device = DeviceTypes.from_string(self.runtime_config.device).to_mesh_device_str()
 
         # Merge MPI override_tt_config into the model_spec's vllm_args
         # This replaces the CONFIG_JSON mechanism to avoid duplicate --override-tt-config flags
@@ -1073,7 +1064,7 @@ def is_multihost_deployment(runtime_config) -> bool:
     """
     try:
         device = DeviceTypes.from_string(runtime_config.device)
-        return device in MULTIHOST_DEVICE_TYPES
+        return device.is_multihost()
     except (ValueError, AttributeError):
         return False
 
@@ -1091,9 +1082,4 @@ def get_expected_num_hosts(runtime_config) -> int:
         ValueError: If device type is not a multi-host type
     """
     device = DeviceTypes.from_string(runtime_config.device)
-    if device not in DEVICE_TYPE_TO_NUM_HOSTS:
-        raise ValueError(
-            f"Device type {device.name} is not a multi-host device type. "
-            f"Supported: {[d.name for d in DEVICE_TYPE_TO_NUM_HOSTS.keys()]}"
-        )
-    return DEVICE_TYPE_TO_NUM_HOSTS[device]
+    return device.get_multihost_num_hosts()

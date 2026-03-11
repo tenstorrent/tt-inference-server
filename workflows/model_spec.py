@@ -464,12 +464,11 @@ class ModelSpec:
         if not self.docker_image:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
-            is_multihost = self.device_type in (
-                DeviceTypes.DUAL_GALAXY,
-                DeviceTypes.QUAD_GALAXY,
-            )
             _default_docker_link = generate_default_docker_link(
-                VERSION, self.tt_metal_commit, self.vllm_commit, multihost=is_multihost
+                VERSION,
+                self.tt_metal_commit,
+                self.vllm_commit,
+                multihost=self.device_type.is_multihost(),
             )
             object.__setattr__(self, "docker_image", _default_docker_link)
 

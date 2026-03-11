@@ -175,23 +175,3 @@ def build_override_tt_config(
     }
 
 
-def get_mesh_device_for_hosts(num_hosts: int) -> str:
-    """Get MESH_DEVICE value based on number of hosts.
-
-    Args:
-        num_hosts: Number of hosts in the deployment
-
-    Returns:
-        MESH_DEVICE string value
-    """
-    mesh_devices = {
-        2: "(8,8)",  # Dual Galaxy (64 chips)
-        4: "(8,16)",  # Quad Galaxy (128 chips)
-    }
-
-    if num_hosts not in mesh_devices:
-        raise ValueError(
-            f"Unsupported number of hosts: {num_hosts}. Supported: {list(mesh_devices.keys())}"
-        )
-
-    return mesh_devices[num_hosts]
