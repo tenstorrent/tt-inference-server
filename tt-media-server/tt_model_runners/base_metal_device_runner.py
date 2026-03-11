@@ -14,10 +14,24 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
         return None
 
     def set_device(self):
+        self.logger.info(f"Device {self.device_id}: set_device() called")
         if self.ttnn_device is None:
+            self.logger.info(
+                f"Device {self.device_id}: ttnn_device is None, calling _mesh_device()..."
+            )
             # for now use all available devices
             self.ttnn_device = self._mesh_device()
+            self.logger.info(
+                f"Device {self.device_id}: _mesh_device() returned successfully"
+            )
+        else:
+            self.logger.info(
+                f"Device {self.device_id}: ttnn_device already exists, skipping initialization"
+            )
         self.max_batch_size = self.settings.max_batch_size
+        self.logger.info(
+            f"Device {self.device_id}: set_device() completed, max_batch_size={self.max_batch_size}"
+        )
         return self.ttnn_device
 
     def close_device(self):
@@ -75,11 +89,16 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
         return new_device_params
 
     def _mesh_device(self):
+        self.logger.info(
+            f"Device {self.device_id}: _mesh_device() called, about to import ttnn..."
+        )
         import ttnn
+
+        self.logger.info(f"Device {self.device_id}: ttnn imported successfully!")
 
         try:
             self.logger.info(
-                f"Device {self.device_id}: ttnn imported, getting device IDs..."
+                f"Device {self.device_id}: calling ttnn.get_device_ids()..."
             )
 
             # Get available devices
