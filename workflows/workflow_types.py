@@ -102,8 +102,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
             DeviceTypes.GALAXY_T3K: "T3K",
-            DeviceTypes.DUAL_GALAXY: "DUAL",
-            DeviceTypes.QUAD_GALAXY: "QUAD",
+            DeviceTypes.DUAL_GALAXY: "(8,8)",
+            DeviceTypes.QUAD_GALAXY: "(8,16)",
             DeviceTypes.GPU: "GPU",
         }
         if self not in mapping:
