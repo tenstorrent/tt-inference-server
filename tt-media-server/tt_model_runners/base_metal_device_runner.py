@@ -78,6 +78,10 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
         import ttnn
 
         try:
+            self.logger.info(
+                f"Device {self.device_id}: ttnn imported, getting device IDs..."
+            )
+
             # Get available devices
             device_ids = ttnn.get_device_ids()
             if not device_ids:
@@ -86,13 +90,42 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
                 f"Device {self.device_id}: Found {len(device_ids)} available TTNN devices: {device_ids}"
             )
 
+            self.logger.info(
+                f"Device {self.device_id}: Creating mesh shape {self.settings.device_mesh_shape}..."
+            )
             mesh_shape = ttnn.MeshShape(self.settings.device_mesh_shape)
+            self.logger.info(
+                f"Device {self.device_id}: Mesh shape created: {mesh_shape}"
+            )
 
+            self.logger.info(
+                f"Device {self.device_id}: Getting pipeline device params..."
+            )
             device_params = self.get_pipeline_device_params()
+            self.logger.info(
+                f"Device {self.device_id}: Pipeline device params: {device_params}"
+            )
+
+            self.logger.info(
+                f"Device {self.device_id}: Getting updated device params..."
+            )
             updated_device_params = self.get_updated_device_params(device_params)
+            self.logger.info(
+                f"Device {self.device_id}: Updated device params: {list(updated_device_params.keys())}"
+            )
+
+            self.logger.info(f"Device {self.device_id}: Configuring fabric...")
             fabric_config = self._configure_fabric(updated_device_params)
+            self.logger.info(f"Device {self.device_id}: Fabric config: {fabric_config}")
+
+            self.logger.info(
+                f"Device {self.device_id}: About to call ttnn.open_mesh_device()..."
+            )
             mesh_device = self._initialize_mesh_device(
                 mesh_shape, updated_device_params, fabric_config
+            )
+            self.logger.info(
+                f"Device {self.device_id}: ttnn.open_mesh_device() completed successfully"
             )
 
             self.logger.info(
@@ -113,9 +146,23 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
     def _initialize_mesh_device(self, mesh_shape, device_params, fabric_config):
         import ttnn
 
+        self.logger.info(
+            f"Device {self.device_id}: _initialize_mesh_device - "
+            f"mesh_shape={mesh_shape}, params={list(device_params.keys())}"
+        )
         try:
+            self.logger.info(
+                f"Device {self.device_id}: Calling ttnn.open_mesh_device() with "
+                f"mesh_shape={mesh_shape}, device_params={device_params}"
+            )
             mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **device_params)
+            self.logger.info(
+                f"Device {self.device_id}: ttnn.open_mesh_device() returned successfully"
+            )
         except Exception as e:
+            self.logger.error(
+                f"Device {self.device_id}: ttnn.open_mesh_device() raised exception: {e}"
+            )
             try:
                 if fabric_config:
                     ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)

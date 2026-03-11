@@ -76,8 +76,14 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                 f"fabric={fabric_config}, tensix={fabric_tensix_config}, "
                 f"reliability={reliability_mode}"
             )
+            self.logger.info(
+                f"Device {self.device_id}: About to call ttnn.set_fabric_config()..."
+            )
             ttnn.set_fabric_config(
                 fabric_config, reliability_mode, None, fabric_tensix_config
+            )
+            self.logger.info(
+                f"Device {self.device_id}: ttnn.set_fabric_config() completed"
             )
             self.logger.info(
                 f"Device {self.device_id}: _configure_fabric completed in {time.time() - t0:.1f}s"

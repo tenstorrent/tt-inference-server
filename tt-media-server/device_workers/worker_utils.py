@@ -21,11 +21,14 @@ def initialize_device_worker(worker_id: str, logger: TTLogger):
         device_runner: BaseDeviceRunner = get_device_runner(worker_id)
 
         logger.info(f"Worker {worker_id}: Setting up device (open mesh, fabric)...")
+        logger.info(f"Worker {worker_id}: About to call device_runner.set_device()...")
         t0 = time.time()
         device_runner.set_device()
+        elapsed = time.time() - t0
         logger.info(
-            f"Worker {worker_id}: Device setup completed in {time.time() - t0:.1f}s"
+            f"Worker {worker_id}: device_runner.set_device() returned successfully"
         )
+        logger.info(f"Worker {worker_id}: Device setup completed in {elapsed:.1f}s")
 
         logger.info(f"Worker {worker_id}: Starting model warmup...")
         t0 = time.time()
