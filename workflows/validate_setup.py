@@ -12,14 +12,12 @@ from evals.eval_config import EVAL_CONFIGS
 from tests.test_config import TEST_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
+    check_path_permissions_for_uid,
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
+    get_groups_for_uid,
     get_repo_root_path,
     run_command,
-)
-from workflows.validate_permissions import (
-    check_path_permissions_for_uid,
-    get_groups_for_uid,
 )
 from workflows.workflow_types import (
     DeviceTypes,

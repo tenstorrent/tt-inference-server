@@ -25,7 +25,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from workflows.validate_permissions import check_path_permissions_for_uid
+from workflows.utils import check_path_permissions_for_uid
 
 logger = logging.getLogger("run_log")
 

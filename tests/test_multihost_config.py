@@ -22,13 +22,13 @@ from workflows.multihost_config import (
     get_mesh_device_for_hosts,
     get_rank_binding_path,
 )
+from workflows.utils import (
+    check_path_permissions_for_uid,
+    get_groups_for_uid,
+)
 from workflows.validate_multihost import (
     _run_ssh_command,
     validate_multihost_bind_mount_permissions,
-)
-from workflows.validate_permissions import (
-    check_path_permissions_for_uid,
-    get_groups_for_uid,
 )
 
 

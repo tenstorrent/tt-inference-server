@@ -401,3 +401,16 @@ If you encounter device initialization errors (e.g., "device not available", "fa
 
 1. Verify mount on all hosts: `ls -la ${CONFIG_PKL_DIR}`
 2. Check permissions: directory must be writable by vLLM process (UID 1000)
+
+---
+
+## Files Reference
+
+| File | Purpose |
+|------|---------|
+| `workflows/multihost_orchestrator.py` | Main orchestration logic |
+| `workflows/multihost_config.py` | Configuration generation functions |
+| `workflows/validate_multihost.py` | Pre-flight validation for multi-host deployment |
+| `workflows/utils.py` | Shared utilities including permission checking |
+| `vllm-tt-metal-llama3/multihost_entrypoint.sh` | Unified Worker/Controller entrypoint |
+| `vllm-tt-metal-llama3/vllm.tt-metal.src.multihost.Dockerfile` | Multi-host Docker image |
