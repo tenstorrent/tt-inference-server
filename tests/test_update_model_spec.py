@@ -2,6 +2,9 @@ from pathlib import Path
 from unittest.mock import patch
 import json
 
+import pytest
+
+from scripts.release.release_diff import build_template_key
 from scripts.release.update_model_spec import (
     apply_release_version_to_manual_updates_from_git,
     build_release_diff_records_from_git,
@@ -18,6 +21,7 @@ def make_snapshot(
     *,
     impl="tt",
     model_arch="DemoModel",
+    inference_engine="vllm",
     weights=None,
     devices=None,
     status=None,
@@ -30,13 +34,14 @@ def make_snapshot(
         "impl": impl,
         "impl_id": impl_id,
         "model_arch": model_arch,
+        "inference_engine": inference_engine,
         "weights": weights,
         "devices": devices,
         "status": status,
         "tt_metal_commit": tt_metal_commit,
         "vllm_commit": vllm_commit,
         "template_text": template_text,
-        "identity_key": (impl_id, tuple(weights), tuple(devices)),
+        "template_key": build_template_key(impl_id, weights, devices, inference_engine),
         "occurrence_key": (impl_id, occurrence_index),
     }
 
@@ -96,7 +101,11 @@ def test_build_release_diff_records_from_git_includes_ci_and_manual_changes():
     assert len(records) == 2
 
     ci_record = records[0]
+    assert ci_record["template_key"] == build_template_key(
+        "ci_impl", ["demo/model"], ["N150"], "vllm"
+    )
     assert ci_record["impl_id"] == "ci_impl"
+    assert ci_record["inference_engine"] == "vllm"
     assert ci_record["status_before"] == "FUNCTIONAL"
     assert ci_record["status_after"] == "COMPLETE"
     assert ci_record["tt_metal_commit_before"] == "aaaaaaa"
@@ -105,7 +114,11 @@ def test_build_release_diff_records_from_git_includes_ci_and_manual_changes():
     assert ci_record["ci_run_number"] == 123
 
     manual_record = records[1]
+    assert manual_record["template_key"] == build_template_key(
+        "manual_impl", ["manual/model"], ["T3K"], "vllm"
+    )
     assert manual_record["impl_id"] == "manual_impl"
+    assert manual_record["inference_engine"] == "vllm"
     assert manual_record["status_before"] is None
     assert manual_record["status_after"] == "EXPERIMENTAL"
     assert manual_record["tt_metal_commit_before"] is None
@@ -187,6 +200,10 @@ def test_generate_release_diff_outputs_from_git_writes_markdown_and_json(tmp_pat
         "ci_impl",
         "manual_impl",
     ]
+    assert output_records[0]["template_key"] == build_template_key(
+        "ci_impl", ["demo/model"], ["N150"], "vllm"
+    )
+    assert output_records[0]["inference_engine"] == "vllm"
     assert output_records[0]["ci_run_number"] == 123
     assert output_records[1]["ci_job_url"] is None
 
@@ -221,6 +238,48 @@ def test_generate_release_diff_outputs_from_git_handles_no_changes(tmp_path):
 
     assert "No updates were made." in markdown_path.read_text()
     assert json.loads(json_path.read_text()) == []
+
+
+def test_build_release_diff_records_from_git_rejects_duplicate_template_keys():
+    model_spec_path = Path("/tmp/workflows/model_spec.py")
+    duplicate_before_snapshots = [
+        make_snapshot(
+            "dup_impl",
+            0,
+            "before-one",
+            weights=["dup/model"],
+            devices=["N150"],
+        ),
+        make_snapshot(
+            "dup_impl",
+            1,
+            "before-two",
+            weights=["dup/model"],
+            devices=["N150"],
+        ),
+    ]
+    after_snapshots = [
+        make_snapshot(
+            "dup_impl",
+            0,
+            "after-one",
+            weights=["dup/model"],
+            devices=["N150"],
+        )
+    ]
+
+    with patch(
+        "scripts.release.update_model_spec.read_git_base_model_spec_content",
+        return_value="base-content",
+    ), patch(
+        "scripts.release.update_model_spec.build_template_snapshots",
+        side_effect=[duplicate_before_snapshots, after_snapshots],
+    ):
+        with pytest.raises(ValueError, match="Duplicate template identities detected"):
+            build_release_diff_records_from_git(
+                model_spec_path,
+                current_content="current-content",
+            )
 
 
 def test_update_template_fields_inserts_release_version_when_absent():
@@ -409,7 +468,7 @@ def test_main_output_only_updates_release_version_before_generating_outputs(tmp_
     ), patch(
         "scripts.release.update_model_spec.generate_release_diff_outputs_from_git"
     ) as diff_mock, patch(
-        "scripts.release.update_model_spec.update_readme_model_support"
+        "scripts.release.update_model_spec.regenerate_model_support_docs_and_update_readme"
     ) as readme_mock, patch(
         "scripts.release.update_model_spec.reload_and_export_model_specs_json"
     ) as export_mock:

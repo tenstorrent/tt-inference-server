@@ -37,7 +37,7 @@ import subprocess
 import sys
 import types
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -49,8 +49,22 @@ from workflows.model_spec import (
 )
 
 try:
+    from release_diff import (
+        CiMetadata,
+        ReleaseDiffRecord,
+        TemplateSnapshot,
+        build_snapshot_index_by_template_key,
+        build_template_key,
+    )
     from release_paths import get_versioned_release_logs_dir, resolve_release_output_dir
 except ImportError:
+    from scripts.release.release_diff import (
+        CiMetadata,
+        ReleaseDiffRecord,
+        TemplateSnapshot,
+        build_snapshot_index_by_template_key,
+        build_template_key,
+    )
     from scripts.release.release_paths import (
         get_versioned_release_logs_dir,
         resolve_release_output_dir,
@@ -367,6 +381,22 @@ def update_template_fields(
     return updated
 
 
+def update_template_optional_string_field(template_text, field_name, value):
+    """Update an optional quoted string field, preserving explicit `None` values."""
+    quoted_pattern = rf'{field_name}="[^"]*"'
+    none_pattern = rf"{field_name}=None"
+
+    if value is None:
+        return re.sub(quoted_pattern, f"{field_name}=None", template_text)
+
+    replacement = f'{field_name}="{value}"'
+    if re.search(quoted_pattern, template_text):
+        return re.sub(quoted_pattern, replacement, template_text)
+    if re.search(none_pattern, template_text):
+        return re.sub(none_pattern, replacement, template_text)
+    return template_text
+
+
 def normalize_status_value(status_value):
     """Normalize `ModelStatusTypes.*` strings to their enum member names."""
     if not status_value:
@@ -541,7 +571,9 @@ def load_model_spec_module_from_content(
     return module
 
 
-def build_template_snapshots(model_spec_path: Path, content: str, module_name: str):
+def build_template_snapshots(
+    model_spec_path: Path, content: str, module_name: str
+) -> List[TemplateSnapshot]:
     """Build ordered template snapshots from model_spec content."""
     model_spec_module = load_model_spec_module_from_content(
         model_spec_path, content, module_name
@@ -566,6 +598,7 @@ def build_template_snapshots(model_spec_path: Path, content: str, module_name: s
 
         weights = list(template.weights)
         devices = [spec.device.name for spec in template.device_model_specs]
+        inference_engine = str(template.inference_engine)
 
         snapshots.append(
             {
@@ -574,13 +607,16 @@ def build_template_snapshots(model_spec_path: Path, content: str, module_name: s
                 "model_arch": model_name_from_weight(weights[0])
                 if weights
                 else "unknown",
+                "inference_engine": inference_engine,
                 "weights": weights,
                 "devices": devices,
                 "status": extract_status(template_text),
                 "tt_metal_commit": extract_tt_metal_commit(template_text),
                 "vllm_commit": extract_vllm_commit(template_text),
                 "template_text": template_text,
-                "identity_key": (impl_id, tuple(weights), tuple(devices)),
+                "template_key": build_template_key(
+                    impl_id, weights, devices, inference_engine
+                ),
                 "occurrence_key": (impl_id, occurrence_index),
             }
         )
@@ -607,15 +643,25 @@ def read_git_base_model_spec_content(model_spec_path: Path, ref: str = "HEAD") -
     return result.stdout
 
 
-def build_release_diff_record(before_snapshot, after_snapshot, ci_metadata=None):
+def build_release_diff_record(
+    before_snapshot: Optional[TemplateSnapshot],
+    after_snapshot: Optional[TemplateSnapshot],
+    ci_metadata: Optional[CiMetadata] = None,
+) -> ReleaseDiffRecord:
     """Create one release-diff record from before/after template snapshots."""
     current_snapshot = after_snapshot or before_snapshot
+    if current_snapshot is None:
+        raise ValueError(
+            "Expected before_snapshot or after_snapshot when building diff"
+        )
     ci_metadata = ci_metadata or {}
 
     return {
+        "template_key": current_snapshot["template_key"],
         "impl": current_snapshot["impl"],
         "impl_id": current_snapshot["impl_id"],
         "model_arch": current_snapshot["model_arch"],
+        "inference_engine": current_snapshot["inference_engine"],
         "weights": current_snapshot["weights"],
         "devices": current_snapshot["devices"],
         "status_before": before_snapshot["status"] if before_snapshot else None,
@@ -638,10 +684,8 @@ def build_release_diff_record(before_snapshot, after_snapshot, ci_metadata=None)
 def build_release_diff_records_from_git(
     model_spec_path: Path,
     current_content: Optional[str] = None,
-    ci_metadata_by_occurrence: Optional[
-        Dict[Tuple[str, int], Dict[str, object]]
-    ] = None,
-):
+    ci_metadata_by_occurrence: Optional[Dict[Tuple[str, int], CiMetadata]] = None,
+) -> List[ReleaseDiffRecord]:
     """Build final release-diff records from the git diff of `model_spec.py`."""
     current_text = (
         current_content if current_content is not None else model_spec_path.read_text()
@@ -655,15 +699,18 @@ def build_release_diff_records_from_git(
     )
 
     ci_metadata_by_occurrence = ci_metadata_by_occurrence or {}
-    before_by_identity = {
-        snapshot["identity_key"]: snapshot for snapshot in before_snapshots
-    }
+    before_by_template_key = build_snapshot_index_by_template_key(
+        before_snapshots, "building release diff records from git (before snapshots)"
+    )
+    build_snapshot_index_by_template_key(
+        after_snapshots, "building release diff records from git (after snapshots)"
+    )
     matched_before_occurrence_keys = set()
     records = []
     unmatched_after_snapshots = []
 
     for after_snapshot in after_snapshots:
-        before_snapshot = before_by_identity.get(after_snapshot["identity_key"])
+        before_snapshot = before_by_template_key.get(after_snapshot["template_key"])
         if before_snapshot is None:
             unmatched_after_snapshots.append(after_snapshot)
             continue
@@ -711,9 +758,7 @@ def generate_release_diff_outputs_from_git(
     model_spec_path: Path,
     output_dir: Path,
     current_content: Optional[str] = None,
-    ci_metadata_by_occurrence: Optional[
-        Dict[Tuple[str, int], Dict[str, object]]
-    ] = None,
+    ci_metadata_by_occurrence: Optional[Dict[Tuple[str, int], CiMetadata]] = None,
 ):
     """Generate markdown and JSON release-diff artifacts from git-derived records."""
     update_records = build_release_diff_records_from_git(
@@ -742,9 +787,12 @@ def apply_release_version_to_manual_updates_from_git(
             "Template block count does not match loaded spec_templates count"
         )
 
-    before_by_identity = {
-        snapshot["identity_key"]: snapshot for snapshot in before_snapshots
-    }
+    before_by_template_key = build_snapshot_index_by_template_key(
+        before_snapshots, "stamping release_version from git (before snapshots)"
+    )
+    build_snapshot_index_by_template_key(
+        after_snapshots, "stamping release_version from git (after snapshots)"
+    )
     matched_before_occurrence_keys = set()
     unmatched_after_snapshots = []
     indices_to_update = []
@@ -757,7 +805,7 @@ def apply_release_version_to_manual_updates_from_git(
         indices_to_update.append(index)
 
     for index, after_snapshot in enumerate(after_snapshots):
-        before_snapshot = before_by_identity.get(after_snapshot["identity_key"])
+        before_snapshot = before_by_template_key.get(after_snapshot["template_key"])
         if before_snapshot is None:
             unmatched_after_snapshots.append((index, after_snapshot))
             continue
@@ -862,7 +910,7 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
 
     # Note: docs/model_support/README.md is no longer generated.
     # The model support content is maintained directly in root README.md
-    # via update_readme_model_support() function.
+    # via regenerate_model_support_docs_and_update_readme().
 
     # Generate models by hardware page
     hardware_content = generate_models_by_hardware_page(templates)
@@ -908,9 +956,11 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
     print("Documentation generation complete!")
 
 
-def update_readme_model_support(model_spec_path, readme_path="README.md"):
+def regenerate_model_support_docs_and_update_readme(
+    model_spec_path, readme_path="README.md"
+):
     """
-    Update the Model Support section in README.md with links to docs/model_support/.
+    Regenerate docs/model_support/ and update the Model Support section in README.md.
 
     Generates docs/model_support/ documentation (model type pages, hardware page,
     individual model pages), then generates the model support section content directly
@@ -1015,6 +1065,11 @@ def update_readme_model_support(model_spec_path, readme_path="README.md"):
     print(f"\nSuccessfully updated Model Support section in {readme_path}")
 
 
+def update_readme_model_support(model_spec_path, readme_path="README.md"):
+    """Backward-compatible wrapper for the explicit README/docs regeneration helper."""
+    return regenerate_model_support_docs_and_update_readme(model_spec_path, readme_path)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Update model_spec.py commits from last_good_json CI results"
@@ -1103,8 +1158,10 @@ def main():
             model_spec_path, release_output_dir, current_content=updated_content
         )
 
-        # Update README.md Model Support section and regenerate docs/model_support/
-        update_readme_model_support(model_spec_path, args.readme_path)
+        # Regenerate docs/model_support/ and update README.md Model Support section.
+        regenerate_model_support_docs_and_update_readme(
+            model_spec_path, args.readme_path
+        )
 
         # Export MODEL_SPECS to JSON
         output_json_path = Path(args.output_json)
@@ -1274,8 +1331,8 @@ def main():
                 ci_metadata_by_occurrence=ci_metadata_by_occurrence,
             )
 
-            # Update README.md Model Support section and regenerate docs/model_support/
-            update_readme_model_support(model_spec_path)
+            # Regenerate docs/model_support/ and update README.md Model Support section.
+            regenerate_model_support_docs_and_update_readme(model_spec_path)
     else:
         print("\nNo updates needed.")
 
