@@ -90,14 +90,6 @@ void LLMController::completions(
         return;
     }
 
-    if (request->n < 1) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json("n must be at least 1", "invalid_request_error", Json::Value("n")));
-        resp->setStatusCode(drogon::k400BadRequest);
-        callback(resp);
-        return;
-    }
-
     if (!service_->is_model_ready()) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
             error_json("Model is not ready", "service_unavailable"));
@@ -158,14 +150,6 @@ void LLMController::chat_completions(
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
             error_json("messages is required and must be a non-empty array",
                 "invalid_request_error", Json::Value("messages")));
-        resp->setStatusCode(drogon::k400BadRequest);
-        callback(resp);
-        return;
-    }
-
-    if (chat_req.n < 1) {
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(
-            error_json("n must be at least 1", "invalid_request_error", Json::Value("n")));
         resp->setStatusCode(drogon::k400BadRequest);
         callback(resp);
         return;

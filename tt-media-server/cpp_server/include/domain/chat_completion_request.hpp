@@ -81,6 +81,9 @@ struct ChatCompletionRequest: BaseRequest {
         if (json.isMember("max_tokens")) req.max_tokens = json["max_tokens"].asInt();
         if (json.isMember("max_completion_tokens")) req.max_tokens = json["max_completion_tokens"].asInt();
         if (json.isMember("n")) req.n = json["n"].asInt();
+        if (req.n < 1) {
+            throw std::invalid_argument("n must be at least 1");
+        }
         if (json.isMember("presence_penalty")) req.presence_penalty = json["presence_penalty"].asFloat();
         if (json.isMember("frequency_penalty")) req.frequency_penalty = json["frequency_penalty"].asFloat();
         if (json.isMember("suffix") && !json["suffix"].isNull()) {
