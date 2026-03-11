@@ -5,6 +5,7 @@ import json
 from scripts.release.update_model_spec import (
     build_release_diff_records_from_git,
     generate_release_diff_outputs_from_git,
+    update_template_fields,
 )
 
 
@@ -218,3 +219,50 @@ def test_generate_release_diff_outputs_from_git_handles_no_changes(tmp_path):
 
     assert "No updates were made." in markdown_path.read_text()
     assert json.loads(json_path.read_text()) == []
+
+
+def test_update_template_fields_inserts_release_version_when_absent():
+    template_text = (
+        "ModelSpecTemplate(\n"
+        '        weights=["org/model"],\n'
+        "        impl=demo_impl,\n"
+        '        tt_metal_commit="aaaaaaa",\n'
+        '        vllm_commit="1111111",\n'
+        "        status=ModelStatusTypes.FUNCTIONAL,\n"
+        "    )"
+    )
+    result = update_template_fields(
+        template_text, "bbbbbbb", "2222222", None, release_version="0.10.0"
+    )
+    assert 'tt_metal_commit="bbbbbbb"' in result
+    assert 'release_version="0.10.0"' in result
+    assert 'vllm_commit="2222222"' in result
+    assert result.index('tt_metal_commit="bbbbbbb"') < result.index(
+        'release_version="0.10.0"'
+    )
+
+
+def test_update_template_fields_replaces_existing_release_version():
+    template_text = (
+        "ModelSpecTemplate(\n"
+        '        weights=["org/model"],\n'
+        "        impl=demo_impl,\n"
+        '        tt_metal_commit="aaaaaaa",\n'
+        '        release_version="0.9.0",\n'
+        '        vllm_commit="1111111",\n'
+        "        status=ModelStatusTypes.FUNCTIONAL,\n"
+        "    )"
+    )
+    result = update_template_fields(
+        template_text, "bbbbbbb", None, None, release_version="0.10.0"
+    )
+    assert 'release_version="0.10.0"' in result
+    assert 'release_version="0.9.0"' not in result
+
+
+def test_update_template_fields_skips_release_version_when_none():
+    template_text = 'ModelSpecTemplate(\n        tt_metal_commit="aaaaaaa",\n    )'
+    result = update_template_fields(
+        template_text, None, None, None, release_version=None
+    )
+    assert "release_version" not in result

@@ -41,6 +41,7 @@ from typing import Dict, Optional, Tuple
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from workflows.model_spec import (
+    VERSION,
     export_model_specs_json,
     spec_templates,
     ModelSpecTemplate,
@@ -329,25 +330,38 @@ def get_ci_job_url_for_template(template: ModelSpecTemplate, last_good_data):
     return None, None
 
 
-def update_template_fields(template_text, tt_metal_commit, vllm_commit, status):
-    """Update commit and status values in a template text."""
+def update_template_fields(
+    template_text, tt_metal_commit, vllm_commit, status, release_version=None
+):
+    """Update commit, status, and release_version values in a template text."""
     updated = template_text
 
     if tt_metal_commit:
-        # Replace tt_metal_commit value
         updated = re.sub(
             r'tt_metal_commit="[^"]*"', f'tt_metal_commit="{tt_metal_commit}"', updated
         )
 
     if vllm_commit:
-        # Replace vllm_commit value
         updated = re.sub(
             r'vllm_commit="[^"]*"', f'vllm_commit="{vllm_commit}"', updated
         )
 
     if status:
-        # Replace status value (matches ModelStatusTypes.XXXX format)
         updated = re.sub(r"status=ModelStatusTypes\.\w+", f"status={status}", updated)
+
+    if release_version:
+        if re.search(r'release_version="[^"]*"', updated):
+            updated = re.sub(
+                r'release_version="[^"]*"',
+                f'release_version="{release_version}"',
+                updated,
+            )
+        else:
+            updated = re.sub(
+                r'(tt_metal_commit="[^"]*",)',
+                rf'\1\n        release_version="{release_version}",',
+                updated,
+            )
 
     return updated
 
@@ -1094,7 +1108,11 @@ def main():
         # If --ignore-perf-status is set, don't update status
         status_to_update = None if args.ignore_perf_status else status
         updated_template = update_template_fields(
-            template_text, tt_metal_commit, vllm_commit, status_to_update
+            template_text,
+            tt_metal_commit,
+            vllm_commit,
+            status_to_update,
+            release_version=VERSION,
         )
 
         if updated_template != template_text:
