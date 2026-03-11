@@ -3,8 +3,10 @@ from unittest.mock import patch
 import json
 
 from scripts.release.update_model_spec import (
+    apply_release_version_to_manual_updates_from_git,
     build_release_diff_records_from_git,
     generate_release_diff_outputs_from_git,
+    main,
     update_template_fields,
 )
 
@@ -266,3 +268,154 @@ def test_update_template_fields_skips_release_version_when_none():
         template_text, None, None, None, release_version=None
     )
     assert "release_version" not in result
+
+
+def test_apply_release_version_to_manual_updates_from_git_updates_tt_metal_changes_only(
+    tmp_path,
+):
+    model_spec_path = tmp_path / "workflows" / "model_spec.py"
+    model_spec_path.parent.mkdir(parents=True)
+
+    changed_template = (
+        "ModelSpecTemplate(\n"
+        '        weights=["org/changed"],\n'
+        "        impl=changed_impl,\n"
+        '        tt_metal_commit="bbbbbbb",\n'
+        '        vllm_commit="1111111",\n'
+        "        status=ModelStatusTypes.FUNCTIONAL,\n"
+        "    ),"
+    )
+    unchanged_template = (
+        "ModelSpecTemplate(\n"
+        '        weights=["org/unchanged"],\n'
+        "        impl=unchanged_impl,\n"
+        '        tt_metal_commit="ddddddd",\n'
+        '        vllm_commit="2222222",\n'
+        "        status=ModelStatusTypes.FUNCTIONAL,\n"
+        "    ),"
+    )
+    current_content = (
+        f"spec_templates = [\n{changed_template}\n{unchanged_template}\n]\n"
+    )
+    model_spec_path.write_text(current_content)
+
+    before_snapshots = [
+        make_snapshot(
+            "changed_impl",
+            0,
+            changed_template.replace("bbbbbbb", "aaaaaaa"),
+            weights=["org/changed"],
+            tt_metal_commit="aaaaaaa",
+            vllm_commit="1111111",
+            status="FUNCTIONAL",
+        ),
+        make_snapshot(
+            "unchanged_impl",
+            0,
+            unchanged_template,
+            weights=["org/unchanged"],
+            tt_metal_commit="ddddddd",
+            vllm_commit="2222222",
+            status="FUNCTIONAL",
+        ),
+    ]
+    after_snapshots = [
+        make_snapshot(
+            "changed_impl",
+            0,
+            changed_template,
+            weights=["org/changed"],
+            tt_metal_commit="bbbbbbb",
+            vllm_commit="1111111",
+            status="FUNCTIONAL",
+        ),
+        make_snapshot(
+            "unchanged_impl",
+            0,
+            unchanged_template,
+            weights=["org/unchanged"],
+            tt_metal_commit="ddddddd",
+            vllm_commit="2222222",
+            status="FUNCTIONAL",
+        ),
+    ]
+
+    with patch(
+        "scripts.release.update_model_spec.read_git_base_model_spec_content",
+        return_value="base-content",
+    ), patch(
+        "scripts.release.update_model_spec.build_template_snapshots",
+        side_effect=[before_snapshots, after_snapshots],
+    ):
+        updated_content, updates_made = (
+            apply_release_version_to_manual_updates_from_git(
+                model_spec_path, current_content, "0.10.0"
+            )
+        )
+
+    assert updates_made == 1
+    assert updated_content.count('release_version="0.10.0"') == 1
+    assert (
+        updated_content.index('weights=["org/changed"]')
+        < updated_content.index('release_version="0.10.0"')
+        < updated_content.index('weights=["org/unchanged"]')
+    )
+
+
+def test_main_output_only_updates_release_version_before_generating_outputs(tmp_path):
+    model_spec_path = tmp_path / "workflows" / "model_spec.py"
+    model_spec_path.parent.mkdir(parents=True)
+    current_content = "spec_templates = []\n"
+    updated_content = (
+        "spec_templates = [\n"
+        "    ModelSpecTemplate(\n"
+        '        tt_metal_commit="bbbbbbb",\n'
+        '        release_version="0.10.0",\n'
+        "    ),\n"
+        "]\n"
+    )
+    model_spec_path.write_text(current_content)
+
+    readme_path = tmp_path / "README.md"
+    readme_path.write_text("# README\n")
+    output_json_path = tmp_path / "model_spec.json"
+    release_output_dir = tmp_path / "release_logs" / "v0.10.0"
+
+    args = type(
+        "Args",
+        (),
+        {
+            "last_good_json": None,
+            "model_spec_path": str(model_spec_path),
+            "dry_run": False,
+            "output_json": str(output_json_path),
+            "output_only": True,
+            "readme_path": str(readme_path),
+            "ignore_perf_status": False,
+            "models_ci_run_id": None,
+            "out_root": None,
+        },
+    )()
+
+    with patch(
+        "argparse.ArgumentParser.parse_args",
+        return_value=args,
+    ), patch(
+        "scripts.release.update_model_spec.apply_release_version_to_manual_updates_from_git",
+        return_value=(updated_content, 1),
+    ), patch(
+        "scripts.release.update_model_spec.resolve_release_output_dir",
+        return_value=release_output_dir,
+    ), patch(
+        "scripts.release.update_model_spec.generate_release_diff_outputs_from_git"
+    ) as diff_mock, patch(
+        "scripts.release.update_model_spec.update_readme_model_support"
+    ) as readme_mock, patch(
+        "scripts.release.update_model_spec.reload_and_export_model_specs_json"
+    ) as export_mock:
+        main()
+
+    assert model_spec_path.read_text() == updated_content
+    assert diff_mock.call_args.kwargs["current_content"] == updated_content
+    readme_mock.assert_called_once_with(model_spec_path, str(readme_path))
+    export_mock.assert_called_once_with(model_spec_path, output_json_path)

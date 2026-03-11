@@ -62,6 +62,8 @@ is accepted into a release, capture it explicitly in the release notes known iss
 
 ## Pre-release
 
+The pre-release steps occur on `stable` branch only. This means that the automatic diffs to model_spec.py need to be added to `main` in Post-release.
+
 ### Step 1: cut new `stable` branch
 
 Release engineer will use pre-defined tt-inference-server commit, this can be from results of nightly Models CI run for example, or a specific version required for a specific feature, or before a feature was added.
@@ -87,9 +89,11 @@ Add changes to `model_spec.py` for the chosen commit sets. These can be determin
 
 Both the CI-driven flow and the manual `--output-only` flow generate the
 pre-release diff artifacts from the git diff of `workflows/model_spec.py`.
-When CI references are available they are attached to the changed
-`ModelSpecTemplate` records; otherwise those entries render as `N/A` in the
-markdown output.
+The CI-driven flow stamps `release_version` on CI-updated
+`ModelSpecTemplate` records, and `--output-only` stamps `release_version` on
+manually edited templates whose `tt_metal_commit` changed. When CI references
+are available they are attached to the changed `ModelSpecTemplate` records;
+otherwise those entries render as `N/A` in the markdown output.
 
 ```bash
 # process a specific workflow run_id to update passing models
@@ -98,7 +102,9 @@ python3 scripts/release/update_model_spec.py --models-ci-run-id 19339722549
 
 ### [optional] step 2B: manual changes to model_spec.py
 
-Manually edit `model_spec.py`. After changes are added, re-generate the Model Support documentation and `default_model_spec.json`:
+Manually edit `model_spec.py`. After changes are added, re-run the helper to
+stamp `release_version` on templates whose `tt_metal_commit` changed, then
+re-generate the Model Support documentation and `default_model_spec.json`:
 
 ```bash
 python3 scripts/release/update_model_spec.py --output-only
@@ -106,13 +112,15 @@ python3 scripts/release/update_model_spec.py --output-only
 
 #### outputs
 
-- `workflows/model_spec.py`: diff has updates from Models CI most recent passing runs and any manual `ModelSpecTemplate` edits
+- `workflows/model_spec.py`: Updates `ModelSpecTemplate`:
+  - `tt_metal_commit`: from Models CI run id, or manual edits.
+  - `release_version`: where tt_metal_commit has been changed.
 - `default_model_spec.json`: all model specs fully expanded from the ModelSpecTemplates in `workflows/model_spec.py`
-- `release_logs/v{VERSION}/pre_release_models_diff.md`: summary of changed `ModelSpecTemplate` records derived from the git diff of `workflows/model_spec.py`, with CI links when available
-- `release_logs/v{VERSION}/pre_release_models_diff.json`: programmatic version of the same changed-template records used to render `pre_release_models_diff.md`. This is used for post-release as well.
+- `release_logs/v{VERSION}/pre_release_models_diff.json`: summary of changed `ModelSpecTemplate` records derived from the git diff of `workflows/model_spec.py`, with CI links when available. This is used for post-release as well. and in `scripts/release/post_release.py`.
+- `release_logs/v{VERSION}/pre_release_models_diff.md`: This markdown version of `pre_release_models_diff.json` is used by `scripts/release/generate_release_notes.py`.
 - `release_logs/v{VERSION}/models_ci_all_results_*.json`: this has full Models CI parsed data for analysis
 - `release_logs/v{VERSION}/models_ci_last_good_*.json`: this may be used downstream for release process
-- `docs/model_support/`: regenerated model support documentation (model type pages, hardware pages, individual model pages)
+- `docs/model_support/*.md`: regenerated model support documentation (model type pages, hardware pages, individual model pages)
 - `README.md`: updates to the `Model Support` section (links to docs/model_support/)
 
 ### Step 3: force update `stable` branch
@@ -180,7 +188,6 @@ git push -u origin v${VERSION}
 ```
 
 Make [new release on GitHub repo](https://github.com/tenstorrent/tt-inference-server/releases/new)
-
 
 ## Post-release
 
