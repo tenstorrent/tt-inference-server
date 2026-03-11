@@ -1179,13 +1179,15 @@ def main():
             "Error: last_good_json or --models-ci-run-id is required when not using --output-only"
         )
 
+    release_output_dir = resolve_release_output_dir(args.out_root)
+
     # Resolve last_good_path: either run the CI pipeline or use the supplied file
     if args.models_ci_run_id:
         from scripts.release.models_ci_reader import run_ci_pipeline
 
         last_good_path = run_ci_pipeline(
             args.models_ci_run_id,
-            resolve_release_output_dir(args.out_root),
+            release_output_dir,
         )
     else:
         last_good_path = Path(args.last_good_json)
@@ -1326,7 +1328,7 @@ def main():
 
             generate_release_diff_outputs_from_git(
                 model_spec_path,
-                last_good_path.parent,
+                release_output_dir,
                 current_content=updated_content,
                 ci_metadata_by_occurrence=ci_metadata_by_occurrence,
             )
@@ -1342,7 +1344,7 @@ def main():
             reload_and_export_model_specs_json(model_spec_path, output_json_path)
             generate_release_diff_outputs_from_git(
                 model_spec_path,
-                last_good_path.parent,
+                release_output_dir,
                 current_content=content,
                 ci_metadata_by_occurrence=ci_metadata_by_occurrence,
             )
