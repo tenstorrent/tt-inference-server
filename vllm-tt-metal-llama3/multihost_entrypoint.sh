@@ -46,7 +46,7 @@ setup_ssh() {
         fi
         cp -r "${config_src}"/* "${SSH_DIR}/"
         # Set file permissions
-        [[ -f "${SSH_DIR}/id_rsa_multihost" ]] && chmod 600 "${SSH_DIR}/id_rsa_multihost"
+        [[ -f "${SSH_DIR}/id_ed25519_multihost" ]] && chmod 600 "${SSH_DIR}/id_ed25519_multihost"
         [[ -f "${SSH_DIR}/config" ]] && chmod 644 "${SSH_DIR}/config"
         [[ -f "${SSH_DIR}/known_hosts" ]] && chmod 644 "${SSH_DIR}/known_hosts"
         echo "[multihost_entrypoint] Configured SSH from ${config_src}"

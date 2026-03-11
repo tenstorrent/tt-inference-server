@@ -14,10 +14,10 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
-# Fixed values for Quad Galaxy multi-host deployment
+# Fixed values for multi-host deployment
 WORKER_SSH_PORT = 2200
 CONTAINER_USER = "container_app_user"
-DEFAULT_IDENTITY_FILE = f"/home/{CONTAINER_USER}/.ssh/id_rsa_multihost"
+DEFAULT_IDENTITY_FILE = f"/home/{CONTAINER_USER}/.ssh/id_ed25519_multihost"
 
 # Common environment variables passed through to MPI workers
 # Model-specific env vars (e.g., DEEPSEEK_V3_*) are in DeviceModelSpec.override_tt_config
@@ -173,5 +173,3 @@ def build_override_tt_config(
         "config_pkl_dir": config_pkl_dir,
         "env_passthrough": ENV_PASSTHROUGH,
     }
-
-

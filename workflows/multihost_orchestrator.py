@@ -23,10 +23,13 @@ import logging
 import os
 import shlex
 import shutil
+import signal
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -40,7 +43,6 @@ from workflows.multihost_config import (
 )
 from workflows.utils import default_dotenv_path, load_dotenv, write_dotenv
 from workflows.workflow_types import DeviceTypes, WorkflowType
-
 
 
 def _short_uuid():
@@ -368,10 +370,10 @@ class MultiHostOrchestrator:
         config_dir = Path(tempfile.mkdtemp(prefix="tt_multihost_"))
         logger.info(f"Created multi-host config directory: {config_dir}")
 
-        # Generate ephemeral SSH key pair
-        ssh_key_path = config_dir / "id_rsa_multihost"
+        # Generate ephemeral SSH key pair (Ed25519 for better security and performance)
+        ssh_key_path = config_dir / "id_ed25519_multihost"
         subprocess.run(
-            ["ssh-keygen", "-t", "rsa", "-N", "", "-f", str(ssh_key_path), "-q"],
+            ["ssh-keygen", "-t", "ed25519", "-N", "", "-f", str(ssh_key_path), "-q"],
             check=True,
         )
         ssh_key_path.chmod(0o600)
@@ -413,7 +415,9 @@ class MultiHostOrchestrator:
 
         return self.setup
 
-    def generate_worker_docker_command(self, host: str, rank: int) -> tuple[list[str], str]:
+    def generate_worker_docker_command(
+        self, host: str, rank: int
+    ) -> tuple[list[str], str]:
         """Generate docker run command for a Worker container.
 
         Worker containers run sshd and wait for MPI processes from Controller.
@@ -479,7 +483,9 @@ class MultiHostOrchestrator:
             )
 
         container_name = f"tt-controller-{_short_uuid()}"
-        mesh_device = DeviceTypes.from_string(self.runtime_config.device).to_mesh_device_str()
+        mesh_device = DeviceTypes.from_string(
+            self.runtime_config.device
+        ).to_mesh_device_str()
 
         # Merge MPI override_tt_config into the model_spec's vllm_args
         # This replaces the CONFIG_JSON mechanism to avoid duplicate --override-tt-config flags
@@ -760,13 +766,15 @@ class MultiHostOrchestrator:
     def ensure_images_on_all_hosts(self) -> bool:
         """Ensure Docker image is available on all hosts.
 
+        Transfers images to all hosts in parallel using ThreadPoolExecutor
+        for improved performance on multi-host deployments.
+
         Returns:
             True if all hosts have the image
         """
-        for host in self.hosts:
-            if not self.ensure_image_on_host(host):
-                return False
-        return True
+        with ThreadPoolExecutor(max_workers=len(self.hosts)) as executor:
+            results = list(executor.map(self.ensure_image_on_host, self.hosts))
+        return all(results)
 
     def copy_public_key_to_host(self, host: str) -> bool:
         """Copy SSH public key to remote host for Worker authorization.
@@ -903,7 +911,12 @@ class MultiHostOrchestrator:
         return False
 
     def _register_cleanup(self):
-        """Register atexit handler to clean up containers.
+        """Register atexit and signal handlers to clean up containers.
+
+        Registers cleanup for:
+        - Normal exit (atexit)
+        - SIGTERM (e.g., docker stop, kill)
+        - SIGINT (Ctrl+C)
 
         For server/reports workflows, we skip cleanup registration so that
         Workers remain running after the orchestrator process exits.
@@ -925,7 +938,15 @@ class MultiHostOrchestrator:
             if self.setup and self.setup.config_dir.exists():
                 shutil.rmtree(self.setup.config_dir, ignore_errors=True)
 
+        def signal_handler(signum, frame):
+            sig_name = signal.Signals(signum).name
+            logger.info(f"Received {sig_name}, cleaning up...")
+            cleanup()
+            sys.exit(128 + signum)
+
         atexit.register(cleanup)
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
         self._cleanup_registered = True
 
     def stop_all_workers(self):
