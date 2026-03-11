@@ -20,9 +20,9 @@ namespace tt::domain {
 struct TaskID {
     static constexpr size_t kSerializedSize = 36;
 
-    TaskID() {
-        auto uuid = boost::uuids::random_generator()();
-        id = boost::uuids::to_string(uuid);
+    TaskID() : id("") {
+        // Default to empty string - no expensive UUID generation
+        // Task ID will be set explicitly by the caller after fromJson()
     }
 
     explicit TaskID(std::string task_id) : id(std::move(task_id)) {}
