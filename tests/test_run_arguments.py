@@ -5,6 +5,7 @@
 
 import pytest
 import argparse
+import logging
 import os
 import sys
 import subprocess
@@ -22,6 +23,7 @@ from run import (
     populate_model_spec_cli_args,
 )
 from workflows.validate_setup import (
+    validate_setup,
     validate_runtime_args,
     validate_local_setup,
 )
@@ -1116,6 +1118,45 @@ class TestUtilityFunctions:
 
         mock_get_log_dir.assert_called_once()
         mock_ensure_dir.assert_called_once_with(mock_log_dir)
+
+    def test_validate_setup_warns_for_older_model_spec_release_version(
+        self, mock_model_spec, mock_runtime_config, caplog
+    ):
+        mock_model_spec.release_version = "0.8.0"
+
+        with caplog.at_level(logging.WARNING, logger="run_log"), patch(
+            "workflows.validate_setup.get_version", return_value="0.9.0"
+        ), patch("workflows.validate_setup.validate_runtime_args"), patch(
+            "workflows.validate_setup.validate_local_setup"
+        ):
+            validate_setup(
+                mock_model_spec,
+                mock_runtime_config,
+                Path("/tmp/test-model-spec.json"),
+            )
+
+        assert (
+            "release_version 0.8.0, which is older than the current VERSION 0.9.0"
+            in caplog.text
+        )
+
+    def test_validate_setup_skips_warning_for_current_release_version(
+        self, mock_model_spec, mock_runtime_config, caplog
+    ):
+        mock_model_spec.release_version = "0.9.0"
+
+        with caplog.at_level(logging.WARNING, logger="run_log"), patch(
+            "workflows.validate_setup.get_version", return_value="0.9.0"
+        ), patch("workflows.validate_setup.validate_runtime_args"), patch(
+            "workflows.validate_setup.validate_local_setup"
+        ):
+            validate_setup(
+                mock_model_spec,
+                mock_runtime_config,
+                Path("/tmp/test-model-spec.json"),
+            )
+
+        assert "older than the current VERSION" not in caplog.text
 
 
 if __name__ == "__main__":
