@@ -196,8 +196,14 @@ git checkout -b post-release-vx.y.z
 
 ### step 8: run post_release.py
 
-The script uses the pre-release record of the model diffs from `release_logs/v{VERSION}/pre_release_models_diff.md`
-to determine updates to model_spec.py where the `main` model spec has the starting 
+The script uses the pre-release record of the model diffs from
+`release_logs/v{VERSION}/pre_release_models_diff.json` to determine which
+released template updates from `stable` should be carried back onto `main`.
+For each matching template on `main`, commit or status fields are only updated
+when `main` still has the released starting value from the pre-release diff.
+If `main` has already been changed manually, that field update is discarded and
+reported in the PR draft. The template `release_version` is always updated to
+the version that was just released.
 
 ```bash
 python3 scripts/release/post_release.py --increment minor
