@@ -10,13 +10,13 @@ This script reads a last_good_json file and updates tt_metal_commit and vllm_com
 fields in model_spec.py for each ModelSpecTemplate based on CI results.
 
 Usage:
-    python3 update_model_spec_commits.py <last_good_json_path>
-    python3 update_model_spec_commits.py --dry-run <last_good_json_path>
-    python3 update_model_spec_commits.py --ignore-perf-status <last_good_json_path>
-    python3 update_model_spec_commits.py --help
+    python3 update_model_spec.py <last_good_json_path>
+    python3 update_model_spec.py --dry-run <last_good_json_path>
+    python3 update_model_spec.py --ignore-perf-status <last_good_json_path>
+    python3 update_model_spec.py --help
 
 Example:
-    python3 update_model_spec_commits.py release_logs/models_ci_last_good_*.json
+    python3 update_model_spec.py release_logs/v{VERSION}/models_ci_last_good_*.json
 
 The script:
 - Parses all ModelSpecTemplate blocks in model_spec.py
@@ -32,8 +32,11 @@ import argparse
 import importlib.util
 import json
 import re
+import subprocess
 import sys
+import types
 from pathlib import Path
+from typing import Dict, Optional, Tuple
 
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -42,6 +45,14 @@ from workflows.model_spec import (
     spec_templates,
     ModelSpecTemplate,
 )
+
+try:
+    from release_paths import get_versioned_release_logs_dir, resolve_release_output_dir
+except ImportError:
+    from scripts.release.release_paths import (
+        get_versioned_release_logs_dir,
+        resolve_release_output_dir,
+    )
 
 
 def map_perf_status_to_model_status(perf_status):
@@ -341,9 +352,20 @@ def update_template_fields(template_text, tt_metal_commit, vllm_commit, status):
     return updated
 
 
+def normalize_status_value(status_value):
+    """Normalize `ModelStatusTypes.*` strings to their enum member names."""
+    if not status_value:
+        return None
+
+    status_match = re.search(r"ModelStatusTypes\.(\w+)", status_value)
+    if status_match:
+        return status_match.group(1)
+    return status_value
+
+
 def generate_release_diff_markdown(update_records, output_path):
     """
-    Generate release_models_diff.md markdown file with update details.
+    Generate pre_release_models_diff.md markdown file with update details.
 
     Args:
         update_records: List of dicts with keys: impl, impl_id, model_arch,
@@ -397,29 +419,15 @@ def generate_release_diff_markdown(update_records, output_path):
 
             # Status change
             if record["status_before"] and record["status_after"]:
-                status_before = record["status_before"]
-                status_after_match = re.search(
-                    r"ModelStatusTypes\.(\w+)", record["status_after"]
-                )
-                status_after = (
-                    status_after_match.group(1)
-                    if status_after_match
-                    else record["status_after"]
-                )
+                status_before = normalize_status_value(record["status_before"])
+                status_after = normalize_status_value(record["status_after"])
 
                 if status_before != status_after:
                     status_change = f"{status_before} → {status_after}"
                 else:
                     status_change = f"{status_after} (no change)"
             elif record["status_after"]:
-                status_after_match = re.search(
-                    r"ModelStatusTypes\.(\w+)", record["status_after"]
-                )
-                status_after = (
-                    status_after_match.group(1)
-                    if status_after_match
-                    else record["status_after"]
-                )
+                status_after = normalize_status_value(record["status_after"])
                 status_change = f"New: {status_after}"
             else:
                 status_change = "No change"
@@ -442,6 +450,254 @@ def generate_release_diff_markdown(update_records, output_path):
         f.write("\n".join(lines))
 
     print(f"\nGenerated release diff markdown: {output_path}")
+
+
+def write_release_diff_json(update_records, output_path):
+    """Write structured release diff records as JSON."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w") as f:
+        json.dump(update_records, f, indent=2)
+        f.write("\n")
+
+    print(f"\nGenerated release diff JSON: {output_path}")
+
+
+def write_release_diff_outputs(update_records, output_dir):
+    """Write markdown and JSON release diff artifacts from one record list."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    markdown_path = output_dir / "pre_release_models_diff.md"
+    json_path = output_dir / "pre_release_models_diff.json"
+
+    generate_release_diff_markdown(update_records, markdown_path)
+    write_release_diff_json(update_records, json_path)
+
+    return markdown_path, json_path
+
+
+def extract_template_blocks(content):
+    """Extract raw `ModelSpecTemplate(...)` blocks from `model_spec.py` content."""
+    blocks = []
+    template_pattern = r"ModelSpecTemplate\("
+
+    for match in re.finditer(template_pattern, content):
+        start_pos = match.start()
+        pos = match.end()
+        paren_count = 1
+
+        while pos < len(content) and paren_count > 0:
+            if content[pos] == "(":
+                paren_count += 1
+            elif content[pos] == ")":
+                paren_count -= 1
+            pos += 1
+
+        if paren_count != 0:
+            raise ValueError("Unbalanced parentheses while parsing ModelSpecTemplate")
+
+        template_text = content[start_pos:pos]
+        if pos < len(content) and content[pos] == ",":
+            template_text += ","
+        blocks.append(template_text)
+
+    return blocks
+
+
+def load_model_spec_module_from_content(
+    model_spec_path: Path, content: str, module_name: str
+):
+    """Execute model_spec content in an isolated module namespace."""
+    repo_root = model_spec_path.parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    module = types.ModuleType(module_name)
+    module.__file__ = str(model_spec_path)
+    exec(compile(content, str(model_spec_path), "exec"), module.__dict__)
+    return module
+
+
+def build_template_snapshots(model_spec_path: Path, content: str, module_name: str):
+    """Build ordered template snapshots from model_spec content."""
+    model_spec_module = load_model_spec_module_from_content(
+        model_spec_path, content, module_name
+    )
+    templates = getattr(model_spec_module, "spec_templates", None)
+    if templates is None:
+        raise ValueError(f"Could not load spec_templates from {model_spec_path}")
+
+    template_blocks = extract_template_blocks(content)
+    if len(template_blocks) != len(templates):
+        raise ValueError(
+            "Template block count does not match loaded spec_templates count"
+        )
+
+    occurrence_counts = {}
+    snapshots = []
+
+    for template, template_text in zip(templates, template_blocks):
+        impl_id = template.impl.impl_id
+        occurrence_index = occurrence_counts.get(impl_id, 0)
+        occurrence_counts[impl_id] = occurrence_index + 1
+
+        weights = list(template.weights)
+        devices = [spec.device.name for spec in template.device_model_specs]
+
+        snapshots.append(
+            {
+                "impl": template.impl.impl_name,
+                "impl_id": impl_id,
+                "model_arch": model_name_from_weight(weights[0])
+                if weights
+                else "unknown",
+                "weights": weights,
+                "devices": devices,
+                "status": extract_status(template_text),
+                "tt_metal_commit": extract_tt_metal_commit(template_text),
+                "vllm_commit": extract_vllm_commit(template_text),
+                "template_text": template_text,
+                "identity_key": (impl_id, tuple(weights), tuple(devices)),
+                "occurrence_key": (impl_id, occurrence_index),
+            }
+        )
+
+    return snapshots
+
+
+def read_git_base_model_spec_content(model_spec_path: Path, ref: str = "HEAD") -> str:
+    """Read the git base version of `model_spec.py`."""
+    repo_root = model_spec_path.parent.parent.resolve()
+    relative_path = model_spec_path.resolve().relative_to(repo_root).as_posix()
+    git_object = f"{ref}:{relative_path}"
+    result = subprocess.run(
+        ["git", "show", git_object],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to read git base content for {relative_path}: {result.stderr.strip()}"
+        )
+    return result.stdout
+
+
+def build_release_diff_record(before_snapshot, after_snapshot, ci_metadata=None):
+    """Create one release-diff record from before/after template snapshots."""
+    current_snapshot = after_snapshot or before_snapshot
+    ci_metadata = ci_metadata or {}
+
+    return {
+        "impl": current_snapshot["impl"],
+        "impl_id": current_snapshot["impl_id"],
+        "model_arch": current_snapshot["model_arch"],
+        "weights": current_snapshot["weights"],
+        "devices": current_snapshot["devices"],
+        "status_before": before_snapshot["status"] if before_snapshot else None,
+        "status_after": after_snapshot["status"] if after_snapshot else None,
+        "tt_metal_commit_before": (
+            before_snapshot["tt_metal_commit"] if before_snapshot else None
+        ),
+        "tt_metal_commit_after": (
+            after_snapshot["tt_metal_commit"] if after_snapshot else None
+        ),
+        "vllm_commit_before": before_snapshot["vllm_commit"]
+        if before_snapshot
+        else None,
+        "vllm_commit_after": after_snapshot["vllm_commit"] if after_snapshot else None,
+        "ci_job_url": ci_metadata.get("ci_job_url"),
+        "ci_run_number": ci_metadata.get("ci_run_number"),
+    }
+
+
+def build_release_diff_records_from_git(
+    model_spec_path: Path,
+    current_content: Optional[str] = None,
+    ci_metadata_by_occurrence: Optional[
+        Dict[Tuple[str, int], Dict[str, object]]
+    ] = None,
+):
+    """Build final release-diff records from the git diff of `model_spec.py`."""
+    current_text = (
+        current_content if current_content is not None else model_spec_path.read_text()
+    )
+    base_text = read_git_base_model_spec_content(model_spec_path)
+    before_snapshots = build_template_snapshots(
+        model_spec_path, base_text, "model_spec_release_diff_before"
+    )
+    after_snapshots = build_template_snapshots(
+        model_spec_path, current_text, "model_spec_release_diff_after"
+    )
+
+    ci_metadata_by_occurrence = ci_metadata_by_occurrence or {}
+    before_by_identity = {
+        snapshot["identity_key"]: snapshot for snapshot in before_snapshots
+    }
+    matched_before_occurrence_keys = set()
+    records = []
+    unmatched_after_snapshots = []
+
+    for after_snapshot in after_snapshots:
+        before_snapshot = before_by_identity.get(after_snapshot["identity_key"])
+        if before_snapshot is None:
+            unmatched_after_snapshots.append(after_snapshot)
+            continue
+
+        matched_before_occurrence_keys.add(before_snapshot["occurrence_key"])
+        if before_snapshot["template_text"] == after_snapshot["template_text"]:
+            continue
+
+        records.append(
+            build_release_diff_record(
+                before_snapshot,
+                after_snapshot,
+                ci_metadata_by_occurrence.get(after_snapshot["occurrence_key"]),
+            )
+        )
+
+    unmatched_before_by_occurrence = {
+        snapshot["occurrence_key"]: snapshot
+        for snapshot in before_snapshots
+        if snapshot["occurrence_key"] not in matched_before_occurrence_keys
+    }
+
+    for after_snapshot in unmatched_after_snapshots:
+        before_snapshot = unmatched_before_by_occurrence.get(
+            after_snapshot["occurrence_key"]
+        )
+        if (
+            before_snapshot
+            and before_snapshot["template_text"] == after_snapshot["template_text"]
+        ):
+            continue
+
+        records.append(
+            build_release_diff_record(
+                before_snapshot,
+                after_snapshot,
+                ci_metadata_by_occurrence.get(after_snapshot["occurrence_key"]),
+            )
+        )
+
+    return records
+
+
+def generate_release_diff_outputs_from_git(
+    model_spec_path: Path,
+    output_dir: Path,
+    current_content: Optional[str] = None,
+    ci_metadata_by_occurrence: Optional[
+        Dict[Tuple[str, int], Dict[str, object]]
+    ] = None,
+):
+    """Generate markdown and JSON release-diff artifacts from git-derived records."""
+    update_records = build_release_diff_records_from_git(
+        model_spec_path,
+        current_content=current_content,
+        ci_metadata_by_occurrence=ci_metadata_by_occurrence,
+    )
+    return write_release_diff_outputs(update_records, output_dir)
 
 
 def reload_and_export_model_specs_json(model_spec_path, output_json_path):
@@ -699,6 +955,20 @@ def main():
         action="store_true",
         help="Only update tt_metal_commit and vllm_commit, do not update status/perf_status",
     )
+    parser.add_argument(
+        "--models-ci-run-id",
+        type=int,
+        default=None,
+        help="GitHub Actions workflow run ID; automatically runs models_ci_reader pipeline to produce the last_good JSON",
+    )
+    parser.add_argument(
+        "--out-root",
+        default=None,
+        help=(
+            "Output directory for CI reader artifacts when using --models-ci-run-id "
+            f"(default: {get_versioned_release_logs_dir()})"
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -712,6 +982,10 @@ def main():
             "Running in --output-only mode: generating outputs without modifying model_spec.py"
         )
 
+        release_output_dir = resolve_release_output_dir(args.out_root)
+
+        generate_release_diff_outputs_from_git(model_spec_path, release_output_dir)
+
         # Update README.md Model Support section and regenerate docs/model_support/
         update_readme_model_support(model_spec_path, args.readme_path)
 
@@ -721,16 +995,28 @@ def main():
 
         return
 
-    # Validate that last_good_json is provided when not in --output-only mode
-    if not args.last_good_json:
+    # Validate that exactly one of --models-ci-run-id or last_good_json is provided
+    if args.models_ci_run_id and args.last_good_json:
         raise ValueError(
-            "Error: last_good_json argument is required when not using --output-only"
+            "Error: provide --models-ci-run-id or last_good_json, not both."
+        )
+    if not args.models_ci_run_id and not args.last_good_json:
+        raise ValueError(
+            "Error: last_good_json or --models-ci-run-id is required when not using --output-only"
         )
 
-    # Load last_good_json
-    last_good_path = Path(args.last_good_json)
-    if not last_good_path.exists():
-        raise FileNotFoundError(f"Error: File not found: {args.last_good_json}")
+    # Resolve last_good_path: either run the CI pipeline or use the supplied file
+    if args.models_ci_run_id:
+        from scripts.release.models_ci_reader import run_ci_pipeline
+
+        last_good_path = run_ci_pipeline(
+            args.models_ci_run_id,
+            resolve_release_output_dir(args.out_root),
+        )
+    else:
+        last_good_path = Path(args.last_good_json)
+        if not last_good_path.exists():
+            raise FileNotFoundError(f"Error: File not found: {args.last_good_json}")
 
     with open(last_good_path, "r") as f:
         last_good_data = json.load(f)
@@ -748,13 +1034,18 @@ def main():
 
     updated_content = content
     updates_made = 0
-    update_records = []  # Track updates for markdown generation
+    ci_metadata_by_occurrence = {}
+    template_occurrence_counts = {}
 
     for template in spec_templates:
         # Log template being processed
         impl_name = template.impl.impl_name
         weights = template.weights
         devices = [spec.device.name for spec in template.device_model_specs]
+        impl_id = template.impl.impl_id
+        occurrence_index = template_occurrence_counts.get(impl_id, 0)
+        template_occurrence_counts[impl_id] = occurrence_index + 1
+        occurrence_key = (impl_id, occurrence_index)
         print(f"\n{'=' * 80}")
         print(
             f"Processing template: impl={impl_name}, weights={weights}, devices={devices}"
@@ -782,7 +1073,6 @@ def main():
                 continue
 
         # Build unique identifier to find this template in text
-        impl_id = template.impl.impl_id
         first_weight = template.weights[0] if template.weights else ""
         devices = [spec.device for spec in template.device_model_specs]
 
@@ -824,35 +1114,14 @@ def main():
             elif args.ignore_perf_status and status:
                 print(f"  status: {status} (ignored, not updating)")
 
-            # Track update for markdown generation
-            status_before = extract_status(template_text)
-            tt_metal_commit_before = extract_tt_metal_commit(template_text)
-            vllm_commit_before = extract_vllm_commit(template_text)
-            devices = [spec.device.name for spec in template.device_model_specs]
             ci_job_url, ci_run_number = get_ci_job_url_for_template(
                 template, last_good_data
             )
-            model_arch = model_name_from_weight(weights[0]) if weights else "unknown"
-            # For status_after, use None if ignoring perf status, otherwise use the status
-            status_after = None if args.ignore_perf_status else status
 
-            update_records.append(
-                {
-                    "impl": impl_name,
-                    "impl_id": impl_id,
-                    "model_arch": model_arch,
-                    "weights": weights,
-                    "devices": devices,
-                    "status_before": status_before,
-                    "status_after": status_after,
-                    "tt_metal_commit_before": tt_metal_commit_before,
-                    "tt_metal_commit_after": tt_metal_commit,
-                    "vllm_commit_before": vllm_commit_before,
-                    "vllm_commit_after": vllm_commit,
-                    "ci_job_url": ci_job_url,
-                    "ci_run_number": ci_run_number,
-                }
-            )
+            ci_metadata_by_occurrence[occurrence_key] = {
+                "ci_job_url": ci_job_url,
+                "ci_run_number": ci_run_number,
+            }
 
             # Apply replacement directly
             updated_content = updated_content.replace(
@@ -877,10 +1146,12 @@ def main():
             output_json_path = Path(args.output_json)
             reload_and_export_model_specs_json(model_spec_path, output_json_path)
 
-            # Generate release diff markdown
-            if update_records:
-                diff_markdown_path = last_good_path.parent / "release_models_diff.md"
-                generate_release_diff_markdown(update_records, diff_markdown_path)
+            generate_release_diff_outputs_from_git(
+                model_spec_path,
+                last_good_path.parent,
+                current_content=updated_content,
+                ci_metadata_by_occurrence=ci_metadata_by_occurrence,
+            )
 
             # Update README.md Model Support section and regenerate docs/model_support/
             update_readme_model_support(model_spec_path)
@@ -891,6 +1162,12 @@ def main():
         if not args.dry_run:
             output_json_path = Path(args.output_json)
             reload_and_export_model_specs_json(model_spec_path, output_json_path)
+            generate_release_diff_outputs_from_git(
+                model_spec_path,
+                last_good_path.parent,
+                current_content=content,
+                ci_metadata_by_occurrence=ci_metadata_by_occurrence,
+            )
 
 
 if __name__ == "__main__":

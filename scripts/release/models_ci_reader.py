@@ -21,6 +21,14 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from workflow_logs_parser import parse_workflow_logs_dir
 
+try:
+    from release_paths import get_versioned_release_logs_dir, resolve_release_output_dir
+except ImportError:
+    from scripts.release.release_paths import (
+        get_versioned_release_logs_dir,
+        resolve_release_output_dir,
+    )
+
 # Add project root to Python path to allow imports from workflows
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -1821,6 +1829,48 @@ def write_summary_output(
         f"Summary: {total_models} total models, {passing_models} passing models"
     )
 
+    return last_good_path
+
+
+def run_ci_pipeline(
+    run_id: int,
+    out_root: Optional[Path] = None,
+    owner: str = DEFAULT_OWNER,
+    repo: str = DEFAULT_REPO,
+    workflow_file: str = DEFAULT_WORKFLOW_FILE,
+    remove_existing: bool = False,
+) -> Path:
+    """Download and process a single CI workflow run, returning the last_good_path.
+
+    Args:
+        run_id: GitHub Actions workflow run ID to process.
+        out_root: Root directory for downloaded artifacts and output JSON files.
+        owner: GitHub repository owner.
+        repo: GitHub repository name.
+        workflow_file: Workflow filename (e.g. on-nightly.yml).
+        remove_existing: If True, re-download even if the run directory already exists.
+
+    Returns:
+        Path to the generated models_ci_last_good_*.json file.
+    """
+    out_root = resolve_release_output_dir(out_root)
+    ensure_dir(out_root)
+    token = check_auth(owner, repo)
+    download_runs(
+        owner,
+        repo,
+        workflow_file,
+        token,
+        out_root,
+        max_runs=1,
+        run_id=run_id,
+        remove_existing=remove_existing,
+    )
+    all_models_dict, all_run_numbers = process_all_runs(
+        out_root, owner, repo, last_run_only=False
+    )
+    return write_summary_output(all_models_dict, all_run_numbers, out_root)
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1830,7 +1880,13 @@ def main():
     parser.add_argument("--repo", default=DEFAULT_REPO)
     parser.add_argument("--workflow-file", default=DEFAULT_WORKFLOW_FILE)
     parser.add_argument("--max-runs", type=int, default=30)
-    parser.add_argument("--out-root", type=str, default="release_logs")
+    default_out_root = get_versioned_release_logs_dir()
+    parser.add_argument(
+        "--out-root",
+        type=str,
+        default=None,
+        help=f"Output directory for downloaded artifacts and summaries (default: {default_out_root})",
+    )
     parser.add_argument(
         "--run-id", type=int, default=None, help="Process only this workflow run ID"
     )
@@ -1852,7 +1908,7 @@ def main():
     args = parser.parse_args()
 
     # Setup output directory
-    out_root = Path(args.out_root).resolve()
+    out_root = resolve_release_output_dir(args.out_root)
     ensure_dir(out_root)
     logger.info(f"Output root directory: {out_root}")
 
