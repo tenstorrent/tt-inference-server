@@ -107,8 +107,8 @@ DEVICE_TO_MESH_STR = {
     "T3K": "T3K",
     "GALAXY": "TG",
     "GALAXY_T3K": "T3K",
-    "DUAL_GALAXY": "DUAL",
-    "QUAD_GALAXY": "QUAD",
+    "DUAL_GALAXY": "(8,8)",
+    "QUAD_GALAXY": "(8,16)",
     "GPU": "GPU",
 }
 
@@ -492,6 +492,16 @@ def runtime_settings(model_spec_json, no_auth=False):
     logger.info(f"using model: {model_spec_json['model_id']}")
     handle_secrets(no_auth=no_auth)
 
+    # In multihost deployments, model weights are on shared storage and accessed
+    # via model-specific environment variables (e.g., DEEPSEEK_V3_HF_MODEL).
+    # Skip model_setup() which requires MODEL_WEIGHTS_DIR and creates symlinks.
+    if os.getenv("MULTIHOST_ROLE"):
+        logger.info(
+            "Multihost mode detected, skipping model_setup() - "
+            "weights accessed via model-specific env vars on shared storage"
+        )
+        return
+
     # TODO: check HF repo access with HF_TOKEN supplied
     model_setup(model_spec_json)
 
@@ -615,7 +625,12 @@ def main():
 
     if device_type and not os.getenv("TT_CACHE_PATH"):
         set_cache_paths(model_spec, device_type)
-    if not os.getenv("MODEL_WEIGHTS_DIR"):
+    # NOTE: In multihost deployments, model weights are expected to reside on shared
+    # storage (e.g., NFS) and are read directly by each worker via model-specific
+    # environment variables (e.g., DEEPSEEK_V3_HF_MODEL). Users are responsible for
+    # downloading weights to a location on shared storage beforehand. Therefore,
+    # automatic weight download is skipped when MULTIHOST_ROLE is set.
+    if not os.getenv("MODEL_WEIGHTS_DIR") and not os.getenv("MULTIHOST_ROLE"):
         ensure_weights_available(model_spec)
 
     logger.info(f"Using model spec: {model_spec['model_id']}")
