@@ -39,14 +39,15 @@ import shutil
 import subprocess
 import sys
 from collections import defaultdict
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import DefaultDict, Dict, List, Optional, Tuple
+from typing import Any, DefaultDict, Dict, List, Optional, Tuple
 
 # Add project root to Python path for imports
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 from workflows.model_spec import MODEL_SPECS
-from workflows.utils import get_version
+from workflows.utils import get_version, parse_commits_from_docker_image
 
 try:
     from generate_release_notes import (
@@ -64,15 +65,57 @@ except ImportError:
         resolve_release_output_dir,
     )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-    ],
-)
 logger = logging.getLogger(__name__)
+
+LOG_FORMAT = "%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
+IMAGE_EXISTS_TIMEOUT_SECONDS = 30
+IMAGE_COPY_TIMEOUT_SECONDS = 600
+IMAGE_STATUS_EXISTS_WITH_CI = "exists_with_ci"
+IMAGE_STATUS_EXISTS_WITHOUT_CI = "exists_without_ci"
+IMAGE_STATUS_COPY_FROM_CI = "copy_from_ci"
+IMAGE_STATUS_COPIED = "copied"
+IMAGE_STATUS_NEEDS_BUILD = "needs_build"
+CommitPair = Tuple[Optional[str], Optional[str]]
+
+
+@dataclass(frozen=True)
+class MergedModelRecord:
+    """Release-artifact inputs for a single model."""
+
+    model_id: str
+    model_spec: Any
+    ci_data: Dict[str, Any]
+    target_docker_image: str
+
+
+@dataclass(frozen=True)
+class ImagePlan:
+    """One image-level decision shared by all models using the same docker image."""
+
+    target_image: str
+    model_ids: Tuple[str, ...]
+    status: str
+    ci_source_image: Optional[str] = None
+
+
+def configure_logging() -> None:
+    """Configure CLI logging only when the script is executed."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format=LOG_FORMAT,
+        handlers=[logging.StreamHandler(sys.stdout)],
+        force=True,
+    )
+
+
+def get_target_docker_image(model_id: str, model_spec: Any, is_dev: bool) -> str:
+    """Return the release/dev target image for a model without mutating MODEL_SPECS."""
+    docker_image = model_spec.docker_image
+    if not docker_image:
+        raise ValueError(f"MODEL_SPECS entry {model_id} is missing docker_image")
+    if is_dev:
+        return docker_image.replace("-release-", "-dev-")
+    return docker_image
 
 
 def check_crane_installed() -> bool:
@@ -95,47 +138,70 @@ def check_docker_installed() -> bool:
     return True
 
 
-def merge_specs_with_ci_data(ci_json_path: Path, is_dev: bool) -> Dict[str, dict]:
+def merge_specs_with_ci_data(
+    ci_json_path: Path, is_dev: bool
+) -> Dict[str, MergedModelRecord]:
     """
     Merge models_ci_last_good JSON with MODEL_SPECS.
 
     Args:
         ci_json_path: Path to the CI results JSON file
-        is_dev: If True, modifies docker_image to use '-dev-' instead of '-release-'
+        is_dev: If True, derive '-dev-' image targets instead of '-release-'
 
     Returns:
-        Dictionary mapping model_id to merged data containing model_spec and ci_data
+        Dictionary mapping model_id to merged data containing model_spec, ci_data,
+        and the derived target docker image.
     """
     logger.info(f"Loading CI data from: {ci_json_path}")
 
     if not ci_json_path.exists():
         raise FileNotFoundError(f"CI JSON file not found: {ci_json_path}")
 
-    with open(ci_json_path, "r") as f:
+    with ci_json_path.open("r", encoding="utf-8") as f:
         ci_data = json.load(f)
 
     logger.info(f"Loaded CI data for {len(ci_data)} model entries")
 
-    merged = {}
+    merged: Dict[str, MergedModelRecord] = {}
     for model_id, model_spec in MODEL_SPECS.items():
         ci_entry = ci_data.get(model_id, {})
-
-        docker_image = model_spec.docker_image
-        if is_dev:
-            docker_image = docker_image.replace("-release-", "-dev-")
-
-        object.__setattr__(model_spec, "docker_image", docker_image)
-        merged[model_id] = {"model_spec": model_spec, "ci_data": ci_entry}
+        merged[model_id] = MergedModelRecord(
+            model_id=model_id,
+            model_spec=model_spec,
+            ci_data=ci_entry,
+            target_docker_image=get_target_docker_image(model_id, model_spec, is_dev),
+        )
 
     logger.info(f"Merged {len(merged)} model specs with CI data")
     logger.info(
-        f"Models with CI data: {len([m for m in merged.values() if m['ci_data']])}"
+        f"Models with CI data: {len([m for m in merged.values() if m.ci_data])}"
     )
     logger.info(
-        f"Models without CI data: {len([m for m in merged.values() if not m['ci_data']])}"
+        f"Models without CI data: {len([m for m in merged.values() if not m.ci_data])}"
     )
 
     return merged
+
+
+def run_registry_command(
+    command: List[str], timeout_seconds: int, action_description: str
+) -> Optional[subprocess.CompletedProcess]:
+    """Run a registry command with consistent timeout and exception handling."""
+    try:
+        return subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            f"Timeout while {action_description} ({timeout_seconds} seconds exceeded)"
+        )
+        return None
+    except Exception as exc:
+        logger.error(f"Exception while {action_description}: {exc}")
+        return None
 
 
 def check_image_exists(image: str, cache: Optional[Dict[str, bool]] = None) -> bool:
@@ -155,20 +221,12 @@ def check_image_exists(image: str, cache: Optional[Dict[str, bool]] = None) -> b
 
     logger.debug(f"Cache MISS for image: {image}")
 
-    try:
-        result = subprocess.run(
-            ["docker", "manifest", "inspect", image],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        exists = result.returncode == 0
-    except subprocess.TimeoutExpired:
-        logger.warning(f"Timeout checking image existence: {image}")
-        exists = False
-    except Exception as e:
-        logger.debug(f"Error checking image {image}: {e}")
-        exists = False
+    result = run_registry_command(
+        ["docker", "manifest", "inspect", image],
+        IMAGE_EXISTS_TIMEOUT_SECONDS,
+        f"checking image existence for {image}",
+    )
+    exists = result is not None and result.returncode == 0
 
     if cache is not None:
         cache[image] = exists
@@ -176,7 +234,7 @@ def check_image_exists(image: str, cache: Optional[Dict[str, bool]] = None) -> b
     return exists
 
 
-def extract_commits_from_tag(docker_image: str) -> Optional[Tuple[str, Optional[str]]]:
+def extract_commits_from_tag(docker_image: str) -> Optional[CommitPair]:
     """
     Extract tt-metal and vllm commit hashes from docker image tag.
 
@@ -189,28 +247,17 @@ def extract_commits_from_tag(docker_image: str) -> Optional[Tuple[str, Optional[
         Tuple of (tt_metal_commit, vllm_commit) or None if parsing fails
         vllm_commit can be None for images that don't have a vllm component
     """
-    try:
-        if ":" not in docker_image:
-            logger.debug(f"No tag found in docker image: {docker_image}")
-            return None
-
-        tag = docker_image.split(":")[-1]
-        parts = tag.split("-")
-
-        if len(parts) < 2:
-            logger.debug(f"Tag format unexpected (too few parts): {tag}")
-            return None
-
-        tt_metal_commit = parts[1]
-        vllm_commit = parts[2] if len(parts) >= 3 else None
-        return (tt_metal_commit, vllm_commit)
-    except Exception as e:
-        logger.debug(f"Error extracting commits from tag {docker_image}: {e}")
+    tt_metal_commit, vllm_commit = parse_commits_from_docker_image(docker_image)
+    if not tt_metal_commit:
+        logger.debug(f"Unable to parse commits from docker image tag: {docker_image}")
         return None
+    return (tt_metal_commit, vllm_commit)
 
 
 def commits_match(
-    release_commits: Optional[Tuple], ci_commits: Optional[Tuple], model_spec
+    release_commits: Optional[CommitPair],
+    ci_commits: Optional[CommitPair],
+    model_spec: Any,
 ) -> bool:
     """
     Check if commits from release and CI docker images match.
@@ -295,32 +342,239 @@ def copy_docker_image(src: str, dst: str, dry_run: bool = False) -> bool:
         logger.info(f"[DRY-RUN] Would copy: {src} -> {dst}")
         return True
 
-    try:
-        logger.info(f"Copying image: {src} -> {dst}")
-        result = subprocess.run(
-            ["crane", "copy", src, dst],
-            capture_output=True,
-            text=True,
-            timeout=600,
+    logger.info(f"Copying image: {src} -> {dst}")
+    result = run_registry_command(
+        ["crane", "copy", src, dst],
+        IMAGE_COPY_TIMEOUT_SECONDS,
+        f"copying image {src} -> {dst}",
+    )
+    if result is None:
+        return False
+
+    if result.returncode == 0:
+        return True
+
+    logger.error(f"crane copy failed with exit code {result.returncode}")
+    if result.stderr:
+        logger.error(f"Error output: {result.stderr}")
+    return False
+
+
+def group_models_by_target_image(
+    merged_spec: Dict[str, MergedModelRecord],
+) -> Dict[str, List[MergedModelRecord]]:
+    """Group merged model records by target docker image."""
+    grouped: DefaultDict[str, List[MergedModelRecord]] = defaultdict(list)
+    for record in merged_spec.values():
+        grouped[record.target_docker_image].append(record)
+    return {image: grouped[image] for image in sorted(grouped)}
+
+
+def log_commit_mismatch(
+    record: MergedModelRecord,
+    target_image: str,
+    ci_image: str,
+    ci_commits: Optional[CommitPair],
+) -> None:
+    """Log a model-specific mismatch against a candidate shared image."""
+    logger.warning(
+        f"  Commit mismatch between release and CI images for model: {record.model_id}"
+    )
+    logger.warning(f"     Release image: {target_image}")
+    logger.warning(
+        f"     Release expects: tt-metal={record.model_spec.tt_metal_commit}, vllm={record.model_spec.vllm_commit}"
+    )
+    logger.warning(f"     CI image: {ci_image}")
+    logger.warning(
+        f"     CI image has: tt-metal={ci_commits[0] if ci_commits else 'unknown'}, vllm={ci_commits[1] if ci_commits else 'unknown'}"
+    )
+    logger.warning(
+        "     Shared docker images must resolve to a single commit-compatible Models CI source."
+    )
+
+
+def image_matches_all_specs(
+    target_image: str, ci_image: str, records: List[MergedModelRecord]
+) -> bool:
+    """Return True when one CI image is compatible with every model sharing a target image."""
+    target_commits = extract_commits_from_tag(target_image)
+    ci_commits = extract_commits_from_tag(ci_image)
+    if target_commits is None or ci_commits is None:
+        logger.info(
+            "  Unable to validate commits because one image tag could not be parsed"
+        )
+        return False
+
+    all_records_match = True
+    for record in records:
+        if not commits_match(target_commits, ci_commits, record.model_spec):
+            log_commit_mismatch(record, target_image, ci_image, ci_commits)
+            all_records_match = False
+
+    return all_records_match
+
+
+def select_ci_source_for_image(
+    target_image: str,
+    records: List[MergedModelRecord],
+    image_exists_cache: Dict[str, bool],
+) -> Optional[str]:
+    """Select the first valid CI image that is compatible with all models sharing a target image."""
+    seen_ci_images = set()
+    has_ci_data = False
+    has_ci_image = False
+
+    for record in records:
+        if record.ci_data:
+            has_ci_data = True
+        ci_docker_image = record.ci_data.get("docker_image") if record.ci_data else None
+        if not ci_docker_image:
+            continue
+        has_ci_image = True
+        if ci_docker_image in seen_ci_images:
+            continue
+        seen_ci_images.add(ci_docker_image)
+
+        logger.info(f"  Candidate CI image: {ci_docker_image}")
+        if not check_image_exists(ci_docker_image, cache=image_exists_cache):
+            logger.info("  Candidate CI image not found on remote container registry")
+            continue
+
+        if image_matches_all_specs(target_image, ci_docker_image, records):
+            logger.info("  Found valid Models CI reference")
+            return ci_docker_image
+
+    if not has_ci_data:
+        logger.info("  No CI data available for models sharing this image")
+    elif not has_ci_image:
+        logger.info("  No CI docker_image available for models sharing this image")
+    else:
+        logger.info("  No valid Models CI source found for shared image")
+
+    return None
+
+
+def plan_image_action(
+    target_image: str,
+    records: List[MergedModelRecord],
+    image_exists_cache: Dict[str, bool],
+) -> ImagePlan:
+    """Compute a single image-level action for all models sharing one target image."""
+    model_ids = tuple(record.model_id for record in records)
+    release_exists = check_image_exists(target_image, cache=image_exists_cache)
+    if release_exists:
+        logger.info("  Found image on remote container registry")
+
+    ci_source_image = select_ci_source_for_image(
+        target_image, records, image_exists_cache
+    )
+    if release_exists:
+        if ci_source_image:
+            return ImagePlan(
+                target_image=target_image,
+                model_ids=model_ids,
+                status=IMAGE_STATUS_EXISTS_WITH_CI,
+                ci_source_image=ci_source_image,
+            )
+        logger.info("  Existing image without Models CI reference")
+        return ImagePlan(
+            target_image=target_image,
+            model_ids=model_ids,
+            status=IMAGE_STATUS_EXISTS_WITHOUT_CI,
         )
 
-        if result.returncode == 0:
-            return True
+    if ci_source_image:
+        return ImagePlan(
+            target_image=target_image,
+            model_ids=model_ids,
+            status=IMAGE_STATUS_COPY_FROM_CI,
+            ci_source_image=ci_source_image,
+        )
 
-        logger.error(f"crane copy failed with exit code {result.returncode}")
-        if result.stderr:
-            logger.error(f"Error output: {result.stderr}")
-        return False
-    except subprocess.TimeoutExpired:
-        logger.error("Timeout copying image (10 minutes exceeded)")
-        return False
-    except Exception as e:
-        logger.error(f"Exception during crane copy: {e}")
-        return False
+    logger.info("  No valid Models CI source found, image needs building")
+    return ImagePlan(
+        target_image=target_image,
+        model_ids=model_ids,
+        status=IMAGE_STATUS_NEEDS_BUILD,
+    )
+
+
+def execute_image_plan(plan: ImagePlan, dry_run: bool) -> ImagePlan:
+    """Execute side effects for an image plan and return the final status."""
+    if plan.status != IMAGE_STATUS_COPY_FROM_CI:
+        return plan
+
+    logger.info(
+        "  Copying from Models CI container registry to release container registry"
+    )
+    if plan.ci_source_image and copy_docker_image(
+        plan.ci_source_image, plan.target_image, dry_run
+    ):
+        logger.info("  Successfully copied to release container registry")
+        return replace(plan, status=IMAGE_STATUS_COPIED)
+
+    logger.error("  Failed to copy image")
+    return replace(plan, status=IMAGE_STATUS_NEEDS_BUILD)
+
+
+def apply_image_plan(
+    plan: ImagePlan,
+    images_to_build: DefaultDict[str, List[str]],
+    copied_images: Dict[str, str],
+    existing_with_ci_ref: Dict[str, str],
+    existing_without_ci_ref: DefaultDict[str, List[str]],
+) -> None:
+    """Apply one image-level result into the output collections."""
+    if plan.status == IMAGE_STATUS_NEEDS_BUILD:
+        images_to_build[plan.target_image].extend(plan.model_ids)
+        return
+
+    if plan.status == IMAGE_STATUS_COPIED:
+        if not plan.ci_source_image:
+            raise ValueError("Copied image plans must include a CI source image")
+        copied_images[plan.target_image] = plan.ci_source_image
+        return
+
+    if plan.status == IMAGE_STATUS_EXISTS_WITH_CI:
+        if not plan.ci_source_image:
+            raise ValueError("Existing-with-CI plans must include a CI source image")
+        existing_with_ci_ref[plan.target_image] = plan.ci_source_image
+        return
+
+    if plan.status == IMAGE_STATUS_EXISTS_WITHOUT_CI:
+        existing_without_ci_ref[plan.target_image].extend(plan.model_ids)
+        return
+
+    raise ValueError(f"Unknown image plan status: {plan.status}")
+
+
+def log_summary(
+    total_models: int,
+    unique_images_processed: int,
+    images_to_build: DefaultDict[str, List[str]],
+    copied_images: Dict[str, str],
+    existing_with_ci_ref: Dict[str, str],
+    existing_without_ci_ref: DefaultDict[str, List[str]],
+) -> None:
+    """Log final processing summary."""
+    logger.info("\n" + "=" * 80)
+    logger.info("SUMMARY")
+    logger.info("=" * 80)
+    logger.info(f"Total models processed: {total_models}")
+    logger.info(f"Unique docker images processed: {unique_images_processed}")
+    logger.info(
+        f"Efficiency gain: {total_models - unique_images_processed} redundant checks avoided"
+    )
+    logger.info(f"Existing images with CI backing: {len(existing_with_ci_ref)}")
+    logger.info(f"Existing images without CI backing: {len(existing_without_ci_ref)}")
+    logger.info(f"Images copied from CI: {len(copied_images)}")
+    logger.info(f"Images that need building: {len(images_to_build)}")
+    logger.info(f"Unique images to build: {len(images_to_build)}")
+    logger.info("=" * 80)
 
 
 def generate_release_artifacts(
-    merged_spec: Dict, dry_run: bool
+    merged_spec: Dict[str, MergedModelRecord], dry_run: bool
 ) -> Tuple[
     DefaultDict[str, List[str]],
     int,
@@ -329,206 +583,49 @@ def generate_release_artifacts(
     DefaultDict[str, List[str]],
 ]:
     """
-    Process each model and create release artifacts.
+    Process images and create release artifacts.
 
     Returns:
         Tuple of image build/copy state needed for output files.
     """
     images_to_build = defaultdict(list)
-    copied_images = {}
-    existing_with_ci_ref = {}
+    copied_images: Dict[str, str] = {}
+    existing_with_ci_ref: Dict[str, str] = {}
     existing_without_ci_ref = defaultdict(list)
-    processed = 0
-    found_with_ci = 0
-    found_without_ci = 0
-    copied_from_ci = 0
-    needs_building = 0
-    processed_images = set()
-    image_results = {}
     image_exists_cache: Dict[str, bool] = {}
+    grouped_records = group_models_by_target_image(merged_spec)
 
-    logger.info(f"Processing {len(merged_spec)} models...")
+    logger.info(
+        f"Processing {len(merged_spec)} models across {len(grouped_records)} docker images..."
+    )
 
-    for model_id, data in merged_spec.items():
-        processed += 1
-        model_spec = data["model_spec"]
-        ci_data = data["ci_data"]
-        docker_image = model_spec.docker_image
-
-        logger.info(f"[{processed}/{len(merged_spec)}] Processing {model_id}")
-        logger.info(f"  Release image: {docker_image}")
-
-        if docker_image in processed_images:
-            logger.info("  Image already processed, using cached result")
-            cached_result = image_results.get(docker_image)
-            if cached_result == "needs_building":
-                images_to_build[docker_image].append(model_id)
-                needs_building += 1
-            elif cached_result == "exists_with_ci":
-                found_with_ci += 1
-            elif cached_result == "exists_without_ci":
-                existing_without_ci_ref[docker_image].append(model_id)
-                found_without_ci += 1
-            elif cached_result == "copied":
-                copied_from_ci += 1
-            continue
-
-        if check_image_exists(docker_image, cache=image_exists_cache):
-            logger.info("  Found image on remote container registry")
-            has_ci_backing = False
-
-            if ci_data:
-                ci_docker_image = ci_data.get("docker_image")
-                if ci_docker_image:
-                    logger.info(f"  CI image: {ci_docker_image}")
-                    if check_image_exists(ci_docker_image, cache=image_exists_cache):
-                        release_commits = extract_commits_from_tag(docker_image)
-                        ci_commits = extract_commits_from_tag(ci_docker_image)
-
-                        if commits_match(release_commits, ci_commits, model_spec):
-                            logger.info("  Has valid Models CI reference")
-                            existing_with_ci_ref[docker_image] = ci_docker_image
-                            processed_images.add(docker_image)
-                            image_results[docker_image] = "exists_with_ci"
-                            found_with_ci += 1
-                            has_ci_backing = True
-                        else:
-                            logger.info(
-                                "  Commit mismatch between release and CI images"
-                            )
-                    else:
-                        logger.info("  CI image not found on remote")
-                else:
-                    logger.info("  No CI docker_image in CI data")
-            else:
-                logger.info("  No CI data available")
-
-            if not has_ci_backing:
-                logger.info("  Existing image without Models CI reference")
-                existing_without_ci_ref[docker_image].append(model_id)
-                processed_images.add(docker_image)
-                image_results[docker_image] = "exists_without_ci"
-                found_without_ci += 1
-
-            continue
-
-        if not ci_data:
-            if docker_image in copied_images:
-                logger.warning(
-                    f"  Image already copied from {copied_images[docker_image]}, skipping build list"
-                )
-                continue
-            images_to_build[docker_image].append(model_id)
-            image_results[docker_image] = "needs_building"
-            logger.info("  No CI data available, added to images_to_be_built.json")
-            needs_building += 1
-            continue
-
-        ci_docker_image = ci_data.get("docker_image")
-        if not ci_docker_image:
-            if docker_image in copied_images:
-                logger.warning(
-                    f"  Image already copied from {copied_images[docker_image]}, skipping build list"
-                )
-                continue
-            images_to_build[docker_image].append(model_id)
-            processed_images.add(docker_image)
-            image_results[docker_image] = "needs_building"
-            logger.info(
-                "  No CI docker_image in CI data, added to images_to_be_built.json"
-            )
-            needs_building += 1
-            continue
-
-        logger.info(f"  CI image: {ci_docker_image}")
-
-        if not check_image_exists(ci_docker_image, cache=image_exists_cache):
-            logger.error("  CI image not found on remote container registry")
-            if docker_image in copied_images:
-                logger.warning(
-                    f"  Image already copied from {copied_images[docker_image]}, skipping build list"
-                )
-                continue
-            images_to_build[docker_image].append(model_id)
-            processed_images.add(docker_image)
-            image_results[docker_image] = "needs_building"
-            needs_building += 1
-            continue
-
-        release_commits = extract_commits_from_tag(docker_image)
-        ci_commits = extract_commits_from_tag(ci_docker_image)
-
-        if not commits_match(release_commits, ci_commits, model_spec):
-            logger.warning(
-                f"  Commit mismatch between release and CI images for model: {model_id}"
-            )
-            logger.warning(f"     Release image: {docker_image}")
-            logger.warning(
-                f"     Release expects: tt-metal={model_spec.tt_metal_commit}, vllm={model_spec.vllm_commit}"
-            )
-            logger.warning(f"     CI image: {ci_docker_image}")
-            logger.warning(
-                f"     CI image has: tt-metal={ci_commits[0] if ci_commits else 'unknown'}, vllm={ci_commits[1] if ci_commits and len(ci_commits) > 1 else 'unknown'}"
-            )
-            logger.warning(
-                "     This happens when multiple models in MODEL_SPECS share the same docker_image"
-            )
-            logger.warning(
-                "        but have different commits in CI data. Skipping copy to avoid mismatch."
-            )
-            if docker_image in copied_images:
-                logger.warning(
-                    f"  Image already copied from {copied_images[docker_image]}, skipping build list"
-                )
-                continue
-            images_to_build[docker_image].append(model_id)
-            processed_images.add(docker_image)
-            image_results[docker_image] = "needs_building"
-            needs_building += 1
-            continue
-
+    for index, (target_image, records) in enumerate(grouped_records.items(), start=1):
         logger.info(
-            "  Copying from Models CI container registry to release container registry"
+            f"[{index}/{len(grouped_records)}] Processing docker image: {target_image}"
         )
-        if copy_docker_image(ci_docker_image, docker_image, dry_run):
-            logger.info("  Successfully copied to release container registry")
-            copied_images[docker_image] = ci_docker_image
-
-            if docker_image in images_to_build:
-                del images_to_build[docker_image]
-
-            processed_images.add(docker_image)
-            image_results[docker_image] = "copied"
-            copied_from_ci += 1
-        else:
-            logger.error("  Failed to copy image")
-            if docker_image in copied_images:
-                logger.warning(
-                    f"  Image already copied from {copied_images[docker_image]}, skipping build list"
-                )
-                continue
-            images_to_build[docker_image].append(model_id)
-            processed_images.add(docker_image)
-            image_results[docker_image] = "needs_building"
-            needs_building += 1
+        logger.info(
+            f"  Shared by models: {', '.join(record.model_id for record in records)}"
+        )
+        image_plan = plan_image_action(target_image, records, image_exists_cache)
+        image_plan = execute_image_plan(image_plan, dry_run)
+        apply_image_plan(
+            image_plan,
+            images_to_build,
+            copied_images,
+            existing_with_ci_ref,
+            existing_without_ci_ref,
+        )
 
     unique_images_count = len(images_to_build)
-    unique_images_processed = len(processed_images)
-
-    logger.info("\n" + "=" * 80)
-    logger.info("SUMMARY")
-    logger.info("=" * 80)
-    logger.info(f"Total models processed: {processed}")
-    logger.info(f"Unique docker images processed: {unique_images_processed}")
-    logger.info(
-        f"Efficiency gain: {processed - unique_images_processed} redundant checks avoided"
+    unique_images_processed = len(grouped_records)
+    log_summary(
+        total_models=len(merged_spec),
+        unique_images_processed=unique_images_processed,
+        images_to_build=images_to_build,
+        copied_images=copied_images,
+        existing_with_ci_ref=existing_with_ci_ref,
+        existing_without_ci_ref=existing_without_ci_ref,
     )
-    logger.info(f"Existing images with CI backing: {found_with_ci}")
-    logger.info(f"Existing images without CI backing: {found_without_ci}")
-    logger.info(f"Images copied from CI: {copied_from_ci}")
-    logger.info(f"Images that need building: {needs_building}")
-    logger.info(f"Unique images to build: {unique_images_count}")
-    logger.info("=" * 80)
     return (
         images_to_build,
         unique_images_count,
@@ -570,8 +667,7 @@ def write_output(
         },
     }
 
-    with open(output_file, "w") as f:
-        json.dump(output_data, f, indent=2)
+    output_file.write_text(json.dumps(output_data, indent=2), encoding="utf-8")
     logger.info(f"Written JSON summary to {output_file}")
 
     markdown_file = output_dir / f"{prefix}_artifacts_summary.md"
@@ -624,8 +720,7 @@ def write_output(
     else:
         markdown_content += "No images need to be built.\n"
 
-    with open(markdown_file, "w") as f:
-        f.write(markdown_content)
+    markdown_file.write_text(markdown_content, encoding="utf-8")
     logger.info(f"Written markdown summary to {markdown_file}")
 
     return output_data
@@ -644,13 +739,19 @@ def write_release_notes(output_dir: Path, version: str) -> Path:
         model_diff_markdown=model_diff_markdown,
         artifacts_summary_markdown=artifacts_summary_markdown,
     )
-    notes_path.write_text(notes)
+    notes_path.write_text(notes, encoding="utf-8")
     logger.info(f"Written release notes to {notes_path}")
     return notes_path
 
 
+def emit_markdown_summary(markdown_path: Path) -> None:
+    """Write the generated markdown summary to stdout."""
+    sys.stdout.write(markdown_path.read_text(encoding="utf-8"))
+
+
 def main():
     """Main entry point for the script."""
+    configure_logging()
     default_output_dir = get_versioned_release_logs_dir()
     parser = argparse.ArgumentParser(
         description="Create release image artifacts by copying CI docker images",
@@ -777,7 +878,7 @@ def main():
     logger.info(f"Existing images with CI backing: {len(existing_with_ci_ref)}")
     logger.info(f"Existing images without CI backing: {len(existing_without_ci_ref)}")
 
-    print(open(output_dir / f"{image_target}_artifacts_summary.md").read())
+    emit_markdown_summary(output_dir / f"{image_target}_artifacts_summary.md")
 
     return 0
 
