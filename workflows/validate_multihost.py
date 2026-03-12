@@ -21,7 +21,6 @@ Validation Categories:
 
 import json
 import logging
-import os
 import subprocess
 from pathlib import Path
 
@@ -677,7 +676,7 @@ def main():
     from workflows.multihost_config import MultiHostConfig
     from workflows.multihost_orchestrator import (
         _create_config_pkl_dir_with_permissions,
-        _generate_config_pkl_dir,
+        _generate_config_pkl_path,
     )
 
     hosts = [h.strip() for h in args.hosts.split(",")]
@@ -688,7 +687,7 @@ def main():
         config_pkl_dir = args.config_pkl_dir
         # Validation only - don't create, just check
     else:
-        config_pkl_dir = _generate_config_pkl_dir(args.shared_storage_root)
+        config_pkl_dir = _generate_config_pkl_path(args.shared_storage_root)
         auto_generated = True
         # Create temp directory for validation (will be cleaned up)
         _create_config_pkl_dir_with_permissions(config_pkl_dir)

@@ -10,18 +10,18 @@ from unittest.mock import patch
 
 import pytest
 
+from workflows.utils import check_path_permissions_for_uid
 from workflows.validate_setup import (
-    _check_path_permissions_for_uid,
     _try_fix_path_permissions_for_uid,  # noqa: F401
     validate_bind_mount_permissions,
 )
 
 
 class TestCheckPathPermissionsForUid:
-    """Tests for _check_path_permissions_for_uid helper."""
+    """Tests for check_path_permissions_for_uid helper."""
 
     def test_nonexistent_path(self, tmp_path):
-        ok, reason = _check_path_permissions_for_uid(tmp_path / "nonexistent", uid=1000)
+        ok, reason = check_path_permissions_for_uid(tmp_path / "nonexistent", uid=1000)
         assert not ok
         assert "does not exist" in reason
 
@@ -30,7 +30,7 @@ class TestCheckPathPermissionsForUid:
         d = tmp_path / "owned"
         d.mkdir()
         uid = os.getuid()
-        ok, reason = _check_path_permissions_for_uid(d, uid=uid)
+        ok, reason = check_path_permissions_for_uid(d, uid=uid)
         assert ok
         assert reason == ""
 
@@ -41,7 +41,7 @@ class TestCheckPathPermissionsForUid:
         os.chmod(d, 0o300)
         try:
             uid = os.getuid()
-            ok, reason = _check_path_permissions_for_uid(d, uid=uid)
+            ok, reason = check_path_permissions_for_uid(d, uid=uid)
             assert not ok
             assert "lacks read permission" in reason
             assert "owner" in reason
@@ -52,7 +52,7 @@ class TestCheckPathPermissionsForUid:
         d = tmp_path / "writable"
         d.mkdir()
         uid = os.getuid()
-        ok, reason = _check_path_permissions_for_uid(d, uid=uid, need_write=True)
+        ok, reason = check_path_permissions_for_uid(d, uid=uid, need_write=True)
         assert ok
 
     def test_owner_lacks_write(self, tmp_path):
@@ -61,7 +61,7 @@ class TestCheckPathPermissionsForUid:
         os.chmod(d, 0o500)
         try:
             uid = os.getuid()
-            ok, reason = _check_path_permissions_for_uid(d, uid=uid, need_write=True)
+            ok, reason = check_path_permissions_for_uid(d, uid=uid, need_write=True)
             assert not ok
             assert "lacks write permission" in reason
         finally:
@@ -74,7 +74,7 @@ class TestCheckPathPermissionsForUid:
         os.chmod(d, 0o600)
         try:
             uid = os.getuid()
-            ok, reason = _check_path_permissions_for_uid(d, uid=uid)
+            ok, reason = check_path_permissions_for_uid(d, uid=uid)
             assert not ok
             assert "traverse" in reason
         finally:
@@ -88,8 +88,8 @@ class TestCheckPathPermissionsForUid:
         # UID 0 is root; use a UID that is not the owner and not in the group.
         # We use a mock to force the "other" code path.
         fake_uid = 99999
-        with patch("workflows.validate_setup._get_groups_for_uid", return_value=set()):
-            ok, reason = _check_path_permissions_for_uid(d, uid=fake_uid)
+        with patch("workflows.utils.get_groups_for_uid", return_value=set()):
+            ok, reason = check_path_permissions_for_uid(d, uid=fake_uid)
         assert ok
 
     def test_other_uid_not_world_readable(self, tmp_path):
@@ -98,8 +98,8 @@ class TestCheckPathPermissionsForUid:
         d.mkdir()
         os.chmod(d, 0o750)
         fake_uid = 99999
-        with patch("workflows.validate_setup._get_groups_for_uid", return_value=set()):
-            ok, reason = _check_path_permissions_for_uid(d, uid=fake_uid)
+        with patch("workflows.utils.get_groups_for_uid", return_value=set()):
+            ok, reason = check_path_permissions_for_uid(d, uid=fake_uid)
         assert not ok
         assert "lacks read permission" in reason
         assert "other" in reason
@@ -109,8 +109,8 @@ class TestCheckPathPermissionsForUid:
         d.mkdir()
         os.chmod(d, 0o757)
         fake_uid = 99999
-        with patch("workflows.validate_setup._get_groups_for_uid", return_value=set()):
-            ok, reason = _check_path_permissions_for_uid(
+        with patch("workflows.utils.get_groups_for_uid", return_value=set()):
+            ok, reason = check_path_permissions_for_uid(
                 d, uid=fake_uid, need_write=True
             )
         assert ok
@@ -120,8 +120,8 @@ class TestCheckPathPermissionsForUid:
         d.mkdir()
         os.chmod(d, 0o755)
         fake_uid = 99999
-        with patch("workflows.validate_setup._get_groups_for_uid", return_value=set()):
-            ok, reason = _check_path_permissions_for_uid(
+        with patch("workflows.utils.get_groups_for_uid", return_value=set()):
+            ok, reason = check_path_permissions_for_uid(
                 d, uid=fake_uid, need_write=True
             )
         assert not ok
@@ -135,10 +135,10 @@ class TestCheckPathPermissionsForUid:
         os.chmod(d, 0o750)
         fake_uid = 99999
         with patch(
-            "workflows.validate_setup._get_groups_for_uid",
+            "workflows.utils.get_groups_for_uid",
             return_value={st.st_gid},
         ):
-            ok, reason = _check_path_permissions_for_uid(d, uid=fake_uid)
+            ok, reason = check_path_permissions_for_uid(d, uid=fake_uid)
         assert ok
 
     def test_file_permissions(self, tmp_path):
@@ -147,7 +147,7 @@ class TestCheckPathPermissionsForUid:
         f.write_text("data")
         os.chmod(f, 0o644)
         uid = os.getuid()
-        ok, reason = _check_path_permissions_for_uid(f, uid=uid)
+        ok, reason = check_path_permissions_for_uid(f, uid=uid)
         assert ok
 
 
@@ -281,7 +281,7 @@ class TestValidateBindMountPermissions:
         os.chmod(d, 0o700)
         fake_uid = 99999
         args = self._make_args(image_user=str(fake_uid), host_volume=str(d))
-        with patch("workflows.validate_setup._get_groups_for_uid", return_value=set()):
+        with patch("workflows.utils.get_groups_for_uid", return_value=set()):
             validate_bind_mount_permissions(args)
         mode = os.stat(d).st_mode
         assert mode & 0o007 == 0o007
