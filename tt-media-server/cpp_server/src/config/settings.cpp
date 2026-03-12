@@ -207,6 +207,14 @@ std::string socket_host() {
     return env_string("SOCKET_HOST", defaults::SOCKET_HOST);
 }
 
+bool enable_accumulated_streaming() {
+    return env_ulong("ENABLE_ACCUMULATED_STREAMING", defaults::ENABLE_ACCUMULATED_STREAMING);
+}
+
+size_t max_accumulated_tokens() {
+    return static_cast<size_t>(env_ulong("MAX_ACCUMULATED_TOKENS", defaults::MAX_ACCUMULATED_TOKENS));
+}
+
 uint16_t socket_port() {
     return static_cast<uint16_t>(env_ulong("SOCKET_PORT", defaults::SOCKET_PORT));
 }

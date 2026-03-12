@@ -111,7 +111,10 @@ namespace defaults {
     constexpr const char* SOCKET_HOST = "localhost";
     constexpr uint16_t SOCKET_PORT = 9000;
     constexpr const char* SCHEDULING_POLICY = "prefill_first";  // "prefill_first" or "max_occupancy"
-    constexpr const char* LLM_DEVICE_BACKEND = "mock";  // "mock", "pipeline", "llama"
+    constexpr const char* LLM_DEVICE_BACKEND = "mock";  // "mock", "ttrun", "llama"
+    constexpr const bool ENABLE_ACCUMULATED_STREAMING = false;
+    constexpr size_t MAX_ACCUMULATED_TOKENS = 5;
+
 }
 
 }  // namespace tt::config
