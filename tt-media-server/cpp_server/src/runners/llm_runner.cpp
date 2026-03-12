@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <thread>
 
 namespace tt::runners {
   using namespace llm_engine;
@@ -83,7 +84,9 @@ void LLMRunner::drain_decode_results() {
       };
       strncpy(shared.task_id, dr.task_id.id.c_str(), sizeof(shared.task_id) - 1);
       shared.task_id[sizeof(shared.task_id) - 1] = '\0';
-      result_queue_->push(shared);
+      while (!result_queue_->push(shared)) {
+        std::this_thread::yield();
+      }
       continue;
     }
 
@@ -104,7 +107,9 @@ void LLMRunner::drain_decode_results() {
       };
       strncpy(shared.task_id, dr.task_id.id.c_str(), sizeof(shared.task_id) - 1);
       shared.task_id[sizeof(shared.task_id) - 1] = '\0';
-      result_queue_->push(shared);
+      while (!result_queue_->push(shared)) {
+        std::this_thread::yield();
+      }
     }
 
     if (finished) {
