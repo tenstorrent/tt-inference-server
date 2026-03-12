@@ -27,6 +27,22 @@ public:
     virtual void stop() = 0;
 
     /**
+     * Warm up the runner by preloading models and resources.
+     */
+    bool warmup() {
+        return true;
+    }
+
+    void start() {
+        // Initialize resources and prepare for inference.
+        bool is_warmed_up = warmup();
+        if (!is_warmed_up) {
+            throw std::runtime_error(std::string(runner_type()) + " warmup failed");
+        }
+        run();
+    }
+
+    /**
      * Get the runner type for identification.
      */
     virtual const char* runner_type() const = 0;
