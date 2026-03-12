@@ -12,6 +12,7 @@
 #include "domain/prefill_request.hpp"
 #include "services/streamable.hpp"
 #include "sockets/inter_server_service.hpp"
+#include "utils/thread_pool.hpp"
 
 #include <atomic>
 #include <functional>
@@ -46,6 +47,15 @@ public:
     SystemStatus get_system_status() const override;
 
     using StreamCallback = std::function<void(domain::StreamingChunkResponse&, bool)>;
+
+    void submit_streaming_request_async(
+        domain::CompletionRequest request,
+        std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback);
+
+    void submit_request_async(
+        domain::CompletionRequest request,
+        std::function<void(domain::CompletionResponse)> callback);
+
     std::optional<StreamCallback> detach_stream_callback(const std::string& task_id);
     void submit_decode_continuation(domain::CompletionRequest request, StreamCallback callback);
 
@@ -99,6 +109,9 @@ private:
     std::shared_ptr<tt::sockets::InterServerService> socket_service_;
 
     PrefillRequestCallback prefill_request_callback_;
+
+    static constexpr size_t TOKENIZER_POOL_SIZE = 4;
+    tt::utils::ThreadPool tokenizer_pool_{TOKENIZER_POOL_SIZE};
 };
 
 }

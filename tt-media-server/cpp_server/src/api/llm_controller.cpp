@@ -142,21 +142,22 @@ void LLMController::completions(
         handle_streaming(request, std::move(callback), false);
     } else {
         auto start_time = std::chrono::high_resolution_clock::now();
-        auto response = service_->submit_request(std::move(*request));
-        auto end_time = std::chrono::high_resolution_clock::now();
+        service_->submit_request_async(std::move(*request),
+            [callback = std::move(callback), start_time](domain::CompletionResponse response) {
+                auto end_time = std::chrono::high_resolution_clock::now();
 
-        response.id = "cmpl-" + response.id;
+                response.id = "cmpl-" + response.id;
 
-        // Add timing metrics to non-streaming response
-        auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        if (total_duration.count() > 0 && response.usage.completion_tokens > 0) {
-            response.usage.ttft_ms = static_cast<double>(total_duration.count());
-            if (response.usage.completion_tokens > 1) {
-                response.usage.tps = response.usage.completion_tokens * 1000.0 / total_duration.count();
-            }
-        }
+                auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+                if (total_duration.count() > 0 && response.usage.completion_tokens > 0) {
+                    response.usage.ttft_ms = static_cast<double>(total_duration.count());
+                    if (response.usage.completion_tokens > 1) {
+                        response.usage.tps = response.usage.completion_tokens * 1000.0 / total_duration.count();
+                    }
+                }
 
-        callback(drogon::HttpResponse::newHttpJsonResponse(response.toJson()));
+                callback(drogon::HttpResponse::newHttpJsonResponse(response.toJson()));
+            });
     }
 }
 
@@ -211,22 +212,23 @@ void LLMController::chat_completions(
         handle_streaming(request, std::move(callback), true);
     } else {
         auto start_time = std::chrono::high_resolution_clock::now();
-        auto completion = service_->submit_request(std::move(*request));
-        auto end_time = std::chrono::high_resolution_clock::now();
+        service_->submit_request_async(std::move(*request),
+            [callback = std::move(callback), start_time](domain::CompletionResponse completion) {
+                auto end_time = std::chrono::high_resolution_clock::now();
 
-        completion.id = "chatcmpl-" + completion.id;
+                completion.id = "chatcmpl-" + completion.id;
 
-        // Add timing metrics to non-streaming response
-        auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        if (total_duration.count() > 0 && completion.usage.completion_tokens > 0) {
-            completion.usage.ttft_ms = static_cast<double>(total_duration.count());
-            if (completion.usage.completion_tokens > 1) {
-                completion.usage.tps = completion.usage.completion_tokens * 1000.0 / total_duration.count();
-            }
-        }
+                auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+                if (total_duration.count() > 0 && completion.usage.completion_tokens > 0) {
+                    completion.usage.ttft_ms = static_cast<double>(total_duration.count());
+                    if (completion.usage.completion_tokens > 1) {
+                        completion.usage.tps = completion.usage.completion_tokens * 1000.0 / total_duration.count();
+                    }
+                }
 
-        auto chat_response = domain::ChatCompletionResponse::fromCompletionResponse(completion);
-        callback(drogon::HttpResponse::newHttpJsonResponse(chat_response.toJson()));
+                auto chat_response = domain::ChatCompletionResponse::fromCompletionResponse(completion);
+                callback(drogon::HttpResponse::newHttpJsonResponse(chat_response.toJson()));
+            });
     }
 }
 
@@ -269,7 +271,7 @@ void LLMController::handle_streaming(
             auto second_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
             auto first_content_chunk = std::make_shared<std::atomic<bool>>(true);
 
-            service_->submit_streaming_request(
+            service_->submit_streaming_request_async(
                 *req_ptr,
                 [loop, stream_ptr, done, completion_id, model, created,
                  is_chat, include_usage, continuous_usage, completion_tokens,

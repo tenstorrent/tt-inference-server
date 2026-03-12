@@ -208,6 +208,8 @@ void LLMService::stop() {
         socket_service_->stop();
     }
 
+    tokenizer_pool_.shutdown();
+
     is_ready_ = false;
     TT_LOG_INFO("[LLMService] Stopped");
     queue_manager_->clear();
@@ -405,6 +407,37 @@ void LLMService::process_streaming_request(
     sequence->num_prompt_tokens_ = prompt.size();
     sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(tt::utils::mapper::map_sampling_params(request));
     queue_manager_->task_queue->push(*std::move(sequence));
+}
+
+void LLMService::submit_streaming_request_async(
+    domain::CompletionRequest request,
+    std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback) {
+
+    tokenizer_pool_.submit(
+        [this, req = std::move(request), cb = std::move(callback)]() mutable {
+            ZoneScopedN("LLMService::submit_streaming_request_async");
+            pre_process(req);
+            process_streaming_request(std::move(req),
+                [this, cb = std::move(cb)](
+                    domain::StreamingChunkResponse& response, bool is_final) {
+                    streaming_post_process(response);
+                    cb(response, is_final);
+                });
+        });
+}
+
+void LLMService::submit_request_async(
+    domain::CompletionRequest request,
+    std::function<void(domain::CompletionResponse)> callback) {
+
+    tokenizer_pool_.submit(
+        [this, req = std::move(request), cb = std::move(callback)]() mutable {
+            ZoneScopedN("LLMService::submit_request_async");
+            pre_process(req);
+            auto response = process_request(std::move(req));
+            post_process(response);
+            cb(std::move(response));
+        });
 }
 
 void LLMService::post_process(domain::CompletionResponse&) const {
