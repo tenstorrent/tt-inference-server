@@ -6826,16 +6826,16 @@
           "device_model_spec": {
             "device": "GALAXY",
             "max_concurrency": 256,
-            "max_context": 65536,
+            "max_context": 2048,
             "perf_targets_map": {},
             "default_impl": true,
             "perf_reference": [],
             "vllm_args": {
               "model": "deepseek-ai/DeepSeek-R1-0528",
               "block_size": "64",
-              "max_model_len": "65536",
+              "max_model_len": "2048",
               "max_num_seqs": "256",
-              "max_num_batched_tokens": "65536",
+              "max_num_batched_tokens": "2048",
               "max-log-len": "32",
               "seed": "9472",
               "override_tt_config": "{}"
@@ -6852,7 +6852,6 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
             "MESH_DEVICE": "TG",
             "ARCH_NAME": "wormhole_b0"
           },
@@ -6873,7 +6872,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -6896,16 +6895,16 @@
           "device_model_spec": {
             "device": "DUAL_GALAXY",
             "max_concurrency": 256,
-            "max_context": 131072,
+            "max_context": 2048,
             "perf_targets_map": {},
             "default_impl": true,
             "perf_reference": [],
             "vllm_args": {
               "model": "deepseek-ai/DeepSeek-R1-0528",
               "block_size": "32",
-              "max_model_len": "131072",
+              "max_model_len": "2048",
               "max_num_seqs": "32",
-              "max_num_batched_tokens": "131072",
+              "max_num_batched_tokens": "2048",
               "max-log-len": "32",
               "seed": "9472",
               "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\", \"fabric_reliability_mode\": \"RELAXED_INIT\", \"trace_mode\": \"none\", \"env_passthrough\": [\"DEEPSEEK_V3_CACHE\", \"DEEPSEEK_V3_HF_MODEL\"]}",
@@ -6930,7 +6929,6 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
             "MESH_DEVICE": "(8,8)"
           },
           "vllm_commit": "22be241",
@@ -6958,7 +6956,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -6981,16 +6979,16 @@
           "device_model_spec": {
             "device": "QUAD_GALAXY",
             "max_concurrency": 512,
-            "max_context": 131072,
+            "max_context": 2048,
             "perf_targets_map": {},
             "default_impl": true,
             "perf_reference": [],
             "vllm_args": {
               "model": "deepseek-ai/DeepSeek-R1-0528",
               "block_size": "32",
-              "max_model_len": "131072",
+              "max_model_len": "2048",
               "max_num_seqs": "32",
-              "max_num_batched_tokens": "131072",
+              "max_num_batched_tokens": "2048",
               "max-log-len": "32",
               "seed": "9472",
               "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\", \"fabric_reliability_mode\": \"RELAXED_INIT\", \"trace_mode\": \"none\", \"env_passthrough\": [\"DEEPSEEK_V3_CACHE\", \"DEEPSEEK_V3_HF_MODEL\"]}",
@@ -7015,7 +7013,6 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
             "MESH_DEVICE": "(8,16)"
           },
           "vllm_commit": "22be241",
@@ -7043,7 +7040,7 @@
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }

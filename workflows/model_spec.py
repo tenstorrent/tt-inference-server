@@ -1489,17 +1489,21 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32 * 8,
-                max_context=64 * 1024,
+                max_context=2048,
                 default_impl=True,
+                vllm_args={
+                    "max_model_len": "2048",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.DUAL_GALAXY,
                 max_concurrency=32 * 8,  # 32 per DP rank * 8 ranks
-                max_context=128 * 1024,
+                max_context=2048,
                 default_impl=True,
                 vllm_args={
                     "data_parallel_size": 8,
                     "block_size": "32",
+                    "max_model_len": "2048",
                 },
                 override_tt_config={
                     "fabric_config": "FABRIC_1D",
@@ -1511,11 +1515,12 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.QUAD_GALAXY,
                 max_concurrency=32 * 16,  # 32 per DP rank * 16 ranks
-                max_context=128 * 1024,
+                max_context=2048,
                 default_impl=True,
                 vllm_args={
                     "data_parallel_size": 16,
                     "block_size": "32",
+                    "max_model_len": "2048",
                 },
                 override_tt_config={
                     "fabric_config": "FABRIC_1D",
@@ -1525,10 +1530,8 @@ llm_templates = [
                 },
             ),
         ],
-        env_vars={
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
-        },
         status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=[
