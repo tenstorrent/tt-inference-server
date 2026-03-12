@@ -259,7 +259,9 @@ def generate_model_specs_json(output_path: Path = None) -> Path:
         output_path = get_repo_root_path() / "default_model_spec.json"
 
     num_specs = export_model_specs_json(MODEL_SPECS, output_path)
-    logger.info(f"Generated default_model_spec.json with {num_specs} specs at {output_path}")
+    logger.info(
+        f"Generated default_model_spec.json with {num_specs} specs at {output_path}"
+    )
     return output_path
 
 
@@ -1532,7 +1534,11 @@ if __name__ == "__main__":
         "--force-build", action="store_true", help="Force rebuild even if image exists."
     )
     parser.add_argument("--release", action="store_true", help="Mark build as release.")
-    parser.add_argument("--multihost", action="store_true", help="Build multihost image for distributed inference.")
+    parser.add_argument(
+        "--multihost",
+        action="store_true",
+        help="Build multihost image for distributed inference.",
+    )
     parser.add_argument("--push", action="store_true", help="Push containers.")
     parser.add_argument(
         "--ubuntu-version",

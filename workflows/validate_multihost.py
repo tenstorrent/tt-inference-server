@@ -92,7 +92,9 @@ def validate_multihost_bind_mount_permissions(
 
     # SHARED_STORAGE_ROOT only needs read access (for traversal)
     shared_root = Path(multihost_config.shared_storage_root)
-    ok, reason = check_path_permissions_for_uid(shared_root, container_uid, need_write=False)
+    ok, reason = check_path_permissions_for_uid(
+        shared_root, container_uid, need_write=False
+    )
     if not ok:
         errors.append(
             f"SHARED_STORAGE_ROOT={shared_root}: Container user (UID {container_uid}) needs read access.\n"
@@ -100,11 +102,15 @@ def validate_multihost_bind_mount_permissions(
             f"  Fix: chmod o+rx {shared_root}"
         )
     else:
-        logger.info(f"✅ Bind mount permission check passed for SHARED_STORAGE_ROOT={shared_root}")
+        logger.info(
+            f"✅ Bind mount permission check passed for SHARED_STORAGE_ROOT={shared_root}"
+        )
 
     # CONFIG_PKL_DIR needs read+write access
     config_pkl = Path(multihost_config.config_pkl_dir)
-    ok, reason = check_path_permissions_for_uid(config_pkl, container_uid, need_write=True)
+    ok, reason = check_path_permissions_for_uid(
+        config_pkl, container_uid, need_write=True
+    )
     if not ok:
         errors.append(
             f"CONFIG_PKL_DIR={config_pkl}: Container user (UID {container_uid}) needs read+write access.\n"
@@ -113,14 +119,18 @@ def validate_multihost_bind_mount_permissions(
             f"       or: chmod -R o+rwx {config_pkl}"
         )
     else:
-        logger.info(f"✅ Bind mount permission check passed for CONFIG_PKL_DIR={config_pkl}")
+        logger.info(
+            f"✅ Bind mount permission check passed for CONFIG_PKL_DIR={config_pkl}"
+        )
 
     # Optional paths from multihost_config (set via .env or interactive input)
     # Use getattr to handle both MultihostConfig variants
     deepseek_model = getattr(multihost_config, "deepseek_hf_model", None)
     if deepseek_model:
         path = Path(deepseek_model)
-        ok, reason = check_path_permissions_for_uid(path, container_uid, need_write=False)
+        ok, reason = check_path_permissions_for_uid(
+            path, container_uid, need_write=False
+        )
         if not ok:
             errors.append(
                 f"DEEPSEEK_V3_HF_MODEL={path}: Container user (UID {container_uid}) needs read access.\n"
@@ -128,7 +138,9 @@ def validate_multihost_bind_mount_permissions(
                 f"  Fix: chmod -R o+rx {path}"
             )
         else:
-            logger.info(f"✅ Bind mount permission check passed for DEEPSEEK_V3_HF_MODEL={path}")
+            logger.info(
+                f"✅ Bind mount permission check passed for DEEPSEEK_V3_HF_MODEL={path}"
+            )
 
     deepseek_cache = getattr(multihost_config, "deepseek_cache", None)
     if deepseek_cache:
@@ -141,7 +153,9 @@ def validate_multihost_bind_mount_permissions(
             )
         else:
             # If cache exists, only read access is needed (pre-built cache)
-            ok, reason = check_path_permissions_for_uid(path, container_uid, need_write=False)
+            ok, reason = check_path_permissions_for_uid(
+                path, container_uid, need_write=False
+            )
             if not ok:
                 errors.append(
                     f"DEEPSEEK_V3_CACHE={path}: Container user (UID {container_uid}) needs read access.\n"
@@ -149,7 +163,9 @@ def validate_multihost_bind_mount_permissions(
                     f"  Fix: chmod -R o+rx {path}"
                 )
             else:
-                logger.info(f"✅ Bind mount permission check passed for DEEPSEEK_V3_CACHE={path}")
+                logger.info(
+                    f"✅ Bind mount permission check passed for DEEPSEEK_V3_CACHE={path}"
+                )
 
     if errors:
         raise ValueError(
@@ -393,7 +409,9 @@ def validate_host_system_software(
                 else:
                     all_kmd_versions.append((host, kmd_version))
 
-            logger.info(f"✅ tt-smi on {host}: FW={fw_versions_on_host}, KMD={kmd_version}")
+            logger.info(
+                f"✅ tt-smi on {host}: FW={fw_versions_on_host}, KMD={kmd_version}"
+            )
 
         except json.JSONDecodeError as e:
             errors.append(f"Failed to parse tt-smi JSON from {host}: {e}")
@@ -411,7 +429,9 @@ def validate_host_system_software(
             f"  Found versions: {version_details}"
         )
     elif unique_fw_versions:
-        logger.info(f"✅ FW bundle version consistent across all hosts: {unique_fw_versions.pop()}")
+        logger.info(
+            f"✅ FW bundle version consistent across all hosts: {unique_fw_versions.pop()}"
+        )
 
     # Validate FW/KMD versions meet requirements (if model_spec has requirements)
     if model_spec and hasattr(model_spec, "system_requirements"):
@@ -422,7 +442,10 @@ def validate_host_system_software(
                 from packaging.version import Version
 
                 # Check firmware requirements
-                if hasattr(system_requirements, "firmware") and system_requirements.firmware:
+                if (
+                    hasattr(system_requirements, "firmware")
+                    and system_requirements.firmware
+                ):
                     fw_requirement = system_requirements.firmware
                     for fw_version in all_fw_versions:
                         try:
@@ -435,7 +458,9 @@ def validate_host_system_software(
                                 )
                                 break  # Only report once since all FW versions should match
                         except Exception as e:
-                            logger.warning(f"Could not parse FW version {fw_version}: {e}")
+                            logger.warning(
+                                f"Could not parse FW version {fw_version}: {e}"
+                            )
 
                 # Check KMD requirements
                 if hasattr(system_requirements, "kmd") and system_requirements.kmd:
@@ -450,9 +475,13 @@ def validate_host_system_software(
                                     f"requirement {kmd_requirement.specifier}"
                                 )
                         except Exception as e:
-                            logger.warning(f"Could not parse KMD version {kmd_version} on {host}: {e}")
+                            logger.warning(
+                                f"Could not parse KMD version {kmd_version} on {host}: {e}"
+                            )
             except ImportError:
-                logger.warning("packaging module not available, skipping FW/KMD version validation")
+                logger.warning(
+                    "packaging module not available, skipping FW/KMD version validation"
+                )
 
     return errors
 
@@ -708,7 +737,9 @@ def main():
         # Derive device type from number of hosts
         device_map = {2: "dual-galaxy", 4: "quad-galaxy"}
         if len(hosts) not in device_map:
-            logger.error(f"Unsupported number of hosts: {len(hosts)}. Supported: 2 or 4")
+            logger.error(
+                f"Unsupported number of hosts: {len(hosts)}. Supported: 2 or 4"
+            )
             sys.exit(1)
         device = device_map[len(hosts)]
 
@@ -724,7 +755,10 @@ def main():
     logger.info("=" * 60)
     logger.info(f"Hosts: {hosts}")
     logger.info(f"Shared storage root: {args.shared_storage_root}")
-    logger.info(f"Config pkl dir: {config_pkl_dir}" + (" (auto-generated)" if auto_generated else ""))
+    logger.info(
+        f"Config pkl dir: {config_pkl_dir}"
+        + (" (auto-generated)" if auto_generated else "")
+    )
     logger.info(f"MPI interface: {args.mpi_interface}")
     if args.model:
         logger.info(f"Model: {args.model}")
