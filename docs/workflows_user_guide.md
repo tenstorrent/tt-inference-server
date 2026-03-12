@@ -252,7 +252,7 @@ See [Docker Volume Options](../workflows/README.md#docker-volume-options) for de
 
 Each model implementation is mapped to a pre-built release Docker Image that contains pre-built tt-metal and vLLM source builds. These Docker images are tested with the `release` workflow to ensure correctness for each model supported.
 
-The current model support tables are in the docs model support pages, starting here: [LLM Models](./model_support/llm/README.md)
+The Docker image for each model is listed in the per-model model support pages, starting here: [LLM Models](./model_support/llm/README.md)
 
 ## Release Workflow
 
