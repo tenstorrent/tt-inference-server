@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-import os
 from pathlib import Path
 
 from huggingface_hub import hf_hub_download, list_repo_files
+from utils.logger import TTLogger
+
+logger = TTLogger(__name__)
 
 
 def _find_safetensors_filename(repo_id: str) -> str:
@@ -35,13 +37,20 @@ def _find_safetensors_filename(repo_id: str) -> str:
 def resolve_lora_path(lora_path: str) -> str:
     """Resolve a LoRA path to a guaranteed local file.
 
-    If lora_path is an existing local file, returns the resolved absolute path.
-    Otherwise treats it as an HF repo ID, discovers the safetensors filename,
-    and downloads via hf_hub_download (cached by HF hub).
+    If *lora_path* is an existing local file it is returned as-is.
+    Otherwise it is treated as an HF repo ID (``org/name``) and
+    downloaded via ``hf_hub_download`` into the standard HF cache
+    (``$HF_HOME/hub/``), same as base model weights.
+
+    HuggingFace handles caching, deduplication, and concurrent-download
+    locking internally so no extra copy or lock is needed here.
     """
     if Path(lora_path).is_file():
         return str(Path(lora_path).resolve())
 
     filename = _find_safetensors_filename(lora_path)
-    cache_dir = os.environ.get("HF_HOME")
-    return hf_hub_download(repo_id=lora_path, filename=filename, cache_dir=cache_dir)
+
+    logger.info("Resolving LoRA %s/%s via HF cache", lora_path, filename)
+    local_path = hf_hub_download(repo_id=lora_path, filename=filename)
+    logger.info("LoRA resolved: %s", local_path)
+    return local_path
