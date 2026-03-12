@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "filters/security_filter.hpp"
+#include "utils/logger.hpp"
 
 #include <cstdlib>
-#include <iostream>
 
 // Static member definitions
 std::string SecurityFilter::cachedToken_;
@@ -14,10 +14,10 @@ void SecurityFilter::initializeToken() {
     const char* envToken = std::getenv("OPENAI_API_KEY");
     if (envToken && envToken[0] != '\0') {
         cachedToken_ = envToken;
-        std::cout << "[SecurityFilter] Using OPENAI_API_KEY from environment" << std::endl;
+        TT_LOG_INFO("[SecurityFilter] Using OPENAI_API_KEY from environment");
     } else {
         cachedToken_ = "your-secret-key";
-        std::cout << "[SecurityFilter] OPENAI_API_KEY not set, using default key" << std::endl;
+        TT_LOG_WARN("[SecurityFilter] OPENAI_API_KEY not set, using default key");
     }
 }
 

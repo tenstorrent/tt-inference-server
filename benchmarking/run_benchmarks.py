@@ -164,6 +164,7 @@ def build_benchmark_command(
         "--random-output-len", str(osl),
         "--percentile-metrics", "ttft,tpot,itl,e2el",  # must add e2el in order for it to be logged
         "--save-result",
+        "--save-detailed",
         "--result-filename", str(result_filename),
     ]
 

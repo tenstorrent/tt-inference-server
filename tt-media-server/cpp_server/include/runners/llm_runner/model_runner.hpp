@@ -3,26 +3,16 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 #include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner/sequence.hpp"
-#include "profiling/tracy.hpp"
+#include "utils/concurrent_queue.hpp"
 
 namespace llm_engine {
 
 using DecodeCallback = std::function<void(const TokenResult&)>;
-
-class DecodeQueue {
- public:
-  void push(const TokenResult& result);
-  std::vector<TokenResult> drain();
-
- private:
-  TracyLockable(std::mutex, mutex_);
-  std::vector<TokenResult> pending_;
-};
+using DecodeQueue = ConcurrentQueue<TokenResult>;
 
 class IModelRunner {
  public:

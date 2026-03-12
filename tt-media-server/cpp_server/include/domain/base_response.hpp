@@ -1,14 +1,13 @@
-// SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-
 #pragma once
 
-#include <string>
+#include "domain/task_id.hpp"
 
 namespace tt::domain {
 
 struct BaseResponse {
-    std::string task_id;
+    TaskID task_id;
+
+    explicit BaseResponse(TaskID task_id) : task_id(std::move(task_id)) {}
 };
 
 } // namespace tt::domain

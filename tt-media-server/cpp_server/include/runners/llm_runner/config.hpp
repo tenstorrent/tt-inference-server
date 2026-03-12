@@ -8,8 +8,13 @@ namespace llm_engine {
 
 enum class ModelRunnerType {
   Mock,
-  TtRun,
+  Pipeline,
   Llama
+};
+
+enum class SchedulingPolicy {
+  PREFILL_FIRST,
+  MAX_OCCUPANCY,
 };
 
 struct Config {
@@ -22,6 +27,7 @@ struct Config {
   int kvcache_block_size = 256;
   int num_kvcache_blocks = 512;
   ModelRunnerType runner_type = ModelRunnerType::Mock;
+  SchedulingPolicy scheduling_policy = SchedulingPolicy::PREFILL_FIRST;
 };
 
 }  // namespace llm_engine

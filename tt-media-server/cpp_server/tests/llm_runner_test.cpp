@@ -48,9 +48,10 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   tt::runners::LLMRunner engine{config, &result_queue, task_queue.get()};
 
   std::vector<TaskID> task_ids;
+  int id_counter = 0;
   for (const auto& req : requests) {
     Sequence& seq =
-        engine.scheduler().add_request(req.prompt, {.max_tokens = req.max_tokens});
+        engine.scheduler().add_request(std::move(TaskID(TaskID::generate())), req.prompt, {.max_tokens = req.max_tokens});
     task_ids.push_back(seq.task_id);
   }
 
@@ -61,7 +62,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
     tt::ipc::SharedToken token;
     while (finished_count.load() < total_requests) {
       if (result_queue.pop(token)) {
-        TaskID tid;
+        TaskID tid(TaskID(std::string(token.task_id)));
         tid.id = std::string(token.task_id);
         received_tokens[tid].push_back(static_cast<int64_t>(token.token_id));
         if (token.is_final()) {
@@ -72,7 +73,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
     engine.stop();
   });
 
-  engine.run();
+  engine.start();
   consumer.join();
 
   ASSERT_EQ(finished_count.load(), total_requests);

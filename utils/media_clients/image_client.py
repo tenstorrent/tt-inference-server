@@ -675,6 +675,9 @@ class ImageClientStrategy(BaseMediaStrategy):
         result = await eval_test._run_specific_test_async()
 
         if not result.get("success"):
+            logger.error(
+                f"ImageGenerationEvalsTest ACCURACY_CHECK failed: error={result.get('error')}"
+            )
             error = result.get("error", "ImageGenerationEvalsTest failed")
             raise RuntimeError(error)
 
