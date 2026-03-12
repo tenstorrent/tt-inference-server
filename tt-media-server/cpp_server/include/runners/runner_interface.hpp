@@ -16,12 +16,6 @@ public:
     virtual ~IRunner() = default;
 
     /**
-     * Start the runner and begin processing.
-     * This method should run the main inference loop.
-     */
-    virtual void run() = 0;
-
-    /**
      * Stop the runner gracefully.
      */
     virtual void stop() = 0;
@@ -46,6 +40,13 @@ public:
      * Get the runner type for identification.
      */
     virtual const char* runner_type() const = 0;
+
+private:
+    /**
+     * Start the runner and begin processing.
+     * This method should run the main inference loop.
+     */
+    virtual void run() = 0;
 };
 
 } // namespace tt::runners
