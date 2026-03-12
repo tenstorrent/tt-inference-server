@@ -65,55 +65,39 @@ class TestResolveLoraPath:
         result = resolve_lora_path(str(lora_file))
         assert result == str(lora_file.resolve())
 
-    def test_hf_repo_id_downloads(self):
-        expected_path = "/cache/models/lora.safetensors"
+    def test_hf_repo_delegates_to_hf_hub_download(self, tmp_path):
+        hf_cached = str(tmp_path / "hub" / "snapshots" / "abc123" / LORA_FILENAME)
+
         with patch(
             "utils.lora_utils.list_repo_files",
             return_value=[LORA_FILENAME],
         ):
             with patch(
                 "utils.lora_utils.hf_hub_download",
-                return_value=expected_path,
+                return_value=hf_cached,
             ) as mock_download:
                 result = resolve_lora_path(REPO_ID)
 
-        assert result == expected_path
+        assert result == hf_cached
         mock_download.assert_called_once_with(
             repo_id=REPO_ID,
             filename=LORA_FILENAME,
-            cache_dir=None,
         )
 
-    def test_hf_repo_uses_hf_home_env(self, monkeypatch):
-        monkeypatch.setenv("HF_HOME", "/custom/cache")
-        expected_path = "/custom/cache/lora.safetensors"
-        with patch(
-            "utils.lora_utils.list_repo_files",
-            return_value=[LORA_FILENAME],
-        ):
-            with patch(
-                "utils.lora_utils.hf_hub_download",
-                return_value=expected_path,
-            ) as mock_download:
-                resolve_lora_path(REPO_ID)
+    def test_nonexistent_local_path_treated_as_hf_repo(self, tmp_path):
+        hf_cached = str(tmp_path / "hub" / "snapshots" / "abc123" / "model.safetensors")
 
-        mock_download.assert_called_once_with(
-            repo_id=REPO_ID,
-            filename=LORA_FILENAME,
-            cache_dir="/custom/cache",
-        )
-
-    def test_nonexistent_local_path_treated_as_hf_repo(self):
         with patch(
             "utils.lora_utils.list_repo_files",
             return_value=["model.safetensors"],
         ):
             with patch(
                 "utils.lora_utils.hf_hub_download",
-                return_value="/cache/model.safetensors",
+                return_value=hf_cached,
             ):
                 result = resolve_lora_path("/nonexistent/path.safetensors")
-                assert result == "/cache/model.safetensors"
+
+        assert result == hf_cached
 
     def test_download_failure_propagates(self):
         with patch(
