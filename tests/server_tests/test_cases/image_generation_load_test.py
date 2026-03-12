@@ -30,7 +30,7 @@ headers = {
 
 class ImageGenerationLoadTest(BaseTest):
     async def _run_specific_test_async(self):
-        self.url = f"http://localhost:{self.service_port}/v1/images/generations"
+        self.url = f"http://localhost:{self.service_port}/image/generations"
         print(self.targets)
         devices = self.targets.get("num_of_devices", 1)
         image_generation_target_time = self.targets.get(
@@ -45,25 +45,17 @@ class ImageGenerationLoadTest(BaseTest):
             average_duration,
         ) = await self.test_concurrent_image_generation(batch_size=devices)
 
-        success = requests_duration <= image_generation_target_time
-        logger.info(
-            "Load test result: duration=%.2fs, target=%.2fs, success=%s",
-            requests_duration,
-            image_generation_target_time,
-            success,
-        )
-
         return {
             "requests_duration": requests_duration,
             "average_duration": average_duration,
             "target_time": image_generation_target_time,
             "devices": devices,
-            "success": success,
+            "success": requests_duration <= image_generation_target_time,
         }
 
     async def test_concurrent_image_generation(self, batch_size):
         async def timed_request(session, index):
-            logger.info("Starting request %s", index)
+            print(f"Starting request {index}")
             try:
                 start = time.perf_counter()
                 async with session.post(
@@ -72,25 +64,17 @@ class ImageGenerationLoadTest(BaseTest):
                     duration = time.perf_counter() - start
                     if response.status == 200:
                         await response.json()
-                    else:
-                        body = await response.text()
-                        logger.error(
-                            "[%s] HTTP %s: %s",
-                            index,
-                            response.status,
-                            body[:500],
-                        )
-                    logger.info(
-                        "[%s] Status: %s, Time: %.2fs", index, response.status, duration
+                    print(
+                        f"[{index}] Status: {response.status}, Time: {duration:.2f}s",
                     )
                     return duration
 
             except Exception as e:
                 duration = time.perf_counter() - start
-                logger.error("[%s] Exception after %.2fs: %s", index, duration, e)
+                print(f"[{index}] Error after {duration:.2f}s: {e}")
                 raise
 
-        # NOTE: warmup never runs due to early return inside first iteration
+        # First iteration is warmup, second is measured (original behavior)
         for iteration in range(2):
             session_timeout = aiohttp.ClientTimeout(total=2000)
             async with aiohttp.ClientSession(
@@ -103,4 +87,13 @@ class ImageGenerationLoadTest(BaseTest):
                 avg_duration = total_duration / batch_size
                 return requests_duration, avg_duration
             if iteration == 0:
-                logger.info("Warmup run done.")
+                print("🔥 Warm up run done.")
+
+        print(f"\n🚀 Time taken for individual concurrent requests : {results}")
+        print(
+            f"\n🚀 Total time for {batch_size} concurrent requests: {requests_duration:.2f}s"
+        )
+        print(
+            f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
+        )
+        print(f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")
