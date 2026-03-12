@@ -7,7 +7,7 @@ from pathlib import Path
 from huggingface_hub import hf_hub_download, list_repo_files
 from utils.logger import TTLogger
 
-logger = TTLogger(__name__)
+logger = TTLogger()
 
 
 def _find_safetensors_filename(repo_id: str) -> str:
