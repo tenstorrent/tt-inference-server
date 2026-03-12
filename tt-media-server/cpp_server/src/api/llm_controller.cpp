@@ -7,8 +7,10 @@
 #include "domain/chat_completion_response.hpp"
 #include "domain/completion_response.hpp"
 #include "profiling/tracy.hpp"
+#include "utils/logger.hpp"
 
 #include <memory>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <chrono>
@@ -24,7 +26,7 @@ namespace tt::api {
 
 LLMController::LLMController() {
     if (!tt::config::is_llm_service_enabled()) {
-        std::cout << "[LLMController] Skipping initialization (TT_MODEL_SERVICE != llm)" << std::endl;
+        TT_LOG_INFO("[LLMController] Skipping initialization (TT_MODEL_SERVICE != llm)");
         return;
     }
 
@@ -33,7 +35,7 @@ LLMController::LLMController() {
         throw std::runtime_error("[LLMController] LLM service not found in service fabric. "
                                  "Ensure register_services() is called before Drogon starts.");
     }
-    std::cout << "[LLMController] Initialized (service already started)" << std::endl;
+    TT_LOG_INFO("[LLMController] Initialized (service already started)");
 }
 
 std::string LLMController::generate_completion_id() {
@@ -77,10 +79,11 @@ void LLMController::completions(
         return;
     }
 
-    domain::CompletionRequest request;
+    std::shared_ptr<domain::CompletionRequest> request;
     try {
-        request = domain::CompletionRequest::fromJson(*json);
-        request.task_id = generate_completion_id();
+        domain::TaskID task_id(generate_completion_id());
+        request = std::make_shared<domain::CompletionRequest>(
+            domain::CompletionRequest::fromJson(*json, std::move(task_id)));
     } catch (const std::exception& e) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
             error_json(std::string("Failed to parse request: ") + e.what(), "invalid_request_error"));
@@ -97,11 +100,11 @@ void LLMController::completions(
         return;
     }
 
-    if (request.stream) {
-        handle_streaming(std::move(request), std::move(callback), false);
+    if (request->stream) {
+        handle_streaming(request, std::move(callback), false);
     } else {
         auto start_time = std::chrono::high_resolution_clock::now();
-        auto response = service_->submit_request(std::move(request));
+        auto response = service_->submit_request(std::move(*request));
         auto end_time = std::chrono::high_resolution_clock::now();
 
         response.id = "cmpl-" + response.id;
@@ -133,10 +136,10 @@ void LLMController::chat_completions(
         return;
     }
 
-    domain::ChatCompletionRequest chat_req;
+    std::optional<domain::ChatCompletionRequest> chat_req_opt;
     try {
-        chat_req = domain::ChatCompletionRequest::fromJson(*json);
-        chat_req.task_id = generate_completion_id();
+        domain::TaskID task_id(generate_completion_id());
+        chat_req_opt = domain::ChatCompletionRequest::fromJson(*json, std::move(task_id));
     } catch (const std::exception& e) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
             error_json(std::string("Failed to parse request: ") + e.what(), "invalid_request_error"));
@@ -144,6 +147,8 @@ void LLMController::chat_completions(
         callback(resp);
         return;
     }
+
+    domain::ChatCompletionRequest& chat_req = *chat_req_opt;
 
     if (chat_req.messages.empty()) {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(
@@ -162,13 +167,13 @@ void LLMController::chat_completions(
         return;
     }
 
-    domain::CompletionRequest request = chat_req.to_completion_request();
+    auto request = std::make_shared<domain::CompletionRequest>(chat_req.to_completion_request());
 
-    if (request.stream) {
-        handle_streaming(std::move(request), std::move(callback), true);
+    if (request->stream) {
+        handle_streaming(request, std::move(callback), true);
     } else {
         auto start_time = std::chrono::high_resolution_clock::now();
-        auto completion = service_->submit_request(std::move(request));
+        auto completion = service_->submit_request(std::move(*request));
         auto end_time = std::chrono::high_resolution_clock::now();
 
         completion.id = "chatcmpl-" + completion.id;
@@ -188,26 +193,26 @@ void LLMController::chat_completions(
 }
 
 void LLMController::handle_streaming(
-    domain::CompletionRequest request,
+    std::shared_ptr<domain::CompletionRequest> req_ptr,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     bool is_chat) const {
 
     ZoneScopedN("API::handle_streaming");
 
     const std::string completion_id =
-        (is_chat ? "chatcmpl-" : "cmpl-") + request.task_id;
-    const std::string model = request.model.value_or("default");
+        (is_chat ? "chatcmpl-" : "cmpl-") + req_ptr->task_id.id;
+    const std::string model = req_ptr->model.value_or("default");
     const int64_t created = static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
 
-    const bool include_usage = !request.stream_options.has_value()
-        || request.stream_options->include_usage;  // Default to true if not specified
-    const bool continuous_usage = request.stream_options.has_value()
-        && request.stream_options->continuous_usage_stats;
+    const bool include_usage = !req_ptr->stream_options.has_value()
+        || req_ptr->stream_options->include_usage;  // Default to true if not specified
+    const bool continuous_usage = req_ptr->stream_options.has_value()
+        && req_ptr->stream_options->continuous_usage_stats;
 
     auto resp = drogon::HttpResponse::newAsyncStreamResponse(
-        [this, req = std::move(request), completion_id, model, created,
+        [this, req_ptr, completion_id, model, created,
          is_chat, include_usage, continuous_usage](
             drogon::ResponseStreamPtr stream) mutable {
             trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
@@ -224,10 +229,10 @@ void LLMController::handle_streaming(
             auto first_content_chunk = std::make_shared<std::atomic<bool>>(true);
 
             service_->submit_streaming_request(
-                std::move(req),
+                *req_ptr,
                 [loop, stream_ptr, done, completion_id, model, created,
                  is_chat, include_usage, continuous_usage, completion_tokens,
-                 start_time, first_token_time, second_token_time, first_content_chunk](
+                 start_time, first_token_time, second_token_time, first_content_chunk, req_ptr](
                     const domain::StreamingChunkResponse& chunk, bool is_final) {
                     if (done->load() || !*stream_ptr) {
                         return;
@@ -248,14 +253,14 @@ void LLMController::handle_streaming(
                             std::optional<domain::CompletionUsage> usage;
                             if (continuous_usage) {
                                 // Only send token counts during streaming, timing metrics come with final chunk
-                                usage = domain::CompletionUsage{0, current_tokens, current_tokens, std::nullopt, std::nullopt};
+                                usage = domain::CompletionUsage{req_ptr->prompt_tokens_count, current_tokens, current_tokens, std::nullopt, std::nullopt};
                             }
                             auto stream_chunk = domain::ChatCompletionStreamChunk::makeContentChunk(
                                 completion_id, model, created, chunk.choices[0], usage);
                             if (first_content_chunk->exchange(false)) {
                                 std::optional<domain::CompletionUsage> initial_usage;
                                 if (continuous_usage) {
-                                    initial_usage = domain::CompletionUsage{0, 0, 0, std::nullopt, std::nullopt};
+                                    initial_usage = domain::CompletionUsage{req_ptr->prompt_tokens_count, 0, 0, std::nullopt, std::nullopt};
                                 }
                                 auto initial_chunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
                                     completion_id, model, created, initial_usage);
@@ -265,7 +270,7 @@ void LLMController::handle_streaming(
                             }
                         } else if (!chunk.choices[0].text.empty() ||
                                    !chunk.choices[0].finish_reason.has_value()) {
-                            domain::StreamingChunkResponse out;
+                            domain::StreamingChunkResponse out(req_ptr->task_id);
                             out.id = completion_id;
                             out.object = "text_completion";
                             out.model = model;
@@ -286,11 +291,11 @@ void LLMController::handle_streaming(
 
                             [stream_ptr, done, is_chat, include_usage,
                              completion_id, model, created, completion_tokens,
-                             start_time, first_token_time, second_token_time]() {
+                             start_time, first_token_time, second_token_time, req_ptr]() {
                                 if (!done->exchange(true) && *stream_ptr) {
                                     if (include_usage) {
                                         const int tokens = completion_tokens->load();
-                                        domain::CompletionUsage usage{0, tokens, tokens, std::nullopt, std::nullopt};
+                                        domain::CompletionUsage usage{req_ptr->prompt_tokens_count, tokens, tokens, std::nullopt, std::nullopt};
 
                                         // Calculate final timing metrics
                                         if (first_token_time->has_value()) {
@@ -308,7 +313,7 @@ void LLMController::handle_streaming(
                                             if (total_duration.count() > 0) {
                                                 auto time_seconds = static_cast<double>(total_duration.count()) / 1000000.0;
                                                 usage.tps = std::round((tokens - 1) / time_seconds * 1000.0) / 1000.0;
-                                                std::cout << "[DEBUG] Final TPS: " << usage.tps.value() << " tokens/sec" << std::endl;
+                                                TT_LOG_DEBUG("[LLMController] Final TPS: {} tokens/sec", usage.tps.value());
                                             }
                                         }
 
@@ -319,7 +324,7 @@ void LLMController::handle_streaming(
                                         } else {
                                             // For text completions, we need to send a usage chunk
                                             // The format should be similar but for text_completion object
-                                            domain::StreamingChunkResponse usage_chunk;
+                                            domain::StreamingChunkResponse usage_chunk(req_ptr->task_id);
                                             usage_chunk.id = completion_id;
                                             usage_chunk.object = "text_completion";
                                             usage_chunk.model = model;

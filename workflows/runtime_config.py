@@ -43,6 +43,7 @@ class RuntimeConfig:
     local_server: bool = False
     interactive: bool = False
     service_port: str = "8000"
+    bind_host: str = "0.0.0.0"
 
     # Dev / override
     dev_mode: bool = False
@@ -56,6 +57,7 @@ class RuntimeConfig:
     # Workflow control
     tools: str = "vllm"
     disable_trace_capture: bool = False
+    disable_metal_timeout: bool = False
     concurrency_sweeps: bool = False
     percentile_report: bool = False
     streaming: Optional[str] = None
@@ -107,6 +109,7 @@ class RuntimeConfig:
             local_server=args.local_server,
             interactive=args.interactive,
             service_port=args.service_port,
+            bind_host=args.bind_host,
             dev_mode=args.dev_mode,
             no_auth=args.no_auth,
             print_docker_cmd=args.print_docker_cmd,
@@ -116,6 +119,7 @@ class RuntimeConfig:
             runtime_model_spec_json=args.runtime_model_spec_json,
             tools=args.tools,
             disable_trace_capture=args.disable_trace_capture,
+            disable_metal_timeout=args.disable_metal_timeout,
             concurrency_sweeps=args.concurrency_sweeps,
             percentile_report=args.percentile_report,
             streaming=args.streaming,

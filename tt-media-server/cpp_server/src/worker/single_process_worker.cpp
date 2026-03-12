@@ -41,6 +41,7 @@ void SingleProcessWorker::start() {
 }
 
 void SingleProcessWorker::stop() {
+    ZoneScopedN("Worker::stop");
     if (runner_) {
         runner_->stop();
     }

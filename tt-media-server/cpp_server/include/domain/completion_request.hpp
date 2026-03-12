@@ -36,7 +36,9 @@ struct StreamOptions {
  * OpenAI-compatible completion request.
  * Based on OpenAI API specification.
  */
-struct CompletionRequest: BaseRequest {
+struct CompletionRequest : BaseRequest {
+    using BaseRequest::BaseRequest;
+
     // Model identifier
     std::optional<std::string> model;
 
@@ -82,9 +84,10 @@ struct CompletionRequest: BaseRequest {
     std::optional<std::vector<int>> allowed_token_ids;
     std::optional<int> prompt_logprobs;
     std::optional<int> truncate_prompt_tokens;
+    int prompt_tokens_count = 0;
 
-    static CompletionRequest fromJson(const Json::Value& json) {
-        CompletionRequest req;
+    static CompletionRequest fromJson(const Json::Value& json, TaskID task_id) {
+        CompletionRequest req(std::move(task_id));
 
         if (json.isMember("model") && !json["model"].isNull()) {
             req.model = json["model"].asString();

@@ -29,7 +29,7 @@ if __name__ == "__main__":
     # List of directories to process here
     repo_root = Path(__file__).resolve().parent.parent
     directories_to_process = [
-        repo_root / "vllm-tt-metal-llama3",
+        repo_root / "vllm-tt-metal",
         repo_root / "tt-metal-yolov4",
         repo_root / "tests",
         repo_root / "utils",

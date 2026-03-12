@@ -285,6 +285,7 @@ class DeviceModelSpec:
     vllm_args: Dict[str, str] = field(default_factory=dict)
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     env_vars: Dict[str, str] = field(default_factory=dict)
+    system_requirements: Optional[SystemRequirements] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -861,7 +862,6 @@ class ModelSpecTemplate:
                     override_tt_config=device_model_spec.override_tt_config,
                     env_vars=device_model_spec.env_vars,
                 )
-
                 spec = ModelSpec(
                     # Core identity
                     device_type=device_type,
@@ -872,7 +872,9 @@ class ModelSpecTemplate:
                     inference_engine=self.inference_engine,
                     device_model_spec=device_model_spec_with_perf,
                     # Version control
-                    system_requirements=self.system_requirements,
+                    system_requirements=device_model_spec.system_requirements
+                    if device_model_spec.system_requirements
+                    else self.system_requirements,
                     tt_metal_commit=self.tt_metal_commit,
                     vllm_commit=self.vllm_commit,
                     hf_weights_repo=self.hf_weights_repo,
@@ -1104,6 +1106,32 @@ llm_templates = [
         status=ModelStatusTypes.FUNCTIONAL,
     ),
     ModelSpecTemplate(
+        weights=["Qwen/Qwen3-8B"],
+        impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=19.2.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.5.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        tt_metal_commit="e867533",
+        vllm_commit="22be241",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P300,
+                max_concurrency=32,
+                max_context=40960,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
+    ),
+    ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=qwen3_32b_galaxy_impl,
         tt_metal_commit="e867533",
@@ -1211,6 +1239,35 @@ llm_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3-32B"],
+        impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=19.2.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.5.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        tt_metal_commit="e867533",
+        vllm_commit="22be241",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
@@ -1493,16 +1550,6 @@ llm_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=tt_transformers_impl,
-        system_requirements=SystemRequirements(
-            firmware=VersionRequirement(
-                specifier=">=18.5.0",
-                mode=VersionMode.STRICT,
-            ),
-            kmd=VersionRequirement(
-                specifier=">=2.3.0",
-                mode=VersionMode.STRICT,
-            ),
-        ),
         tt_metal_commit="55fd115",
         vllm_commit="aa4ae1e",
         inference_engine=InferenceEngine.VLLM.value,
@@ -1515,6 +1562,32 @@ llm_templates = [
                 override_tt_config={
                     "trace_region_size": 30000000,
                 },
+                system_requirements=SystemRequirements(
+                    firmware=VersionRequirement(
+                        specifier=">=18.5.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                    kmd=VersionRequirement(
+                        specifier=">=2.3.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                ),
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150X8,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                system_requirements=SystemRequirements(
+                    firmware=VersionRequirement(
+                        specifier=">=18.12.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                    kmd=VersionRequirement(
+                        specifier=">=2.4.1",
+                        mode=VersionMode.STRICT,
+                    ),
+                ),
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -1529,23 +1602,26 @@ llm_templates = [
         impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
-                specifier=">=18.12.0",
+                specifier=">=19.2.0",
                 mode=VersionMode.STRICT,
             ),
             kmd=VersionRequirement(
-                specifier=">=2.4.1",
+                specifier=">=2.5.0",
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="e867533",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
-                device=DeviceTypes.P150X8,
+                device=DeviceTypes.P300X2,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 56000000,
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -1770,6 +1846,46 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=19.2.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.5.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        tt_metal_commit="e867533",
+        vllm_commit="22be241",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "sample_on_device_mode": "decode_only",
+                    "trace_region_size": 56000000,
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "sample_on_device_mode": "decode_only",
+                    "trace_region_size": 56000000,
+                },
+            ),
+        ],
+        status=ModelStatusTypes.FUNCTIONAL,
+    ),
+    ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
+        impl=tt_transformers_impl,
         tt_metal_commit="65718bb",
         vllm_commit="409b1cd",
         inference_engine=InferenceEngine.VLLM.value,
@@ -1980,13 +2096,11 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                vllm_args={"num_scheduler_steps": 1},
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "VLLM_USE_V1": "1",
         },
         supported_modalities=["text", "image"],
     ),

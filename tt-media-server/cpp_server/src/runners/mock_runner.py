@@ -16,7 +16,7 @@ import signal
 import sys
 import time
 
-from shared_memory import SharedMemory
+from shared_memory import DECODE_MAX_TOKEN_IDS, PREFILL_MAX_TOKEN_IDS, SharedMemory
 
 _shutdown = False
 
@@ -51,8 +51,10 @@ def _run_mock_bridge() -> None:
         return _shutdown
 
     try:
-        with SharedMemory(c2p_name, is_shutdown=is_shutdown) as c2p, SharedMemory(
-            p2c_name, is_shutdown=is_shutdown
+        with SharedMemory(
+            c2p_name, max_token_ids=PREFILL_MAX_TOKEN_IDS, is_shutdown=is_shutdown
+        ) as c2p, SharedMemory(
+            p2c_name, max_token_ids=DECODE_MAX_TOKEN_IDS, is_shutdown=is_shutdown
         ) as p2c:
             print("Mock runner: SHM bridge started successfully", file=sys.stderr)
 
@@ -77,6 +79,8 @@ def _run_mock_bridge() -> None:
                 )
 
                 for i in range(tokens_to_generate):
+                    start_time = time.perf_counter()
+
                     token_id = msg.token_ids[i] if i < len(msg.token_ids) else 12345
                     p2c.write_token(msg.task_id, token_id)
 
@@ -84,7 +88,12 @@ def _run_mock_bridge() -> None:
                         f"Mock runner: Sent token {i + 1}/{tokens_to_generate}: {token_id}",
                         file=sys.stderr,
                     )
-                    time.sleep(0.0001)
+
+                    # Sleep for remaining time to reach 50 microseconds total
+                    elapsed = time.perf_counter() - start_time
+                    remaining = 0.00002 - elapsed  # 20 microseconds total
+                    if remaining > 0:
+                        time.sleep(remaining)
 
                 print(
                     f"Mock runner: Finished generating {tokens_to_generate} tokens for task {task_id_str}",

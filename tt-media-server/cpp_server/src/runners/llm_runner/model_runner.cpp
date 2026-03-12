@@ -10,22 +10,8 @@
 
 namespace llm_engine {
 
-void DecodeQueue::push(const TokenResult& result) {
-  std::lock_guard lock(mutex_);
-  pending_.push_back(result);
-}
-
-std::vector<TokenResult> DecodeQueue::drain() {
-  std::lock_guard lock(mutex_);
-  std::vector<TokenResult> out;
-  out.swap(pending_);
-  return out;
-}
-
 std::unique_ptr<IModelRunner> make_mock_model_runner(const Config& config,
                                                      DecodeCallback callback);
-std::unique_ptr<IModelRunner> make_ttrun_model_runner(const Config& config,
-                                                      DecodeCallback callback);
 #ifdef USE_METAL_CPP_LIB
 std::unique_ptr<IModelRunner> make_llama_model_runner(const Config& config,
                                                       DecodeCallback callback);
@@ -36,8 +22,6 @@ std::unique_ptr<IModelRunner> make_model_runner(const Config& config,
   switch (config.runner_type) {
     case ModelRunnerType::Mock:
       return make_mock_model_runner(config, std::move(callback));
-    case ModelRunnerType::TtRun:
-      return make_ttrun_model_runner(config, std::move(callback));
 #ifdef USE_METAL_CPP_LIB
     case ModelRunnerType::Llama:
       return make_llama_model_runner(config, std::move(callback));
