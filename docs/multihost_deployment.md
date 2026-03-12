@@ -249,7 +249,7 @@ The multi-host deployment requires a Docker image with sshd and the worker entry
 # Build multi-host image from base vLLM image
 docker build -t <your-registry>/vllm-multihost:<tag> \
     --build-arg BASE_IMAGE=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:<version> \
-    -f vllm-tt-metal-llama3/vllm.tt-metal.src.multihost.Dockerfile .
+    -f vllm-tt-metal/vllm.tt-metal.src.multihost.Dockerfile .
 ```
 
 The Dockerfile adds:

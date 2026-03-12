@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config
 
 # Unified entrypoint script for Worker/Controller SSH setup
-COPY vllm-tt-metal-llama3/multihost_entrypoint.sh /usr/local/bin/multihost_entrypoint.sh
+COPY vllm-tt-metal/multihost_entrypoint.sh /usr/local/bin/multihost_entrypoint.sh
 RUN chmod +x /usr/local/bin/multihost_entrypoint.sh
 
 USER container_app_user

@@ -1182,7 +1182,7 @@ def build_multihost_image(image_tags, logger):
         "--build-arg",
         f"BASE_IMAGE={release_image_tag}",
         "-f",
-        "vllm-tt-metal-llama3/vllm.tt-metal.src.multihost.Dockerfile",
+        "vllm-tt-metal/vllm.tt-metal.src.multihost.Dockerfile",
         ".",
     ]
 
@@ -1501,6 +1501,7 @@ def build_docker_images(
     # Generate JSON summary
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     logs_dir = get_build_logs_dir()
+    logs_dir.mkdir(parents=True, exist_ok=True)
     json_file = logs_dir / f"build_summary_{timestamp}.json"
 
     summary_data = {
