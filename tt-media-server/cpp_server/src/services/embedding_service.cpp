@@ -36,6 +36,9 @@ struct EmbeddingService::Impl {
     struct PendingRequest {
         domain::EmbeddingRequest request;
         std::promise<domain::EmbeddingResponse> promise;
+
+        explicit PendingRequest(domain::EmbeddingRequest req)
+            : request(std::move(req)) {}
     };
 
     // Worker process info
@@ -241,12 +244,21 @@ struct EmbeddingService::Impl {
 
             // Build batch of requests
             std::vector<domain::EmbeddingRequest> batch;
+            auto task_id_from_json = [](const Json::Value& j) -> domain::TaskID {
+                if (j.isMember("task_id") && !j["task_id"].asString().empty()) {
+                    return domain::TaskID(j["task_id"].asString());
+                }
+                return domain::TaskID(
+                    domain::TaskID::generate());
+            };
             if (req_json.isArray()) {
                 for (const auto& item : req_json) {
-                    batch.push_back(domain::EmbeddingRequest::from_json(item));
+                    batch.push_back(
+                        domain::EmbeddingRequest::from_json(item, task_id_from_json(item)));
                 }
             } else {
-                batch.push_back(domain::EmbeddingRequest::from_json(req_json));
+                batch.push_back(domain::EmbeddingRequest::from_json(
+                    req_json, task_id_from_json(req_json)));
             }
 
             TT_LOG_INFO("[Worker {}] Processing batch of {} requests", worker_id, batch.size());
@@ -389,9 +401,8 @@ struct EmbeddingService::Impl {
                 // Worker died while we were grabbing work, put it back or error out
                 TT_LOG_ERROR("[EmbeddingService] Worker {} died, failing {} requests", worker_idx, batch.size());
                 for (auto& pending : batch) {
-                    domain::EmbeddingResponse error_resp;
+                    domain::EmbeddingResponse error_resp(pending->request.task_id);
                     error_resp.error = "Worker died";
-                    error_resp.task_id = pending->request.task_id;
                     pending->promise.set_value(error_resp);
                 }
             }
@@ -406,9 +417,8 @@ struct EmbeddingService::Impl {
 
         if (!worker.is_ready.load() || worker.pid <= 0) {
             for (auto& pending : batch) {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Worker not available";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(error_resp);
             }
             return;
@@ -426,9 +436,8 @@ struct EmbeddingService::Impl {
             }
             worker.is_ready.store(false);
             for (auto& pending : batch) {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Worker process died";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(error_resp);
             }
             return;
@@ -454,9 +463,8 @@ struct EmbeddingService::Impl {
             TT_LOG_ERROR("[EmbeddingService] Worker {} failed to write length: {}", worker.worker_id, strerror(errno));
             worker.is_ready.store(false);  // Mark worker as dead
             for (auto& pending : batch) {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Worker pipe broken - worker crashed";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(error_resp);
             }
             return;
@@ -466,9 +474,8 @@ struct EmbeddingService::Impl {
             TT_LOG_ERROR("[EmbeddingService] Worker {} failed to write data: {}", worker.worker_id, strerror(errno));
             worker.is_ready.store(false);  // Mark worker as dead
             for (auto& pending : batch) {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Worker pipe broken - worker crashed";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(error_resp);
             }
             return;
@@ -489,9 +496,8 @@ struct EmbeddingService::Impl {
                         worker.worker_id, response_len);
             worker.is_ready.store(false);
             for (auto& pending : batch) {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Failed to read response from worker";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(error_resp);
             }
             return;
@@ -512,9 +518,8 @@ struct EmbeddingService::Impl {
             TT_LOG_ERROR("[EmbeddingService] Worker {} incomplete read: {}/{} bytes",
                         worker.worker_id, total_read, response_len);
             for (auto& pending : batch) {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Failed to read full response from worker";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(error_resp);
             }
             return;
@@ -568,8 +573,7 @@ struct EmbeddingService::Impl {
         response_map.reserve(num_responses);
 
         for (uint32_t i = 0; i < num_responses && offset < response_buffer.size(); ++i) {
-            domain::EmbeddingResponse resp;
-            resp.task_id = domain::TaskID(read_string());
+            domain::EmbeddingResponse resp{domain::TaskID(read_string())};
             uint8_t has_error = response_buffer[offset++];
 
             if (has_error) {
@@ -580,7 +584,8 @@ struct EmbeddingService::Impl {
                 resp.model = read_string();
             }
 
-            response_map[resp.task_id.id] = std::move(resp);
+            auto key = resp.task_id.id;
+            response_map.insert_or_assign(std::move(key), std::move(resp));
         }
 
         auto t5 = std::chrono::steady_clock::now();
@@ -605,17 +610,15 @@ struct EmbeddingService::Impl {
             if (it != response_map.end()) {
                 pending->promise.set_value(std::move(it->second));
             } else {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Response not found for task_id";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(std::move(error_resp));
             }
         }
     }
 
     std::future<domain::EmbeddingResponse> submit_request(domain::EmbeddingRequest request) {
-        auto pending = std::make_shared<PendingRequest>();
-        pending->request = std::move(request);
+        auto pending = std::make_shared<PendingRequest>(std::move(request));
         auto future = pending->promise.get_future();
 
         {

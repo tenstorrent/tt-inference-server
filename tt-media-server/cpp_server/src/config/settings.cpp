@@ -3,6 +3,7 @@
 
 #include "config/settings.hpp"
 #include "runners/llm_runner/config.hpp"
+#include "runners/sp_pipeline_runner/config.hpp"
 #include "utils/tokenizer.hpp"
 
 #include <algorithm>
@@ -168,8 +169,8 @@ llm_engine::Config llm_engine_config() {
     llm_engine::Config cfg;
     cfg.stop_token_ids = utils::active_tokenizer().stop_token_ids();
     std::string backend = env_string_lower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
-    if (backend == "ttrun") {
-        cfg.runner_type = llm_engine::ModelRunnerType::TtRun;
+    if (backend == "pipeline") {
+        cfg.runner_type = llm_engine::ModelRunnerType::Pipeline;
     } else if (backend == "llama") {
         cfg.max_in_flight_count = 32;
         cfg.max_num_seqs = 32;
@@ -180,6 +181,12 @@ llm_engine::Config llm_engine_config() {
         cfg.runner_type = llm_engine::ModelRunnerType::Mock;
     }
     cfg.scheduling_policy = scheduling_policy();
+    return cfg;
+}
+
+sp_pipeline::SpPipelineConfig sp_pipeline_config() {
+    sp_pipeline::SpPipelineConfig cfg;
+    cfg.stop_token_ids = utils::active_tokenizer().stop_token_ids();
     return cfg;
 }
 
@@ -198,6 +205,14 @@ llm_engine::SchedulingPolicy scheduling_policy() {
 
 std::string socket_host() {
     return env_string("SOCKET_HOST", defaults::SOCKET_HOST);
+}
+
+bool enable_accumulated_streaming() {
+    return env_ulong("ENABLE_ACCUMULATED_STREAMING", defaults::ENABLE_ACCUMULATED_STREAMING);
+}
+
+size_t max_accumulated_tokens() {
+    return static_cast<size_t>(env_ulong("MAX_ACCUMULATED_TOKENS", defaults::MAX_ACCUMULATED_TOKENS));
 }
 
 uint16_t socket_port() {

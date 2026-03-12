@@ -44,15 +44,10 @@ int main() {
       ipc::create_only, QUEUE_NAME, MAX_NUM_MSGS, MAX_MSG_SIZE);
 
   // Build two sequences with known values.
-  Config seq_config;
-  Sequence seq1(256, {1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
-  Sequence seq2(256, {10, 20, 30}, SamplingParams{.temperature = 0.7f, .max_tokens = 5});
-
-
-  std::string seq1_id = boost::uuids::to_string(boost::uuids::random_generator()());
-  seq1.task_id.id = seq1_id;
-  std::string seq2_id = boost::uuids::to_string(boost::uuids::random_generator()());
-  seq2.task_id.id = seq2_id;
+  std::string seq1_id = TaskID::generate();
+  std::string seq2_id = TaskID::generate();
+  Sequence seq1(TaskID(seq1_id), 256, {1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
+  Sequence seq2(TaskID(seq2_id), 256, {10, 20, 30}, SamplingParams{.temperature = 0.7f, .max_tokens = 5});
 
   // Push via BoostIpcTaskQueue (opens the existing shared-memory queue).
   {

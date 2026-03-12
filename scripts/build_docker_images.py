@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import argparse
+import concurrent.futures
 import json
 import logging
 import multiprocessing
@@ -11,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -27,6 +29,216 @@ from workflows.model_spec import MODEL_SPECS, export_model_specs_json
 from workflows.utils import get_repo_root_path
 
 logger = logging.getLogger(__file__)
+
+MEMORY_PER_BUILD_GB = 16
+MEMORY_RESERVE_GB = 16
+DISK_PER_BUILD_GB = 40
+DISK_RESERVE_GB = 20
+RESOURCE_POLL_INTERVAL_SECONDS = 10
+# ~4 CPU cores needed per concurrent Docker build
+CPU_CORES_PER_BUILD = 4
+DRY_RUN_BUILD_DURATION_SECONDS = 5
+
+
+def get_available_memory_gb():
+    """Get available system memory in GB from /proc/meminfo (MemAvailable).
+
+    MemAvailable accounts for reclaimable buffers/cache, so it reflects
+    what is actually usable. Available since Linux 3.14.
+    """
+    try:
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    kb = int(line.split()[1])
+                    return kb / (1024 * 1024)
+    except (FileNotFoundError, ValueError, IndexError):
+        pass
+
+    try:
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        avail_pages = os.sysconf("SC_AVPHYS_PAGES")
+        if page_size > 0 and avail_pages > 0:
+            return (page_size * avail_pages) / (1024**3)
+    except (ValueError, OSError):
+        pass
+
+    raise RuntimeError("Could not determine available memory")
+
+
+def get_docker_root_dir():
+    """Get Docker's storage root directory via `docker info`."""
+    try:
+        result = subprocess.run(
+            ["docker", "info", "--format", "{{.DockerRootDir}}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    return "/var/lib/docker"
+
+
+def get_available_disk_gb(path=None):
+    """Get available disk space in GB for the filesystem containing path.
+
+    Defaults to the Docker storage root directory.
+    """
+    if path is None:
+        path = get_docker_root_dir()
+    try:
+        usage = shutil.disk_usage(path)
+        return usage.free / (1024**3)
+    except OSError:
+        usage = shutil.disk_usage("/")
+        return usage.free / (1024**3)
+
+
+def get_max_concurrent_builds(
+    memory_per_build_gb=MEMORY_PER_BUILD_GB,
+    memory_reserve_gb=MEMORY_RESERVE_GB,
+    disk_per_build_gb=DISK_PER_BUILD_GB,
+    disk_reserve_gb=DISK_RESERVE_GB,
+    max_workers=None,
+):
+    """Compute safe max concurrent builds based on host RAM, disk, and CPU.
+
+    Returns:
+        Tuple of (limit, details_dict) where details_dict contains the
+        individual constraint values for logging.
+    """
+    available_mem_gb = get_available_memory_gb()
+    docker_root = get_docker_root_dir()
+    available_disk_gb = get_available_disk_gb(docker_root)
+    physical_cpu_count = get_physical_cpu_count()
+
+    max_by_memory = int((available_mem_gb - memory_reserve_gb) // memory_per_build_gb)
+    max_by_disk = int((available_disk_gb - disk_reserve_gb) // disk_per_build_gb)
+    max_by_cpu = physical_cpu_count // CPU_CORES_PER_BUILD
+
+    resource_limit = max(1, min(max_by_memory, max_by_disk, max_by_cpu))
+
+    if max_workers is not None:
+        limit = min(resource_limit, max_workers)
+    else:
+        limit = resource_limit
+
+    limit = max(1, limit)
+
+    constraints = {
+        "memory": max_by_memory,
+        "disk": max_by_disk,
+        "cpu": max_by_cpu,
+    }
+    binding = min(constraints, key=constraints.get)
+
+    details = {
+        "available_memory_gb": round(available_mem_gb, 1),
+        "available_disk_gb": round(available_disk_gb, 1),
+        "docker_root": docker_root,
+        "physical_cpu_count": physical_cpu_count,
+        "memory_per_build_gb": memory_per_build_gb,
+        "memory_reserve_gb": memory_reserve_gb,
+        "disk_per_build_gb": disk_per_build_gb,
+        "disk_reserve_gb": disk_reserve_gb,
+        "max_by_memory": max_by_memory,
+        "max_by_disk": max_by_disk,
+        "max_by_cpu": max_by_cpu,
+        "resource_limit": resource_limit,
+        "max_workers_override": max_workers,
+        "effective_limit": limit,
+        "binding_constraint": binding,
+    }
+    return limit, details
+
+
+def check_resources_for_new_build(
+    memory_per_build_gb=MEMORY_PER_BUILD_GB,
+    memory_reserve_gb=MEMORY_RESERVE_GB,
+    disk_per_build_gb=DISK_PER_BUILD_GB,
+    disk_reserve_gb=DISK_RESERVE_GB,
+):
+    """Check if there are sufficient resources to start one more build.
+
+    Returns:
+        Tuple of (ok, available_mem_gb, available_disk_gb)
+    """
+    available_mem_gb = get_available_memory_gb()
+    available_disk_gb = get_available_disk_gb()
+    mem_ok = (available_mem_gb - memory_reserve_gb) >= memory_per_build_gb
+    disk_ok = (available_disk_gb - disk_reserve_gb) >= disk_per_build_gb
+    return (mem_ok and disk_ok), available_mem_gb, available_disk_gb
+
+
+def log_resource_summary(details, total_builds):
+    """Log a detailed resource summary before builds begin."""
+    d = details
+    logger.info("=" * 60)
+    logger.info("BUILD RESOURCE SUMMARY")
+    logger.info("=" * 60)
+    logger.info("Host resources:")
+    logger.info(f"  Available memory: {d['available_memory_gb']} GB")
+    logger.info(f"  Available disk ({d['docker_root']}): {d['available_disk_gb']} GB")
+    logger.info(f"  Physical CPU cores: {d['physical_cpu_count']}")
+    logger.info("Per-build requirements:")
+    logger.info(f"  Memory per build: {d['memory_per_build_gb']} GB")
+    logger.info(f"  Memory reserve: {d['memory_reserve_gb']} GB")
+    logger.info(f"  Disk per build: {d['disk_per_build_gb']} GB")
+    logger.info(f"  Disk reserve: {d['disk_reserve_gb']} GB")
+    logger.info("Concurrency limits:")
+    logger.info(
+        f"  By memory: {d['max_by_memory']}"
+        f" (({d['available_memory_gb']} - {d['memory_reserve_gb']}) GB"
+        f" / {d['memory_per_build_gb']} GB)"
+    )
+    logger.info(
+        f"  By disk: {d['max_by_disk']}"
+        f" (({d['available_disk_gb']} - {d['disk_reserve_gb']}) GB"
+        f" / {d['disk_per_build_gb']} GB)"
+    )
+    logger.info(
+        f"  By CPU: {d['max_by_cpu']}"
+        f" ({d['physical_cpu_count']} cores / {CPU_CORES_PER_BUILD})"
+    )
+    if d["max_workers_override"] is not None:
+        logger.info(f"  --max-workers override: {d['max_workers_override']}")
+    logger.info(
+        f"  Effective max concurrent builds: {d['effective_limit']}"
+        f" (limited by {d['binding_constraint']})"
+    )
+    logger.info("Build queue:")
+    start_now = min(d["effective_limit"], total_builds)
+    queued = total_builds - start_now
+    logger.info(f"  Total builds queued: {total_builds}")
+    logger.info(
+        f"  Will start {start_now} immediately, {queued} queued waiting for resources"
+    )
+    logger.info("=" * 60)
+
+    if d["effective_limit"] < total_builds:
+        logger.warning(
+            f"Throttling active: only {d['effective_limit']} of {total_builds}"
+            " builds can run concurrently due to resource constraints"
+        )
+
+    usable_mem = d["available_memory_gb"] - d["memory_reserve_gb"]
+    if usable_mem < d["memory_per_build_gb"]:
+        logger.error(
+            f"Available memory after reserve ({usable_mem:.1f} GB) is below the"
+            f" minimum per-build requirement ({d['memory_per_build_gb']} GB)."
+            " Builds may fail due to OOM."
+        )
+
+    usable_disk = d["available_disk_gb"] - d["disk_reserve_gb"]
+    if usable_disk < d["disk_per_build_gb"]:
+        logger.error(
+            f"Available disk after reserve ({usable_disk:.1f} GB) is below the"
+            f" minimum per-build requirement ({d['disk_per_build_gb']} GB)."
+            " Builds may fail due to insufficient disk space."
+        )
 
 
 def generate_model_specs_json(output_path: Path = None) -> Path:
@@ -193,6 +405,7 @@ def process_sha_combination(args_tuple):
         container_app_uid,
         dry_run,
         stdout_only,
+        dry_run_build_duration,
     ) = args_tuple
 
     # Set up individual logging for this combination
@@ -286,7 +499,11 @@ def process_sha_combination(args_tuple):
         if build_dev_image_flag and build_tt_metal_base_flag:
             image_status["tt_metal_base"]["build_attempted"] = True
             if dry_run:
-                process_logger.info("[DRY-RUN] Would build tt-metal base image...")
+                process_logger.info(
+                    f"[DRY-RUN] Would build tt-metal base image... "
+                    f"(simulating {dry_run_build_duration}s build)"
+                )
+                time.sleep(dry_run_build_duration)
             else:
                 process_logger.info("Building tt-metal base image...")
                 try:
@@ -311,8 +528,10 @@ def process_sha_combination(args_tuple):
             image_status["dev"]["build_attempted"] = True
             if dry_run:
                 process_logger.info(
-                    f"[DRY-RUN] Would build dev image: {image_tags['dev']}"
+                    f"[DRY-RUN] Would build dev image: {image_tags['dev']} "
+                    f"(simulating {dry_run_build_duration}s build)"
                 )
+                time.sleep(dry_run_build_duration)
             else:
                 process_logger.info("Building dev image...")
                 try:
@@ -336,8 +555,10 @@ def process_sha_combination(args_tuple):
             image_status["release"]["build_attempted"] = True
             if dry_run:
                 process_logger.info(
-                    f"[DRY-RUN] Would build release image: {image_tags['release']}"
+                    f"[DRY-RUN] Would build release image: {image_tags['release']} "
+                    f"(simulating {dry_run_build_duration}s build)"
                 )
+                time.sleep(dry_run_build_duration)
             else:
                 process_logger.info("Building release image...")
                 try:
@@ -355,7 +576,11 @@ def process_sha_combination(args_tuple):
         # Push images if requested
         if push:
             if dry_run:
-                process_logger.info("[DRY-RUN] Would push images to registry...")
+                process_logger.info(
+                    f"[DRY-RUN] Would push images to registry... "
+                    f"(simulating {dry_run_build_duration}s push)"
+                )
+                time.sleep(dry_run_build_duration)
             else:
                 process_logger.info("Pushing images to registry...")
 
@@ -371,7 +596,11 @@ def process_sha_combination(args_tuple):
 
                 if should_push_image(image_tag, force_push=False):
                     if dry_run:
-                        process_logger.info(f"[DRY-RUN] Would push image: {image_tag}")
+                        process_logger.info(
+                            f"[DRY-RUN] Would push image: {image_tag} "
+                            f"(simulating {dry_run_build_duration}s push)"
+                        )
+                        time.sleep(dry_run_build_duration)
                     else:
                         push_image(image_tag, process_logger)
                 else:
@@ -926,6 +1155,100 @@ def list_image_combinations(model_configs, build_metal_commit=None):
     return unique_sha_combinations
 
 
+def _run_resource_aware_queue(
+    args_tuples,
+    max_concurrent,
+    memory_per_build_gb,
+    memory_reserve_gb,
+    disk_per_build_gb,
+    disk_reserve_gb,
+):
+    """Submit builds via a resource-gated queue using ProcessPoolExecutor.
+
+    Submits up to max_concurrent builds initially, then after each completion
+    polls host resources before submitting the next queued build.
+    """
+    pending_queue = list(args_tuples)
+    results = []
+    active_futures = {}
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_concurrent) as executor:
+
+        def _submit_next():
+            if not pending_queue:
+                return
+            args = pending_queue.pop(0)
+            combo_id = _build_combination_id(args[0], args[1])
+            future = executor.submit(process_sha_combination, args)
+            active_futures[future] = combo_id
+            active = len(active_futures)
+            queued = len(pending_queue)
+            logger.info(
+                f"Starting build {combo_id}"
+                f" ({active}/{max_concurrent} slots, {queued} queued)"
+            )
+
+        def _wait_for_resources_and_submit():
+            logger.info("Polling resources for next build...")
+            ok, avail_mem, avail_disk = check_resources_for_new_build(
+                memory_per_build_gb,
+                memory_reserve_gb,
+                disk_per_build_gb,
+                disk_reserve_gb,
+            )
+            while not ok:
+                logger.warning(
+                    f"Waiting for resources: {avail_mem:.1f} GB memory,"
+                    f" {avail_disk:.1f} GB disk available"
+                    f" (need {memory_per_build_gb} GB mem"
+                    f" + {memory_reserve_gb} GB reserve,"
+                    f" {disk_per_build_gb} GB disk"
+                    f" + {disk_reserve_gb} GB reserve;"
+                    f" polling every {RESOURCE_POLL_INTERVAL_SECONDS}s)..."
+                )
+                time.sleep(RESOURCE_POLL_INTERVAL_SECONDS)
+                ok, avail_mem, avail_disk = check_resources_for_new_build(
+                    memory_per_build_gb,
+                    memory_reserve_gb,
+                    disk_per_build_gb,
+                    disk_reserve_gb,
+                )
+            logger.info("Resources available, starting next build from queue")
+            _submit_next()
+
+        while pending_queue and len(active_futures) < max_concurrent:
+            ok, avail_mem, avail_disk = check_resources_for_new_build(
+                memory_per_build_gb,
+                memory_reserve_gb,
+                disk_per_build_gb,
+                disk_reserve_gb,
+            )
+            if not ok:
+                logger.info(
+                    f"Pausing initial submissions: {avail_mem:.1f} GB memory,"
+                    f" {avail_disk:.1f} GB disk available"
+                )
+                break
+            _submit_next()
+
+        while active_futures:
+            done, _ = concurrent.futures.wait(
+                active_futures,
+                return_when=concurrent.futures.FIRST_COMPLETED,
+            )
+            for future in done:
+                combo_id = active_futures.pop(future)
+                result = future.result()
+                results.append(result)
+                status = "succeeded" if result["success"] else "FAILED"
+                logger.info(f"Completed build {combo_id} ({status})")
+
+                if pending_queue:
+                    _wait_for_resources_and_submit()
+
+    return results
+
+
 def build_docker_images(
     model_configs,
     force_build=False,
@@ -937,6 +1260,9 @@ def build_docker_images(
     single_threaded=False,
     dry_run=False,
     stdout_only=False,
+    memory_per_build_gb=MEMORY_PER_BUILD_GB,
+    disk_per_build_gb=DISK_PER_BUILD_GB,
+    dry_run_build_duration=DRY_RUN_BUILD_DURATION_SECONDS,
 ):
     """
     Builds all Docker images required by the provided ModelConfigs.
@@ -948,16 +1274,17 @@ def build_docker_images(
         push: Push containers to registry
         ubuntu_version: Ubuntu version to use for base images
         build_metal_commit: Only build containers with this exact tt-metal commit
-        max_workers: Maximum number of parallel workers (defaults to physical CPU cores)
+        max_workers: Ceiling on parallel workers (resource-based limit applies first)
         single_threaded: Run builds sequentially instead of in parallel (for debugging)
         dry_run: Print summary of what would be built without building
         stdout_only: If True, only log to stdout (no file logging)
+        memory_per_build_gb: GB of RAM required per concurrent build
+        disk_per_build_gb: GB of disk required per concurrent build
+        dry_run_build_duration: Seconds each mock build sleeps in dry-run mode
     """
-    # Validate inputs
     container_app_uid = 1000
     validate_inputs(ubuntu_version, container_app_uid)
 
-    # Get unique combinations using the shared function
     unique_sha_combinations = list_image_combinations(
         model_configs,
         build_metal_commit=build_metal_commit,
@@ -976,20 +1303,6 @@ def build_docker_images(
         f"Unique SHA combinations to build if needed:\n{unique_sha_combinations_str}"
     )
 
-    # Get physical CPU count for multiprocessing
-    physical_cpu_count = get_physical_cpu_count()
-
-    # Use max_workers if specified, otherwise use physical CPU count
-    if max_workers is not None:
-        workers = max(1, min(max_workers, physical_cpu_count))
-        logger.info(
-            f"Using {workers} workers (max_workers={max_workers}, physical_cores={physical_cpu_count})"
-        )
-    else:
-        workers = max(1, physical_cpu_count)
-        logger.info(f"Using {workers} workers (physical cores detected)")
-
-    # Create argument tuples for each combination
     args_tuples = [
         (
             tt_metal_commit,
@@ -1001,6 +1314,7 @@ def build_docker_images(
             container_app_uid,
             dry_run,
             stdout_only,
+            dry_run_build_duration,
         )
         for tt_metal_commit, vllm_commit in unique_sha_combinations
     ]
@@ -1009,22 +1323,36 @@ def build_docker_images(
         logger.warning("No combinations to process")
         return
 
-    # Log execution mode
+    max_concurrent, resource_details = get_max_concurrent_builds(
+        memory_per_build_gb=memory_per_build_gb,
+        memory_reserve_gb=MEMORY_RESERVE_GB,
+        disk_per_build_gb=disk_per_build_gb,
+        max_workers=max_workers,
+    )
+    log_resource_summary(resource_details, total_builds=len(args_tuples))
+
     if dry_run:
         logger.info("=" * 80)
         logger.info("DRY-RUN MODE: Checking image status without building")
         logger.info("=" * 80)
 
-    # Use multiprocessing.Pool to process combinations in parallel
-    logger.info(f"Processing {len(args_tuples)} combinations with {workers} workers")
+    logger.info(
+        f"Processing {len(args_tuples)} combinations (max concurrent: {max_concurrent})"
+    )
 
     if single_threaded:
         results = []
         for args_tuple in args_tuples:
             results.append(process_sha_combination(args_tuple))
     else:
-        with multiprocessing.Pool(processes=workers) as pool:
-            results = pool.map(process_sha_combination, args_tuples)
+        results = _run_resource_aware_queue(
+            args_tuples,
+            max_concurrent,
+            memory_per_build_gb,
+            MEMORY_RESERVE_GB,
+            disk_per_build_gb,
+            DISK_RESERVE_GB,
+        )
 
     # Process results and show individual log files
     success_count = 0
@@ -1136,7 +1464,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max-workers",
         type=int,
-        help="Maximum number of parallel workers (defaults to physical CPU cores)",
+        help="Ceiling on parallel workers (resource-based auto-limit applies first)",
     )
     parser.add_argument(
         "--single-threaded",
@@ -1149,9 +1477,27 @@ if __name__ == "__main__":
         help="Print summary of what would be built without building",
     )
     parser.add_argument(
+        "--dry-run-build-duration",
+        type=float,
+        default=DRY_RUN_BUILD_DURATION_SECONDS,
+        help=f"Seconds each mock build sleeps in dry-run mode (default: {DRY_RUN_BUILD_DURATION_SECONDS})",
+    )
+    parser.add_argument(
         "--stdout-only",
         action="store_true",
         help="Only log to stdout (no file logging)",
+    )
+    parser.add_argument(
+        "--memory-per-build",
+        type=float,
+        default=MEMORY_PER_BUILD_GB,
+        help=f"GB of RAM required per concurrent build (default: {MEMORY_PER_BUILD_GB})",
+    )
+    parser.add_argument(
+        "--disk-per-build",
+        type=float,
+        default=DISK_PER_BUILD_GB,
+        help=f"GB of disk required per concurrent build (default: {DISK_PER_BUILD_GB})",
     )
     args = parser.parse_args()
     logger.info(f"ubuntu_version: {args.ubuntu_version}")
@@ -1162,7 +1508,10 @@ if __name__ == "__main__":
     logger.info(f"push: {args.push}")
     logger.info(f"single_threaded: {args.single_threaded}")
     logger.info(f"dry_run: {args.dry_run}")
+    logger.info(f"dry_run_build_duration: {args.dry_run_build_duration}")
     logger.info(f"stdout_only: {args.stdout_only}")
+    logger.info(f"memory_per_build: {args.memory_per_build}")
+    logger.info(f"disk_per_build: {args.disk_per_build}")
 
     build_docker_images(
         MODEL_SPECS,
@@ -1175,4 +1524,7 @@ if __name__ == "__main__":
         single_threaded=args.single_threaded,
         dry_run=args.dry_run,
         stdout_only=args.stdout_only,
+        memory_per_build_gb=args.memory_per_build,
+        disk_per_build_gb=args.disk_per_build,
+        dry_run_build_duration=args.dry_run_build_duration,
     )

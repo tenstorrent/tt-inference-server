@@ -23,6 +23,8 @@ struct PrefillResult {
     std::vector<int64_t> token_ids;
     int remaining_tokens = 0;
     bool finished = false;
+
+    explicit PrefillResult(TaskID task_id) : task_id(std::move(task_id)) {}
 };
 
 } // namespace tt::domain

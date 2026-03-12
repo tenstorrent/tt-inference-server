@@ -106,6 +106,14 @@ if(ENABLE_TRACY)
         GIT_TAG master
     )
     FetchContent_MakeAvailable(tracy)
+
+    add_library(tracy_client STATIC ${tracy_SOURCE_DIR}/public/TracyClient.cpp)
+    target_include_directories(tracy_client PUBLIC ${tracy_SOURCE_DIR}/public)
+    target_compile_definitions(tracy_client PUBLIC
+        TRACY_ENABLE
+        TRACY_DELAYED_INIT
+        TRACY_MANUAL_LIFETIME
+    )
 endif()
 
 # Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
@@ -169,16 +177,16 @@ endif()
 set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/block_manager.cpp
     src/ipc/boost_ipc_task_queue.cpp
-    src/runners/llm_runner/shared_memory.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
     src/runners/llm_runner/mock_model_runner.cpp
-    src/runners/llm_runner/ttrun_model_runner.cpp
     src/runners/llm_runner/scheduler.cpp
     src/runners/llm_runner/sequence.cpp
     src/runners/llm_runner/sampling_params.cpp
     src/utils/logger.cpp
+    src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
+    src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
 )
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
@@ -219,6 +227,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(llm_engine PUBLIC rt)
 endif()
 target_compile_features(llm_engine PUBLIC cxx_std_20)
+
+if(ENABLE_TRACY)
+    target_link_libraries(llm_engine PUBLIC tracy_client)
+endif()
 
 option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
 if(LLM_ENGINE_DEBUG_BUILD)
@@ -348,19 +360,8 @@ else()
     target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog)
 endif()
 if(ENABLE_TRACY)
-    target_include_directories(${PROJECT_NAME} PRIVATE ${tracy_SOURCE_DIR}/public)
-    target_sources(${PROJECT_NAME} PRIVATE
-        ${tracy_SOURCE_DIR}/public/TracyClient.cpp
-        src/profiling/tracy_alloc.cpp
-    )
-    # TRACY_DELAYED_INIT + TRACY_MANUAL_LIFETIME: init profiler after fork so main/workers
-    # each call StartupProfiler() on their own port (see tracy_config::TracyStartupSchedulerParent etc.).
-    target_compile_definitions(${PROJECT_NAME} PRIVATE
-        TT_ENABLE_TRACY
-        TRACY_ENABLE
-        TRACY_DELAYED_INIT
-        TRACY_MANUAL_LIFETIME
-    )
+    target_sources(${PROJECT_NAME} PRIVATE src/profiling/tracy_alloc.cpp)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE TT_ENABLE_TRACY)
 endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 

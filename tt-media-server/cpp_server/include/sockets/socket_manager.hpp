@@ -24,20 +24,6 @@
 namespace tt::sockets {
 
 /**
- * @brief Serializable message wrapper for socket communication
- */
-template<typename T>
-struct SocketMessage {
-    std::string message_type;
-    T payload;
-
-    template<class Archive>
-    void serialize(Archive& ar) {
-        ar(message_type, payload);
-    }
-};
-
-/**
  * @brief Singleton socket manager for inter-server communication
  *
  * Supports both server (listening) and client (connecting) modes.
@@ -152,6 +138,7 @@ private:
 };
 
 // Template implementations
+
 template<typename T>
 bool SocketManager::sendObject(const std::string& message_type, const T& obj) {
     if (!connected_) {
@@ -159,14 +146,11 @@ bool SocketManager::sendObject(const std::string& message_type, const T& obj) {
     }
 
     try {
-        SocketMessage<T> message;
-        message.message_type = message_type;
-        message.payload = obj;
-
         std::ostringstream oss;
         {
             cereal::BinaryOutputArchive archive(oss);
-            archive(message);
+            archive(message_type);
+            obj.write(archive);
         }
 
         std::string serialized = oss.str();
@@ -190,10 +174,11 @@ void SocketManager::registerHandler(const std::string& message_type,
             std::istringstream iss(serialized);
 
             cereal::BinaryInputArchive archive(iss);
-            SocketMessage<T> message;
-            archive(message);
+            std::string msg_type;
+            archive(msg_type);
+            T payload = T::read(archive);
 
-            handler(message.payload);
+            handler(payload);
         } catch (const std::exception& e) {
             TT_LOG_ERROR("[SocketManager] Deserialization error: {}", e.what());
         }

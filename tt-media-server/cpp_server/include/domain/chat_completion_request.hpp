@@ -28,7 +28,8 @@ inline std::string messages_to_prompt(const std::vector<ChatMessage>& messages) 
     return out.str();
 }
 
-struct ChatCompletionRequest: BaseRequest {
+struct ChatCompletionRequest : BaseRequest {
+    using BaseRequest::BaseRequest;
     std::optional<std::string> model;
 
     std::vector<ChatMessage> messages;
@@ -64,8 +65,8 @@ struct ChatCompletionRequest: BaseRequest {
     std::optional<int> prompt_logprobs;
     std::optional<int> truncate_prompt_tokens;
 
-    static ChatCompletionRequest fromJson(const Json::Value& json) {
-        ChatCompletionRequest req;
+    static ChatCompletionRequest fromJson(const Json::Value& json, TaskID task_id) {
+        ChatCompletionRequest req(std::move(task_id));
 
         if (json.isMember("model") && !json["model"].isNull()) {
             req.model = json["model"].asString();
@@ -150,8 +151,7 @@ struct ChatCompletionRequest: BaseRequest {
 
     /** Convert to CompletionRequest: messages -> prompt, then same pipeline as /completions. */
     CompletionRequest to_completion_request() const {
-        CompletionRequest out;
-        out.task_id = task_id;
+        CompletionRequest out(task_id);
         out.model = model;
         out.prompt = tt::utils::active_tokenizer().apply_chat_template(messages);
 

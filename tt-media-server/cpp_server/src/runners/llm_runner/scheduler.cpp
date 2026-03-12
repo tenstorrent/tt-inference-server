@@ -5,6 +5,7 @@
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
 #include "runners/llm_runner/max_occupancy_scheduler.hpp"
 #include "runners/llm_runner/debug.hpp"
+#include "profiling/tracy.hpp"
 
 #include <cassert>
 
@@ -35,12 +36,11 @@ bool Scheduler::is_finished() const {
   return prefill_queue_->empty() && decode_queue_.empty() && in_flight_count_ == 0;
 }
 
-Sequence& Scheduler::add_request(std::vector<int64_t> prompt,
+Sequence& Scheduler::add_request(TaskID task_id, std::vector<int64_t> prompt,
                                   const SamplingParams& params) {
-  auto seq = std::make_unique<Sequence>(block_size_, std::move(prompt), params);
-  Sequence& ref = *seq;
+  auto seq = std::make_unique<Sequence>(std::move(task_id), block_size_, std::move(prompt), params);
   auto id = seq->task_id;
-  add(ref);
+  add(*seq);
   sequences_[id] = std::move(seq);
   return *sequences_[id].get();
 }
@@ -139,6 +139,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
 }
 
 void Scheduler::preempt(Sequence& seq) {
+  ZoneScopedN("Scheduler::preempt");
   LLM_ENGINE_LOG("scheduler") << "preempt task_id=" << seq.task_id << std::endl;
   seq.status_ = SequenceStatus::WAITING;
   block_manager_.deallocate(seq);
@@ -147,6 +148,7 @@ void Scheduler::preempt(Sequence& seq) {
 
 void Scheduler::postprocess(std::vector<Sequence*>& seqs,
                             const std::vector<int64_t>& token_ids) {
+  ZoneScopedN("Scheduler::postprocess");
   for (size_t i = 0; i < seqs.size(); ++i) {
     Sequence* seq = seqs[i];
     int64_t token_id = token_ids[i];

@@ -253,13 +253,13 @@ struct EmbeddingRunner::Impl {
 
         if (!result_list) {
             PyErr_Print();
-            TT_LOG_ERROR("[EmbeddingRunner] runner.run() failed");
+            TT_LOG_ERROR("[EmbeddingRunner] runner.start() failed");
             return responses;
         }
 
         // Parse results
         if (!PyList_Check(result_list)) {
-            TT_LOG_ERROR("[EmbeddingRunner] Expected list result from runner.run()");
+            TT_LOG_ERROR("[EmbeddingRunner] Expected list result from runner.start()");
             Py_DECREF(result_list);
             return responses;
         }
@@ -268,8 +268,7 @@ struct EmbeddingRunner::Impl {
         for (Py_ssize_t i = 0; i < num_results; ++i) {
             PyObject* py_resp = PyList_GetItem(result_list, i);  // Borrowed reference
 
-            domain::EmbeddingResponse resp;
-            resp.task_id = requests[i].task_id;
+            domain::EmbeddingResponse resp(requests[i].task_id);
             resp.model = requests[i].model;
 
             // Get embedding attribute
