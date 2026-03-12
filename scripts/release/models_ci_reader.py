@@ -1787,6 +1787,7 @@ def write_summary_output(
         )
         chosen = entries_sorted[-1]
         workflow_data = chosen.get("workflow_logs", {}).get("summary", {})
+        release_report = chosen.get("workflow_logs", {}).get("reports_output", {}) or {}
         ci_metadata = chosen.get("ci_metadata") or {}
         ci_job_metadata = ci_metadata.get("ci_job_metadata") or {}
         ci_logs = chosen.get("ci_logs") or {}
@@ -1810,6 +1811,7 @@ def write_summary_output(
             "ci_job_completed_at": ci_job_metadata.get("completed_at"),
             "firmware_bundle": ci_logs.get("firmware_bundle"),
             "driver_version": ci_logs.get("kmd_version"),
+            "release_report": release_report,
         }
 
     # Write models_ci_last_good to file (most recent entry per model)

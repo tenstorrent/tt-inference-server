@@ -1,11 +1,13 @@
+import json
 from argparse import Namespace
+from unittest.mock import patch
+
 from scripts.release.generate_release_notes import build_release_notes
 from scripts.release.generate_release_notes import main
 from scripts.release.release_paths import (
     get_versioned_release_logs_dir,
     resolve_release_output_dir,
 )
-from unittest.mock import patch
 
 
 def test_release_paths_use_versioned_release_logs():
@@ -17,47 +19,149 @@ def test_release_paths_use_versioned_release_logs():
     )
 
 
-def test_build_release_notes_uses_requested_sections_and_sources():
+def make_release_diff_record():
+    return {
+        "template_key": "template:demo",
+        "impl": "demo-impl",
+        "impl_id": "demo_impl",
+        "model_arch": "DemoModel",
+        "inference_engine": "vllm",
+        "weights": ["demo/model"],
+        "devices": ["N150"],
+        "status_before": "ModelStatusTypes.EXPERIMENTAL",
+        "status_after": "ModelStatusTypes.COMPLETE",
+        "tt_metal_commit_before": "aaaaaaa",
+        "tt_metal_commit_after": "bbbbbbb",
+        "vllm_commit_before": None,
+        "vllm_commit_after": None,
+        "ci_job_url": "https://example.com/jobs/456",
+        "ci_run_number": 123,
+    }
+
+
+def make_release_performance_data(
+    *, perf_status="functional", ttft=45.0, test_status="passed"
+):
+    return {
+        "schema_version": 1,
+        "models": {
+            "DemoModel": {
+                "n150": {
+                    "demo_impl": {
+                        "vLLM": {
+                            "model": "DemoModel",
+                            "device": "n150",
+                            "impl_id": "demo_impl",
+                            "inference_engine": "vLLM",
+                            "perf_status": perf_status,
+                            "accuracy_status": True,
+                            "ci_run_number": 123,
+                            "ci_run_url": "https://example.com/runs/123",
+                            "ci_job_url": "https://example.com/jobs/456",
+                            "benchmarks_summary": [
+                                {
+                                    "task_type": "text",
+                                    "isl": 128,
+                                    "osl": 128,
+                                    "max_concurrency": 1,
+                                    "ttft": ttft,
+                                }
+                            ],
+                            "report_data": {
+                                "parameter_support_tests": {
+                                    "results": {
+                                        "test_smoke": [
+                                            {"status": test_status},
+                                        ]
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def make_artifacts_summary_data():
+    return {
+        "images_to_build": ["ghcr.io/tenstorrent/build:tag"],
+        "copied_images": {
+            "ghcr.io/tenstorrent/release:tag": "ghcr.io/tenstorrent/ci:tag"
+        },
+        "existing_with_ci_ref": {
+            "ghcr.io/tenstorrent/existing:tag": "ghcr.io/tenstorrent/existing-ci:tag"
+        },
+        "existing_without_ci_ref": ["ghcr.io/tenstorrent/manual:tag"],
+    }
+
+
+def test_build_release_notes_renders_raw_inputs_and_performance_diff():
     notes = build_release_notes(
         version="0.10.0",
-        model_diff_markdown="# Model Spec Release Updates\n\n- Updated supported models.",
-        artifacts_summary_markdown="# Release Artifacts Summary\n\n- Promoted 3 images.",
+        model_diff_records=[make_release_diff_record()],
+        artifacts_summary_data=make_artifacts_summary_data(),
+        release_performance_data=make_release_performance_data(
+            perf_status="target", ttft=52.0, test_status="failed"
+        ),
+        base_release_performance_data=make_release_performance_data(),
     )
 
     assert notes.startswith("# tt-inference-server v0.10.0\n")
     assert "## Summary of Changes\n" in notes
     assert "## Recommended system software versions\n" in notes
     assert "## Known Issues\n" in notes
-    assert "## Model and Hardware Support Diff\n\n- Updated supported models." in notes
-    assert "## Performance\n" in notes
+    assert (
+        "## Model and Hardware Support Diff\n\nThis document shows model specification updates."
+        in notes
+    )
+    assert "| Performance Diff |" in notes
+    assert (
+        "N150: Perf status: functional -> target; Benchmarks ~1; LLM API tests ~1"
+        in notes
+    )
     assert "## Scale Out\n" in notes
     assert "## Deprecations and breaking changes\n" in notes
-    assert "## Release Artifacts Summary\n\n- Promoted 3 images." in notes
+    assert "## Release Artifacts Summary\n\n### Images Promoted from Models CI" in notes
     assert "## Contributors\n" in notes
     assert "## Assets\n" in notes
-    assert "\n# Release Artifacts Summary\n\n- Promoted 3 images." not in notes
-    assert "\n# Model Spec Release Updates\n\n- Updated supported models." not in notes
+    assert "## Performance\n" not in notes
+    assert "https://ghcr.io/tenstorrent/release:tag" in notes
+    assert "https://ghcr.io/tenstorrent/build:tag" in notes
 
 
-def test_main_reads_pre_release_model_diff_markdown_from_release_dir(tmp_path):
+def test_main_reads_raw_release_inputs_from_release_dir(tmp_path):
     version_file = tmp_path / "VERSION"
     version_file.write_text("0.10.0\n")
 
     release_dir = tmp_path / "release_logs" / "v0.10.0"
     release_dir.mkdir(parents=True)
-    (release_dir / "pre_release_models_diff.md").write_text(
-        "# Model Spec Release Updates\n\n- Updated supported models.\n"
+    (release_dir / "pre_release_models_diff.json").write_text(
+        json.dumps([make_release_diff_record()])
     )
-    (release_dir / "release_artifacts_summary.md").write_text(
-        "# Release Artifacts Summary\n\n- Promoted 3 images.\n"
+    (release_dir / "release_artifacts_summary.json").write_text(
+        json.dumps(make_artifacts_summary_data())
     )
+    current_performance_path = tmp_path / "release_performance.json"
+    current_performance_path.write_text(
+        json.dumps(
+            make_release_performance_data(
+                perf_status="target", ttft=52.0, test_status="failed"
+            )
+        )
+    )
+    base_performance_path = tmp_path / "release_performance_base.json"
+    base_performance_path.write_text(json.dumps(make_release_performance_data()))
     output_path = release_dir / "release_notes_v0.10.0.md"
 
     args = Namespace(
         version=None,
         version_file=str(version_file),
-        artifacts_summary_markdown=None,
-        model_diff_markdown=None,
+        artifacts_summary_json=None,
+        model_diff_json=None,
+        release_performance_json=str(current_performance_path),
+        base_release_performance_json=str(base_performance_path),
         output=str(output_path),
     )
 
@@ -71,4 +175,12 @@ def test_main_reads_pre_release_model_diff_markdown_from_release_dir(tmp_path):
         assert main() == 0
 
     notes = output_path.read_text()
-    assert "## Model and Hardware Support Diff\n\n- Updated supported models." in notes
+    assert (
+        "## Model and Hardware Support Diff\n\nThis document shows model specification updates."
+        in notes
+    )
+    assert (
+        "N150: Perf status: functional -> target; Benchmarks ~1; LLM API tests ~1"
+        in notes
+    )
+    assert "## Performance\n" not in notes

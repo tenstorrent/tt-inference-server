@@ -52,13 +52,27 @@ from workflows.utils import get_version, parse_commits_from_docker_image
 try:
     from generate_release_notes import (
         build_release_notes,
-        load_optional_text,
+        load_git_release_performance_data,
+        load_optional_json,
+    )
+    from release_performance import (
+        build_release_performance_data,
+        get_release_performance_path,
+        load_release_performance_data,
+        write_release_performance_data,
     )
     from release_paths import get_versioned_release_logs_dir, resolve_release_output_dir
 except ImportError:
     from scripts.release.generate_release_notes import (
         build_release_notes,
-        load_optional_text,
+        load_git_release_performance_data,
+        load_optional_json,
+    )
+    from scripts.release.release_performance import (
+        build_release_performance_data,
+        get_release_performance_path,
+        load_release_performance_data,
+        write_release_performance_data,
     )
     from scripts.release.release_paths import (
         get_versioned_release_logs_dir,
@@ -726,18 +740,60 @@ def write_output(
     return output_data
 
 
-def write_release_notes(output_dir: Path, version: str) -> Path:
-    """Write versioned release notes using the pre-release diff and artifact summary."""
+def write_release_performance_outputs(
+    merged_spec: Dict[str, MergedModelRecord],
+    output_dir: Path,
+    dry_run: bool,
+) -> Dict[str, Any]:
+    """Write the release-performance baseline and return its raw data."""
+    release_performance_data = build_release_performance_data(merged_spec.values())
+
+    release_performance_path = get_release_performance_path()
+    if not release_performance_data.get("models"):
+        logger.warning(
+            "Skipping checked-in release performance baseline update because no release data was found"
+        )
+    elif dry_run:
+        logger.info(
+            "Dry-run mode: skipping checked-in release performance baseline update"
+        )
+    else:
+        write_release_performance_data(
+            release_performance_data, path=release_performance_path
+        )
+        logger.info(
+            f"Written checked-in release performance baseline to {release_performance_path}"
+        )
+
+    return release_performance_data
+
+
+def write_release_notes(
+    output_dir: Path,
+    version: str,
+    release_performance_data: Optional[Dict[str, Any]] = None,
+) -> Path:
+    """Write versioned release notes using structured release artifacts."""
     notes_path = output_dir / f"release_notes_v{version}.md"
-    model_diff_markdown = load_optional_text(output_dir / "pre_release_models_diff.md")
-    artifacts_summary_markdown = load_optional_text(
-        output_dir / "release_artifacts_summary.md"
+    model_diff_records = load_optional_json(
+        output_dir / "pre_release_models_diff.json", default=[]
+    )
+    artifacts_summary_data = load_optional_json(
+        output_dir / "release_artifacts_summary.json", default={}
+    )
+    current_release_performance_data = (
+        release_performance_data or load_release_performance_data()
+    )
+    base_release_performance_data = load_git_release_performance_data(
+        get_release_performance_path()
     )
 
     notes = build_release_notes(
         version=version,
-        model_diff_markdown=model_diff_markdown,
-        artifacts_summary_markdown=artifacts_summary_markdown,
+        model_diff_records=model_diff_records,
+        artifacts_summary_data=artifacts_summary_data,
+        release_performance_data=current_release_performance_data,
+        base_release_performance_data=base_release_performance_data,
     )
     notes_path.write_text(notes, encoding="utf-8")
     logger.info(f"Written release notes to {notes_path}")
@@ -857,8 +913,16 @@ def main():
 
     notes_path = None
     if args.release:
-        logger.info("\nStep 4: Writing release notes...")
-        notes_path = write_release_notes(output_dir, get_version())
+        logger.info("\nStep 4: Writing release performance outputs...")
+        release_performance_data = write_release_performance_outputs(
+            merged_spec, output_dir, args.dry_run
+        )
+        logger.info("\nStep 5: Writing release notes...")
+        notes_path = write_release_notes(
+            output_dir,
+            get_version(),
+            release_performance_data=release_performance_data,
+        )
 
     logger.info("\n" + "=" * 80)
     logger.info("COMPLETED SUCCESSFULLY")

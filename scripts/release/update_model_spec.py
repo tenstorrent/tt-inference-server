@@ -890,6 +890,7 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
         get_model_page_group_filename,
         write_file,
     )
+    from scripts.release.release_performance import load_release_performance_data
     from workflows.workflow_types import ModelType
 
     # Dynamically import the updated model_spec module to get fresh spec_templates
@@ -907,6 +908,7 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
 
     print(f"Generating Model Support documentation from {len(templates)} templates")
     print(f"Output directory: {output_path}")
+    release_performance_data = load_release_performance_data()
 
     # Note: docs/model_support/README.md is no longer generated.
     # The model support content is maintained directly in root README.md
@@ -949,7 +951,10 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
                 generated_groups.add(id(group))
                 filename = get_model_page_group_filename(model_name, group)
                 page_content = generate_model_page_group_page(
-                    model_name, model_templates, group
+                    model_name,
+                    model_templates,
+                    group,
+                    release_performance_data=release_performance_data,
                 )
                 write_file(output_path / subdir / filename, page_content)
 

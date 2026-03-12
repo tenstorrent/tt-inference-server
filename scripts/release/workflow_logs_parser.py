@@ -245,9 +245,7 @@ def parse_workflow_logs_dir(
             "model_specs": {
                 "model_spec": dict      # Model specification JSON
             },
-            "reports_output": {
-                "report_data": dict     # Performance and evaluation report data
-            },
+            "reports_output": dict,     # Full report_data_*.json payload
             "tt_smi_output": {
                 "firmware_bundle": str, # Firmware bundle version
                 "kmd_version": str,     # KMD driver version
@@ -292,8 +290,6 @@ def parse_workflow_logs_dir(
     accuracy_status = parse_accuracy_status(report_data_json)
     evals_completed = parse_evals_completed(report_data_json)
     is_passing = benchmarks_completed and accuracy_status
-
-    del report_data_json["benchmarks"]
 
     # Extract docker image and parse commits
     spec_docker_image = model_spec_json.get("docker_image") if model_spec_json else None
