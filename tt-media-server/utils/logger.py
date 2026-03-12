@@ -13,7 +13,7 @@ from colorama import init as colorama_init
 colorama_init(autoreset=True)
 
 
-def _reset_logging_locks_after_fork():
+def _reset_logging_locks_after_fork():  # pragma: no cover
     """Reset all logging handler locks in the child process after a fork.
 
     When the parent process is forked, the child inherits a copy of all
