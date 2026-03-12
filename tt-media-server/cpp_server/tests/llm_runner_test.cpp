@@ -73,7 +73,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
     engine.stop();
   });
 
-  engine.run();
+  engine.start();
   consumer.join();
 
   ASSERT_EQ(finished_count.load(), total_requests);
