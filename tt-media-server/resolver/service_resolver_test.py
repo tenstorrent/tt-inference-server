@@ -7,9 +7,9 @@ import sys
 
 # Mock ALL problematic modules BEFORE any imports
 sys.modules["ttnn"] = Mock()
-sys.modules["models.experimental.stable_diffusion_xl_base.tt.tt_unet"] = Mock()
-sys.modules["models.experimental.stable_diffusion_xl_base.tt.tt_embedding"] = Mock()
-sys.modules["models.experimental.stable_diffusion_xl_base.tt.sdxl_utility"] = Mock()
+sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_unet"] = Mock()
+sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_embedding"] = Mock()
+sys.modules["models.demos.stable_diffusion_xl_base.tt.sdxl_utility"] = Mock()
 sys.modules["tt_model_runners.sdxl_runner"] = Mock()
 sys.modules["model_services.scheduler"] = Mock()
 

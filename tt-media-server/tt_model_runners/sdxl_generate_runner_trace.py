@@ -8,7 +8,7 @@ import torch
 from config.constants import SupportedModels
 from diffusers import DiffusionPipeline
 from domain.image_generate_request import ImageGenerateRequest
-from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
+from models.demos.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
     TtSDXLPipeline,
     TtSDXLPipelineConfig,
 )
@@ -83,7 +83,6 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
 
         self._apply_request_settings(requests[0])
         self._ensure_lora_state(requests[0])
-        self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
         self.tt_sdxl.compile_text_encoding()
 
         (
@@ -92,8 +91,6 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         ) = self.tt_sdxl.encode_prompts(
             prompts, negative_prompts, prompts_2, negative_prompt_2
         )
-
-        self.logger.debug(f"Device {self.device_id}: Generating input tensors...")
 
         tt_latents, tt_prompt_embeds, tt_add_text_embeds = (
             self.tt_sdxl.generate_input_tensors(
@@ -105,16 +102,12 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
             )
         )
 
-        self.logger.debug(f"Device {self.device_id}: Preparing input tensors...")
-
         tensors = (
             tt_latents,
             tt_prompt_embeds,
             tt_add_text_embeds,
         )
         self._prepare_input_tensors_for_iteration(tensors)
-
-        self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
 
         self.tt_sdxl.compile_image_processing()
 
