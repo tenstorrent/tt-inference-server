@@ -47,6 +47,8 @@ class MockImageGenerateRequest:
         self.stream = False  # Default to non-streaming
 
 
+_orig_image_generate_request = sys.modules.get("domain.image_generate_request")
+
 sys.modules["domain.image_generate_request"] = Mock()
 sys.modules[
     "domain.image_generate_request"
@@ -68,6 +70,11 @@ sys.modules["utils.logger"] = Mock()
 sys.modules["utils.logger"].TTLogger.return_value = mock_logger
 
 from device_workers.device_worker import device_worker
+
+if _orig_image_generate_request is not None:
+    sys.modules["domain.image_generate_request"] = _orig_image_generate_request
+else:
+    sys.modules.pop("domain.image_generate_request", None)
 
 
 class WorkerExitException(Exception):
