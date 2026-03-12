@@ -44,6 +44,11 @@ from workflows.workflow_types import (
     ModelStatusTypes,
     ModelType,
 )
+from scripts.release.release_performance import (
+    get_release_performance_entry,
+    load_release_performance_data,
+    render_release_report_section,
+)
 
 
 @dataclass(frozen=True)
@@ -412,6 +417,7 @@ def generate_model_page_group_page(
     model_name: str,
     templates: List[ModelSpecTemplate],
     group: HardwarePageGroup,
+    release_performance_data: Optional[Dict[str, object]] = None,
 ) -> str:
     """
     Generate markdown content for a model's page group page.
@@ -635,6 +641,24 @@ def generate_model_page_group_page(
 
         lines.append(f"| Docker Image | `{docker_image}` |")
         lines.append("")
+
+        release_entry = None
+        if release_performance_data:
+            release_entry = get_release_performance_entry(
+                release_performance_data,
+                model_name,
+                device,
+                target_template.impl.impl_id,
+                target_template.inference_engine,
+            )
+        if release_entry:
+            release_report_section = render_release_report_section(
+                release_entry,
+                section_heading_level=2 if idx == 0 else 3,
+            )
+            if release_report_section:
+                lines.append(release_report_section)
+                lines.append("")
 
     return "\n".join(lines)
 
@@ -1007,6 +1031,7 @@ def main():
     # Note: docs/model_support/README.md is no longer generated here.
     # The model support content is maintained directly in root README.md
     # via update_model_spec.py's update_readme_model_support() function.
+    release_performance_data = load_release_performance_data()
 
     # Generate models by hardware page
     hardware_content = generate_models_by_hardware_page(templates)
@@ -1047,7 +1072,10 @@ def main():
                 generated_groups.add(id(group))
                 filename = get_model_page_group_filename(model_name, group)
                 page_content = generate_model_page_group_page(
-                    model_name, model_templates, group
+                    model_name,
+                    model_templates,
+                    group,
+                    release_performance_data=release_performance_data,
                 )
                 write_file(output_dir / subdir / filename, page_content, args.dry_run)
 
