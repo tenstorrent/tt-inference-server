@@ -27,6 +27,7 @@ class SpPipelineRunner : public IRunner {
 
   void run() override;
   void stop() override;
+  bool warmup() override;
   const char* runner_type() const override { return "SpPipelineRunner"; }
 
  private:
