@@ -50,7 +50,7 @@ def resolve_lora_path(lora_path: str) -> str:
 
     filename = _find_safetensors_filename(lora_path)
 
-    logger.info("Resolving LoRA %s/%s via HF cache", lora_path, filename)
+    logger.info(f"Resolving LoRA {lora_path}/{filename} via HF cache")
     local_path = hf_hub_download(repo_id=lora_path, filename=filename)
-    logger.info("LoRA resolved: %s", local_path)
+    logger.info(f"LoRA resolved: {local_path}")
     return local_path
