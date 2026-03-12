@@ -131,6 +131,34 @@
                         "lora_scale": 0.6
                     }
                 }
+            },
+            {
+                "name": "ImageGenerationLoraLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_lora_load_test",
+                "enabled": true,
+                "description": "Mixed LoRA load test: concurrent baseline + pixel-art-xl + ColoringBookRedmond-V2",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "batch_size": 10,
+                    "num_inference_steps": 20,
+                    "target_time": 120,
+                    "lora_configs": [
+                        {
+                            "lora_path": "nerijs/pixel-art-xl",
+                            "lora_scale": 0.8
+                        },
+                        {
+                            "lora_path": "artificialguybr/ColoringBookRedmond-V2",
+                            "lora_scale": 0.6
+                        }
+                    ]
+                }
             }
         ]
     },
@@ -266,6 +294,34 @@
                         "lora_scale": 0.6
                     }
                 }
+            },
+            {
+                "name": "ImageGenerationLoraLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_lora_load_test",
+                "enabled": true,
+                "description": "Mixed LoRA load test: concurrent baseline + pixel-art-xl + ColoringBookRedmond-V2",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "batch_size": 10,
+                    "num_inference_steps": 20,
+                    "target_time": 120,
+                    "lora_configs": [
+                        {
+                            "lora_path": "nerijs/pixel-art-xl",
+                            "lora_scale": 0.8
+                        },
+                        {
+                            "lora_path": "artificialguybr/ColoringBookRedmond-V2",
+                            "lora_scale": 0.6
+                        }
+                    ]
+                }
             }
         ]
     },
@@ -400,6 +456,34 @@
                         "lora_path": "artificialguybr/ColoringBookRedmond-V2",
                         "lora_scale": 0.6
                     }
+                }
+            },
+            {
+                "name": "ImageGenerationLoraLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_lora_load_test",
+                "enabled": true,
+                "description": "Mixed LoRA load test: concurrent baseline + pixel-art-xl + ColoringBookRedmond-V2",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "batch_size": 10,
+                    "num_inference_steps": 20,
+                    "target_time": 120,
+                    "lora_configs": [
+                        {
+                            "lora_path": "nerijs/pixel-art-xl",
+                            "lora_scale": 0.8
+                        },
+                        {
+                            "lora_path": "artificialguybr/ColoringBookRedmond-V2",
+                            "lora_scale": 0.6
+                        }
+                    ]
                 }
             }
         ]
