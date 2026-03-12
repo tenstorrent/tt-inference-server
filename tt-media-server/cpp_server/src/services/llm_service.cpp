@@ -187,8 +187,11 @@ void LLMService::stop() {
 
     TT_LOG_INFO("[LLMService] Stopping...");
 
+    // Signal shutdown on all ring buffers so blocking_pop wakes up
+    for (auto& q : queue_manager_->result_queues) {
+        q->shutdown();
+    }
 
-    // Wait for all consumer threads
     for (auto& thread : consumer_threads_) {
         if (thread.joinable()) {
             thread.join();
@@ -256,7 +259,7 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
         bool any_activity = false;
 
         ipc::SharedToken token;
-        while (worker->cfg.result_queue->pop(token)) {
+        while (worker->cfg.result_queue->blocking_pop(token)) {
             any_activity = true;
 
             auto val = stream_callbacks_.get(token.task_id);

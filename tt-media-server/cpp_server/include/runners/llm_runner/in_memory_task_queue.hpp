@@ -31,6 +31,13 @@ class InMemoryTaskQueue : public ITaskQueue {
     queue_.pop_front();
     return seq;
   }
+  
+  Sequence* receive() override {
+    if (queue_.empty()) return nullptr;
+    Sequence* seq = queue_.front().release();
+    queue_.pop_front();
+    return seq;
+  }
 
   bool empty() const override { return queue_.empty(); }
 

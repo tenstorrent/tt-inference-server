@@ -29,6 +29,7 @@ class BoostIpcTaskQueue : public llm_engine::ITaskQueue {
   ~BoostIpcTaskQueue();
 
   void push(const llm_engine::Sequence& seq) override;
+  llm_engine::Sequence* receive() override;
   llm_engine::Sequence* try_pop() override;
   bool empty() const override;
 
