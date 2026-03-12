@@ -16,31 +16,47 @@ import struct
 import sys
 import time
 
-# ── Shared-memory layout (must match C++ SharedMemory and runner.py) ─────────
+# ── Shared-memory layout (must match C++ Message<MaxTokenIds> template) ──
+# template<int MaxTokenIds>
+# struct Message {
+#     atomic<int32_t> state;          // offset 0
+#     uint32_t        max_tokens;     // offset 4
+#     uint32_t        num_token_ids;  // offset 8
+#     char            task_id[36];    // offset 12
+#     uint64_t        token_ids[MaxTokenIds]; // offset 48
+# };
 _NUM_SLOTS = 1024
-_MESSAGE_SIZE = 8224
-_SHM_SIZE = _NUM_SLOTS * _MESSAGE_SIZE
-_STATE_OFFSET = 0
-_PAYLOAD_LENGTH_OFFSET = 20  # 4 (state) + 16 (pad)
-_MAX_TOKENS_OFFSET = 24
-_NUM_TOKEN_IDS_OFFSET = 28
-_PAYLOAD_OFFSET = 32
-_TASK_ID_SIZE = 36
+_HEADER_SIZE = 48
 _TOKEN_ID_SIZE = 8
+_TASK_ID_SIZE = 36
+
+_PREFILL_MAX_TOKEN_IDS = 32768
+_DECODE_MAX_TOKEN_IDS = 1
+
+_C2P_MESSAGE_SIZE = _HEADER_SIZE + _PREFILL_MAX_TOKEN_IDS * _TOKEN_ID_SIZE
+_P2C_MESSAGE_SIZE = _HEADER_SIZE + _DECODE_MAX_TOKEN_IDS * _TOKEN_ID_SIZE
+
+_STATE_OFF = 0
+_MAX_TOKENS_OFF = 4
+_NUM_TOKEN_IDS_OFF = 8
+_TASK_ID_OFF = 12
+_TOKEN_IDS_OFF = 48
+
 _FREE = 0
 _TAKEN = 1
 
 
-def _open_shm(shm_name: str):
+def _open_shm(shm_name: str, message_size: int):
     """Open existing shared memory (same as runner.py)."""
     path = f"/dev/shm/{shm_name}"
     if not os.path.exists(path):
         print(f"Error: Shared memory {path} does not exist", file=sys.stderr)
         return None
+    shm_size = _NUM_SLOTS * message_size
     fd = os.open(path, os.O_RDWR)
     try:
         return mmap.mmap(
-            fd, _SHM_SIZE, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE
+            fd, shm_size, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE
         )
     finally:
         os.close(fd)
@@ -49,11 +65,10 @@ def _open_shm(shm_name: str):
 def _shm_write_prefill(
     buf, task_id: str, token_ids: list[int], max_tokens: int, pos: int
 ) -> int:
-    """Write prefill message to C2P shared memory (mimics C++ SharedMemory::write)."""
-    msg_off = pos * _MESSAGE_SIZE
-    state_off = msg_off + _STATE_OFFSET
+    """Write prefill message to C2P shared memory (mimics C++ PrefillSharedMemory::write)."""
+    msg_off = pos * _C2P_MESSAGE_SIZE
+    state_off = msg_off + _STATE_OFF
 
-    # Wait for FREE slot
     timeout = 5.0
     start = time.time()
     while struct.unpack_from("<i", buf, state_off)[0] != _FREE:
@@ -62,29 +77,19 @@ def _shm_write_prefill(
             return pos
         time.sleep(0.001)
 
-    # Encode task_id (36 bytes, pad with zeros)
     task_id_bytes = task_id.encode("utf-8")[:_TASK_ID_SIZE].ljust(
         _TASK_ID_SIZE, b"\x00"
     )
 
-    # Encode token_ids
-    token_ids_bytes = b"".join(struct.pack("<q", tid) for tid in token_ids)
+    struct.pack_into("<I", buf, msg_off + _MAX_TOKENS_OFF, max_tokens)
+    struct.pack_into("<I", buf, msg_off + _NUM_TOKEN_IDS_OFF, len(token_ids))
 
-    # Calculate payload
-    payload = task_id_bytes + token_ids_bytes
-    payload_length = len(payload)
+    buf[msg_off + _TASK_ID_OFF : msg_off + _TASK_ID_OFF + _TASK_ID_SIZE] = task_id_bytes
 
-    # Write metadata
-    struct.pack_into("<I", buf, msg_off + _PAYLOAD_LENGTH_OFFSET, payload_length)
-    struct.pack_into("<I", buf, msg_off + _MAX_TOKENS_OFFSET, max_tokens)
-    struct.pack_into("<I", buf, msg_off + _NUM_TOKEN_IDS_OFFSET, len(token_ids))
+    token_ids_off = msg_off + _TOKEN_IDS_OFF
+    for i, tid in enumerate(token_ids):
+        struct.pack_into("<q", buf, token_ids_off + i * _TOKEN_ID_SIZE, tid)
 
-    # Write payload
-    buf[msg_off + _PAYLOAD_OFFSET : msg_off + _PAYLOAD_OFFSET + payload_length] = (
-        payload
-    )
-
-    # Flush and mark TAKEN
     buf.flush()
     struct.pack_into("<i", buf, state_off, _TAKEN)
     buf.flush()
@@ -96,30 +101,24 @@ def _shm_write_prefill(
 
 
 def _shm_read_token(buf, pos: int) -> tuple[str | None, int | None, int]:
-    """Read a single token from P2C shared memory (mimics C++ SharedMemory::try_read)."""
-    msg_off = pos * _MESSAGE_SIZE
-    state_off = msg_off + _STATE_OFFSET
+    """Read a single token from P2C shared memory (mimics C++ DecodeSharedMemory::try_read)."""
+    msg_off = pos * _P2C_MESSAGE_SIZE
+    state_off = msg_off + _STATE_OFF
 
-    # Check if TAKEN
     if struct.unpack_from("<i", buf, state_off)[0] != _TAKEN:
         return None, None, pos
 
-    # Read metadata
-    num_token_ids = struct.unpack_from("<I", buf, msg_off + _NUM_TOKEN_IDS_OFFSET)[0]
-    payload_length = struct.unpack_from("<I", buf, msg_off + _PAYLOAD_LENGTH_OFFSET)[0]
+    num_token_ids = struct.unpack_from("<I", buf, msg_off + _NUM_TOKEN_IDS_OFF)[0]
 
-    # Read payload
-    payload_off = msg_off + _PAYLOAD_OFFSET
-    task_id_bytes = bytes(buf[payload_off : payload_off + _TASK_ID_SIZE])
+    task_id_bytes = bytes(
+        buf[msg_off + _TASK_ID_OFF : msg_off + _TASK_ID_OFF + _TASK_ID_SIZE]
+    )
     task_id = task_id_bytes.rstrip(b"\x00").decode("utf-8")
 
-    # Read token_id (should be 1 token for decode response)
-    if num_token_ids > 0 and payload_length >= _TASK_ID_SIZE + _TOKEN_ID_SIZE:
-        token_id = struct.unpack_from("<q", buf, payload_off + _TASK_ID_SIZE)[0]
-    else:
-        token_id = None
+    token_id = None
+    if num_token_ids > 0:
+        token_id = struct.unpack_from("<q", buf, msg_off + _TOKEN_IDS_OFF)[0]
 
-    # Mark FREE
     struct.pack_into("<i", buf, state_off, _FREE)
 
     return task_id, token_id, (pos + 1) % _NUM_SLOTS
@@ -127,15 +126,13 @@ def _shm_read_token(buf, pos: int) -> tuple[str | None, int | None, int]:
 
 def test_roundtrip():
     """Test roundtrip communication with runner.py."""
-    # Get shared memory names from environment
     c2p_name = os.environ.get("TT_IPC_SHM_C2P", "tt_ipc_c2p_12345")
     p2c_name = os.environ.get("TT_IPC_SHM_P2C", "tt_ipc_p2c_12345")
 
     print(f"Opening shared memory: C2P={c2p_name}, P2C={p2c_name}")
 
-    # Open shared memory
-    c2p_buf = _open_shm(c2p_name)
-    p2c_buf = _open_shm(p2c_name)
+    c2p_buf = _open_shm(c2p_name, _C2P_MESSAGE_SIZE)
+    p2c_buf = _open_shm(p2c_name, _P2C_MESSAGE_SIZE)
 
     if not c2p_buf or not p2c_buf:
         print(
@@ -145,7 +142,6 @@ def test_roundtrip():
         return 1
 
     try:
-        # Test data (same as your example)
         test_task_id = "2a3533ab258758aae0c141f5"
         test_token_ids = [0, 19923, 2058]
         test_max_tokens = 16
@@ -155,17 +151,15 @@ def test_roundtrip():
         print(f"  token_ids: {test_token_ids}")
         print(f"  max_tokens: {test_max_tokens}")
 
-        # Write prefill message
         write_pos = 0
         write_pos = _shm_write_prefill(
             c2p_buf, test_task_id, test_token_ids, test_max_tokens, write_pos
         )
 
-        # Read tokens back
         print("\nReading tokens from P2C...")
         read_pos = 0
         received_tokens = []
-        timeout = 10.0  # 10 seconds timeout
+        timeout = 10.0
         start = time.time()
 
         while len(received_tokens) < test_max_tokens:
@@ -182,15 +176,13 @@ def test_roundtrip():
                 )
                 received_tokens.append(token_id)
 
-                # Verify task_id matches
                 if task_id != test_task_id:
                     print(
                         f"  Warning: task_id mismatch! Expected {test_task_id}, got {task_id}"
                     )
             else:
-                time.sleep(0.001)  # Small sleep to avoid busy-wait
+                time.sleep(0.001)
 
-        # Summary
         print(f"\n{'=' * 60}")
         print("Test Summary:")
         print(f"  Sent: {len(test_token_ids)} token_ids, max_tokens={test_max_tokens}")

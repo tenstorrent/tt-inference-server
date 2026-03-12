@@ -5,6 +5,8 @@
 #include "config/settings.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/embedding_runner.hpp"
+#include "utils/logger.hpp"
+#include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
 
 #include <iostream>
 
@@ -18,11 +20,16 @@ std::unique_ptr<runners::IRunner> create_runner(
 
     switch (service) {
         case config::ModelService::EMBEDDING: {
-            std::cout << "[RunnerFactory] Creating Embedding runner\n" << std::flush;
+            TT_LOG_INFO("[RunnerFactory] Creating Embedding runner");
             return std::make_unique<runners::EmbeddingRunner>("device_0", 0);
         }
         case config::ModelService::LLM:
         default: {
+            TT_LOG_INFO("[RunnerFactory] Creating LLM runner");
+            if (auto* sp_cfg = std::get_if<sp_pipeline::SpPipelineConfig>(&config)) {
+                std::cout << "[RunnerFactory] Creating SP Pipeline runner\n" << std::flush;
+                return std::make_unique<runners::SpPipelineRunner>(*sp_cfg, result_queue, task_queue);
+            }
             std::cout << "[RunnerFactory] Creating LLM runner\n" << std::flush;
             auto& cfg = std::get<llm_engine::Config>(config);
             return std::make_unique<tt::runners::LLMRunner>(cfg, result_queue, task_queue);

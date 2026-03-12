@@ -5,9 +5,9 @@
 #include "config/settings.hpp"
 #include "runners/embedding_runner.hpp"
 #include "profiling/tracy.hpp"
+#include "utils/logger.hpp"
 
 #include <future>
-#include <iostream>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -36,6 +36,9 @@ struct EmbeddingService::Impl {
     struct PendingRequest {
         domain::EmbeddingRequest request;
         std::promise<domain::EmbeddingResponse> promise;
+
+        explicit PendingRequest(domain::EmbeddingRequest req)
+            : request(std::move(req)) {}
     };
 
     // Worker process info
@@ -72,9 +75,8 @@ struct EmbeddingService::Impl {
         num_workers_ = tt::config::num_workers();
         max_batch_size_ = tt::config::batch_size();
         batch_timeout_ = std::chrono::milliseconds(tt::config::batch_timeout_ms());
-        std::cout << "[EmbeddingService] Initialized with " << num_workers_ << " workers"
-                  << ", batch_size=" << max_batch_size_
-                  << ", batch_timeout=" << batch_timeout_.count() << "ms\n";
+        TT_LOG_INFO("[EmbeddingService] Initialized with {} workers, batch_size={}, batch_timeout={}ms",
+                    num_workers_, max_batch_size_, batch_timeout_.count());
     }
 
     ~Impl() {
@@ -86,7 +88,7 @@ struct EmbeddingService::Impl {
             return;
         }
 
-        std::cout << "[EmbeddingService] Starting with " << num_workers_ << " worker processes\n";
+        TT_LOG_INFO("[EmbeddingService] Starting with {} worker processes", num_workers_);
 
         workers_.reserve(num_workers_);
 
@@ -97,14 +99,14 @@ struct EmbeddingService::Impl {
 
             // Create pipes
             if (pipe(worker->request_pipe) < 0 || pipe(worker->response_pipe) < 0) {
-                std::cerr << "[EmbeddingService] Failed to create pipes for worker " << i << "\n";
+                TT_LOG_ERROR("[EmbeddingService] Failed to create pipes for worker {}", i);
                 continue;
             }
 
             pid_t pid = fork();
 
             if (pid < 0) {
-                std::cerr << "[EmbeddingService] Failed to fork worker " << i << "\n";
+                TT_LOG_ERROR("[EmbeddingService] Failed to fork worker {}", i);
                 continue;
             } else if (pid == 0) {
                 // Child process
@@ -121,11 +123,8 @@ struct EmbeddingService::Impl {
                 worker->is_ready.store(true);
                 worker->running.store(true);
 
-                std::cout << "[EmbeddingService] Spawned worker " << i
-                          << " with PID " << pid
-                          << " (TT_VISIBLE_DEVICES=" << tt::config::visible_devices_for_worker(i) << ")"
-                          << " request_pipe[1]=" << worker->request_pipe[1]
-                          << " response_pipe[0]=" << worker->response_pipe[0] << "\n";
+                TT_LOG_INFO("[EmbeddingService] Spawned worker {} with PID {} (TT_VISIBLE_DEVICES={}) request_pipe[1]={} response_pipe[0]={}",
+                            i, pid, tt::config::visible_devices_for_worker(i), worker->request_pipe[1], worker->response_pipe[0]);
 
                 workers_.push_back(std::move(worker));
             }
@@ -137,7 +136,7 @@ struct EmbeddingService::Impl {
         }
 
         is_ready_ = true;
-        std::cout << "[EmbeddingService] All " << workers_.size() << " workers started\n";
+        TT_LOG_INFO("[EmbeddingService] All {} workers started", workers_.size());
     }
 
     void stop() {
@@ -145,7 +144,7 @@ struct EmbeddingService::Impl {
             return;
         }
 
-        std::cout << "[EmbeddingService] Stopping...\n";
+        TT_LOG_INFO("[EmbeddingService] Stopping...");
 
         // Wake up all dispatch threads
         queue_cv_.notify_all();
@@ -164,7 +163,7 @@ struct EmbeddingService::Impl {
             if (worker->pid > 0) {
                 kill(worker->pid, SIGTERM);
                 waitpid(worker->pid, nullptr, 0);
-                std::cout << "[EmbeddingService] Worker " << worker->worker_id << " terminated\n";
+                TT_LOG_INFO("[EmbeddingService] Worker {} terminated", worker->worker_id);
             }
 
             // Close pipes
@@ -175,7 +174,7 @@ struct EmbeddingService::Impl {
         workers_.clear();
         is_ready_ = false;
 
-        std::cout << "[EmbeddingService] Stopped\n";
+        TT_LOG_INFO("[EmbeddingService] Stopped");
     }
 
     [[noreturn]] void worker_process_main(int worker_id, int request_pipe[2], int response_pipe[2]) {
@@ -191,19 +190,19 @@ struct EmbeddingService::Impl {
         std::string visible_devices = tt::config::visible_devices_for_worker(wid);
         setenv("TT_VISIBLE_DEVICES", visible_devices.c_str(), 1);
 
-        std::cout << "[Worker " << worker_id << "] Started with PID " << getpid() << "\n";
-        std::cout << "[Worker " << worker_id << "] TT_VISIBLE_DEVICES=" << visible_devices << "\n";
-        std::cout << "[Worker " << worker_id << "] read_fd=" << read_fd << ", write_fd=" << write_fd << "\n";
+        TT_LOG_INFO("[Worker {}] Started with PID {}", worker_id, getpid());
+        TT_LOG_INFO("[Worker {}] TT_VISIBLE_DEVICES={}", worker_id, visible_devices);
+        TT_LOG_INFO("[Worker {}] read_fd={}, write_fd={}", worker_id, read_fd, write_fd);
 
         runners::EmbeddingRunner runner(visible_devices, static_cast<int>(wid));
 
         // Warmup
         if (!runner.warmup()) {
-            std::cerr << "[Worker " << worker_id << "] Warmup failed!\n";
+            TT_LOG_ERROR("[Worker {}] Warmup failed!", worker_id);
             _exit(1);
         }
 
-        std::cout << "[Worker " << worker_id << "] Ready\n";
+        TT_LOG_INFO("[Worker {}] Ready", worker_id);
 
         // Process requests (supports batching)
         while (true) {
@@ -211,11 +210,11 @@ struct EmbeddingService::Impl {
             uint32_t request_len = 0;
             ssize_t n = read(read_fd, &request_len, sizeof(request_len));
             if (n <= 0) {
-                std::cerr << "[Worker " << worker_id << "] Pipe closed or read error (n=" << n << ")\n";
+                TT_LOG_ERROR("[Worker {}] Pipe closed or read error (n={})", worker_id, n);
                 break;  // Pipe closed or error
             }
 
-            std::cout << "[Worker " << worker_id << "] Reading request of " << request_len << " bytes\n";
+            TT_LOG_DEBUG("[Worker {}] Reading request of {} bytes", worker_id, request_len);
 
             // Read request JSON - loop until all bytes are read
             std::string request_json(request_len, '\0');
@@ -223,13 +222,13 @@ struct EmbeddingService::Impl {
             while (total_read < request_len) {
                 n = read(read_fd, request_json.data() + total_read, request_len - total_read);
                 if (n <= 0) {
-                    std::cerr << "[Worker " << worker_id << "] Read error at " << total_read << "/" << request_len << "\n";
+                    TT_LOG_ERROR("[Worker {}] Read error at {}/{}", worker_id, total_read, request_len);
                     break;
                 }
                 total_read += n;
             }
             if (total_read != request_len) {
-                std::cerr << "[Worker " << worker_id << "] Failed to read full request\n";
+                TT_LOG_ERROR("[Worker {}] Failed to read full request", worker_id);
                 continue;
             }
 
@@ -239,21 +238,30 @@ struct EmbeddingService::Impl {
             std::istringstream iss(request_json);
             std::string errors;
             if (!Json::parseFromStream(builder, iss, &req_json, &errors)) {
-                std::cerr << "[Worker " << worker_id << "] Failed to parse request: " << errors << "\n";
+                TT_LOG_ERROR("[Worker {}] Failed to parse request: {}", worker_id, errors);
                 continue;
             }
 
             // Build batch of requests
             std::vector<domain::EmbeddingRequest> batch;
+            auto task_id_from_json = [](const Json::Value& j) -> domain::TaskID {
+                if (j.isMember("task_id") && !j["task_id"].asString().empty()) {
+                    return domain::TaskID(j["task_id"].asString());
+                }
+                return domain::TaskID(
+                    domain::TaskID::generate());
+            };
             if (req_json.isArray()) {
                 for (const auto& item : req_json) {
-                    batch.push_back(domain::EmbeddingRequest::from_json(item));
+                    batch.push_back(
+                        domain::EmbeddingRequest::from_json(item, task_id_from_json(item)));
                 }
             } else {
-                batch.push_back(domain::EmbeddingRequest::from_json(req_json));
+                batch.push_back(domain::EmbeddingRequest::from_json(
+                    req_json, task_id_from_json(req_json)));
             }
 
-            std::cout << "[Worker " << worker_id << "] Processing batch of " << batch.size() << " requests\n";
+            TT_LOG_INFO("[Worker {}] Processing batch of {} requests", worker_id, batch.size());
 
             // Run inference on batch
             auto responses = runner.run(batch);
@@ -297,7 +305,7 @@ struct EmbeddingService::Impl {
             append_uint32(static_cast<uint32_t>(batch.size()));
 
             for (size_t i = 0; i < batch.size(); ++i) {
-                append_string(batch[i].task_id);
+                append_string(batch[i].task_id.id);
 
                 if (i < responses.size() && responses[i].error.empty()) {
                     response_buffer.push_back(0);  // has_error = false
@@ -312,13 +320,13 @@ struct EmbeddingService::Impl {
             }
 
             uint32_t response_len = static_cast<uint32_t>(response_buffer.size());
-            std::cout << "[Worker " << worker_id << "] Sending binary response of " << response_len << " bytes\n";
+            TT_LOG_DEBUG("[Worker {}] Sending binary response of {} bytes", worker_id, response_len);
 
             ssize_t w1 = write(write_fd, &response_len, sizeof(response_len));
             ssize_t w2 = write(write_fd, response_buffer.data(), response_len);
 
             if (w1 != sizeof(response_len) || w2 != static_cast<ssize_t>(response_len)) {
-                std::cerr << "[Worker " << worker_id << "] Failed to write response: w1=" << w1 << " w2=" << w2 << "\n";
+                TT_LOG_ERROR("[Worker {}] Failed to write response: w1={} w2={}", worker_id, w1, w2);
             }
         }
 
@@ -330,7 +338,7 @@ struct EmbeddingService::Impl {
     void worker_dispatch_loop(size_t worker_idx) {
         auto& worker = workers_[worker_idx];
 
-        std::cout << "[EmbeddingService] Worker " << worker_idx << " dispatch thread started\n";
+        TT_LOG_INFO("[EmbeddingService] Worker {} dispatch thread started", worker_idx);
 
         // Performance counters
         uint64_t total_batches = 0;
@@ -386,26 +394,21 @@ struct EmbeddingService::Impl {
                     double avg_queue_wait = total_queue_wait_ms / total_batches;
                     double avg_dispatch = total_dispatch_ms / total_batches;
                     double throughput = (total_requests * 1000.0) / (total_queue_wait_ms + total_dispatch_ms);
-                    std::cout << "[PERF] Worker " << worker_idx
-                              << " batches=" << total_batches
-                              << " requests=" << total_requests
-                              << " avg_queue_wait=" << avg_queue_wait << "ms"
-                              << " avg_dispatch=" << avg_dispatch << "ms"
-                              << " throughput=" << throughput << " req/s\n";
+                    TT_LOG_DEBUG("[EmbeddingService] Worker {} batches={} requests={} avg_queue_wait={}ms avg_dispatch={}ms throughput={} req/s",
+                                worker_idx, total_batches, total_requests, avg_queue_wait, avg_dispatch, throughput);
                 }
             } else if (!batch.empty()) {
                 // Worker died while we were grabbing work, put it back or error out
-                std::cerr << "[EmbeddingService] Worker " << worker_idx << " died, failing " << batch.size() << " requests\n";
+                TT_LOG_ERROR("[EmbeddingService] Worker {} died, failing {} requests", worker_idx, batch.size());
                 for (auto& pending : batch) {
-                    domain::EmbeddingResponse error_resp;
+                    domain::EmbeddingResponse error_resp(pending->request.task_id);
                     error_resp.error = "Worker died";
-                    error_resp.task_id = pending->request.task_id;
                     pending->promise.set_value(error_resp);
                 }
             }
         }
 
-        std::cout << "[EmbeddingService] Worker " << worker_idx << " dispatch thread exiting (is_ready=" << worker->is_ready << ")\n";
+        TT_LOG_INFO("[EmbeddingService] Worker {} dispatch thread exiting (is_ready={})", worker_idx, worker->is_ready.load());
     }
 
     // Send batch to specific worker and wait for response (blocking)
@@ -414,9 +417,8 @@ struct EmbeddingService::Impl {
 
         if (!worker.is_ready.load() || worker.pid <= 0) {
             for (auto& pending : batch) {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Worker not available";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(error_resp);
             }
             return;
@@ -428,17 +430,14 @@ struct EmbeddingService::Impl {
         if (result == worker.pid) {
             // Worker has exited
             if (WIFEXITED(status)) {
-                std::cerr << "[EmbeddingService] Worker " << worker.worker_id
-                          << " exited with code " << WEXITSTATUS(status) << "\n";
+                TT_LOG_ERROR("[EmbeddingService] Worker {} exited with code {}", worker.worker_id, WEXITSTATUS(status));
             } else if (WIFSIGNALED(status)) {
-                std::cerr << "[EmbeddingService] Worker " << worker.worker_id
-                          << " killed by signal " << WTERMSIG(status) << "\n";
+                TT_LOG_ERROR("[EmbeddingService] Worker {} killed by signal {}", worker.worker_id, WTERMSIG(status));
             }
             worker.is_ready.store(false);
             for (auto& pending : batch) {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Worker process died";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(error_resp);
             }
             return;
@@ -461,24 +460,22 @@ struct EmbeddingService::Impl {
         // Send to worker
         ssize_t written = write(worker.request_pipe[1], &request_len, sizeof(request_len));
         if (written != sizeof(request_len)) {
-            std::cerr << "[EmbeddingService] Worker " << worker.worker_id << " failed to write length: " << strerror(errno) << "\n";
+            TT_LOG_ERROR("[EmbeddingService] Worker {} failed to write length: {}", worker.worker_id, strerror(errno));
             worker.is_ready.store(false);  // Mark worker as dead
             for (auto& pending : batch) {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Worker pipe broken - worker crashed";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(error_resp);
             }
             return;
         }
         written = write(worker.request_pipe[1], request_str.data(), request_len);
         if (written != static_cast<ssize_t>(request_len)) {
-            std::cerr << "[EmbeddingService] Worker " << worker.worker_id << " failed to write data: " << strerror(errno) << "\n";
+            TT_LOG_ERROR("[EmbeddingService] Worker {} failed to write data: {}", worker.worker_id, strerror(errno));
             worker.is_ready.store(false);  // Mark worker as dead
             for (auto& pending : batch) {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Worker pipe broken - worker crashed";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(error_resp);
             }
             return;
@@ -490,17 +487,17 @@ struct EmbeddingService::Impl {
         uint32_t response_len = 0;
         ssize_t n = read(worker.response_pipe[0], &response_len, sizeof(response_len));
 
-        std::cout << "[EmbeddingService] Worker " << worker.worker_id << " got binary response length: " << response_len << " (read " << n << " bytes)\n";
+        TT_LOG_DEBUG("[EmbeddingService] Worker {} got binary response length: {} (read {} bytes)",
+                    worker.worker_id, response_len, n);
 
         // Sanity check - response should be reasonable size (< 100MB)
         if (n != sizeof(response_len) || response_len > 100 * 1024 * 1024) {
-            std::cerr << "[EmbeddingService] Worker " << worker.worker_id
-                      << " invalid response length " << response_len << " - pipe corrupted?\n";
+            TT_LOG_ERROR("[EmbeddingService] Worker {} invalid response length {} - pipe corrupted?",
+                        worker.worker_id, response_len);
             worker.is_ready.store(false);
             for (auto& pending : batch) {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Failed to read response from worker";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(error_resp);
             }
             return;
@@ -511,19 +508,18 @@ struct EmbeddingService::Impl {
         while (total_read < response_len) {
             n = read(worker.response_pipe[0], response_buffer.data() + total_read, response_len - total_read);
             if (n <= 0) {
-                std::cerr << "[EmbeddingService] Worker " << worker.worker_id
-                          << " read error at " << total_read << "/" << response_len << " bytes\n";
+                TT_LOG_ERROR("[EmbeddingService] Worker {} read error at {}/{} bytes",
+                            worker.worker_id, total_read, response_len);
                 break;
             }
             total_read += n;
         }
         if (total_read != response_len) {
-            std::cerr << "[EmbeddingService] Worker " << worker.worker_id
-                      << " incomplete read: " << total_read << "/" << response_len << " bytes\n";
+            TT_LOG_ERROR("[EmbeddingService] Worker {} incomplete read: {}/{} bytes",
+                        worker.worker_id, total_read, response_len);
             for (auto& pending : batch) {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Failed to read full response from worker";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(error_resp);
             }
             return;
@@ -577,8 +573,7 @@ struct EmbeddingService::Impl {
         response_map.reserve(num_responses);
 
         for (uint32_t i = 0; i < num_responses && offset < response_buffer.size(); ++i) {
-            domain::EmbeddingResponse resp;
-            resp.task_id = read_string();
+            domain::EmbeddingResponse resp{domain::TaskID(read_string())};
             uint8_t has_error = response_buffer[offset++];
 
             if (has_error) {
@@ -589,7 +584,8 @@ struct EmbeddingService::Impl {
                 resp.model = read_string();
             }
 
-            response_map[resp.task_id] = std::move(resp);
+            auto key = resp.task_id.id;
+            response_map.insert_or_assign(std::move(key), std::move(resp));
         }
 
         auto t5 = std::chrono::steady_clock::now();
@@ -604,33 +600,25 @@ struct EmbeddingService::Impl {
         double overhead_ms = total_ms - wait_worker_ms;
 
         // Always log timing for every batch
-        std::cout << "[TIMING] Worker " << worker.worker_id
-                  << " batch=" << batch.size()
-                  << " check=" << check_ms << "ms"
-                  << " build=" << build_json_ms << "ms"
-                  << " write=" << write_pipe_ms << "ms"
-                  << " wait=" << wait_worker_ms << "ms"
-                  << " parse=" << parse_binary_ms << "ms"
-                  << " overhead=" << overhead_ms << "ms"
-                  << " total=" << total_ms << "ms\n";
+        TT_LOG_DEBUG("[EmbeddingService] Worker {} batch={} check={}ms build={}ms write={}ms wait={}ms parse={}ms overhead={}ms total={}ms",
+                    worker.worker_id, batch.size(), check_ms, build_json_ms, write_pipe_ms,
+                    wait_worker_ms, parse_binary_ms, overhead_ms, total_ms);
 
         // Match responses to requests by task_id
         for (auto& pending : batch) {
-            auto it = response_map.find(pending->request.task_id);
+            auto it = response_map.find(pending->request.task_id.id);
             if (it != response_map.end()) {
                 pending->promise.set_value(std::move(it->second));
             } else {
-                domain::EmbeddingResponse error_resp;
+                domain::EmbeddingResponse error_resp(pending->request.task_id);
                 error_resp.error = "Response not found for task_id";
-                error_resp.task_id = pending->request.task_id;
                 pending->promise.set_value(std::move(error_resp));
             }
         }
     }
 
     std::future<domain::EmbeddingResponse> submit_request(domain::EmbeddingRequest request) {
-        auto pending = std::make_shared<PendingRequest>();
-        pending->request = std::move(request);
+        auto pending = std::make_shared<PendingRequest>(std::move(request));
         auto future = pending->promise.get_future();
 
         {

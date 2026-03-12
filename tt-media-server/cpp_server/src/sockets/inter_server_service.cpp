@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "sockets/inter_server_service.hpp"
-#include <iostream>
+#include "utils/logger.hpp"
 
 namespace tt::sockets {
 
@@ -19,7 +19,7 @@ bool InterServerService::initializeFromConfig() {
     auto mode = tt::config::llm_mode();
 
     if (mode == tt::config::LLMMode::REGULAR) {
-        std::cout << "[InterServerService] Socket communication disabled (regular mode)" << std::endl;
+        TT_LOG_INFO("[InterServerService] Socket communication disabled (regular mode)");
         enabled_ = false;
         return false;
     }
@@ -30,19 +30,19 @@ bool InterServerService::initializeFromConfig() {
     bool success = false;
 
     if (mode == tt::config::LLMMode::DECODE_ONLY) {
-        std::cout << "[InterServerService] Initializing as server on port " << port << std::endl;
+        TT_LOG_INFO("[InterServerService] Initializing as server on port {}", port);
         success = socket_manager_.initializeAsServer(port);
     } else if (mode == tt::config::LLMMode::PREFILL_ONLY) {
-        std::cout << "[InterServerService] Initializing as client to " << host << ":" << port << std::endl;
+        TT_LOG_INFO("[InterServerService] Initializing as client to {}:{}", host, port);
         success = socket_manager_.initializeAsClient(host, port);
     }
 
     if (success) {
         enabled_ = true;
-        std::cout << "[InterServerService] Socket communication initialized successfully" << std::endl;
+        TT_LOG_INFO("[InterServerService] Socket communication initialized successfully");
     } else {
         enabled_ = false;
-        std::cerr << "[InterServerService] Failed to initialize socket communication" << std::endl;
+        TT_LOG_ERROR("[InterServerService] Failed to initialize socket communication");
     }
 
     return success;
@@ -54,7 +54,7 @@ void InterServerService::start() {
     }
 
     socket_manager_.start();
-    std::cout << "[InterServerService] Started socket communication" << std::endl;
+    TT_LOG_INFO("[InterServerService] Started socket communication");
 }
 
 void InterServerService::stop() {
@@ -63,14 +63,14 @@ void InterServerService::stop() {
     }
 
     socket_manager_.stop();
-    std::cout << "[InterServerService] Stopped socket communication" << std::endl;
+    TT_LOG_INFO("[InterServerService] Stopped socket communication");
 }
 
 bool InterServerService::isEnabled() const {
     return enabled_;
 }
 
-bool InterServerService::sendPrefillRequest(const std::string& task_id,
+bool InterServerService::sendPrefillRequest(const tt::domain::TaskID& task_id,
                                     const std::string& prompt,
                                     const std::vector<int64_t>& token_ids,
                                     int max_tokens) {
@@ -78,8 +78,7 @@ bool InterServerService::sendPrefillRequest(const std::string& task_id,
         return false;
     }
 
-    PrefillRequestMessage message;
-    message.task_id = task_id;
+    PrefillRequestMessage message(task_id);
     message.prompt = prompt;
     message.token_ids = token_ids;
     message.max_tokens = max_tokens;
@@ -143,8 +142,8 @@ void InterServerService::setupMessageHandlers() {
     // Handle incoming prefill requests
     socket_manager_.registerHandler<PrefillRequestMessage>("prefill_request",
         [this](const PrefillRequestMessage& message) {
-            std::cout << "[InterServerService] Received prefill request: " << message.task_id
-                      << " (tokens: " << message.token_ids.size() << ")" << std::endl;
+            TT_LOG_INFO("[InterServerService] Received prefill request: {} (tokens: {})",
+                       message.task_id.id, message.token_ids.size());
             if (prefill_requested_callback_) {
                 prefill_requested_callback_(message);
             }
@@ -153,10 +152,9 @@ void InterServerService::setupMessageHandlers() {
     // Handle incoming prefill results
     socket_manager_.registerHandler<PrefillResultMessage>("prefill_result",
         [this](const PrefillResultMessage& message) {
-            std::cout << "[InterServerService] Received prefill result: " << message.task_id
-                      << " - text: '" << message.generated_text.substr(0, 50)
-                      << "', remaining: " << message.remaining_tokens
-                      << ", token_ids: " << message.token_ids.size() << std::endl;
+            TT_LOG_INFO("[InterServerService] Received prefill result: {} - text: '{}', remaining: {}, token_ids: {}",
+                       message.task_id.id, message.generated_text.substr(0, 50),
+                       message.remaining_tokens, message.token_ids.size());
             if (prefill_complete_callback_) {
                 prefill_complete_callback_(message);
             }
@@ -165,9 +163,8 @@ void InterServerService::setupMessageHandlers() {
     // Handle incoming health checks
     socket_manager_.registerHandler<HealthCheckMessage>("health_check",
         [this](const HealthCheckMessage& message) {
-            std::cout << "[InterServerService] Received health check from: " << message.server_id
-                      << " (CPU: " << message.cpu_usage << "%, Memory: " << message.memory_usage
-                      << "%, Tasks: " << message.active_tasks << ")" << std::endl;
+            TT_LOG_DEBUG("[InterServerService] Received health check from: {} (CPU: {}%, Memory: {}%, Tasks: {})",
+                        message.server_id, message.cpu_usage, message.memory_usage, message.active_tasks);
             if (health_check_callback_) {
                 health_check_callback_(message.server_id, message.cpu_usage,
                                      message.memory_usage, message.active_tasks);

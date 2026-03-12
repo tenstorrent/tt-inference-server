@@ -8,47 +8,14 @@
 #include <optional>
 #include <string>
 #include <vector>
-#include <string>
-#include <vector>
 #include <memory>
 #include <optional>
 #include "runners/llm_runner/sampling_params.hpp"
-
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>
+#include "domain/task_id.hpp"
 
 namespace llm_engine {
 
-struct TaskID {
-  static constexpr size_t kSerializedSize = 36;
-  TaskID() {
-    auto uuid = boost::uuids::random_generator()();
-    id = boost::uuids::to_string(uuid);
-  }
-  std::string id;
-
-  bool operator==(const TaskID& other) const {
-    return id == other.id;
-  }
-
-  std::vector<char> serialize() const {
-    std::vector<char> buf(kSerializedSize, '\0');
-    std::copy_n(id.begin(), std::min(id.size(), kSerializedSize), buf.begin());
-    return buf;
-  }
-
-  static TaskID deserialize(const char* data, size_t len) {
-    TaskID tid;
-    size_t actual_len = strnlen(data, len);
-    tid.id = std::string(data, actual_len);
-    return tid;
-  }
-};
-
-inline std::ostream& operator<<(std::ostream& os, const TaskID& tid) {
-  return os << tid.id;
-}
+using TaskID = tt::domain::TaskID;
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
@@ -57,11 +24,16 @@ struct TokenResult {
   uint64_t token_id;
   std::optional<bool> finished;
   bool is_error = false;
+
+  TokenResult(TaskID task_id, uint64_t token_id,
+             std::optional<bool> finished = {}, bool is_error = false)
+      : task_id(std::move(task_id)), token_id(token_id),
+        finished(std::move(finished)), is_error(is_error) {}
 };
 
 class Sequence {
  public:
-  Sequence(const int block_size, std::vector<int64_t> token_ids,
+  Sequence(TaskID task_id, int block_size, std::vector<int64_t> token_ids,
            const SamplingParams& sampling_params = SamplingParams());
 
   void serialize(std::ostream& os) const;
@@ -104,12 +76,3 @@ class Sequence {
 };
 
 }  // namespace llm_engine
-
-namespace std {
-  template <>
-  struct hash<llm_engine::TaskID> {
-    size_t operator()(const llm_engine::TaskID& s) const {
-      return hash<string>{}(s.id);
-    }
-  };
-  }  // namespace std

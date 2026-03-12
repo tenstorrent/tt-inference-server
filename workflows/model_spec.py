@@ -290,6 +290,7 @@ class DeviceModelSpec:
     vllm_args: Dict[str, str] = field(default_factory=dict)
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     env_vars: Dict[str, str] = field(default_factory=dict)
+    system_requirements: Optional[SystemRequirements] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -869,7 +870,6 @@ class ModelSpecTemplate:
                     override_tt_config=device_model_spec.override_tt_config,
                     env_vars=device_model_spec.env_vars,
                 )
-
                 spec = ModelSpec(
                     # Core identity
                     device_type=device_type,
@@ -880,7 +880,9 @@ class ModelSpecTemplate:
                     inference_engine=self.inference_engine,
                     device_model_spec=device_model_spec_with_perf,
                     # Version control
-                    system_requirements=self.system_requirements,
+                    system_requirements=device_model_spec.system_requirements
+                    if device_model_spec.system_requirements
+                    else self.system_requirements,
                     tt_metal_commit=self.tt_metal_commit,
                     vllm_commit=self.vllm_commit,
                     hf_weights_repo=self.hf_weights_repo,
@@ -1579,16 +1581,6 @@ llm_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=tt_transformers_impl,
-        system_requirements=SystemRequirements(
-            firmware=VersionRequirement(
-                specifier=">=18.5.0",
-                mode=VersionMode.STRICT,
-            ),
-            kmd=VersionRequirement(
-                specifier=">=2.3.0",
-                mode=VersionMode.STRICT,
-            ),
-        ),
         tt_metal_commit="55fd115",
         vllm_commit="aa4ae1e",
         inference_engine=InferenceEngine.VLLM.value,
@@ -1601,37 +1593,32 @@ llm_templates = [
                 override_tt_config={
                     "trace_region_size": 30000000,
                 },
+                system_requirements=SystemRequirements(
+                    firmware=VersionRequirement(
+                        specifier=">=18.5.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                    kmd=VersionRequirement(
+                        specifier=">=2.3.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                ),
             ),
-        ],
-        status=ModelStatusTypes.FUNCTIONAL,
-    ),
-    ModelSpecTemplate(
-        weights=[
-            "meta-llama/Llama-3.3-70B-Instruct",
-            "meta-llama/Llama-3.1-70B",
-            "meta-llama/Llama-3.1-70B-Instruct",
-            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-        ],
-        impl=tt_transformers_impl,
-        system_requirements=SystemRequirements(
-            firmware=VersionRequirement(
-                specifier=">=18.12.0",
-                mode=VersionMode.STRICT,
-            ),
-            kmd=VersionRequirement(
-                specifier=">=2.4.1",
-                mode=VersionMode.STRICT,
-            ),
-        ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
-        inference_engine=InferenceEngine.VLLM.value,
-        device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                system_requirements=SystemRequirements(
+                    firmware=VersionRequirement(
+                        specifier=">=18.12.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                    kmd=VersionRequirement(
+                        specifier=">=2.4.1",
+                        mode=VersionMode.STRICT,
+                    ),
+                ),
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -2140,13 +2127,11 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                vllm_args={"num_scheduler_steps": 1},
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "VLLM_USE_V1": "1",
         },
         supported_modalities=["text", "image"],
     ),

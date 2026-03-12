@@ -65,7 +65,7 @@ class HardwarePageGroup:
 
 # Mapping inference engine to documentation link (reused from update_model_spec.py)
 INFERENCE_ENGINE_README_LINKS = {
-    InferenceEngine.VLLM.value: "../../../vllm-tt-metal-llama3/README.md",
+    InferenceEngine.VLLM.value: "../../../vllm-tt-metal/README.md",
     InferenceEngine.MEDIA.value: "../../../tt-media-server/README.md",
     InferenceEngine.FORGE.value: "../../../tt-media-server/README.md",
 }
