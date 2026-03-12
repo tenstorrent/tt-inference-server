@@ -28,4 +28,4 @@ Directory of developement docs for working on tt-inference-server.
 
 ## Deployment
 
-- [Multi-Host Deployment](multihost_deployment.md) - Guide for distributed inference across multiple Galaxy systems (Dual/Quad Galaxy), including Kubernetes integration reference
+- [Multi-Host Deployment](multihost_deployment.md) - Guide for distributed inference across multiple systems (like Dual/Quad Galaxy)
