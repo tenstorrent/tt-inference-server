@@ -22,6 +22,44 @@
 #include <json/json.h>
 #include <trantor/net/EventLoop.h>
 
+namespace {
+
+void sse_send(
+    const std::string& sse,
+    trantor::EventLoop* loop,
+    const std::shared_ptr<drogon::ResponseStreamPtr>& stream_ptr,
+    const std::shared_ptr<ConcurrentQueue<std::string>>& accumulator) {
+    if (!accumulator) {
+        loop->queueInLoop([stream_ptr, sse]() {
+            if (*stream_ptr) (*stream_ptr)->send(sse);
+        });
+        return;
+    }
+    accumulator->push(sse);
+    if (accumulator->size() >= tt::config::max_accumulated_tokens()) {
+        auto accumulated = accumulator->drain();
+        std::string batch;
+        for (auto& s : accumulated) batch.append(s);
+        loop->queueInLoop([stream_ptr, batch = std::move(batch)]() {
+            if (*stream_ptr) (*stream_ptr)->send(batch);
+        });
+    }
+}
+
+void flush_accumulated(
+    const std::shared_ptr<ConcurrentQueue<std::string>>& accumulator,
+    const std::shared_ptr<drogon::ResponseStreamPtr>& stream_ptr) {
+    if (!accumulator) return;
+    auto accumulated = accumulator->drain();
+    if (!accumulated.empty()) {
+        std::string batch;
+        for (auto& s : accumulated) batch.append(s);
+        (*stream_ptr)->send(batch);
+    }
+}
+
+} // anonymous namespace
+
 namespace tt::api {
 
 LLMController::LLMController() {
@@ -101,11 +139,7 @@ void LLMController::completions(
     }
 
     if (request->stream) {
-        if (tt::config::enable_accumulated_streaming()) {
-            handle_streaming_accumulated(request, std::move(callback), false);
-        } else {
-            handle_streaming(request, std::move(callback), false);
-        }
+        handle_streaming(request, std::move(callback), false);
     } else {
         auto start_time = std::chrono::high_resolution_clock::now();
         auto response = service_->submit_request(std::move(*request));
@@ -174,11 +208,7 @@ void LLMController::chat_completions(
     auto request = std::make_shared<domain::CompletionRequest>(chat_req.to_completion_request());
 
     if (request->stream) {
-        if (tt::config::enable_accumulated_streaming()) {
-            handle_streaming_accumulated(request, std::move(callback), true);
-        } else {
-            handle_streaming(request, std::move(callback), true);
-        }
+        handle_streaming(request, std::move(callback), true);
     } else {
         auto start_time = std::chrono::high_resolution_clock::now();
         auto completion = service_->submit_request(std::move(*request));
@@ -219,9 +249,13 @@ void LLMController::handle_streaming(
     const bool continuous_usage = req_ptr->stream_options.has_value()
         && req_ptr->stream_options->continuous_usage_stats;
 
+    auto accumulator = tt::config::enable_accumulated_streaming()
+        ? std::make_shared<ConcurrentQueue<std::string>>()
+        : nullptr;
+
     auto resp = drogon::HttpResponse::newAsyncStreamResponse(
         [this, req_ptr, completion_id, model, created,
-         is_chat, include_usage, continuous_usage](
+         is_chat, include_usage, continuous_usage, accumulator](
             drogon::ResponseStreamPtr stream) mutable {
             trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
             auto done = std::make_shared<std::atomic<bool>>(false);
@@ -229,171 +263,11 @@ void LLMController::handle_streaming(
                 std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
             auto completion_tokens = std::make_shared<std::atomic<int>>(0);
 
-            // Timing metrics for TTFT and TPS calculation
             auto start_time = std::make_shared<std::chrono::high_resolution_clock::time_point>(
                 std::chrono::high_resolution_clock::now());
             auto first_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
             auto second_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
             auto first_content_chunk = std::make_shared<std::atomic<bool>>(true);
-
-            service_->submit_streaming_request(
-                *req_ptr,
-                [loop, stream_ptr, done, completion_id, model, created,
-                 is_chat, include_usage, continuous_usage, completion_tokens,
-                 start_time, first_token_time, second_token_time, first_content_chunk, req_ptr](
-                    const domain::StreamingChunkResponse& chunk, bool is_final) {
-                    if (done->load() || !*stream_ptr) {
-                        return;
-                    }
-                    if (!chunk.choices.empty()) {
-                        const int current_tokens = completion_tokens->fetch_add(1) + 1;
-
-                        // Record timing for TTFT and TPS calculation
-                        auto now = std::chrono::high_resolution_clock::now();
-                        if (!first_token_time->has_value()) {
-                            *first_token_time = now;
-                        } else if (current_tokens == 2 && !second_token_time->has_value()) {
-                            *second_token_time = now;
-                        }
-
-                        std::string sse;
-                        if (is_chat) {
-                            std::optional<domain::CompletionUsage> usage;
-                            if (continuous_usage) {
-                                // Only send token counts during streaming, timing metrics come with final chunk
-                                usage = domain::CompletionUsage{req_ptr->prompt_tokens_count, current_tokens, current_tokens, std::nullopt, std::nullopt};
-                            }
-                            auto stream_chunk = domain::ChatCompletionStreamChunk::makeContentChunk(
-                                completion_id, model, created, chunk.choices[0], usage);
-                            if (first_content_chunk->exchange(false)) {
-                                std::optional<domain::CompletionUsage> initial_usage;
-                                if (continuous_usage) {
-                                    initial_usage = domain::CompletionUsage{req_ptr->prompt_tokens_count, 0, 0, std::nullopt, std::nullopt};
-                                }
-                                auto initial_chunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
-                                    completion_id, model, created, initial_usage);
-                                sse = initial_chunk.toSSE() + stream_chunk.toSSE();
-                            } else {
-                                sse = stream_chunk.toSSE();
-                            }
-                        } else if (!chunk.choices[0].text.empty() ||
-                                   !chunk.choices[0].finish_reason.has_value()) {
-                            domain::StreamingChunkResponse out(req_ptr->task_id);
-                            out.id = completion_id;
-                            out.object = "text_completion";
-                            out.model = model;
-                            out.created = created;
-                            out.choices = chunk.choices;
-                            sse = out.toSSE();
-                        }
-
-                        if (!sse.empty()) {
-                            loop->queueInLoop(
-                                [stream_ptr, sse = std::move(sse)]() {
-                                if (*stream_ptr) (*stream_ptr)->send(sse);
-                            });
-                        }
-                    }
-                    if (is_final) {
-                        loop->queueInLoop(
-
-                            [stream_ptr, done, is_chat, include_usage,
-                             completion_id, model, created, completion_tokens,
-                             start_time, first_token_time, second_token_time, req_ptr]() {
-                                if (!done->exchange(true) && *stream_ptr) {
-                                    if (include_usage) {
-                                        const int tokens = completion_tokens->load();
-                                        domain::CompletionUsage usage{req_ptr->prompt_tokens_count, tokens, tokens, std::nullopt, std::nullopt};
-
-                                        // Calculate final timing metrics
-                                        if (first_token_time->has_value()) {
-                                            auto ttft_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                                first_token_time->value() - *start_time);
-                                            usage.ttft_ms = std::round(static_cast<double>(ttft_duration.count()) / 10.0) / 100.0;
-                                        }
-
-                                        if (tokens > 1) {
-                                            auto final_time = std::chrono::high_resolution_clock::now();
-                                            auto base_time = second_token_time->has_value() ?
-                                                second_token_time->value() : first_token_time->value();
-                                            auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                                final_time - base_time);
-                                            if (total_duration.count() > 0) {
-                                                auto time_seconds = static_cast<double>(total_duration.count()) / 1000000.0;
-                                                usage.tps = std::round((tokens - 1) / time_seconds * 1000.0) / 1000.0;
-                                                TT_LOG_DEBUG("[LLMController] Final TPS: {} tokens/sec", usage.tps.value());
-                                            }
-                                        }
-
-                                        if (is_chat) {
-                                            (*stream_ptr)->send(
-                                                domain::ChatCompletionStreamChunk::makeUsageChunk(
-                                                    completion_id, model, created, usage).toSSE());
-                                        } else {
-                                            // For text completions, we need to send a usage chunk
-                                            // The format should be similar but for text_completion object
-                                            domain::StreamingChunkResponse usage_chunk(req_ptr->task_id);
-                                            usage_chunk.id = completion_id;
-                                            usage_chunk.object = "text_completion";
-                                            usage_chunk.model = model;
-                                            usage_chunk.created = created;
-                                            usage_chunk.usage = usage;
-                                            (*stream_ptr)->send(usage_chunk.toSSE());
-                                        }
-                                    }
-                                    (*stream_ptr)->send("data: [DONE]\n\n");
-                                    (*stream_ptr)->close();
-                                }
-                            });
-                    }
-                });
-        });
-
-    resp->setContentTypeString("text/event-stream");
-    resp->addHeader("Cache-Control", "no-cache");
-    resp->addHeader("Connection", "keep-alive");
-    resp->addHeader("X-Accel-Buffering", "no");
-
-    callback(resp);
-}
-
-void LLMController::handle_streaming_accumulated(
-    std::shared_ptr<domain::CompletionRequest> req_ptr,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    bool is_chat) const {
-
-    ZoneScopedN("API::handle_streaming");
-
-    const std::string completion_id =
-        (is_chat ? "chatcmpl-" : "cmpl-") + req_ptr->task_id.id;
-    const std::string model = req_ptr->model.value_or("default");
-    const int64_t created = static_cast<int64_t>(
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-
-    const bool include_usage = !req_ptr->stream_options.has_value()
-        || req_ptr->stream_options->include_usage;  // Default to true if not specified
-    const bool continuous_usage = req_ptr->stream_options.has_value()
-        && req_ptr->stream_options->continuous_usage_stats;
-
-    auto resp = drogon::HttpResponse::newAsyncStreamResponse(
-        [this, req_ptr, completion_id, model, created,
-         is_chat, include_usage, continuous_usage](
-            drogon::ResponseStreamPtr stream) mutable {
-            trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
-            auto done = std::make_shared<std::atomic<bool>>(false);
-            auto stream_ptr =
-                std::make_shared<drogon::ResponseStreamPtr>(std::move(stream));
-            auto completion_tokens = std::make_shared<std::atomic<int>>(0);
-
-            // Timing metrics for TTFT and TPS calculation
-            auto start_time = std::make_shared<std::chrono::high_resolution_clock::time_point>(
-                std::chrono::high_resolution_clock::now());
-            auto first_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
-            auto second_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
-            auto first_content_chunk = std::make_shared<std::atomic<bool>>(true);
-            
-            auto accumulator = std::make_shared<ConcurrentQueue<std::string>>();
 
             service_->submit_streaming_request(
                 *req_ptr,
@@ -407,7 +281,6 @@ void LLMController::handle_streaming_accumulated(
                     if (!chunk.choices.empty()) {
                         const int current_tokens = completion_tokens->fetch_add(1) + 1;
 
-                        // Record timing for TTFT and TPS calculation
                         auto now = std::chrono::high_resolution_clock::now();
                         if (!first_token_time->has_value()) {
                             *first_token_time = now;
@@ -419,7 +292,6 @@ void LLMController::handle_streaming_accumulated(
                         if (is_chat) {
                             std::optional<domain::CompletionUsage> usage;
                             if (continuous_usage) {
-                                // Only send token counts during streaming, timing metrics come with final chunk
                                 usage = domain::CompletionUsage{req_ptr->prompt_tokens_count, current_tokens, current_tokens, std::nullopt, std::nullopt};
                             }
                             auto stream_chunk = domain::ChatCompletionStreamChunk::makeContentChunk(
@@ -447,37 +319,20 @@ void LLMController::handle_streaming_accumulated(
                         }
 
                         if (!sse.empty()) {
-                            accumulator->push(sse);
-                            if (accumulator->size() >= tt::config::max_accumulated_tokens()) {
-                                auto accumulated_sse = accumulator->drain();
-                                std::string batch;
-                                for (auto& s : accumulated_sse) batch.append(s);
-                                loop->queueInLoop(
-                                    [stream_ptr, batch = std::move(batch)]() {
-                                    if (*stream_ptr) (*stream_ptr)->send(batch);
-                                });
-                            }
+                            sse_send(sse, loop, stream_ptr, accumulator);
                         }
                     }
                     if (is_final) {
                         loop->queueInLoop(
-
                             [stream_ptr, done, is_chat, include_usage,
                              completion_id, model, created, completion_tokens,
                              start_time, first_token_time, second_token_time, req_ptr, accumulator]() {
                                 if (!done->exchange(true) && *stream_ptr) {
-                                    auto accumulated_sse = accumulator->drain();
-                                    if (!accumulated_sse.empty()) {
-                                        std::string batch;
-                                        for (auto& s : accumulated_sse) batch.append(s);    
-                                        (*stream_ptr)->send(batch);
-                                    }
-
+                                    flush_accumulated(accumulator, stream_ptr);
                                     if (include_usage) {
                                         const int tokens = completion_tokens->load();
                                         domain::CompletionUsage usage{req_ptr->prompt_tokens_count, tokens, tokens, std::nullopt, std::nullopt};
 
-                                        // Calculate final timing metrics
                                         if (first_token_time->has_value()) {
                                             auto ttft_duration = std::chrono::duration_cast<std::chrono::microseconds>(
                                                 first_token_time->value() - *start_time);
@@ -502,8 +357,6 @@ void LLMController::handle_streaming_accumulated(
                                                 domain::ChatCompletionStreamChunk::makeUsageChunk(
                                                     completion_id, model, created, usage).toSSE());
                                         } else {
-                                            // For text completions, we need to send a usage chunk
-                                            // The format should be similar but for text_completion object
                                             domain::StreamingChunkResponse usage_chunk(req_ptr->task_id);
                                             usage_chunk.id = completion_id;
                                             usage_chunk.object = "text_completion";
