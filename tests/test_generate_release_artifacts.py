@@ -33,11 +33,20 @@ def make_model_spec(
     *,
     tt_metal_commit=TT_METAL_COMMIT,
     vllm_commit=VLLM_COMMIT,
+    model_name="DemoModel",
+    device_name="N150",
+    impl_id="demo_impl",
+    impl_name="demo-impl",
+    inference_engine="vLLM",
 ):
     return SimpleNamespace(
         docker_image=docker_image,
         tt_metal_commit=tt_metal_commit,
         vllm_commit=vllm_commit,
+        model_name=model_name,
+        device_type=SimpleNamespace(name=device_name),
+        impl=SimpleNamespace(impl_id=impl_id, impl_name=impl_name),
+        inference_engine=inference_engine,
     )
 
 
@@ -237,6 +246,209 @@ def test_generate_release_artifacts_marks_shared_image_for_build_on_commit_misma
     copy_mock.assert_not_called()
 
 
+def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
+    tmp_path,
+):
+    output_dir = tmp_path / "release_logs" / "v0.10.0"
+    output_dir.mkdir(parents=True)
+    target_image = make_image("demo")
+    model_spec = make_model_spec(target_image)
+    merged_spec = {
+        "model-a": gra.MergedModelRecord(
+            model_id="model-a",
+            model_spec=model_spec,
+            ci_data={
+                "perf_status": "target",
+                "accuracy_status": True,
+                "ci_run_number": 123,
+                "ci_run_url": "https://example.com/runs/123",
+                "ci_job_url": "https://example.com/jobs/456",
+                "release_report": {
+                    "benchmarks_summary": [
+                        {
+                            "task_type": "text",
+                            "isl": 128,
+                            "osl": 128,
+                            "max_concurrency": 1,
+                            "ttft": 45.0,
+                            "tput_user": 12.0,
+                            "target_checks": {
+                                "target": {
+                                    "ttft_check": 2,
+                                    "tput_user_check": 2,
+                                    "ttft": 50.0,
+                                    "tput_user": 10.0,
+                                }
+                            },
+                        }
+                    ],
+                    "parameter_support_tests": {
+                        "endpoint_url": "http://localhost:8000",
+                        "test_run_timestamp_utc": "2026-03-11T12:00:00",
+                        "results": {
+                            "test_smoke": [
+                                {
+                                    "status": "passed",
+                                    "test_node_name": "test_smoke[param]",
+                                    "message": "",
+                                }
+                            ]
+                        },
+                    },
+                },
+            },
+            target_docker_image=target_image,
+        )
+    }
+    baseline_path = (
+        tmp_path / "benchmarking" / "benchmark_targets" / "release_performance.json"
+    )
+
+    with patch.object(gra, "get_release_performance_path", return_value=baseline_path):
+        release_performance_data = gra.write_release_performance_outputs(
+            merged_spec, output_dir, dry_run=False
+        )
+
+    entry = release_performance_data["models"]["DemoModel"]["n150"]["demo_impl"]["vLLM"]
+    assert entry["benchmarks_summary"][0]["ttft"] == 45.0
+    assert not (output_dir / "release_performance.md").exists()
+    baseline = json.loads(baseline_path.read_text())
+    baseline_entry = baseline["models"]["DemoModel"]["n150"]["demo_impl"]["vLLM"]
+    assert baseline_entry["benchmarks_summary"][0]["ttft"] == 45.0
+    assert baseline_entry["benchmarks_summary"][0]["isl"] == 128
+    assert baseline_entry["report_data"]["benchmarks_summary"][0]["ttft"] == 45.0
+    assert (
+        "test_smoke"
+        in baseline_entry["report_data"]["parameter_support_tests"]["results"]
+    )
+
+
+def test_write_release_notes_uses_raw_json_inputs(tmp_path):
+    output_dir = tmp_path / "release_logs" / "v0.10.0"
+    output_dir.mkdir(parents=True)
+    (output_dir / "pre_release_models_diff.json").write_text(
+        json.dumps(
+            [
+                {
+                    "template_key": "template:demo",
+                    "impl": "demo-impl",
+                    "impl_id": "demo_impl",
+                    "model_arch": "DemoModel",
+                    "inference_engine": "vllm",
+                    "weights": ["demo/model"],
+                    "devices": ["N150"],
+                    "status_before": "EXPERIMENTAL",
+                    "status_after": "COMPLETE",
+                    "tt_metal_commit_before": "aaaaaaa",
+                    "tt_metal_commit_after": "bbbbbbb",
+                    "vllm_commit_before": None,
+                    "vllm_commit_after": None,
+                    "ci_job_url": "https://example.com/jobs/456",
+                    "ci_run_number": 123,
+                }
+            ]
+        )
+    )
+    (output_dir / "release_artifacts_summary.json").write_text(
+        json.dumps(
+            {
+                "images_to_build": ["ghcr.io/tenstorrent/build:tag"],
+                "copied_images": {
+                    "ghcr.io/tenstorrent/release:tag": "ghcr.io/tenstorrent/ci:tag"
+                },
+                "existing_with_ci_ref": {},
+                "existing_without_ci_ref": [],
+            }
+        )
+    )
+    release_performance_data = {
+        "schema_version": 1,
+        "models": {
+            "DemoModel": {
+                "n150": {
+                    "demo_impl": {
+                        "vLLM": {
+                            "model": "DemoModel",
+                            "device": "n150",
+                            "impl_id": "demo_impl",
+                            "inference_engine": "vLLM",
+                            "perf_status": "target",
+                            "accuracy_status": True,
+                            "benchmarks_summary": [
+                                {
+                                    "task_type": "text",
+                                    "isl": 128,
+                                    "osl": 128,
+                                    "max_concurrency": 1,
+                                    "ttft": 52.0,
+                                }
+                            ],
+                            "report_data": {
+                                "parameter_support_tests": {
+                                    "results": {"test_smoke": [{"status": "failed"}]}
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+    base_release_performance_data = {
+        "schema_version": 1,
+        "models": {
+            "DemoModel": {
+                "n150": {
+                    "demo_impl": {
+                        "vLLM": {
+                            "model": "DemoModel",
+                            "device": "n150",
+                            "impl_id": "demo_impl",
+                            "inference_engine": "vLLM",
+                            "perf_status": "functional",
+                            "accuracy_status": True,
+                            "benchmarks_summary": [
+                                {
+                                    "task_type": "text",
+                                    "isl": 128,
+                                    "osl": 128,
+                                    "max_concurrency": 1,
+                                    "ttft": 45.0,
+                                }
+                            ],
+                            "report_data": {
+                                "parameter_support_tests": {
+                                    "results": {"test_smoke": [{"status": "passed"}]}
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+    with patch.object(
+        gra,
+        "load_git_release_performance_data",
+        return_value=base_release_performance_data,
+    ):
+        notes_path = gra.write_release_notes(
+            output_dir,
+            "0.10.0",
+            release_performance_data=release_performance_data,
+        )
+
+    notes = notes_path.read_text()
+    assert "## Model and Hardware Support Diff" in notes
+    assert (
+        "N150: Perf status: functional -> target; Benchmarks ~1; LLM API tests ~1"
+        in notes
+    )
+    assert "## Release Artifacts Summary" in notes
+    assert "## Performance\n" not in notes
+
+
 def test_main_wires_release_flow_and_emits_summary(tmp_path):
     ci_json_path = tmp_path / "last_good.json"
     ci_json_path.write_text("{}")
@@ -275,6 +487,10 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     ) as generate_mock, patch.object(
         gra, "write_output"
     ) as write_output_mock, patch.object(
+        gra,
+        "write_release_performance_outputs",
+        return_value={"schema_version": 1, "models": {}},
+    ) as performance_mock, patch.object(
         gra, "write_release_notes", return_value=output_dir / "release_notes.md"
     ) as release_notes_mock, patch.object(
         gra, "emit_markdown_summary"
@@ -284,5 +500,10 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     merge_mock.assert_called_once_with(ci_json_path.resolve(), False)
     generate_mock.assert_called_once_with(merged_spec, False)
     write_output_mock.assert_called_once()
-    release_notes_mock.assert_called_once_with(output_dir, "0.10.0")
+    performance_mock.assert_called_once_with(merged_spec, output_dir, False)
+    release_notes_mock.assert_called_once_with(
+        output_dir,
+        "0.10.0",
+        release_performance_data={"schema_version": 1, "models": {}},
+    )
     emit_mock.assert_called_once_with(output_dir / "release_artifacts_summary.md")
