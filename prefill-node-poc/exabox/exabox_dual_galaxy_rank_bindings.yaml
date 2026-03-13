@@ -1,0 +1,20 @@
+# Rank bindings for Dual Galaxy on Exabox Slurm cluster
+# Used with partition: wh_pod_8x16_2
+# Example nodes: wh-glx-a05u02, wh-glx-a05u08
+#
+# This is a Big-Mesh (SPMD) configuration where both ranks share
+# the same mesh_id but have different mesh_host_rank values.
+# Both processes execute the same code in lockstep.
+
+rank_bindings:
+  - rank: 0
+    mesh_id: 0
+    mesh_host_rank: 0
+
+  - rank: 1
+    mesh_id: 0
+    mesh_host_rank: 1
+
+# IMPORTANT: Use absolute path for multi-host execution
+# Update this path to match your exabox /data/<user>/tt-metal location
+mesh_graph_desc_path: "/data/dmadic/tt-metal/tt_metal/fabric/mesh_graph_descriptors/dual_galaxy_mesh_graph_descriptor.textproto"

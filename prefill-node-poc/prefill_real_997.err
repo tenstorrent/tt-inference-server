@@ -1,0 +1,330 @@
+2026-01-30 14:23:37.279 | DEBUG    | ttnn:<module>:77 - Initial ttnn.CONFIG:
+Config{cache_path=/home/dmadic/.cache/ttnn,model_cache_path=/home/dmadic/.cache/ttnn/models,tmp_dir=/tmp/ttnn,enable_model_cache=false,enable_fast_runtime_mode=true,throw_exception_on_fallback=false,enable_logging=false,enable_graph_report=false,enable_detailed_buffer_report=false,enable_detailed_tensor_report=false,enable_comparison_mode=false,comparison_mode_should_raise_exception=false,comparison_mode_pcc=0.9999,root_report_path=generated/ttnn/reports,report_name=std::nullopt,std::nullopt}
+2026-01-30 14:23:39.229 | INFO     | ttnn.distributed.ttrun:print_command:231 - [tt-run] Command:
+2026-01-30 14:23:39.229 | INFO     | ttnn.distributed.ttrun:print_command:245 - [tt-run] Command: mpirun --hostfile /tmp/997_hosts.txt --map-by ppr:1:node --mca btl self,tcp --mca btl_tcp_if_exclude docker0,lo --bind-to none --tag-output -np 1 -x TT_METAL_CACHE=/home/dmadic/.cache_wh-glx-a05u02_rank0 -x TT_MESH_ID=0 -x TT_MESH_GRAPH_DESC_PATH=/data/dmadic/tt-metal/tt_metal/fabric/mesh_graph_descriptors/dual_galaxy_mesh_graph_descriptor.textproto -x TT_METAL_HOME=/data/dmadic/tt-metal -x TT_METAL_RUNTIME_ROOT=/data/dmadic/tt-metal -x PYTHONPATH=/data/dmadic/tt-metal:/data/dmadic/tt-inference-server/prefill-node-poc: -x LD_LIBRARY_PATH=/home/dmadic/build/lib -x TT_MESH_HOST_RANK=0 python /data/dmadic/tt-inference-server/prefill-node-poc/main_prefill_real.py --model-path /mnt/models/deepseek-ai/DeepSeek-R1-0528 --cache-dir /data/dmadic/deepseek-ai/DeepSeek-R1-0528-Cache What is the capital of France? : -np 1 -x TT_METAL_CACHE=/home/dmadic/.cache_wh-glx-a05u02_rank1 -x TT_MESH_ID=0 -x TT_MESH_GRAPH_DESC_PATH=/data/dmadic/tt-metal/tt_metal/fabric/mesh_graph_descriptors/dual_galaxy_mesh_graph_descriptor.textproto -x TT_METAL_HOME=/data/dmadic/tt-metal -x TT_METAL_RUNTIME_ROOT=/data/dmadic/tt-metal -x PYTHONPATH=/data/dmadic/tt-metal:/data/dmadic/tt-inference-server/prefill-node-poc: -x LD_LIBRARY_PATH=/home/dmadic/build/lib -x TT_MESH_HOST_RANK=1 python /data/dmadic/tt-inference-server/prefill-node-poc/main_prefill_real.py --model-path /mnt/models/deepseek-ai/DeepSeek-R1-0528 --cache-dir /data/dmadic/deepseek-ai/DeepSeek-R1-0528-Cache What is the capital of France?
+[1,0]<stderr>: 2026-01-30 14:23:41.833 | DEBUG    | ttnn:<module>:77 - Initial ttnn.CONFIG:
+[1,0]<stderr>: Config{cache_path=/home/dmadic/.cache/ttnn,model_cache_path=/home/dmadic/.cache/ttnn/models,tmp_dir=/tmp/ttnn,enable_model_cache=false,enable_fast_runtime_mode=true,throw_exception_on_fallback=false,enable_logging=false,enable_graph_report=false,enable_detailed_buffer_report=false,enable_detailed_tensor_report=false,enable_comparison_mode=false,comparison_mode_should_raise_exception=false,comparison_mode_pcc=0.9999,root_report_path=generated/ttnn/reports,report_name=std::nullopt,std::nullopt}
+[1,1]<stderr>: 2026-01-30 14:23:43.367 | DEBUG    | ttnn:<module>:77 - Initial ttnn.CONFIG:
+[1,1]<stderr>: Config{cache_path=/home/dmadic/.cache/ttnn,model_cache_path=/home/dmadic/.cache/ttnn/models,tmp_dir=/tmp/ttnn,enable_model_cache=false,enable_fast_runtime_mode=true,throw_exception_on_fallback=false,enable_logging=false,enable_graph_report=false,enable_detailed_buffer_report=false,enable_detailed_tensor_report=false,enable_comparison_mode=false,comparison_mode_should_raise_exception=false,comparison_mode_pcc=0.9999,root_report_path=generated/ttnn/reports,report_name=std::nullopt,std::nullopt}
+[1,0]<stderr>: root: MESH_DEVICE: 'DUAL' - mesh shape: MeshShape([8, 8])
+[1,1]<stderr>: root: MESH_DEVICE: 'DUAL' - mesh shape: MeshShape([8, 8])
+[1,0]<stderr>: root: Opening mesh device with shape MeshShape([8, 8])
+[1,1]<stderr>: root: Opening mesh device with shape MeshShape([8, 8])
+[1,1]<stderr>: 2026-01-30 14:23:48.344 | DEBUG    | ttnn.device:__init__:150 - Using default dispatch core type for this system: DispatchCoreType.WORKER
+[1,1]<stderr>: 2026-01-30 14:23:48.345 | DEBUG    | ttnn.device:__init__:152 - Using default dispatch core axis for this system: DispatchCoreAxis.ROW
+[1,0]<stderr>: 2026-01-30 14:23:48.345 | DEBUG    | ttnn.device:__init__:150 - Using default dispatch core type for this system: DispatchCoreType.WORKER
+[1,0]<stderr>: 2026-01-30 14:23:48.345 | DEBUG    | ttnn.device:__init__:152 - Using default dispatch core axis for this system: DispatchCoreAxis.ROW
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,1]<stderr>: Read unexpected run_mailbox value: 0x40 (expected 0x80 or 0x0)
+[1,0]<stderr>: root: KvCacheConfig: shape=(2048, 1, 32, 576) dtype=bfloat8_b
+[1,0]<stderr>: root: Creating PrefillEngine...
+[1,0]<stderr>: scheduler: kv_cache memory calc available_gb=12.00 num_layers=61 -> num_blocks=11459
+[1,0]<stderr>: scheduler: block_manager num_blocks=11459 (from memory calc)
+[1,0]<stderr>: 2026-01-30 14:23:59.355 | WARNING  | models.perf.benchmarking_utils:<module>:18 - Skipping import of pydantic_models for benchmarking since not running in CI environment
+[1,0]<stderr>: model_runner: ============================================================
+[1,0]<stderr>: model_runner: INITIALIZING DEEPSEEK GENERATOR
+[1,0]<stderr>: model_runner: ============================================================
+[1,0]<stderr>: model_runner: ModelConfig:
+[1,0]<stderr>: model_runner:   model_path: /mnt/models/deepseek-ai/DeepSeek-R1-0528
+[1,0]<stderr>: model_runner:   cache_dir: /data/dmadic/deepseek-ai/DeepSeek-R1-0528-Cache
+[1,0]<stderr>: model_runner:   prefill_max_tokens: None
+[1,0]<stderr>: model_runner:   vocab_size: 129280
+[1,0]<stderr>: model_runner:   block_size: 32
+[1,0]<stderr>: model_runner:   pad_token_id: 0
+[1,0]<stderr>: model_runner: ----------------------------------------
+[1,0]<stderr>: model_runner: Loading tokenizer...
+[1,1]<stderr>: root: KvCacheConfig: shape=(2048, 1, 32, 576) dtype=bfloat8_b
+[1,1]<stderr>: root: Creating PrefillEngine...
+[1,1]<stderr>: scheduler: kv_cache memory calc available_gb=12.00 num_layers=61 -> num_blocks=11459
+[1,1]<stderr>: scheduler: block_manager num_blocks=11459 (from memory calc)
+[1,1]<stderr>: 2026-01-30 14:23:59.414 | WARNING  | models.perf.benchmarking_utils:<module>:18 - Skipping import of pydantic_models for benchmarking since not running in CI environment
+[1,1]<stderr>: model_runner: ============================================================
+[1,1]<stderr>: model_runner: INITIALIZING DEEPSEEK GENERATOR
+[1,1]<stderr>: model_runner: ============================================================
+[1,1]<stderr>: model_runner: ModelConfig:
+[1,1]<stderr>: model_runner:   model_path: /mnt/models/deepseek-ai/DeepSeek-R1-0528
+[1,1]<stderr>: model_runner:   cache_dir: /data/dmadic/deepseek-ai/DeepSeek-R1-0528-Cache
+[1,1]<stderr>: model_runner:   prefill_max_tokens: None
+[1,1]<stderr>: model_runner:   vocab_size: 129280
+[1,1]<stderr>: model_runner:   block_size: 32
+[1,1]<stderr>: model_runner:   pad_token_id: 0
+[1,1]<stderr>: model_runner: ----------------------------------------
+[1,1]<stderr>: model_runner: Loading tokenizer...
+[1,0]<stderr>: model_runner: Tokenizer loaded:
+[1,0]<stderr>: model_runner:   vocab_size: 128000
+[1,0]<stderr>: model_runner:   pad_token_id: 1
+[1,0]<stderr>: model_runner:   eos_token_id: 1
+[1,0]<stderr>: model_runner:   bos_token_id: 0
+[1,0]<stderr>: model_runner:   Updated pad_token_id from tokenizer: 1
+[1,0]<stderr>: model_runner: ----------------------------------------
+[1,0]<stderr>: model_runner: Creating DeepseekGenerator with arguments:
+[1,0]<stderr>: model_runner:   mesh_device: MeshDevice (shape=[8, 8])
+[1,0]<stderr>: model_runner:   model_path: /mnt/models/deepseek-ai/DeepSeek-R1-0528
+[1,0]<stderr>: model_runner:   cache_dir: /data/dmadic/deepseek-ai/DeepSeek-R1-0528-Cache
+[1,0]<stderr>: model_runner:   tokenizer: LlamaTokenizerFast
+[1,0]<stderr>: model_runner:   random_weights: False
+[1,0]<stderr>: model_runner:   enable_trace: False
+[1,0]<stderr>: model_runner:   prefill_max_tokens: None
+[1,1]<stderr>: model_runner: Tokenizer loaded:
+[1,1]<stderr>: model_runner:   vocab_size: 128000
+[1,1]<stderr>: model_runner:   pad_token_id: 1
+[1,1]<stderr>: model_runner:   eos_token_id: 1
+[1,1]<stderr>: model_runner:   bos_token_id: 0
+[1,1]<stderr>: model_runner:   Updated pad_token_id from tokenizer: 1
+[1,1]<stderr>: model_runner: ----------------------------------------
+[1,1]<stderr>: model_runner: Creating DeepseekGenerator with arguments:
+[1,1]<stderr>: model_runner:   mesh_device: MeshDevice (shape=[8, 8])
+[1,1]<stderr>: model_runner:   model_path: /mnt/models/deepseek-ai/DeepSeek-R1-0528
+[1,1]<stderr>: model_runner:   cache_dir: /data/dmadic/deepseek-ai/DeepSeek-R1-0528-Cache
+[1,1]<stderr>: model_runner:   tokenizer: LlamaTokenizerFast
+[1,1]<stderr>: model_runner:   random_weights: False
+[1,1]<stderr>: model_runner:   enable_trace: False
+[1,1]<stderr>: model_runner:   prefill_max_tokens: None
+[1,0]<stderr>: 2026-01-30 14:23:59.733 | INFO     | models.demos.deepseek_v3.tt.generator:__init__:144 - Enable trace: False
+[1,1]<stderr>: 2026-01-30 14:23:59.733 | INFO     | models.demos.deepseek_v3.tt.generator:__init__:144 - Enable trace: False
+[1,1]<stderr>: 2026-01-30 14:23:59.985 | INFO     | models.demos.deepseek_v3.utils.weight_config:_try_load_cached_config:104 - Using weights cached at /data/dmadic/deepseek-ai/DeepSeek-R1-0528-Cache/61_layers/mesh_8x8
+[1,0]<stderr>: 2026-01-30 14:23:59.985 | INFO     | models.demos.deepseek_v3.utils.weight_config:_try_load_cached_config:104 - Using weights cached at /data/dmadic/deepseek-ai/DeepSeek-R1-0528-Cache/61_layers/mesh_8x8
+[1,1]<stderr>: model_runner: ----------------------------------------
+[1,1]<stderr>: model_runner: Generator created:
+[1,1]<stderr>: model_runner:   batch_size_per_row: 32
+[1,1]<stderr>: model_runner:   batch_size (total): 256
+[1,1]<stderr>: model_runner:   dp_factor: 8
+[1,1]<stderr>: model_runner:   prefill_max_tokens: None
+[1,1]<stderr>: model_runner:   enable_trace: False
+[1,1]<stderr>: model_runner: ----------------------------------------
+[1,1]<stderr>: model_runner: HF Config:
+[1,1]<stderr>: model_runner:   num_hidden_layers: 61
+[1,1]<stderr>: model_runner:   hidden_size: 7168
+[1,1]<stderr>: model_runner:   num_attention_heads: 128
+[1,1]<stderr>: model_runner:   vocab_size: 129280
+[1,1]<stderr>: model_runner:   max_seq_len: 1024
+[1,1]<stderr>: model_runner:   kv_lora_rank: 512
+[1,1]<stderr>: model_runner:   qk_rope_head_dim: 64
+[1,1]<stderr>: model_runner: ----------------------------------------
+[1,1]<stderr>: model_runner: Paged Config:
+[1,1]<stderr>: model_runner:   block_size: 32
+[1,1]<stderr>: model_runner:   max_num_blocks: 1024
+[1,1]<stderr>: model_runner: ============================================================
+[1,1]<stderr>: model_runner: ============================================================
+[1,0]<stderr>: model_runner: ----------------------------------------
+[1,1]<stderr>: model_runner: ALLOCATING KV CACHE
+[1,0]<stderr>: model_runner: Generator created:
+[1,1]<stderr>: model_runner:   shape: (2048, 1, 32, 576) dtype: bfloat8_b
+[1,0]<stderr>: model_runner:   batch_size_per_row: 32
+[1,0]<stderr>: model_runner:   batch_size (total): 256
+[1,0]<stderr>: model_runner:   dp_factor: 8
+[1,0]<stderr>: model_runner:   prefill_max_tokens: None
+[1,1]<stderr>: 2026-01-30 14:23:59.991 | INFO     | models.demos.deepseek_v3.tt.generator:_prepare_run_configs:202 - Creating model prefill config...
+[1,0]<stderr>: model_runner:   enable_trace: False
+[1,0]<stderr>: model_runner: ----------------------------------------
+[1,0]<stderr>: model_runner: HF Config:
+[1,0]<stderr>: model_runner:   num_hidden_layers: 61
+[1,0]<stderr>: model_runner:   hidden_size: 7168
+[1,0]<stderr>: model_runner:   num_attention_heads: 128
+[1,0]<stderr>: model_runner:   vocab_size: 129280
+[1,0]<stderr>: model_runner:   max_seq_len: 1024
+[1,0]<stderr>: model_runner:   kv_lora_rank: 512
+[1,0]<stderr>: model_runner:   qk_rope_head_dim: 64
+[1,0]<stderr>: model_runner: ----------------------------------------
+[1,0]<stderr>: model_runner: Paged Config:
+[1,0]<stderr>: model_runner:   block_size: 32
+[1,0]<stderr>: model_runner:   max_num_blocks: 1024
+[1,0]<stderr>: model_runner: ============================================================
+[1,0]<stderr>: model_runner: ============================================================
+[1,0]<stderr>: model_runner: ALLOCATING KV CACHE
+[1,0]<stderr>: model_runner:   shape: (2048, 1, 32, 576) dtype: bfloat8_b
+[1,0]<stderr>: 2026-01-30 14:23:59.991 | INFO     | models.demos.deepseek_v3.tt.generator:_prepare_run_configs:202 - Creating model prefill config...
+[1,1]<stderr>: 2026-01-30 14:23:59.991 | INFO     | models.demos.deepseek_v3.tt.generator:_prepare_model_states:187 - Creating model states...
+[1,0]<stderr>: 2026-01-30 14:23:59.992 | INFO     | models.demos.deepseek_v3.tt.generator:_prepare_model_states:187 - Creating model states...
+[1,1]<stderr>: Creating MLP layer states:   0%|          | 0/3 [00:00<?, ?it/s]Creating MLP layer states:   0%|          | 0/3 [00:00<?, ?it/s]Creating MLP layer states:  33%|███▎      | 1/3 [00:00<00:00,  2.04it/s]Creating MLP layer states:  33%|███▎      | 1/3 [00:00<00:00,  2.03it/s]Creating MLP layer states:  67%|██████▋   | 2/3 [00:00<00:00,  2.04it/s]Creating MLP layer states:  67%|██████▋   | 2/3 [00:00<00:00,  2.04it/s]Creating MLP layer states: 100%|██████████| 3/3 [00:01<00:00,  2.06it/s]Creating MLP layer states: 100%|██████████| 3/3 [00:01<00:00,  2.06it/s]
+[1,0]<stderr>: Creating MoE layer states:   0%|          | 0/58 [00:00<?, ?it/s]Creating MLP layer states: 100%|██████████| 3/3 [00:01<00:00,  2.06it/s]Creating MLP layer states: 100%|██████████| 3/3 [00:01<00:00,  2.05it/s]
+[1,1]<stderr>: Creating MoE layer states:   0%|          | 0/58 [00:00<?, ?it/s]Creating MoE layer states:   2%|▏         | 1/58 [00:00<00:27,  2.07it/s]Creating MoE layer states:   2%|▏         | 1/58 [00:00<00:27,  2.08it/s]Creating MoE layer states:   3%|▎         | 2/58 [00:00<00:26,  2.08it/s]Creating MoE layer states:   3%|▎         | 2/58 [00:00<00:27,  2.07it/s]Creating MoE layer states:   5%|▌         | 3/58 [00:01<00:26,  2.07it/s]Creating MoE layer states:   5%|▌         | 3/58 [00:01<00:27,  1.97it/s]Creating MoE layer states:   7%|▋         | 4/58 [00:01<00:26,  2.07it/s]Creating MoE layer states:   7%|▋         | 4/58 [00:01<00:26,  2.01it/s]Creating MoE layer states:   9%|▊         | 5/58 [00:02<00:25,  2.07it/s]Creating MoE layer states:   9%|▊         | 5/58 [00:02<00:26,  2.03it/s]Creating MoE layer states:  10%|█         | 6/58 [00:02<00:25,  2.07it/s]Creating MoE layer states:  10%|█         | 6/58 [00:02<00:25,  2.04it/s]Creating MoE layer states:  12%|█▏        | 7/58 [00:03<00:24,  2.05it/s]Creating MoE layer states:  12%|█▏        | 7/58 [00:03<00:24,  2.05it/s]Creating MoE layer states:  14%|█▍        | 8/58 [00:03<00:24,  2.06it/s]Creating MoE layer states:  14%|█▍        | 8/58 [00:03<00:24,  2.06it/s]Creating MoE layer states:  16%|█▌        | 9/58 [00:04<00:23,  2.06it/s]Creating MoE layer states:  16%|█▌        | 9/58 [00:04<00:23,  2.06it/s]Creating MoE layer states:  17%|█▋        | 10/58 [00:04<00:23,  2.06it/s]Creating MoE layer states:  17%|█▋        | 10/58 [00:04<00:23,  2.06it/s]Creating MoE layer states:  19%|█▉        | 11/58 [00:05<00:22,  2.06it/s]Creating MoE layer states:  19%|█▉        | 11/58 [00:05<00:22,  2.06it/s]Creating MoE layer states:  21%|██        | 12/58 [00:05<00:22,  2.06it/s]Creating MoE layer states:  21%|██        | 12/58 [00:05<00:22,  2.07it/s]Creating MoE layer states:  22%|██▏       | 13/58 [00:06<00:21,  2.06it/s]Creating MoE layer states:  22%|██▏       | 13/58 [00:06<00:21,  2.07it/s]Creating MoE layer states:  24%|██▍       | 14/58 [00:06<00:21,  2.07it/s]Creating MoE layer states:  24%|██▍       | 14/58 [00:06<00:21,  2.08it/s]Creating MoE layer states:  26%|██▌       | 15/58 [00:07<00:20,  2.07it/s]Creating MoE layer states:  26%|██▌       | 15/58 [00:07<00:20,  2.08it/s]Creating MoE layer states:  28%|██▊       | 16/58 [00:07<00:20,  2.07it/s]Creating MoE layer states:  28%|██▊       | 16/58 [00:07<00:20,  2.08it/s]Creating MoE layer states:  29%|██▉       | 17/58 [00:08<00:19,  2.07it/s]Creating MoE layer states:  29%|██▉       | 17/58 [00:08<00:19,  2.08it/s]Creating MoE layer states:  31%|███       | 18/58 [00:08<00:19,  2.07it/s]Creating MoE layer states:  31%|███       | 18/58 [00:08<00:19,  2.08it/s]Creating MoE layer states:  33%|███▎      | 19/58 [00:09<00:18,  2.07it/s]Creating MoE layer states:  33%|███▎      | 19/58 [00:09<00:18,  2.08it/s]Creating MoE layer states:  34%|███▍      | 20/58 [00:09<00:18,  2.07it/s]Creating MoE layer states:  34%|███▍      | 20/58 [00:09<00:18,  2.08it/s]Creating MoE layer states:  36%|███▌      | 21/58 [00:10<00:17,  2.06it/s]Creating MoE layer states:  36%|███▌      | 21/58 [00:10<00:17,  2.08it/s]Creating MoE layer states:  38%|███▊      | 22/58 [00:10<00:17,  2.06it/s]Creating MoE layer states:  38%|███▊      | 22/58 [00:10<00:17,  2.08it/s]Creating MoE layer states:  40%|███▉      | 23/58 [00:11<00:16,  2.08it/s]Creating MoE layer states:  40%|███▉      | 23/58 [00:11<00:16,  2.06it/s]Creating MoE layer states:  41%|████▏     | 24/58 [00:11<00:16,  2.07it/s]Creating MoE layer states:  41%|████▏     | 24/58 [00:11<00:16,  2.06it/s]Creating MoE layer states:  43%|████▎     | 25/58 [00:12<00:15,  2.07it/s]Creating MoE layer states:  43%|████▎     | 25/58 [00:12<00:16,  2.06it/s]Creating MoE layer states:  45%|████▍     | 26/58 [00:12<00:15,  2.07it/s]Creating MoE layer states:  45%|████▍     | 26/58 [00:12<00:15,  2.02it/s]Creating MoE layer states:  47%|████▋     | 27/58 [00:13<00:14,  2.07it/s]Creating MoE layer states:  47%|████▋     | 27/58 [00:13<00:15,  2.03it/s]Creating MoE layer states:  48%|████▊     | 28/58 [00:13<00:14,  2.07it/s]Creating MoE layer states:  48%|████▊     | 28/58 [00:13<00:14,  2.04it/s]Creating MoE layer states:  50%|█████     | 29/58 [00:14<00:13,  2.08it/s]Creating MoE layer states:  50%|█████     | 29/58 [00:14<00:14,  2.05it/s]Creating MoE layer states:  52%|█████▏    | 30/58 [00:14<00:13,  2.07it/s]Creating MoE layer states:  52%|█████▏    | 30/58 [00:14<00:13,  2.05it/s]Creating MoE layer states:  53%|█████▎    | 31/58 [00:15<00:13,  2.04it/s]Creating MoE layer states:  53%|█████▎    | 31/58 [00:15<00:13,  2.05it/s]Creating MoE layer states:  55%|█████▌    | 32/58 [00:15<00:12,  2.05it/s]Creating MoE layer states:  55%|█████▌    | 32/58 [00:15<00:12,  2.06it/s]Creating MoE layer states:  57%|█████▋    | 33/58 [00:15<00:12,  2.06it/s]Creating MoE layer states:  57%|█████▋    | 33/58 [00:16<00:12,  2.06it/s]Creating MoE layer states:  59%|█████▊    | 34/58 [00:16<00:11,  2.06it/s]Creating MoE layer states:  59%|█████▊    | 34/58 [00:16<00:11,  2.06it/s]Creating MoE layer states:  60%|██████    | 35/58 [00:16<00:11,  2.06it/s]Creating MoE layer states:  60%|██████    | 35/58 [00:16<00:11,  2.06it/s]Creating MoE layer states:  62%|██████▏   | 36/58 [00:17<00:10,  2.07it/s]Creating MoE layer states:  62%|██████▏   | 36/58 [00:17<00:10,  2.06it/s]Creating MoE layer states:  64%|██████▍   | 37/58 [00:17<00:10,  2.07it/s]Creating MoE layer states:  64%|██████▍   | 37/58 [00:17<00:10,  2.07it/s]Creating MoE layer states:  66%|██████▌   | 38/58 [00:18<00:09,  2.07it/s]Creating MoE layer states:  66%|██████▌   | 38/58 [00:18<00:09,  2.03it/s]Creating MoE layer states:  67%|██████▋   | 39/58 [00:18<00:09,  2.07it/s]Creating MoE layer states:  67%|██████▋   | 39/58 [00:18<00:09,  2.04it/s]Creating MoE layer states:  69%|██████▉   | 40/58 [00:19<00:08,  2.07it/s]Creating MoE layer states:  69%|██████▉   | 40/58 [00:19<00:08,  2.05it/s]Creating MoE layer states:  71%|███████   | 41/58 [00:19<00:08,  2.07it/s]Creating MoE layer states:  71%|███████   | 41/58 [00:19<00:08,  2.05it/s]Creating MoE layer states:  72%|███████▏  | 42/58 [00:20<00:07,  2.07it/s]Creating MoE layer states:  72%|███████▏  | 42/58 [00:20<00:07,  2.05it/s]Creating MoE layer states:  74%|███████▍  | 43/58 [00:20<00:07,  2.07it/s]Creating MoE layer states:  74%|███████▍  | 43/58 [00:20<00:07,  2.06it/s]Creating MoE layer states:  76%|███████▌  | 44/58 [00:21<00:06,  2.07it/s]Creating MoE layer states:  76%|███████▌  | 44/58 [00:21<00:06,  2.06it/s]Creating MoE layer states:  78%|███████▊  | 45/58 [00:21<00:06,  2.07it/s]Creating MoE layer states:  78%|███████▊  | 45/58 [00:21<00:06,  2.06it/s]Creating MoE layer states:  79%|███████▉  | 46/58 [00:22<00:05,  2.07it/s]Creating MoE layer states:  79%|███████▉  | 46/58 [00:22<00:05,  2.06it/s]Creating MoE layer states:  81%|████████  | 47/58 [00:22<00:05,  2.07it/s]Creating MoE layer states:  81%|████████  | 47/58 [00:22<00:05,  2.06it/s]Creating MoE layer states:  83%|████████▎ | 48/58 [00:23<00:04,  2.07it/s]Creating MoE layer states:  83%|████████▎ | 48/58 [00:23<00:04,  2.06it/s]Creating MoE layer states:  84%|████████▍ | 49/58 [00:23<00:04,  2.08it/s]Creating MoE layer states:  84%|████████▍ | 49/58 [00:23<00:04,  2.06it/s]Creating MoE layer states:  86%|████████▌ | 50/58 [00:24<00:03,  2.07it/s]Creating MoE layer states:  86%|████████▌ | 50/58 [00:24<00:03,  2.06it/s]Creating MoE layer states:  88%|████████▊ | 51/58 [00:24<00:03,  2.07it/s]Creating MoE layer states:  88%|████████▊ | 51/58 [00:24<00:03,  2.06it/s]Creating MoE layer states:  90%|████████▉ | 52/58 [00:25<00:02,  2.07it/s]Creating MoE layer states:  90%|████████▉ | 52/58 [00:25<00:02,  2.07it/s]Creating MoE layer states:  91%|█████████▏| 53/58 [00:25<00:02,  2.07it/s]Creating MoE layer states:  91%|█████████▏| 53/58 [00:25<00:02,  2.07it/s]Creating MoE layer states:  93%|█████████▎| 54/58 [00:26<00:01,  2.07it/s]Creating MoE layer states:  93%|█████████▎| 54/58 [00:26<00:01,  2.07it/s]Creating MoE layer states:  95%|█████████▍| 55/58 [00:26<00:01,  2.07it/s]Creating MoE layer states:  95%|█████████▍| 55/58 [00:26<00:01,  2.07it/s]Creating MoE layer states:  97%|█████████▋| 56/58 [00:27<00:00,  2.07it/s]Creating MoE layer states:  97%|█████████▋| 56/58 [00:27<00:00,  2.06it/s]Creating MoE layer states:  98%|█████████▊| 57/58 [00:27<00:00,  2.07it/s]Creating MoE layer states:  98%|█████████▊| 57/58 [00:27<00:00,  2.06it/s]Creating MoE layer states: 100%|██████████| 58/58 [00:28<00:00,  2.07it/s]Creating MoE layer states: 100%|██████████| 58/58 [00:28<00:00,  2.07it/s]
+[1,1]<stderr>: 2026-01-30 14:24:29.507 | INFO     | models.demos.deepseek_v3.tt.generator:_prepare_model_states:195 - Creating model shared states...
+[1,0]<stderr>: Creating MoE layer states: 100%|██████████| 58/58 [00:28<00:00,  2.06it/s]Creating MoE layer states: 100%|██████████| 58/58 [00:28<00:00,  2.06it/s]
+[1,0]<stderr>: 2026-01-30 14:24:29.622 | INFO     | models.demos.deepseek_v3.tt.generator:_prepare_model_states:195 - Creating model shared states...
+[1,0]<stderr>: 2026-01-30 14:24:42.212 | INFO     | models.demos.deepseek_v3.tt.generator:_prepare_run_configs:235 - Model run config created for prefill...
+[1,0]<stderr>: model_runner:   num_layers: 61
+[1,0]<stderr>: model_runner:   per_layer_shape: Shape([2048, 1, 32, 576])
+[1,0]<stderr>: model_runner: ============================================================
+[1,0]<stderr>: prefill_node_poc.timing:   [ model_runner.allocate_kv_cache ]  latency_ms=42877.928
+[1,0]<stderr>: scheduler: kv_cache memory calc available_gb=12.00 num_layers=61 -> num_blocks=11459
+[1,0]<stderr>: prefill_engine: engine init max_num_seqs=4 max_num_batched_tokens=8192 num_kvcache_blocks=11459
+[1,0]<stderr>: root: Adding prompts...
+[1,0]<stderr>: scheduler: request added req_id=req_0 prompt_len=10 waiting=1
+[1,0]<stderr>: prefill_engine: add_request req_id=req_0 prompt_len=10
+[1,0]<stderr>: root: Added: req_0 - 10 tokens
+[1,0]<stderr>: root: Running prefills...
+[1,0]<stderr>: block_manager: allocated blocks req_id=req_0 num_blocks=1 block_ids=[0] free_after=11458
+[1,0]<stderr>: scheduler: scheduled batch num_seqs=1 num_batched_tokens=10 req_ids=['req_0'] waiting_left=0
+[1,0]<stderr>: prefill_node_poc.timing:   [ scheduler.schedule ]  latency_ms=0.051
+[1,0]<stderr>: model_runner: ============================================================
+[1,0]<stderr>: model_runner: RUN_PREFILL: num_seqs=1 req_ids=['req_0']
+[1,0]<stderr>: model_runner: Page table created:
+[1,0]<stderr>: model_runner:   shape: (1, 1)
+[1,0]<stderr>: model_runner:   block_tables: [[0]]
+[1,0]<stderr>: model_runner: ----------------------------------------
+[1,0]<stderr>: model_runner: KV CACHE BLOCK VALUES BEFORE PREFILL (layer 0, first 8 values):
+[1,1]<stderr>: 2026-01-30 14:24:44.298 | INFO     | models.demos.deepseek_v3.tt.generator:_prepare_run_configs:235 - Model run config created for prefill...
+[1,1]<stderr>: model_runner:   num_layers: 61
+[1,1]<stderr>: model_runner:   per_layer_shape: Shape([2048, 1, 32, 576])
+[1,1]<stderr>: model_runner: ============================================================
+[1,1]<stderr>: prefill_node_poc.timing:   [ model_runner.allocate_kv_cache ]  latency_ms=44904.402
+[1,1]<stderr>: scheduler: kv_cache memory calc available_gb=12.00 num_layers=61 -> num_blocks=11459
+[1,1]<stderr>: prefill_engine: engine init max_num_seqs=4 max_num_batched_tokens=8192 num_kvcache_blocks=11459
+[1,1]<stderr>: root: Adding prompts...
+[1,1]<stderr>: scheduler: request added req_id=req_0 prompt_len=10 waiting=1
+[1,1]<stderr>: prefill_engine: add_request req_id=req_0 prompt_len=10
+[1,1]<stderr>: root: Added: req_0 - 10 tokens
+[1,1]<stderr>: root: Running prefills...
+[1,1]<stderr>: block_manager: allocated blocks req_id=req_0 num_blocks=1 block_ids=[0] free_after=11458
+[1,1]<stderr>: scheduler: scheduled batch num_seqs=1 num_batched_tokens=10 req_ids=['req_0'] waiting_left=0
+[1,1]<stderr>: prefill_node_poc.timing:   [ scheduler.schedule ]  latency_ms=0.047
+[1,1]<stderr>: model_runner: ============================================================
+[1,1]<stderr>: model_runner: RUN_PREFILL: num_seqs=1 req_ids=['req_0']
+[1,1]<stderr>: model_runner: Page table created:
+[1,1]<stderr>: model_runner:   shape: (1, 1)
+[1,1]<stderr>: model_runner:   block_tables: [[0]]
+[1,1]<stderr>: model_runner: ----------------------------------------
+[1,1]<stderr>: model_runner: KV CACHE BLOCK VALUES BEFORE PREFILL (layer 0, first 8 values):
+[1,0]<stderr>: model_runner:   block[0]: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[1,0]<stderr>: model_runner: ----------------------------------------
+[1,0]<stderr>: model_runner: PREFILL user_id=0
+[1,0]<stderr>: model_runner:   req_id: req_0
+[1,0]<stderr>: model_runner:   prompt_len: 10
+[1,0]<stderr>: model_runner:   padded_len: 32
+[1,0]<stderr>: model_runner:   block_table: [0]
+[1,0]<stderr>: model_runner:   first_10_tokens: [0, 128803, 3085, 344, 270, 6102, 294, 8760, 33, 128804]
+[1,0]<stderr>: model_runner:   last_10_tokens: [0, 128803, 3085, 344, 270, 6102, 294, 8760, 33, 128804]
+[1,0]<stderr>: model_runner: Calling generator._prefill():
+[1,0]<stderr>: model_runner:   tokens: shape=(32,) dtype=torch.int64
+[1,0]<stderr>: model_runner:   user_id: 0
+[1,0]<stderr>: model_runner:   page_table: shape=(1, 1) user_row=[0]
+[1,0]<stderr>: model_runner:   local_user_id: 0
+[1,1]<stderr>: model_runner:   block[0]: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[1,1]<stderr>: model_runner: ----------------------------------------
+[1,1]<stderr>: model_runner: PREFILL user_id=0
+[1,1]<stderr>: model_runner:   req_id: req_0
+[1,1]<stderr>: model_runner:   prompt_len: 10
+[1,1]<stderr>: model_runner:   padded_len: 32
+[1,1]<stderr>: model_runner:   block_table: [0]
+[1,1]<stderr>: model_runner:   first_10_tokens: [0, 128803, 3085, 344, 270, 6102, 294, 8760, 33, 128804]
+[1,1]<stderr>: model_runner:   last_10_tokens: [0, 128803, 3085, 344, 270, 6102, 294, 8760, 33, 128804]
+[1,1]<stderr>: model_runner: Calling generator._prefill():
+[1,1]<stderr>: model_runner:   tokens: shape=(32,) dtype=torch.int64
+[1,1]<stderr>: model_runner:   user_id: 0
+[1,1]<stderr>: model_runner:   page_table: shape=(1, 1) user_row=[0]
+[1,1]<stderr>: model_runner:   local_user_id: 0
+[1,1]<stderr>: model_runner: Output: logits.shape=(1, 1, 32, 129280)
+[1,1]<stderr>: model_runner: Top-5 tokens at last position:
+[1,1]<stderr>: model_runner:   [1] token_id=128798 logit=28.7500 text='<think>'
+[1,1]<stderr>: model_runner:   [2] token_id=128799 logit=18.2500 text='</think>'
+[1,1]<stderr>: model_runner:   [3] token_id=128797 logit=16.7500 text='<｜place▁holder▁no▁797｜>'
+[1,1]<stderr>: model_runner:   [4] token_id=128002 logit=16.5000 text='<｜place▁holder▁no▁2｜>'
+[1,1]<stderr>: model_runner:   [5] token_id=128787 logit=16.3750 text='<｜place▁holder▁no▁787｜>'
+[1,0]<stderr>: model_runner: Output: logits.shape=(1, 1, 32, 129280)
+[1,0]<stderr>: model_runner: Top-5 tokens at last position:
+[1,0]<stderr>: model_runner:   [1] token_id=128798 logit=28.7500 text='<think>'
+[1,0]<stderr>: model_runner:   [2] token_id=128799 logit=18.2500 text='</think>'
+[1,0]<stderr>: model_runner:   [3] token_id=128797 logit=16.7500 text='<｜place▁holder▁no▁797｜>'
+[1,0]<stderr>: model_runner:   [4] token_id=128002 logit=16.5000 text='<｜place▁holder▁no▁2｜>'
+[1,0]<stderr>: model_runner:   [5] token_id=128787 logit=16.3750 text='<｜place▁holder▁no▁787｜>'
+[1,1]<stderr>: model_runner: ----------------------------------------
+[1,1]<stderr>: model_runner: KV CACHE BLOCK VALUES AFTER PREFILL (layer 0, first 8 values):
+[1,0]<stderr>: model_runner: ----------------------------------------
+[1,0]<stderr>: model_runner: KV CACHE BLOCK VALUES AFTER PREFILL (layer 0, first 8 values):
+[1,0]<stderr>: model_runner:   block[0]: [-0.0001068115234375, 0.0004425048828125, 1.52587890625e-05, 7.62939453125e-05, 0.0, 0.000274658203125, 0.000396728515625, -0.0009613037109375]
+[1,0]<stderr>: model_runner:     CHANGED: True (was: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+[1,0]<stderr>: model_runner: RUN_PREFILL COMPLETE: logits_shape=(1, 32, 129280)
+[1,0]<stderr>: model_runner: ============================================================
+[1,1]<stderr>: model_runner:   block[0]: [-0.0001068115234375, 0.0004425048828125, 1.52587890625e-05, 7.62939453125e-05, 0.0, 0.000274658203125, 0.000396728515625, -0.0009613037109375]
+[1,1]<stderr>: model_runner:     CHANGED: True (was: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+[1,1]<stderr>: model_runner: RUN_PREFILL COMPLETE: logits_shape=(1, 32, 129280)
+[1,1]<stderr>: model_runner: ============================================================
+[1,0]<stderr>: prefill_node_poc.timing:   [ model_runner.run_prefill ]  latency_ms=125161.694
+[1,0]<stderr>: prefill_engine: step done num_seqs=1 logits_shape=(1, 32, 129280) req_ids=['req_0']
+[1,0]<stderr>: prefill_node_poc.timing:   [ prefill_engine.step ]  latency_ms=125161.938
+[1,0]<stderr>: root: Prefill: req_id=req_0 first_token=128798 '<think>'
+[1,0]<stderr>: prefill_engine: release_after_prefill num_seqs=1 req_ids=['req_0']
+[1,0]<stderr>: scheduler: releasing seqs num=1 req_ids=['req_0']
+[1,0]<stderr>: block_manager: deallocated blocks req_id=req_0 num_blocks=1 free_after=11459
+[1,0]<stderr>: prefill_node_poc.timing:   [ scheduler.release ]  latency_ms=0.049
+[1,0]<stderr>: prefill_node_poc.timing:   [ prefill_engine.release_after_prefill ]  latency_ms=0.095
+[1,0]<stderr>: root: Cleaning up...
+[1,0]<stderr>: 2026-01-30 14:26:47.416 | INFO     | models.demos.deepseek_v3.tt.generator:_cleanup_run_configs:247 - No decode run config to cleanup
+[1,0]<stderr>: model_runner: model_runner cleanup
+[1,0]<stderr>: prefill_engine: engine cleanup
+[1,1]<stderr>: prefill_node_poc.timing:   [ model_runner.run_prefill ]  latency_ms=123108.138
+[1,1]<stderr>: prefill_engine: step done num_seqs=1 logits_shape=(1, 32, 129280) req_ids=['req_0']
+[1,1]<stderr>: prefill_node_poc.timing:   [ prefill_engine.step ]  latency_ms=123108.380
+[1,1]<stderr>: root: Prefill: req_id=req_0 first_token=128798 '<think>'
+[1,1]<stderr>: prefill_engine: release_after_prefill num_seqs=1 req_ids=['req_0']
+[1,1]<stderr>: scheduler: releasing seqs num=1 req_ids=['req_0']
+[1,1]<stderr>: block_manager: deallocated blocks req_id=req_0 num_blocks=1 free_after=11459
+[1,1]<stderr>: prefill_node_poc.timing:   [ scheduler.release ]  latency_ms=0.050
+[1,1]<stderr>: prefill_node_poc.timing:   [ prefill_engine.release_after_prefill ]  latency_ms=0.096
+[1,1]<stderr>: root: Cleaning up...
+[1,1]<stderr>: 2026-01-30 14:26:47.449 | INFO     | models.demos.deepseek_v3.tt.generator:_cleanup_run_configs:247 - No decode run config to cleanup
+[1,1]<stderr>: model_runner: model_runner cleanup
+[1,1]<stderr>: prefill_engine: engine cleanup
