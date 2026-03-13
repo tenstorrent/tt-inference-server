@@ -86,7 +86,7 @@ Multi-host deployment enables running large language models across multiple Gala
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `HF_TOKEN` | Yes | HuggingFace token for model downloads |
+| `HF_TOKEN` | Yes | HuggingFace token for gated model downloads |
 | `JWT_SECRET` | Conditional | Required unless `--no-auth` is specified |
 
 ---
