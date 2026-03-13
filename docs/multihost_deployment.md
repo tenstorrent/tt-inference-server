@@ -16,41 +16,40 @@ Multi-host deployment enables running large language models across multiple Gala
 ### Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                          Multi-Host Architecture                              │
-├──────────────────────────────────────────────────────────────────────────────┤
-│                                                                               │
-│   [User/Client]                                                               │
-│        │                                                                      │
-│        │ HTTP API (port 8000)                                                 │
-│        ▼                                                                      │
-│   ┌────────────────────────────────────────────────────────────────────┐      │
-│   │    Host 0 (Two Containers)                                         │      │
-│   │  ┌─────────────────────────────┐     ┌─────────────────────────────┐│      │
-│   │  │  Controller Container       │     │  Worker Container (rank 0) ││      │
-│   │  │  - Serves inference API     │     │  - sshd (port 2200)        ││      │
-│   │  │  - Runs mpirun to spawn     │────▶│  - Runs MPI rank 0 process ││      │
-│   │  │    MPI processes via SSH    │     │  - TT Device access        ││      │
-│   │  │                             │     │                            ││      │
-│   │  └──────────────┬──────────────┘     └─────────────────────────────┘│      │
-│   └─────────────────┼───────────────────────────────────────────────────┘      │
-│                     │                                                         │
-│                     │ SSH (port 2200) to spawn MPI processes                  │
-│                     ▼                                                         │
-│   ┌─────────────────────────────────┐  ┌─────────────────────────────────┐    │
-│   │   Host 1: Worker (rank 1)       │  │   Host 2, 3: Workers            │    │
-│   │  ┌───────────────────────────┐  │  │   (Quad Galaxy only)            │    │
-│   │  │  Worker Container         │  │  │                                 │    │
-│   │  │  - sshd (port 2200)       │  │  │  ┌───────────────────────────┐  │    │
-│   │  │  - Accepts MPI spawn      │  │  │  │  Same as Host 1           │  │    │
-│   │  │  - TT Device access       │  │  │  │  - rank 2, rank 3         │  │    │
-│   │  └───────────────────────────┘  │  │  └───────────────────────────┘  │    │
-│   └─────────────────────────────────┘  └─────────────────────────────────┘    │
-│                                                                               │
-│   Note: All hosts run Worker containers. Host 0 additionally runs Controller.│
-│         Controller spawns MPI processes on all Workers via SSH (port 2200).  │
-│                                                                               │
-└──────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│                        Multi-Host Architecture                             │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  [User/Client]                                                             │
+│       │                                                                    │
+│       │ HTTP API (port 8000)                                               │
+│       ▼                                                                    │
+│  ┌────────────────────────────────────────────────────────────────────┐    │
+│  │  Host 0 (Two Containers)                                           │    │
+│  │  ┌───────────────────────┐       ┌───────────────────────────┐     │    │
+│  │  │ Controller Container  │       │ Worker Container (rank 0) │     │    │
+│  │  │ - Serves inference API│       │ - sshd (port 2200)        │     │    │
+│  │  │ - Runs mpirun to spawn│──────▶│ - Runs MPI rank 0 process │     │    │
+│  │  │   MPI processes       │       │ - TT Device access        │     │    │
+│  │  └───────────┬───────────┘       └───────────────────────────┘     │    │
+│  └──────────────┼─────────────────────────────────────────────────────┘    │
+│                 │                                                          │
+│                 │ SSH (port 2200) to spawn MPI processes                   │
+│                 ▼                                                          │
+│  ┌────────────────────────────────┐  ┌────────────────────────────────┐    │
+│  │  Host 1: Worker (rank 1)       │  │  Host 2, 3: Workers            │    │
+│  │  ┌──────────────────────────┐  │  │  (Quad Galaxy only)            │    │
+│  │  │ Worker Container         │  │  │  ┌──────────────────────────┐  │    │
+│  │  │ - sshd (port 2200)       │  │  │  │ Same as Host 1           │  │    │
+│  │  │ - Runs MPI rank 1 process│  │  │  │ - rank 2, rank 3         │  │    │
+│  │  │ - TT Device access       │  │  │  └──────────────────────────┘  │    │
+│  │  └──────────────────────────┘  │  │                                │    │
+│  └────────────────────────────────┘  └────────────────────────────────┘    │
+│                                                                            │
+│  Note: All hosts run Worker containers. Controller spawns MPI processes    │
+│        on all Workers (including rank 0 on Host 0) via SSH (port 2200).    │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Key Points:**
