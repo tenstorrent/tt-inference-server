@@ -54,12 +54,7 @@ worker::WorkerConfig make_worker_config_for_process(int worker_id) {
     cfg.result_queue = std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
         "/tt_tokens_" + std::to_string(worker_id), false);
     cfg.worker_id = worker_id;
-    auto engine_cfg = tt::config::llm_engine_config();
-    if (engine_cfg.runner_type == llm_engine::ModelRunnerType::Pipeline) {
-        cfg.runner_config = tt::config::sp_pipeline_config();
-    } else {
-        cfg.runner_config = engine_cfg;
-    }
+    cfg.runner_config = tt::config::llm_engine_config();
     return cfg;
 }
 
