@@ -113,7 +113,7 @@ namespace defaults {
     constexpr const char* SCHEDULING_POLICY = "prefill_first";  // "prefill_first" or "max_occupancy"
     constexpr const char* LLM_DEVICE_BACKEND = "mock";  // "mock", "ttrun", "llama"
     constexpr const bool ENABLE_ACCUMULATED_STREAMING = true;
-    constexpr size_t MAX_ACCUMULATED_TOKENS = 5;
+    constexpr size_t MAX_ACCUMULATED_TOKENS = 10;
 
 }
 
