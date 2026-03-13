@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -21,7 +22,7 @@ struct PrefillRequest {
     TaskID task_id;
     std::string prompt;
     std::vector<int64_t> token_ids;
-    int max_tokens = 0;
+    std::optional<int> max_tokens;
 
     explicit PrefillRequest(TaskID task_id) : task_id(std::move(task_id)) {}
 };

@@ -48,7 +48,7 @@ void SocketController::setup_prefill_mode_handlers() {
             } else {
                 request.prompt = message.prompt;
             }
-            const int original_max_tokens = message.max_tokens;
+            const std::optional<int> original_max_tokens = message.max_tokens;
             request.max_tokens = 1;
 
             auto token_ids_ptr = std::make_shared<std::vector<int64_t>>(message.token_ids);
@@ -65,19 +65,27 @@ void SocketController::setup_prefill_mode_handlers() {
                         }
                     }
 
-                    int remaining_tokens = original_max_tokens - 1;
+                    std::optional<int> remaining_tokens =
+                        original_max_tokens.has_value()
+                            ? std::optional<int>(std::max(0, original_max_tokens.value() - 1))
+                            : std::nullopt;
 
                     tt::sockets::PrefillResultMessage msg{domain::TaskID(task_id)};
                     msg.generated_text = text;
                     msg.token_ids = *token_ids_ptr;
                     msg.remaining_tokens = remaining_tokens;
-                    msg.finished = is_final && remaining_tokens <= 0;
+                    msg.finished = is_final &&
+                        (remaining_tokens.has_value() && remaining_tokens.value() <= 0);
                     msg.tokens_generated = 1;
                     socket_service_->sendPrefillResult(msg);
 
                     if (is_final) {
                         TT_LOG_INFO("[SocketController] Completed prefill {} (remaining: {}, token_ids: {})",
-                                    task_id, remaining_tokens, token_ids_ptr->size());
+                                    task_id,
+                                    remaining_tokens.has_value()
+                                        ? std::to_string(remaining_tokens.value())
+                                        : "none",
+                                    token_ids_ptr->size());
                     }
                 });
         });
@@ -115,7 +123,9 @@ void SocketController::setup_decode_mode_handlers() {
             response.choices.push_back(std::move(choice));
             callback(response, false);
 
-            if (msg.remaining_tokens > 0 && !msg.token_ids.empty()) {
+            bool continue_decode = !msg.token_ids.empty() &&
+                (!msg.remaining_tokens.has_value() || msg.remaining_tokens.value() > 0);
+            if (continue_decode) {
                 domain::CompletionRequest request(msg.task_id);
                 std::vector<int> tokens(msg.token_ids.begin(), msg.token_ids.end());
                 request.prompt = std::move(tokens);

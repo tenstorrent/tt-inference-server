@@ -53,7 +53,6 @@ class StepSequence:
 
     task_id: str
     token_ids: list[int]
-    max_tokens: int
     temperature: float
     ignore_eos: bool
     block_table: list[int]

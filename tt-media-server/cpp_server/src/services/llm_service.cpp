@@ -451,7 +451,10 @@ void LLMService::submit_decode_continuation(
 
     TT_LOG_DEBUG("[LLMService:DECODE] Queued decode continuation for task {} "
                  "(prompt_tokens={}, max_tokens={})",
-                 task_id, prompt.size(), request.max_tokens);
+                 task_id, prompt.size(),
+                 request.max_tokens.has_value()
+                     ? std::to_string(request.max_tokens.value())
+                     : "none");
 }
 
 void LLMService::handle_connection_lost() {

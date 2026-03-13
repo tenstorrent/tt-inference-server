@@ -102,8 +102,8 @@ void SpPipelineRunner::step() {
   std::unique_ptr<llm_engine::Sequence> owned(seq);
   llm_engine::TaskID task_id = seq->task_id;
 
-  model_runner_->write(
-      seq->task_id.id, seq->token_ids_, seq->sampling_params->max_tokens);
+  uint32_t max_tokens = seq->sampling_params->max_tokens.value_or(config_.MAX_INPUT_TOKENS);
+  model_runner_->write(seq->task_id.id, seq->token_ids_, max_tokens);
 
   active_sequences_.emplace(task_id, std::move(owned));
 }
@@ -126,9 +126,11 @@ void SpPipelineRunner::drain_decode_results() {
     seq->append_token(static_cast<int64_t>(dr.token_id));
 
     bool is_stop = stop_token_ids_.count(static_cast<int64_t>(dr.token_id)) > 0;
+    bool reached_max_tokens = seq->sampling_params->max_tokens.has_value() &&
+    seq->num_completion_tokens() >= static_cast<size_t>(seq->sampling_params->max_tokens.value());
     bool finished =
         (!seq->sampling_params->ignore_eos && is_stop) ||
-        seq->num_completion_tokens() >= static_cast<size_t>(seq->sampling_params->max_tokens);
+        reached_max_tokens;
 
     push_token(dr.task_id, dr.token_id, finished);
 

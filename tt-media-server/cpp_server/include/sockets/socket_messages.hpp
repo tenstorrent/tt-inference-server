@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 #include <cereal/types/string.hpp>
@@ -20,13 +21,14 @@ struct PrefillRequestMessage {
     tt::domain::TaskID task_id;
     std::string prompt;
     std::vector<int64_t> token_ids;
-    int max_tokens = 0;
+    std::optional<int> max_tokens;
 
     explicit PrefillRequestMessage(tt::domain::TaskID task_id) : task_id(std::move(task_id)) {}
 
     template<class Archive>
     void write(Archive& ar) const {
-        ar(task_id.id, prompt, token_ids, max_tokens);
+        int mt = max_tokens.has_value() ? max_tokens.value() : -1;
+        ar(task_id.id, prompt, token_ids, mt);
     }
 
     template<class Archive>
@@ -39,7 +41,7 @@ struct PrefillRequestMessage {
         PrefillRequestMessage msg(tt::domain::TaskID(std::move(tid)));
         msg.prompt = std::move(p);
         msg.token_ids = std::move(tids);
-        msg.max_tokens = mt;
+        msg.max_tokens = (mt == -1) ? std::nullopt : std::optional<int>(mt);
         return msg;
     }
 };
@@ -56,14 +58,15 @@ struct PrefillResultMessage {
     int tokens_generated = 0;
     double processing_time_ms = 0.0;
     std::vector<int64_t> token_ids;
-    int remaining_tokens = 0;
+    std::optional<int> remaining_tokens;
 
     explicit PrefillResultMessage(tt::domain::TaskID task_id) : task_id(std::move(task_id)) {}
 
     template<class Archive>
     void write(Archive& ar) const {
+        int rt = remaining_tokens.has_value() ? remaining_tokens.value() : -1;
         ar(task_id.id, generated_text, finished, tokens_generated, processing_time_ms,
-           token_ids, remaining_tokens);
+           token_ids, rt);
     }
 
     template<class Archive>
@@ -82,7 +85,7 @@ struct PrefillResultMessage {
         msg.tokens_generated = tg;
         msg.processing_time_ms = pt;
         msg.token_ids = std::move(tids);
-        msg.remaining_tokens = rt;
+        msg.remaining_tokens = (rt == -1) ? std::nullopt : std::optional<int>(rt);
         return msg;
     }
 };
