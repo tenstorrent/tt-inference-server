@@ -17,7 +17,8 @@ SpPipelineRunner::SpPipelineRunner(
     : config_(config),
       stop_token_ids_(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       result_queue_(result_queue),
-      task_queue_(task_queue) {
+      task_queue_(task_queue),
+      max_in_flight_count_(config.max_in_flight_count) {
   auto decode_cb = [this](const llm_engine::TokenResult& result) {
     decode_queue_.push(result);
   };
@@ -96,6 +97,11 @@ void SpPipelineRunner::stop() {
 void SpPipelineRunner::step() {
   drain_decode_results();
 
+  // Check if we can accept more in-flight requests
+  if (in_flight_count_ >= max_in_flight_count_) {
+    return;
+  }
+
   llm_engine::Sequence* seq = task_queue_->try_pop();
   if (!seq) return;
 
@@ -106,6 +112,7 @@ void SpPipelineRunner::step() {
       seq->task_id.id, seq->token_ids_, seq->sampling_params->max_tokens);
 
   active_sequences_.emplace(task_id, std::move(owned));
+  ++in_flight_count_;
 }
 
 void SpPipelineRunner::drain_decode_results() {
@@ -120,6 +127,7 @@ void SpPipelineRunner::drain_decode_results() {
     if (dr.is_error) {
       push_error_token(dr.task_id);
       active_sequences_.erase(it);
+      --in_flight_count_;
       continue;
     }
 
@@ -134,6 +142,7 @@ void SpPipelineRunner::drain_decode_results() {
 
     if (finished) {
       active_sequences_.erase(it);
+      --in_flight_count_;
     }
   }
 }

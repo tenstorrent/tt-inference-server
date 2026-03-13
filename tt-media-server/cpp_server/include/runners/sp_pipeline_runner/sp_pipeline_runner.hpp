@@ -44,6 +44,8 @@ class SpPipelineRunner : public IRunner {
   sp_pipeline::DecodeQueue decode_queue_;
   std::unordered_map<llm_engine::TaskID, std::unique_ptr<llm_engine::Sequence>> active_sequences_;
   std::atomic<bool> stopped_{false};
+  int max_in_flight_count_;
+  int in_flight_count_ = 0;
 };
 
 }  // namespace tt::runners
