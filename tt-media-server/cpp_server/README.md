@@ -404,7 +404,7 @@ curl -X POST http://localhost:8001/v1/completions \
 ```
 data: {"id":"cmpl-abc123","choices":[{"text":"token_0","index":0}],...}
 
-data: {"id":"cmpl-abc123","choices":[{"text":"token_1","index":1}],...}
+data: {"id":"cmpl-abc123","choices":[{"text":"token_1","index":0}],...}
 
 ...
 
