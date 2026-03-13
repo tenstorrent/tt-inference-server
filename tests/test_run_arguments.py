@@ -375,6 +375,22 @@ class TestModelSpecCliArgsCompatibility:
 
         assert args.tt_metal_home == "/env/tt-metal"
 
+    def test_host_hf_cache_bare_flag_defaults_from_env(self, base_args):
+        """Test bare --host-hf-cache resolves via HOST_HF_HOME/HF_HOME defaults."""
+        full_args = base_args + ["--host-hf-cache"]
+        with patch.dict(
+            os.environ,
+            {
+                "HOST_HF_HOME": "/host/hf-cache",
+                "HF_HOME": "/env/hf-home",
+            },
+            clear=False,
+        ):
+            with patch("sys.argv", ["run.py"] + full_args):
+                args = parse_arguments()
+
+        assert args.host_hf_cache == "/host/hf-cache"
+
     def test_device_alias_compatibility(self):
         """Test --device alias remains supported."""
         with patch(

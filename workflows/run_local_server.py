@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from workflows.log_setup import clean_log_file
-from workflows.run_docker_server import generate_docker_volume_name
+from workflows.setup_host import SetupConfig
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
@@ -37,22 +37,6 @@ def _prepend_env_path(value: Path, existing: str) -> str:
     return os.pathsep.join(parts)
 
 
-def _resolve_hf_snapshot_dir(hf_repo: str, hf_home: Path) -> Path:
-    local_repo_name = hf_repo.replace("/", "--")
-    possible_snapshot_dirs = [
-        hf_home / f"models--{local_repo_name}" / "snapshots",
-        hf_home / "hub" / f"models--{local_repo_name}" / "snapshots",
-    ]
-    for snapshot_dir in possible_snapshot_dirs:
-        if snapshot_dir.is_dir():
-            snapshots = list(snapshot_dir.glob("*"))
-            if snapshots:
-                return max(snapshots, key=lambda path: path.stat().st_mtime)
-    raise ValueError(
-        f"Could not resolve a Hugging Face snapshot for {hf_repo} under {hf_home}"
-    )
-
-
 def get_local_server_paths(runtime_config, repo_root=None):
     repo_root_path = Path(repo_root or get_repo_root_path()).resolve()
     tt_metal_home = Path(runtime_config.tt_metal_home).expanduser().resolve()
@@ -61,7 +45,9 @@ def get_local_server_paths(runtime_config, repo_root=None):
         if runtime_config.tt_metal_python_venv_dir
         else tt_metal_home / "python_env"
     )
-    entrypoint_path = repo_root_path / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
+    entrypoint_path = (
+        repo_root_path / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
+    )
     return {
         "repo_root": repo_root_path,
         "tt_metal_home": tt_metal_home,
@@ -71,18 +57,13 @@ def get_local_server_paths(runtime_config, repo_root=None):
     }
 
 
-def _resolve_cache_root(model_spec, runtime_config, repo_root: Path) -> Path:
-    if runtime_config.host_volume:
-        return Path(runtime_config.host_volume).expanduser().resolve()
-    return (repo_root / "persistent_volume" / generate_docker_volume_name(model_spec)).resolve()
-
-
-def build_local_server_env(model_spec, runtime_config, json_fpath, repo_root=None):
+def build_local_server_env(
+    model_spec, runtime_config, json_fpath, setup_config: SetupConfig, repo_root=None
+):
     paths = get_local_server_paths(runtime_config, repo_root=repo_root)
-    repo_root_path = paths["repo_root"]
     tt_metal_home = paths["tt_metal_home"]
     python_env_dir = paths["python_env_dir"]
-    cache_root = _resolve_cache_root(model_spec, runtime_config, repo_root_path)
+    cache_root = Path(setup_config.host_model_volume_root).resolve()
     logs_path = cache_root / "logs"
     device = DeviceTypes.from_string(runtime_config.device)
     mesh_device_str = device.to_mesh_device_str()
@@ -91,9 +72,7 @@ def build_local_server_env(model_spec, runtime_config, json_fpath, repo_root=Non
         if getattr(model_spec, "subdevice_type", None)
         else mesh_device_str
     )
-    tt_cache_path = (
-        cache_root / "tt_metal_cache" / f"cache_{model_spec.model_name}" / device_cache_dir
-    )
+    tt_cache_path = Path(setup_config.host_tt_metal_cache_dir) / device_cache_dir
 
     ensure_readwriteable_dir(cache_root)
     ensure_readwriteable_dir(logs_path)
@@ -116,17 +95,21 @@ def build_local_server_env(model_spec, runtime_config, json_fpath, repo_root=Non
     env["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(Path(json_fpath).resolve())
     env["SERVICE_PORT"] = str(runtime_config.service_port)
 
-    if runtime_config.host_weights_dir:
+    if setup_config.host_weights_dir:
         env["MODEL_WEIGHTS_DIR"] = str(
-            Path(runtime_config.host_weights_dir).expanduser().resolve()
+            Path(setup_config.host_model_weights_mount_dir).resolve()
         )
-    elif runtime_config.host_hf_cache:
-        hf_home = Path(runtime_config.host_hf_cache).expanduser().resolve()
+    elif setup_config.host_hf_cache:
+        if not setup_config.host_model_weights_snapshot_dir:
+            raise ValueError(
+                f"Could not resolve a Hugging Face snapshot for {model_spec.hf_weights_repo} "
+                f"under {setup_config.host_hf_cache}"
+            )
+        hf_home = Path(setup_config.host_hf_cache).resolve()
+        snapshot_dir = Path(setup_config.host_model_weights_snapshot_dir).resolve()
         env["HOST_HF_HOME"] = str(hf_home)
         env["HF_HOME"] = str(hf_home)
-        env["MODEL_WEIGHTS_DIR"] = str(
-            _resolve_hf_snapshot_dir(model_spec.hf_weights_repo, hf_home)
-        )
+        env["MODEL_WEIGHTS_DIR"] = str(snapshot_dir)
 
     if runtime_config.disable_metal_timeout:
         env["DISABLE_METAL_OP_TIMEOUT"] = "1"
@@ -134,7 +117,9 @@ def build_local_server_env(model_spec, runtime_config, json_fpath, repo_root=Non
     return env
 
 
-def generate_local_run_command(model_spec, runtime_config, json_fpath, repo_root=None):
+def generate_local_run_command(
+    model_spec, runtime_config, json_fpath, setup_config: SetupConfig, repo_root=None
+):
     if model_spec.inference_engine != InferenceEngine.VLLM.value:
         raise NotImplementedError(
             "--local-server currently supports only vLLM-backed model specs."
@@ -142,7 +127,11 @@ def generate_local_run_command(model_spec, runtime_config, json_fpath, repo_root
 
     paths = get_local_server_paths(runtime_config, repo_root=repo_root)
     env = build_local_server_env(
-        model_spec, runtime_config, json_fpath, repo_root=paths["repo_root"]
+        model_spec,
+        runtime_config,
+        json_fpath,
+        setup_config,
+        repo_root=paths["repo_root"],
     )
     process_name = f"tt-inference-server-local-{short_uuid()}"
     command = [
@@ -245,7 +234,7 @@ def run_local_command(
     }
 
 
-def run_local_server(model_spec, runtime_config, json_fpath):
+def run_local_server(model_spec, runtime_config, json_fpath, setup_config: SetupConfig):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     local_log_file_dir = get_default_workflow_root_log_dir() / "local_server"
     ensure_readwriteable_dir(local_log_file_dir)
@@ -255,7 +244,7 @@ def run_local_server(model_spec, runtime_config, json_fpath):
     )
 
     command, env, process_name = generate_local_run_command(
-        model_spec, runtime_config, json_fpath
+        model_spec, runtime_config, json_fpath, setup_config
     )
     return run_local_command(
         command, env, process_name, runtime_config, model_spec, local_log_file_path

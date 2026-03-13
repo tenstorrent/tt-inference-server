@@ -257,6 +257,38 @@ class TestSetupHostCombinations:
         # No host volume set
         assert config.host_model_volume_root is None
 
+    def test_local_server_defaults_to_repo_persistent_volume(self, tiny_model_spec):
+        """Local server always gets a host-backed cache root."""
+        config = SetupConfig(model_spec=tiny_model_spec, local_server=True)
+
+        assert config.host_volume is not None
+        assert config.persistent_volume_root.name == "persistent_volume"
+        assert config.host_model_volume_root is not None
+        assert config.host_tt_metal_cache_dir is not None
+
+    def test_local_server_hf_cache_still_uses_host_volume_for_cache(
+        self, tiny_model_spec, temp_dir
+    ):
+        """Local server keeps host volume storage for cache/logs when using HF cache weights."""
+        hf_cache = temp_dir / "hf_home"
+        snapshot_dir = (
+            hf_cache
+            / "hub"
+            / f"models--{TINY_HF_REPO.replace('/', '--')}"
+            / "snapshots"
+            / "abc123"
+        )
+        snapshot_dir.mkdir(parents=True)
+        config = SetupConfig(
+            model_spec=tiny_model_spec,
+            host_hf_cache=str(hf_cache),
+            local_server=True,
+        )
+
+        assert config.host_model_volume_root is not None
+        assert config.host_hf_cache == str(hf_cache.resolve())
+        assert config.host_model_weights_snapshot_dir == snapshot_dir
+
     def test_local_model_source_mode(self, tiny_model_spec, temp_dir):
         """Mode 5: MODEL_SOURCE=local with MODEL_WEIGHTS_DIR env var.
 
@@ -554,14 +586,10 @@ class TestSetupHostDockerCommand:
         snapshot_dir.mkdir(parents=True)
         (snapshot_dir / "config.json").write_text("{}")
 
-        with patch(
-            "workflows.setup_host.get_weights_hf_cache_dir",
-            return_value=snapshot_dir,
-        ):
-            config = SetupConfig(
-                model_spec=tiny_model_spec,
-                host_hf_cache=hf_cache,
-            )
+        config = SetupConfig(
+            model_spec=tiny_model_spec,
+            host_hf_cache=hf_cache,
+        )
 
         json_fpath = self._make_json_fpath(temp_dir)
 
