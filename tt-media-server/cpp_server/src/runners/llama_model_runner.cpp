@@ -105,7 +105,6 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool is_prefill) 
         int prompt_len = static_cast<int>(seq->num_prompt_tokens_);
 
         const SamplingParams* sp = seq->sampling_params.get();
-        int max_tokens = (sp && sp->max_tokens.has_value()) ? sp->max_tokens.value() : 64;
         double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;
         bool ignore_eos = sp ? sp->ignore_eos : false;
 
@@ -138,7 +137,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool is_prefill) 
         double frequency_penalty = sp ? static_cast<double>(sp->frequency_penalty) : 0.0;
 
         py_seqs.append(
-            g_step_seq_class(seq->task_id.id, token_ids, max_tokens, temperature, ignore_eos,
+            g_step_seq_class(seq->task_id.id, token_ids, temperature, ignore_eos,
                             block_table, current_pos, prompt_len, seed, top_p, top_k, min_p,
                             repetition_penalty, presence_penalty, frequency_penalty));
       }

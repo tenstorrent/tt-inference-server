@@ -48,8 +48,7 @@ void SpPipelineRunner::step() {
   std::unique_ptr<llm_engine::Sequence> owned(seq);
   llm_engine::TaskID task_id = seq->task_id;
 
-  // Use max_tokens if set, otherwise use 0 (sequences will stop at EOS via ignore_eos check)
-  uint32_t max_tokens = seq->sampling_params->max_tokens.value_or(0);
+  uint32_t max_tokens = seq->sampling_params->max_tokens.value_or(65536);
   model_runner_->write(seq->task_id.id, seq->token_ids_, max_tokens);
 
   active_sequences_.emplace(task_id, std::move(owned));
@@ -74,7 +73,7 @@ void SpPipelineRunner::drain_decode_results() {
 
     bool is_stop = stop_token_ids_.count(static_cast<int64_t>(dr.token_id)) > 0;
     bool reached_max_tokens = seq->sampling_params->max_tokens.has_value() &&
-        seq->num_completion_tokens() >= static_cast<size_t>(seq->sampling_params->max_tokens.value());
+    seq->num_completion_tokens() >= static_cast<size_t>(seq->sampling_params->max_tokens.value());
     bool finished =
         (!seq->sampling_params->ignore_eos && is_stop) ||
         reached_max_tokens;

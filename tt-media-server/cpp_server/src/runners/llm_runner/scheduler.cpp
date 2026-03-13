@@ -111,7 +111,7 @@ void Scheduler::try_schedule_decode(std::vector<Sequence*>& scheduled_seqs,
   }
 }
 
-std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() { 
+std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   std::vector<Sequence*> scheduled_seqs;
   if (prefill_queue_->empty() && decode_queue_.empty() && in_flight_count_ == 0) {
     auto seq =prefill_queue_->receive();
@@ -164,11 +164,8 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
     seq->append_token(token_id);
 
     bool is_stop_token = stop_token_ids_.count(token_id) > 0;
-    bool reached_max_tokens = false;
-    if (seq->sampling_params->max_tokens.has_value()) {
-      reached_max_tokens = seq->num_completion_tokens() >=
-          static_cast<size_t>(seq->sampling_params->max_tokens.value());
-    }
+    bool reached_max_tokens = seq->sampling_params->max_tokens.has_value()
+        && seq->num_completion_tokens() >= static_cast<size_t>(seq->sampling_params->max_tokens.value());
     bool finished =
         (!seq->sampling_params->ignore_eos && is_stop_token) ||
         reached_max_tokens;

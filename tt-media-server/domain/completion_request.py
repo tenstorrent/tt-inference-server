@@ -32,7 +32,7 @@ class CompletionRequest(BaseRequest):
 
     # Response configuration
     echo: bool | None = False
-    max_tokens: int | None = None
+    max_tokens: int | None = 16
     n: int = 1
     presence_penalty: float | None = 0.0
     frequency_penalty: float | None = 0.0
