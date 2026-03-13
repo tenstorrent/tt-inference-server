@@ -12730,8 +12730,7 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{}",
-              "num_scheduler_steps": 1
+              "override_tt_config": "{}"
             },
             "override_tt_config": {},
             "env_vars": {
@@ -12748,7 +12747,6 @@
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "VLLM_USE_V1": "1",
             "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
             "MESH_DEVICE": "T3K",
             "ARCH_NAME": "wormhole_b0"
@@ -15622,7 +15620,7 @@
           "tt_metal_commit": "65718bb",
           "device_model_spec": {
             "device": "GALAXY",
-            "max_concurrency": 32,
+            "max_concurrency": 16,
             "max_context": 65536,
             "perf_targets_map": {},
             "default_impl": true,
@@ -15670,7 +15668,7 @@
               "model": "stabilityai/stable-diffusion-xl-base-1.0",
               "block_size": "64",
               "max_model_len": "65536",
-              "max_num_seqs": "32",
+              "max_num_seqs": "16",
               "max_num_batched_tokens": "65536",
               "max-log-len": "32",
               "seed": "9472",
@@ -16064,7 +16062,7 @@
           "tt_metal_commit": "65718bb",
           "device_model_spec": {
             "device": "GALAXY",
-            "max_concurrency": 32,
+            "max_concurrency": 16,
             "max_context": 65536,
             "perf_targets_map": {},
             "default_impl": true,
@@ -16112,7 +16110,7 @@
               "model": "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
               "block_size": "64",
               "max_model_len": "65536",
-              "max_num_seqs": "32",
+              "max_num_seqs": "16",
               "max_num_batched_tokens": "65536",
               "max-log-len": "32",
               "seed": "9472",

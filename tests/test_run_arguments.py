@@ -72,6 +72,7 @@ def mock_args():
         reset_venvs=False,
         runtime_model_spec_json=None,
         tt_metal_python_venv_dir=None,
+        tt_metal_home=None,
         no_auth=False,
         print_docker_cmd=False,
         concurrency_sweeps=False,
@@ -105,6 +106,7 @@ def mock_model_spec():
     mock_spec.model_name = "Mistral-7B-Instruct-v0.3"
     mock_spec.tt_metal_commit = "test-commit"
     mock_spec.vllm_commit = "test-vllm-commit"
+    mock_spec.inference_engine = "vLLM"
     mock_spec.to_json.return_value = "/tmp/test-model-spec.json"
 
     return mock_spec
@@ -311,6 +313,8 @@ class TestModelSpecCliArgsCompatibility:
             '{"max_model_len": 4096}',
             "--no-auth",
             "--concurrency-sweeps",
+            "--tt-metal-home",
+            "/opt/tt-metal",
         ]
         with patch("sys.argv", ["run.py"] + full_args):
             args = parse_arguments()
@@ -329,6 +333,7 @@ class TestModelSpecCliArgsCompatibility:
         assert args.vllm_override_args == '{"max_model_len": 4096}'
         assert args.no_auth is True
         assert args.concurrency_sweeps is True
+        assert args.tt_metal_home == "/opt/tt-metal"
 
         # Test defaults
         with patch("sys.argv", ["run.py"] + base_args):
@@ -350,6 +355,25 @@ class TestModelSpecCliArgsCompatibility:
         assert args.host_hf_cache is None
         assert args.image_user == "1000"
         assert args.engine is None
+        assert args.tt_metal_home is None
+
+    def test_tt_metal_home_parsing(self, base_args):
+        """Test --tt-metal-home parsing."""
+        full_args = base_args + ["--local-server", "--tt-metal-home", "/srv/tt-metal"]
+        with patch("sys.argv", ["run.py"] + full_args):
+            args = parse_arguments()
+
+        assert args.local_server is True
+        assert args.tt_metal_home == "/srv/tt-metal"
+
+    def test_tt_metal_home_defaults_from_env(self, base_args):
+        """Test --tt-metal-home falls back to TT_METAL_HOME env var."""
+        full_args = base_args + ["--local-server"]
+        with patch.dict(os.environ, {"TT_METAL_HOME": "/env/tt-metal"}, clear=False):
+            with patch("sys.argv", ["run.py"] + full_args):
+                args = parse_arguments()
+
+        assert args.tt_metal_home == "/env/tt-metal"
 
     def test_device_alias_compatibility(self):
         """Test --device alias remains supported."""
@@ -594,20 +618,20 @@ class TestRuntimeValidation:
             {mock_model_spec.model_id: mock_model_spec},
         ):
             # Should fail without docker or local server
-            with pytest.raises(ValueError, match="requires --docker-server"):
+            with pytest.raises(
+                ValueError, match="requires --docker-server or --local-server"
+            ):
                 validate_runtime_args(mock_model_spec, mock_runtime_config)
 
             # Should pass with docker server
             mock_runtime_config.docker_server = True
             validate_runtime_args(mock_model_spec, mock_runtime_config)
 
-            # Should fail with local server (not implemented)
+            # Should pass with local server when tt-metal home is provided
             mock_runtime_config.docker_server = False
             mock_runtime_config.local_server = True
-            with pytest.raises(
-                NotImplementedError, match="not implemented for --local-server"
-            ):
-                validate_runtime_args(mock_model_spec, mock_runtime_config)
+            mock_runtime_config.tt_metal_home = "/opt/tt-metal"
+            validate_runtime_args(mock_model_spec, mock_runtime_config)
 
     def test_conflicting_server_options(self, mock_model_spec, mock_runtime_config):
         """Test that both docker and local server raises error."""

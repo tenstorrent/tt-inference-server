@@ -27,6 +27,7 @@ from workflows.run_docker_server import (
     generate_docker_run_command,
     run_docker_server,
 )
+from workflows.run_local_server import run_local_server
 from workflows.run_workflows import run_workflows
 from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import setup_host
@@ -195,6 +196,13 @@ def parse_arguments():
         "--tt-metal-python-venv-dir",
         type=str,
         help="[for --local-server] TT-Metal python venv directory, PYTHON_ENV_DIR in tt-metal usage, must be pre-built with python_env setup and vLLM installed.",
+    )
+    parser.add_argument(
+        "--tt-metal-home",
+        type=str,
+        default=os.getenv("TT_METAL_HOME"),
+        help="[for --local-server] Host path to a built tt-metal repo containing python_env/ and build/lib/. "
+        "Defaults to TT_METAL_HOME from the environment when set.",
     )
     parser.add_argument(
         "--limit-samples-mode",
@@ -384,6 +392,7 @@ def format_cli_args_summary(runtime_config):
         f"  local_server:               {runtime_config.local_server}",
         f"  no_auth:                    {runtime_config.no_auth}",
         f"  tt_metal_python_venv_dir:   {runtime_config.tt_metal_python_venv_dir}",
+        f"  tt_metal_home:              {runtime_config.tt_metal_home}",
         f"  service_port:               {runtime_config.service_port}",
         f"  bind_host:                  {runtime_config.bind_host}",
         f"  docker_override_image:      {runtime_config.override_docker_image}",
@@ -546,7 +555,7 @@ def main():
         run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
     elif runtime_config.local_server:
         logger.info("Running inference server on localhost ...")
-        raise NotImplementedError("TODO")
+        run_local_server(model_spec, runtime_config, json_fpath)
 
     # step 5: run workflows
     main_return_code = 0
