@@ -21,6 +21,7 @@ Validation Categories:
 
 import json
 import logging
+import socket
 import subprocess
 from pathlib import Path
 
@@ -173,6 +174,47 @@ def validate_multihost_bind_mount_permissions(
             + "\n\n".join(f"  - {e}" for e in errors)
             + "\n"
         )
+
+
+# =============================================================================
+# Controller Host Validation
+# =============================================================================
+
+
+def validate_controller_is_rank0_host(hosts: list[str]) -> list[str]:
+    """Validate that run.py is executed on the rank-0 host (first in MULTIHOST_HOSTS).
+
+    Controller container runs locally, and MPI rank-0 must be on the same host
+    for torch distributed TCP rendezvous to work correctly.
+
+    Args:
+        hosts: List of hostnames from MULTIHOST_HOSTS
+
+    Returns:
+        List of error messages (empty if validation passes)
+    """
+    errors = []
+    local_hostname = socket.gethostname()
+    rank0_host = hosts[0]
+
+    # Compare short hostnames (handle FQDN vs short name)
+    local_short = local_hostname.split(".")[0]
+    rank0_short = rank0_host.split(".")[0]
+
+    if local_short != rank0_short:
+        errors.append(
+            f"run.py must be executed on the rank-0 host.\n"
+            f"  Current host: {local_hostname}\n"
+            f"  Rank-0 host (MULTIHOST_HOSTS[0]): {rank0_host}\n"
+            f"  Solutions:\n"
+            f"    1. Run this command on {rank0_host}, or\n"
+            f"    2. Change MULTIHOST_HOSTS to start with {local_hostname}"
+        )
+        logger.error("❌ Controller host validation: FAILED")
+    else:
+        logger.info(f"✅ Controller host matches rank-0: {local_hostname}")
+
+    return errors
 
 
 # =============================================================================
@@ -518,6 +560,10 @@ def validate_multihost_environment(
     logger.info("=" * 60)
 
     all_errors = []
+
+    # 0. Controller host validation (local check, fail fast)
+    logger.info("Checking controller host matches rank-0...")
+    all_errors.extend(validate_controller_is_rank0_host(hosts))
 
     # 1. SSH connectivity (required for all other checks)
     logger.info("Checking SSH connectivity...")
