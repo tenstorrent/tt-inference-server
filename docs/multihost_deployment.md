@@ -24,19 +24,19 @@ Multi-host deployment enables running large language models across multiple Gala
 │        │                                                                      │
 │        │ HTTP API (port 8000)                                                 │
 │        ▼                                                                      │
-│   ┌────────────────────────────────────────────┐                              │
-│   │    Host 0: Controller + Worker (rank 0)    │                              │
-│   │  ┌──────────────────────────────────────┐  │                              │
-│   │  │  vLLM API Server Container           │  │                              │
-│   │  │  - Serves inference API              │  │                              │
-│   │  │  - Runs MPI rank 0 process           │  │                              │
-│   │  │  - Spawns remote MPI via SSH         │  │                              │
-│   │  │  - TT Device access (rank 0)         │  │                              │
-│   │  └──────────────────────────────────────┘  │                              │
-│   └────────────────────────────────────────────┘                              │
-│              │                                                                │
-│              │ SSH (port 2200) to host2, host3, ...                           │
-│              ▼                                                                │
+│   ┌────────────────────────────────────────────────────────────────────┐      │
+│   │    Host 0 (Two Containers)                                         │      │
+│   │  ┌─────────────────────────────┐     ┌─────────────────────────────┐│      │
+│   │  │  Controller Container       │     │  Worker Container (rank 0) ││      │
+│   │  │  - Serves inference API     │     │  - sshd (port 2200)        ││      │
+│   │  │  - Runs mpirun to spawn     │────▶│  - Runs MPI rank 0 process ││      │
+│   │  │    MPI processes via SSH    │     │  - TT Device access        ││      │
+│   │  │                             │     │                            ││      │
+│   │  └──────────────┬──────────────┘     └─────────────────────────────┘│      │
+│   └─────────────────┼───────────────────────────────────────────────────┘      │
+│                     │                                                         │
+│                     │ SSH (port 2200) to spawn MPI processes                  │
+│                     ▼                                                         │
 │   ┌─────────────────────────────────┐  ┌─────────────────────────────────┐    │
 │   │   Host 1: Worker (rank 1)       │  │   Host 2, 3: Workers            │    │
 │   │  ┌───────────────────────────┐  │  │   (Quad Galaxy only)            │    │
@@ -47,16 +47,17 @@ Multi-host deployment enables running large language models across multiple Gala
 │   │  └───────────────────────────┘  │  │  └───────────────────────────┘  │    │
 │   └─────────────────────────────────┘  └─────────────────────────────────┘    │
 │                                                                               │
-│   Note: All hosts run MPI processes. Host 0 additionally runs vLLM server.   │
+│   Note: All hosts run Worker containers. Host 0 additionally runs Controller.│
+│         Controller spawns MPI processes on all Workers via SSH (port 2200).  │
 │                                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Key Points:**
-- Host 0 runs the Controller container (vLLM API server + MPI rank 0)
-- Hosts 1+ run Worker containers (sshd only, MPI processes spawned via SSH)
-- All hosts participate in distributed inference via MPI
-- Controller connects to Workers using real hostnames (from `MULTIHOST_HOSTS`)
+- Host 0 runs **two containers**: Controller (vLLM API server, mpirun) + Worker (sshd, MPI rank 0)
+- Hosts 1+ run Worker containers (sshd, MPI rank 1+)
+- Controller runs `mpirun` which spawns MPI processes on all Workers via SSH
+- All Workers (including rank-0) run the actual MPI processes for distributed inference
 - **Important:** `run.py` must be executed on the rank-0 host (first in `MULTIHOST_HOSTS`)
 
 ---
