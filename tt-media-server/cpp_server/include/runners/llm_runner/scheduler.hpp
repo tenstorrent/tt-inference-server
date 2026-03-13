@@ -92,13 +92,11 @@ class Scheduler {
 
   int max_num_seqs_;
   int max_num_batched_tokens_;
-  int max_in_flight_count_;
   std::unordered_set<int64_t> stop_token_ids_;
   BlockManager block_manager_;
   ITaskQueue* prefill_queue_;
   std::unordered_map<TaskID, std::unique_ptr<Sequence>> sequences_;
   std::deque<Sequence*> decode_queue_;
-  int in_flight_count_ = 0;
 };
 
 std::unique_ptr<Scheduler> make_scheduler(const Config& config,

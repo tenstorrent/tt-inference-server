@@ -1,9 +1,7 @@
 #include "runners/llm_runner.hpp"
-#include "runners/llm_runner/debug.hpp"
 #include "profiling/tracy.hpp"
 
 #include <cassert>
-#include <iostream>
 #include <thread>
 
 namespace tt::runners {
@@ -17,7 +15,6 @@ LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_q
     ZoneScopedN("LLMRunner::process_token_result");
     Sequence* seq = scheduler_->find_sequence(result.task_id);
     assert(seq);
-    assert(seq->status_ == SequenceStatus::IN_FLIGHT);
 
     if (result.is_error) {
       scheduler_->removeSequence(result.task_id);
@@ -73,17 +70,14 @@ LLMRunner::~LLMRunner() {
 
 void LLMRunner::exit() {
   if (model_runner_) {
-    LLM_ENGINE_LOG("llm_engine") << "exit" << std::endl;
     model_runner_->exit();
   }
 }
 
 void LLMRunner::run() {
-  LLM_ENGINE_LOG("llm_engine") << "run" << std::endl;
   while (!stopped_.load(std::memory_order_relaxed)) {
     step();
   }
-  LLM_ENGINE_LOG("llm_engine") << "run done" << std::endl;
 }
 
 void LLMRunner::stop() {
