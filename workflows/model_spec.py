@@ -1576,21 +1576,6 @@ llm_templates = [
                     ),
                 ),
             ),
-        ],
-        status=ModelStatusTypes.FUNCTIONAL,
-    ),
-    ModelSpecTemplate(
-        weights=[
-            "meta-llama/Llama-3.3-70B-Instruct",
-            "meta-llama/Llama-3.1-70B",
-            "meta-llama/Llama-3.1-70B-Instruct",
-            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-        ],
-        impl=tt_transformers_impl,
-        tt_metal_commit="5fd3a04",
-        vllm_commit="1f567b7",
-        inference_engine=InferenceEngine.VLLM.value,
-        device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P150X8,
                 max_concurrency=32,
