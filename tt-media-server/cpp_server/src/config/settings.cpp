@@ -3,7 +3,6 @@
 
 #include "config/settings.hpp"
 #include "runners/llm_runner/config.hpp"
-#include "runners/sp_pipeline_runner/config.hpp"
 #include "utils/tokenizer.hpp"
 
 #include <algorithm>
@@ -168,11 +167,12 @@ std::string visible_devices_for_worker(size_t worker_index) {
 llm_engine::Config llm_engine_config() {
     llm_engine::Config cfg;
     cfg.stop_token_ids = utils::active_tokenizer().stop_token_ids();
+    cfg.max_in_flight_count = max_in_flight_count();
     std::string backend = env_string_lower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
     if (backend == "pipeline") {
         cfg.runner_type = llm_engine::ModelRunnerType::Pipeline;
+        cfg.max_in_flight_count = 1;
     } else if (backend == "llama") {
-        cfg.max_in_flight_count = 32;
         cfg.kvcache_block_size = 32;
         cfg.max_num_batched_tokens = 16384;
         cfg.runner_type = llm_engine::ModelRunnerType::Llama;
@@ -180,12 +180,6 @@ llm_engine::Config llm_engine_config() {
         cfg.runner_type = llm_engine::ModelRunnerType::Mock;
     }
     cfg.scheduling_policy = scheduling_policy();
-    return cfg;
-}
-
-sp_pipeline::SpPipelineConfig sp_pipeline_config() {
-    sp_pipeline::SpPipelineConfig cfg;
-    cfg.stop_token_ids = utils::active_tokenizer().stop_token_ids();
     return cfg;
 }
 
@@ -201,6 +195,9 @@ llm_engine::SchedulingPolicy scheduling_policy() {
     return scheduling_policy_from_string(env_string_lower("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY));
 }
 
+size_t max_in_flight_count() {
+    return static_cast<size_t>(env_ulong("MAX_IN_FLIGHT_COUNT", defaults::MAX_IN_FLIGHT_COUNT));
+}
 
 std::string socket_host() {
     return env_string("SOCKET_HOST", defaults::SOCKET_HOST);
@@ -216,6 +213,10 @@ size_t max_accumulated_tokens() {
 
 uint16_t socket_port() {
     return static_cast<uint16_t>(env_ulong("SOCKET_PORT", defaults::SOCKET_PORT));
+}
+
+size_t max_queue_size() {
+    return static_cast<size_t>(env_ulong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));
 }
 
 }  // namespace tt::config
