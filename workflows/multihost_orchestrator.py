@@ -457,8 +457,6 @@ class MultiHostOrchestrator:
             "--mount", f"type=bind,src={remote_public_key_path},dst=/tmp/authorized_keys.pub,readonly",
             # Environment variables
             "-e", "MULTIHOST_ROLE=worker",
-            "-e", f"MESH_DEVICE={DeviceTypes.from_string(self.runtime_config.device).to_mesh_device_str()}",
-            "-e", "VLLM_TARGET_DEVICE=tt",
             "-e", f"SSH_PORT={WORKER_SSH_PORT}",
             # Use unified entrypoint script
             "--entrypoint", "/usr/local/bin/multihost_entrypoint.sh",

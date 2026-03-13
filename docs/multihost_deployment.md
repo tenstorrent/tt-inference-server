@@ -277,8 +277,6 @@ docker run --rm -d \
     --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
     --mount type=bind,src=${CONFIG_PKL_DIR},dst=${CONFIG_PKL_DIR} \
     --mount type=bind,src=<pubkey-path>,dst=/tmp/authorized_keys.pub,readonly \
-    -e MESH_DEVICE=<mesh-device> \
-    -e VLLM_TARGET_DEVICE=tt \
     -e SSH_PORT=2200 \
     --entrypoint /usr/local/bin/multihost_entrypoint.sh \
     <docker-image>
