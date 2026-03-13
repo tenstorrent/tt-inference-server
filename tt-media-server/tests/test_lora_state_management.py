@@ -25,6 +25,16 @@ def _passthrough_resolve_lora_path():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _passthrough_prepare_prompt():
+    """Mock prepare_prompt_with_lora as identity so tests don't need HF access."""
+    with patch(
+        "tt_model_runners.base_sdxl_runner.prepare_prompt_with_lora",
+        side_effect=lambda prompt, lora_path: prompt,
+    ):
+        yield
+
+
 class _ConcreteSDXLRunner(BaseSDXLRunner):
     """Minimal concrete subclass for testing non-abstract methods."""
 
@@ -172,6 +182,22 @@ class TestEnsureLoraStateErrorHandling:
         runner.tt_sdxl.unload_lora_weights.assert_called_once()
         assert runner._current_lora_path is None
         assert runner._current_lora_scale is None
+
+
+class TestInjectLoraTriggers:
+    def test_no_lora_returns_prompts_unchanged(self):
+        runner = _make_runner()
+        prompts = ["a cat", "a dog", ""]
+        assert runner._inject_lora_triggers(prompts, None) is prompts
+
+    def test_calls_prepare_prompt_for_each(self):
+        runner = _make_runner()
+        with patch(
+            "tt_model_runners.base_sdxl_runner.prepare_prompt_with_lora",
+            side_effect=lambda p, lp: f"{p}, trigger" if p else p,
+        ):
+            result = runner._inject_lora_triggers(["a cat", "a dog", ""], "adapter-A")
+        assert result == ["a cat, trigger", "a dog, trigger", ""]
 
 
 class TestLoRABatching:
