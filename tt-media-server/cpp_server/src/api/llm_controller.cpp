@@ -267,7 +267,8 @@ void LLMController::handle_streaming(
                 std::chrono::high_resolution_clock::now());
             auto first_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
             auto second_token_time = std::make_shared<std::optional<std::chrono::high_resolution_clock::time_point>>();
-            auto first_content_chunk = std::make_shared<std::atomic<bool>>(true);
+            auto first_content_chunk = std::make_shared<std::vector<std::atomic<bool>>>(req_ptr->n);
+    for (auto& flag : *first_content_chunk) flag.store(true);
 
             service_->submit_streaming_request(
                 *req_ptr,
@@ -296,7 +297,9 @@ void LLMController::handle_streaming(
                             }
                             auto stream_chunk = domain::ChatCompletionStreamChunk::makeContentChunk(
                                 completion_id, model, created, chunk.choices[0], usage);
-                            if (first_content_chunk->exchange(false)) {
+                            const int choice_idx = chunk.choices[0].index;
+                            const int safe_idx = (choice_idx >= 0 && choice_idx < static_cast<int>(first_content_chunk->size())) ? choice_idx : 0;
+                            if ((*first_content_chunk)[safe_idx].exchange(false)) {
                                 std::optional<domain::CompletionUsage> initial_usage;
                                 if (continuous_usage) {
                                     initial_usage = domain::CompletionUsage{req_ptr->prompt_tokens_count, 0, 0, std::nullopt, std::nullopt};

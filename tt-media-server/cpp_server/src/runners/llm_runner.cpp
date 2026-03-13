@@ -72,10 +72,11 @@ void LLMRunner::drain_decode_results() {
     assert(seq->status_ == SequenceStatus::IN_FLIGHT);
 
     if (dr.is_error) {
+      uint32_t choice_idx = static_cast<uint32_t>(seq->choice_index);
       LLM_ENGINE_LOG("llm_engine") << "error task_id=" << seq->task_id << std::endl;
       scheduler_->removeSequence(dr.task_id);
       auto shared = ipc::SharedToken{
-          .token_index = 0,
+          .token_index = choice_idx,
           .flags = static_cast<uint32_t>(ipc::SharedToken::FLAG_FINAL |
                                          ipc::SharedToken::FLAG_ERROR),
           .token_id = 0,
@@ -99,7 +100,7 @@ void LLMRunner::drain_decode_results() {
     {
       ZoneScopedN("ResultQueue::push");
       auto shared = ipc::SharedToken{
-          .token_index = 0,
+          .token_index = static_cast<uint32_t>(seq->choice_index),
           .flags = static_cast<uint32_t>(finished ? ipc::SharedToken::FLAG_FINAL : 0),
           .token_id = dr.token_id,
           .task_id = {},

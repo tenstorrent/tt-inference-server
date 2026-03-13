@@ -314,9 +314,10 @@ domain::CompletionResponse LLMService::process_request(domain::CompletionRequest
     std::condition_variable cv;
     bool done = false;
 
-    std::string accumulated_text;
-    int completion_tokens = 0;
-    std::string finish_reason = "stop";
+    const int n = request.n;
+    std::vector<std::string> accumulated_texts(n);
+    std::vector<int> per_choice_tokens(n, 0);
+    std::vector<std::string> finish_reasons(n, "stop");
 
     const int prompt_tokens = std::holds_alternative<std::vector<int>>(request.prompt)
         ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
@@ -327,10 +328,11 @@ domain::CompletionResponse LLMService::process_request(domain::CompletionRequest
     process_streaming_request(std::move(request),
         [&](domain::StreamingChunkResponse& chunk, bool is_final) {
             if (!chunk.choices.empty()) {
-                accumulated_text.append(chunk.choices[0].text);
-                completion_tokens++;
+                const int idx = std::max(0, std::min(n - 1, chunk.choices[0].index));
+                accumulated_texts[idx].append(chunk.choices[0].text);
+                per_choice_tokens[idx]++;
                 if (chunk.choices[0].finish_reason.has_value()) {
-                    finish_reason = chunk.choices[0].finish_reason.value();
+                    finish_reasons[idx] = chunk.choices[0].finish_reason.value();
                 }
             }
             if (is_final) {
@@ -349,13 +351,17 @@ domain::CompletionResponse LLMService::process_request(domain::CompletionRequest
     response.created = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
-    domain::CompletionChoice choice;
-    choice.text = std::move(accumulated_text);
-    choice.index = 0;
-    choice.finish_reason = finish_reason;
-    response.choices.push_back(std::move(choice));
+    int total_completion_tokens = 0;
+    for (int i = 0; i < n; i++) {
+        domain::CompletionChoice choice;
+        choice.text = std::move(accumulated_texts[i]);
+        choice.index = i;
+        choice.finish_reason = finish_reasons[i];
+        response.choices.push_back(std::move(choice));
+        total_completion_tokens += per_choice_tokens[i];
+    }
 
-    response.usage = {prompt_tokens, completion_tokens, prompt_tokens + completion_tokens, std::nullopt, std::nullopt};
+    response.usage = {prompt_tokens, total_completion_tokens, prompt_tokens + total_completion_tokens, std::nullopt, std::nullopt};
 
     return response;
 }
@@ -370,6 +376,40 @@ void LLMService::process_streaming_request(
         throw std::runtime_error("task_id must be set before submitting request");
     }
     std::string task_id = request.task_id.id;
+    const int n = request.n;
+
+    if (n > 1) {
+        if (mode_ == tt::config::LLMMode::DECODE_ONLY) {
+            throw std::runtime_error("n>1 is not supported in DECODE_ONLY mode");
+        }
+        auto prompt = std::get<std::vector<int>>(request.prompt);
+        std::vector<int64_t> token_ids(prompt.begin(), prompt.end());
+        auto sampling_params = tt::utils::mapper::map_sampling_params(request);
+
+        pending_tasks_.fetch_add(n);
+        TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
+
+        auto finished_count = std::make_shared<std::atomic<int>>(0);
+        auto shared_callback = std::make_shared<std::function<void(domain::StreamingChunkResponse&, bool)>>(std::move(callback));
+
+        for (int i = 0; i < n; i++) {
+            const std::string child_id = task_id + "_" + std::to_string(i);
+            stream_callbacks_.insert(child_id, [shared_callback, finished_count, n](
+                domain::StreamingChunkResponse& chunk, bool is_final) {
+                bool all_done = is_final && (finished_count->fetch_add(1) + 1 == n);
+                (*shared_callback)(chunk, all_done);
+            });
+            auto sequence = std::make_unique<llm_engine::Sequence>(
+                tt::config::llm_engine_config().kvcache_block_size,
+                std::vector<int64_t>(token_ids));
+            sequence->task_id.id = child_id;
+            sequence->num_prompt_tokens_ = prompt.size();
+            sequence->choice_index = i;
+            sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(sampling_params);
+            queue_manager_->task_queue->push(*std::move(sequence));
+        }
+        return;
+    }
 
     pending_tasks_.fetch_add(1);
     TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));

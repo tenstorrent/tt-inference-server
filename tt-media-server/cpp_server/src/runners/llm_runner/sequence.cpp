@@ -61,6 +61,7 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&status_), sizeof(status_));
   os.write(reinterpret_cast<const char*>(&block_size_), sizeof(block_size_));
   sampling_params->serialize(os);
+  os.write(reinterpret_cast<const char*>(&choice_index), sizeof(choice_index));
 }
 
 Sequence* Sequence::deserialize(std::istream& is) {
@@ -91,6 +92,7 @@ Sequence* Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(&seq->status_), sizeof(seq->status_));
   is.read(reinterpret_cast<char*>(&seq->block_size_), sizeof(seq->block_size_));
   seq->sampling_params.reset(SamplingParams::deserialize(is));
+  is.read(reinterpret_cast<char*>(&seq->choice_index), sizeof(seq->choice_index));
   return seq;
 }
 
