@@ -74,7 +74,11 @@ class SharedMemory:
                 name=self._name, create=True, size=self._total_size
             )
         except FileExistsError:
-            self._shm = _shm.SharedMemory(name=self._name)
+            temp_shm = _shm.SharedMemory(name=self._name, create=False)
+            temp_shm.unlink()  # delete the existing shared memory block
+            self._shm = _shm.SharedMemory(
+                name=self._name, create=True, size=self._total_size
+            )
         os.chmod(f"/dev/shm/{self._name}", 0o666)
         self._buf = self._shm.buf
 

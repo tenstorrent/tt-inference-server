@@ -5,7 +5,6 @@
 
 #include "config/constants.hpp"
 #include "runners/llm_runner/config.hpp"
-#include "runners/sp_pipeline_runner/config.hpp"
 #include <cstddef>
 #include <string>
 
@@ -60,8 +59,6 @@ std::string visible_devices_for_worker(size_t worker_index);
 
 llm_engine::Config llm_engine_config();
 
-sp_pipeline::SpPipelineConfig sp_pipeline_config();
-
 /** Model type derived from LLM_DEVICE_BACKEND (llama -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528). */
 ModelType model_type();
 
@@ -80,7 +77,13 @@ bool enable_accumulated_streaming();
 /** Max accumulated tokens from MAX_ACCUMULATED_TOKENS. Default: defaults::MAX_ACCUMULATED_TOKENS. */
 size_t max_accumulated_tokens();
 
+/** Max in-flight requests before 429. From MAX_QUEUE_SIZE. Default: defaults::MAX_QUEUE_SIZE. */
+size_t max_queue_size();
+
 /** Scheduling policy from SCHEDULING_POLICY. Default: defaults::SCHEDULING_POLICY ("prefill_first"). */
 llm_engine::SchedulingPolicy scheduling_policy();
+
+/** Max in-flight requests from MAX_IN_FLIGHT_COUNT. Default: defaults::MAX_IN_FLIGHT_COUNT. */
+size_t max_in_flight_count();
 
 }  // namespace tt::config
