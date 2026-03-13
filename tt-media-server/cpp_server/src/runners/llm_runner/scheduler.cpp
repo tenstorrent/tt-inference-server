@@ -164,14 +164,19 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
     seq->append_token(token_id);
 
     bool is_stop_token = stop_token_ids_.count(token_id) > 0;
+    bool reached_max_tokens = false;
+    if (seq->sampling_params->max_tokens.has_value()) {
+      reached_max_tokens = seq->num_completion_tokens() >=
+          static_cast<size_t>(seq->sampling_params->max_tokens.value());
+    }
     bool finished =
         (!seq->sampling_params->ignore_eos && is_stop_token) ||
-        seq->num_completion_tokens() >= static_cast<size_t>(seq->sampling_params->max_tokens);
+        reached_max_tokens;
 
     if (finished) {
       LLM_ENGINE_LOG("scheduler") << "postprocess task_id=" << seq->task_id << " finished"
           << " (stop_token=" << is_stop_token << " max_tokens="
-          << (seq->num_completion_tokens() >= static_cast<size_t>(seq->sampling_params->max_tokens)) << ")" << std::endl;
+          << reached_max_tokens << ")" << std::endl;
       seq->status_ = SequenceStatus::FINISHED;
       block_manager_.deallocate(*seq);
       --in_flight_count_;

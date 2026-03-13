@@ -5,7 +5,7 @@ namespace tt::utils::mapper {
 llm_engine::SamplingParams map_sampling_params(const tt::domain::CompletionRequest& request) {
     llm_engine::SamplingParams params;
     params.temperature = request.temperature.value_or(1.0f);
-    params.max_tokens = request.max_tokens;
+    params.max_tokens = request.max_tokens;  // Pass through optional as-is
     params.ignore_eos = request.ignore_eos;
     params.top_p = request.top_p;
     params.presence_penalty = request.presence_penalty;

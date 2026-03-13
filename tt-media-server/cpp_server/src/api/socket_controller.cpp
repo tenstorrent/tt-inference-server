@@ -90,7 +90,7 @@ void SocketController::setup_decode_mode_handlers() {
                 request.task_id,
                 request.prompt,
                 request.token_ids,
-                request.max_tokens);
+                request.max_tokens.value_or(0));  // 0 means run until EOS
         });
 
     socket_service_->onPrefillComplete(

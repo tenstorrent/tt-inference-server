@@ -28,8 +28,9 @@ def build_sampling_params(request: CompletionRequest) -> SamplingParams:
     top_k = request.top_k if request.top_k is not None else defaults["top_k"]
     min_p = request.min_p if request.min_p is not None else defaults["min_p"]
 
-    # We check falsey here because that is what we used to do, if user passes 0, he will get 65536(default) tokens back
-    max_tokens = request.max_tokens if request.max_tokens else defaults["max_tokens"]
+    # If max_tokens is explicitly set (even to 0), use it; otherwise use default
+    # None means run until EOS (which vLLM handles naturally via ignore_eos=False)
+    max_tokens = request.max_tokens if request.max_tokens is not None else defaults["max_tokens"]
     n = request.n if request.n is not None else defaults["n"]
     seed = request.seed if request.seed is not None else defaults["seed"]
     logprobs = (

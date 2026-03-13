@@ -105,7 +105,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool is_prefill) 
         int prompt_len = static_cast<int>(seq->num_prompt_tokens_);
 
         const SamplingParams* sp = seq->sampling_params.get();
-        int max_tokens = sp ? sp->max_tokens : 64;
+        int max_tokens = (sp && sp->max_tokens.has_value()) ? sp->max_tokens.value() : 64;
         double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;
         bool ignore_eos = sp ? sp->ignore_eos : false;
 

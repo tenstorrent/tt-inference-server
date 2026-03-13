@@ -32,7 +32,8 @@ class TestBuildSamplingParamsDefaults:
             # When temp=0 (default), top_p is forced to 1.0
             assert kwargs["top_p"] == 1.0
 
-    def test_default_max_tokens_applied_when_falsy(self):
+    def test_max_tokens_zero_is_respected(self):
+        """max_tokens=0 should be passed through as-is, not replaced with default."""
         with patch("utils.sampling_params_builder.SamplingParams") as mock_sp:
             from utils.sampling_params_builder import build_sampling_params
 
@@ -40,9 +41,10 @@ class TestBuildSamplingParamsDefaults:
             build_sampling_params(request)
 
             kwargs = mock_sp.call_args.kwargs
-            assert kwargs["max_tokens"] == _DEFAULT_SAMPLING_PARAMS["max_tokens"]
+            assert kwargs["max_tokens"] == 0
 
     def test_default_max_tokens_applied_when_none(self):
+        """max_tokens=None should use the default (for backward compatibility)."""
         with patch("utils.sampling_params_builder.SamplingParams") as mock_sp:
             from utils.sampling_params_builder import build_sampling_params
 
@@ -249,3 +251,55 @@ class TestBuildSamplingParamsDirectPassthrough:
 
             kwargs = mock_sp.call_args.kwargs
             assert kwargs["skip_special_tokens"] is False
+
+
+class TestMaxTokensOptionalBehavior:
+    """Test max_tokens behavior for running until EOS."""
+
+    def test_max_tokens_none_uses_default(self):
+        """When max_tokens is None (not explicitly set), should use default."""
+        with patch("utils.sampling_params_builder.SamplingParams") as mock_sp:
+            from utils.sampling_params_builder import build_sampling_params
+
+            request = CompletionRequest(prompt="test")  # max_tokens defaults to None now
+            build_sampling_params(request)
+
+            kwargs = mock_sp.call_args.kwargs
+            # Should get the default max_tokens
+            assert kwargs["max_tokens"] == _DEFAULT_SAMPLING_PARAMS["max_tokens"]
+            # ignore_eos should be False (default), allowing EOS to stop generation
+            assert kwargs["ignore_eos"] is False
+
+    def test_explicit_max_tokens_is_respected(self):
+        """When max_tokens is explicitly set, it should be used."""
+        with patch("utils.sampling_params_builder.SamplingParams") as mock_sp:
+            from utils.sampling_params_builder import build_sampling_params
+
+            request = CompletionRequest(prompt="test", max_tokens=100)
+            build_sampling_params(request)
+
+            kwargs = mock_sp.call_args.kwargs
+            assert kwargs["max_tokens"] == 100
+
+    def test_max_tokens_zero_stops_immediately(self):
+        """max_tokens=0 should be respected (generates no tokens)."""
+        with patch("utils.sampling_params_builder.SamplingParams") as mock_sp:
+            from utils.sampling_params_builder import build_sampling_params
+
+            request = CompletionRequest(prompt="test", max_tokens=0)
+            build_sampling_params(request)
+
+            kwargs = mock_sp.call_args.kwargs
+            assert kwargs["max_tokens"] == 0
+
+    def test_ignore_eos_overrides_eos_stopping(self):
+        """When ignore_eos=True, generation continues past EOS until max_tokens."""
+        with patch("utils.sampling_params_builder.SamplingParams") as mock_sp:
+            from utils.sampling_params_builder import build_sampling_params
+
+            request = CompletionRequest(prompt="test", max_tokens=100, ignore_eos=True)
+            build_sampling_params(request)
+
+            kwargs = mock_sp.call_args.kwargs
+            assert kwargs["max_tokens"] == 100
+            assert kwargs["ignore_eos"] is True

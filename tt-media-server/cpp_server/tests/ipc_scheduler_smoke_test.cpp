@@ -88,7 +88,7 @@ int main() {
     for (auto* s : batch) {
       std::cout << "[child]    task_id=" << s->task_id
                 << " size=" << s->size()
-                << " max_tokens=" << s->sampling_params->max_tokens
+                << " max_tokens=" << s->sampling_params->max_tokens.value_or(0)
                 << " temperature=" << s->sampling_params->temperature
                 << " tokens=[";
       for (size_t i = 0; i < s->size(); ++i) {
