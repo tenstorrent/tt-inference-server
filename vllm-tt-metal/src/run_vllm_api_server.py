@@ -495,6 +495,8 @@ def runtime_settings(model_spec_json, no_auth=False):
     # In multihost deployments, model weights are on shared storage and accessed
     # via model-specific environment variables (e.g., DEEPSEEK_V3_HF_MODEL).
     # Skip model_setup() which requires MODEL_WEIGHTS_DIR and creates symlinks.
+    # TODO(tt-metal): Update DeepSeek model impl to use standard HF_MODEL env var
+    # so we can reuse existing model setup and standard weight/cache mounting.
     if os.getenv("MULTIHOST_ROLE"):
         logger.info(
             "Multihost mode detected, skipping model_setup() - "
