@@ -2,37 +2,31 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import importlib.util
 import logging
 import os
 import signal
+import sys
 import threading
-from pathlib import Path
 
 from tests.server_tests.base_test import BaseTest
 
 logger = logging.getLogger(__name__)
 
 
-def _find_repo_root() -> Path:
-    """Find repository root by locating .git directory."""
-    current = Path(__file__).resolve()
-    for parent in current.parents:
-        if (parent / ".git").exists():
-            return parent
-    # Fallback to parents[3] for compatibility
-    return Path(__file__).resolve().parents[3]
+def _get_ttlogger_class():
+    """Get TTLogger class from already-imported utils.logger module.
 
+    The server has already imported utils.logger, which registered the
+    os.register_at_fork callback. We just need to get the TTLogger class.
+    """
+    # Import from the server's module path
+    if "utils.logger" in sys.modules:
+        return sys.modules["utils.logger"].TTLogger
 
-def _load_real_logger_module():
-    """Load utils/logger.py from disk to trigger os.register_at_fork registration."""
-    logger_path = _find_repo_root() / "tt-media-server" / "utils" / "logger.py"
-    spec = importlib.util.spec_from_file_location(
-        "utils.logger._real", str(logger_path)
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    # Fallback: import it (will work if dependencies are installed)
+    from utils.logger import TTLogger
+
+    return TTLogger
 
 
 class LoggerForkSafetyTest(BaseTest):
@@ -42,11 +36,15 @@ class LoggerForkSafetyTest(BaseTest):
     when child processes inherit logging handler locks in acquired state.
 
     This test simulates the production bug scenario:
-    1. Create a TTLogger instance
-    2. Hold its handler lock from a background thread (simulates logging activity)
-    3. Fork while the lock is held
-    4. Child process attempts to log (would deadlock without the fix)
-    5. Verify child successfully logs and exits (fix is working)
+    1. Get TTLogger class from already-loaded module (server imports it at startup)
+    2. Create a TTLogger instance
+    3. Hold its handler lock from a background thread (simulates logging activity)
+    4. Fork while the lock is held
+    5. Child process attempts to log (would deadlock without the fix)
+    6. Verify child successfully logs and exits (fix is working)
+
+    Note: This test uses the server's already-imported logger module, so
+    os.register_at_fork was already called at server startup.
     """
 
     async def _run_specific_test_async(self):
@@ -56,9 +54,9 @@ class LoggerForkSafetyTest(BaseTest):
 
         logger.info("Testing logger fork safety with held lock...")
 
-        # Load the real logger module (triggers os.register_at_fork)
-        mod = _load_real_logger_module()
-        tt_logger = mod.TTLogger(name="fork_safety_test")
+        # Get TTLogger class (os.register_at_fork already called when server started)
+        TTLogger = _get_ttlogger_class()
+        tt_logger = TTLogger(name="fork_safety_test")
         handler = tt_logger.logger.handlers[0]
 
         # Create pipe for child to report status
