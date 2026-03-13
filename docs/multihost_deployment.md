@@ -277,6 +277,7 @@ docker run --rm -d \
     --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
     --mount type=bind,src=${CONFIG_PKL_DIR},dst=${CONFIG_PKL_DIR} \
     --mount type=bind,src=<pubkey-path>,dst=/tmp/authorized_keys.pub,readonly \
+    -e MULTIHOST_ROLE=worker \
     -e SSH_PORT=2200 \
     --entrypoint /usr/local/bin/multihost_entrypoint.sh \
     <docker-image>
@@ -310,6 +311,7 @@ docker run --rm \
     --mount type=bind,src=<config-dir>,dst=/home/container_app_user/.ssh,readonly \
     --mount type=bind,src=<config-dir>/mpirun,dst=/etc/mpirun,readonly \
     --mount type=bind,src=${CONFIG_PKL_DIR},dst=${CONFIG_PKL_DIR} \
+    -e MULTIHOST_ROLE=controller \
     -e MESH_DEVICE=<mesh-device> \
     -e VLLM_TARGET_DEVICE=tt \
     -e NCCL_SOCKET_IFNAME=${MPI_INTERFACE} \
