@@ -78,7 +78,7 @@ class Scheduler {
    * Default: batch_size (full capacity). Override to limit prefill
    * to available slots when decode sequences should be preserved.
    */
-  virtual int max_prefill_seqs(int decode_count, int batch_size) const {
+  virtual int max_prefill_seqs(int /*decode_count*/, int batch_size) const {
     return batch_size;
   }
 
