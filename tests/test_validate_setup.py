@@ -6,14 +6,17 @@
 
 import os
 from argparse import Namespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from workflows.runtime_config import RuntimeConfig
 from workflows.validate_setup import (
     _check_path_permissions_for_uid,
     _try_fix_path_permissions_for_uid,  # noqa: F401
     validate_bind_mount_permissions,
+    validate_local_server_paths,
+    validate_runtime_args,
 )
 
 
@@ -187,6 +190,7 @@ class TestValidateBindMountPermissions:
         finally:
             os.chmod(d, 0o700)
 
+
     def test_host_volume_not_writable_raises_when_fix_fails(self, tmp_path):
         d = tmp_path / "ro_volume"
         d.mkdir()
@@ -300,3 +304,77 @@ class TestValidateBindMountPermissions:
                     validate_bind_mount_permissions(args)
         finally:
             os.chmod(d, 0o700)
+
+
+class TestLocalServerValidation:
+    def _make_model_spec(self):
+        model_spec = MagicMock()
+        model_spec.model_id = "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
+        model_spec.model_name = "Mistral-7B-Instruct-v0.3"
+        model_spec.inference_engine = "vLLM"
+        return model_spec
+
+    def _make_runtime_config(self):
+        return RuntimeConfig(
+            model="Mistral-7B-Instruct-v0.3",
+            workflow="server",
+            device="n150",
+            local_server=True,
+        )
+
+    def test_runtime_args_require_tt_metal_home_for_local_server(self):
+        model_spec = self._make_model_spec()
+        runtime_config = self._make_runtime_config()
+
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS",
+            {model_spec.model_id: model_spec},
+        ):
+            with pytest.raises(
+                ValueError, match="requires --tt-metal-home or TT_METAL_HOME"
+            ):
+                validate_runtime_args(model_spec, runtime_config)
+
+    def test_runtime_args_allow_tt_metal_home_from_env(self):
+        model_spec = self._make_model_spec()
+        runtime_config = self._make_runtime_config()
+        runtime_config.tt_metal_home = "/env/tt-metal"
+
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS",
+            {model_spec.model_id: model_spec},
+        ):
+            validate_runtime_args(model_spec, runtime_config)
+
+    def test_validate_local_server_paths_passes(self, tmp_path):
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        build_lib_dir = tt_metal_home / "build" / "lib"
+        python_bin_dir.mkdir(parents=True)
+        build_lib_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        args = Namespace(
+            local_server=True,
+            tt_metal_home=str(tt_metal_home),
+            tt_metal_python_venv_dir=None,
+            host_hf_cache=None,
+            host_weights_dir=None,
+        )
+
+        validate_local_server_paths(args)
+
+    def test_validate_local_server_paths_requires_python(self, tmp_path):
+        tt_metal_home = tmp_path / "tt-metal"
+        (tt_metal_home / "build" / "lib").mkdir(parents=True)
+
+        args = Namespace(
+            local_server=True,
+            tt_metal_home=str(tt_metal_home),
+            tt_metal_python_venv_dir=None,
+            host_hf_cache=None,
+            host_weights_dir=None,
+        )
+
+        with pytest.raises(ValueError, match="python venv interpreter"):
+            validate_local_server_paths(args)

@@ -80,6 +80,7 @@ class RuntimeConfig:
 
     # Misc
     tt_metal_python_venv_dir: Optional[str] = None
+    tt_metal_home: Optional[str] = None
 
     # Runtime state (set during execution, not from CLI)
     run_id: Optional[str] = None
@@ -134,6 +135,7 @@ class RuntimeConfig:
             image_user=args.image_user,
             skip_system_sw_validation=args.skip_system_sw_validation,
             tt_metal_python_venv_dir=args.tt_metal_python_venv_dir,
+            tt_metal_home=args.tt_metal_home,
         )
 
     def to_dict(self) -> dict:

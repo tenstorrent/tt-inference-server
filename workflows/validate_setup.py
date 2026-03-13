@@ -20,6 +20,7 @@ from workflows.utils import (
 )
 from workflows.workflow_types import (
     DeviceTypes,
+    InferenceEngine,
     WorkflowType,
     WorkflowVenvType,
 )
@@ -44,6 +45,10 @@ def validate_runtime_args(model_spec, runtime_config):
             f"model:={runtime_config.model} does not support device:={runtime_config.device}"
         )
 
+    assert not (args.docker_server and args.local_server), (
+        "Cannot run --docker-server and --local-server"
+    )
+
     if workflow_type == WorkflowType.EVALS:
         assert model_spec.model_name in EVAL_CONFIGS, (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
@@ -64,13 +69,16 @@ def validate_runtime_args(model_spec, runtime_config):
     if workflow_type == WorkflowType.REPORTS:
         pass
     if workflow_type == WorkflowType.SERVER:
-        if args.local_server:
-            raise NotImplementedError(
-                f"Workflow {args.workflow} not implemented for --local-server"
-            )
         if not (args.docker_server or args.local_server):
             raise ValueError(
-                f"Workflow {args.workflow} requires --docker-server argument"
+                f"Workflow {args.workflow} requires --docker-server or --local-server"
+            )
+        if (
+            args.local_server
+            and model_spec.inference_engine != InferenceEngine.VLLM.value
+        ):
+            raise NotImplementedError(
+                "--local-server currently supports only vLLM-backed model specs"
             )
 
         # For partitioning Galaxy per tray as T3K
@@ -99,9 +107,10 @@ def validate_runtime_args(model_spec, runtime_config):
                 "GPU support for running inference server not implemented yet"
             )
 
-    assert not (args.docker_server and args.local_server), (
-        "Cannot run --docker-server and --local-server"
-    )
+    if args.local_server and not args.tt_metal_home:
+        raise ValueError(
+            "--local-server requires --tt-metal-home or TT_METAL_HOME to be set"
+        )
 
     # Validate mutual exclusivity of weight source options
     weight_source_args = [
@@ -329,6 +338,54 @@ def validate_bind_mount_permissions(args):
         )
 
 
+def validate_local_server_paths(args):
+    """Validate required host paths for --local-server execution."""
+    if not args.local_server:
+        return
+    if not args.tt_metal_home:
+        raise ValueError(
+            "--local-server requires --tt-metal-home or TT_METAL_HOME to be set"
+        )
+
+    tt_metal_home = Path(args.tt_metal_home).expanduser().resolve()
+    if not tt_metal_home.exists():
+        raise ValueError(f"⛔ --tt-metal-home path does not exist: {tt_metal_home}")
+    if not tt_metal_home.is_dir():
+        raise ValueError(f"⛔ --tt-metal-home is not a directory: {tt_metal_home}")
+
+    python_env_dir = (
+        Path(args.tt_metal_python_venv_dir).expanduser().resolve()
+        if args.tt_metal_python_venv_dir
+        else tt_metal_home / "python_env"
+    )
+    venv_python = python_env_dir / "bin" / "python"
+    build_lib_dir = tt_metal_home / "build" / "lib"
+    entrypoint_path = (
+        get_repo_root_path() / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
+    )
+
+    required_paths = [
+        ("python venv interpreter", venv_python),
+        ("tt-metal build/lib", build_lib_dir),
+        ("local server entrypoint", entrypoint_path),
+    ]
+    for label, path in required_paths:
+        if not path.exists():
+            raise ValueError(f"⛔ Missing required {label}: {path}")
+
+    if args.host_hf_cache:
+        host_hf_cache = Path(args.host_hf_cache).expanduser().resolve()
+        if not host_hf_cache.exists():
+            raise ValueError(f"⛔ --host-hf-cache path does not exist: {host_hf_cache}")
+
+    if args.host_weights_dir:
+        host_weights_dir = Path(args.host_weights_dir).expanduser().resolve()
+        if not host_weights_dir.exists():
+            raise ValueError(
+                f"⛔ --host-weights-dir path does not exist: {host_weights_dir}"
+            )
+
+
 def validate_setup(model_spec, runtime_config, json_fpath):
     """Top-level validation orchestrator called from run.py main().
 
@@ -341,3 +398,5 @@ def validate_setup(model_spec, runtime_config, json_fpath):
     validate_local_setup(model_spec, runtime_config, json_fpath)
     if runtime_config.docker_server:
         validate_bind_mount_permissions(runtime_config)
+    elif runtime_config.local_server:
+        validate_local_server_paths(runtime_config)
