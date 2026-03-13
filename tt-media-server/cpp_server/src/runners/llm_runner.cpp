@@ -1,6 +1,7 @@
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/debug.hpp"
 #include "profiling/tracy.hpp"
+#include "config/settings.hpp"
 
 #include <cassert>
 #include <iostream>
@@ -13,7 +14,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_q
     : config_(config), result_queue_(result_queue) {
   LLM_ENGINE_LOG("llm_engine") << "construct" << std::endl;
 
-  scheduler_ = make_scheduler(config_, task_queue);
+  scheduler_ = make_scheduler(config_, task_queue, tt::config::batch_size());
 
   auto decode_cb = [this](const TokenResult& result) {
     decode_queue_.push(result);

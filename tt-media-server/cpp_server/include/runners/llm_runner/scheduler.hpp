@@ -24,7 +24,7 @@ namespace llm_engine {
  */
 class Scheduler {
  public:
-  explicit Scheduler(const Config& config, ITaskQueue* task_queue);
+  explicit Scheduler(const Config& config, ITaskQueue* task_queue, size_t batch_size);
   virtual ~Scheduler() = default;
 
   /** @return true if there are no prefill_queue, decode_queue, or in-flight sequences. */
@@ -68,18 +68,18 @@ class Scheduler {
  protected:
   /**
    * @param decode_count  number of sequences currently in the decode_queue.
-   * @param max_num_seqs  maximum batch / decode_queue capacity.
+   * @param batch_size    maximum batch / decode_queue capacity.
    * @return true if the scheduler should attempt prefill before decode.
    */
-  virtual bool should_prefill_first(int decode_count, int max_num_seqs) const = 0;
+  virtual bool should_prefill_first(int decode_count, int batch_size) const = 0;
 
   /**
    * Maximum number of sequences to prefill in one step.
-   * Default: max_num_seqs (full capacity). Override to limit prefill
+   * Default: batch_size (full capacity). Override to limit prefill
    * to available slots when decode sequences should be preserved.
    */
-  virtual int max_prefill_seqs(int decode_count, int max_num_seqs) const {
-    return max_num_seqs;
+  virtual int max_prefill_seqs(int decode_count, int batch_size) const {
+    return batch_size;
   }
 
  private:
@@ -90,7 +90,7 @@ class Scheduler {
   void try_schedule_decode(std::vector<Sequence*>& scheduled_seqs,
                            int& num_seqs);
 
-  int max_num_seqs_;
+  size_t batch_size_;
   int max_num_batched_tokens_;
   int max_in_flight_count_;
   std::unordered_set<int64_t> stop_token_ids_;
@@ -102,6 +102,7 @@ class Scheduler {
 };
 
 std::unique_ptr<Scheduler> make_scheduler(const Config& config,
-                                          ITaskQueue* task_queue);
+                                          ITaskQueue* task_queue,
+                                          size_t batch_size);
 
 }  // namespace llm_engine

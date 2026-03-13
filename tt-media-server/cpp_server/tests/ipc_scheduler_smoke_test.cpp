@@ -78,7 +78,7 @@ int main() {
     config.eos = 0;
 
     auto queue = std::make_unique<tt::ipc::BoostIpcTaskQueue>(QUEUE_NAME);
-    PrefillFirstScheduler sched(config, queue.get());
+    PrefillFirstScheduler sched(config, queue.get(), 1);
 
     auto [batch, is_prefill] = sched.schedule();
 
@@ -98,7 +98,7 @@ int main() {
       std::cout << "]\n";
     }
 
-    // --- Verify (batch size is 1 with current Config::max_num_seqs) ---
+    // --- Verify (batch size is 1 with current batch_size setting) ---
     bool ok = true;
     auto fail = [&](const char* msg) {
       std::cerr << "[child]  FAIL: " << msg << "\n";

@@ -173,7 +173,7 @@ llm_engine::Config llm_engine_config() {
         cfg.runner_type = llm_engine::ModelRunnerType::Pipeline;
     } else if (backend == "llama") {
         cfg.max_in_flight_count = 32;
-        cfg.max_num_seqs = 32;
+        // max_num_seqs removed - now controlled by MAX_BATCH_SIZE env var
         cfg.kvcache_block_size = 32;
         cfg.max_num_batched_tokens = 16384;
         cfg.runner_type = llm_engine::ModelRunnerType::Llama;
