@@ -57,6 +57,7 @@ Multi-host deployment enables running large language models across multiple Gala
 - Hosts 1+ run Worker containers (sshd only, MPI processes spawned via SSH)
 - All hosts participate in distributed inference via MPI
 - Controller connects to Workers using real hostnames (from `MULTIHOST_HOSTS`)
+- **Important:** `run.py` must be executed on the rank-0 host (first in `MULTIHOST_HOSTS`)
 
 ---
 
@@ -141,6 +142,7 @@ python3 run.py \
 
 ### Validation Rules
 
+- **`run.py` must be executed on the rank-0 host** (first hostname in `MULTIHOST_HOSTS`). This is required because the Controller container runs locally and MPI rank-0 must be on the same host for torch distributed TCP rendezvous to work correctly.
 - `MULTIHOST_HOSTS` must contain exactly 2 or 4 hostnames (matching `--tt-device`)
 - `SHARED_STORAGE_ROOT` must exist and be accessible on all hosts
 - `CONFIG_PKL_DIR` must be under `SHARED_STORAGE_ROOT`
@@ -369,6 +371,31 @@ ENV_PASSTHROUGH = [
 ---
 
 ## Troubleshooting
+
+### Controller Host Mismatch (run.py on Wrong Host)
+
+If you see an error like:
+```
+run.py must be executed on the rank-0 host.
+  Current host: host2
+  Rank-0 host (MULTIHOST_HOSTS[0]): host1
+```
+
+This means `run.py` is being executed on a host that doesn't match the first hostname in `MULTIHOST_HOSTS`. The Controller container runs locally and must be on the same host as MPI rank-0 for torch distributed to work correctly.
+
+**Solutions:**
+1. SSH to the rank-0 host and run `run.py` from there:
+   ```bash
+   ssh host1
+   cd /path/to/tt-inference-server
+   python3 run.py --model <MODEL> --workflow server --docker-server --tt-device dual_galaxy
+   ```
+
+2. Or update `MULTIHOST_HOSTS` to start with the current host:
+   ```bash
+   # If you're on host2 and want it to be rank-0
+   export MULTIHOST_HOSTS=host2,host1
+   ```
 
 ### TT Device Initialization Error
 
