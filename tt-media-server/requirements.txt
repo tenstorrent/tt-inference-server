@@ -20,5 +20,6 @@ uvicorn
 whisperx==3.4.3
 requests
 
+torchaudio<2.9
 
 --extra-index-url https://download.pytorch.org/whl/cpu
