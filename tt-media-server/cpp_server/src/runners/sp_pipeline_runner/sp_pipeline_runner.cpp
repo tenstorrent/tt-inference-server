@@ -48,7 +48,7 @@ void SpPipelineRunner::step() {
   std::unique_ptr<llm_engine::Sequence> owned(seq);
   llm_engine::TaskID task_id = seq->task_id;
 
-  uint32_t max_tokens = seq->sampling_params->max_tokens.value_or(65536);
+  uint32_t max_tokens = seq->sampling_params->max_tokens.value_or(config_.MAX_INPUT_TOKENS);
   model_runner_->write(seq->task_id.id, seq->token_ids_, max_tokens);
 
   active_sequences_.emplace(task_id, std::move(owned));
