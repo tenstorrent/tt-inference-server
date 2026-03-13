@@ -70,11 +70,13 @@ struct EmbeddingService::Impl {
     // Set TT_BATCH_SIZE and MAX_BATCH_SIZE env vars to the same value
     size_t max_batch_size_ = 1;          // Max requests per batch (default 1 = no batching)
     std::chrono::milliseconds batch_timeout_{5};  // Max wait time to fill batch
+    size_t max_queue_size_ = tt::config::defaults::MAX_QUEUE_SIZE;
 
     Impl() {
         num_workers_ = tt::config::num_workers();
         max_batch_size_ = tt::config::batch_size();
         batch_timeout_ = std::chrono::milliseconds(tt::config::batch_timeout_ms());
+        max_queue_size_ = tt::config::max_queue_size();
         TT_LOG_INFO("[EmbeddingService] Initialized with {} workers, batch_size={}, batch_timeout={}ms",
                     num_workers_, max_batch_size_, batch_timeout_.count());
     }
@@ -634,7 +636,9 @@ struct EmbeddingService::Impl {
 // Public interface
 
 EmbeddingService::EmbeddingService()
-    : impl_(std::make_unique<Impl>()) {}
+    : impl_(std::make_unique<Impl>()) {
+    max_queue_size_ = impl_->max_queue_size_;
+}
 
 EmbeddingService::~EmbeddingService() = default;
 
@@ -650,8 +654,9 @@ bool EmbeddingService::is_model_ready() const {
     return impl_->is_ready_.load();
 }
 
-void EmbeddingService::pre_process(domain::EmbeddingRequest&) const {
-    // no-op
+size_t EmbeddingService::current_queue_size() const {
+    std::lock_guard lock(impl_->queue_mutex_);
+    return impl_->request_queue_.size();
 }
 
 void EmbeddingService::post_process(domain::EmbeddingResponse&) const {
@@ -673,7 +678,7 @@ SystemStatus EmbeddingService::get_system_status() const {
         status.queue_size = impl_->request_queue_.size();
     }
 
-    status.max_queue_size = 10000;
+    status.max_queue_size = max_queue_size_;
     status.device = "tenstorrent";
 
     for (size_t i = 0; i < impl_->num_workers_; ++i) {

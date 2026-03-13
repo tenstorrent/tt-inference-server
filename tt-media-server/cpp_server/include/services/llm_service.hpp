@@ -58,6 +58,7 @@ public:
 protected:
     void pre_process(domain::CompletionRequest& request) const override;
     void post_process(domain::CompletionResponse& response) const override;
+    size_t current_queue_size() const override;
     domain::CompletionResponse process_request(
         domain::CompletionRequest request) override;
 
@@ -91,7 +92,6 @@ private:
     std::atomic<bool> is_ready_{false};
     std::atomic<bool> running_{false};
 
-    size_t max_queue_size_ = 10000;
     std::string device_ = "cpu";
 
     std::unique_ptr<tt::ipc::QueueManager> queue_manager_;

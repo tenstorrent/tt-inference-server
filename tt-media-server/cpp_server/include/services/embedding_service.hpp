@@ -31,7 +31,7 @@ public:
     SystemStatus get_system_status() const override;
 
 protected:
-    void pre_process(domain::EmbeddingRequest& request) const override;
+    size_t current_queue_size() const override;
     void post_process(domain::EmbeddingResponse& response) const override;
 
     domain::EmbeddingResponse process_request(
