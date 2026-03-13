@@ -4,11 +4,14 @@
 #pragma once
 
 #include <atomic>
+#include <climits>
 #include <cstdint>
 #include <cstring>
 #include <string>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
+#include <linux/futex.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdexcept>
@@ -44,6 +47,21 @@ static_assert(sizeof(SharedToken) == 128, "SharedToken must be 128 bytes for cac
 
 struct SharedEmbedding {};
 
+namespace detail {
+
+inline int futex_wait(std::atomic<uint32_t>& futex_word, uint32_t expected,
+                      const struct timespec* timeout = nullptr) {
+    return syscall(SYS_futex, reinterpret_cast<uint32_t*>(&futex_word),
+                   FUTEX_WAIT, expected, timeout, nullptr, 0);
+}
+
+inline void futex_wake(std::atomic<uint32_t>& futex_word, int count = 1) {
+    syscall(SYS_futex, reinterpret_cast<uint32_t*>(&futex_word),
+            FUTEX_WAKE, count, nullptr, nullptr, 0);
+}
+
+} // namespace detail
+
 /**
  * Shared memory ring buffer header.
  * Lives at the start of the shared memory region.
@@ -57,11 +75,12 @@ struct alignas(64) RingBufferHeader {
 
     // Cache line 3: Metadata
     alignas(64) uint64_t capacity{0};
-    uint64_t token_offset{0};  // Offset to token array
+    uint64_t token_offset{0};
     uint32_t version{1};
     uint32_t worker_count{0};
     std::atomic<bool> shutdown{false};
-    char padding[32];
+    std::atomic<uint32_t> push_notify{0};   // Futex word for blocking pop
+    char padding[28];
 };
 
 static_assert(sizeof(RingBufferHeader) == 192, "Header size check");
@@ -174,40 +193,61 @@ public:
         uint64_t write = header_->write_pos.load(std::memory_order_relaxed);
         uint64_t read = header_->read_pos.load(std::memory_order_acquire);
 
-        // Check if full
         if (write - read >= CAPACITY) {
             return false;
         }
 
-        // Write token
         size_t idx = write % CAPACITY;
         tokens_[idx] = token;
 
-        // Publish
         header_->write_pos.store(write + 1, std::memory_order_release);
+
+        header_->push_notify.fetch_add(1, std::memory_order_release);
+        detail::futex_wake(header_->push_notify);
         return true;
     }
 
     /**
-     * Pop a token (consumer side).
+     * Pop a token (consumer side). Non-blocking.
      * Returns false if buffer is empty.
      */
     bool pop(SharedToken& token) {
         uint64_t read = header_->read_pos.load(std::memory_order_relaxed);
         uint64_t write = header_->write_pos.load(std::memory_order_acquire);
 
-        // Check if empty
         if (read >= write) {
             return false;
         }
 
-        // Read token
         size_t idx = read % CAPACITY;
         token = tokens_[idx];
 
-        // Advance read position
         header_->read_pos.store(read + 1, std::memory_order_release);
         return true;
+    }
+
+    /**
+     * Pop a token (consumer side). Blocks until a token is available
+     * or shutdown is signaled. Returns false only on shutdown with
+     * an empty buffer.
+     */
+    bool blocking_pop(SharedToken& token) {
+        while (!is_shutdown()) {
+            if (pop(token)) {
+                return true;
+            }
+
+            uint32_t snapshot = header_->push_notify.load(std::memory_order_acquire);
+
+            // Re-check after capturing snapshot to avoid missed-wake race
+            if (pop(token)) {
+                return true;
+            }
+
+            struct timespec timeout = {0, 1'000'000};  // 1 ms — periodic wake for shutdown check
+            detail::futex_wait(header_->push_notify, snapshot, &timeout);
+        }
+        return pop(token);
     }
 
     /**
@@ -242,10 +282,12 @@ public:
     }
 
     /**
-     * Signal shutdown.
+     * Signal shutdown and wake any blocked consumer.
      */
     void shutdown() {
         header_->shutdown.store(true, std::memory_order_release);
+        header_->push_notify.fetch_add(1, std::memory_order_release);
+        detail::futex_wake(header_->push_notify, INT_MAX);
     }
 
     /**

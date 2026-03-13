@@ -6,7 +6,7 @@ All development uses the following workflows in git for the repo repository http
 
 ### development in `dev`
 
-All normal development work should be done using this simple workflow, making branchs off `dev` and making PRs back to `dev`.
+All normal development work should be done using this simple workflow, making branches off `dev` and making PRs back to `dev`.
 
 **branches:**
 - `<namett>/<my-description>`
