@@ -190,7 +190,6 @@ class TestValidateBindMountPermissions:
         finally:
             os.chmod(d, 0o700)
 
-
     def test_host_volume_not_writable_raises_when_fix_fails(self, tmp_path):
         d = tmp_path / "ro_volume"
         d.mkdir()
@@ -315,12 +314,16 @@ class TestLocalServerValidation:
         return model_spec
 
     def _make_runtime_config(self):
-        return RuntimeConfig(
+        runtime_config = RuntimeConfig(
             model="Mistral-7B-Instruct-v0.3",
             workflow="server",
             device="n150",
             local_server=True,
         )
+        runtime_config.runtime_model_spec = {
+            "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3"
+        }
+        return runtime_config
 
     def test_runtime_args_require_tt_metal_home_for_local_server(self):
         model_spec = self._make_model_spec()
@@ -360,6 +363,9 @@ class TestLocalServerValidation:
             tt_metal_python_venv_dir=None,
             host_hf_cache=None,
             host_weights_dir=None,
+            runtime_model_spec={
+                "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3"
+            },
         )
 
         validate_local_server_paths(args)
@@ -374,7 +380,65 @@ class TestLocalServerValidation:
             tt_metal_python_venv_dir=None,
             host_hf_cache=None,
             host_weights_dir=None,
+            runtime_model_spec={
+                "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3"
+            },
         )
 
         with pytest.raises(ValueError, match="python venv interpreter"):
             validate_local_server_paths(args)
+
+    def test_validate_local_server_paths_requires_cached_hf_snapshot(self, tmp_path):
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        build_lib_dir = tt_metal_home / "build" / "lib"
+        python_bin_dir.mkdir(parents=True)
+        build_lib_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        hf_home = tmp_path / "hf_home"
+        hf_home.mkdir()
+        args = Namespace(
+            local_server=True,
+            tt_metal_home=str(tt_metal_home),
+            tt_metal_python_venv_dir=None,
+            host_hf_cache=str(hf_home),
+            host_weights_dir=None,
+            runtime_model_spec={
+                "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3"
+            },
+        )
+
+        with pytest.raises(ValueError, match="did not contain a cached snapshot"):
+            validate_local_server_paths(args)
+
+    def test_validate_local_server_paths_accepts_cached_hf_snapshot(self, tmp_path):
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        build_lib_dir = tt_metal_home / "build" / "lib"
+        python_bin_dir.mkdir(parents=True)
+        build_lib_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        snapshot_dir = (
+            tmp_path
+            / "hf_home"
+            / "hub"
+            / "models--mistralai--Mistral-7B-Instruct-v0.3"
+            / "snapshots"
+            / "abc123"
+        )
+        snapshot_dir.mkdir(parents=True)
+
+        args = Namespace(
+            local_server=True,
+            tt_metal_home=str(tt_metal_home),
+            tt_metal_python_venv_dir=None,
+            host_hf_cache=str(tmp_path / "hf_home"),
+            host_weights_dir=None,
+            runtime_model_spec={
+                "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3"
+            },
+        )
+
+        validate_local_server_paths(args)

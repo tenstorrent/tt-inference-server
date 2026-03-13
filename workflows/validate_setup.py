@@ -16,6 +16,7 @@ from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_repo_root_path,
+    resolve_hf_snapshot_dir,
     run_command,
 )
 from workflows.workflow_types import (
@@ -377,6 +378,14 @@ def validate_local_server_paths(args):
         host_hf_cache = Path(args.host_hf_cache).expanduser().resolve()
         if not host_hf_cache.exists():
             raise ValueError(f"⛔ --host-hf-cache path does not exist: {host_hf_cache}")
+        snapshot_dir = resolve_hf_snapshot_dir(
+            args.runtime_model_spec["hf_weights_repo"], host_hf_cache
+        )
+        if snapshot_dir is None:
+            raise ValueError(
+                f"⛔ --host-hf-cache did not contain a cached snapshot for "
+                f"{args.runtime_model_spec['hf_weights_repo']}: {host_hf_cache}"
+            )
 
     if args.host_weights_dir:
         host_weights_dir = Path(args.host_weights_dir).expanduser().resolve()

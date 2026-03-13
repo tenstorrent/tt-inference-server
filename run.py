@@ -33,6 +33,7 @@ from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
+    get_default_hf_home_path,
     get_default_workflow_root_log_dir,
     get_run_id,
     load_dotenv,
@@ -262,23 +263,26 @@ def parse_arguments():
         nargs="?",
         const=str(Path(__file__).resolve().parent / "persistent_volume"),
         default=None,
-        help="Host directory for persistent cache volume (bind mount). "
-        "If flag is given without a path, defaults to persistent_volume/ in the repo root. "
-        "If not provided, a Docker named volume is used instead.",
+        help="Host directory for persistent cache/log/tensor storage. "
+        "If the flag is given without a path, defaults to persistent_volume/ in the repo root. "
+        "For --docker-server, omitting it uses a Docker named volume. "
+        "For --local-server, omitting it still uses the repo persistent_volume/ path.",
     )
     parser.add_argument(
         "--host-hf-cache",
-        type=str,
+        nargs="?",
+        const=str(get_default_hf_home_path()),
         default=None,
-        help="Host HuggingFace cache directory to mount readonly for model weights. "
-        "Uses existing HF cache instead of downloading weights into the Docker volume.",
+        help="Host HuggingFace cache directory to reuse for model weights. "
+        "If the flag is given without a path, defaults to HOST_HF_HOME, then HF_HOME, then ~/.cache/huggingface. "
+        "For --local-server, tensor cache/logs still use the host volume path.",
     )
     parser.add_argument(
         "--host-weights-dir",
         type=str,
         default=None,
-        help="Host directory containing pre-downloaded model weights to mount into container. "
-        "Uses existing weights instead of downloading into the Docker volume.",
+        help="Host directory containing pre-downloaded model weights. "
+        "For --local-server, tensor cache/logs still use the host volume path.",
     )
     parser.add_argument(
         "--image-user",
@@ -405,7 +409,7 @@ def format_cli_args_summary(runtime_config):
         f"  limit_samples_mode:         {runtime_config.limit_samples_mode}",
         f"  skip_system_sw_validation:  {runtime_config.skip_system_sw_validation}",
         "",
-        "Docker Volume Options:",
+        "Host Storage Options:",
         f"  host_volume:                {runtime_config.host_volume}",
         f"  host_hf_cache:              {runtime_config.host_hf_cache}",
         f"  host_weights_dir:           {runtime_config.host_weights_dir}",
@@ -527,8 +531,11 @@ def main():
     validate_setup(model_spec, runtime_config, json_fpath)
 
     setup_config = None
-    if runtime_config.docker_server:
-        logger.info("Running inference server in Docker container ...")
+    if runtime_config.docker_server or runtime_config.local_server:
+        if runtime_config.docker_server:
+            logger.info("Running inference server in Docker container ...")
+        else:
+            logger.info("Resolving local-server host storage ...")
         setup_config = setup_host(
             model_spec=model_spec,
             jwt_secret=os.getenv("JWT_SECRET"),
@@ -538,6 +545,7 @@ def main():
             host_hf_cache=runtime_config.host_hf_cache,
             host_weights_dir=runtime_config.host_weights_dir,
             image_user=runtime_config.image_user,
+            local_server=runtime_config.local_server,
         )
 
     # step 4: optionally run inference server
@@ -555,7 +563,7 @@ def main():
         run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
     elif runtime_config.local_server:
         logger.info("Running inference server on localhost ...")
-        run_local_server(model_spec, runtime_config, json_fpath)
+        run_local_server(model_spec, runtime_config, json_fpath, setup_config)
 
     # step 5: run workflows
     main_return_code = 0
