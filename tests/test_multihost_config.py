@@ -92,17 +92,17 @@ class TestBuildMpiArgs:
 
 class TestGetRankBindingPath:
     def test_dual_galaxy(self):
-        path = get_rank_binding_path(2)
+        path = get_rank_binding_path(DeviceTypes.DUAL_GALAXY)
         assert "dual_galaxy_rank_bindings.yaml" in path
         assert "tt-metal" in path
 
     def test_quad_galaxy(self):
-        path = get_rank_binding_path(4)
+        path = get_rank_binding_path(DeviceTypes.QUAD_GALAXY)
         assert "quad_galaxy_rank_bindings.yaml" in path
 
-    def test_unsupported_hosts(self):
-        with pytest.raises(ValueError, match="Unsupported number of hosts"):
-            get_rank_binding_path(3)
+    def test_unsupported_device_type(self):
+        with pytest.raises(ValueError, match="Unsupported device type"):
+            get_rank_binding_path(DeviceTypes.T3K)
 
 
 class TestBuildOverrideTtConfig:
@@ -112,6 +112,7 @@ class TestBuildOverrideTtConfig:
             mpi_interface="cnx1",
             config_pkl_dir="/mnt/shared/config_pkl",
             rankfile_path="/etc/mpirun/rankfile",
+            device_type=DeviceTypes.DUAL_GALAXY,
         )
 
         assert "rank_binding" in config
@@ -131,6 +132,7 @@ class TestBuildOverrideTtConfig:
             mpi_interface="eth0",
             config_pkl_dir="/tmp/config_pkl",
             rankfile_path="/etc/mpirun/rankfile",
+            device_type=DeviceTypes.DUAL_GALAXY,
             rank_binding_path="/custom/rank_binding.yaml",
         )
         assert config["rank_binding"] == "/custom/rank_binding.yaml"

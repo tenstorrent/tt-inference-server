@@ -13,6 +13,8 @@ This module generates configuration files needed for multi-host deployment:
 from dataclasses import dataclass, field
 from typing import Optional
 
+from workflows.workflow_types import DeviceTypes
+
 
 # Fixed values for multi-host deployment
 WORKER_SSH_PORT = 2200
@@ -119,11 +121,11 @@ def build_mpi_args(hosts: list[str], rankfile_path: str) -> str:
     return f"--host {host_list} --map-by rankfile:file={rankfile_path} --bind-to none"
 
 
-def get_rank_binding_path(num_hosts: int) -> str:
-    """Get the appropriate rank binding YAML path based on host count.
+def get_rank_binding_path(device_type: DeviceTypes) -> str:
+    """Get the appropriate rank binding YAML path based on device type.
 
     Args:
-        num_hosts: Number of hosts in the deployment
+        device_type: Device type for the deployment
 
     Returns:
         Path to rank binding YAML file inside container
@@ -132,16 +134,17 @@ def get_rank_binding_path(num_hosts: int) -> str:
     config_dir = f"{tt_metal_home}/tests/tt_metal/distributed/config"
 
     binding_files = {
-        2: "dual_galaxy_rank_bindings.yaml",
-        4: "quad_galaxy_rank_bindings.yaml",
+        DeviceTypes.DUAL_GALAXY: "dual_galaxy_rank_bindings.yaml",
+        DeviceTypes.QUAD_GALAXY: "quad_galaxy_rank_bindings.yaml",
     }
 
-    if num_hosts not in binding_files:
+    if device_type not in binding_files:
         raise ValueError(
-            f"Unsupported number of hosts: {num_hosts}. Supported: {list(binding_files.keys())}"
+            f"Unsupported device type: {device_type.name}. "
+            f"Supported: {[d.name for d in binding_files.keys()]}"
         )
 
-    return f"{config_dir}/{binding_files[num_hosts]}"
+    return f"{config_dir}/{binding_files[device_type]}"
 
 
 def build_override_tt_config(
@@ -149,6 +152,7 @@ def build_override_tt_config(
     mpi_interface: str,
     config_pkl_dir: str,
     rankfile_path: str,
+    device_type: DeviceTypes,
     rank_binding_path: Optional[str] = None,
 ) -> dict:
     """Build override_tt_config dict for multi-host vLLM deployment.
@@ -158,13 +162,14 @@ def build_override_tt_config(
         mpi_interface: Network interface for MPI (e.g., 'cnx1')
         config_pkl_dir: Directory for vLLM config pickle files (under shared storage)
         rankfile_path: Path to rankfile inside container
-        rank_binding_path: Path to rank binding YAML (auto-detected if None)
+        device_type: Device type for the deployment (determines rank binding file)
+        rank_binding_path: Path to rank binding YAML (auto-detected from device_type if None)
 
     Returns:
         Dictionary suitable for JSON serialization and passing to vLLM
     """
     if rank_binding_path is None:
-        rank_binding_path = get_rank_binding_path(len(hosts))
+        rank_binding_path = get_rank_binding_path(device_type)
 
     return {
         "rank_binding": rank_binding_path,

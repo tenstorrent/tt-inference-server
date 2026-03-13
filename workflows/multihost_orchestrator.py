@@ -396,11 +396,13 @@ class MultiHostOrchestrator:
         logger.debug(f"Generated rankfile at {rankfile_path}")
 
         # Generate override_tt_config
+        device_type = DeviceTypes.from_string(self.runtime_config.device)
         override_tt_config = build_override_tt_config(
             hosts=self.hosts,
             mpi_interface=self.mpi_interface,
             config_pkl_dir=self.config_pkl_dir,
             rankfile_path="/etc/mpirun/rankfile",
+            device_type=device_type,
         )
 
         self.setup = MultiHostSetup(
