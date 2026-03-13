@@ -8,6 +8,109 @@ The release process can be run locally on a laptop or on a remote server. Howeve
 
 ![release-summary-2025-08-14-1106.png](release-summary-2025-08-14-1106.png)
 
+---
+
+## GitHub Workflow Automation
+
+The steps described in the manual process below are automated by three GitHub Actions workflows. Each workflow must be triggered manually on the tt-inference-server repo. There is a human review gate (PR merge) between each workflow.
+
+### Overview
+
+```
+┌────────────────────────────────────────────────┐
+│  tt-shield: Models-CI 'release.yml' run        │
+└─────────────────────┬──────────────────────────┘
+                      │ input: run-id
+                      ▼
+┌────────────────────────────────────────────────┐
+│  Workflow 1: Create Prerelease                 │
+│    - creates branch rc-vX.Y.Z                  │
+│    - pushes dev-tagged Docker images           │
+│    - opens draft PR: rc-vX.Y.Z → dev           │
+└─────────────────────┬──────────────────────────┘
+                      │ [human] review & merge PR into dev
+                      │ input: merged PR number
+                      ▼
+┌────────────────────────────────────────────────┐
+│  Workflow 2: Create Release Candidate PR       │
+│    - pushes release-tagged Docker images       │
+│    - opens draft PR: rc-vX.Y.Z → main          │
+└─────────────────────┬──────────────────────────┘
+                      │ [human] review & merge PR into main
+                      │ input: merged PR number
+                      ▼
+┌────────────────────────────────────────────────┐
+│  Workflow 3: Package GH Release                │
+│    - tags latest commit on main with vX.Y.Z    │
+│    - creates draft GitHub Release              │
+└────────────────────────────────────────────────┘
+```
+
+### Workflow 1 — Create Prerelease
+
+**File:** `.github/workflows/release_process_create_prerelease.yml`
+
+**When to trigger:** At the start of a release, once a passing `release.yml` run exists in the `tenstorrent/tt-shield` repo.
+
+**Inputs:**
+- `release-candidate-run-id`: the run ID of the `release.yml` workflow run from tt-shield
+- `release-increment`: `patch`, `minor`, or `major`
+
+**What it does:**
+1. Validates the run ID points to a `release.yml` run in tt-shield
+2. Downloads build artifacts from that run and extracts the `tt-inference-server` commit SHA that was tested
+3. Checks out that commit, runs `models_ci_reader.py`, updates the model spec, bumps the VERSION file, and re-tags Docker images with `-dev-` tags on GHCR
+4. Creates branch `rc-vX.Y.Z`, commits all changes, and pushes it
+5. Opens a draft PR from `rc-vX.Y.Z` → `dev`, with the original run ID embedded in the PR body as `metadata:run_id=...` (used by subsequent workflows)
+6. Builds any additional Docker images needed by the model spec in a parallel matrix
+
+**End state:** Draft PR `rc-vX.Y.Z` → `dev` exists with updated model spec, bumped version, and dev Docker images published.
+
+---
+
+### Workflow 2 — Create Release Candidate PR
+
+**File:** `.github/workflows/release_process_create_release_candidate.yml`
+
+**When to trigger:** After the draft PR from Workflow 1 has been reviewed and **merged into `dev`**.
+
+**Inputs:**
+- `prerelease-pr-number`: the PR number of the now-merged PR from Workflow 1
+
+**What it does:**
+1. Validates the PR is merged and its head branch starts with `rc-`
+2. Extracts the original tt-shield run ID from the PR body metadata comment
+3. Restores the `rc-vX.Y.Z` branch on remote if it was deleted after merge
+4. Re-runs `make_release_image_artifacts.py` with `--release`, promoting Docker images from tt-shield to tt-inference-server GHCR with `-release-` tags
+5. Opens a draft PR from `rc-vX.Y.Z` → `main` (retitling from "Release Candidate vX.Y.Z" to "Release vX.Y.Z")
+
+**End state:** Release-tagged Docker images are published to GHCR, and a draft PR `rc-vX.Y.Z` → `main` exists.
+
+---
+
+### Workflow 3 — Package GH Release
+
+**File:** `.github/workflows/release_process_package_gh_release.yml`
+
+**When to trigger:** After the draft PR from Workflow 2 has been reviewed and **merged into `main`**.
+
+**Inputs:**
+- `release-candidate-pr-number`: the PR number of the now-merged PR from Workflow 2
+
+**What it does:**
+1. Validates the PR is merged and its head branch starts with `rc-`
+2. Re-downloads tt-shield workflow artifacts and packages all `workflow_logs_release_*` directories into a single `vX.Y.Z-release_artifacts.zip`
+3. Tags the latest commit on `main` with `vX.Y.Z`
+4. Creates a draft GitHub Release at that tag, using the PR body as release notes and attaching the artifact zip
+
+**End state:** A draft GitHub Release exists at tag `vX.Y.Z` on `main` with release notes and attached workflow log artifacts. After review, the draft can be published.
+
+---
+
+## Manual Release Process
+
+The sections below describe how to perform each of the above steps manually, which may be necessary for handling edge cases, manual model overrides, or builds requiring older tt-metal SHA versions.
+
 ## pre-requisite requirements
 permissions requirement:
 - Download only
@@ -39,10 +142,10 @@ Follow the git workflow for release described below in the diagram and step by s
 
 ## Pre-release to `dev`
 
-Make pre-release branch from Models CI passing commit, for example `50bd698` from https://github.com/tenstorrent/tt-shield/actions/runs/20241693052/job/58113167653#step:5:78
+Make the RC branch directly from the Models CI passing commit, for example `50bd698` from https://github.com/tenstorrent/tt-shield/actions/runs/20241693052/job/58113167653#step:5:78
 ```bash
 git checkout 50bd698
-git checkout -b pre-release-vx.x.x
+git checkout -b rc-vx.x.x
 ```
 
 ## Step 1: parse Models CI run data
@@ -131,24 +234,18 @@ python3 scripts/build_docker_images.py --push
 
 ## step 4: create pre-release PR
 
-* Open tt-inference-server PR `pre-release-vx.x.x` to dev https://github.com/tenstorrent/tt-inference-server/compare/dev...
+* Open tt-inference-server PR `rc-vx.x.x` to dev https://github.com/tenstorrent/tt-inference-server/compare/dev...
 * manually inspect and review `model_spec.py` changes
 * include: `release_logs/release_models_diff.md`
 * include: `release_logs/dev_artifacts_summary.md`
 * any manual changes from the automated edits should be noted
 * the PR must be merge commit option ("all commits from this branch will be added with a merge commit"), this is done in the case that there are merge conflicts that need to be resolved. The resolution commit is then available in the next release for the changes required on current `dev`.
 * Use `git add -f docs/model_support/**` to commit updates to generated model docs.
-* NOTE: the release will process with `pre-release-vx.x.x` branch which is now "stable" from `dev`
+* NOTE: the same `rc-vx.x.x` branch will be reused for the release PR to `main` in the next phase
 
 ## Release to `main`
 
-Once pre-release PR is merged to `dev` begin release to `main`.
-
-Make RC `rc-vx.x.x` branch from `pre-release-vx.x.x`:
-```bash
-git checkout pre-release-vx.x.x
-git checkout -b rc-vx.x.x
-```
+Once the pre-release PR is merged to `dev` begin release to `main`. The `rc-vx.x.x` branch already exists — no new branch is needed. If `rc-*` branch was deleted by a GitHub PR merge rule, just restore either through the PR page (at the bottom), or GH API.
 
 Note: any hot-fixes to be applied on the RC branch should be based on the RC branch `<namett>/hot-fix-<fix-description>` and be PR back into `dev` via merge commit then `git cherry-pick` the changes back into RC branch. This ensures all future branches have the same commit SHAs and history is correct.
 
