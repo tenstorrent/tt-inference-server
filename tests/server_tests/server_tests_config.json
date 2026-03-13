@@ -3332,7 +3332,7 @@
                     "num_inference_steps": 20,
                     "image_generation_time": 10
                 }
-            },
+                },
             {
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",

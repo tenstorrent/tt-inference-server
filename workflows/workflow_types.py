@@ -71,6 +71,7 @@ class DeviceTypes(IntEnum):
     P150X8 = auto()  # BH LoudBox - 8x P150 (2,4 mesh)
     P300 = auto()  # Single P300 card (2 dies)
     P300X2 = auto()  # 2x P300 cards = 4 chips (2,2 mesh)
+
     GALAXY = auto()
     GALAXY_T3K = auto()
     DUAL_GALAXY = auto()
@@ -185,6 +186,7 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.N150, 1): DeviceTypes.N150,
             (DeviceTypes.P150X4, 4): DeviceTypes.P150,
             (DeviceTypes.P150X8, 8): DeviceTypes.P150,
+            (DeviceTypes.P300, 1): DeviceTypes.P300,
         }
         if (self, data_parallel) not in data_parallel_map:
             raise ValueError(
