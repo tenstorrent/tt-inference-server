@@ -9,6 +9,7 @@ import os
 import sys
 from pathlib import Path
 from typing import List
+from workflows.workflow_types import InferenceEngine
 
 import jwt
 
@@ -105,14 +106,14 @@ def _check_media_server_health(model_spec, device, output_path, service_port):
     return is_healthy, runner_in_use
 
 
-def _setup_openai_api_key(args, logger):
+def _setup_openai_api_key(args, model_spec, logger):
     """Setup OPENAI_API_KEY environment variable based on JWT secret or API key.
     Args:
         args: Parsed command line arguments
         logger: Logger instance
     """
     api_key = args.jwt_secret or os.getenv("API_KEY", "your-secret-key")
-    os.environ["OPENAI_API_KEY"] = api_key
+    os.environ["OPENAI_API_KEY"] = api_key if model_spec.inference_engine != InferenceEngine.FORGE else "your-secret-key"
     logger.info("OPENAI_API_KEY environment variable set.")
 
 
@@ -344,8 +345,8 @@ def main():
     assert device == model_spec.device_type
 
     # Setup authentication based on model type
-    if model_spec.model_type in EVAL_TASK_TYPES:
-        _setup_openai_api_key(args, logger)
+    if model_spec.model_type in EVAL_TASK_TYPES or model_spec.inference_engine == InferenceEngine.FORGE:
+        _setup_openai_api_key(args, model_spec, logger)
     elif args.jwt_secret:
         # For LLM models, generate JWT token from jwt_secret
         json_payload = json.loads(
@@ -381,7 +382,6 @@ def main():
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
-
     if (
         model_spec.model_type in EVAL_TASK_TYPES
         and model_spec.model_type != ModelType.AUDIO
