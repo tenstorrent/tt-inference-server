@@ -19,6 +19,8 @@ tqdm
 uvicorn
 whisperx==3.4.3
 requests
+transformers == 4.53.0
+diffusers==0.35.1
 
 
---extra-index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://download.pytorch.org/whl/cu126
