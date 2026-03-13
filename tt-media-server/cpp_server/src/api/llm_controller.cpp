@@ -141,31 +141,29 @@ void LLMController::completions(
     if (request->stream) {
         handle_streaming(request, std::move(callback), false);
     } else {
-        auto start_time = std::chrono::high_resolution_clock::now();
-        domain::CompletionResponse response;
         try {
-            response = service_->submit_request(std::move(*request));
+            auto start_time = std::chrono::high_resolution_clock::now();
+            auto response = service_->submit_request(std::move(*request));
+            auto end_time = std::chrono::high_resolution_clock::now();
+
+            response.id = "cmpl-" + response.id;
+
+            // Add timing metrics to non-streaming response
+            auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+            if (total_duration.count() > 0 && response.usage.completion_tokens > 0) {
+                response.usage.ttft_ms = static_cast<double>(total_duration.count());
+                if (response.usage.completion_tokens > 1) {
+                    response.usage.tps = response.usage.completion_tokens * 1000.0 / total_duration.count();
+                }
+            }
+
+            callback(drogon::HttpResponse::newHttpJsonResponse(response.toJson()));
         } catch (const services::QueueFullException& e) {
             auto resp = drogon::HttpResponse::newHttpJsonResponse(
                 error_json(e.what(), "rate_limit_exceeded"));
             resp->setStatusCode(drogon::k429TooManyRequests);
             callback(resp);
-            return;
         }
-        auto end_time = std::chrono::high_resolution_clock::now();
-
-        response.id = "cmpl-" + response.id;
-
-        // Add timing metrics to non-streaming response
-        auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        if (total_duration.count() > 0 && response.usage.completion_tokens > 0) {
-            response.usage.ttft_ms = static_cast<double>(total_duration.count());
-            if (response.usage.completion_tokens > 1) {
-                response.usage.tps = response.usage.completion_tokens * 1000.0 / total_duration.count();
-            }
-        }
-
-        callback(drogon::HttpResponse::newHttpJsonResponse(response.toJson()));
     }
 }
 
@@ -219,32 +217,30 @@ void LLMController::chat_completions(
     if (request->stream) {
         handle_streaming(request, std::move(callback), true);
     } else {
-        auto start_time = std::chrono::high_resolution_clock::now();
-        domain::CompletionResponse completion;
         try {
-            completion = service_->submit_request(std::move(*request));
+            auto start_time = std::chrono::high_resolution_clock::now();
+            auto completion = service_->submit_request(std::move(*request));
+            auto end_time = std::chrono::high_resolution_clock::now();
+
+            completion.id = "chatcmpl-" + completion.id;
+
+            // Add timing metrics to non-streaming response
+            auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+            if (total_duration.count() > 0 && completion.usage.completion_tokens > 0) {
+                completion.usage.ttft_ms = static_cast<double>(total_duration.count());
+                if (completion.usage.completion_tokens > 1) {
+                    completion.usage.tps = completion.usage.completion_tokens * 1000.0 / total_duration.count();
+                }
+            }
+
+            auto chat_response = domain::ChatCompletionResponse::fromCompletionResponse(completion);
+            callback(drogon::HttpResponse::newHttpJsonResponse(chat_response.toJson()));
         } catch (const services::QueueFullException& e) {
             auto resp = drogon::HttpResponse::newHttpJsonResponse(
                 error_json(e.what(), "rate_limit_exceeded"));
             resp->setStatusCode(drogon::k429TooManyRequests);
             callback(resp);
-            return;
         }
-        auto end_time = std::chrono::high_resolution_clock::now();
-
-        completion.id = "chatcmpl-" + completion.id;
-
-        // Add timing metrics to non-streaming response
-        auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        if (total_duration.count() > 0 && completion.usage.completion_tokens > 0) {
-            completion.usage.ttft_ms = static_cast<double>(total_duration.count());
-            if (completion.usage.completion_tokens > 1) {
-                completion.usage.tps = completion.usage.completion_tokens * 1000.0 / total_duration.count();
-            }
-        }
-
-        auto chat_response = domain::ChatCompletionResponse::fromCompletionResponse(completion);
-        callback(drogon::HttpResponse::newHttpJsonResponse(chat_response.toJson()));
     }
 }
 
