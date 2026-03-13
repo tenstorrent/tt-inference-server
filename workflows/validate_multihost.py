@@ -728,8 +728,9 @@ def main():
         help="MPI network interface (default: cnx1)",
     )
     parser.add_argument(
-        "--model",
-        help="Model name for system software validation (e.g., 'DeepSeek-V3')",
+        "--runtime-model-spec-json",
+        type=str,
+        help="Path to runtime model spec JSON file for system software validation",
     )
     parser.add_argument(
         "--tt-smi-path",
@@ -775,25 +776,16 @@ def main():
         _auto_generated_config_pkl_dir=auto_generated,
     )
 
-    # Load model_spec if --model is provided
+    # Load model_spec if --runtime-model-spec-json is provided
     model_spec = None
-    if args.model:
-        from workflows.model_spec import get_runtime_model_spec
-
-        # Derive device type from number of hosts
-        device_map = {2: "dual-galaxy", 4: "quad-galaxy"}
-        if len(hosts) not in device_map:
-            logger.error(
-                f"Unsupported number of hosts: {len(hosts)}. Supported: 2 or 4"
-            )
-            sys.exit(1)
-        device = device_map[len(hosts)]
+    if args.runtime_model_spec_json:
+        from workflows.model_spec import ModelSpec
 
         try:
-            model_spec, _, _ = get_runtime_model_spec(model=args.model, device=device)
-            logger.info(f"Loaded model spec for {args.model} on {device}")
+            model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+            logger.info(f"Loaded model spec from {args.runtime_model_spec_json}")
         except Exception as e:
-            logger.error(f"Failed to load model spec for {args.model}: {e}")
+            logger.error(f"Failed to load model spec: {e}")
             sys.exit(1)
 
     logger.info("=" * 60)
@@ -806,8 +798,8 @@ def main():
         + (" (auto-generated)" if auto_generated else "")
     )
     logger.info(f"MPI interface: {args.mpi_interface}")
-    if args.model:
-        logger.info(f"Model: {args.model}")
+    if model_spec:
+        logger.info(f"Model: {model_spec.model_name}")
     logger.info("=" * 60)
 
     try:
