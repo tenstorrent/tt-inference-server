@@ -22,11 +22,11 @@ _SAFETENSORS_TRIGGER_KEYS = (
 
 _README_TRIGGER_PATTERNS = (
     re.compile(
-        r"\*{0,2}trigger\s*words?\*{0,2}\s*[:=]\s*\*{0,2}`?([^`\n]+?)`?\*{0,2}\s*$",
+        r"\*{0,2}trigger\s*words?\*{0,2}\s*[:=]\s*\*{0,2}\s*`?([^`\n]+?)`?\*{0,2}\s*$",
         re.IGNORECASE | re.MULTILINE,
     ),
     re.compile(
-        r"\*{0,2}activation\s*(?:tokens?|words?)\*{0,2}\s*[:=]\s*\*{0,2}`?([^`\n]+?)`?\*{0,2}\s*$",
+        r"\*{0,2}activation\s*(?:tokens?|words?)\*{0,2}\s*[:=]\s*\*{0,2}\s*`?([^`\n]+?)`?\*{0,2}\s*$",
         re.IGNORECASE | re.MULTILINE,
     ),
     re.compile(
@@ -66,7 +66,7 @@ def _get_triggers_from_safetensors(local_path: str) -> list[str] | None:
 
         with safe_open(local_path, framework="numpy") as f:
             metadata = f.metadata()
-    except (FileNotFoundError, OSError) as e:
+    except (ImportError, FileNotFoundError, OSError) as e:
         logger.debug(f"Failed to read safetensors file {local_path}: {e}")
         return None
 

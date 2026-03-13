@@ -39,9 +39,12 @@ class TestFindSafetensorsFilename:
     def test_repository_not_found_raises(self):
         from huggingface_hub.utils import RepositoryNotFoundError
 
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.headers = {}
         with patch(
             "utils.lora_utils.list_repo_files",
-            side_effect=RepositoryNotFoundError("not found"),
+            side_effect=RepositoryNotFoundError("not found", response=mock_response),
         ):
             with pytest.raises(FileNotFoundError, match="Repository not found"):
                 _find_safetensors_filename("bad/repo")
@@ -186,7 +189,7 @@ class TestGetTriggersFromSafetensors:
         mock_file.__exit__ = MagicMock(return_value=False)
         mock_file.metadata.return_value = {"trigger_word": "pixel art, style"}
 
-        with patch("utils.lora_utils.safe_open", return_value=mock_file):
+        with patch("safetensors.safe_open", return_value=mock_file):
             result = _get_triggers_from_safetensors("/fake/path.safetensors")
 
         assert result == ["pixel art", "style"]
@@ -197,7 +200,7 @@ class TestGetTriggersFromSafetensors:
         mock_file.__exit__ = MagicMock(return_value=False)
         mock_file.metadata.return_value = {"ss_trigger_words": "my_style"}
 
-        with patch("utils.lora_utils.safe_open", return_value=mock_file):
+        with patch("safetensors.safe_open", return_value=mock_file):
             result = _get_triggers_from_safetensors("/fake/path")
 
         assert result == ["my_style"]
@@ -208,12 +211,19 @@ class TestGetTriggersFromSafetensors:
         mock_file.__exit__ = MagicMock(return_value=False)
         mock_file.metadata.return_value = None
 
-        with patch("utils.lora_utils.safe_open", return_value=mock_file):
+        with patch("safetensors.safe_open", return_value=mock_file):
             assert _get_triggers_from_safetensors("/fake/path") is None
 
     def test_returns_none_on_import_error(self):
-        with patch("builtins.__import__", side_effect=ImportError("no safetensors")):
-            assert _get_triggers_from_safetensors("/fake/path") is None
+        import sys
+
+        saved = sys.modules.pop("safetensors", None)
+        try:
+            with patch.dict(sys.modules, {"safetensors": None}):
+                assert _get_triggers_from_safetensors("/fake/path") is None
+        finally:
+            if saved is not None:
+                sys.modules["safetensors"] = saved
 
 
 class TestGetTriggersFromReadme:
