@@ -80,6 +80,7 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         prompts, negative_prompts, prompts_2, negative_prompt_2, needed_padding = (
             self._process_prompts(requests)
         )
+        prompts = self._inject_lora_triggers(prompts, requests[0].lora_path)
 
         self._apply_request_settings(requests[0])
         self._ensure_lora_state(requests[0])

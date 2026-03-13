@@ -20,7 +20,7 @@ from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
 from utils.logger import log_exception_chain
-from utils.lora_utils import resolve_lora_path
+from utils.lora_utils import prepare_prompt_with_lora, resolve_lora_path
 
 
 class BaseSDXLRunner(BaseMetalDeviceRunner):
@@ -186,6 +186,14 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         negative_prompt_2 = requests[0].negative_prompt_2
 
         return prompts, negative_prompts, prompts_2, negative_prompt_2, needed_padding
+
+    def _inject_lora_triggers(
+        self, prompts: list[str], lora_path: str | None
+    ) -> list[str]:
+        """Inject LoRA trigger words into non-empty prompts."""
+        if not lora_path:
+            return prompts
+        return [prepare_prompt_with_lora(p, lora_path) for p in prompts]
 
     def _apply_request_settings(self, request: ImageGenerateRequest) -> None:
         if request.num_inference_steps is not None:
