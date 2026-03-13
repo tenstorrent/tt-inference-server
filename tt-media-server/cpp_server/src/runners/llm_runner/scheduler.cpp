@@ -111,8 +111,15 @@ void Scheduler::try_schedule_decode(std::vector<Sequence*>& scheduled_seqs,
   }
 }
 
-std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
+std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() { 
   std::vector<Sequence*> scheduled_seqs;
+  if (prefill_queue_->empty() && decode_queue_.empty() && in_flight_count_ == 0) {
+    auto seq =prefill_queue_->receive();
+    if (seq) {
+      prefill_queue_->push(*seq);
+      delete seq;
+    }
+  }
   int num_seqs = 0;
   int num_batched_tokens = 0;
 

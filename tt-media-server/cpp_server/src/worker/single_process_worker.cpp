@@ -37,7 +37,7 @@ void SingleProcessWorker::start() {
             cfg.task_queue.get()
         );
     }
-    runner_->run();
+    runner_->start();
 }
 
 void SingleProcessWorker::stop() {
