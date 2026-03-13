@@ -115,6 +115,7 @@ namespace defaults {
     constexpr const char* LLM_DEVICE_BACKEND = "mock";  // "mock", "ttrun", "llama"
     constexpr const bool ENABLE_ACCUMULATED_STREAMING = false;
     constexpr size_t MAX_ACCUMULATED_TOKENS = 5;
+    constexpr size_t MAX_IN_FLIGHT_COUNT = 32;
 
 }
 
