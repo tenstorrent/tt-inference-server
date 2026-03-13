@@ -2215,7 +2215,11 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 configured_keys = kwargs.get("result_keys", [])
                 actual_data = results.get(t_key, {})
 
-                key_found = any(k in actual_data for k in configured_keys)
+                # For multilevel (tuple) keys, check the terminal key against actual_data
+                key_found = any(
+                    (k[-1] if isinstance(k, tuple) else k) in actual_data
+                    for k in configured_keys
+                )
 
                 if not key_found:
                     valid_candidates = [
@@ -2237,32 +2241,37 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                     )
                 except Exception as e:
                     logger.warning(f"  Could not calculate score for {t_key}: {e}")
-                    score = 0.0
-                if kwargs.get("unit") == "WER":
+                    score = None
+                if score is not None and kwargs.get("unit") == "WER":
                     score = 100 - score
 
-                if task.score.published_score:
+                if score is None:
+                    ratio_to_published = "N/A"
+                    ratio_to_reference = "N/A"
+                    accuracy_check = ReportCheckTypes.FAIL
+                elif task.score.published_score:
                     assert task.score.published_score > 0, "Published score is not > 0"
                     ratio_to_published = score / task.score.published_score
                 else:
                     ratio_to_published = "N/A"
 
-                if task.score.gpu_reference_score:
-                    assert task.score.gpu_reference_score > 0, (
-                        "Reference score is not > 0"
-                    )
-                    ratio_to_reference = score / task.score.gpu_reference_score
-                    accuracy_check = ReportCheckTypes.from_result(
-                        ratio_to_reference >= (1.0 - task.score.tolerance)
-                    )
-                else:
-                    ratio_to_reference = "N/A"
-                    if task.score.published_score:
+                if score is not None:
+                    if task.score.gpu_reference_score:
+                        assert task.score.gpu_reference_score > 0, (
+                            "Reference score is not > 0"
+                        )
+                        ratio_to_reference = score / task.score.gpu_reference_score
                         accuracy_check = ReportCheckTypes.from_result(
-                            ratio_to_published >= (1.0 - task.score.tolerance)
+                            ratio_to_reference >= (1.0 - task.score.tolerance)
                         )
                     else:
-                        accuracy_check = ReportCheckTypes.NA
+                        ratio_to_reference = "N/A"
+                        if task.score.published_score:
+                            accuracy_check = ReportCheckTypes.from_result(
+                                ratio_to_published >= (1.0 - task.score.tolerance)
+                            )
+                        else:
+                            accuracy_check = ReportCheckTypes.NA
 
                 report_rows.append(
                     {
