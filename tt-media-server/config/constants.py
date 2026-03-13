@@ -237,6 +237,7 @@ class AudioResponseFormat(Enum):
     OGG = "ogg"
 
 
+SDXL_VALID_IMAGE_RESOLUTIONS = frozenset({(1024, 1024), (512, 512)})
 AUDIO_RESPONSE_FORMATS = frozenset(e.value for e in AudioResponseFormat)
 
 # TTS formats that require ffmpeg for encoding (WAV does not)
