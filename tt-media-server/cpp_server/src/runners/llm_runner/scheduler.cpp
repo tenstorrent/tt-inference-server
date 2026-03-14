@@ -97,7 +97,7 @@ void Scheduler::try_schedule_decode(std::vector<Sequence*>& scheduled_seqs,
         break;
       }
     }
-    if (block_manager_.can_append(*seq) && !self_preempt) {
+    if (!self_preempt && block_manager_.can_append(*seq)) {
       num_seqs += 1;
       block_manager_.may_append(*seq);
       scheduled_seqs.push_back(seq);
@@ -137,6 +137,7 @@ void Scheduler::preempt(Sequence& seq) {
   seq.status_ = SequenceStatus::WAITING;
   block_manager_.deallocate(seq);
   prefill_queue_->push(seq);
+  sequences_.erase(seq.task_id);
 }
 
 void Scheduler::postprocess(std::vector<Sequence*>& seqs,
