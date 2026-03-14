@@ -37,6 +37,7 @@ class ImageGenerationLoadTest(BaseTest):
             "image_generation_time", 9
         )  # in seconds
         num_inference_steps = self.targets.get("num_inference_steps", 20)
+        image_resolution = self.targets.get("image_resolution")
 
         payload["num_inference_steps"] = num_inference_steps
 
@@ -58,6 +59,7 @@ class ImageGenerationLoadTest(BaseTest):
             "average_duration": average_duration,
             "target_time": image_generation_target_time,
             "devices": devices,
+            "image_resolution": image_resolution,
             "success": success,
         }
 
