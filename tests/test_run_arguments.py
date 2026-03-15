@@ -73,6 +73,7 @@ def mock_args():
         runtime_model_spec_json=None,
         tt_metal_python_venv_dir=None,
         tt_metal_home=None,
+        vllm_dir=None,
         no_auth=False,
         print_docker_cmd=False,
         concurrency_sweeps=False,
@@ -315,6 +316,8 @@ class TestModelSpecCliArgsCompatibility:
             "--concurrency-sweeps",
             "--tt-metal-home",
             "/opt/tt-metal",
+            "--vllm-dir",
+            "/opt/vllm",
         ]
         with patch("sys.argv", ["run.py"] + full_args):
             args = parse_arguments()
@@ -334,6 +337,7 @@ class TestModelSpecCliArgsCompatibility:
         assert args.no_auth is True
         assert args.concurrency_sweeps is True
         assert args.tt_metal_home == "/opt/tt-metal"
+        assert args.vllm_dir == "/opt/vllm"
 
         # Test defaults
         with patch("sys.argv", ["run.py"] + base_args):
@@ -356,6 +360,7 @@ class TestModelSpecCliArgsCompatibility:
         assert args.image_user == "1000"
         assert args.engine is None
         assert args.tt_metal_home is None
+        assert args.vllm_dir is None
 
     def test_tt_metal_home_parsing(self, base_args):
         """Test --tt-metal-home parsing."""
@@ -374,6 +379,23 @@ class TestModelSpecCliArgsCompatibility:
                 args = parse_arguments()
 
         assert args.tt_metal_home == "/env/tt-metal"
+
+    def test_vllm_dir_defaults_from_env(self, base_args):
+        """Test --vllm-dir falls back to vllm_dir env var."""
+        full_args = base_args + ["--local-server", "--tt-metal-home", "/srv/tt-metal"]
+        with patch.dict(os.environ, {"vllm_dir": "/env/vllm"}, clear=False):
+            with patch("sys.argv", ["run.py"] + full_args):
+                args = parse_arguments()
+
+        assert args.vllm_dir == "/env/vllm"
+
+    def test_vllm_dir_defaults_from_tt_metal_home(self, base_args):
+        """Test --vllm-dir defaults to tt-metal-home/vllm."""
+        full_args = base_args + ["--local-server", "--tt-metal-home", "/srv/tt-metal"]
+        with patch("sys.argv", ["run.py"] + full_args):
+            args = parse_arguments()
+
+        assert args.vllm_dir == "/srv/tt-metal/vllm"
 
     def test_host_hf_cache_bare_flag_defaults_from_env(self, base_args):
         """Test bare --host-hf-cache resolves via HOST_HF_HOME/HF_HOME defaults."""

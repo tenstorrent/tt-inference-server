@@ -353,14 +353,17 @@ class TestLocalServerValidation:
         tt_metal_home = tmp_path / "tt-metal"
         python_bin_dir = tt_metal_home / "python_env" / "bin"
         build_lib_dir = tt_metal_home / "build" / "lib"
+        vllm_dir = tt_metal_home / "vllm"
         python_bin_dir.mkdir(parents=True)
         build_lib_dir.mkdir(parents=True)
+        vllm_dir.mkdir(parents=True)
         (python_bin_dir / "python").write_text("")
 
         args = Namespace(
             local_server=True,
             tt_metal_home=str(tt_metal_home),
             tt_metal_python_venv_dir=None,
+            vllm_dir=None,
             host_hf_cache=None,
             host_weights_dir=None,
             runtime_model_spec={
@@ -372,12 +375,14 @@ class TestLocalServerValidation:
 
     def test_validate_local_server_paths_requires_python(self, tmp_path):
         tt_metal_home = tmp_path / "tt-metal"
+        (tt_metal_home / "vllm").mkdir(parents=True)
         (tt_metal_home / "build" / "lib").mkdir(parents=True)
 
         args = Namespace(
             local_server=True,
             tt_metal_home=str(tt_metal_home),
             tt_metal_python_venv_dir=None,
+            vllm_dir=None,
             host_hf_cache=None,
             host_weights_dir=None,
             runtime_model_spec={
@@ -392,8 +397,10 @@ class TestLocalServerValidation:
         tt_metal_home = tmp_path / "tt-metal"
         python_bin_dir = tt_metal_home / "python_env" / "bin"
         build_lib_dir = tt_metal_home / "build" / "lib"
+        vllm_dir = tt_metal_home / "vllm"
         python_bin_dir.mkdir(parents=True)
         build_lib_dir.mkdir(parents=True)
+        vllm_dir.mkdir(parents=True)
         (python_bin_dir / "python").write_text("")
 
         hf_home = tmp_path / "hf_home"
@@ -402,6 +409,7 @@ class TestLocalServerValidation:
             local_server=True,
             tt_metal_home=str(tt_metal_home),
             tt_metal_python_venv_dir=None,
+            vllm_dir=None,
             host_hf_cache=str(hf_home),
             host_weights_dir=None,
             runtime_model_spec={
@@ -416,8 +424,10 @@ class TestLocalServerValidation:
         tt_metal_home = tmp_path / "tt-metal"
         python_bin_dir = tt_metal_home / "python_env" / "bin"
         build_lib_dir = tt_metal_home / "build" / "lib"
+        vllm_dir = tt_metal_home / "vllm"
         python_bin_dir.mkdir(parents=True)
         build_lib_dir.mkdir(parents=True)
+        vllm_dir.mkdir(parents=True)
         (python_bin_dir / "python").write_text("")
 
         snapshot_dir = (
@@ -434,7 +444,32 @@ class TestLocalServerValidation:
             local_server=True,
             tt_metal_home=str(tt_metal_home),
             tt_metal_python_venv_dir=None,
+            vllm_dir=None,
             host_hf_cache=str(tmp_path / "hf_home"),
+            host_weights_dir=None,
+            runtime_model_spec={
+                "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3"
+            },
+        )
+
+        validate_local_server_paths(args)
+
+    def test_validate_local_server_paths_accepts_explicit_vllm_dir(self, tmp_path):
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        build_lib_dir = tt_metal_home / "build" / "lib"
+        python_bin_dir.mkdir(parents=True)
+        build_lib_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        explicit_vllm_dir = tmp_path / "custom-vllm"
+        explicit_vllm_dir.mkdir()
+        args = Namespace(
+            local_server=True,
+            tt_metal_home=str(tt_metal_home),
+            tt_metal_python_venv_dir=None,
+            vllm_dir=str(explicit_vllm_dir),
+            host_hf_cache=None,
             host_weights_dir=None,
             runtime_model_spec={
                 "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3"

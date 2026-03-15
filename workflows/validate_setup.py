@@ -359,6 +359,11 @@ def validate_local_server_paths(args):
         if args.tt_metal_python_venv_dir
         else tt_metal_home / "python_env"
     )
+    vllm_dir = (
+        Path(args.vllm_dir).expanduser().resolve()
+        if getattr(args, "vllm_dir", None)
+        else (tt_metal_home / "vllm").resolve()
+    )
     venv_python = python_env_dir / "bin" / "python"
     build_lib_dir = tt_metal_home / "build" / "lib"
     entrypoint_path = (
@@ -368,6 +373,7 @@ def validate_local_server_paths(args):
     required_paths = [
         ("python venv interpreter", venv_python),
         ("tt-metal build/lib", build_lib_dir),
+        ("vLLM source dir", vllm_dir),
         ("local server entrypoint", entrypoint_path),
     ]
     for label, path in required_paths:
