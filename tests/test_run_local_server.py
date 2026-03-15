@@ -3,14 +3,18 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from workflows.run_local_server import (
+    _format_env_exports,
     build_local_server_env,
     generate_local_run_command,
+    install_local_server_requirements,
     run_local_command,
+    run_local_server,
 )
 from workflows.runtime_config import RuntimeConfig
 
@@ -95,7 +99,33 @@ class TestRunLocalServer:
         assert "--no-auth" in command
         assert "--disable-trace-capture" in command
         assert env["TT_METAL_HOME"] == str(tt_metal_home)
+        assert env["APP_DIR"] == str(repo_root)
+        assert env["vllm_dir"] == str(tt_metal_home / "vllm")
         assert process_name.startswith("tt-inference-server-local-")
+
+    def test_install_local_server_requirements_uses_tt_metal_venv(self, tmp_path):
+        repo_root = tmp_path / "repo"
+        requirements_path = repo_root / "vllm-tt-metal" / "requirements.txt"
+        requirements_path.parent.mkdir(parents=True)
+        requirements_path.write_text("requests==2.32.3\n")
+
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        python_bin_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        runtime_config = self._make_runtime_config(tt_metal_home)
+
+        with patch("workflows.run_local_server.run_command") as run_command_mock, patch(
+            "workflows.run_local_server.UV_EXEC", Path("/tmp/uv")
+        ):
+            install_local_server_requirements(runtime_config, repo_root=repo_root)
+
+        install_command = run_command_mock.call_args.args[0]
+        assert str(Path("/tmp/uv")) in install_command
+        assert str(python_bin_dir / "python") in install_command
+        assert str(requirements_path) in install_command
+        assert run_command_mock.call_args.kwargs["check"] is True
 
     def test_build_local_server_env_sets_expected_overrides(self, tmp_path):
         repo_root = tmp_path / "repo"
@@ -128,15 +158,55 @@ class TestRunLocalServer:
             repo_root=repo_root,
         )
 
+        assert env["APP_DIR"] == str(repo_root)
         assert env["TT_METAL_HOME"] == str(tt_metal_home)
         assert env["PYTHON_ENV_DIR"] == str(tt_metal_home / "python_env")
         assert env["CACHE_ROOT"] == str(cache_root.resolve())
         assert env["TT_METAL_LOGS_PATH"] == str(cache_root.resolve() / "logs")
         assert env["RUNTIME_MODEL_SPEC_JSON_PATH"] == str(json_fpath.resolve())
         assert env["DISABLE_METAL_OP_TIMEOUT"] == "1"
-        assert str(tt_metal_home) in env["PYTHONPATH"]
-        assert str(entrypoint.parent) in env["PYTHONPATH"]
+        pythonpath_parts = env["PYTHONPATH"].split(os.pathsep)
+        assert str(tt_metal_home) in pythonpath_parts
+        assert str(repo_root) in pythonpath_parts
+        assert env["vllm_dir"] == str(tt_metal_home / "vllm")
+        assert pythonpath_parts[-1] == str(tt_metal_home / "vllm")
         assert str(tt_metal_home / "build" / "lib") in env["LD_LIBRARY_PATH"]
+
+    def test_build_local_server_env_uses_explicit_vllm_dir(self, tmp_path):
+        repo_root = tmp_path / "repo"
+        entrypoint = repo_root / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.write_text("")
+
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        build_lib_dir = tt_metal_home / "build" / "lib"
+        python_bin_dir.mkdir(parents=True)
+        build_lib_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        vllm_dir = tmp_path / "custom-vllm"
+        vllm_dir.mkdir()
+        cache_root = tmp_path / "cache-root"
+        runtime_config = self._make_runtime_config(
+            tt_metal_home, vllm_dir=str(vllm_dir)
+        )
+        setup_config = self._make_setup_config(cache_root)
+        json_fpath = repo_root / "runtime.json"
+        json_fpath.write_text("{}")
+
+        env = build_local_server_env(
+            self._make_model_spec(),
+            runtime_config,
+            json_fpath,
+            setup_config,
+            repo_root=repo_root,
+        )
+
+        assert env["APP_DIR"] == str(repo_root)
+        pythonpath_parts = env["PYTHONPATH"].split(os.pathsep)
+        assert env["vllm_dir"] == str(vllm_dir.resolve())
+        assert pythonpath_parts[-1] == str(vllm_dir.resolve())
 
     def test_build_local_server_env_uses_setup_host_default_cache_root(self, tmp_path):
         repo_root = tmp_path / "repo"
@@ -247,6 +317,19 @@ class TestRunLocalServer:
 
         assert env["MODEL_WEIGHTS_DIR"] == str(weights_dir.resolve())
 
+    def test_format_env_exports_only_logs_overrides(self):
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            "APP_DIR": "/tmp/app dir",
+            "TT_METAL_HOME": "/tmp/tt-metal",
+        }
+
+        exports = _format_env_exports(env)
+
+        assert "export PATH=" not in exports
+        assert "export APP_DIR='/tmp/app dir'" in exports
+        assert "export TT_METAL_HOME=/tmp/tt-metal" in exports
+
     def test_run_local_command_registers_cleanup_for_workflows(self, tmp_path):
         log_path = tmp_path / "local.log"
         command = [
@@ -255,7 +338,6 @@ class TestRunLocalServer:
             "--model",
             "repo/model",
         ]
-        env = {"PATH": "/tmp"}
         runtime_config = RuntimeConfig(
             model="Mistral-7B-Instruct-v0.3",
             workflow="benchmarks",
@@ -271,10 +353,12 @@ class TestRunLocalServer:
             "workflows.run_local_server.subprocess.Popen", return_value=process
         ), patch("workflows.run_local_server.atexit.register") as register_mock, patch(
             "workflows.run_local_server.time.sleep", return_value=None
-        ), patch("workflows.run_local_server.time.time", side_effect=[0.0, 0.1, 2.1]):
+        ), patch(
+            "workflows.run_local_server.time.time", side_effect=[0.0, 0.1, 2.1]
+        ), patch("workflows.run_local_server.logger.info") as logger_info_mock:
             result = run_local_command(
                 command,
-                env,
+                {"PATH": os.environ.get("PATH", ""), "APP_DIR": "/tmp/app"},
                 "tt-inference-server-local-test123",
                 runtime_config,
                 MagicMock(),
@@ -284,3 +368,50 @@ class TestRunLocalServer:
         assert result["pid"] == 12345
         assert result["local_log_file_path"] == str(log_path)
         register_mock.assert_called_once()
+        logged_messages = [call.args[0] for call in logger_info_mock.call_args_list]
+        assert any(
+            "Local server env overrides:" in message for message in logged_messages
+        )
+        assert any("export APP_DIR=/tmp/app" in message for message in logged_messages)
+        assert any(
+            "Local server working directory: /tmp" in message
+            for message in logged_messages
+        )
+
+    def test_run_local_server_installs_requirements_before_launch(self, tmp_path):
+        repo_root = tmp_path / "repo"
+        (repo_root / "vllm-tt-metal").mkdir(parents=True)
+        (repo_root / "vllm-tt-metal" / "requirements.txt").write_text(
+            "requests==2.32.3\n"
+        )
+
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        build_lib_dir = tt_metal_home / "build" / "lib"
+        python_bin_dir.mkdir(parents=True)
+        build_lib_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        runtime_config = self._make_runtime_config(tt_metal_home)
+        setup_config = self._make_setup_config(tmp_path / "persistent_volume" / "cache")
+        json_fpath = repo_root / "runtime.json"
+        json_fpath.write_text("{}")
+
+        with patch(
+            "workflows.run_local_server.install_local_server_requirements"
+        ) as install_mock, patch(
+            "workflows.run_local_server.run_local_command",
+            return_value={"pid": 12345},
+        ) as run_local_command_mock, patch(
+            "workflows.run_local_server.get_default_workflow_root_log_dir",
+            return_value=tmp_path / "workflow_logs",
+        ):
+            run_local_server(
+                self._make_model_spec(),
+                runtime_config,
+                json_fpath,
+                setup_config,
+            )
+
+        install_mock.assert_called_once_with(runtime_config)
+        run_local_command_mock.assert_called_once()

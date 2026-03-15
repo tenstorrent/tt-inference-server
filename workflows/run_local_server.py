@@ -14,12 +14,14 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from workflows.bootstrap_uv import UV_EXEC
 from workflows.log_setup import clean_log_file
 from workflows.setup_host import SetupConfig
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_repo_root_path,
+    run_command,
 )
 from workflows.workflow_types import DeviceTypes, InferenceEngine, WorkflowType
 
@@ -37,6 +39,22 @@ def _prepend_env_path(value: Path, existing: str) -> str:
     return os.pathsep.join(parts)
 
 
+def _append_env_path(existing: str, value: Path) -> str:
+    parts = [existing] if existing else []
+    parts.append(str(value))
+    return os.pathsep.join(parts)
+
+
+def _format_env_exports(env) -> str:
+    export_lines = []
+    for key in sorted(env):
+        current_value = os.environ.get(key)
+        if current_value == env[key]:
+            continue
+        export_lines.append(f"export {key}={shlex.quote(env[key])}")
+    return "\n".join(export_lines)
+
+
 def get_local_server_paths(runtime_config, repo_root=None):
     repo_root_path = Path(repo_root or get_repo_root_path()).resolve()
     tt_metal_home = Path(runtime_config.tt_metal_home).expanduser().resolve()
@@ -45,15 +63,23 @@ def get_local_server_paths(runtime_config, repo_root=None):
         if runtime_config.tt_metal_python_venv_dir
         else tt_metal_home / "python_env"
     )
+    vllm_dir = (
+        Path(runtime_config.vllm_dir).expanduser().resolve()
+        if getattr(runtime_config, "vllm_dir", None)
+        else (tt_metal_home / "vllm").resolve()
+    )
     entrypoint_path = (
         repo_root_path / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
     )
     return {
         "repo_root": repo_root_path,
+        "app_dir": repo_root_path,
         "tt_metal_home": tt_metal_home,
         "python_env_dir": python_env_dir,
+        "vllm_dir": vllm_dir,
         "venv_python": python_env_dir / "bin" / "python",
         "entrypoint_path": entrypoint_path,
+        "requirements_path": repo_root_path / "vllm-tt-metal" / "requirements.txt",
     }
 
 
@@ -61,8 +87,10 @@ def build_local_server_env(
     model_spec, runtime_config, json_fpath, setup_config: SetupConfig, repo_root=None
 ):
     paths = get_local_server_paths(runtime_config, repo_root=repo_root)
+    app_dir = paths["app_dir"]
     tt_metal_home = paths["tt_metal_home"]
     python_env_dir = paths["python_env_dir"]
+    vllm_dir = paths["vllm_dir"]
     cache_root = Path(setup_config.host_model_volume_root).resolve()
     logs_path = cache_root / "logs"
     device = DeviceTypes.from_string(runtime_config.device)
@@ -79,12 +107,15 @@ def build_local_server_env(
     ensure_readwriteable_dir(tt_cache_path)
 
     env = os.environ.copy()
+    env["APP_DIR"] = str(app_dir)
     env["TT_METAL_HOME"] = str(tt_metal_home)
     env["PYTHON_ENV_DIR"] = str(python_env_dir)
-    env["PYTHONPATH"] = _prepend_env_path(
+    env["vllm_dir"] = str(vllm_dir)
+    pythonpath = _prepend_env_path(
         tt_metal_home,
-        _prepend_env_path(paths["entrypoint_path"].parent, env.get("PYTHONPATH", "")),
+        _prepend_env_path(app_dir, env.get("PYTHONPATH", "")),
     )
+    env["PYTHONPATH"] = _append_env_path(pythonpath, vllm_dir)
     env["LD_LIBRARY_PATH"] = _prepend_env_path(
         tt_metal_home / "build" / "lib", env.get("LD_LIBRARY_PATH", "")
     )
@@ -153,6 +184,25 @@ def generate_local_run_command(
     return command, env, process_name
 
 
+def install_local_server_requirements(runtime_config, repo_root=None):
+    paths = get_local_server_paths(runtime_config, repo_root=repo_root)
+    requirements_path = paths["requirements_path"]
+    if not requirements_path.exists():
+        raise FileNotFoundError(
+            f"Missing local server requirements file: {requirements_path}"
+        )
+
+    install_command = (
+        f"{shlex.quote(str(UV_EXEC))} pip install "
+        f"--python {shlex.quote(str(paths['venv_python']))} "
+        f"-r {shlex.quote(str(requirements_path))}"
+    )
+    logger.info(
+        f"Installing local server requirements into tt-metal venv from: {requirements_path}"
+    )
+    run_command(install_command, logger=logger, check=True)
+
+
 def _terminate_process_group(process: subprocess.Popen, process_name: str):
     if process.poll() is not None:
         return
@@ -183,12 +233,17 @@ def run_local_command(
     command, env, process_name, runtime_config, model_spec, local_log_file_path
 ):
     local_log_file = open(local_log_file_path, "w", buffering=1)
+    command_cwd = str(Path(command[1]).parent)
     logger.info(f"Running local server process with log file: {local_log_file_path}")
+    env_exports = _format_env_exports(env)
+    if env_exports:
+        logger.info(f"Local server env overrides:\n{env_exports}\n")
+    logger.info(f"Local server working directory: {command_cwd}")
     logger.info(f"Local server command:\n{shlex.join(command)}\n")
 
     process = subprocess.Popen(
         command,
-        cwd=str(Path(command[1]).parent),
+        cwd=command_cwd,
         stdout=local_log_file,
         stderr=local_log_file,
         text=True,
@@ -243,6 +298,7 @@ def run_local_server(model_spec, runtime_config, json_fpath, setup_config: Setup
         / f"vllm_local_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
     )
 
+    install_local_server_requirements(runtime_config)
     command, env, process_name = generate_local_run_command(
         model_spec, runtime_config, json_fpath, setup_config
     )

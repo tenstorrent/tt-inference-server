@@ -206,6 +206,14 @@ def parse_arguments():
         "Defaults to TT_METAL_HOME from the environment when set.",
     )
     parser.add_argument(
+        "--vllm-dir",
+        type=str,
+        default=os.getenv("vllm_dir"),
+        help="[for --local-server] Host path to the vLLM source tree to export as vllm_dir "
+        "and append to PYTHONPATH. Defaults to vllm_dir from the environment when set, "
+        "otherwise tt-metal-home/vllm.",
+    )
+    parser.add_argument(
         "--limit-samples-mode",
         type=str,
         help="Predefined eval dataset limit mappings: ['ci-nightly', 'ci-long', 'ci-commit', 'smoke-test']",
@@ -310,6 +318,9 @@ def parse_arguments():
         args.device = infer_default_device(args.model, args.engine)
     args.tt_device = args.device
 
+    if not args.vllm_dir and args.tt_metal_home:
+        args.vllm_dir = str(Path(args.tt_metal_home).expanduser() / "vllm")
+
     # indirectly set additional flags for CI-mode
     if args.ci_mode:
         if "--limit-samples-mode" not in args:
@@ -397,6 +408,7 @@ def format_cli_args_summary(runtime_config):
         f"  no_auth:                    {runtime_config.no_auth}",
         f"  tt_metal_python_venv_dir:   {runtime_config.tt_metal_python_venv_dir}",
         f"  tt_metal_home:              {runtime_config.tt_metal_home}",
+        f"  vllm_dir:                   {runtime_config.vllm_dir}",
         f"  service_port:               {runtime_config.service_port}",
         f"  bind_host:                  {runtime_config.bind_host}",
         f"  docker_override_image:      {runtime_config.override_docker_image}",
