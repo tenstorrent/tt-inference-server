@@ -36,7 +36,7 @@ echo "######################################"
 echo "# Phase 1: Varying ISL (OSL=128, concurrency=1)"
 echo "######################################"
 FIXED_OSL=128
-for isl in 128 256 512 1024 2048 4096; do
+for isl in 128 256 512 1024 2048 4096 8192 16384 32768; do
     run_bench "$isl" "$FIXED_OSL" 1
 done
 
@@ -46,7 +46,7 @@ echo "######################################"
 echo "# Phase 2: Varying OSL (ISL=128, concurrency=1)"
 echo "######################################"
 FIXED_ISL=128
-for osl in 128 256 512 1024 2048 4096; do
+for osl in 128 256 512 1024 2048 4096 8192 16384; do
     run_bench "$FIXED_ISL" "$osl" 1
 done
 
