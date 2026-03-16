@@ -9,7 +9,7 @@ across multiple hosts for MPI-based distributed inference.
 
 Architecture:
 - Controller (rank-0): Runs vLLM API server, initiates MPI processes
-- Workers (rank-1+): Run sshd, MPI processes spawned by Controller via SSH
+- Workers (rank-0+): Run sshd, MPI processes spawned by Controller via SSH
 
 Execution Flow:
 1. Orchestrator starts Worker containers on remote hosts (sshd mode)
