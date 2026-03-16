@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import grp
 import logging
 import os
 import stat
@@ -13,8 +12,10 @@ from evals.eval_config import EVAL_CONFIGS
 from tests.test_config import TEST_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
+    check_path_permissions_for_uid,
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
+    get_groups_for_uid,
     get_repo_root_path,
     run_command,
 )
@@ -155,83 +156,6 @@ def validate_local_setup(model_spec, runtime_config, json_fpath):
     logger.info("✅ validating local setup completed")
 
 
-def _get_groups_for_uid(uid):
-    """Return the set of GIDs that a given UID belongs to on this host."""
-    gids = set()
-    try:
-        import pwd
-
-        pw = pwd.getpwuid(uid)
-        gids.add(pw.pw_gid)
-        username = pw.pw_name
-        for group in grp.getgrall():
-            if username in group.gr_mem:
-                gids.add(group.gr_gid)
-    except KeyError:
-        # UID doesn't exist on the host; can only rely on "other" bits
-        pass
-    return gids
-
-
-def _check_path_permissions_for_uid(path, uid, need_write=False):
-    """Check whether the given UID can access a path based on POSIX permission bits.
-
-    Best-effort pre-flight check. Cannot detect ACLs, SELinux, or other
-    security modules, but catches common UID/permission mismatches.
-
-    Args:
-        path: Filesystem path to check.
-        uid: Numeric UID that will access the path (i.e. --image-user).
-        need_write: If True, also check write permission.
-
-    Returns:
-        Tuple of (ok: bool, reason: str). reason is empty when ok is True.
-    """
-    path = Path(path)
-    if not path.exists():
-        return False, f"path does not exist: {path}"
-
-    st = path.stat()
-    mode = st.st_mode
-    gids = _get_groups_for_uid(uid)
-
-    if uid == st.st_uid:
-        has_read = bool(mode & stat.S_IRUSR)
-        has_write = bool(mode & stat.S_IWUSR)
-        has_exec = bool(mode & stat.S_IXUSR)
-        scope = "owner"
-    elif st.st_gid in gids:
-        has_read = bool(mode & stat.S_IRGRP)
-        has_write = bool(mode & stat.S_IWGRP)
-        has_exec = bool(mode & stat.S_IXGRP)
-        scope = "group"
-    else:
-        has_read = bool(mode & stat.S_IROTH)
-        has_write = bool(mode & stat.S_IWOTH)
-        has_exec = bool(mode & stat.S_IXOTH)
-        scope = "other"
-
-    if not has_read:
-        return False, (
-            f"UID {uid} lacks read permission ({scope}) on {path} "
-            f"(owner={st.st_uid}, gid={st.st_gid}, mode={oct(mode)})"
-        )
-
-    if path.is_dir() and not has_exec:
-        return False, (
-            f"UID {uid} lacks execute/traverse permission ({scope}) on directory {path} "
-            f"(owner={st.st_uid}, gid={st.st_gid}, mode={oct(mode)})"
-        )
-
-    if need_write and not has_write:
-        return False, (
-            f"UID {uid} lacks write permission ({scope}) on {path} "
-            f"(owner={st.st_uid}, gid={st.st_gid}, mode={oct(mode)})"
-        )
-
-    return True, ""
-
-
 def _try_fix_path_permissions_for_uid(path, uid, need_write=False):
     """Best-effort chmod to grant the target UID the required access bits.
 
@@ -248,7 +172,7 @@ def _try_fix_path_permissions_for_uid(path, uid, need_write=False):
 
     st = path.stat()
     mode = st.st_mode
-    gids = _get_groups_for_uid(uid)
+    gids = get_groups_for_uid(uid)
 
     if uid == st.st_uid:
         new_bits = stat.S_IRUSR
@@ -306,12 +230,12 @@ def validate_bind_mount_permissions(args):
         checks.append(("--host-weights-dir", args.host_weights_dir, False))
 
     for flag, host_path, need_write in checks:
-        ok, reason = _check_path_permissions_for_uid(
+        ok, reason = check_path_permissions_for_uid(
             host_path, uid, need_write=need_write
         )
         if not ok:
             _try_fix_path_permissions_for_uid(host_path, uid, need_write=need_write)
-            ok, reason = _check_path_permissions_for_uid(
+            ok, reason = check_path_permissions_for_uid(
                 host_path, uid, need_write=need_write
             )
         if not ok:

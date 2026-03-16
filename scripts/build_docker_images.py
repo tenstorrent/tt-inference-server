@@ -242,7 +242,7 @@ def log_resource_summary(details, total_builds):
 
 
 def generate_model_specs_json(output_path: Path = None) -> Path:
-    """Generate model_spec.json by serializing all MODEL_SPECS.
+    """Generate default_model_spec.json by serializing all MODEL_SPECS.
 
     This function generates a JSON file containing all model specifications
     that will be embedded in the Docker image. The JSON can be used at runtime
@@ -250,16 +250,18 @@ def generate_model_specs_json(output_path: Path = None) -> Path:
 
     Args:
         output_path: Path where the JSON file should be written.
-                    Defaults to repo_root / "model_spec.json"
+                    Defaults to repo_root / "default_model_spec.json"
 
     Returns:
         Path to the generated JSON file
     """
     if output_path is None:
-        output_path = get_repo_root_path() / "model_spec.json"
+        output_path = get_repo_root_path() / "default_model_spec.json"
 
     num_specs = export_model_specs_json(MODEL_SPECS, output_path)
-    logger.info(f"Generated model_spec.json with {num_specs} specs at {output_path}")
+    logger.info(
+        f"Generated default_model_spec.json with {num_specs} specs at {output_path}"
+    )
     return output_path
 
 
@@ -401,6 +403,7 @@ def process_sha_combination(args_tuple):
         ubuntu_version,
         force_build,
         release,
+        multihost,
         push,
         container_app_uid,
         dry_run,
@@ -445,7 +448,7 @@ def process_sha_combination(args_tuple):
 
         # Check existence of all images
         process_logger.info("Checking if images already exist...")
-        for image_type in ["tt_metal_base", "dev", "release"]:
+        for image_type in ["tt_metal_base", "dev", "release", "multihost"]:
             image_tag = image_tags[image_type]
             local_exists = check_image_exists_local(image_tag)
             remote_exists = check_image_exists_remote(image_tag)
@@ -462,6 +465,7 @@ def process_sha_combination(args_tuple):
         build_tt_metal_base_flag = True
         build_dev_image_flag = True
         build_release_image_flag = True
+        build_multihost_image_flag = True
 
         if not force_build:
             if (
@@ -479,6 +483,13 @@ def process_sha_combination(args_tuple):
                 process_logger.info("Release image already exists, skipping build")
 
             if (
+                image_status["multihost"]["local_exists"]
+                or image_status["multihost"]["remote_exists"]
+            ):
+                build_multihost_image_flag = False
+                process_logger.info("Multihost image already exists, skipping build")
+
+            if (
                 image_status["tt_metal_base"]["local_exists"]
                 or image_status["tt_metal_base"]["remote_exists"]
             ):
@@ -494,6 +505,19 @@ def process_sha_combination(args_tuple):
                     "Dev image does not exist locally, building dev image to safely build release image"
                 )
                 build_dev_image_flag = True
+
+            if (
+                multihost
+                and build_multihost_image_flag
+                and not image_status["release"]["local_exists"]
+            ):
+                # Multihost image is built from release, so release must exist
+                process_logger.info(
+                    "Release image does not exist locally, building release image to build multihost image"
+                )
+                build_release_image_flag = True
+                if not image_status["dev"]["local_exists"]:
+                    build_dev_image_flag = True
 
         # Build tt-metal base image only if needed
         if build_dev_image_flag and build_tt_metal_base_flag:
@@ -573,6 +597,27 @@ def process_sha_combination(args_tuple):
                 f"Skipping release image build: {image_tags['release']}"
             )
 
+        # Build multihost image (only if multihost=True)
+        if multihost and build_multihost_image_flag:
+            image_status["multihost"]["build_attempted"] = True
+            if dry_run:
+                process_logger.info(
+                    f"[DRY-RUN] Would build multihost image: {image_tags['multihost']}"
+                )
+            else:
+                process_logger.info("Building multihost image...")
+                try:
+                    build_multihost_image(image_tags, process_logger)
+                    image_status["multihost"]["build_succeeded"] = True
+                except Exception as e:
+                    process_logger.error(f"Failed to build multihost image: {e}")
+                    image_status["multihost"]["build_succeeded"] = False
+                    raise
+        else:
+            process_logger.info(
+                f"Skipping multihost image build: {image_tags['multihost']}"
+            )
+
         # Push images if requested
         if push:
             if dry_run:
@@ -584,13 +629,20 @@ def process_sha_combination(args_tuple):
             else:
                 process_logger.info("Pushing images to registry...")
 
-            for image_type in ["dev", "release"]:
+            for image_type in ["dev", "release", "multihost"]:
                 image_tag = image_tags[image_type]
 
                 # Skip release image unless explicitly marked as a release
                 if image_type == "release" and not release:
                     process_logger.info(
                         f"Skipping push for {image_tag}, release={release}"
+                    )
+                    continue
+
+                # Skip multihost image unless explicitly marked as multihost
+                if image_type == "multihost" and not multihost:
+                    process_logger.info(
+                        f"Skipping push for {image_tag}, multihost={multihost}"
                     )
                     continue
 
@@ -817,11 +869,13 @@ def get_image_tags(
 
     dev_image_tag = f"{image_repo}/vllm-tt-metal-src-dev-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     release_image_tag = f"{image_repo}/vllm-tt-metal-src-release-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
+    multihost_image_tag = f"{image_repo}/vllm-tt-metal-src-multihost-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     tt_metal_base_tag = f"local/tt-metal/tt-metalium/{os_version}:{tt_metal_commit}"
 
     return {
         "dev": dev_image_tag,
         "release": release_image_tag,
+        "multihost": multihost_image_tag,
         "tt_metal_base": tt_metal_base_tag,
     }
 
@@ -1106,6 +1160,36 @@ def build_release_image(image_tags, logger):
     logger.info(f"Successfully tagged release image: {release_image_tag}")
 
 
+def build_multihost_image(image_tags, logger):
+    """
+    Build the multihost Docker image from the release image.
+
+    Multihost image extends the release image with SSH server and
+    multihost_entrypoint.sh for distributed MPI-based inference.
+    """
+    repo_root = get_repo_root_path()
+    multihost_image_tag = image_tags["multihost"]
+    release_image_tag = image_tags["release"]
+
+    logger.info(f"Building multihost image: {multihost_image_tag}")
+    logger.info(f"Base image: {release_image_tag}")
+
+    build_command = [
+        "docker",
+        "build",
+        "-t",
+        multihost_image_tag,
+        "--build-arg",
+        f"BASE_IMAGE={release_image_tag}",
+        "-f",
+        "vllm-tt-metal/vllm.tt-metal.src.multihost.Dockerfile",
+        ".",
+    ]
+
+    run_command_with_logging(build_command, logger=logger, check=True, cwd=repo_root)
+    logger.info(f"Successfully built multihost image: {multihost_image_tag}")
+
+
 def push_image(image_tag, logger):
     """
     Push a Docker image to the registry.
@@ -1253,6 +1337,7 @@ def build_docker_images(
     model_configs,
     force_build=False,
     release=False,
+    multihost=False,
     push=False,
     ubuntu_version="20.04",
     build_metal_commit=None,
@@ -1310,6 +1395,7 @@ def build_docker_images(
             ubuntu_version,
             force_build,
             release,
+            multihost,
             push,
             container_app_uid,
             dry_run,
@@ -1396,13 +1482,13 @@ def build_docker_images(
             logger.error("Use the log files above to debug the specific failures.")
 
     # Aggregate image build status across all combinations
-    build_attempted = {"dev": [], "release": []}
-    build_succeeded = {"dev": [], "release": []}
-    remote_exists = {"dev": [], "release": []}
+    build_attempted = {"dev": [], "release": [], "multihost": []}
+    build_succeeded = {"dev": [], "release": [], "multihost": []}
+    remote_exists = {"dev": [], "release": [], "multihost": []}
 
     for result in results:
         images = result.get("images", {})
-        for image_type in ["dev", "release"]:
+        for image_type in ["dev", "release", "multihost"]:
             if image_type in images:
                 image_info = images[image_type]
                 if image_info.get("build_attempted", False):
@@ -1415,6 +1501,7 @@ def build_docker_images(
     # Generate JSON summary
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     logs_dir = get_build_logs_dir()
+    logs_dir.mkdir(parents=True, exist_ok=True)
     json_file = logs_dir / f"build_summary_{timestamp}.json"
 
     summary_data = {
@@ -1448,6 +1535,11 @@ if __name__ == "__main__":
         "--force-build", action="store_true", help="Force rebuild even if image exists."
     )
     parser.add_argument("--release", action="store_true", help="Mark build as release.")
+    parser.add_argument(
+        "--multihost",
+        action="store_true",
+        help="Build multihost image for distributed inference.",
+    )
     parser.add_argument("--push", action="store_true", help="Push containers.")
     parser.add_argument(
         "--ubuntu-version",
@@ -1505,6 +1597,7 @@ if __name__ == "__main__":
     logger.info(f"max_workers: {args.max_workers}")
     logger.info(f"force_build: {args.force_build}")
     logger.info(f"release: {args.release}")
+    logger.info(f"multihost: {args.multihost}")
     logger.info(f"push: {args.push}")
     logger.info(f"single_threaded: {args.single_threaded}")
     logger.info(f"dry_run: {args.dry_run}")
@@ -1517,6 +1610,7 @@ if __name__ == "__main__":
         MODEL_SPECS,
         force_build=args.force_build,
         release=args.release,
+        multihost=args.multihost,
         push=args.push,
         ubuntu_version=args.ubuntu_version,
         build_metal_commit=args.build_metal_commit,

@@ -27,6 +27,13 @@ from workflows.run_docker_server import (
     generate_docker_run_command,
     run_docker_server,
 )
+from workflows.multihost_orchestrator import (
+    MultiHostOrchestrator,
+    get_expected_num_hosts,
+    is_multihost_deployment,
+    setup_multihost_config,
+)
+from workflows.validate_multihost import validate_multihost_args
 from workflows.run_workflows import run_workflows
 from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import setup_host
@@ -519,7 +526,6 @@ def main():
 
     setup_config = None
     if runtime_config.docker_server:
-        logger.info("Running inference server in Docker container ...")
         setup_config = setup_host(
             model_spec=model_spec,
             jwt_secret=os.getenv("JWT_SECRET"),
@@ -536,12 +542,49 @@ def main():
         docker_json_fpath = None
         if runtime_config.dev_mode:
             docker_json_fpath = json_fpath
-        logger.info("Running inference server in Docker container ...")
         if runtime_config.print_docker_cmd:
-            docker_command, _ = generate_docker_run_command(
-                model_spec, runtime_config, setup_config, docker_json_fpath
-            )
-            print(f"Docker run command:\n\n{format_docker_command(docker_command)}\n")
+            if is_multihost_deployment(runtime_config):
+                # Print multi-host docker commands
+                expected_hosts = get_expected_num_hosts(runtime_config)
+                multihost_config = setup_multihost_config(
+                    model_spec, expected_hosts, dry_run=True
+                )
+                hosts = validate_multihost_args(
+                    multihost_config,
+                    tt_smi_path=multihost_config.tt_smi_path,
+                    dry_run=True,
+                )
+                orchestrator = MultiHostOrchestrator(
+                    hosts=hosts,
+                    mpi_interface=multihost_config.mpi_interface,
+                    shared_storage_root=multihost_config.shared_storage_root,
+                    config_pkl_dir=multihost_config.config_pkl_dir,
+                    docker_image=model_spec.docker_image,
+                    runtime_config=runtime_config,
+                    model_spec=model_spec,
+                    setup_config=setup_config,
+                    tt_smi_path=multihost_config.tt_smi_path,
+                )
+                orchestrator.prepare()
+
+                print("\n=== Multi-Host Deployment Commands ===\n")
+                for rank, host in enumerate(hosts):
+                    worker_cmd, _ = orchestrator.generate_worker_docker_command(
+                        host, rank
+                    )
+                    print(f"Worker {rank} on {host}:")
+                    print(f"ssh {host} {format_docker_command(worker_cmd)}\n")
+
+                controller_cmd, _ = orchestrator.generate_controller_docker_command()
+                print("Controller (run on rank-0 host):")
+                print(f"{format_docker_command(controller_cmd)}\n")
+            else:
+                docker_command, _ = generate_docker_run_command(
+                    model_spec, runtime_config, setup_config, docker_json_fpath
+                )
+                print(
+                    f"Docker run command:\n\n{format_docker_command(docker_command)}\n"
+                )
             return 0
         run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
     elif runtime_config.local_server:
