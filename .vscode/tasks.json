@@ -1,0 +1,51 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "clang-tidy (workspace)",
+            "type": "shell",
+            "command": "run-clang-tidy-20",
+            "args": [
+                "-p", "${workspaceFolder}/tt-media-server/cpp_server/build",
+                "include/", "src/", "tests/", "benchmarks/"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/tt-media-server/cpp_server",
+                "env": {}
+            },
+            "problemMatcher": {
+                "owner": "clang-tidy",
+                "fileLocation": ["relative", "${workspaceFolder}/tt-media-server/cpp_server"],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "clang-format (workspace)",
+            "type": "shell",
+            "command": "find include src tests benchmarks -type f \\( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \\) -print0 | xargs -0 clang-format-20 -i",
+            "options": {
+                "cwd": "${workspaceFolder}/tt-media-server/cpp_server"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        }
+    ]
+}
