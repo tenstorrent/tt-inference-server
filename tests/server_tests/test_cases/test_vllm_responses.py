@@ -17,6 +17,8 @@ from utils.prompt_configs import EnvironmentConfig
 # --- Helper Functions ---
 def get_output_text(response):
     """Extract the first text output from a Responses API response."""
+    if "error" in response:
+        raise ValueError(f"API returned an error: {response['error']}")
     for item in response.get("output", []):
         if item.get("type") == "message":
             for content in item.get("content", []):
@@ -93,6 +95,38 @@ WEATHER_TOOL = {
 
 # --- Test Functions ---
 
+def test_include(report_test, api_client, request):
+    """Tests that the 'include' parameter is accepted."""
+    payload = {
+        "input": BASE_INPUT,
+        "max_output_tokens": 256,
+        "include": [],
+    }
+    response = api_client(payload)
+
+    try:
+        output_text = get_output_text(response)
+        assert output_text, "Expected non-empty output text."
+    except AssertionError as e:
+        msg = f"AssertionError: {str(e)}. Response: {response}"
+        raise AssertionError(msg)
+
+
+def test_background(report_test, api_client, request):
+    """Tests that the 'background' parameter is accepted."""
+    payload = {
+        "input": BASE_INPUT,
+        "max_output_tokens": 256,
+        "background": True,
+    }
+    response = api_client(payload)
+
+    try:
+        assert "id" in response, "Expected response to have an 'id'."
+    except AssertionError as e:
+        msg = f"AssertionError: {str(e)}. Response: {response}"
+        raise AssertionError(msg)
+
 
 @pytest.mark.parametrize(
     "input_val",
@@ -120,7 +154,7 @@ def test_instructions(report_test, api_client, request):
     payload = {
         "input": "What is 2+2?",
         "instructions": "Always respond in French, no matter what language the user uses.",
-        "max_output_tokens": 64,
+        "max_output_tokens": 256,
     }
     response = api_client(payload)
 
@@ -147,40 +181,29 @@ def test_max_output_tokens(report_test, api_client, max_val, request):
     )
 
 
-@pytest.mark.parametrize(
-    "param_name, param_value",
-    [
-        ("temperature", 0.0),
-        ("top_p", 0.01),
-    ],
-)
-def test_determinism_parameters(
-    report_test, api_client, param_name, param_value, request
-):
-    """Tests parameters that should force deterministic output."""
-    payload = {"input": REPRO_INPUT, param_name: param_value}
+@pytest.mark.parametrize("max_calls", [1, 3])
+def test_max_tool_calls(report_test, api_client, max_calls, request):
+    """Tests the 'max_tool_calls' parameter."""
+    payload = {
+        "input": "What's the weather in San Francisco, New York, London, Tokyo, and Sydney?",
+        "tools": [WEATHER_TOOL],
+        "max_tool_calls": max_calls,
+        "max_output_tokens": 256,
+    }
+    response = api_client(payload)
 
-    # If testing top_p, set temperature high to prove it is working
-    if param_name != "temperature":
-        payload["temperature"] = 1.0
-
-    response1 = api_client(payload)
-    response2 = api_client(payload)
-
-    output1 = get_output_text(response1)
-    output2 = get_output_text(response2)
-    assert output1 and output1 == output2, (
-        f"{param_name}={param_value} was not deterministic. Output 1: '{output1}', Output 2: '{output2}'"
+    tool_calls = get_function_calls(response)
+    assert len(tool_calls) <= max_calls, (
+        f"Expected at most {max_calls} tool calls, got {len(tool_calls)}."
     )
 
 
-@pytest.mark.parametrize("top_logprobs_val", [3, 5])
-def test_top_logprobs(report_test, api_client, top_logprobs_val, request):
-    """Tests the 'top_logprobs' parameter."""
+def test_metadata(report_test, api_client, request):
+    """Tests that the 'metadata' parameter is accepted."""
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 32,
-        "top_logprobs": top_logprobs_val,
+        "max_output_tokens": 256,
+        "metadata": {"test_key": "test_value", "run_id": "12345"},
     }
     response = api_client(payload)
 
@@ -192,9 +215,125 @@ def test_top_logprobs(report_test, api_client, top_logprobs_val, request):
         raise AssertionError(msg)
 
 
-def test_stream_false(report_test, api_client, request):
-    """Tests the 'stream' parameter set to false."""
-    payload = {"input": BASE_INPUT, "max_output_tokens": 256, "stream": False}
+def test_model(report_test, api_client, request):
+    """Tests that the 'model' parameter is accepted."""
+    model_name = request.config.getoption("--model-name")
+    payload = {
+        "input": BASE_INPUT,
+        "model": model_name,
+        "max_output_tokens": 256,
+    }
+    response = api_client(payload)
+
+    try:
+        output_text = get_output_text(response)
+        assert output_text, "Expected non-empty output text."
+    except AssertionError as e:
+        msg = f"AssertionError: {str(e)}. Response: {response}"
+        raise AssertionError(msg)
+
+@pytest.mark.parametrize("parallel", [True, False])
+def test_parallel_tool_calls(report_test, api_client, parallel, request):
+    """Tests the 'parallel_tool_calls' parameter."""
+    payload = {
+        "input": "What's the weather in both San Francisco and New York?",
+        "tools": [WEATHER_TOOL],
+        "parallel_tool_calls": parallel,
+        "max_output_tokens": 256,
+    }
+    response = api_client(payload)
+
+    try:
+        assert "output" in response, "Expected 'output' in response."
+    except AssertionError as e:
+        msg = f"AssertionError: {str(e)}. Response: {response}"
+        raise AssertionError(msg)
+
+
+def test_previous_response_id(report_test, api_client, request):
+    """Tests the 'previous_response_id' parameter for multi-turn conversations."""
+    # First request
+    payload1 = {
+        "input": "My name is Alice.",
+        "max_output_tokens": 256,
+    }
+    response1 = api_client(payload1)
+
+    response_id = response1.get("id")
+    assert response_id, f"Expected response to have an 'id'. Response: {response1}"
+
+    # Second request referencing the first
+    payload2 = {
+        "input": "What is my name?",
+        "previous_response_id": response_id,
+        "max_output_tokens": 256,
+    }
+    response2 = api_client(payload2)
+
+    output_text = get_output_text(response2)
+    assert "Alice" in output_text, (
+        f"Expected model to recall name 'Alice' from previous response. Got: '{output_text}'"
+    )
+
+def test_prompt(report_test, api_client, request):
+    """Tests that the 'prompt' parameter is accepted."""
+    payload = {
+        "input": BASE_INPUT,
+        "max_output_tokens": 256,
+        "prompt": {"id": "test-prompt"},
+    }
+    # Stored prompts may not be supported by all servers
+    try:
+        response = api_client(payload)
+        output_text = get_output_text(response)
+        assert output_text, f"Expected non-empty output text. Response: {response}"
+    except requests.exceptions.HTTPError:
+        pytest.skip("Stored prompts not supported by this server.")
+
+
+@pytest.mark.parametrize("effort", ["low", "medium", "high"])
+def test_reasoning(report_test, api_client, effort, request):
+    """Tests the 'reasoning' parameter with different effort levels."""
+    payload = {
+        "input": "What is 15 * 27?",
+        "max_output_tokens": 256,
+        "reasoning": {"effort": effort},
+    }
+    response = api_client(payload)
+
+    try:
+        output_text = get_output_text(response)
+        assert output_text, "Expected non-empty output text."
+    except AssertionError as e:
+        msg = f"AssertionError: {str(e)}. Response: {response}"
+        raise AssertionError(msg)
+
+
+@pytest.mark.parametrize("tier", ["auto", "default"])
+def test_service_tier(report_test, api_client, tier, request):
+    """Tests that the 'service_tier' parameter is accepted."""
+    payload = {
+        "input": BASE_INPUT,
+        "max_output_tokens": 256,
+        "service_tier": tier,
+    }
+    response = api_client(payload)
+
+    try:
+        output_text = get_output_text(response)
+        assert output_text, "Expected non-empty output text."
+    except AssertionError as e:
+        msg = f"AssertionError: {str(e)}. Response: {response}"
+        raise AssertionError(msg)
+
+@pytest.mark.parametrize("store_val", [True, False])
+def test_store(report_test, api_client, store_val, request):
+    """Tests that the 'store' parameter is accepted."""
+    payload = {
+        "input": BASE_INPUT,
+        "max_output_tokens": 256,
+        "store": store_val,
+    }
     response = api_client(payload)
 
     try:
@@ -233,14 +372,9 @@ def test_stream_true(report_test, api_client, endpoint_url, request):
     assert len(events) > 0, "Expected at least one streaming event."
 
 
-def test_model(report_test, api_client, request):
-    """Tests that the 'model' parameter is accepted."""
-    model_name = request.config.getoption("--model-name")
-    payload = {
-        "input": BASE_INPUT,
-        "model": model_name,
-        "max_output_tokens": 32,
-    }
+def test_stream_false(report_test, api_client, request):
+    """Tests the 'stream' parameter set to false."""
+    payload = {"input": BASE_INPUT, "max_output_tokens": 256, "stream": False}
     response = api_client(payload)
 
     try:
@@ -250,93 +384,79 @@ def test_model(report_test, api_client, request):
         msg = f"AssertionError: {str(e)}. Response: {response}"
         raise AssertionError(msg)
 
+@pytest.mark.parametrize(
+    "param_name, param_value",
+    [
+        ("temperature", 0.0),
+        ("top_p", 0.01),  # A very low top_p should also be deterministic
+    ],
+)
+def test_determinism_parameters(
+    report_test, api_client, param_name, param_value, request
+):
+    """Tests parameters that should force deterministic output."""
+    payload = {"input": REPRO_INPUT, param_name: param_value}
 
-def test_metadata(report_test, api_client, request):
-    """Tests that the 'metadata' parameter is accepted."""
+    # If testing top_p, set temperature high to prove it is working
+    if param_name != "temperature":
+        payload["temperature"] = 1.0
+
+    response1 = api_client(payload)
+    response2 = api_client(payload)
+
+    output1 = get_output_text(response1)
+    output2 = get_output_text(response2)
+    assert output1 and output1 == output2, (
+        f"{param_name}={param_value} was not deterministic. Output 1: '{output1}', Output 2: '{output2}'"
+    )
+
+
+@pytest.mark.parametrize(
+    "text_config",
+    [
+        {"format": {"type": "text"}},
+        {"format": {
+            "type": "json_schema",
+            "name": "color_list",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "colors": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["colors"],
+            },
+            "strict": True,
+        }},
+    ],
+    ids=["text", "json_schema"],
+)
+def test_text(report_test, api_client, text_config, request):
+    """Tests the 'text' parameter for output format configuration."""
+    fmt_type = text_config["format"]["type"]
+    input_msg = "List 3 colors."
+    if fmt_type in ("json_object", "json_schema"):
+        input_msg = "List 3 colors as a JSON object with a 'colors' key."
+
     payload = {
-        "input": BASE_INPUT,
-        "max_output_tokens": 32,
-        "metadata": {"test_key": "test_value", "run_id": "12345"},
+        "input": input_msg,
+        "max_output_tokens": 256,
+        "text": text_config,
     }
     response = api_client(payload)
 
-    try:
-        output_text = get_output_text(response)
-        assert output_text, "Expected non-empty output text."
-    except AssertionError as e:
-        msg = f"AssertionError: {str(e)}. Response: {response}"
-        raise AssertionError(msg)
+    output_text = get_output_text(response)
+    assert output_text, f"Expected non-empty output text. Response: {response}"
 
-
-@pytest.mark.parametrize("store_val", [True, False])
-def test_store(report_test, api_client, store_val, request):
-    """Tests that the 'store' parameter is accepted."""
-    payload = {
-        "input": BASE_INPUT,
-        "max_output_tokens": 32,
-        "store": store_val,
-    }
-    response = api_client(payload)
-
-    try:
-        output_text = get_output_text(response)
-        assert output_text, "Expected non-empty output text."
-    except AssertionError as e:
-        msg = f"AssertionError: {str(e)}. Response: {response}"
-        raise AssertionError(msg)
-
-
-def test_user(report_test, api_client, request):
-    """Tests that the 'user' parameter is accepted."""
-    payload = {
-        "input": BASE_INPUT,
-        "max_output_tokens": 32,
-        "user": "test-user-123",
-    }
-    response = api_client(payload)
-
-    try:
-        output_text = get_output_text(response)
-        assert output_text, "Expected non-empty output text."
-    except AssertionError as e:
-        msg = f"AssertionError: {str(e)}. Response: {response}"
-        raise AssertionError(msg)
-
-
-@pytest.mark.parametrize("tier", ["auto", "default"])
-def test_service_tier(report_test, api_client, tier, request):
-    """Tests that the 'service_tier' parameter is accepted."""
-    payload = {
-        "input": BASE_INPUT,
-        "max_output_tokens": 32,
-        "service_tier": tier,
-    }
-    response = api_client(payload)
-
-    try:
-        output_text = get_output_text(response)
-        assert output_text, "Expected non-empty output text."
-    except AssertionError as e:
-        msg = f"AssertionError: {str(e)}. Response: {response}"
-        raise AssertionError(msg)
-
-
-def test_tools(report_test, api_client, request):
-    """Tests that the 'tools' parameter triggers tool calls."""
-    payload = {
-        "input": "What's the weather like in San Francisco?",
-        "tools": [WEATHER_TOOL],
-        "max_output_tokens": 128,
-    }
-    response = api_client(payload)
-
-    try:
-        assert "output" in response, "Expected 'output' in response."
-        assert len(response["output"]) > 0, "Expected non-empty output."
-    except AssertionError as e:
-        msg = f"AssertionError: {str(e)}. Response: {response}"
-        raise AssertionError(msg)
-
+    if fmt_type == "json_schema":
+        try:
+            parsed = json.loads(output_text)
+            assert isinstance(parsed, dict), "Expected JSON object output."
+            assert "colors" in parsed, f"Expected 'colors' key in output. Got: {parsed}"
+            assert isinstance(parsed["colors"], list), f"Expected 'colors' to be a list. Got: {type(parsed['colors'])}"
+        except json.JSONDecodeError:
+            pytest.fail(
+                f"Expected valid JSON output with json_schema format. Got: '{output_text}'"
+            )
 
 @pytest.mark.parametrize("choice", ["auto", "none", "required"])
 def test_tool_choice(report_test, api_client, choice, request):
@@ -345,7 +465,7 @@ def test_tool_choice(report_test, api_client, choice, request):
         "input": "What's the weather like in San Francisco?",
         "tools": [WEATHER_TOOL],
         "tool_choice": choice,
-        "max_output_tokens": 128,
+        "max_output_tokens": 256,
     }
     response = api_client(payload)
 
@@ -362,133 +482,64 @@ def test_tool_choice(report_test, api_client, choice, request):
         raise AssertionError(msg)
 
 
-@pytest.mark.parametrize("parallel", [True, False])
-def test_parallel_tool_calls(report_test, api_client, parallel, request):
-    """Tests the 'parallel_tool_calls' parameter."""
+def test_tools(report_test, api_client, request):
+    """Tests that the 'tools' parameter triggers tool calls."""
     payload = {
-        "input": "What's the weather in both San Francisco and New York?",
+        "input": "What's the weather like in San Francisco?",
         "tools": [WEATHER_TOOL],
-        "parallel_tool_calls": parallel,
         "max_output_tokens": 256,
     }
     response = api_client(payload)
 
     try:
         assert "output" in response, "Expected 'output' in response."
+        assert len(response["output"]) > 0, "Expected non-empty output."
     except AssertionError as e:
         msg = f"AssertionError: {str(e)}. Response: {response}"
         raise AssertionError(msg)
 
 
-@pytest.mark.parametrize("max_calls", [1, 3])
-def test_max_tool_calls(report_test, api_client, max_calls, request):
-    """Tests the 'max_tool_calls' parameter."""
-    payload = {
-        "input": "What's the weather in San Francisco, New York, London, Tokyo, and Sydney?",
-        "tools": [WEATHER_TOOL],
-        "max_tool_calls": max_calls,
-        "max_output_tokens": 256,
-    }
-    response = api_client(payload)
-
-    tool_calls = get_function_calls(response)
-    assert len(tool_calls) <= max_calls, (
-        f"Expected at most {max_calls} tool calls, got {len(tool_calls)}."
-    )
-
-
-def test_previous_response_id(report_test, api_client, request):
-    """Tests the 'previous_response_id' parameter for multi-turn conversations."""
-    # First request
-    payload1 = {
-        "input": "My name is Alice.",
-        "max_output_tokens": 64,
-    }
-    response1 = api_client(payload1)
-
-    response_id = response1.get("id")
-    assert response_id, f"Expected response to have an 'id'. Response: {response1}"
-
-    # Second request referencing the first
-    payload2 = {
-        "input": "What is my name?",
-        "previous_response_id": response_id,
-        "max_output_tokens": 64,
-    }
-    response2 = api_client(payload2)
-
-    output_text = get_output_text(response2)
-    assert "Alice" in output_text, (
-        f"Expected model to recall name 'Alice' from previous response. Got: '{output_text}'"
-    )
-
-
-def test_background(report_test, api_client, request):
-    """Tests that the 'background' parameter is accepted."""
+@pytest.mark.parametrize("top_logprobs_val", [3, 5])
+def test_top_logprobs(report_test, api_client, top_logprobs_val, request):
+    """Tests the 'top_logprobs' parameter."""
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 32,
-        "background": True,
+        "max_output_tokens": 256,
+        "top_logprobs": top_logprobs_val,
+        "include": ["message.output_text.logprobs"],
     }
     response = api_client(payload)
-
     try:
-        assert "id" in response, "Expected response to have an 'id'."
-    except AssertionError as e:
-        msg = f"AssertionError: {str(e)}. Response: {response}"
-        raise AssertionError(msg)
+        assert "output" in response, "Missing 'output' array in response"
+        assert len(response["output"]) > 0, "Output array is empty"
 
+        message_item = response["output"][0]
+        assert "content" in message_item, "Missing 'content' in output item"
+        assert len(message_item["content"]) > 0, "Content array is empty"
 
-@pytest.mark.parametrize("effort", ["low", "medium", "high"])
-def test_reasoning(report_test, api_client, effort, request):
-    """Tests the 'reasoning' parameter with different effort levels."""
-    payload = {
-        "input": "What is 15 * 27?",
-        "max_output_tokens": 128,
-        "reasoning": {"effort": effort},
-    }
-    response = api_client(payload)
-
-    try:
-        output_text = get_output_text(response)
-        assert output_text, "Expected non-empty output text."
-    except AssertionError as e:
-        msg = f"AssertionError: {str(e)}. Response: {response}"
-        raise AssertionError(msg)
-
-
-@pytest.mark.parametrize(
-    "text_config",
-    [
-        {"format": {"type": "text"}},
-        {"format": {"type": "json_object"}},
-    ],
-    ids=["text", "json_object"],
-)
-def test_text(report_test, api_client, text_config, request):
-    """Tests the 'text' parameter for output format configuration."""
-    input_msg = "List 3 colors."
-    if text_config["format"]["type"] == "json_object":
-        input_msg = "List 3 colors as a JSON object with a 'colors' key."
-
-    payload = {
-        "input": input_msg,
-        "max_output_tokens": 128,
-        "text": text_config,
-    }
-    response = api_client(payload)
-
-    output_text = get_output_text(response)
-    assert output_text, f"Expected non-empty output text. Response: {response}"
-
-    if text_config["format"]["type"] == "json_object":
-        try:
-            parsed = json.loads(output_text)
-            assert isinstance(parsed, dict), "Expected JSON object output."
-        except json.JSONDecodeError:
-            pytest.fail(
-                f"Expected valid JSON output with json_object format. Got: '{output_text}'"
+        text_content_part = message_item["content"][0]
+        assert text_content_part.get("type") == "output_text", "First content part is not 'output_text'"
+        assert "logprobs" in text_content_part, "Missing 'logprobs' in content part"
+        assert text_content_part["logprobs"] is not None, "Logprobs is None"
+        assert len(text_content_part["logprobs"]) > 0, "Logprobs array is empty"
+        
+        for i, token_entry in enumerate(text_content_part["logprobs"]):
+            assert "token" in token_entry, f"Token {i}: missing 'token' field"
+            assert "bytes" in token_entry, f"Token {i}: missing 'bytes' field"
+            assert "logprob" in token_entry, f"Token {i}: missing 'logprob' field"
+            assert "top_logprobs" in token_entry, f"Token {i}: missing 'top_logprobs'"
+            assert len(token_entry["top_logprobs"]) == top_logprobs_val, (
+                f"Token {i}: expected {top_logprobs_val} top_logprobs, got {len(token_entry['top_logprobs'])}"
             )
+
+            for j, alt in enumerate(token_entry["top_logprobs"]):
+                assert "token" in alt, f"Token {i}, alt {j}: missing 'token'"
+                assert "bytes" in alt, f"Token {i}, alt {j}: missing 'bytes'"
+                assert "logprob" in alt, f"Token {i}, alt {j}: missing 'logprob'"
+
+    except AssertionError as e:
+        msg = f"Logprobs data was missing or malformed: {str(e)}. Response: {response}"
+        raise AssertionError(msg)
 
 
 @pytest.mark.parametrize("truncation", ["auto", "disabled"])
@@ -496,7 +547,7 @@ def test_truncation(report_test, api_client, truncation, request):
     """Tests the 'truncation' parameter."""
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 32,
+        "max_output_tokens": 256,
         "truncation": truncation,
     }
     response = api_client(payload)
@@ -509,28 +560,12 @@ def test_truncation(report_test, api_client, truncation, request):
         raise AssertionError(msg)
 
 
-def test_prompt(report_test, api_client, request):
-    """Tests that the 'prompt' parameter is accepted."""
+def test_user(report_test, api_client, request):
+    """Tests that the 'user' parameter is accepted."""
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 32,
-        "prompt": {"id": "test-prompt"},
-    }
-    # Stored prompts may not be supported by all servers
-    try:
-        response = api_client(payload)
-        output_text = get_output_text(response)
-        assert output_text, f"Expected non-empty output text. Response: {response}"
-    except requests.exceptions.HTTPError:
-        pytest.skip("Stored prompts not supported by this server.")
-
-
-def test_include(report_test, api_client, request):
-    """Tests that the 'include' parameter is accepted."""
-    payload = {
-        "input": BASE_INPUT,
-        "max_output_tokens": 32,
-        "include": [],
+        "max_output_tokens": 256,
+        "user": "test-user-123",
     }
     response = api_client(payload)
 
@@ -540,3 +575,4 @@ def test_include(report_test, api_client, request):
     except AssertionError as e:
         msg = f"AssertionError: {str(e)}. Response: {response}"
         raise AssertionError(msg)
+
