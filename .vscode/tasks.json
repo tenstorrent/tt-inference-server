@@ -15,7 +15,7 @@
             },
             "problemMatcher": {
                 "owner": "clang-tidy",
-                "fileLocation": ["relative", "${workspaceFolder}/tt-media-server/cpp_server"],
+                "fileLocation": "absolute",
                 "pattern": {
                     "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
                     "file": 1,
