@@ -10,7 +10,6 @@ from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
     AudioTasks,
-    DeviceIds,
     DeviceTypes,
     ModelConfigs,
     ModelNames,
@@ -33,8 +32,8 @@ class Settings(BaseSettings):
     device: Optional[str] = None
 
     # Device settings
-    device_ids: str = DeviceIds.DEVICE_IDS_32.value
-    is_galaxy: bool = True  # used for graph device split and class init
+    device_ids: str = "(0)"
+    is_galaxy: bool = False  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
@@ -42,7 +41,7 @@ class Settings(BaseSettings):
     use_greedy_based_allocation: bool = True
 
     # Model settings
-    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
+    model_runner: str = ModelRunners.SPEECHT5_TTS.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
@@ -53,7 +52,6 @@ class Settings(BaseSettings):
 
     # Queue and batch settings
     max_queue_size: int = 5000
-    max_batch_size: int = 1
     max_batch_delay_time_ms: Optional[int] = None
     use_dynamic_batcher: bool = False
     use_queue_per_worker: bool = False
@@ -263,7 +261,17 @@ class Settings(BaseSettings):
         )
 
     def _set_config_overrides(self, model_to_run: str, device: str):
-        model_name_enum = ModelNames(model_to_run)
+        try:
+            model_name_enum = ModelNames(model_to_run)
+        except ValueError:
+            valid = ", ".join(m.value for m in ModelNames)
+            raise ValueError(
+                f"Model {model_to_run!r} is not a valid ModelNames. "
+                f"Valid values: {valid}. "
+                "If you expect this model to be supported, run with --dev-mode so the "
+                "container uses your local tt-media-server, or use an image built from a "
+                "branch that includes this model."
+            ) from None
 
         # Find the appropriate model runner for this model name
         model_runner_enum = None
