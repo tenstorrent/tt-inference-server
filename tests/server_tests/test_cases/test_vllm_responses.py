@@ -124,7 +124,9 @@ def test_background(report_test, api_client, endpoint_url, request):
     response = api_client(payload)
 
     assert "id" in response, f"Expected response to have an 'id'. Response: {response}"
-    assert "status" in response, f"Expected response to have a 'status'. Response: {response}"
+    assert "status" in response, (
+        f"Expected response to have a 'status'. Response: {response}"
+    )
     response_id = response["id"]
 
     # Poll the GET /v1/responses/{response_id} endpoint until terminal state
@@ -158,7 +160,9 @@ def test_background(report_test, api_client, endpoint_url, request):
         f"Expected status 'completed', got '{poll_data.get('status')}'. Response: {poll_data}"
     )
     output_text = get_output_text(poll_data)
-    assert output_text, f"Expected non-empty output text in completed response. Response: {poll_data}"
+    assert output_text, (
+        f"Expected non-empty output text in completed response. Response: {poll_data}"
+    )
 
 
 @pytest.mark.parametrize(
