@@ -4,10 +4,10 @@
         {
             "label": "clang-tidy (workspace)",
             "type": "shell",
-            "command": "run-clang-tidy-20",
+            "command": "bash",
             "args": [
-                "-p", "${workspaceFolder}/tt-media-server/cpp_server/build",
-                "include/", "src/", "tests/", "benchmarks/"
+                "-c",
+                "run-clang-tidy-20 -p ${workspaceFolder}/tt-media-server/cpp_server/build -header-filter='\\''^(?!.*_deps).*'\\'' '\\''(^(include|src|tests|benchmarks)/|.*cpp_server/(include|src|tests|benchmarks)/)'\\''"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/tt-media-server/cpp_server",

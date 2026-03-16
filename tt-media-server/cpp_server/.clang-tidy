@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 # Google C++ style + camelCase method names for tt-media-server cpp_server.
-# Only our code (include/, src/, tests/, benchmarks/) is linted; deps/ excluded.
+# Only our code is linted; build/_deps excluded.
 Checks: >
   -*
   ,readability-identifier-naming
 WarningsAsErrors: ''
-HeaderFilterRegex: ''
+# Ignore headers under build/_deps.
+HeaderFilterRegex: '^(?!.*_deps).*'
 FormatStyle: file
 CheckOptions:
   - key: readability-identifier-naming.ClassMethodCase
