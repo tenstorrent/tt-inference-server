@@ -97,19 +97,71 @@ struct CompletionRequest : BaseRequest {
             if (json["prompt"].isString()) {
                 req.prompt = json["prompt"].asString();
             } else if (json["prompt"].isArray()) {
-                std::vector<int> tokens;
-                for (const auto& token : json["prompt"]) {
-                    tokens.push_back(token.asInt());
+                // Check if it's a batched request (array of prompts)
+                if (json["prompt"].size() > 0 && json["prompt"][0].isArray()) {
+                    // Batched requests are not currently supported
+                    throw std::runtime_error(
+                        "Batched completion requests (array of prompts) are not supported. "
+                        "Please send one prompt per request. Received " +
+                        std::to_string(json["prompt"].size()) + " prompts in batch.");
+                } else {
+                    // Flat array of token IDs for a single prompt
+                    std::vector<int> tokens;
+                    for (const auto& token : json["prompt"]) {
+                        tokens.push_back(token.asInt());
+                    }
+                    req.prompt = tokens;
                 }
-                req.prompt = tokens;
             }
         }
 
-        if (json.isMember("echo")) req.echo = json["echo"].asBool();
-        if (json.isMember("max_tokens")) req.max_tokens = json["max_tokens"].asInt();
-        if (json.isMember("n")) req.n = json["n"].asInt();
-        if (json.isMember("presence_penalty")) req.presence_penalty = json["presence_penalty"].asFloat();
-        if (json.isMember("frequency_penalty")) req.frequency_penalty = json["frequency_penalty"].asFloat();
+        try {
+            if (json.isMember("echo")) req.echo = json["echo"].asBool();
+        } catch (const std::exception& e) {
+            throw std::runtime_error(std::string("Failed to parse 'echo': ") + e.what());
+        }
+        try {
+            if (json.isMember("max_tokens")) {
+                // Support both int and string values for compatibility
+                if (json["max_tokens"].isInt()) {
+                    req.max_tokens = json["max_tokens"].asInt();
+                } else if (json["max_tokens"].isString()) {
+                    req.max_tokens = std::stoi(json["max_tokens"].asString());
+                } else {
+                    req.max_tokens = json["max_tokens"].asInt();  // Let it throw if wrong type
+                }
+            }
+        } catch (const std::exception& e) {
+            throw std::runtime_error(std::string("Failed to parse 'max_tokens': ") + e.what());
+        }
+        try {
+            if (json.isMember("n")) {
+                if (json["n"].isInt()) {
+                    req.n = json["n"].asInt();
+                } else if (json["n"].isString()) {
+                    req.n = std::stoi(json["n"].asString());
+                } else {
+                    req.n = json["n"].asInt();
+                }
+            }
+        } catch (const std::exception& e) {
+            throw std::runtime_error(std::string("Failed to parse 'n': ") + e.what());
+        }
+        // Parse float fields with string fallback
+        if (json.isMember("presence_penalty")) {
+            if (json["presence_penalty"].isNumeric()) {
+                req.presence_penalty = json["presence_penalty"].asFloat();
+            } else if (json["presence_penalty"].isString()) {
+                req.presence_penalty = std::stof(json["presence_penalty"].asString());
+            }
+        }
+        if (json.isMember("frequency_penalty")) {
+            if (json["frequency_penalty"].isNumeric()) {
+                req.frequency_penalty = json["frequency_penalty"].asFloat();
+            } else if (json["frequency_penalty"].isString()) {
+                req.frequency_penalty = std::stof(json["frequency_penalty"].asString());
+            }
+        }
         if (json.isMember("suffix") && !json["suffix"].isNull()) {
             req.suffix = json["suffix"].asString();
         }
@@ -128,17 +180,45 @@ struct CompletionRequest : BaseRequest {
             }
         }
 
-        if (json.isMember("seed") && !json["seed"].isNull()) {
-            req.seed = json["seed"].asInt();
+        try {
+            if (json.isMember("seed") && !json["seed"].isNull()) {
+                if (json["seed"].isInt()) {
+                    req.seed = json["seed"].asInt();
+                } else if (json["seed"].isString()) {
+                    req.seed = std::stoi(json["seed"].asString());
+                } else {
+                    req.seed = json["seed"].asInt();
+                }
+            }
+        } catch (const std::exception& e) {
+            throw std::runtime_error(std::string("Failed to parse 'seed': ") + e.what());
         }
         if (json.isMember("temperature") && !json["temperature"].isNull()) {
-            req.temperature = json["temperature"].asFloat();
+            if (json["temperature"].isNumeric()) {
+                req.temperature = json["temperature"].asFloat();
+            } else if (json["temperature"].isString()) {
+                req.temperature = std::stof(json["temperature"].asString());
+            }
         }
         if (json.isMember("top_p") && !json["top_p"].isNull()) {
-            req.top_p = json["top_p"].asFloat();
+            if (json["top_p"].isNumeric()) {
+                req.top_p = json["top_p"].asFloat();
+            } else if (json["top_p"].isString()) {
+                req.top_p = std::stof(json["top_p"].asString());
+            }
         }
-        if (json.isMember("logprobs") && !json["logprobs"].isNull()) {
-            req.logprobs = json["logprobs"].asInt();
+        try {
+            if (json.isMember("logprobs") && !json["logprobs"].isNull()) {
+                if (json["logprobs"].isInt()) {
+                    req.logprobs = json["logprobs"].asInt();
+                } else if (json["logprobs"].isString()) {
+                    req.logprobs = std::stoi(json["logprobs"].asString());
+                } else {
+                    req.logprobs = json["logprobs"].asInt();
+                }
+            }
+        } catch (const std::exception& e) {
+            throw std::runtime_error(std::string("Failed to parse 'logprobs': ") + e.what());
         }
         if (json.isMember("user") && !json["user"].isNull()) {
             req.user = json["user"].asString();
@@ -149,12 +229,26 @@ struct CompletionRequest : BaseRequest {
             req.top_k = json["top_k"].asInt();
         }
         if (json.isMember("min_p") && !json["min_p"].isNull()) {
-            req.min_p = json["min_p"].asFloat();
+            if (json["min_p"].isNumeric()) {
+                req.min_p = json["min_p"].asFloat();
+            } else if (json["min_p"].isString()) {
+                req.min_p = std::stof(json["min_p"].asString());
+            }
         }
         if (json.isMember("repetition_penalty") && !json["repetition_penalty"].isNull()) {
-            req.repetition_penalty = json["repetition_penalty"].asFloat();
+            if (json["repetition_penalty"].isNumeric()) {
+                req.repetition_penalty = json["repetition_penalty"].asFloat();
+            } else if (json["repetition_penalty"].isString()) {
+                req.repetition_penalty = std::stof(json["repetition_penalty"].asString());
+            }
         }
-        if (json.isMember("length_penalty")) req.length_penalty = json["length_penalty"].asFloat();
+        if (json.isMember("length_penalty")) {
+            if (json["length_penalty"].isNumeric()) {
+                req.length_penalty = json["length_penalty"].asFloat();
+            } else if (json["length_penalty"].isString()) {
+                req.length_penalty = std::stof(json["length_penalty"].asString());
+            }
+        }
 
         if (json.isMember("stop_token_ids") && json["stop_token_ids"].isArray()) {
             for (const auto& id : json["stop_token_ids"]) {
