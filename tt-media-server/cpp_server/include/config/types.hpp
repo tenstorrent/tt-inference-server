@@ -11,7 +11,6 @@ namespace tt::config {
 
 /**
  * Type definitions and enums used throughout the configuration system.
- * Aligned with tt-media-server/config/constants.py.
  */
 
 enum class ModelService {

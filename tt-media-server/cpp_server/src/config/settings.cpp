@@ -204,12 +204,6 @@ SchedulingPolicy scheduling_policy() {
     return scheduling_policy_from_string(env_string_lower("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY));
 }
 
-EmbeddingConfig create_embedding_config() {
-    EmbeddingConfig cfg;
-    // Placeholder - will be expanded as embedding features are added
-    return cfg;
-}
-
 size_t max_in_flight_count() {
     return static_cast<size_t>(env_ulong("MAX_IN_FLIGHT_COUNT", defaults::MAX_IN_FLIGHT_COUNT));
 }

@@ -11,10 +11,4 @@ namespace tt::config {
  */
 struct EmbeddingConfig {};
 
-/**
- * Factory function to create EmbeddingConfig from environment variables and runtime settings.
- * Declared here, implemented in src/config/settings.cpp.
- */
-EmbeddingConfig create_embedding_config();
-
 }  // namespace tt::config
