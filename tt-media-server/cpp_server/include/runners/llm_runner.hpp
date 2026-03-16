@@ -27,7 +27,6 @@ class LLMRunner : public IRunner {
 
  private:
   void step();
-  void drain_decode_results();
   void exit();
 
   Config config_;
