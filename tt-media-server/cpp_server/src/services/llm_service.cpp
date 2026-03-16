@@ -471,7 +471,7 @@ bool LLMService::cancel_request(const std::string& task_id) {
     pending_tasks_.fetch_sub(1);
     TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
 
-    // M3: signal the worker to abort the sequence at the scheduler level.
+    // Signal the worker to abort the sequence at the scheduler level.
     if (queue_manager_ && queue_manager_->cancel_queue) {
         if (!queue_manager_->cancel_queue->push(task_id)) {
             TT_LOG_WARN("[LLMService] Cancel queue full, worker will not abort task {}", task_id);

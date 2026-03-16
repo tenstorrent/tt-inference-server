@@ -401,10 +401,10 @@ void LLMController::handle_streaming(
         return;
     }
 
-    // M2: Automatic disconnect detection — analog of vLLM's @with_cancellation.
-    // When the TCP connection closes before the stream finishes naturally,
-    // cancel_request() is called on the IO thread. The `done` flag is the same
-    // atomic used by the is_final path, so only one of the two ever fires.
+    // Automatic disconnect detection: when the TCP connection closes before the
+    // stream finishes naturally, cancel_request() is called on the IO thread.
+    // The `done` flag is the same atomic used by the is_final path, so only
+    // one of the two ever fires.
     if (auto conn = http_req->getConnectionPtr().lock()) {
         const std::string raw_task_id = req_ptr->task_id.id;
         conn->setCloseCallback(

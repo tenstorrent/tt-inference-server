@@ -477,7 +477,7 @@ TEST(MaxOccupancySchedulerTest, IsFinished_AfterAllComplete) {
 }
 
 // ---------------------------------------------------------------------------
-// Scheduler::cancel() — M3 worker-side abort
+// Scheduler::cancel() — worker-side abort
 // ---------------------------------------------------------------------------
 
 // cancel() on a task currently in the decode queue removes it and frees its

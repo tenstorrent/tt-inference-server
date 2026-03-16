@@ -21,7 +21,7 @@ struct CancelMessage {
 };
 
 /**
- * One-way IPC queue for cancel signals (M3).
+ * One-way IPC queue for cancel signals.
  *
  * The main process (LLMService::cancel_request) pushes a task_id whenever a
  * request is cancelled.  The worker process (LLMRunner::step) drains the queue

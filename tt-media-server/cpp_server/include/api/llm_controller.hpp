@@ -60,7 +60,7 @@ private:
      * ChatCompletionStreamChunk objects; otherwise StreamingChunkResponse.
      * Automatically uses accumulated batching when enabled via config.
      * Registers a TCP close callback so that client disconnect automatically
-     * triggers cancel_request() (M2 disconnect detection).
+     * triggers cancel_request() on disconnect.
      */
     void handle_streaming(
         const drogon::HttpRequestPtr& http_req,

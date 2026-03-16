@@ -52,7 +52,8 @@ public:
     /**
      * Cancel an in-progress request by task_id. Removes the stream callback,
      * decrements pending_tasks_, and delivers a final "cancelled" chunk to the
-     * client. The worker process keeps decoding until M3 (IPC cancel queue).
+     * client. Also signals the worker via the IPC cancel queue to abort at the
+     * scheduler level.
      * @return true if the task was found and cancelled, false if already
      *         finished or unknown.
      */

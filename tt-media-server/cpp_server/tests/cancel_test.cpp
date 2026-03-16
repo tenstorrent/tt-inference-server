@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-// Unit tests for the M1 cancellation feature.
+// Unit tests for the cancellation feature.
 //
 // LLMService::cancel_request() and the corrected consumer_loop_for_worker()
 // both operate on a ConcurrentMap<string, StreamCallback> plus the
@@ -155,7 +155,7 @@ TEST(ConsumerLoopTest, PendingTasksDecrementedExactlyOnce) {
 }
 
 // ---------------------------------------------------------------------------
-// CancelQueue — IPC round-trip (M3)
+// CancelQueue — IPC round-trip
 // ---------------------------------------------------------------------------
 
 // A unique name per test run avoids conflicts with any leftover shared memory
