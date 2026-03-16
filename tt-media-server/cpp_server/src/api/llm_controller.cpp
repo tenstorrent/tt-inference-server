@@ -139,7 +139,7 @@ void LLMController::completions(
     }
 
     if (request->stream) {
-        handle_streaming(request, std::move(callback), false);
+        handle_streaming(req, request, std::move(callback), false);
     } else {
         try {
             auto start_time = std::chrono::high_resolution_clock::now();
@@ -215,7 +215,7 @@ void LLMController::chat_completions(
     auto request = std::make_shared<domain::CompletionRequest>(chat_req.to_completion_request());
 
     if (request->stream) {
-        handle_streaming(request, std::move(callback), true);
+        handle_streaming(req, request, std::move(callback), true);
     } else {
         try {
             auto start_time = std::chrono::high_resolution_clock::now();
@@ -245,6 +245,7 @@ void LLMController::chat_completions(
 }
 
 void LLMController::handle_streaming(
+    const drogon::HttpRequestPtr& http_req,
     std::shared_ptr<domain::CompletionRequest> req_ptr,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     bool is_chat) const {
@@ -398,6 +399,20 @@ void LLMController::handle_streaming(
         resp->setStatusCode(drogon::k429TooManyRequests);
         callback(resp);
         return;
+    }
+
+    // M2: Automatic disconnect detection — analog of vLLM's @with_cancellation.
+    // When the TCP connection closes before the stream finishes naturally,
+    // cancel_request() is called on the IO thread. The `done` flag is the same
+    // atomic used by the is_final path, so only one of the two ever fires.
+    if (auto conn = http_req->getConnectionPtr().lock()) {
+        const std::string raw_task_id = req_ptr->task_id.id;
+        conn->setCloseCallback(
+            [service = service_, raw_task_id, done](const trantor::TcpConnectionPtr&) {
+                if (!done->exchange(true)) {
+                    service->cancel_request(raw_task_id);
+                }
+            });
     }
 
     auto resp = drogon::HttpResponse::newAsyncStreamResponse(

@@ -59,8 +59,11 @@ private:
      * Handle streaming completion (SSE). When is_chat is true, emits
      * ChatCompletionStreamChunk objects; otherwise StreamingChunkResponse.
      * Automatically uses accumulated batching when enabled via config.
+     * Registers a TCP close callback so that client disconnect automatically
+     * triggers cancel_request() (M2 disconnect detection).
      */
     void handle_streaming(
+        const drogon::HttpRequestPtr& http_req,
         std::shared_ptr<domain::CompletionRequest> req_ptr,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback,
         bool is_chat) const;
