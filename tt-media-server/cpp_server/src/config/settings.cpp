@@ -166,7 +166,7 @@ std::string visible_devices_for_worker(size_t worker_index) {
     return "";
 }
 
-LLMConfig create_llm_config() {
+LLMConfig llm_engine_config() {
     LLMConfig cfg;
     cfg.stop_token_ids = utils::active_tokenizer().stop_token_ids();
     cfg.max_in_flight_count = max_in_flight_count();
@@ -183,12 +183,6 @@ LLMConfig create_llm_config() {
     }
     cfg.scheduling_policy = scheduling_policy();
     return cfg;
-}
-
-// Backward compatibility - delegates to create_llm_config()
-// TODO: Remove after all callers updated to use create_llm_config()
-LLMConfig llm_engine_config() {
-    return create_llm_config();
 }
 
 ModelType model_type() {

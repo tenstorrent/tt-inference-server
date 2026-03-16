@@ -57,9 +57,6 @@ std::string tokenizer_config_path(ModelType model);
  */
 std::string visible_devices_for_worker(size_t worker_index);
 
-/** Create LLM engine configuration from environment variables and runtime settings.
- *  Deprecated: Use tt::config::create_llm_config() instead. */
-LLMConfig llm_engine_config();
 
 /** Model type derived from LLM_DEVICE_BACKEND (llama -> LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528). */
 ModelType model_type();
@@ -87,5 +84,8 @@ SchedulingPolicy scheduling_policy();
 
 /** Max in-flight requests from MAX_IN_FLIGHT_COUNT. Default: defaults::MAX_IN_FLIGHT_COUNT. */
 size_t max_in_flight_count();
+
+/** Build LLMConfig from environment variables and runtime settings. Implemented in src/config/settings.cpp. */
+LLMConfig llm_engine_config();
 
 }  // namespace tt::config
