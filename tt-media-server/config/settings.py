@@ -186,27 +186,62 @@ class Settings(BaseSettings):
                 f"max_batch_size {self.max_batch_size} is less than max_num_seqs {self.vllm.max_num_seqs} in vllm settings, set max_batch_size to {self.vllm.max_num_seqs}"
             )
 
-    def _set_device_pairs_overrides(self):
+    def _set_device_pairs_overrides(self) -> None:
         logger.info(
             f"_set_device_pairs_overrides: is_galaxy={self.is_galaxy}, "
-            f"device_mesh_shape={self.device_mesh_shape}, "
-            f"device_ids(before)={self.device_ids!r}"
+            f"mesh={self.device_mesh_shape}, device_ids(before)={self.device_ids!r}"
         )
-        if self.is_galaxy:
-            device_manager = DeviceManager()
-            devices = None
-            if self.device_mesh_shape == (1, 1) and self.use_greedy_based_allocation:
-                devices = device_manager.get_single_devices_from_system()
-            if self.device_mesh_shape == (2, 1):
-                devices = device_manager.get_device_pairs_from_system()
-            elif self.device_mesh_shape == (2, 4):
-                devices = device_manager.get_device_groups_of_eight_from_system()
-            if devices:
-                self.device_ids = ",".join([f"({device})" for device in devices])
+
+        if not self.is_galaxy:
+            return
+
+        dm = DeviceManager()
+        devices = None
+        mesh = self.device_mesh_shape
+
+        try:
+            if mesh == (1, 1) and self.use_greedy_based_allocation:
+                devices = dm.get_single_devices()
+
+            elif mesh == (2, 1):
                 logger.info(
-                    f"_set_device_pairs_overrides: galaxy override applied, "
-                    f"device_ids(after)={self.device_ids!r}"
+                    "Running Galaxy TP2 device discovery (test_system_health, may take 10-15s)..."
                 )
+                devices = dm.get_device_pairs()
+                logger.info(
+                    f"Galaxy TP2 discovery returned {len(devices) if devices else 0} pairs"
+                )
+                if not devices:
+                    raise RuntimeError(
+                        "Galaxy TP2 (2,1): device discovery returned no pairs. "
+                        "Ensure test_system_health binary is available and "
+                        "Cluster.ReportSystemHealth succeeds."
+                    )
+
+            elif mesh == (2, 4):
+                devices = dm.get_device_groups_of_eight()
+                if not devices:
+                    raise RuntimeError(
+                        "Galaxy TP8 (2,4): device discovery returned no groups. "
+                        "Ensure tt-smi is available and returns at least 8 devices per tray."
+                    )
+
+        except Exception as e:
+            if mesh in ((2, 1), (2, 4)):
+                raise RuntimeError(
+                    f"Device discovery failed for mesh {mesh}: {e}. "
+                    "Cannot start without valid device pairs."
+                ) from e
+            logger.error(f"Device discovery failed for mesh {mesh}: {e}")
+            return
+
+        self.device_ids = ",".join(
+            f"({d})" if isinstance(d, int) else f"({','.join(map(str, d))})"
+            for d in devices
+        )
+        logger.info(
+            f"_set_device_pairs_overrides: galaxy override applied, device_ids(after)={self.device_ids!r}"
+        )
 
     def _set_throttling_overrides(self):
         if self.model_runner in [

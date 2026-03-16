@@ -7,10 +7,9 @@
 
 #include "runners/llm_runner/config.hpp"
 #include "runners/embedding_config.hpp"
-#include "runners/sp_pipeline_runner/config.hpp"
 
 namespace tt::runners {
 
-using RunnerConfig = std::variant<llm_engine::Config, EmbeddingConfig, sp_pipeline::SpPipelineConfig>;
+using RunnerConfig = std::variant<llm_engine::Config, EmbeddingConfig>;
 
 }  // namespace tt::runners

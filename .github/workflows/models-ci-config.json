@@ -525,10 +525,7 @@
           "devices": [
             "GALAXY",
             "GALAXY_BH",
-            "N150",
-            "P150X4",
-            "P150X8",
-            "P300X2"
+            "N150"
           ]
         },
         "weekly": {
