@@ -476,6 +476,109 @@ TEST(MaxOccupancySchedulerTest, IsFinished_AfterAllComplete) {
   EXPECT_TRUE(sched.is_finished());
 }
 
+// ---------------------------------------------------------------------------
+// Scheduler::cancel() — M3 worker-side abort
+// ---------------------------------------------------------------------------
+
+// cancel() on a task currently in the decode queue removes it and frees its
+// KV-cache blocks so that the scheduler becomes finished.
+TEST(SchedulerCancelTest, CancelInDecodeQueue_SequenceRemoved) {
+  Config config = make_config();
+  auto queue = make_queue();
+  PrefillFirstScheduler sched{config, queue.get(), 1};
+
+  TaskID id = next_id();
+  sched.add_request(id, prompt(4), {.max_tokens = 10});
+
+  // Prefill so the sequence enters the decode queue after postprocess.
+  auto [prefill_batch, is_prefill] = sched.schedule();
+  ASSERT_TRUE(is_prefill);
+  ASSERT_EQ(prefill_batch.size(), 1u);
+  sched.postprocess(prefill_batch, {1});  // not finished, goes to decode_queue_
+
+  EXPECT_FALSE(sched.is_finished());
+
+  // Cancel the sequence before the next decode step.
+  sched.cancel(id);
+
+  // schedule() must drain the cancel from decode_queue_ and return empty.
+  auto [decode_batch, _] = sched.schedule();
+  EXPECT_TRUE(decode_batch.empty());
+  EXPECT_TRUE(sched.is_finished());
+}
+
+// cancel() on a task still sitting in the prefill queue causes it to be
+// silently dropped (not scheduled) when try_schedule_prefill() pops it.
+TEST(SchedulerCancelTest, CancelInPrefillQueue_SequenceDropped) {
+  Config config = make_config();
+  auto queue = make_queue();
+  PrefillFirstScheduler sched{config, queue.get(), 1};
+
+  TaskID id = next_id();
+  sched.add_request(id, prompt(4), {.max_tokens = 10});
+
+  EXPECT_FALSE(sched.is_finished());  // in prefill queue
+
+  // Cancel before the sequence has ever been scheduled.
+  sched.cancel(id);
+
+  // The next schedule() pops and discards the cancelled sequence.
+  auto [batch, _] = sched.schedule();
+  // schedule() falls through to blocking receive() when both queues are empty
+  // after the cancelled entry is dropped; with InMemoryTaskQueue receive()
+  // returns nullptr, so the batch is empty.
+  EXPECT_TRUE(batch.empty());
+  EXPECT_TRUE(sched.is_finished());
+}
+
+// cancel() for an id that the scheduler has never seen is a no-op:
+// subsequent scheduling of unrelated sequences is unaffected.
+TEST(SchedulerCancelTest, CancelUnknownId_IsNoOp) {
+  Config config = make_config();
+  auto queue = make_queue();
+  PrefillFirstScheduler sched{config, queue.get(), 1};
+
+  TaskID unknown = next_id();
+  sched.cancel(unknown);  // must not crash or affect state
+
+  TaskID real_id = next_id();
+  sched.add_request(real_id, prompt(4), {.max_tokens = 1});
+
+  auto [batch, is_prefill] = sched.schedule();
+  ASSERT_TRUE(is_prefill);
+  ASSERT_EQ(batch.size(), 1u);
+  EXPECT_EQ(batch[0]->task_id, real_id);
+}
+
+// cancel() only removes the targeted task; other tasks in the decode queue
+// continue normally.
+TEST(SchedulerCancelTest, CancelOneTask_DoesNotAffectOthers) {
+  Config config = make_config(64, 8, 256);
+  auto queue = make_queue();
+  // batch_size=2: both sequences are prefilled in a single schedule() call.
+  PrefillFirstScheduler sched{config, queue.get(), 2};
+
+  TaskID id_a = next_id();
+  TaskID id_b = next_id();
+  sched.add_request(id_a, prompt(4), {.max_tokens = 10});
+  sched.add_request(id_b, prompt(4), {.max_tokens = 10});
+
+  // Both sequences are prefilled together.
+  auto [prefill_batch, pf1] = sched.schedule();
+  ASSERT_TRUE(pf1);
+  ASSERT_EQ(prefill_batch.size(), 2u);
+  sched.postprocess(prefill_batch, {1, 1});  // both go to decode_queue_
+
+  EXPECT_FALSE(sched.is_finished());
+
+  sched.cancel(id_a);
+
+  // schedule() should drain id_a from the decode queue and return only id_b.
+  auto [decode_batch, _] = sched.schedule();
+  ASSERT_EQ(decode_batch.size(), 1u);
+  EXPECT_EQ(decode_batch[0]->task_id, id_b);
+}
+
 TEST(MaxOccupancySchedulerTest, ContinuousRefill_MaintainsFullOccupancy) {
   Config config = make_config(64, 8, 256, 0);
   auto queue = make_queue();

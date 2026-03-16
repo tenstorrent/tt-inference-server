@@ -23,10 +23,12 @@
 #include "domain/completion_response.hpp"
 #include "domain/task_id.hpp"
 #include "utils/concurrent_map.hpp"
+#include "ipc/cancel_queue.hpp"
 
 #include <atomic>
 #include <functional>
 #include <string>
+#include <unistd.h>
 
 #include <gtest/gtest.h>
 
@@ -150,6 +152,75 @@ TEST(ConsumerLoopTest, PendingTasksDecrementedExactlyOnce) {
     EXPECT_FALSE(late.has_value());
     // pending must still be 0, not wrapped around to SIZE_MAX.
     EXPECT_EQ(pending.load(), 0u);
+}
+
+// ---------------------------------------------------------------------------
+// CancelQueue — IPC round-trip (M3)
+// ---------------------------------------------------------------------------
+
+// A unique name per test run avoids conflicts with any leftover shared memory
+// from a previous crash.  The queue is removed before creation and after use.
+static std::string cancel_queue_test_name() {
+    // Use the test binary's PID so parallel test runs don't collide.
+    return "tt_cancel_test_" + std::to_string(getpid());
+}
+
+TEST(CancelQueueTest, PushAndTryPop_RoundTrip) {
+    const std::string name = cancel_queue_test_name();
+    tt::ipc::CancelQueue::remove(name);
+
+    tt::ipc::CancelQueue producer(name, /*max_messages=*/8);
+    tt::ipc::CancelQueue consumer(name);
+
+    const std::string task_id = "task-cancel-ipc-123";
+
+    ASSERT_TRUE(producer.push(task_id));
+
+    std::string received;
+    ASSERT_TRUE(consumer.try_pop(received));
+    EXPECT_EQ(received, task_id);
+
+    // Queue is now empty.
+    EXPECT_FALSE(consumer.try_pop(received));
+
+    tt::ipc::CancelQueue::remove(name);
+}
+
+TEST(CancelQueueTest, MultipleMessages_PreserveOrder) {
+    const std::string name = cancel_queue_test_name() + "_order";
+    tt::ipc::CancelQueue::remove(name);
+
+    tt::ipc::CancelQueue producer(name, /*max_messages=*/8);
+    tt::ipc::CancelQueue consumer(name);
+
+    std::vector<std::string> ids = {"task-a", "task-b", "task-c"};
+    for (const auto& id : ids) {
+        ASSERT_TRUE(producer.push(id));
+    }
+
+    std::vector<std::string> received;
+    std::string out;
+    while (consumer.try_pop(out)) {
+        received.push_back(out);
+    }
+
+    EXPECT_EQ(received, ids);
+
+    tt::ipc::CancelQueue::remove(name);
+}
+
+TEST(CancelQueueTest, PushReturnsFalse_WhenFull) {
+    const std::string name = cancel_queue_test_name() + "_full";
+    tt::ipc::CancelQueue::remove(name);
+
+    tt::ipc::CancelQueue producer(name, /*max_messages=*/2);
+    tt::ipc::CancelQueue consumer(name);
+
+    EXPECT_TRUE(producer.push("task-1"));
+    EXPECT_TRUE(producer.push("task-2"));
+    EXPECT_FALSE(producer.push("task-3"));  // queue full
+
+    tt::ipc::CancelQueue::remove(name);
 }
 
 }  // namespace
