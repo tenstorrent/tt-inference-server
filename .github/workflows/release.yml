@@ -1,0 +1,76 @@
+name: Release
+
+run-name: "Release tt-metal: ${{ inputs.tt-metal-commit || 'stable' }} | tt-inference-server: ${{ inputs.tt-inference-server-commit || 'stable' }} | vllm: ${{ inputs.vllm-commit || 'dev' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      tt-metal-commit:
+        description: "tt-metal ref"
+        required: false
+        type: string
+        default: "stable"
+      tt-inference-server-commit:
+        description: "tt-inference-server ref"
+        required: false
+        type: string
+        default: "stable"
+      vllm-commit:
+        description: "vllm ref"
+        required: false
+        type: string
+        default: "dev"
+      workflow:
+        description: "Workflow"
+        required: false
+        type: choice
+        default: "release"
+        options:
+          - release
+          - benchmarks
+          - evals
+          - tests
+  schedule:
+    - cron: "0 17 * * *"
+
+permissions: write-all
+
+env:
+  IMAGE_REPO: ghcr.io/tenstorrent/tt-inference-server
+
+jobs:
+  setup-vars:
+    runs-on: ubuntu-latest
+    outputs:
+      workflow: ${{ inputs.workflow || 'release' }}
+      vllm-commit: ${{ inputs.vllm-commit || 'dev' }}
+      inference-server-sha: ${{ inputs.tt-inference-server-commit || 'stable' }}
+      tt-metal-commit: ${{ inputs.tt-metal-commit || 'stable' }}
+      docker-build-runner-label: "builder"
+      ubuntu-version: "22.04"
+    steps:
+      - run: echo "Variables set"
+
+  resolve-shas:
+    needs: setup-vars
+    uses: tenstorrent/tt-shield/.github/workflows/workflow_resolve-shas.yml@main
+    secrets: inherit
+    with:
+      tt-metal-ref: ${{ needs.setup-vars.outputs.tt-metal-commit }}
+      inference-server-ref: ${{ needs.setup-vars.outputs.inference-server-sha }}
+      vllm-ref: ${{ needs.setup-vars.outputs.vllm-commit }}
+
+  call-dynamic-workflow:
+    name: "_"
+    needs: [setup-vars, resolve-shas]
+    uses: tenstorrent/tt-shield/.github/workflows/dynamic-workflow.yml@main
+    secrets: inherit
+    with:
+      schedule: "release"
+      tt-metal-sha: ${{ needs.resolve-shas.outputs.tt-metal-sha }}
+      vllm-commit: ${{ needs.resolve-shas.outputs.vllm-sha }}
+      inference-server-sha: ${{ needs.resolve-shas.outputs.inference-server-sha }}
+      workflow: ${{ needs.setup-vars.outputs.workflow }}
+      docker-build-runner-label: ${{ needs.setup-vars.outputs.docker-build-runner-label }}
+      ubuntu-version: ${{ needs.setup-vars.outputs.ubuntu-version }}
+      timeout-minutes: 720
