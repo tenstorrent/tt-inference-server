@@ -382,7 +382,8 @@ TEST(MaxOccupancySchedulerTest, PrefillsToFillGap) {
 
   auto [b1, pf1] = sched.schedule();
   ASSERT_TRUE(pf1);
-  EXPECT_EQ(b1.size(), 2u) << "Should prefill both to fill max_in_flight_count=2";
+  EXPECT_EQ(b1.size(), 2u)
+      << "Should prefill both to fill max_in_flight_count=2";
   sched.postprocess(b1, {1, 1});
 
   auto [b2, pf2] = sched.schedule();
