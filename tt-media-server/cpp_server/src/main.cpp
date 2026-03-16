@@ -79,8 +79,7 @@ int main(int argc, char* argv[]) {
                       << "  -p, --port PORT     Listen port (default: 8000)\n"
                       << "  -t, --threads N     Number of IO threads (default: CPU cores)\n"
                       << "  --help              Show this help message\n"
-                      << "\nEnvironment Variables:\n"
-                      << "  TT_RUNNER_TYPE      Runner type: 'llm_test' (default)\n";
+                      << "\nEnvironment Variables:\n";
             return 0;
         }
     }

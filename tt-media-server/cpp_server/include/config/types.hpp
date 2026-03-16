@@ -35,23 +35,6 @@ inline ModelService model_service_from_string(const std::string& v) {
     return ModelService::LLM;
 }
 
-enum class RunnerType {
-    LLM_TEST,
-};
-
-/** String value for env MODEL_RUNNER (e.g. "llm_test"). */
-inline std::string to_string(RunnerType r) {
-    switch (r) {
-        case RunnerType::LLM_TEST:
-        default:
-            return "llm_test";
-    }
-}
-
-/** Parse MODEL_RUNNER; unknown -> LLM_TEST. */
-inline RunnerType runner_type_from_string(const std::string& /*v*/) {
-    return RunnerType::LLM_TEST;
-}
 
 /** Model type: drives tokenizer strategy + model-specific config. Derived from LLM_DEVICE_BACKEND env var. */
 enum class ModelType {
