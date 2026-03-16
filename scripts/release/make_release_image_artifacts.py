@@ -410,6 +410,10 @@ def make_release_artifacts(
         logger.info(f"[{processed}/{len(merged_spec)}] Processing {model_id}")
         logger.info(f"  Release image: {docker_image}")
 
+        if model_spec.skip_build:
+            logger.info("  ⏭️  Skipping (skip_build=True)")
+            continue
+
         # Check if this image has already been processed
         if docker_image in processed_images:
             logger.info("  ⚡ Image already processed, using cached result")
