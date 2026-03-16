@@ -3,6 +3,7 @@
 
 #include "api/embedding_controller.hpp"
 #include "config/settings.hpp"
+#include "services/base_service.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/service_factory.hpp"
 #include "utils/logger.hpp"
@@ -182,6 +183,13 @@ void EmbeddingController::create_embedding(
 
             callback(resp);
 
+        } catch (const services::QueueFullException& e) {
+            Json::Value error;
+            error["error"]["message"] = e.what();
+            error["error"]["type"] = "rate_limit_exceeded";
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
+            resp->setStatusCode(drogon::k429TooManyRequests);
+            callback(resp);
         } catch (const std::exception& e) {
             Json::Value error;
             error["error"]["message"] = std::string("Internal error: ") + e.what();

@@ -1989,6 +1989,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "disable_mm_preprocessor_cache": True,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2002,6 +2003,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "disable_mm_preprocessor_cache": True,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2031,6 +2033,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "disable_mm_preprocessor_cache": True,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2049,6 +2052,7 @@ vlm_templates = [
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "disable_mm_preprocessor_cache": True,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2096,6 +2100,9 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "disable_mm_preprocessor_cache": True,
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -2414,7 +2421,7 @@ image_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,
+                max_concurrency=16,
                 max_context=64 * 1024,
                 default_impl=True,
             ),

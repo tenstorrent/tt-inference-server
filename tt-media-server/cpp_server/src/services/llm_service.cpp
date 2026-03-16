@@ -54,12 +54,7 @@ worker::WorkerConfig make_worker_config_for_process(int worker_id) {
     cfg.result_queue = std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
         "/tt_tokens_" + std::to_string(worker_id), false);
     cfg.worker_id = worker_id;
-    auto engine_cfg = tt::config::llm_engine_config();
-    if (engine_cfg.runner_type == llm_engine::ModelRunnerType::Pipeline) {
-        cfg.runner_config = tt::config::sp_pipeline_config();
-    } else {
-        cfg.runner_config = engine_cfg;
-    }
+    cfg.runner_config = tt::config::llm_engine_config();
     return cfg;
 }
 
@@ -67,6 +62,7 @@ LLMService::LLMService()
     : mode_(tt::config::llm_mode()),
       num_workers_(tt::config::num_workers()),
       tokenizer_(&tt::utils::active_tokenizer()) {
+    max_queue_size_ = tt::config::max_queue_size();
     TT_LOG_INFO("[LLMService] Initialized (mode={}, workers={})",
                 tt::config::to_string(mode_), num_workers_);
     queue_manager_ = std::make_unique<tt::ipc::QueueManager>(num_workers_);
@@ -124,7 +120,12 @@ SystemStatus LLMService::get_system_status() const {
     return status;
 }
 
+size_t LLMService::current_queue_size() const {
+    return pending_tasks_.load();
+}
+
 void LLMService::pre_process(domain::CompletionRequest& request) const {
+    BaseService::pre_process(request);
     if (std::holds_alternative<std::string>(request.prompt)) {
         auto text = std::get<std::string>(request.prompt);
         static auto cfg = tt::utils::get_tokenizer_config();

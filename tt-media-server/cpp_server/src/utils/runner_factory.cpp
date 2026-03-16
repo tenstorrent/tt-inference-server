@@ -26,12 +26,15 @@ std::unique_ptr<runners::IRunner> create_runner(
         case config::ModelService::LLM:
         default: {
             TT_LOG_INFO("[RunnerFactory] Creating LLM runner");
-            if (auto* sp_cfg = std::get_if<sp_pipeline::SpPipelineConfig>(&config)) {
-                std::cout << "[RunnerFactory] Creating SP Pipeline runner\n" << std::flush;
-                return std::make_unique<runners::SpPipelineRunner>(*sp_cfg, result_queue, task_queue);
-            }
-            std::cout << "[RunnerFactory] Creating LLM runner\n" << std::flush;
             auto& cfg = std::get<llm_engine::Config>(config);
+
+            // Choose runner based on config.runner_type
+            if (cfg.runner_type == llm_engine::ModelRunnerType::Pipeline) {
+                TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner");
+                return std::make_unique<runners::SpPipelineRunner>(cfg, result_queue, task_queue);
+            }
+
+            TT_LOG_INFO("[RunnerFactory] Creating LLM runner");
             return std::make_unique<tt::runners::LLMRunner>(cfg, result_queue, task_queue);
         }
     }
