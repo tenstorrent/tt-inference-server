@@ -575,6 +575,12 @@ jobs:
           uv pip install vllm
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
+      - name: Run cancel endpoint integration tests
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          python3 cpp_server/tests/test_cancel_endpoint.py --base-url http://127.0.0.1:8000
+
       - name: Run vLLM bench serve against C++ server
         env:
           OPENAI_API_KEY: 'your-secret-key'
