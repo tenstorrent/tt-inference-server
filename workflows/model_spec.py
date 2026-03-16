@@ -2509,6 +2509,7 @@ audio_tts_templates = [
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
         tt_metal_commit="cce3da6",
         impl=whisper_impl,
+        docker_image="ghcr.io/tenstorrent/tt-inference-server:speecht5-tts-latest",
         min_disk_gb=15,
         min_ram_gb=6,
         model_type=ModelType.AUDIO,
