@@ -83,14 +83,9 @@ def get_local_server_paths(runtime_config, repo_root=None):
     }
 
 
-def build_local_server_env(
-    model_spec, runtime_config, json_fpath, setup_config: SetupConfig, repo_root=None
+def _get_local_server_storage_paths(
+    model_spec, runtime_config, setup_config: SetupConfig
 ):
-    paths = get_local_server_paths(runtime_config, repo_root=repo_root)
-    app_dir = paths["app_dir"]
-    tt_metal_home = paths["tt_metal_home"]
-    python_env_dir = paths["python_env_dir"]
-    vllm_dir = paths["vllm_dir"]
     cache_root = Path(setup_config.host_model_volume_root).resolve()
     logs_path = cache_root / "logs"
     device = DeviceTypes.from_string(runtime_config.device)
@@ -100,11 +95,65 @@ def build_local_server_env(
         if getattr(model_spec, "subdevice_type", None)
         else mesh_device_str
     )
-    tt_cache_path = Path(setup_config.host_tt_metal_cache_dir) / device_cache_dir
+    tt_cache_path = (
+        Path(setup_config.host_tt_metal_cache_dir).resolve() / device_cache_dir
+    )
+    persistent_volume_root = getattr(setup_config, "persistent_volume_root", None)
+    if persistent_volume_root is not None:
+        persistent_volume_root = Path(persistent_volume_root).resolve()
 
-    ensure_readwriteable_dir(cache_root)
-    ensure_readwriteable_dir(logs_path)
-    ensure_readwriteable_dir(tt_cache_path)
+    return {
+        "persistent_volume_root": persistent_volume_root,
+        "cache_root": cache_root,
+        "logs_path": logs_path,
+        "tt_cache_path": tt_cache_path,
+    }
+
+
+def _raise_local_server_storage_permission_error(path: Path, error: PermissionError):
+    host_uid = os.getuid() if hasattr(os, "getuid") else "unknown"
+    uid_suffix = f" (uid={host_uid})" if isinstance(host_uid, int) else ""
+    chown_command = f"sudo chown -R $(id -u):$(id -g) {shlex.quote(str(path.parent))}"
+    raise PermissionError(
+        f"Local server storage path is not writable: {path}. "
+        f"--local-server runs as the invoking host user{uid_suffix} and ignores "
+        "--image-user. This usually means the existing persistent_volume tree was "
+        "created by Docker or another UID. Try "
+        f"`{chown_command}` or adjust the path with chmod, or remove the stale "
+        "directory and rerun."
+    ) from error
+
+
+def ensure_local_server_storage_paths(
+    model_spec, runtime_config, setup_config: SetupConfig
+):
+    storage_paths = _get_local_server_storage_paths(
+        model_spec, runtime_config, setup_config
+    )
+    for path in storage_paths.values():
+        if path is None:
+            continue
+        try:
+            ensure_readwriteable_dir(path)
+        except PermissionError as error:
+            _raise_local_server_storage_permission_error(path, error)
+    return storage_paths
+
+
+def build_local_server_env(
+    model_spec, runtime_config, json_fpath, setup_config: SetupConfig, repo_root=None
+):
+    paths = get_local_server_paths(runtime_config, repo_root=repo_root)
+    app_dir = paths["app_dir"]
+    tt_metal_home = paths["tt_metal_home"]
+    python_env_dir = paths["python_env_dir"]
+    vllm_dir = paths["vllm_dir"]
+    storage_paths = ensure_local_server_storage_paths(
+        model_spec, runtime_config, setup_config
+    )
+    cache_root = storage_paths["cache_root"]
+    logs_path = storage_paths["logs_path"]
+    tt_cache_path = storage_paths["tt_cache_path"]
 
     env = os.environ.copy()
     env["APP_DIR"] = str(app_dir)

@@ -556,7 +556,9 @@ def main():
             host_volume=runtime_config.host_volume,
             host_hf_cache=runtime_config.host_hf_cache,
             host_weights_dir=runtime_config.host_weights_dir,
-            image_user=runtime_config.image_user,
+            image_user=(
+                runtime_config.image_user if runtime_config.docker_server else None
+            ),
             local_server=runtime_config.local_server,
         )
 

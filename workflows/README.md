@@ -214,7 +214,7 @@ Usage: python3 run.py --model <model> --workflow <workflow> [options]
 | `--host-volume` | None for Docker, repo `persistent_volume/` for local when omitted | Host directory for persistent cache/log/tensor storage. |
 | `--host-hf-cache` | None | Host HuggingFace cache directory to reuse for model weights. If the flag is given without a path, it defaults to `HOST_HF_HOME`, then `HF_HOME`, then `~/.cache/huggingface`. |
 | `--host-weights-dir` | None | Host directory with pre-downloaded model weights. |
-| `--image-user` | `1000` | UID passed to `docker run --user`. Must match the UID the image was built with. Default release images use UID `1000`. Only override when using a custom image built with a different UID. |
+| `--image-user` | `1000` | UID passed to `docker run --user`. Docker only; `--local-server` ignores this flag and runs as the invoking host user. Must match the UID the image was built with. Default release images use UID `1000`. Only override when using a custom image built with a different UID. |
 
 Only one of `--host-volume`, `--host-hf-cache`, `--host-weights-dir` can be specified explicitly. For `--local-server`, omitting all three still uses the repo `persistent_volume/` path for TT caches and logs.
 
@@ -278,7 +278,7 @@ flowchart TD
   hostWeights -->|"Docker volume"| ttCache
 ```
 
-**File permissions:** The container runs as a non-root user. There is no root-level entrypoint that adjusts permissions at startup, so mounted volumes must already be accessible to the image's built-in UID (UID `1000` for default release images).
+**File permissions for Docker modes:** The container runs as a non-root user. There is no root-level entrypoint that adjusts permissions at startup, so mounted volumes must already be accessible to the image's built-in UID (UID `1000` for default release images). `--local-server` is different: it launches a host process and therefore uses the invoking host user's permissions instead of `--image-user`.
 
 | Strategy | Host permission requirement |
 |---|---|
@@ -324,6 +324,8 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
 **5. Local server (`--local-server`)**
 
 For local vLLM runs, `run.py` resolves host storage through `setup_host()` before launching the process. If you omit all host storage flags, TT caches, logs, and downloaded weights use `REPO_ROOT/persistent_volume/`. If you pass `--host-hf-cache` or `--host-weights-dir`, those paths are used only for weights; TT caches and logs still use the host volume path.
+
+If the resolved `persistent_volume/` tree already exists from an earlier Docker or different-UID run, fix its ownership or permissions for the current host user before retrying. `--image-user` does not affect `--local-server`.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --workflow server --local-server \

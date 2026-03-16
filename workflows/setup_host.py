@@ -610,7 +610,11 @@ class HostSetupManager:
                 continue
             dir_path.mkdir(parents=True, exist_ok=True)
 
-        if self.image_user is None or not self.setup_config.persistent_volume_root:
+        if (
+            self.setup_config.local_server
+            or self.image_user is None
+            or not self.setup_config.persistent_volume_root
+        ):
             return
         volume_root = self.setup_config.persistent_volume_root
         for dir_path in dirs_to_create:

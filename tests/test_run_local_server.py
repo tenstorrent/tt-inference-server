@@ -8,6 +8,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from workflows.run_local_server import (
     _format_env_exports,
     build_local_server_env,
@@ -50,16 +52,21 @@ class TestRunLocalServer:
         host_weights_dir=None,
         host_model_weights_snapshot_dir=None,
         host_model_weights_mount_dir=None,
+        persistent_volume_root=None,
     ):
+        cache_root = Path(cache_root)
+        if persistent_volume_root is None:
+            persistent_volume_root = cache_root.parent
         return SimpleNamespace(
-            host_model_volume_root=Path(cache_root),
+            host_model_volume_root=cache_root,
             host_tt_metal_cache_dir=(
-                Path(cache_root) / "tt_metal_cache" / "cache_Mistral-7B-Instruct-v0.3"
+                cache_root / "tt_metal_cache" / "cache_Mistral-7B-Instruct-v0.3"
             ),
             host_hf_cache=host_hf_cache,
             host_weights_dir=host_weights_dir,
             host_model_weights_snapshot_dir=host_model_weights_snapshot_dir,
             host_model_weights_mount_dir=host_model_weights_mount_dir,
+            persistent_volume_root=Path(persistent_volume_root),
         )
 
     def test_generate_local_run_command_uses_tt_metal_python(self, tmp_path):
@@ -316,6 +323,54 @@ class TestRunLocalServer:
         )
 
         assert env["MODEL_WEIGHTS_DIR"] == str(weights_dir.resolve())
+
+    def test_build_local_server_env_reports_host_user_permission_mismatch(
+        self, tmp_path
+    ):
+        repo_root = tmp_path / "repo"
+        entrypoint = repo_root / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.write_text("")
+
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        build_lib_dir = tt_metal_home / "build" / "lib"
+        python_bin_dir.mkdir(parents=True)
+        build_lib_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        cache_root = tmp_path / "persistent_volume" / "volume_id_test"
+        logs_path = cache_root / "logs"
+        setup_config = self._make_setup_config(cache_root)
+        runtime_config = self._make_runtime_config(tt_metal_home)
+        json_fpath = repo_root / "runtime.json"
+        json_fpath.write_text("{}")
+
+        def fail_on_logs(path, *args, **kwargs):
+            if Path(path) == logs_path:
+                raise PermissionError("Directory is not writable.")
+            return True
+
+        with patch(
+            "workflows.run_local_server.ensure_readwriteable_dir",
+            side_effect=fail_on_logs,
+        ):
+            with pytest.raises(
+                PermissionError,
+                match="invoking host user.*ignores --image-user",
+            ) as exc_info:
+                build_local_server_env(
+                    self._make_model_spec(),
+                    runtime_config,
+                    json_fpath,
+                    setup_config,
+                    repo_root=repo_root,
+                )
+
+        assert "persistent_volume tree was created by Docker or another UID" in str(
+            exc_info.value
+        )
+        assert "sudo chown -R $(id -u):$(id -g)" in str(exc_info.value)
 
     def test_format_env_exports_only_logs_overrides(self):
         env = {

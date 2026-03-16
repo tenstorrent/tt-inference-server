@@ -474,6 +474,29 @@ class TestSetupHostRunSetup:
         # early for host_weights_dir
         assert setup_config.host_weights_dir == str(weights_dir)
 
+    def test_local_server_skips_image_user_permission_fixes(
+        self, tiny_model_spec, temp_dir
+    ):
+        """Local server uses the invoking host user, not Docker UID fixes."""
+        host_volume = str(temp_dir / "persistent_volume")
+
+        with patch(
+            "workflows.setup_host._try_fix_path_permissions_for_uid"
+        ) as fix_permissions_mock:
+            setup_config = setup_host(
+                model_spec=tiny_model_spec,
+                jwt_secret="test_jwt_secret_123",
+                hf_token="hf_test_token_123456",
+                automatic_setup=True,
+                host_volume=host_volume,
+                image_user="1000",
+                local_server=True,
+            )
+
+        assert setup_config.host_model_volume_root is not None
+        assert setup_config.host_model_volume_root.exists()
+        fix_permissions_mock.assert_not_called()
+
     def test_local_source_mode(
         self, tiny_model_spec, temp_dir, mock_system_calls, mock_ram_check
     ):
