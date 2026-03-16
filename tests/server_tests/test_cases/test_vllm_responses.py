@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import asyncio
 import json
 import math
 from collections import Counter
@@ -94,6 +93,7 @@ WEATHER_TOOL = {
 
 
 # --- Test Functions ---
+
 
 def test_include(report_test, api_client, request):
     """Tests that the 'include' parameter is accepted."""
@@ -232,6 +232,7 @@ def test_model(report_test, api_client, request):
         msg = f"AssertionError: {str(e)}. Response: {response}"
         raise AssertionError(msg)
 
+
 @pytest.mark.parametrize("parallel", [True, False])
 def test_parallel_tool_calls(report_test, api_client, parallel, request):
     """Tests the 'parallel_tool_calls' parameter."""
@@ -274,6 +275,7 @@ def test_previous_response_id(report_test, api_client, request):
     assert "Alice" in output_text, (
         f"Expected model to recall name 'Alice' from previous response. Got: '{output_text}'"
     )
+
 
 def test_prompt(report_test, api_client, request):
     """Tests that the 'prompt' parameter is accepted."""
@@ -325,6 +327,7 @@ def test_service_tier(report_test, api_client, tier, request):
     except AssertionError as e:
         msg = f"AssertionError: {str(e)}. Response: {response}"
         raise AssertionError(msg)
+
 
 @pytest.mark.parametrize("store_val", [True, False])
 def test_store(report_test, api_client, store_val, request):
@@ -384,6 +387,7 @@ def test_stream_false(report_test, api_client, request):
         msg = f"AssertionError: {str(e)}. Response: {response}"
         raise AssertionError(msg)
 
+
 @pytest.mark.parametrize(
     "param_name, param_value",
     [
@@ -415,18 +419,20 @@ def test_determinism_parameters(
     "text_config",
     [
         {"format": {"type": "text"}},
-        {"format": {
-            "type": "json_schema",
-            "name": "color_list",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "colors": {"type": "array", "items": {"type": "string"}}
+        {
+            "format": {
+                "type": "json_schema",
+                "name": "color_list",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "colors": {"type": "array", "items": {"type": "string"}}
+                    },
+                    "required": ["colors"],
                 },
-                "required": ["colors"],
-            },
-            "strict": True,
-        }},
+                "strict": True,
+            }
+        },
     ],
     ids=["text", "json_schema"],
 )
@@ -452,11 +458,14 @@ def test_text(report_test, api_client, text_config, request):
             parsed = json.loads(output_text)
             assert isinstance(parsed, dict), "Expected JSON object output."
             assert "colors" in parsed, f"Expected 'colors' key in output. Got: {parsed}"
-            assert isinstance(parsed["colors"], list), f"Expected 'colors' to be a list. Got: {type(parsed['colors'])}"
+            assert isinstance(parsed["colors"], list), (
+                f"Expected 'colors' to be a list. Got: {type(parsed['colors'])}"
+            )
         except json.JSONDecodeError:
             pytest.fail(
                 f"Expected valid JSON output with json_schema format. Got: '{output_text}'"
             )
+
 
 @pytest.mark.parametrize("choice", ["auto", "none", "required"])
 def test_tool_choice(report_test, api_client, choice, request):
@@ -518,11 +527,13 @@ def test_top_logprobs(report_test, api_client, top_logprobs_val, request):
         assert len(message_item["content"]) > 0, "Content array is empty"
 
         text_content_part = message_item["content"][0]
-        assert text_content_part.get("type") == "output_text", "First content part is not 'output_text'"
+        assert text_content_part.get("type") == "output_text", (
+            "First content part is not 'output_text'"
+        )
         assert "logprobs" in text_content_part, "Missing 'logprobs' in content part"
         assert text_content_part["logprobs"] is not None, "Logprobs is None"
         assert len(text_content_part["logprobs"]) > 0, "Logprobs array is empty"
-        
+
         for i, token_entry in enumerate(text_content_part["logprobs"]):
             assert "token" in token_entry, f"Token {i}: missing 'token' field"
             assert "bytes" in token_entry, f"Token {i}: missing 'bytes' field"
@@ -575,4 +586,3 @@ def test_user(report_test, api_client, request):
     except AssertionError as e:
         msg = f"AssertionError: {str(e)}. Response: {response}"
         raise AssertionError(msg)
-
