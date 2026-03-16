@@ -185,6 +185,11 @@ set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/sequence.cpp
     src/runners/llm_runner/sampling_params.cpp
     src/utils/logger.cpp
+    src/config/settings.cpp
+    src/utils/tokenizer.cpp
+    src/utils/deepseek_tokenizer.cpp
+    src/utils/llama_tokenizer.cpp
+    src/utils/tokenizer_config_loader.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
 )
@@ -203,6 +208,8 @@ target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
+# Link tokenizers_cpp and JsonCpp since settings.cpp depends on tokenizer.hpp
+target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp)
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     target_compile_definitions(llm_engine PUBLIC USE_METAL_CPP_LIB)
     # Find tt_metal library directory

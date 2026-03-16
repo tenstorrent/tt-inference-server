@@ -79,7 +79,7 @@ The LLM engine supports two scheduling policies that trade off individual reques
 #### Max Occupancy
 **When to use:** High request rates, throughput-oriented applications
 
-**Behavior:** Keeps the device at full occupancy (`max_num_seqs`) whenever possible. When decode sequences finish and free slots, immediately prefills enough new sequences to refill capacity, then resumes decode at full width.
+**Behavior:** Keeps the device at full occupancy (`batch_size` from MAX_BATCH_SIZE env var) whenever possible. When decode sequences finish and free slots, immediately prefills enough new sequences to refill capacity, then resumes decode at full width.
 
 **Advantages:**
 - **Better average TTFT across all users** under high load
@@ -224,7 +224,7 @@ Configuration is read via `config/settings.hpp` (defaults with env overrides, si
 |----------|-------------|---------|
 | `DEVICE_IDS` | Bracket-pair device list, one worker per pair (e.g. `(0,1,2,3),(4,5,6,7)`). num_workers = number of pairs; each worker's `TT_VISIBLE_DEVICES` = that pair's contents. | `(0),(1),(2),(3)` |
 | `MODEL_SERVICE` | Service mode: `embedding` or `llm`. Same as tt-media-server. | `llm` |
-| `MAX_BATCH_SIZE` | Max requests per batch (embedding). Same as tt-media-server. | `1` |
+| `MAX_BATCH_SIZE` | Max requests per batch. Used by both LLM scheduler and embedding service. | `1` |
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
 | `LLM_DEVICE_BACKEND` | LLM device backend and model: `mock` or `pipeline` (DeepSeek V3 tokenizer), `llama` (Llama 3.1 8B Instruct). | `mock` |
