@@ -6,7 +6,7 @@
 #include "services/base_service.hpp"
 #include "ipc/queue_manager.hpp"
 #include "worker/single_process_worker.hpp"
-#include "config/constants.hpp"
+#include "config/types.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
 #include "domain/prefill_request.hpp"

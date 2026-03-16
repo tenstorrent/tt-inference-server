@@ -4,7 +4,7 @@
 #include "services/llm_service.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
-#include "runners/llm_runner/config.hpp"
+#include "config/llm_config.hpp"
 #include "utils/tokenizer.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker.hpp"
@@ -137,10 +137,10 @@ void LLMService::pre_process(domain::CompletionRequest& request) const {
         request.prompt = tokenizer_->encode(text);
     }
     const auto& tokens = std::get<std::vector<int>>(request.prompt);
-    if (tokens.size() > llm_engine::Config::MAX_INPUT_TOKENS) {
+    if (tokens.size() > tt::config::LLMConfig::MAX_INPUT_TOKENS) {
         throw std::invalid_argument(
             "Input too long: " + std::to_string(tokens.size()) +
-            " tokens exceeds maximum of " + std::to_string(llm_engine::Config::MAX_INPUT_TOKENS));
+            " tokens exceeds maximum of " + std::to_string(tt::config::LLMConfig::MAX_INPUT_TOKENS));
     }
     // Set prompt token count after tokenization
     request.prompt_tokens_count = static_cast<int>(tokens.size());

@@ -12,6 +12,9 @@
 
 namespace llm_engine {
 
+using Config = tt::config::LLMConfig;
+using SchedulingPolicy = tt::config::SchedulingPolicy;
+
 std::unique_ptr<Scheduler> make_scheduler(const Config& config,
                                           ITaskQueue* task_queue,
                                           size_t batch_size) {

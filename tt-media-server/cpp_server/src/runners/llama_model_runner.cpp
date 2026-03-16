@@ -15,6 +15,8 @@ namespace py = pybind11;
 
 namespace llm_engine {
 
+using Config = tt::config::LLMConfig;
+
 namespace {
 py::object g_runner;
 py::object g_step_seq_class;

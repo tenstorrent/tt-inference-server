@@ -12,7 +12,6 @@
 #include <sys/stat.h>
 #include <netinet/tcp.h>
 
-#include "config/constants.hpp"
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
 #include "profiling/tracy.hpp"

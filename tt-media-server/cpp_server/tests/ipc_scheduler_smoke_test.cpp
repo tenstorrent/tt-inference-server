@@ -12,7 +12,7 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
-#include "runners/llm_runner/config.hpp"
+#include "config/llm_config.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
@@ -35,6 +35,7 @@ static constexpr size_t MAX_MSG_SIZE = 4096;
 
 int main() {
   using namespace llm_engine;
+  using Config = tt::config::LLMConfig;
 
   // Clean up any leftover queue from a previous failed run.
   ipc::message_queue::remove(QUEUE_NAME);

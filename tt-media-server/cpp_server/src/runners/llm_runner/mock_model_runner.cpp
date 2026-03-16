@@ -4,6 +4,8 @@
 
 namespace llm_engine {
 
+using Config = tt::config::LLMConfig;
+
 namespace {
 
 constexpr int64_t kWhitespaceTokenId = 223;

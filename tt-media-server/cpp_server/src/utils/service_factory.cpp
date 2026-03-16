@@ -6,7 +6,6 @@
 #include "profiling/tracy.hpp"
 #include "services/llm_service.hpp"
 #include "services/embedding_service.hpp"
-#include "config/constants.hpp"
 #include "api/socket_controller.hpp"
 #include "utils/logger.hpp"
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-#include "runners/llm_runner/config.hpp"
+#include "config/llm_config.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "ipc/shared_memory.hpp"
@@ -12,6 +12,9 @@
 #include <vector>
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 namespace llm_engine {
+
+using Config = tt::config::LLMConfig;
+
 namespace {
 
 std::shared_ptr<ITaskQueue> make_queue() {

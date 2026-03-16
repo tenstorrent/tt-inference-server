@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-#include "runners/llm_runner/config.hpp"
+#include "config/llm_config.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "utils/concurrent_queue.hpp"
 
@@ -21,7 +21,7 @@ class IModelRunner {
   virtual void exit() = 0;
 };
 
-std::unique_ptr<IModelRunner> make_model_runner(const Config& config,
+std::unique_ptr<IModelRunner> make_model_runner(const tt::config::LLMConfig& config,
                                                 DecodeCallback callback);
 
 }  // namespace llm_engine
