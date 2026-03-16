@@ -6,7 +6,7 @@
 
 import os
 from argparse import Namespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -15,6 +15,7 @@ from workflows.validate_setup import (
     _check_path_permissions_for_uid,
     _try_fix_path_permissions_for_uid,  # noqa: F401
     validate_bind_mount_permissions,
+    validate_local_setup,
     validate_local_server_paths,
     validate_runtime_args,
 )
@@ -477,3 +478,61 @@ class TestLocalServerValidation:
         )
 
         validate_local_server_paths(args)
+
+    @patch("workflows.validate_setup.run_command", return_value=0)
+    @patch("workflows.validate_setup.ensure_readwriteable_dir")
+    @patch("workflows.validate_setup.get_default_workflow_root_log_dir")
+    def test_validate_local_setup_checks_vllm_installation(
+        self,
+        mock_get_log_dir,
+        mock_ensure_dir,
+        mock_run_command,
+        tmp_path,
+    ):
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        python_bin_dir.mkdir(parents=True)
+        venv_python = python_bin_dir / "python"
+        venv_python.write_text("")
+
+        model_spec = self._make_model_spec()
+        runtime_config = self._make_runtime_config()
+        runtime_config.tt_metal_home = str(tt_metal_home)
+        runtime_config.skip_system_sw_validation = True
+
+        mock_get_log_dir.return_value = tmp_path / "logs"
+
+        validate_local_setup(model_spec, runtime_config, tmp_path / "runtime.json")
+
+        mock_ensure_dir.assert_called_once_with(tmp_path / "logs")
+        mock_run_command.assert_called_once_with(
+            [str(venv_python), "-c", "import vllm"], logger=ANY
+        )
+
+    @patch("workflows.validate_setup.run_command", return_value=1)
+    @patch("workflows.validate_setup.ensure_readwriteable_dir")
+    @patch("workflows.validate_setup.get_default_workflow_root_log_dir")
+    def test_validate_local_setup_raises_when_vllm_not_installed(
+        self,
+        mock_get_log_dir,
+        mock_ensure_dir,
+        mock_run_command,
+        tmp_path,
+    ):
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        python_bin_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        model_spec = self._make_model_spec()
+        runtime_config = self._make_runtime_config()
+        runtime_config.tt_metal_home = str(tt_metal_home)
+        runtime_config.skip_system_sw_validation = True
+
+        mock_get_log_dir.return_value = tmp_path / "logs"
+
+        with pytest.raises(ValueError, match="requires the `vllm` Python package"):
+            validate_local_setup(model_spec, runtime_config, tmp_path / "runtime.json")
+
+        mock_ensure_dir.assert_called_once_with(tmp_path / "logs")
+        mock_run_command.assert_called_once()

@@ -131,6 +131,28 @@ def validate_runtime_args(model_spec, runtime_config):
         )
 
 
+def _get_local_server_python_env_dir(runtime_config) -> Path:
+    tt_metal_home = Path(runtime_config.tt_metal_home).expanduser().resolve()
+    if runtime_config.tt_metal_python_venv_dir:
+        return Path(runtime_config.tt_metal_python_venv_dir).expanduser().resolve()
+    return tt_metal_home / "python_env"
+
+
+def _validate_local_vllm_installation(runtime_config):
+    venv_python = _get_local_server_python_env_dir(runtime_config) / "bin" / "python"
+    if not venv_python.exists():
+        raise ValueError(f"⛔ Missing required python venv interpreter: {venv_python}")
+
+    return_code = run_command([str(venv_python), "-c", "import vllm"], logger=logger)
+    if return_code != 0:
+        raise ValueError(
+            "⛔ --local-server with inference engine vLLM requires the `vllm` Python "
+            f"package to be installed in the tt-metal python environment. Could not "
+            f"import `vllm` with: {venv_python}"
+        )
+    logger.info(f"✅ validated vLLM Python package import with: {venv_python}")
+
+
 def validate_local_setup(model_spec, runtime_config, json_fpath):
     logger.info("Starting local setup validation")
     workflow_root_log_dir = get_default_workflow_root_log_dir()
@@ -161,6 +183,12 @@ def validate_local_setup(model_spec, runtime_config, json_fpath):
                 "\nTo skip system software validation, use the flag: --skip-system-sw-validation"
             )
         logger.info("✅ validating system software dependencies completed")
+
+    if (
+        runtime_config.local_server
+        and model_spec.inference_engine == InferenceEngine.VLLM.value
+    ):
+        _validate_local_vllm_installation(runtime_config)
 
     logger.info("✅ validating local setup completed")
 
@@ -354,11 +382,7 @@ def validate_local_server_paths(args):
     if not tt_metal_home.is_dir():
         raise ValueError(f"⛔ --tt-metal-home is not a directory: {tt_metal_home}")
 
-    python_env_dir = (
-        Path(args.tt_metal_python_venv_dir).expanduser().resolve()
-        if args.tt_metal_python_venv_dir
-        else tt_metal_home / "python_env"
-    )
+    python_env_dir = _get_local_server_python_env_dir(args)
     vllm_dir = (
         Path(args.vllm_dir).expanduser().resolve()
         if getattr(args, "vllm_dir", None)
