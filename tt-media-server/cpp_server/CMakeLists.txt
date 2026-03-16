@@ -282,6 +282,12 @@ target_include_directories(sequence_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(cancel_test tests/cancel_test.cpp)
+target_link_libraries(cancel_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(cancel_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Tokenizer test
 add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/deepseek_tokenizer.cpp src/utils/llama_tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp src/utils/logger.cpp)
 if(USE_EXTERNAL_FMT)
@@ -298,6 +304,7 @@ gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(test_tokenizer)
+gtest_discover_tests(cancel_test)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -400,4 +407,6 @@ if(SANITIZE_ADDRESS)
     target_link_options(sequence_test PRIVATE -fsanitize=address)
     target_compile_options(ipc_scheduler_smoke_test PRIVATE ${ASAN_FLAGS})
     target_link_options(ipc_scheduler_smoke_test PRIVATE -fsanitize=address)
+    target_compile_options(cancel_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(cancel_test PRIVATE -fsanitize=address)
 endif()
