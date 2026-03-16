@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-#include "config/runner_config.hpp"
 #include "runners/llm_runner/sequence.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
 
 #include <gtest/gtest.h>
+
 #include <sstream>
+
+#include "config/runner_config.hpp"
+#include "runners/llm_runner/sampling_params.hpp"
 
 namespace llm_engine {
 namespace {
@@ -43,10 +45,12 @@ TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
   EXPECT_EQ(restored->repetition_penalty, orig.repetition_penalty);
   EXPECT_FLOAT_EQ(restored->length_penalty, orig.length_penalty);
   EXPECT_EQ(restored->stop_token_ids, orig.stop_token_ids);
-  EXPECT_EQ(restored->include_stop_str_in_output, orig.include_stop_str_in_output);
+  EXPECT_EQ(restored->include_stop_str_in_output,
+            orig.include_stop_str_in_output);
   EXPECT_EQ(restored->min_tokens, orig.min_tokens);
   EXPECT_EQ(restored->skip_special_tokens, orig.skip_special_tokens);
-  EXPECT_EQ(restored->spaces_between_special_tokens, orig.spaces_between_special_tokens);
+  EXPECT_EQ(restored->spaces_between_special_tokens,
+            orig.spaces_between_special_tokens);
   EXPECT_EQ(restored->allowed_token_ids, orig.allowed_token_ids);
   EXPECT_EQ(restored->prompt_logprobs, orig.prompt_logprobs);
   EXPECT_EQ(restored->truncate_prompt_tokens, orig.truncate_prompt_tokens);
@@ -99,10 +103,12 @@ TEST(SamplingParamsTest, SerializeDeserialize_AllOptionalFieldsSet) {
   EXPECT_FLOAT_EQ(*restored->repetition_penalty, *orig.repetition_penalty);
   EXPECT_FLOAT_EQ(restored->length_penalty, orig.length_penalty);
   EXPECT_EQ(restored->stop_token_ids, orig.stop_token_ids);
-  EXPECT_EQ(restored->include_stop_str_in_output, orig.include_stop_str_in_output);
+  EXPECT_EQ(restored->include_stop_str_in_output,
+            orig.include_stop_str_in_output);
   EXPECT_EQ(restored->min_tokens, orig.min_tokens);
   EXPECT_EQ(restored->skip_special_tokens, orig.skip_special_tokens);
-  EXPECT_EQ(restored->spaces_between_special_tokens, orig.spaces_between_special_tokens);
+  EXPECT_EQ(restored->spaces_between_special_tokens,
+            orig.spaces_between_special_tokens);
   ASSERT_TRUE(restored->allowed_token_ids.has_value());
   EXPECT_EQ(*restored->allowed_token_ids, *orig.allowed_token_ids);
   ASSERT_TRUE(restored->prompt_logprobs.has_value());
@@ -157,7 +163,8 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
 }
 
 TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
-  Sequence orig(TaskID("seq-empty-tokens"), 256, {}, SamplingParams{.max_tokens = 10});
+  Sequence orig(TaskID("seq-empty-tokens"), 256, {},
+                SamplingParams{.max_tokens = 10});
   orig.last_token = 0;
 
   std::ostringstream os;
@@ -173,7 +180,8 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
 }
 
 TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
-  Sequence orig(TaskID("seq-append"), 256, {10, 20}, SamplingParams{.max_tokens = 5});
+  Sequence orig(TaskID("seq-append"), 256, {10, 20},
+                SamplingParams{.max_tokens = 5});
   orig.append_token(30);
   orig.append_token(40);
   orig.num_cached_tokens_ = 256;
