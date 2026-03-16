@@ -41,10 +41,15 @@ class MultiHostConfig:
     mpi_interface: str
     shared_storage_root: str
     config_pkl_dir: str
+    # SSH configuration (used by config generation)
     ssh_key_path: Optional[str] = None
     ssh_user: str = CONTAINER_USER
     ssh_port: int = WORKER_SSH_PORT
     rank_binding_path: Optional[str] = None
+    # Orchestrator configuration (used by orchestrator)
+    tt_smi_path: str = "tt-smi"
+    deepseek_hf_model: Optional[str] = None
+    deepseek_cache: Optional[str] = None
     # Internal: tracks if config_pkl_dir was auto-generated (for cleanup)
     _auto_generated_config_pkl_dir: bool = field(default=False, repr=False)
 

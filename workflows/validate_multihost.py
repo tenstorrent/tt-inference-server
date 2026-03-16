@@ -83,7 +83,7 @@ def validate_multihost_bind_mount_permissions(
     modifying permissions on shared storage could affect other users/hosts.
 
     Args:
-        multihost_config: MultihostConfig object with paths to validate
+        multihost_config: MultiHostConfig object with paths to validate
         container_uid: UID that needs access (default: 1000 for container_app_user)
 
     Raises:
@@ -125,7 +125,6 @@ def validate_multihost_bind_mount_permissions(
         )
 
     # Optional paths from multihost_config (set via .env or interactive input)
-    # Use getattr to handle both MultihostConfig variants
     deepseek_model = getattr(multihost_config, "deepseek_hf_model", None)
     if deepseek_model:
         path = Path(deepseek_model)
@@ -625,7 +624,7 @@ def validate_multihost_args(
     """Validate multi-host configuration.
 
     Args:
-        multihost_config: MultihostConfig object from setup_multihost_config()
+        multihost_config: MultiHostConfig object from setup_multihost_config()
         model_spec: Optional ModelSpec for system software version validation
         skip_environment_check: If True, skip remote host environment validation
         tt_smi_path: Path to tt-smi binary on remote hosts

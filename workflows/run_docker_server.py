@@ -515,8 +515,8 @@ def _monitor_multihost_containers(
     worker_thread = threading.Thread(target=monitor_workers, daemon=True)
     worker_thread.start()
 
-    logger.info("Monitoring containers (Ctrl+C to stop)...")
     logger.info(f"View logs: tail -f {docker_log_file_path}")
+    logger.info("Monitoring containers (Ctrl+C to stop)...")
 
     try:
         # Monitor Controller container status

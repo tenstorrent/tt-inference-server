@@ -30,12 +30,13 @@ import tempfile
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from workflows.multihost_config import (
     CONTAINER_USER,
+    MultiHostConfig,
     WORKER_SSH_PORT,
     build_override_tt_config,
     generate_rankfile,
@@ -50,11 +51,6 @@ def _short_uuid():
     return str(uuid.uuid4())[:8]
 
 
-def _generate_docker_volume_name(model_spec) -> str:
-    """Generate consistent volume name for model weights/cache persistence."""
-    return f"volume_id_{model_spec.impl.impl_id}-{model_spec.model_name}"
-
-
 logger = logging.getLogger("run_log")
 
 
@@ -66,21 +62,6 @@ ENV_CONFIG_PKL_DIR = "CONFIG_PKL_DIR"
 ENV_TT_SMI_PATH = "TT_SMI_PATH"
 ENV_DEEPSEEK_V3_HF_MODEL = "DEEPSEEK_V3_HF_MODEL"
 ENV_DEEPSEEK_V3_CACHE = "DEEPSEEK_V3_CACHE"
-
-
-@dataclass
-class MultihostConfig:
-    """Configuration for multi-host deployment, read from .env or interactive input."""
-
-    hosts: list[str]
-    mpi_interface: str
-    shared_storage_root: str
-    config_pkl_dir: str
-    tt_smi_path: str = "tt-smi"
-    deepseek_hf_model: Optional[str] = None
-    deepseek_cache: Optional[str] = None
-    # Internal: tracks if config_pkl_dir was auto-generated (for cleanup)
-    _auto_generated_config_pkl_dir: bool = field(default=False, repr=False)
 
 
 def _generate_config_pkl_path(shared_storage_root: str) -> str:
@@ -155,11 +136,11 @@ def _cleanup_config_pkl_dir(config_pkl_dir: str) -> None:
 
 def setup_multihost_config(
     model_spec, expected_num_hosts: int, dry_run: bool = False
-) -> MultihostConfig:
+) -> MultiHostConfig:
     """Setup all multi-host configuration.
 
     Reads from .env or prompts interactively, then writes to .env.
-    Returns MultihostConfig with all values.
+    Returns MultiHostConfig with all values.
 
     If CONFIG_PKL_DIR is not specified, automatically generates a unique directory
     under SHARED_STORAGE_ROOT that will be cleaned up on exit.
@@ -170,7 +151,7 @@ def setup_multihost_config(
         dry_run: If True, skip directory creation and .env writes (for --print-docker-cmd)
 
     Returns:
-        MultihostConfig object with all configuration values
+        MultiHostConfig object with all configuration values
     """
     # Load existing .env to get any previously set values
     load_dotenv()
@@ -291,7 +272,7 @@ def setup_multihost_config(
     else:
         logger.info("Dry-run mode: skipping .env write and directory creation")
 
-    return MultihostConfig(
+    return MultiHostConfig(
         hosts=host_list,
         mpi_interface=mpi_interface,
         shared_storage_root=shared_root,
@@ -535,11 +516,10 @@ class MultiHostOrchestrator:
                     ]
                 )
             else:
-                volume_name = _generate_docker_volume_name(self.model_spec)
                 cmd.extend(
                     [
                         "--volume",
-                        f"{volume_name}:{self.setup_config.cache_root}",
+                        f"{self.setup_config.docker_volume_name}:{self.setup_config.cache_root}",
                     ]
                 )
 
