@@ -3,6 +3,7 @@
 
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
+#include <string>
 
 namespace tt::sockets {
 
@@ -73,7 +74,7 @@ bool InterServerService::isEnabled() const {
 bool InterServerService::sendPrefillRequest(const tt::domain::TaskID& task_id,
                                     const std::string& prompt,
                                     const std::vector<int64_t>& token_ids,
-                                    int max_tokens) {
+                                    std::optional<int> max_tokens) {
     if (!enabled_) {
         return false;
     }
@@ -154,7 +155,10 @@ void InterServerService::setupMessageHandlers() {
         [this](const PrefillResultMessage& message) {
             TT_LOG_INFO("[InterServerService] Received prefill result: {} - text: '{}', remaining: {}, token_ids: {}",
                        message.task_id.id, message.generated_text.substr(0, 50),
-                       message.remaining_tokens, message.token_ids.size());
+                       message.remaining_tokens.has_value()
+                           ? std::to_string(message.remaining_tokens.value())
+                           : "none",
+                       message.token_ids.size());
             if (prefill_complete_callback_) {
                 prefill_complete_callback_(message);
             }

@@ -52,7 +52,7 @@ std::vector<T> read_vector(std::istream& is) {
 
 void SamplingParams::serialize(std::ostream& os) const {
     write_scalar(os, temperature);
-    write_scalar(os, max_tokens);
+    write_optional(os, max_tokens);
     write_scalar(os, ignore_eos);
     write_optional(os, top_p);
     write_scalar(os, presence_penalty);
@@ -83,7 +83,7 @@ SamplingParams* SamplingParams::deserialize(std::istream& is) {
     auto* params = new SamplingParams();
 
     params->temperature               = read_scalar<float>(is);
-    params->max_tokens                = read_scalar<int>(is);
+    params->max_tokens                = read_optional<int>(is);
     params->ignore_eos                = read_scalar<bool>(is);
     params->top_p                     = read_optional<float>(is);
     params->presence_penalty          = read_scalar<float>(is);

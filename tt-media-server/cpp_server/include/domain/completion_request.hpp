@@ -47,7 +47,7 @@ struct CompletionRequest : BaseRequest {
 
     // Response configuration
     bool echo = false;
-    int max_tokens = 16;
+    std::optional<int> max_tokens;
     int n = 1;
     float presence_penalty = 0.0f;
     float frequency_penalty = 0.0f;
