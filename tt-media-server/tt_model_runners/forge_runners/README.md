@@ -53,7 +53,7 @@ Use MODEL_RUNNER to select which model is run
    - TT_XLA_VIT = "tt-xla-vit"
 
 Set appropriate HF_TOKEN to load weights from Huggingface.
-IRD_LF_CACHE is out large file caching service, in IRD enviroment use http://aus2-lfcache.aus2.tenstorrent.com/
+IRD_LF_CACHE is out large file caching service, in IRD environment use http://aus2-lfcache.aus2.tenstorrent.com/
 
 ```bash
 export MODEL_RUNNER=tt-xla-resnet
@@ -80,7 +80,7 @@ Resnet Demo
 #### Using cURL
 ```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/cnn/search-image' \
+  'http://127.0.0.1:8000/v1/cnn/search-image' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
   -H 'Content-Type: application/json' \

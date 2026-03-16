@@ -5,7 +5,7 @@ import os
 from multiprocessing import Manager
 
 from model_services.base_job_service import BaseJobService
-from config.constants import JobTypes
+from config.constants import JobTypes, ModelNames
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
 
@@ -23,14 +23,22 @@ class TrainingService(BaseJobService):
 
         request._start_event = self._manager.Event()
         request._cancel_event = self._manager.Event()
+        request._training_metrics = self._manager.list()
 
         return await self._job_manager.create_job(
             job_id=request._task_id,
             job_type=job_type,
-            model=self.settings.model_runner,
+            model=ModelNames.GEMMA_1_1_2B_IT.value,  # hardcoded for now
             request=request,
             task_function=self.process_request,
             result_path=request._output_model_path,
             start_event=request._start_event,
             cancel_event=request._cancel_event,
+            job_metrics=request._training_metrics,
         )
+
+    def get_job_metrics(self, job_id: str, after: int = 0) -> list:
+        metrics_list = super().get_job_metrics(job_id)
+        if metrics_list is None:
+            return []
+        return list(metrics_list[after:])

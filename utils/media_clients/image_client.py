@@ -376,7 +376,7 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         try:
             async with session.post(
-                f"{self.base_url}/image/generations",
+                f"{self.base_url}/v1/images/generations",
                 json=payload,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=25000),
@@ -489,7 +489,7 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         try:
             async with session.post(
-                f"{self.base_url}/image/image-to-image",
+                f"{self.base_url}/v1/images/image-to-image",
                 json=payload,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=25000),
@@ -616,7 +616,7 @@ class ImageClientStrategy(BaseMediaStrategy):
 
         try:
             async with session.post(
-                f"{self.base_url}/image/edits",
+                f"{self.base_url}/v1/images/edits",
                 json=payload,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=25000),
@@ -675,79 +675,14 @@ class ImageClientStrategy(BaseMediaStrategy):
         result = await eval_test._run_specific_test_async()
 
         if not result.get("success"):
+            logger.error(
+                f"ImageGenerationEvalsTest ACCURACY_CHECK failed: error={result.get('error')}"
+            )
             error = result.get("error", "ImageGenerationEvalsTest failed")
             raise RuntimeError(error)
 
         logger.info(f"ImageGenerationEvalsTest completed: {result.get('eval_results')}")
         return result
-
-    async def _run_motif_image_6b_preview_eval_async(
-        self,
-    ) -> tuple[list[ImageGenerationTestStatus], float]:
-        """Run Motif Image 6B Preview eval via /generations endpoint."""
-        logger.info("Running Motif Image 6B Preview eval.")
-
-        num_prompts = is_sdxl_num_prompts_enabled(self)
-        logger.info(f"Number of prompts set to: {num_prompts}")
-
-        prompts = sdxl_get_prompts(0, num_prompts)
-        logger.info(f"Retrieved {len(prompts)} prompts for evaluation.")
-
-        async with aiohttp.ClientSession() as session:
-            total_start_time = time.time()
-            tasks = [
-                self._generate_image_eval_async(
-                    session, prompt, FLUX_MOTIF_INFERENCE_STEPS
-                )
-                for prompt in prompts
-            ]
-            results = await asyncio.gather(*tasks)
-            total_time = time.time() - total_start_time
-
-        logger.info(
-            f"Generated {len(prompts)} images concurrently in {total_time:.2f} seconds"
-        )
-
-        status_list = []
-        failed_count = 0
-
-        for i, (status, elapsed, base64image) in enumerate(results):
-            prompt = prompts[i]
-
-            if not status or base64image is None:
-                failed_count += 1
-                logger.warning(
-                    f"❌ Skipping failed image {i + 1}/{num_prompts}: '{prompt}'"
-                )
-                continue
-
-            inference_steps_per_second = (
-                FLUX_MOTIF_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
-            )
-            logger.info(f"🚀 Image {i + 1}/{num_prompts}: {prompt} - {elapsed:.2f}s")
-
-            status_list.append(
-                ImageGenerationTestStatus(
-                    status=status,
-                    elapsed=elapsed,
-                    num_inference_steps=FLUX_MOTIF_INFERENCE_STEPS,
-                    inference_steps_per_second=inference_steps_per_second,
-                    base64image=base64image,
-                    prompt=prompt,
-                )
-            )
-
-        logger.info(f"Total image generations attempted: {num_prompts}")
-        logger.info(f"Total failed image generations: {failed_count}")
-        logger.info(f"Total successful image generations: {num_prompts - failed_count}")
-
-        if failed_count:
-            logger.warning(f"⚠️  {failed_count} image generations failed during eval.")
-            raise RuntimeError(
-                f"❌ {failed_count} image generations failed - cannot calculate accuracy metrics"
-            )
-
-        return status_list, total_time
 
     def _run_image_generation_benchmark(
         self, num_calls: int
@@ -794,7 +729,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         }
         start_time = time.time()
         response = requests.post(
-            f"{self.base_url}/image/generations",
+            f"{self.base_url}/v1/images/generations",
             json=payload,
             headers=headers,
             timeout=90,
@@ -873,7 +808,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         }
         start_time = time.time()
         response = requests.post(
-            f"{self.base_url}/image/image-to-image",
+            f"{self.base_url}/v1/images/image-to-image",
             json=payload,
             headers=headers,
             timeout=90,
@@ -957,7 +892,7 @@ class ImageClientStrategy(BaseMediaStrategy):
         }
         start_time = time.time()
         response = requests.post(
-            f"{self.base_url}/image/edits",
+            f"{self.base_url}/v1/images/edits",
             json=payload,
             headers=headers,
             timeout=90,

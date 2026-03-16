@@ -4,13 +4,10 @@
 #pragma once
 
 #include <memory>
-#include <future>
-#include <functional>
 
 #include "services/base_service.hpp"
 #include "domain/embedding_request.hpp"
 #include "domain/embedding_response.hpp"
-#include "runners/embedding_runner.hpp"
 
 namespace tt::services {
 
@@ -18,9 +15,9 @@ namespace tt::services {
  * Service for handling embedding requests.
  *
  * Uses a multiprocess scheduler with EmbeddingRunner workers.
- * Does not support streaming (embeddings are single-shot).
+ * Synchronous: submit_request blocks until the embedding is computed.
  */
-class EmbeddingService : public BaseService {
+class EmbeddingService : public BaseService<domain::EmbeddingRequest, domain::EmbeddingResponse> {
 public:
     EmbeddingService();
     ~EmbeddingService() override;
@@ -33,21 +30,12 @@ public:
     bool is_model_ready() const override;
     SystemStatus get_system_status() const override;
 
-    /**
-     * Process an embedding request.
-     * @param request The embedding request
-     * @return Future containing the embedding response
-     */
-    std::future<domain::EmbeddingResponse> process_embedding(domain::EmbeddingRequest request);
-
 protected:
-    void process_request(
-        domain::CompletionRequest request,
-        std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
-    ) override;
+    size_t current_queue_size() const override;
+    void post_process(domain::EmbeddingResponse& response) const override;
 
-    void pre_process(domain::CompletionRequest& request) const override;
-    void post_process(domain::CompletionRequest& request) const override;
+    domain::EmbeddingResponse process_request(
+        domain::EmbeddingRequest request) override;
 
 private:
     struct Impl;

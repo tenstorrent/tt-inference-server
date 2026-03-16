@@ -4,6 +4,7 @@
 
 import os
 import traceback
+import time
 
 from transformers import AutoModelForCausalLM
 import torch
@@ -18,12 +19,13 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
+from config.constants import SupportedModels
 
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
-        self.model_name = "google/gemma-1.1-2b-it"
+        super().__init__(device_id, num_torch_threads=num_torch_threads)
+        self.model_name = SupportedModels.GEMMA_1_1_2B_IT.value
 
     @log_execution_time("Setting up Gemma Lora training")
     async def warmup(self) -> bool:
@@ -111,7 +113,10 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         self.model = torch.compile(
             self._peft_model,
             backend="tt",
-            options={"tt_enable_torch_fx_fusion_pass": False},
+            options={
+                "tt_enable_torch_fx_fusion_pass": False,
+                "tt_legacy_compile": True,
+            },
         )
 
         self.optimizer = torch.optim.AdamW(
@@ -187,6 +192,16 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         self.logger.info(
                             f"Step {global_step} | train/loss: {avg_loss:.4f}"
                         )
+                        if request._training_metrics is not None:
+                            request._training_metrics.append(
+                                {
+                                    "global_step": global_step,
+                                    "epoch": epoch,
+                                    "metric_name": "train_loss",
+                                    "value": round(avg_loss, 4),
+                                    "timestamp": time.time(),
+                                }
+                            )
                         running_loss = 0.0
 
                         torch.save(self.model.state_dict(), model_path)
@@ -205,6 +220,16 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         self.logger.info(
                             f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}"
                         )
+                        if request._training_metrics is not None:
+                            request._training_metrics.append(
+                                {
+                                    "global_step": global_step,
+                                    "epoch": epoch,
+                                    "metric_name": "val_loss",
+                                    "value": round(avg_val_loss, 4),
+                                    "timestamp": time.time(),
+                                }
+                            )
                         self.model.train()
 
                     global_step += 1

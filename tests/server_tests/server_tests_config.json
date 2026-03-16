@@ -22,6 +22,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
@@ -94,6 +107,110 @@
         "weights": [
             "stable-diffusion-xl-base-1.0"
         ],
+        "device": "n300",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 2
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 20 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 2,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 30 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 2,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 50 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 2,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
+            },
+            {
+                "name": "ImageGenerationParamTest",
+                "module": "tests.server_tests.test_cases.image_generation_param_test",
+                "enabled": true,
+                "description": "Test image gen params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "stable-diffusion-xl-base-1.0"
+        ],
         "device": "t3k",
         "test_cases": [
             {
@@ -110,6 +227,19 @@
                 },
                 "targets": {
                     "num_of_devices": 4
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -201,6 +331,19 @@
                 },
                 "targets": {
                     "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -295,6 +438,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "Img2ImgGenerationParamTest",
                 "module": "tests.server_tests.test_cases.img2img_generation_param_test",
                 "enabled": true,
@@ -332,6 +488,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "Img2ImgGenerationParamTest",
                 "module": "tests.server_tests.test_cases.img2img_generation_param_test",
                 "enabled": true,
@@ -366,6 +535,19 @@
                 },
                 "targets": {
                     "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -406,6 +588,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "InpaintingGenerationParamTest",
                 "module": "tests.server_tests.test_cases.inpainting_generation_param_test",
                 "enabled": true,
@@ -443,6 +638,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "InpaintingGenerationParamTest",
                 "module": "tests.server_tests.test_cases.inpainting_generation_param_test",
                 "enabled": true,
@@ -477,6 +685,19 @@
                 },
                 "targets": {
                     "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -514,6 +735,19 @@
                 },
                 "targets": {
                     "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -601,6 +835,19 @@
                 },
                 "targets": {
                     "num_of_devices": 4
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -692,6 +939,53 @@
                 },
                 "targets": {
                     "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadDp2Chunk5Test",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_dp2_chunk5_test",
+                "enabled": true,
+                "description": "DP2 burst with 60s audio, chunk_duration_seconds=5 (start server with AUDIO_CHUNK_DURATION_SECONDS=5)",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_concurrent": 64,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadDp2Chunk30Test",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_dp2_chunk30_test",
+                "enabled": true,
+                "description": "DP2 burst with 60s audio, chunk_duration_seconds=30 (start server with AUDIO_CHUNK_DURATION_SECONDS=30)",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_concurrent": 64,
+                    "dataset": "60s"
                 }
             },
             {
@@ -785,6 +1079,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "AudioTranscriptionLoadTest",
                 "module": "tests.server_tests.test_cases.audio_transcription_load_test",
                 "enabled": true,
@@ -857,6 +1164,19 @@
                 },
                 "targets": {
                     "num_of_devices": 4
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -948,6 +1268,53 @@
                 },
                 "targets": {
                     "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadDp2Chunk5Test",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_dp2_chunk5_test",
+                "enabled": true,
+                "description": "DP2 burst with 60s audio, chunk_duration_seconds=5 (start server with AUDIO_CHUNK_DURATION_SECONDS=5)",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_concurrent": 64,
+                    "dataset": "60s"
+                }
+            },
+            {
+                "name": "AudioTranscriptionLoadDp2Chunk30Test",
+                "module": "tests.server_tests.test_cases.audio_transcription_load_dp2_chunk30_test",
+                "enabled": true,
+                "description": "DP2 burst with 60s audio, chunk_duration_seconds=30 (start server with AUDIO_CHUNK_DURATION_SECONDS=30)",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_concurrent": 64,
+                    "dataset": "60s"
                 }
             },
             {
@@ -1043,6 +1410,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "EmbeddingLoadTest",
                 "module": "tests.server_tests.test_cases.embedding_load_test",
                 "enabled": true,
@@ -1083,6 +1463,19 @@
                 },
                 "targets": {
                     "num_of_devices": 4
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -1129,6 +1522,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "EmbeddingLoadTest",
                 "module": "tests.server_tests.test_cases.embedding_load_test",
                 "enabled": true,
@@ -1168,6 +1574,19 @@
                 },
                 "targets": {
                     "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -1256,6 +1675,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "CnnLoadTest",
                 "module": "tests.server_tests.test_cases.cnn_load_test",
                 "enabled": true,
@@ -1311,6 +1743,19 @@
                 },
                 "targets": {
                     "num_of_devices": 2
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -1372,6 +1817,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "VideoGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.video_generation_load_test",
                 "enabled": true,
@@ -1425,6 +1883,19 @@
                 },
                 "targets": {
                     "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -1484,6 +1955,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "VideoGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.video_generation_load_test",
                 "enabled": true,
@@ -1538,6 +2022,19 @@
                 },
                 "targets": {
                     "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -1599,6 +2096,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "EmbeddingLoadTest",
                 "module": "tests.server_tests.test_cases.embedding_load_test",
                 "enabled": true,
@@ -1639,6 +2149,19 @@
                 },
                 "targets": {
                     "num_of_devices": 4
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -1685,6 +2208,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "EmbeddingLoadTest",
                 "module": "tests.server_tests.test_cases.embedding_load_test",
                 "enabled": true,
@@ -1727,6 +2263,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
@@ -1815,6 +2364,19 @@
                 },
                 "targets": {
                     "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -1909,6 +2471,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
@@ -1997,6 +2572,19 @@
                 },
                 "targets": {
                     "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -2091,6 +2679,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
@@ -2179,6 +2780,19 @@
                 },
                 "targets": {
                     "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -2273,6 +2887,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
@@ -2360,7 +2987,20 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -2376,7 +3016,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 10
                 }
@@ -2394,7 +3034,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 14
                 }
@@ -2412,7 +3052,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 23
                 }
@@ -2455,6 +3095,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
@@ -2527,7 +3180,7 @@
         "weights": [
             "FLUX.1-dev"
         ],
-        "device": "qbge",
+        "device": "p300x2",
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
@@ -2543,6 +3196,19 @@
                 },
                 "targets": {
                     "num_of_devices": 4
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -2637,6 +3303,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
@@ -2724,7 +3403,20 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -2740,7 +3432,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 10
                 }
@@ -2758,7 +3450,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 14
                 }
@@ -2776,7 +3468,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 23
                 }
@@ -2819,6 +3511,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
@@ -2891,7 +3596,7 @@
         "weights": [
             "FLUX.1-schnell"
         ],
-        "device": "qbge",
+        "device": "p300x2",
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
@@ -2907,6 +3612,19 @@
                 },
                 "targets": {
                     "num_of_devices": 4
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
                 }
             },
             {
@@ -3001,6 +3719,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
@@ -3092,6 +3823,19 @@
                 }
             },
             {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
                 "name": "ImageGenerationLoadTest",
                 "module": "tests.server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
@@ -3143,6 +3887,214 @@
                     "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 23
+                }
+            },
+            {
+                "name": "ImageGenerationParamTest",
+                "module": "tests.server_tests.test_cases.image_generation_param_test",
+                "enabled": true,
+                "description": "Test image gen params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "stable-diffusion-3.5-large"
+        ],
+        "device": "t3k",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 20 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 30 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 50 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
+            },
+            {
+                "name": "ImageGenerationParamTest",
+                "module": "tests.server_tests.test_cases.image_generation_param_test",
+                "enabled": true,
+                "description": "Test image gen params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "stable-diffusion-3.5-large"
+        ],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 20 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 11
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 30 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 15
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 50 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 25
                 }
             },
             {

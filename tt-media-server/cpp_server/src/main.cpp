@@ -2,11 +2,15 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include <drogon/drogon.h>
+#include <atomic>
+#include <chrono>
 #include <iostream>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <thread>
 #include <sys/stat.h>
+#include <netinet/tcp.h>
 
 #include "config/constants.hpp"
 #include "config/settings.hpp"
@@ -14,6 +18,7 @@
 #include "profiling/tracy.hpp"
 #include "services/llm_service.hpp"
 #include "utils/service_factory.hpp"
+#include "utils/logger.hpp"
 #include "worker/single_process_worker.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
@@ -22,7 +27,7 @@ namespace {
     volatile std::sig_atomic_t g_shutdown_requested = 0;
 
     void signal_handler(int signal) {
-        std::cout << "\n[Main] Received signal " << signal << ", initiating shutdown..." << std::endl;
+        TT_LOG_WARN("\n[Main] Received signal {}, initiating shutdown...", signal);
         g_shutdown_requested = 1;
         drogon::app().quit();
     }
@@ -34,8 +39,22 @@ int main(int argc, char* argv[]) {
         tracy_config::TracyStartupWorker(worker_id);
         tt::worker::WorkerConfig cfg = tt::services::make_worker_config_for_process(worker_id);
         tt::worker::SingleProcessWorker worker(cfg);
+
+        static std::atomic<bool> worker_shutdown{false};
+        std::signal(SIGTERM, [](int) { worker_shutdown.store(true); });
+        std::signal(SIGINT, [](int) { worker_shutdown.store(true); });
+
+        std::thread shutdown_monitor([&worker] {
+            while (!worker_shutdown.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            worker.stop();
+        });
+
         worker.start();
-        _exit(0);
+        worker_shutdown.store(true);
+        if (shutdown_monitor.joinable()) shutdown_monitor.join();
+        return 0;
     }
 
     // Parse command line arguments
@@ -53,6 +72,7 @@ int main(int argc, char* argv[]) {
         } else if ((arg == "-t" || arg == "--threads") && i + 1 < argc) {
             threads = std::stoi(argv[++i]);
         } else if (arg == "--help") {
+            // Use cout for help message (before logger is initialized)
             std::cout << "TT Media Server (C++ Drogon)\n"
                       << "Usage: " << argv[0] << " [options]\n"
                       << "Options:\n"
@@ -66,6 +86,9 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Initialize logger first
+    tt::utils::ZeroOverheadLogger::initialize();
+
     // Setup signal handlers
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
@@ -73,15 +96,14 @@ int main(int argc, char* argv[]) {
     auto model_svc = tt::config::model_service();
     std::string service_name = tt::config::to_string(model_svc);
 
-    std::cout << "=================================================\n"
-              << "  TT Media Server (C++ Drogon Implementation)\n"
-              << "=================================================\n"
-              << "  Host: " << host << "\n"
-              << "  Port: " << port << "\n"
-              << "  IO Threads: " << threads << "\n"
-              << "  Model Service: " << service_name << "\n";
-    std::cout << "=================================================\n"
-              << std::endl;
+    TT_LOG_INFO("=================================================");
+    TT_LOG_INFO("  TT Media Server (C++ Drogon Implementation)");
+    TT_LOG_INFO("=================================================");
+    TT_LOG_INFO("  Host: {}", host);
+    TT_LOG_INFO("  Port: {}", port);
+    TT_LOG_INFO("  IO Threads: {}", threads);
+    TT_LOG_INFO("  Model Service: {}", service_name);
+    TT_LOG_INFO("=================================================");
 
     // Ensure log directory exists (Drogon requires it)
     mkdir("./logs", 0755);
@@ -135,40 +157,42 @@ int main(int argc, char* argv[]) {
 
     // Configure Drogon
     drogon::app()
-        .setLogLevel(trantor::Logger::kWarn)
+        .setLogLevel(trantor::Logger::kDebug)
         .setLogPath("./logs")
         .addListener(host, port)
         .setThreadNum(threads)
+        .setAfterAcceptSockOptCallback([](int fd) {
+            int one = 1;
+            setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        })
         .setMaxConnectionNum(100000)
         .setMaxConnectionNumPerIP(0)  // No limit per IP
-        .setIdleConnectionTimeout(60)
+        .setIdleConnectionTimeout(300)
         .setKeepaliveRequestsNumber(0)  // No limit
         .setClientMaxBodySize(100 * 1024 * 1024)  // 100MB max body
         .setClientMaxMemoryBodySize(100 * 1024 * 1024)
         .setStaticFilesCacheTime(0);
 
-    std::cout << "[Main] Starting Drogon server at http://" << host << ":" << port << std::endl;
+    TT_LOG_INFO("[Main] Starting Drogon server at http://{}:{}", host, port);
 
     if (model_svc == tt::config::ModelService::EMBEDDING) {
-        std::cout << "[Main] Endpoints:\n"
-                  << "  POST /v1/embeddings   - OpenAI-compatible embeddings\n"
-                  << "  GET  /health          - Health check\n"
-                  << "  GET  /tt-liveness     - Liveness check\n"
-                  << std::endl;
+        TT_LOG_INFO("[Main] Endpoints:");
+        TT_LOG_INFO("  POST /v1/embeddings   - OpenAI-compatible embeddings");
+        TT_LOG_INFO("  GET  /health          - Health check");
+        TT_LOG_INFO("  GET  /tt-liveness     - Liveness check");
     } else {
-        std::cout << "[Main] Endpoints:\n"
-                  << "  POST /v1/completions       - OpenAI-compatible completions\n"
-                  << "  POST /v1/chat/completions  - OpenAI-compatible chat completions\n"
-                  << "  GET  /health               - Health check\n"
-                  << "  GET  /tt-liveness          - Liveness check\n"
-                  << "  GET  /docs                 - Swagger UI\n"
-                  << "  GET  /openapi.json         - OpenAPI specification\n"
-                  << std::endl;
+        TT_LOG_INFO("[Main] Endpoints:");
+        TT_LOG_INFO("  POST /v1/completions       - OpenAI-compatible completions");
+        TT_LOG_INFO("  POST /v1/chat/completions  - OpenAI-compatible chat completions");
+        TT_LOG_INFO("  GET  /health               - Health check");
+        TT_LOG_INFO("  GET  /tt-liveness          - Liveness check");
+        TT_LOG_INFO("  GET  /docs                 - Swagger UI");
+        TT_LOG_INFO("  GET  /openapi.json         - OpenAPI specification");
     }
 
     // Run the server
     drogon::app().run();
 
-    std::cout << "[Main] Server shutdown complete" << std::endl;
+    TT_LOG_INFO("[Main] Server shutdown complete");
     return 0;
 }

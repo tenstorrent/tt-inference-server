@@ -6,7 +6,7 @@ All development uses the following workflows in git for the repo repository http
 
 ### development in `dev`
 
-All normal development work should be done using this simple workflow, making branchs off `dev` and making PRs back to `dev`.
+All normal development work should be done using this simple workflow, making branches off `dev` and making PRs back to `dev`.
 
 **branches:**
 - `<namett>/<my-description>`
@@ -117,6 +117,10 @@ pip install -r tt-media-server/requirements.txt
 #### running pre-commit tests
 
 ```bash
+# option 1: use git pre-commit hooks direct
+. scripts/setup-hooks.sh
+
+# option 2: use pre-commit tool
 pre-commit install
 ```
 

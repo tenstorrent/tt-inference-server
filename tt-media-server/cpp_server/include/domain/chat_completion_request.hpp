@@ -8,6 +8,7 @@
 #include <optional>
 #include <sstream>
 
+#include "domain/base_request.hpp"
 #include "domain/chat_message.hpp"
 #include "domain/completion_request.hpp"
 #include "utils/tokenizer.hpp"
@@ -27,14 +28,14 @@ inline std::string messages_to_prompt(const std::vector<ChatMessage>& messages) 
     return out.str();
 }
 
-struct ChatCompletionRequest {
-    std::string task_id;
+struct ChatCompletionRequest : BaseRequest {
+    using BaseRequest::BaseRequest;
     std::optional<std::string> model;
 
     std::vector<ChatMessage> messages;
 
     bool echo = false;
-    int max_tokens = 16;
+    std::optional<int> max_tokens;
     int n = 1;
     float presence_penalty = 0.0f;
     float frequency_penalty = 0.0f;
@@ -64,8 +65,8 @@ struct ChatCompletionRequest {
     std::optional<int> prompt_logprobs;
     std::optional<int> truncate_prompt_tokens;
 
-    static ChatCompletionRequest fromJson(const Json::Value& json) {
-        ChatCompletionRequest req;
+    static ChatCompletionRequest fromJson(const Json::Value& json, TaskID task_id) {
+        ChatCompletionRequest req(std::move(task_id));
 
         if (json.isMember("model") && !json["model"].isNull()) {
             req.model = json["model"].asString();
@@ -150,10 +151,9 @@ struct ChatCompletionRequest {
 
     /** Convert to CompletionRequest: messages -> prompt, then same pipeline as /completions. */
     CompletionRequest to_completion_request() const {
-        CompletionRequest out;
-        out.task_id = task_id;
+        CompletionRequest out(task_id);
         out.model = model;
-        out.prompt = tt::utils::Tokenizer::apply_chat_template(messages);
+        out.prompt = tt::utils::active_tokenizer().apply_chat_template(messages);
 
         out.echo = echo;
         out.max_tokens = max_tokens;

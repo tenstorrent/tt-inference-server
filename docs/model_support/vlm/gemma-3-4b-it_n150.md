@@ -17,7 +17,22 @@ To use non-default weights, replace `gemma-3-4b-it` in commands below.
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
-This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
+This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal/README.md) inference engine.
+
+**docker run command**
+
+```bash
+docker run \
+  --env "HF_TOKEN=$HF_TOKEN" \
+  --ipc host \
+  --publish 8000:8000 \
+  --device /dev/tenstorrent \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --volume volume_id_gemma-3-4b-it:/home/container_app_user/cache_root \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-c254ee3-c4f2327 \
+  --model gemma-3-4b-it \
+  --tt-device n150
+```
 
 **via run.py command**
 
@@ -44,6 +59,21 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 ## N300 Configuration
 
 ### Quickstart - Deploy on n300
+
+**docker run command**
+
+```bash
+docker run \
+  --env "HF_TOKEN=$HF_TOKEN" \
+  --ipc host \
+  --publish 8000:8000 \
+  --device /dev/tenstorrent \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --volume volume_id_gemma-3-4b-it:/home/container_app_user/cache_root \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-c254ee3-c4f2327 \
+  --model gemma-3-4b-it \
+  --tt-device n300
+```
 
 **via run.py command**
 

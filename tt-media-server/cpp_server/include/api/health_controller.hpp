@@ -28,7 +28,7 @@ public:
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
 private:
-    std::shared_ptr<services::BaseService> service_;
+    std::shared_ptr<services::IService> service_;
 };
 
 } // namespace tt::api

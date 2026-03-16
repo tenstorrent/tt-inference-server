@@ -3,80 +3,66 @@
 
 #pragma once
 
+#include <concepts>
 #include <functional>
+#include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
-#include "domain/completion_request.hpp"
-#include "domain/completion_response.hpp"
-
+#include "domain/base_request.hpp"
+#include "domain/base_response.hpp"
 namespace tt::services {
 
-/**
- * Abstract base service class defining the interface for all completion services.
- * Concrete implementations (e.g. LLMService) provide scheduling, worker management,
- * and request dispatching.
- */
-class BaseService {
+class QueueFullException : public std::runtime_error {
+public:
+    QueueFullException() : std::runtime_error("Request queue is full, please retry later") {}
+};
+
+struct WorkerInfo {
+    std::string worker_id;
+    bool is_ready;
+    size_t processed_requests;
+};
+
+struct SystemStatus {
+    bool model_ready;
+    size_t queue_size;
+    size_t max_queue_size;
+    std::string device;
+    std::vector<WorkerInfo> worker_info;
+};
+
+class IService {
+public:
+    virtual ~IService() = default;
+    virtual void start() = 0;
+    virtual void stop() = 0;
+    virtual bool is_model_ready() const = 0;
+    virtual SystemStatus get_system_status() const = 0;
+};
+
+template<std::derived_from<domain::BaseRequest> RequestType, std::derived_from<domain::BaseResponse> ResponseType>
+class BaseService : public IService {
 public:
     virtual ~BaseService() = default;
 
-    /**
-     * Start the service and its workers.
-     */
-    virtual void start() = 0;
-
-    /**
-     * Stop the service and cleanup resources.
-     */
-    virtual void stop() = 0;
-
-    /**
-     * Check if the model is ready.
-     */
-    virtual bool is_model_ready() const = 0;
-
-    /**
-     * Worker info for monitoring.
-     */
-    struct WorkerInfo {
-        std::string worker_id;
-        bool is_ready;
-        size_t processed_requests;
-    };
-
-    /**
-     * System status for monitoring.
-     */
-    struct SystemStatus {
-        bool model_ready;
-        size_t queue_size;
-        size_t max_queue_size;
-        std::string device;
-        std::vector<WorkerInfo> worker_info;
-    };
-
-    virtual SystemStatus get_system_status() const = 0;
-    
-    void submit_request(
-        domain::CompletionRequest request,
-        std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
-    ) {
+    ResponseType submit_request(RequestType request) {
         pre_process(request);
-        process_request(request, callback);
-        post_process(request);
+        auto response = process_request(std::move(request));
+        post_process(response);
+        return response;
     }
 
-
 protected:
-    virtual void process_request(
-        domain::CompletionRequest request,
-        std::function<void(const domain::StreamingChunkResponse&, bool is_final)> callback
-    ) = 0;
+    virtual ResponseType process_request(RequestType request) = 0;
+    virtual void pre_process(RequestType& /*request*/) const {
+        if (current_queue_size() >= max_queue_size_) throw QueueFullException{};
+    }
+    virtual void post_process(ResponseType& response) const = 0;
+    virtual size_t current_queue_size() const = 0;
 
-    virtual void pre_process(domain::CompletionRequest& request) const = 0;
-
-    virtual void post_process(domain::CompletionRequest& request) const = 0;
+    size_t max_queue_size_ = std::numeric_limits<size_t>::max();
 };
 
 } // namespace tt::services

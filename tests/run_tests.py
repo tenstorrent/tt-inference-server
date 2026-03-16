@@ -21,6 +21,7 @@ from tests.test_config import TEST_CONFIGS, TestTask
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_TESTS_CONFIG,
@@ -78,9 +79,9 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Run tests")
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     parser.add_argument(
@@ -127,12 +128,12 @@ def main():
 
     args = parse_args()
     jwt_secret = args.jwt_secret
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    # Extract CLI args from model_spec
-    cli_args = model_spec.cli_args
-    device_str = cli_args.get("device")
-    service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+    # runtime config loaded from JSON
+    device_str = runtime_config.device
+    service_port = runtime_config.service_port
 
     workflow_config = WORKFLOW_TESTS_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
@@ -165,7 +166,7 @@ def main():
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = args.jwt_secret
-    env_config.service_port = cli_args.get("service_port")
+    env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
     # Execute pytest for each task.
@@ -182,7 +183,7 @@ def main():
             model_spec,
             device_str,
             args.output_path,
-            cli_args.get("service_port"),
+            runtime_config.service_port,
         )
         return_code = run_command(command=cmd, logger=logger, env=env_vars)
         return_codes.append(return_code)

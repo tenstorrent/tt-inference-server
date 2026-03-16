@@ -5,29 +5,38 @@
 #include "config/settings.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/embedding_runner.hpp"
+#include "utils/logger.hpp"
+#include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
 
 #include <iostream>
 
 namespace tt::utils::runner_factory {
 
 std::unique_ptr<runners::IRunner> create_runner(
-    const llm_engine::Config& config,
-    llm_engine::TokenCallback on_token,
+    config::ModelService service,
+    const runners::RunnerConfig& config,
+    ipc::TokenRingBuffer<65536>* result_queue,
     llm_engine::ITaskQueue* task_queue) {
-    
-    std::string runner_type = tt::config::runner_type();
-    
-    if (runner_type == "llm") {
-        std::cout << "[RunnerFactory] Creating LLM runner\n" << std::flush;
-        return std::make_unique<tt::runners::LLMRunner>(config, std::move(on_token), task_queue);
-    } else if (runner_type == "embedding") {
-        std::cout << "[RunnerFactory] Creating Embedding runner\n" << std::flush;
-        // For embedding runner, we'll use device_0 as default and visible_device=0
-        return std::make_unique<runners::EmbeddingRunner>("device_0", 0);
-    } else {
-        std::cout << "[RunnerFactory] Unknown runner type '" << runner_type 
-                  << "', defaulting to LLM runner\n" << std::flush;
-        return std::make_unique<tt::runners::LLMRunner>(config, std::move(on_token), task_queue);
+
+    switch (service) {
+        case config::ModelService::EMBEDDING: {
+            TT_LOG_INFO("[RunnerFactory] Creating Embedding runner");
+            return std::make_unique<runners::EmbeddingRunner>("device_0", 0);
+        }
+        case config::ModelService::LLM:
+        default: {
+            TT_LOG_INFO("[RunnerFactory] Creating LLM runner");
+            auto& cfg = std::get<llm_engine::Config>(config);
+
+            // Choose runner based on config.runner_type
+            if (cfg.runner_type == llm_engine::ModelRunnerType::Pipeline) {
+                TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner");
+                return std::make_unique<runners::SpPipelineRunner>(cfg, result_queue, task_queue);
+            }
+
+            TT_LOG_INFO("[RunnerFactory] Creating LLM runner");
+            return std::make_unique<tt::runners::LLMRunner>(cfg, result_queue, task_queue);
+        }
     }
 }
 

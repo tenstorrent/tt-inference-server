@@ -3,9 +3,9 @@
 
 #include "utils/tokenizer.hpp"
 #include "config/settings.hpp"
-
 #include <fstream>
 #include <sstream>
+#include <mutex>
 #include <json/json.h>
 
 namespace tt::utils {
@@ -54,24 +54,32 @@ bool load_from_path(const std::string& path, TokenizerConfig& out) {
 
 }  // namespace
 
-TokenizerConfig get_tokenizer_config() {
-    TokenizerConfig c;
-    std::string config_path = tt::config::tokenizer_config_path();
-    if (config_path.empty()) {
+static TokenizerConfig load_and_validate(const std::string& path) {
+    if (path.empty()) {
         throw std::runtime_error("[TokenizerUtil] Tokenizer config not found (tokenizer_config.json missing)");
     }
-    if (!load_from_path(config_path, c)) {
-        throw std::runtime_error("[TokenizerUtil] Failed to load tokenizer config: " + config_path);
+    TokenizerConfig cfg;
+    if (!load_from_path(path, cfg)) {
+        throw std::runtime_error("[TokenizerUtil] Failed to load tokenizer config: " + path);
     }
-    if (c.add_bos_token && c.bos_token.empty()) {
+    if (cfg.add_bos_token && cfg.bos_token.empty()) {
         throw std::runtime_error(
             "[TokenizerUtil] add_bos_token is true but bos_token is missing in tokenizer_config.json");
     }
-    if (c.add_eos_token && c.eos_token.empty()) {
+    if (cfg.add_eos_token && cfg.eos_token.empty()) {
         throw std::runtime_error(
             "[TokenizerUtil] add_eos_token is true but eos_token is missing in tokenizer_config.json");
     }
-    return c;
+    return cfg;
+}
+
+TokenizerConfig get_tokenizer_config() {
+    static TokenizerConfig cached = load_and_validate(tt::config::tokenizer_config_path());
+    return cached;
+}
+
+TokenizerConfig get_tokenizer_config(const std::string& config_path) {
+    return load_and_validate(config_path);
 }
 
 }  // namespace tt::utils

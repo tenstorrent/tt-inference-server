@@ -3,12 +3,12 @@
 
 #include "api/embedding_controller.hpp"
 #include "config/settings.hpp"
+#include "services/base_service.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/service_factory.hpp"
+#include "utils/logger.hpp"
 
-#include <iostream>
 #include <chrono>
-#include <iomanip>
 #include <sstream>
 #include <random>
 #include <thread>
@@ -80,7 +80,7 @@ namespace {
         std::vector<std::thread> workers_;
         std::queue<std::function<void()>> tasks_;
         TracyLockable(std::mutex, mutex_);
-        std::condition_variable cv_;
+        std::condition_variable_any cv_;
         bool stop_;
     };
 
@@ -96,14 +96,12 @@ EmbeddingController::EmbeddingController() {
         return;
     }
 
-    service_ = std::dynamic_pointer_cast<services::EmbeddingService>(
-        tt::utils::service_factory::get_service("embedding")
-    );
+    service_ = tt::utils::service_factory::get_service_by_type<services::EmbeddingService>();
     if (!service_) {
         throw std::runtime_error("[EmbeddingController] Embedding service not found in service factory. "
                                  "Ensure register_services() is called before Drogon starts.");
     }
-    std::cout << "[EmbeddingController] Initialized (service already started)\n" << std::flush;
+    TT_LOG_INFO("[EmbeddingController] Initialized (service already started)");
 }
 
 EmbeddingController::~EmbeddingController() = default;
@@ -140,8 +138,8 @@ void EmbeddingController::create_embedding(
     }
 
     // Build request
-    domain::EmbeddingRequest request = domain::EmbeddingRequest::from_json(*json);
-    request.task_id = generate_task_id();
+    domain::TaskID task_id(generate_task_id());
+    domain::EmbeddingRequest request = domain::EmbeddingRequest::from_json(*json, std::move(task_id));
 
     // Default model if not specified
     if (request.model.empty()) {
@@ -152,14 +150,11 @@ void EmbeddingController::create_embedding(
 
     auto submit_time = std::chrono::steady_clock::now();
 
-    // Submit request and get future
-    auto future = std::make_shared<std::future<domain::EmbeddingResponse>>(
-        service_->process_embedding(std::move(request)));
-
-    // Use thread pool instead of creating new thread per request
-    get_callback_pool().submit([callback = std::move(callback), future, req_num, start_time, submit_time]() {
+    get_callback_pool().submit(
+        [service = service_, request = std::move(request),
+         callback = std::move(callback), req_num, start_time, submit_time]() {
         try {
-            auto response = future->get();
+            auto response = service->submit_request(std::move(request));
             auto got_response_time = std::chrono::steady_clock::now();
 
             if (!response.error.empty()) {
@@ -172,27 +167,29 @@ void EmbeddingController::create_embedding(
                 return;
             }
 
-            // Build OpenAI-compatible response
             Json::Value json_response = response.to_openai_json();
             auto built_json_time = std::chrono::steady_clock::now();
 
             auto resp = drogon::HttpResponse::newHttpJsonResponse(json_response);
 
-            // Log timing every 100 requests
             if (req_num % 100 == 0) {
                 double parse_ms = std::chrono::duration<double, std::milli>(submit_time - start_time).count();
                 double wait_ms = std::chrono::duration<double, std::milli>(got_response_time - submit_time).count();
                 double build_ms = std::chrono::duration<double, std::milli>(built_json_time - got_response_time).count();
                 double total_ms = std::chrono::duration<double, std::milli>(built_json_time - start_time).count();
-                std::cout << "[CTRL] req=" << req_num
-                          << " parse=" << parse_ms << "ms"
-                          << " wait=" << wait_ms << "ms"
-                          << " build=" << build_ms << "ms"
-                          << " total=" << total_ms << "ms\n";
+                TT_LOG_DEBUG("[EmbeddingController] req={} parse={}ms wait={}ms build={}ms total={}ms",
+                            req_num, parse_ms, wait_ms, build_ms, total_ms);
             }
 
             callback(resp);
 
+        } catch (const services::QueueFullException& e) {
+            Json::Value error;
+            error["error"]["message"] = e.what();
+            error["error"]["type"] = "rate_limit_exceeded";
+            auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
+            resp->setStatusCode(drogon::k429TooManyRequests);
+            callback(resp);
         } catch (const std::exception& e) {
             Json::Value error;
             error["error"]["message"] = std::string("Internal error: ") + e.what();

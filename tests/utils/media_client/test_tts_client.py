@@ -52,7 +52,7 @@ class MockAsyncSession:
 class TestTtsClientStrategyInit(unittest.TestCase):
     """Tests for TtsClientStrategy.__init__ method."""
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def test_init_tokenizer_success(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
@@ -64,7 +64,7 @@ class TestTtsClientStrategyInit(unittest.TestCase):
         assert strategy.tokenizer is not None
         mock_tokenizer.assert_called_once_with("microsoft/speecht5_tts")
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def test_init_tokenizer_failure(self, mock_tokenizer):
         mock_tokenizer.side_effect = Exception("Tokenizer error")
         model_spec = MagicMock()
@@ -79,7 +79,7 @@ class TestTtsClientStrategyInit(unittest.TestCase):
 class TestTtsClientStrategyGetNumCalls(unittest.TestCase):
     """Tests for _get_tts_num_calls method."""
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     @patch("utils.media_clients.tts_client.get_num_calls")
     def test_get_tts_num_calls_benchmark_default(
         self, mock_get_num_calls, mock_tokenizer
@@ -95,7 +95,7 @@ class TestTtsClientStrategyGetNumCalls(unittest.TestCase):
 
         assert result == 10  # TTS benchmark default
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     @patch("utils.media_clients.tts_client.get_num_calls")
     def test_get_tts_num_calls_eval_default(self, mock_get_num_calls, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
@@ -109,7 +109,7 @@ class TestTtsClientStrategyGetNumCalls(unittest.TestCase):
 
         assert result == 5  # TTS eval default
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     @patch("utils.media_clients.tts_client.get_num_calls")
     def test_get_tts_num_calls_respects_configured_value(
         self, mock_get_num_calls, mock_tokenizer
@@ -129,7 +129,7 @@ class TestTtsClientStrategyGetNumCalls(unittest.TestCase):
 class TestTtsClientStrategyCalculateTtft(unittest.TestCase):
     """Tests for _calculate_ttft_value method."""
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
@@ -175,7 +175,7 @@ class TestTtsClientStrategyCalculateTtft(unittest.TestCase):
 class TestTtsClientStrategyCalculateRtr(unittest.TestCase):
     """Tests for _calculate_rtr_value method."""
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
@@ -216,7 +216,7 @@ class TestTtsClientStrategyCalculateRtr(unittest.TestCase):
 class TestTtsClientStrategyCalculateTailLatency(unittest.TestCase):
     """Tests for _calculate_tail_latency method."""
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
@@ -275,14 +275,15 @@ class TestTtsClientStrategyCalculateTailLatency(unittest.TestCase):
 class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
     """Tests for _calculate_performance_check method (TTFT, RTR)."""
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
         model_spec.model_name = "test"
         model_spec.hf_model_repo = "test/model"
         model_spec.model_type.name = "TEXT_TO_SPEECH"
-        model_spec.cli_args = {"device": "n150"}
+        model_spec.device_type = MagicMock()
+        model_spec.device_type.name = "N150"
         device = MagicMock()
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
@@ -335,14 +336,15 @@ class TestTtsClientStrategyCalculatePerformanceCheck(unittest.TestCase):
 class TestTtsClientStrategyCalculateAccuracyCheck(unittest.TestCase):
     """Tests for _calculate_accuracy_check method."""
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
         model_spec.model_name = "speecht5_tts"
         model_spec.hf_model_repo = "microsoft/speecht5_tts"
         model_spec.model_type.name = "TEXT_TO_SPEECH"
-        model_spec.cli_args = {"device": "n150"}
+        model_spec.device_type = MagicMock()
+        model_spec.device_type.name = "N150"
         device = MagicMock()
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
 
@@ -356,7 +358,7 @@ class TestTtsClientStrategyCalculateAccuracyCheck(unittest.TestCase):
 class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
     """Tests for _generate_speech method."""
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
@@ -417,7 +419,7 @@ class TestTtsClientStrategyGenerateSpeech(unittest.TestCase):
 class TestTtsClientStrategyRunTtsBenchmark(unittest.TestCase):
     """Tests for _run_tts_benchmark method."""
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
@@ -439,7 +441,7 @@ class TestTtsClientStrategyRunTtsBenchmark(unittest.TestCase):
 class TestTtsClientStrategyRunEval(unittest.TestCase):
     """Tests for run_eval method."""
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
@@ -509,7 +511,7 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
         assert eval_data["score"] == 150.0  # TTFT: (100 + 200) / 2 (in ms)
         assert abs(eval_data["rtr"] - 2.5) < 0.001  # (2.0 + 3.0) / 2
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def test_run_eval_health_check_failed(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
@@ -529,7 +531,7 @@ class TestTtsClientStrategyRunEval(unittest.TestCase):
 class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
     """Tests for run_benchmark method."""
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
@@ -537,7 +539,8 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
         model_spec.model_id = "test_id"
         model_spec.hf_model_repo = "test/model"
         model_spec.model_type.name = "TEXT_TO_SPEECH"
-        model_spec.cli_args = {"device": "n150"}
+        model_spec.device_type = MagicMock()
+        model_spec.device_type.name = "N150"
         device = MagicMock()
         device.name = "test_device"
         return TtsClientStrategy({}, model_spec, device, "/tmp", 8000)
@@ -592,7 +595,7 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
         assert report_data["device"] == "test_device"
         assert report_data["task_type"] == "tts"
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def test_run_benchmark_health_check_failed(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
@@ -610,7 +613,7 @@ class TestTtsClientStrategyRunBenchmark(unittest.TestCase):
 class TestTtsClientStrategyGenerateReport(unittest.TestCase):
     """Tests for _generate_report method."""
 
-    @patch("utils.media_clients.tts_client.AutoTokenizer.from_pretrained")
+    @patch("transformers.AutoTokenizer.from_pretrained")
     def _create_strategy(self, mock_tokenizer):
         mock_tokenizer.return_value = MagicMock()
         model_spec = MagicMock()
@@ -618,7 +621,8 @@ class TestTtsClientStrategyGenerateReport(unittest.TestCase):
         model_spec.model_id = "test_id"
         model_spec.hf_model_repo = "test/model"
         model_spec.model_type.name = "TEXT_TO_SPEECH"
-        model_spec.cli_args = {"device": "n150"}
+        model_spec.device_type = MagicMock()
+        model_spec.device_type.name = "N150"
         device = MagicMock()
         device.name = "test_device"
         return TtsClientStrategy({}, model_spec, device, "/tmp/output", 8000)

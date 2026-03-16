@@ -1,4 +1,4 @@
-# Llama-3.1-8B Tenstorrent Support on BH QuietBox
+# Llama-3.1-8B Tenstorrent Support on BH 4xP150
 
 Supported weights variants for this model implementation are:
 
@@ -9,7 +9,7 @@ To use non-default weights, replace `Llama-3.1-8B` in commands below.
 
 #### Useful links
 
-- [BH QuietBox details](https://tenstorrent.com/hardware/tt-quietbox)
+- [BH 4xP150 details](https://tenstorrent.com/hardware/tt-quietbox)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
@@ -21,11 +21,26 @@ To use non-default weights, replace `Llama-3.1-8B` in commands below.
 - [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
 - [N150/N300](Llama-3.1-8B_n150.md)
 
-## Quickstart - Deploy Llama-3.1-8B Inference Server on BH QuietBox
+## Quickstart - Deploy Llama-3.1-8B Inference Server on BH 4xP150
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
-This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal-llama3/README.md) inference engine.
+This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal/README.md) inference engine.
+
+**docker run command**
+
+```bash
+docker run \
+  --env "HF_TOKEN=$HF_TOKEN" \
+  --ipc host \
+  --publish 8000:8000 \
+  --device /dev/tenstorrent \
+  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e \
+  --model Llama-3.1-8B \
+  --tt-device p150x4
+```
 
 **via run.py command**
 

@@ -65,7 +65,7 @@ class HardwarePageGroup:
 
 # Mapping inference engine to documentation link (reused from update_model_spec.py)
 INFERENCE_ENGINE_README_LINKS = {
-    InferenceEngine.VLLM.value: "../../../vllm-tt-metal-llama3/README.md",
+    InferenceEngine.VLLM.value: "../../../vllm-tt-metal/README.md",
     InferenceEngine.MEDIA.value: "../../../tt-media-server/README.md",
     InferenceEngine.FORGE.value: "../../../tt-media-server/README.md",
 }
@@ -546,6 +546,33 @@ def generate_model_page_group_page(
             lines.append(
                 f"This model is supported by [{inference_engine_display_name}]({INFERENCE_ENGINE_README_LINKS[target_template.inference_engine]}) inference engine."
             )
+            lines.append("")
+
+        # docker run command
+        if target_template.inference_engine == InferenceEngine.VLLM.value:
+            docker_image = target_template.docker_image or generate_default_docker_link(
+                target_template.version,
+                target_template.tt_metal_commit,
+                target_template.vllm_commit,
+            )
+            lines.append("**docker run command**")
+            lines.append("")
+            lines.append("```bash")
+            lines.extend(
+                [
+                    "docker run \\",
+                    '  --env "HF_TOKEN=$HF_TOKEN" \\',
+                    "  --ipc host \\",
+                    "  --publish 8000:8000 \\",
+                    "  --device /dev/tenstorrent \\",
+                    "  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \\",
+                    f"  --volume volume_id_{model_name}:/home/container_app_user/cache_root \\",
+                    f"  {docker_image} \\",
+                    f"  --model {model_name} \\",
+                    f"  --tt-device {device.name.lower()}",
+                ]
+            )
+            lines.append("```")
             lines.append("")
 
         # run.py command

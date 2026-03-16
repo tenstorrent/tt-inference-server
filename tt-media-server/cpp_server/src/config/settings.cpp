@@ -3,7 +3,10 @@
 
 #include "config/settings.hpp"
 #include "runners/llm_runner/config.hpp"
+#include "utils/tokenizer.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <cstddef>
 #include <string>
@@ -14,9 +17,21 @@ namespace tt::config {
 
 namespace {
 
+/** Convert string to lowercase for case-insensitive environment variable parsing. */
+std::string to_lower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return s;
+}
+
 std::string env_string(const char* name, const std::string& default_value) {
     const char* v = std::getenv(name);
     return v ? std::string(v) : default_value;
+}
+
+/** Read env string and convert to lowercase for case-insensitive parsing. */
+std::string env_string_lower(const char* name, const std::string& default_value) {
+    return to_lower(env_string(name, default_value));
 }
 
 unsigned long env_ulong(const char* name, unsigned long default_value) {
@@ -57,8 +72,7 @@ std::vector<std::string> parse_device_ids(const std::string& raw) {
 
 const std::vector<std::string>& device_ids_parsed() {
     static std::vector<std::string> cached;
-    const char* env = std::getenv("DEVICE_IDS");
-    std::string current = (env && *env) ? std::string(env) : std::string(defaults::DEVICE_IDS);
+    std::string current = env_string("DEVICE_IDS", defaults::DEVICE_IDS);
     static std::string last_env;
     if (current != last_env) {
         last_env = std::move(current);
@@ -70,7 +84,7 @@ const std::vector<std::string>& device_ids_parsed() {
 }  // namespace
 
 ModelService model_service() {
-    return model_service_from_string(env_string("MODEL_SERVICE", defaults::MODEL_SERVICE));
+    return model_service_from_string(env_string_lower("MODEL_SERVICE", defaults::MODEL_SERVICE));
 }
 
 bool is_embedding_service() {
@@ -114,8 +128,26 @@ static std::filesystem::path tokenizers_dir() {
     return {};
 }
 
+std::string tokenizer_path(ModelType model) {
+    auto base = tokenizers_dir();
+    if (base.empty()) return "";
+    std::string model_dir = utils::tokenizer_dir_for_model(model);
+    std::filesystem::path p = base / model_dir / "tokenizer.json";
+    if (std::filesystem::exists(p)) {
+        return std::filesystem::absolute(p).string();
+    }
+    return "";
+}
+
 std::string tokenizer_path() {
-    std::filesystem::path p = tokenizers_dir() / "tokenizer.json";
+    return tokenizer_path(model_type());
+}
+
+std::string tokenizer_config_path(ModelType model) {
+    auto base = tokenizers_dir();
+    if (base.empty()) return "";
+    std::string model_dir = utils::tokenizer_dir_for_model(model);
+    std::filesystem::path p = base / model_dir / "tokenizer_config.json";
     if (std::filesystem::exists(p)) {
         return std::filesystem::absolute(p).string();
     }
@@ -123,11 +155,7 @@ std::string tokenizer_path() {
 }
 
 std::string tokenizer_config_path() {
-    std::filesystem::path p = tokenizers_dir() / "tokenizer_config.json";
-    if (std::filesystem::exists(p)) {
-        return std::filesystem::absolute(p).string();
-    }
-    return "";
+    return tokenizer_config_path(model_type());
 }
 
 std::string visible_devices_for_worker(size_t worker_index) {
@@ -138,16 +166,57 @@ std::string visible_devices_for_worker(size_t worker_index) {
 
 llm_engine::Config llm_engine_config() {
     llm_engine::Config cfg;
-    const char* v = std::getenv("LLM_DEVICE_BACKEND");
-    if (v) {
-        std::string s(v);
-        if (s == "sockets") {
-            cfg.device = llm_engine::DeviceBackend::Sockets;
-        } else {
-            cfg.device = llm_engine::DeviceBackend::Mock;
-        }
+    cfg.stop_token_ids = utils::active_tokenizer().stop_token_ids();
+    cfg.max_in_flight_count = max_in_flight_count();
+    std::string backend = env_string_lower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
+    if (backend == "pipeline") {
+        cfg.runner_type = llm_engine::ModelRunnerType::Pipeline;
+        cfg.max_in_flight_count = 1;
+    } else if (backend == "llama") {
+        cfg.kvcache_block_size = 32;
+        cfg.max_num_batched_tokens = 16384;
+        cfg.runner_type = llm_engine::ModelRunnerType::Llama;
+    } else {
+        cfg.runner_type = llm_engine::ModelRunnerType::Mock;
     }
+    cfg.scheduling_policy = scheduling_policy();
     return cfg;
+}
+
+ModelType model_type() {
+    return model_type_from_device_backend(env_string_lower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND));
+}
+
+LLMMode llm_mode() {
+    return llm_mode_from_string(env_string_lower("LLM_MODE", defaults::LLM_MODE));
+}
+
+llm_engine::SchedulingPolicy scheduling_policy() {
+    return scheduling_policy_from_string(env_string_lower("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY));
+}
+
+size_t max_in_flight_count() {
+    return static_cast<size_t>(env_ulong("MAX_IN_FLIGHT_COUNT", defaults::MAX_IN_FLIGHT_COUNT));
+}
+
+std::string socket_host() {
+    return env_string("SOCKET_HOST", defaults::SOCKET_HOST);
+}
+
+bool enable_accumulated_streaming() {
+    return env_ulong("ENABLE_ACCUMULATED_STREAMING", defaults::ENABLE_ACCUMULATED_STREAMING);
+}
+
+size_t max_accumulated_tokens() {
+    return static_cast<size_t>(env_ulong("MAX_ACCUMULATED_TOKENS", defaults::MAX_ACCUMULATED_TOKENS));
+}
+
+uint16_t socket_port() {
+    return static_cast<uint16_t>(env_ulong("SOCKET_PORT", defaults::SOCKET_PORT));
+}
+
+size_t max_queue_size() {
+    return static_cast<size_t>(env_ulong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));
 }
 
 }  // namespace tt::config

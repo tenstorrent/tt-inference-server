@@ -4,20 +4,17 @@
 #include "api/health_controller.hpp"
 #include "config/settings.hpp"
 #include "utils/service_factory.hpp"
+#include "utils/logger.hpp"
 
 #include <chrono>
-#include <iostream>
+#include "services/llm_service.hpp"
+#include "services/embedding_service.hpp"
 
 namespace tt::api {
 
 HealthController::HealthController() {
-    if (tt::config::is_llm_service_enabled()) {
-        service_ = tt::utils::service_factory::get_service("llm");
-    } else if (tt::config::is_embedding_service()) {
-        service_ = tt::utils::service_factory::get_service("embedding");
-    }
-    std::cout << "[HealthController] Initialized (service="
-              << (service_ ? "yes" : "no") << ")\n" << std::flush;
+    service_ = tt::utils::service_factory::get_configured_service();
+    TT_LOG_INFO("[HealthController] Initialized (service={})", (service_ ? "yes" : "no"));
 }
 
 void HealthController::health(

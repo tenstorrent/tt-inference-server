@@ -1,6 +1,6 @@
 # Developer Documentation
 
-Directory of developement docs for working on tt-inference-server.
+Directory of development docs for working on tt-inference-server.
 
 ## Getting Started
 

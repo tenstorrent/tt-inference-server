@@ -35,6 +35,6 @@ def initialize_device_worker(worker_id: str, logger: TTLogger):
     except Exception as e:
         if device_runner is not None:
             device_runner.close_device()
-        logger.error(f"Failed to get device runner: {e}")
+        logger.error(f"Worker {worker_id} device init failed: {e}")
         loop.close()
         raise

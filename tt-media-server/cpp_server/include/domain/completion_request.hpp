@@ -9,6 +9,8 @@
 #include <variant>
 #include <json/json.h>
 
+#include "domain/base_request.hpp"
+
 namespace tt::domain {
 
 /**
@@ -34,9 +36,8 @@ struct StreamOptions {
  * OpenAI-compatible completion request.
  * Based on OpenAI API specification.
  */
-struct CompletionRequest {
-    // Internal task tracking
-    std::string task_id;
+struct CompletionRequest : BaseRequest {
+    using BaseRequest::BaseRequest;
 
     // Model identifier
     std::optional<std::string> model;
@@ -46,7 +47,7 @@ struct CompletionRequest {
 
     // Response configuration
     bool echo = false;
-    int max_tokens = 16;
+    std::optional<int> max_tokens;
     int n = 1;
     float presence_penalty = 0.0f;
     float frequency_penalty = 0.0f;
@@ -83,9 +84,10 @@ struct CompletionRequest {
     std::optional<std::vector<int>> allowed_token_ids;
     std::optional<int> prompt_logprobs;
     std::optional<int> truncate_prompt_tokens;
+    int prompt_tokens_count = 0;
 
-    static CompletionRequest fromJson(const Json::Value& json) {
-        CompletionRequest req;
+    static CompletionRequest fromJson(const Json::Value& json, TaskID task_id) {
+        CompletionRequest req(std::move(task_id));
 
         if (json.isMember("model") && !json["model"].isNull()) {
             req.model = json["model"].asString();

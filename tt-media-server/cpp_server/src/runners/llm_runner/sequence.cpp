@@ -1,18 +1,22 @@
 #include "runners/llm_runner/sequence.hpp"
+#include "runners/llm_runner/config.hpp"
+#include "llm_runner/sampling_params.hpp"
 #include <algorithm>
+#include <cassert>
 #include <stdexcept>
 
 namespace llm_engine {
 
-Sequence::Sequence(std::vector<int64_t> token_ids,
+Sequence::Sequence(TaskID task_id, int block_size,
+                   std::vector<int64_t> token_ids,
                    const SamplingParams& sampling_params)
-    : task_id(TaskID{}),
+    : task_id(std::move(task_id)),
       status_(SequenceStatus::WAITING),
       token_ids_(std::move(token_ids)),
       num_prompt_tokens_(token_ids_.size()),
-      temperature(sampling_params.temperature),
-      max_tokens(sampling_params.max_tokens),
-      ignore_eos(sampling_params.ignore_eos) {
+      sampling_params(std::make_unique<SamplingParams>(sampling_params)),
+      block_size_(block_size) {
+  assert(!this->task_id.id.empty() && "Sequence requires a non-empty task_id");
   if (!token_ids_.empty()) {
     last_token = token_ids_.back();
   }
@@ -23,8 +27,8 @@ std::vector<int64_t> Sequence::block(size_t i) const {
   if (i >= n) {
     throw std::out_of_range("block index out of range");
   }
-  size_t start = i * block_size;
-  size_t end = std::min(start + block_size, token_ids_.size());
+  size_t start = i * block_size_;
+  size_t end = std::min(start + block_size_, token_ids_.size());
   return std::vector<int64_t>(token_ids_.begin() + start, token_ids_.begin() + end);
 }
 
@@ -50,28 +54,29 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&last_token), sizeof(last_token));
   os.write(reinterpret_cast<const char*>(&num_prompt_tokens_), sizeof(num_prompt_tokens_));
   os.write(reinterpret_cast<const char*>(&num_cached_tokens_), sizeof(num_cached_tokens_));
-  os.write(reinterpret_cast<const char*>(&max_tokens), sizeof(max_tokens));
-  os.write(reinterpret_cast<const char*>(&ignore_eos), sizeof(ignore_eos));
   os.write(reinterpret_cast<const char*>(&token_ids_size), sizeof(token_ids_size));
   os.write(reinterpret_cast<const char*>(token_ids_.data()), token_ids_size * sizeof(int64_t));
   os.write(reinterpret_cast<const char*>(&block_table_size), sizeof(block_table_size));
   os.write(reinterpret_cast<const char*>(block_table_.data()), block_table_size * sizeof(int));
-  os.write(reinterpret_cast<const char*>(&temperature), sizeof(temperature));
   os.write(reinterpret_cast<const char*>(&status_), sizeof(status_));
+  os.write(reinterpret_cast<const char*>(&block_size_), sizeof(block_size_));
+  sampling_params->serialize(os);
 }
 
 Sequence* Sequence::deserialize(std::istream& is) {
-  Sequence* seq = new Sequence(std::vector<int64_t>{});
-
   size_t task_id_size;
   is.read(reinterpret_cast<char*>(&task_id_size), sizeof(task_id_size));
-  seq->task_id.id.resize(task_id_size);
-  is.read(reinterpret_cast<char*>(seq->task_id.id.data()), task_id_size);
+  std::string task_id_str(task_id_size, '\0');
+  is.read(task_id_str.data(), task_id_size);
+
+  Config default_config;
+  Sequence* seq = new Sequence(TaskID(std::move(task_id_str)),
+                               default_config.kvcache_block_size,
+                               std::vector<int64_t>{});
+
   is.read(reinterpret_cast<char*>(&seq->last_token), sizeof(seq->last_token));
   is.read(reinterpret_cast<char*>(&seq->num_prompt_tokens_), sizeof(seq->num_prompt_tokens_));
   is.read(reinterpret_cast<char*>(&seq->num_cached_tokens_), sizeof(seq->num_cached_tokens_));
-  is.read(reinterpret_cast<char*>(&seq->max_tokens), sizeof(seq->max_tokens));
-  is.read(reinterpret_cast<char*>(&seq->ignore_eos), sizeof(seq->ignore_eos));
 
   size_t token_ids_size;
   is.read(reinterpret_cast<char*>(&token_ids_size), sizeof(token_ids_size));
@@ -83,9 +88,9 @@ Sequence* Sequence::deserialize(std::istream& is) {
   seq->block_table_.resize(block_table_size);
   is.read(reinterpret_cast<char*>(seq->block_table_.data()), block_table_size * sizeof(int));
 
-  is.read(reinterpret_cast<char*>(&seq->temperature), sizeof(seq->temperature));
-  
   is.read(reinterpret_cast<char*>(&seq->status_), sizeof(seq->status_));
+  is.read(reinterpret_cast<char*>(&seq->block_size_), sizeof(seq->block_size_));
+  seq->sampling_params.reset(SamplingParams::deserialize(is));
   return seq;
 }
 

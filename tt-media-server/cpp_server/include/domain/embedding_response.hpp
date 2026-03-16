@@ -7,13 +7,17 @@
 #include <string>
 #include <json/json.h>
 
+#include "domain/base_response.hpp"
+
 namespace tt::domain {
 
 /**
  * OpenAI-compatible embedding response.
  * Based on: https://platform.openai.com/docs/api-reference/embeddings/object
  */
-struct EmbeddingResponse {
+struct EmbeddingResponse : BaseResponse {
+    using BaseResponse::BaseResponse;
+
     // The embedding vector
     std::vector<float> embedding;
 
@@ -22,9 +26,6 @@ struct EmbeddingResponse {
 
     // Model used
     std::string model;
-
-    // Task ID for tracking
-    std::string task_id;
 
     // Error message (if any)
     std::string error;
@@ -64,10 +65,13 @@ struct EmbeddingResponse {
     }
 
     /**
-     * Parse from Python result JSON.
+     * Parse from Python result JSON. task_id from JSON if present, otherwise a new UUID.
      */
     static EmbeddingResponse from_json(const Json::Value& json) {
-        EmbeddingResponse resp;
+        TaskID tid = json.isMember("task_id") && !json["task_id"].asString().empty()
+            ? TaskID(json["task_id"].asString())
+            : TaskID(TaskID::generate());
+        EmbeddingResponse resp(std::move(tid));
 
         if (json.isMember("embedding") && json["embedding"].isArray()) {
             const Json::Value& emb_array = json["embedding"];
@@ -84,10 +88,6 @@ struct EmbeddingResponse {
 
         if (json.isMember("model")) {
             resp.model = json["model"].asString();
-        }
-
-        if (json.isMember("task_id")) {
-            resp.task_id = json["task_id"].asString();
         }
 
         if (json.isMember("error")) {

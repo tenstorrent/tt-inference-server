@@ -20,13 +20,13 @@ logger = logging.getLogger("run_log")
 
 
 class WorkflowSetup:
-    def __init__(self, model_spec, json_fpath):
+    def __init__(self, model_spec, runtime_config, json_fpath):
         self.model_spec = model_spec
-        self.model_spec_json_path = json_fpath
-        _workflow_type = WorkflowType.from_string(self.model_spec.cli_args.workflow)
+        self.runtime_config = runtime_config
+        self.runtime_model_spec_json_path = json_fpath
+        _workflow_type = WorkflowType.from_string(self.runtime_config.workflow)
 
-        # Check for --tools argument to select appropriate benchmarking workflow
-        tools = getattr(self.model_spec.cli_args, "tools", "vllm")
+        tools = getattr(self.runtime_config, "tools", "vllm")
         if _workflow_type == WorkflowType.BENCHMARKS and tools == "aiperf":
             self.workflow_config = WORKFLOW_BENCHMARKS_AIPERF_CONFIG
         else:
@@ -66,7 +66,6 @@ class WorkflowSetup:
 
     def setup_workflow(self):
         self.create_required_venvs()
-        # stub for workflow specific setup
         if self.workflow_config.workflow_type == WorkflowType.BENCHMARKS:
             pass
         elif self.workflow_config.workflow_type == WorkflowType.EVALS:
@@ -90,10 +89,10 @@ class WorkflowSetup:
         cmd = [
             str(self.workflow_venv_config.venv_python),
             str(self.workflow_config.run_script_path),
-            "--model-spec-json", str(self.model_spec_json_path),
+            "--runtime-model-spec-json", str(self.runtime_model_spec_json_path),
             "--output-path", str(self.get_output_path()),
             "--model", self.model_spec.model_name,
-            "--device", self.model_spec.cli_args.device,
+            "--device", self.runtime_config.device,
         ]
         # fmt: on
 
@@ -107,17 +106,16 @@ class WorkflowSetup:
         return return_code
 
 
-def run_single_workflow(model_spec, json_fpath):
-    manager = WorkflowSetup(model_spec, json_fpath)
+def run_single_workflow(model_spec, runtime_config, json_fpath):
+    manager = WorkflowSetup(model_spec, runtime_config, json_fpath)
     manager.setup_workflow()
     return_code = manager.run_workflow_script()
     return return_code
 
 
-def run_workflows(model_spec, json_fpath):
+def run_workflows(model_spec, runtime_config, json_fpath):
     return_codes = []
-    args = model_spec.cli_args
-    if WorkflowType.from_string(args.workflow) == WorkflowType.RELEASE:
+    if WorkflowType.from_string(runtime_config.workflow) == WorkflowType.RELEASE:
         logger.info("Running release workflow ...")
         done_trace_capture = False
         workflows_to_run = [
@@ -125,24 +123,24 @@ def run_workflows(model_spec, json_fpath):
             WorkflowType.BENCHMARKS,
             WorkflowType.SPEC_TESTS,
         ]
-        # only run tests workflow if defined
         if model_spec.model_name in TEST_CONFIGS:
             workflows_to_run.append(WorkflowType.TESTS)
         workflows_to_run.append(WorkflowType.REPORTS)
         for wf in workflows_to_run:
             if done_trace_capture:
-                # after first run BENCHMARKS traces are captured
-                args.disable_trace_capture = True
+                runtime_config.disable_trace_capture = True
             logger.info(f"Next workflow in release: {wf.name}")
-            args.workflow = wf.name
-            return_code = run_single_workflow(model_spec, json_fpath)
+            runtime_config.workflow = wf.name
+            return_code = run_single_workflow(model_spec, runtime_config, json_fpath)
             return_codes.append(return_code)
             done_trace_capture = True
         return return_codes
     else:
-        return_codes.append(run_single_workflow(model_spec, json_fpath))
-        if WorkflowType.from_string(args.workflow) != WorkflowType.REPORTS:
-            args.workflow = WorkflowType.REPORTS.name
-            return_codes.append(run_single_workflow(model_spec, json_fpath))
+        return_codes.append(run_single_workflow(model_spec, runtime_config, json_fpath))
+        if WorkflowType.from_string(runtime_config.workflow) != WorkflowType.REPORTS:
+            runtime_config.workflow = WorkflowType.REPORTS.name
+            return_codes.append(
+                run_single_workflow(model_spec, runtime_config, json_fpath)
+            )
 
     return return_codes

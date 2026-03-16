@@ -1,6 +1,7 @@
 #include "runners/llm_runner/block_manager.hpp"
 #include "runners/llm_runner/debug.hpp"
 #include "runners/llm_runner/hash.hpp"
+#include "profiling/tracy.hpp"
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
@@ -21,7 +22,7 @@ void Block::reset() {
 }
 
 BlockManager::BlockManager(int num_blocks, int block_size)
-    : block_size_(block_size) {
+ : block_size_(block_size) {
   if (num_blocks <= 0) {
     throw std::invalid_argument(
         "BlockManager: num_blocks must be positive, got " + std::to_string(num_blocks));
@@ -41,6 +42,7 @@ int64_t BlockManager::compute_hash(const std::vector<int64_t>& token_ids,
 }
 
 Block& BlockManager::allocate_block(int block_id) {
+  ZoneScopedN("BlockManager::allocate_block");
   Block& block = blocks_[static_cast<size_t>(block_id)];
   assert(block.ref_count == 0);
   block.reset();
@@ -54,6 +56,7 @@ Block& BlockManager::allocate_block(int block_id) {
 }
 
 void BlockManager::deallocate_block(int block_id) {
+  ZoneScopedN("BlockManager::deallocate_block");
   assert(blocks_[static_cast<size_t>(block_id)].ref_count == 0);
   used_block_ids_.erase(block_id);
   free_block_ids_.push_back(block_id);
@@ -67,6 +70,7 @@ bool BlockManager::can_allocate(const Sequence& seq) const {
 }
 
 void BlockManager::allocate(Sequence& seq) {
+  ZoneScopedN("BlockManager::allocate");
   assert(seq.block_table_.empty());
   LLM_ENGINE_LOG("block_manager") << "allocate task_id=" << seq.task_id
                                 << " num_blocks=" << seq.num_blocks()
@@ -109,6 +113,7 @@ void BlockManager::allocate(Sequence& seq) {
 }
 
 void BlockManager::deallocate(Sequence& seq) {
+  ZoneScopedN("BlockManager::deallocate");
   LLM_ENGINE_LOG("block_manager") << "deallocate task_id=" << seq.task_id
                                  << " num_blocks=" << seq.block_table_.size() << std::endl;
   for (auto it = seq.block_table_.rbegin(); it != seq.block_table_.rend();
@@ -130,6 +135,7 @@ bool BlockManager::can_append(const Sequence& seq) const {
 }
 
 void BlockManager::may_append(Sequence& seq) {
+  ZoneScopedN("BlockManager::may_append");
   std::vector<int>& block_table = seq.block_table_;
   Block& last_block = blocks_[static_cast<size_t>(block_table.back())];
   size_t len = seq.size();
