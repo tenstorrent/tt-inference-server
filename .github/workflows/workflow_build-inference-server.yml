@@ -1,0 +1,248 @@
+name: Build Inference Server
+
+on:
+  workflow_call:
+    inputs:
+      runner-label:
+        description: "Runner label"
+        required: false
+        type: string
+        default: n300
+      inference-server-sha:
+        description: "SHA for tt-inference-server repository"
+        required: false
+        type: string
+        default: dev
+      tt-metal-commit:
+        description: "SHA for tt-metal repository"
+        required: false
+        type: string
+        default: dev
+      vllm-commit:
+        description: "SHA for vllm repository"
+        required: false
+        type: string
+        default: dev
+      ubuntu-version:
+        description: "Ubuntu version"
+        required: false
+        type: string
+        default: "22.04"
+      inference-server-type:
+        description: "Server type (tt-inference-server, media-inference-server, forge-media-inference-server)"
+        required: false
+        type: string
+        default: tt-inference-server
+
+    outputs:
+      cloud_image_tag:
+        description: "The built image tag"
+        value: ${{ jobs.build-inference-server.outputs.cloud_image_tag }}
+      dev_image_tag:
+        description: "The built image tag"
+        value: ${{ jobs.build-inference-server.outputs.dev_image_tag }}
+
+env:
+  IMAGE_REPO: "ghcr.io/tenstorrent/tt-inference-server"
+  WORKFLOW_LOGS: workflow_logs
+
+jobs:
+  build-inference-server:
+    runs-on: ${{ inputs.runner-label }}
+    timeout-minutes: 180
+    outputs:
+      cloud_image_tag: ${{ steps.build.outputs.cloud_image_tag }}
+      dev_image_tag: ${{ steps.build.outputs.dev_image_tag }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Checkout tt-shield
+      uses: actions/checkout@v4
+      with:
+        repository: tenstorrent/tt-shield
+        path: .tt-shield
+        ref: main
+        sparse-checkout: .github
+        fetch-depth: 1
+
+    - name: Fetch job id
+      id: fetch-job-id
+      uses: ./.tt-shield/.github/actions/fetch-job-id
+      with:
+        job_name: "build-${{ inputs.inference-server-type }}"
+
+    - name: Derive short inference-server SHA
+      id: derive-short-inference-server-sha
+      run: echo "short-inference-server-sha=${FULL_SHA:0:7}" >> "$GITHUB_OUTPUT"
+      env:
+        FULL_SHA: ${{ inputs.inference-server-sha }}
+
+    - name: Checkout tt-inference-server
+      uses: actions/checkout@v4
+      with:
+        repository: tenstorrent/tt-inference-server
+        path: tt-inference-server
+        ref: ${{ inputs.inference-server-sha }}
+        fetch-depth: 1
+
+    - name: Derive short vllm SHA
+      if: ${{ inputs.inference-server-type == 'tt-inference-server' }}
+      id: derive-short-vllm-sha
+      run: echo "short-vllm-sha=${FULL_SHA:0:7}" >> "$GITHUB_OUTPUT"
+      env:
+        FULL_SHA: ${{ inputs.vllm-commit }}
+
+    - name: Docker login
+      uses: docker/login-action@v3
+      with:
+        registry: https://ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build image for tt-inference-server
+      if: ${{ inputs.inference-server-type == 'tt-inference-server' }}
+      id: build-tt-inference-server
+      working-directory: tt-inference-server
+      run: |
+        chmod +x ./scripts/build_single_docker.sh
+        BUILD_ARGS=(
+          "./scripts/build_single_docker.sh"
+          "--build"
+          "--tt-metal-commit" "${{ inputs.tt-metal-commit }}"
+          "--vllm-commit" "${{ steps.derive-short-vllm-sha.outputs.short-vllm-sha }}"
+          "--ubuntu-version" "${{ inputs.ubuntu-version }}"
+          "--tag-suffix" "${{ steps.fetch-job-id.outputs.job_id }}"
+          "--image-repo" "${{ env.IMAGE_REPO }}"
+          "--push"
+        )
+
+        # Debug: Show the command that will be executed
+        echo "Executing command: ${BUILD_ARGS[*]}"
+
+        # Run build and capture all output
+        IMAGE_OUTPUT=$("${BUILD_ARGS[@]}")
+
+        # Extract dev image tag from output
+        # Supports new format: "✅ built image: <tag>" (tt-inference-server PR #2242)
+        # and old format: "✅ built images:" followed by tag lines
+        DEV_IMAGE_TAG=$(echo "$IMAGE_OUTPUT" | grep -oE 'ghcr\.io/[^ ]+src-dev[^ ]+' | head -1)
+
+        # Cloud image no longer built separately (removed in tt-inference-server PR #2242);
+        # use dev image tag for backward compatibility with downstream consumers
+        CLOUD_IMAGE_TAG="$DEV_IMAGE_TAG"
+
+        # if nightly and branch main, tag and push latest
+        if [ "$GITHUB_WORKFLOW" == "On nightly" ] && [ "$GITHUB_REF" == "refs/heads/main" ]; then
+          docker tag "$DEV_IMAGE_TAG" "${{ env.IMAGE_REPO }}/tt-inference-server:latest"
+          docker push "${{ env.IMAGE_REPO }}/tt-inference-server:latest"
+        fi
+
+        if [ -z "$DEV_IMAGE_TAG" ]; then
+          echo "Captured dev image tag: $DEV_IMAGE_TAG"
+          echo "❌ Failed to capture dev image tag"
+          exit 1
+        else
+          echo "cloud_image_tag=$CLOUD_IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "dev_image_tag=$DEV_IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "✅ Successfully built and pushed image:"
+          echo "$DEV_IMAGE_TAG"
+        fi
+
+    - name: Build image for media-inference-server
+      if: ${{ inputs.inference-server-type == 'media-inference-server' }}
+      id: build-media-inference-server
+      working-directory: tt-inference-server
+      run: |
+        IMAGE_VERSION=$(cat VERSION)
+        echo "$IMAGE_VERSION"
+        IMAGE_TAG="${{ env.IMAGE_REPO }}/tt-media-inference-server:$IMAGE_VERSION-${{ inputs.tt-metal-commit }}-${{ steps.derive-short-inference-server-sha.outputs.short-inference-server-sha }}-${{ steps.fetch-job-id.outputs.job_id }}"
+        echo "IMAGE TAG: $IMAGE_TAG"
+
+        docker build --no-cache \
+          -t "$IMAGE_TAG" \
+          --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${{ inputs.tt-metal-commit }} \
+          -f tt-media-server/Dockerfile .
+
+        # Calculate size of the image
+        docker image ls --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}" "$IMAGE_TAG"
+
+        # Push the image
+        docker push "$IMAGE_TAG"
+
+        # if nightly and branch main, tag and push latest
+        if [ "$GITHUB_WORKFLOW" == "On nightly" ] && [ "$GITHUB_REF" == "refs/heads/main" ]; then
+          docker tag "$IMAGE_TAG" "${{ env.IMAGE_REPO }}/tt-media-inference-server:latest"
+          docker push "${{ env.IMAGE_REPO }}/tt-media-inference-server:latest"
+        fi
+
+        # Set outputs for consolidation step
+        echo "cloud_image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+        echo "dev_image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+        echo "✅ Successfully built and pushed image: $IMAGE_TAG"
+
+    - name: Build image for forge-media-inference-server
+      if: ${{ inputs.inference-server-type == 'forge-media-inference-server' }}
+      id: build-forge-media-inference-server
+      working-directory: tt-inference-server
+      run: |
+        # Build the forge image
+        IMAGE_TAG="${{ env.IMAGE_REPO }}/tt-media-inference-server-forge:${{ inputs.tt-metal-commit }}_${{ steps.derive-short-inference-server-sha.outputs.short-inference-server-sha }}_${{ steps.fetch-job-id.outputs.job_id }}"
+
+        docker build --no-cache \
+          -t "$IMAGE_TAG" \
+          --build-arg TT_METAL_COMMIT_SHA_OR_TAG=${{ inputs.tt-metal-commit }} \
+          -f tt-media-server/Dockerfile.forge .
+
+        # Calculate size of the image
+        docker image ls --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}" "$IMAGE_TAG"
+
+        # Push the image
+        docker push "$IMAGE_TAG"
+
+        # if nightly and branch main, tag and push latest
+        if [ "$GITHUB_WORKFLOW" == "On nightly" ] && [ "$GITHUB_REF" == "refs/heads/main" ]; then
+          docker tag "$IMAGE_TAG" "${{ env.IMAGE_REPO }}/tt-media-inference-server-forge:latest"
+          docker push "${{ env.IMAGE_REPO }}/tt-media-inference-server-forge:latest"
+        fi
+
+        # Set outputs for consolidation step
+        echo "cloud_image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+        echo "dev_image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+        echo "✅ Successfully built and pushed image: $IMAGE_TAG"
+
+    - name: Set build outputs
+      id: build
+      if: always()
+      run: |
+        # Consolidate outputs from different build steps
+        if [ -n "${{ steps.build-tt-inference-server.outputs.cloud_image_tag }}" ]; then
+          echo "cloud_image_tag=${{ steps.build-tt-inference-server.outputs.cloud_image_tag }}" >> "$GITHUB_OUTPUT"
+          echo "dev_image_tag=${{ steps.build-tt-inference-server.outputs.dev_image_tag }}" >> "$GITHUB_OUTPUT"
+        elif [ -n "${{ steps.build-media-inference-server.outputs.cloud_image_tag }}" ]; then
+          echo "cloud_image_tag=${{ steps.build-media-inference-server.outputs.cloud_image_tag }}" >> "$GITHUB_OUTPUT"
+          echo "dev_image_tag=${{ steps.build-media-inference-server.outputs.dev_image_tag }}" >> "$GITHUB_OUTPUT"
+        elif [ -n "${{ steps.build-forge-media-inference-server.outputs.cloud_image_tag }}" ]; then
+          echo "cloud_image_tag=${{ steps.build-forge-media-inference-server.outputs.cloud_image_tag }}" >> "$GITHUB_OUTPUT"
+          echo "dev_image_tag=${{ steps.build-forge-media-inference-server.outputs.dev_image_tag }}" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Save build results to a file
+      if: always()
+      uses: ./.tt-shield/.github/actions/save-build-results
+      with:
+        build-results: |
+          tt-metal-commit=${{ inputs.tt-metal-commit }}
+          tt-inference-server-commit=${{ steps.derive-short-inference-server-sha.outputs.short-inference-server-sha }}
+          vllm-commit=${{ steps.derive-short-vllm-sha.outputs.short-vllm-sha }}
+          ${{ inputs.inference-server-type }}-cloud-image-tag=${{ steps.build.outputs.cloud_image_tag }}
+          ${{ inputs.inference-server-type }}-dev-image-tag=${{ steps.build.outputs.dev_image_tag }}
+        artifact-name: ${{ inputs.inference-server-type }}-build-results-report-${{ steps.fetch-job-id.outputs.job_id }}
+        json-file: ${{ inputs.inference-server-type }}-build-results-report-${{ steps.fetch-job-id.outputs.job_id }}.json
+
+    - name: Cleanup
+      if: always()
+      run: |
+        # Make sure all docker containers are stopped and removed
+        docker ps -a -q | xargs -r docker stop

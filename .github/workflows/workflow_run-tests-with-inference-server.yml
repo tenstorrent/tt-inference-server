@@ -1,0 +1,463 @@
+name: Run Tests with Inference Server
+
+on:
+  workflow_call:
+    inputs:
+      run-matrix:
+        description: "Matrix for the workflow"
+        required: true
+        type: string
+      inference-server-type:
+        description: "Server type (tt-inference-server, media-inference-server, forge-media-inference-server)"
+        required: false
+        type: string
+        default: tt-inference-server
+      inference-server-sha:
+        description: "SHA for tt-inference-server repository"
+        required: false
+        type: string
+        default: dev
+      image:
+        description: "Pre-built Docker image to use for tests"
+        required: false
+        type: string
+      workflow:
+        description: "Workflow for run.py"
+        required: false
+        type: string
+        default: release
+      additional-args:
+        description: "Additional arguments for run.py (deprecated: use device-args in models-ci-config.json)"
+        required: false
+        type: string
+      throttle-perf:
+        description: "Set TT_MM_THROTTLE PERF (deprecated: use device-args in models-ci-config.json)"
+        required: false
+        type: string
+        default: "0"
+      run-full-evals:
+        description: "Run full evals, i.e. disable --ci-mode"
+        required: false
+        type: boolean
+        default: false
+      timeout-minutes:
+        description: "Timeout in minutes for the job"
+        required: false
+        type: number
+        default: 360 # 6 hours default
+
+env:
+  STORAGE_PATH: /localdev
+  SHARED_DISK_PERSISTENT_VOLUME_ROOT: /mnt/MLPerf/tt-shield/persistent-volume
+  SHARED_DISK_HF_HOME_ROOT: /mnt/MLPerf/huggingface
+  WORKFLOW_LOGS: workflow_logs
+
+jobs:
+  run-tests-with-inference-server:
+    name: "run-${{ matrix.workflow }}-${{ matrix.config.model }}-${{ matrix.config.runner.label }}-${{ matrix.config.runner.type }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        workflow: ["${{ inputs.workflow }}"]
+        config: ${{ fromJson(inputs.run-matrix) }}
+
+    runs-on: ${{ matrix.config.runner.label }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+
+    outputs:
+      summary-status: ${{ steps.summarize.outputs.status }}
+      summary-content: ${{ steps.summarize.outputs.summary-content }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Checkout tt-shield
+      uses: actions/checkout@v4
+      with:
+        repository: tenstorrent/tt-shield
+        path: .tt-shield
+        ref: main
+        sparse-checkout: .github
+        fetch-depth: 1
+
+    - name: Fetch job id
+      id: fetch-job-id
+      uses: ./.tt-shield/.github/actions/fetch-job-id
+      if: always() && !cancelled()
+      with:
+        job_name: "run-tests-with-inference-server (${{ matrix.workflow }}, ${{ matrix.config.model }}, ${{ matrix.config.runner.label }}, ${{ matrix.config.runner.type }}${{ matrix.config.impl && format(', {0}', matrix.config.impl) || '' }})"
+
+    - name: Checkout tt-inference-server
+      uses: actions/checkout@v4
+      with:
+        repository: tenstorrent/tt-inference-server
+        path: tt-inference-server
+        ref: ${{ inputs.inference-server-sha }}
+        fetch-depth: 1
+
+    - name: Find device-id
+      id: find-device-id
+      uses: ./.tt-shield/.github/actions/find-device-id
+      with:
+        device-type: ${{ matrix.config.runner.type }}
+
+    - name: Docker login
+      uses: docker/login-action@v3
+      with:
+        registry: https://ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Determine tt-inference-server Docker image
+      if: inputs.image != '' && !cancelled()
+      id: determine-docker-image
+      run: |
+        image_name="${{ inputs.image }}"
+
+        # Extract tag from image name (default to "latest" if no tag specified)
+        if [[ "$image_name" == *":"* ]]; then
+          image_tag="${image_name##*:}"
+        else
+          image_tag="latest"
+        fi
+
+        # Check if image exists locally
+        if docker image inspect "$image_name" &>/dev/null; then
+          if [[ "$image_tag" == "latest" ]]; then
+            echo "Image $image_name exists locally with 'latest' tag"
+            echo "Removing local image to ensure latest version is pulled..."
+            docker image rm "$image_name"
+            docker pull "$image_name"
+          else
+            echo "Image $image_name exists locally with tag '$image_tag', using cached image"
+          fi
+        else
+          echo "Image $image_name not found locally, pulling..."
+          docker pull "$image_name"
+        fi
+
+        # Display image size
+        docker image ls --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}" "$image_name"
+
+    - name: Cleanup stale docker containers
+      run: |
+        echo "Cleaning up any stale docker containers from previous runs..."
+        docker ps -a --format "{{.ID}} {{.Names}} {{.Status}}" || true
+        docker ps -a -q | xargs -r docker stop 2>/dev/null || true
+        sleep 5
+        docker ps -a -q | xargs -r docker rm -f 2>/dev/null || true
+        echo "Cleanup complete"
+
+    - name: Run tests
+      id: run-tests
+      working-directory: tt-inference-server
+      run: |
+        # Fix proxy settings for localhost
+        echo "Setting proxy exclusions for localhost..."
+        export no_proxy="localhost,127.0.0.1,${no_proxy}"
+        export NO_PROXY="localhost,127.0.0.1,${NO_PROXY}"
+        echo "Proxy settings updated: no_proxy=${no_proxy}"
+
+        export AUTOMATIC_HOST_SETUP=1
+
+        # Create persistent volume and hf_home directories if they don't exist
+        echo "Checking for shared disk directories..."
+        if [ -d ${{ env.SHARED_DISK_PERSISTENT_VOLUME_ROOT }} ] && [ -d ${{ env.SHARED_DISK_HF_HOME_ROOT }} ]; then
+          echo "✓ Found shared disk directory at ${{ env.SHARED_DISK_PERSISTENT_VOLUME_ROOT }}"
+          echo "✓ Found huggingface shared disk directory at ${{ env.SHARED_DISK_HF_HOME_ROOT }}"
+          export PERSISTENT_VOLUME_ROOT=${{ env.SHARED_DISK_PERSISTENT_VOLUME_ROOT }}
+          export HOST_HF_HOME=${{ env.SHARED_DISK_HF_HOME_ROOT }}
+        elif mkdir -p ${{ env.STORAGE_PATH }}/persistent-volume && mkdir -p ${{ env.STORAGE_PATH }}/hf_home; then
+          echo "✓ Using local directories in STORAGE_PATH: ${{ env.STORAGE_PATH }}"
+          export PERSISTENT_VOLUME_ROOT=${{ env.STORAGE_PATH }}/persistent-volume
+          export HOST_HF_HOME=${{ env.STORAGE_PATH }}/hf_home
+        else
+          echo "⚠ Falling back to working directory: $(pwd)"
+          PERSISTENT_VOLUME_ROOT="$(pwd)/persistent-volume"
+          export PERSISTENT_VOLUME_ROOT
+          HOST_HF_HOME="$(pwd)/hf_home"
+          export HOST_HF_HOME
+        fi
+
+        echo "=== Storage paths configured ==="
+        echo "PERSISTENT_VOLUME_ROOT=${PERSISTENT_VOLUME_ROOT}"
+        echo "HOST_HF_HOME=${HOST_HF_HOME}"
+        echo "===================================="
+
+        cat > .env <<EOL
+        JWT_SECRET=${{ secrets.JWT_SECRET }}
+        HF_TOKEN=${{ secrets.HF_TOKEN }}
+        TT_MM_THROTTLE_PERF=${{ matrix.config['throttle-perf'] || inputs.throttle-perf || '0' }}
+        EOL
+
+        # Additional environment variables for media types
+        if [[ "${{ inputs.inference-server-type }}" != "tt-inference-server" ]]; then
+          echo "TORCH_HOME=/tmp/torch-cache" >> .env
+          echo "MAX_QUEUE_SIZE=5000" >> .env
+          echo "IMAGE_RETURN_FORMAT=PNG" >> .env
+          echo "OPENAI_API_KEY=your-secret-key" >> .env
+        fi
+
+        # Model weights will be fetched during server runtime for forge
+        if [[ "${{ inputs.inference-server-type }}" == "forge-media-inference-server" ]]; then
+          export MODEL_SOURCE=noaction
+        fi
+
+        # If triggered by PR, set ONLY_BENCHMARK_TARGETS to 1
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          export ONLY_BENCHMARK_TARGETS=1
+        fi
+
+        arguments=()
+        arguments+=("--model" "${{ matrix.config.model }}")
+        arguments+=("--workflow" "${{ inputs.workflow }}")
+        arguments+=("--device" "${{ matrix.config.runner.type }}")
+        arguments+=("--docker-server")
+        arguments+=("--dev-mode")
+        arguments+=(${{ matrix.config['additional-args'] || inputs.additional-args }})
+
+        if [ "${{ matrix.config.impl || '' }}" != "" ]; then
+            arguments+=("--impl" "${{ matrix.config.impl }}")
+        fi
+
+        # if device-id is specified use that device-id
+        if [ "${{ steps.find-device-id.outputs.device-id }}" != "not-specified" ]; then
+            arguments+=("--device-id" "${{ steps.find-device-id.outputs.device-id }}")
+        fi
+
+        # Add --ci-mode flag only if run-full-evals is false
+        if [ "${{ inputs.run-full-evals }}" = "false" ]; then
+          arguments+=("--ci-mode")
+        fi
+
+        if [ "${{ inputs.image }}" != "" ]; then
+          arguments+=("--override-docker-image" "${{ inputs.image }}")
+        fi
+
+        # Start watcher in background
+        (
+          NAME_PREFIX="tt-inference-server"
+
+          # Wait until there is at least one container with that prefix
+          while [ -z "$(docker ps -q -f "name=${NAME_PREFIX}")" ]; do
+            sleep 1
+          done
+
+          # Tail all currently-matching containers
+          mapfile -t containers < <(docker ps --format '{{.Names}}' -f "name=${NAME_PREFIX}")
+
+          for c in "${containers[@]}"; do
+            echo "Starting streaming logs for container $c"
+            stdbuf -oL -eL docker logs -f "$c" 2>&1 \
+              | stdbuf -oL grep -v -i "INFO" \
+              | stdbuf -oL sed 's/.*/\x1b[36m[SERVER] &\x1b[0m/' || true &
+          done
+        ) &
+
+        cmd="python3 run.py"
+        for arg in "${arguments[@]}"; do
+          cmd="$cmd \"$arg\""
+        done
+        TEST_CMD=("/bin/bash" "-c" "$cmd")
+        echo "running command: ${TEST_CMD[*]}"
+
+        "${TEST_CMD[@]}"
+
+    - name: Fetch system info
+      id: fetch-system-info
+      if: always() && !cancelled()
+      continue-on-error: true
+      uses: ./.tt-shield/.github/actions/fetch-system-info
+      with:
+        runner-label: ${{ matrix.config.runner.label }}
+
+    - name: Prepare reports
+      if: always() && !cancelled()
+      continue-on-error: true
+      working-directory: tt-inference-server
+      run: |
+        set -x
+        job_id="${{ steps.fetch-job-id.outputs.job_id }}"
+        report_file="reports/report_${job_id}.json"
+        report_model_spec_file="reports/model_spec_${job_id}.json"
+        system_info_file="${{ steps.fetch-system-info.outputs.system_info_path }}"
+
+        mkdir -p reports || true
+
+        # Copy the workflow reports from run.py to the reports directory
+        for file in ${{ env.WORKFLOW_LOGS }}/reports_output/${{ inputs.workflow }}/data/report_data_*.json; do
+          if [ -f "$file" ]; then
+            cp "$file" "$report_file" || true
+            break
+          fi
+        done
+
+        # Copy the model spec reports from run.py to the reports directory
+        # Support both legacy (run_specs/tt_model_spec_*) and new (runtime_model_specs/runtime_model_spec_*) formats
+        # Once both stable/main is updated to only produce the new format, we can simplify this to just look in runtime_model_specs
+        model_spec_found=false
+        for file in ${{ env.WORKFLOW_LOGS }}/run_specs/tt_model_spec_*.json; do
+          if [ -f "$file" ]; then
+            cp "$file" "$report_model_spec_file" || true
+            model_spec_found=true
+            break
+          fi
+        done
+        if [ "$model_spec_found" = false ]; then
+          for file in ${{ env.WORKFLOW_LOGS }}/runtime_model_specs/runtime_model_spec_*.json; do
+            if [ -f "$file" ]; then
+              # New format nests fields under runtime_model_spec key; flatten to top-level for collect_data compatibility
+              jq '.runtime_model_spec + {runtime_config: .runtime_config}' "$file" > "$report_model_spec_file"
+              model_spec_found=true
+              break
+            fi
+          done
+        fi
+
+        # Merge system_info into model_spec report
+
+        if [ -f "$system_info_file" ]; then
+          # Create empty model_spec file if it doesn't exist
+          if [ ! -f "$report_model_spec_file" ]; then
+            echo "{}" > "$report_model_spec_file"
+          fi
+          if jq --slurpfile sysinfo "$system_info_file" '. + {system_info: $sysinfo[0]}' "$report_model_spec_file" > "${report_model_spec_file}.tmp"; then
+            mv "${report_model_spec_file}.tmp" "$report_model_spec_file"
+          else
+            echo "Failed to merge system_info into model_spec, keeping original"
+            rm -f "${report_model_spec_file}.tmp"
+          fi
+        else
+          echo "System info file not found, skipping merge"
+        fi
+
+    - name: AI job summary
+      id: summarize
+      if: always() && !cancelled()
+      continue-on-error: true
+      uses: ./.tt-shield/.github/actions/ai-job-summary
+      with:
+        log-path: tt-inference-server/${{ env.WORKFLOW_LOGS }}
+        output-path: tt-inference-server/${{ env.WORKFLOW_LOGS }}/ai_summaries/ai_summary_${{ steps.fetch-job-id.outputs.job_id }}.md
+        output-format: markdown
+        add-to-step-summary: "false"
+        api-key: ${{ secrets.TT_CHAT_API_KEY }}
+        api-url: ${{ secrets.TT_CHAT_URL }}
+        job-status: ${{ job.status }}
+
+    - name: Upload AI summary
+      if: always() && !cancelled()
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: ai_summary_${{ steps.fetch-job-id.outputs.job_id }}
+        path: tt-inference-server/${{ env.WORKFLOW_LOGS }}/ai_summaries/ai_summary_${{ steps.fetch-job-id.outputs.job_id }}.md
+
+    - name: Upload release report
+      if: always() && !cancelled()
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: release_report_${{ steps.fetch-job-id.outputs.job_id }}
+        path: tt-inference-server/${{ env.WORKFLOW_LOGS }}/reports_output/${{ inputs.workflow }}/*.md
+
+    - name: Show report
+      if: always() && !cancelled()
+      continue-on-error: true
+      working-directory: tt-inference-server
+      run: |
+        cat ${{ env.WORKFLOW_LOGS }}/reports_output/${{ inputs.workflow }}/*.md
+
+    - name: Show report in GitHub summary
+      if: always() && !cancelled()
+      continue-on-error: true
+      working-directory: tt-inference-server
+      run: |
+        echo "### Workflow ${{ inputs.workflow }} Report" >> "$GITHUB_STEP_SUMMARY"
+        for file in ${{ env.WORKFLOW_LOGS }}/reports_output/${{ inputs.workflow }}/*.md; do
+          echo "<details><summary>${file}</summary>" >> "$GITHUB_STEP_SUMMARY"
+          cat "$file" >> "$GITHUB_STEP_SUMMARY"
+          echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+        done
+
+    - name: Sanitize model name for artifacts
+      if: always() && !cancelled()
+      id: sanitize
+      run: |
+        # Replace forward slashes with underscore in model name
+        SANITIZED_MODEL="${{ matrix.config.model }}"
+        SANITIZED_MODEL="${SANITIZED_MODEL//\//_}"
+        echo "model_name=${SANITIZED_MODEL}" >> "$GITHUB_OUTPUT"
+
+    - name: Generate empty report
+      if: always() && !cancelled()
+      continue-on-error: true
+      run: |
+        REPORT_FILE="tt-inference-server/reports/report_${{ steps.fetch-job-id.outputs.job_id }}.json"
+        GENERATE_EMPTY=false
+
+        if [ ! -f "$REPORT_FILE" ]; then
+          echo "Report file: $REPORT_FILE does not exist"
+          GENERATE_EMPTY=true
+        elif [ ! -s "$REPORT_FILE" ]; then
+          echo "Report file: $REPORT_FILE is empty"
+          GENERATE_EMPTY=true
+        elif ! jq empty "$REPORT_FILE" 2>/dev/null; then
+          echo "Report file: $REPORT_FILE contains invalid JSON"
+          GENERATE_EMPTY=true
+        fi
+
+        if [ "$GENERATE_EMPTY" = true ]; then
+          chmod +x .tt-shield/.github/scripts/generate-empty-report.sh
+          .tt-shield/.github/scripts/generate-empty-report.sh \
+            "$REPORT_FILE" \
+            "${{ steps.fetch-job-id.outputs.job_id }}" \
+            "${{ matrix.config.model }}" \
+            "${{ matrix.config.runner.type }}" \
+            "${{ inputs.workflow }}"
+        else
+          echo "Valid report exists, skipping empty report generation"
+        fi
+
+    - name: Upload reports
+      if: always() && !cancelled()
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        # Use the sanitized model name instead
+        name: report_${{ inputs.workflow }}_${{ steps.sanitize.outputs.model_name }}_${{ matrix.config.runner.label }}_${{ steps.fetch-job-id.outputs.job_id }}
+        path: tt-inference-server/reports
+
+    - name: Show Docker server logs
+      if: always()
+      continue-on-error: true
+      working-directory: tt-inference-server
+      run: |
+        echo "### Docker server logs ###"
+        cat ${{ env.WORKFLOW_LOGS }}/docker_server/*.log
+
+    - name: Show Run Specs
+      if: always()
+      continue-on-error: true
+      working-directory: tt-inference-server
+      run: |
+        echo "### Run Specs ###"
+        cat ${{ env.WORKFLOW_LOGS }}/run_specs/*.json
+
+    - name: Upload workflow logs
+      if: always() && !cancelled()
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: workflow_logs_${{ inputs.workflow }}_${{ matrix.config.model }}_${{ matrix.config.runner.label }}
+        path: tt-inference-server/${{ env.WORKFLOW_LOGS }}
+
+    - name: Cleanup
+      if: always()
+      continue-on-error: true
+      run: |
+        # Make sure all docker containers are stopped and removed
+        docker ps -a -q | xargs -r docker stop || true
+        sleep 5
+        docker ps -a -q | xargs -r docker rm -f || true

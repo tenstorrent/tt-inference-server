@@ -53,7 +53,7 @@ jobs:
 
   resolve-shas:
     needs: setup-vars
-    uses: tenstorrent/tt-shield/.github/workflows/workflow_resolve-shas.yml@main
+    uses: ./.github/workflows/workflow_resolve-shas.yml
     secrets: inherit
     with:
       tt-metal-ref: ${{ needs.setup-vars.outputs.tt-metal-commit }}
@@ -63,7 +63,7 @@ jobs:
   call-dynamic-workflow:
     name: "_"
     needs: [setup-vars, resolve-shas]
-    uses: tenstorrent/tt-shield/.github/workflows/dynamic-workflow.yml@main
+    uses: ./.github/workflows/dynamic-workflow.yml
     secrets: inherit
     with:
       schedule: "release"

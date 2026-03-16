@@ -1,0 +1,217 @@
+name: Dynamic CI (Reusable)
+
+run-name: "Dynamic CI - ${{ inputs.schedule }}"
+
+on:
+  workflow_call:
+    inputs:
+      schedule:
+        description: "Schedule type (nightly, weekly, bi_weekly)"
+        required: true
+        type: string
+      tt-metal-sha:
+        description: "Resolved tt-metal tag/commit"
+        required: true
+        type: string
+      workflow:
+        description: "Workflow type (e.g., release)"
+        required: false
+        type: string
+        default: "release"
+      vllm-commit:
+        description: "vllm commit/branch"
+        required: false
+        type: string
+        default: "dev"
+      inference-server-sha:
+        description: "Inference server SHA"
+        required: false
+        type: string
+        default: "dev"
+      docker-build-runner-label:
+        description: "Runner label for Docker builds"
+        required: false
+        type: string
+        default: "builder"
+      ubuntu-version:
+        description: "Ubuntu version for Docker images"
+        required: false
+        type: string
+        default: "22.04"
+      run-full-evals:
+        description: "Run full evals (disable --ci-mode)"
+        required: false
+        type: boolean
+        default: false
+      timeout-minutes:
+        description: "Timeout in minutes for test jobs"
+        required: false
+        type: number
+        default: 360
+
+permissions: write-all
+
+env:
+  IMAGE_REPO: ghcr.io/tenstorrent/tt-inference-server
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix_vllm: ${{ steps.set-matrix.outputs.matrix_vllm }}
+      matrix_media: ${{ steps.set-matrix.outputs.matrix_media }}
+      matrix_forge: ${{ steps.set-matrix.outputs.matrix_forge }}
+      has_vllm: ${{ steps.set-matrix.outputs.has_vllm }}
+      has_media: ${{ steps.set-matrix.outputs.has_media }}
+      has_forge: ${{ steps.set-matrix.outputs.has_forge }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout tt-shield
+        uses: actions/checkout@v4
+        with:
+          repository: tenstorrent/tt-shield
+          path: .tt-shield
+          ref: main
+          sparse-checkout: .github
+          fetch-depth: 1
+
+      - name: Copy model config files and generate script
+        run: |
+          DEST=".tt-shield/.github/scripts/generate_model_ci_workflows"
+          cp .github/workflows/models-ci-config.json "$DEST/models-ci-config.json"
+          cp .github/workflows/models-ci-config-schema.json "$DEST/models-ci-config-schema.json"
+
+      - name: Generate CI matrix
+        id: set-matrix
+        run: |
+          cd .tt-shield/.github/scripts/generate_model_ci_workflows
+
+          SCHEDULE="${{ inputs.schedule }}"
+          echo "Generating matrices for schedule: $SCHEDULE"
+
+          # Generate matrices for all server types
+          for config in "vllm:tt-inference-server" "media:media-inference-server" "forge:forge-media-inference-server"; do
+            IFS=':' read -r key server_type <<< "$config"
+
+            MATRIX=$(python generate_ci_matrix.py \
+              --schedule "$SCHEDULE" \
+              --server-type "$server_type" \
+              --config models-ci-config.json \
+              --schema models-ci-config-schema.json \
+              | tee /dev/stderr)
+
+            {
+              echo "matrix_${key}<<EOF"
+              echo "$MATRIX"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+
+            # Check if matrix is non-empty
+            HAS_FLAG=$([ "$MATRIX" != "[]" ] && echo "true" || echo "false")
+            echo "has_${key}=$HAS_FLAG" >> "$GITHUB_OUTPUT"
+            echo "Has ${key} tests: $HAS_FLAG"
+          done
+
+  ###
+  ### Build images
+  ###
+
+  build-tt-inference-server:
+    needs: [generate-matrix]
+    if: needs.generate-matrix.outputs.has_vllm == 'true'
+    uses: ./.github/workflows/workflow_build-inference-server.yml
+    secrets: inherit
+    with:
+      runner-label: ${{ inputs.docker-build-runner-label }}
+      inference-server-sha: ${{ inputs.inference-server-sha }}
+      tt-metal-commit: ${{ inputs.tt-metal-sha }}
+      vllm-commit: ${{ inputs.vllm-commit }}
+      ubuntu-version: ${{ inputs.ubuntu-version }}
+      inference-server-type: tt-inference-server
+
+  build-media-inference-server:
+    needs: [generate-matrix]
+    if: needs.generate-matrix.outputs.has_media == 'true'
+    uses: ./.github/workflows/workflow_build-inference-server.yml
+    secrets: inherit
+    with:
+      runner-label: ${{ inputs.docker-build-runner-label }}
+      inference-server-sha: ${{ inputs.inference-server-sha }}
+      tt-metal-commit: ${{ inputs.tt-metal-sha }}
+      ubuntu-version: ${{ inputs.ubuntu-version }}
+      inference-server-type: media-inference-server
+
+  build-forge-media-inference-server:
+    needs: [generate-matrix]
+    if: needs.generate-matrix.outputs.has_forge == 'true'
+    uses: ./.github/workflows/workflow_build-inference-server.yml
+    secrets: inherit
+    with:
+      runner-label: ${{ inputs.docker-build-runner-label }}
+      inference-server-sha: ${{ inputs.inference-server-sha }}
+      tt-metal-commit: ${{ inputs.tt-metal-sha }}
+      ubuntu-version: ${{ inputs.ubuntu-version }}
+      inference-server-type: forge-media-inference-server
+
+
+  ###
+  ### Run tests
+  ###
+
+  test-vllm:
+    name: "vLLM"
+    needs: [generate-matrix, build-tt-inference-server]
+    if: |
+      always() &&
+      !cancelled() &&
+      needs.generate-matrix.outputs.has_vllm == 'true' &&
+      needs.build-tt-inference-server.result == 'success'
+    uses: ./.github/workflows/workflow_run-tests-with-inference-server.yml
+    secrets: inherit
+    with:
+      run-matrix: ${{ needs.generate-matrix.outputs.matrix_vllm }}
+      inference-server-type: tt-inference-server
+      image: ${{ needs.build-tt-inference-server.outputs.dev_image_tag }}
+      inference-server-sha: ${{ inputs.inference-server-sha }}
+      workflow: ${{ inputs.workflow }}
+      run-full-evals: ${{ inputs.run-full-evals }}
+      timeout-minutes: ${{ inputs.timeout-minutes }}
+
+  test-media:
+    name: "Media"
+    needs: [generate-matrix, build-media-inference-server]
+    if: |
+      always() &&
+      !cancelled() &&
+      needs.generate-matrix.outputs.has_media == 'true' &&
+      needs.build-media-inference-server.result == 'success'
+    uses: ./.github/workflows/workflow_run-tests-with-inference-server.yml
+    secrets: inherit
+    with:
+      run-matrix: ${{ needs.generate-matrix.outputs.matrix_media }}
+      inference-server-type: media-inference-server
+      image: ${{ needs.build-media-inference-server.outputs.cloud_image_tag }}
+      inference-server-sha: ${{ inputs.inference-server-sha }}
+      workflow: ${{ inputs.workflow }}
+      run-full-evals: ${{ inputs.run-full-evals }}
+      timeout-minutes: ${{ inputs.timeout-minutes }}
+
+  test-forge:
+    name: "Forge"
+    needs: [generate-matrix, build-forge-media-inference-server]
+    if: |
+      always() &&
+      !cancelled() &&
+      needs.generate-matrix.outputs.has_forge == 'true' &&
+      needs.build-forge-media-inference-server.result == 'success'
+    uses: ./.github/workflows/workflow_run-tests-with-inference-server.yml
+    secrets: inherit
+    with:
+      run-matrix: ${{ needs.generate-matrix.outputs.matrix_forge }}
+      inference-server-type: forge-media-inference-server
+      image: ${{ needs.build-forge-media-inference-server.outputs.cloud_image_tag }}
+      inference-server-sha: ${{ inputs.inference-server-sha }}
+      workflow: ${{ inputs.workflow }}
+      run-full-evals: ${{ inputs.run-full-evals }}
+      timeout-minutes: ${{ inputs.timeout-minutes }}

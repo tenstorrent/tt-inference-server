@@ -1,0 +1,73 @@
+name: Resolve SHAs
+
+on:
+  workflow_call:
+    inputs:
+      tt-metal-ref:
+        description: "tt-metal branch/tag/SHA to resolve"
+        required: false
+        type: string
+        default: "stable"
+      inference-server-ref:
+        description: "tt-inference-server branch/tag/SHA to resolve"
+        required: false
+        type: string
+        default: "stable"
+      vllm-ref:
+        description: "vllm branch/tag/SHA to resolve"
+        required: false
+        type: string
+        default: "dev"
+    outputs:
+      tt-metal-sha:
+        description: "Resolved tt-metal full SHA"
+        value: ${{ jobs.resolve.outputs.tt-metal-sha }}
+      inference-server-sha:
+        description: "Resolved tt-inference-server full SHA"
+        value: ${{ jobs.resolve.outputs.inference-server-sha }}
+      vllm-sha:
+        description: "Resolved vllm full SHA"
+        value: ${{ jobs.resolve.outputs.vllm-sha }}
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      tt-metal-sha: ${{ steps.tt-metal.outputs.full_sha }}
+      inference-server-sha: ${{ steps.inference-server.outputs.full_sha }}
+      vllm-sha: ${{ steps.vllm.outputs.full_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout tt-shield
+        uses: actions/checkout@v4
+        with:
+          repository: tenstorrent/tt-shield
+          path: .tt-shield
+          ref: main
+          sparse-checkout: .github
+          fetch-depth: 1
+
+      - name: Resolve tt-metal SHA
+        id: tt-metal
+        if: ${{ inputs.tt-metal-ref != '' }}
+        uses: ./.tt-shield/.github/actions/find-latest-sha
+        with:
+          ref: ${{ inputs.tt-metal-ref }}
+          repository: tenstorrent/tt-metal
+
+      - name: Resolve tt-inference-server SHA
+        id: inference-server
+        if: ${{ inputs.inference-server-ref != '' }}
+        uses: ./.tt-shield/.github/actions/find-latest-sha
+        with:
+          ref: ${{ inputs.inference-server-ref }}
+          repository: tenstorrent/tt-inference-server
+
+      - name: Resolve vllm SHA
+        id: vllm
+        if: ${{ inputs.vllm-ref != '' }}
+        uses: ./.tt-shield/.github/actions/find-latest-sha
+        with:
+          ref: ${{ inputs.vllm-ref }}
+          repository: tenstorrent/vllm
