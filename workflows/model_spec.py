@@ -42,11 +42,16 @@ def generate_docker_tag(
 
 
 def generate_default_docker_link(
-    version: str, tt_metal_commit: str, vllm_commit: Optional[str]
+    version: str,
+    tt_metal_commit: str,
+    vllm_commit: Optional[str],
+    multihost: bool = False,
 ) -> str:
     _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
     if vllm_commit is None:
         _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server"
+    elif multihost:
+        _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64"
     else:
         _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
@@ -461,7 +466,10 @@ class ModelSpec:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_link = generate_default_docker_link(
-                VERSION, self.tt_metal_commit, self.vllm_commit
+                VERSION,
+                self.tt_metal_commit,
+                self.vllm_commit,
+                multihost=self.device_type.is_multihost(),
             )
             object.__setattr__(self, "docker_image", _default_docker_link)
 
@@ -1476,33 +1484,56 @@ llm_templates = [
             "deepseek-ai/DeepSeek-R1-0528",
         ],
         impl=deepseek_r1_galaxy_impl,
-        tt_metal_commit="e3d97e5",
-        vllm_commit="a186bf4",
+        tt_metal_commit="0900acd",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32 * 8,
-                max_context=64 * 1024,
+                max_context=2048,
                 default_impl=True,
+                vllm_args={
+                    "max_model_len": "2048",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.DUAL_GALAXY,
-                max_concurrency=32 * 8,
-                max_context=64 * 1024,
+                max_concurrency=32 * 8,  # 32 per DP rank * 8 ranks
+                max_context=2048,
                 default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 8,
+                    "block_size": "32",
+                    "max_model_len": "2048",
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
+                    "fabric_reliability_mode": "RELAXED_INIT",
+                    "trace_mode": "none",
+                    "env_passthrough": ["DEEPSEEK_V3_CACHE", "DEEPSEEK_V3_HF_MODEL"],
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.QUAD_GALAXY,
-                max_concurrency=32 * 8,
-                max_context=64 * 1024,
+                max_concurrency=32 * 16,  # 32 per DP rank * 16 ranks
+                max_context=2048,
                 default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 16,
+                    "block_size": "32",
+                    "max_model_len": "2048",
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
+                    "fabric_reliability_mode": "RELAXED_INIT",
+                    "trace_mode": "none",
+                    "env_passthrough": ["DEEPSEEK_V3_CACHE", "DEEPSEEK_V3_HF_MODEL"],
+                },
             ),
         ],
-        env_vars={
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
-        },
         status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=[
