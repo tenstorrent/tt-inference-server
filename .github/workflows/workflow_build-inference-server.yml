@@ -66,6 +66,7 @@ jobs:
         ref: main
         sparse-checkout: .github
         fetch-depth: 1
+        token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
 
     - name: Fetch job id
       id: fetch-job-id

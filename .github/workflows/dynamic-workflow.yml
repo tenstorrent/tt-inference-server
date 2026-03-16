@@ -75,6 +75,7 @@ jobs:
           ref: main
           sparse-checkout: .github
           fetch-depth: 1
+          token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
 
       - name: Copy model config files and generate script
         run: |
