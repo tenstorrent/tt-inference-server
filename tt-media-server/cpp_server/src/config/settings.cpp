@@ -105,10 +105,6 @@ size_t num_workers() {
     return device_ids_parsed().size();
 }
 
-size_t batch_size() {
-    return static_cast<size_t>(env_ulong("MAX_BATCH_SIZE", defaults::MAX_BATCH_SIZE));
-}
-
 unsigned batch_timeout_ms() {
     return static_cast<unsigned>(env_ulong("MAX_BATCH_DELAY_TIME_MS", defaults::MAX_BATCH_DELAY_TIME_MS));
 }

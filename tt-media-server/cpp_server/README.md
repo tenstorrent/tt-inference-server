@@ -79,7 +79,7 @@ The LLM engine supports two scheduling policies that trade off individual reques
 #### Max Occupancy
 **When to use:** High request rates, throughput-oriented applications
 
-**Behavior:** Keeps the device at full occupancy (`batch_size` from MAX_BATCH_SIZE env var) whenever possible. When decode sequences finish and free slots, immediately prefills enough new sequences to refill capacity, then resumes decode at full width.
+**Behavior:** Keeps the device at full occupancy (`max_in_flight_count` from MAX_IN_FLIGHT_COUNT env var) whenever possible. When decode sequences finish and free slots, immediately prefills enough new sequences to refill capacity, then resumes decode at full width.
 
 **Advantages:**
 - **Better average TTFT across all users** under high load
@@ -230,7 +230,6 @@ All environment variable reads go through `config/settings.hpp` (no direct `gete
 |----------|-------------|---------|
 | `DEVICE_IDS` | Bracket-pair device list, one worker per pair (e.g. `(0,1,2,3),(4,5,6,7)`). num_workers = number of pairs; each worker's `TT_VISIBLE_DEVICES` = that pair's contents. | `(0)` |
 | `MODEL_SERVICE` | Service mode: `embedding` or `llm`. Same as tt-media-server. | `llm` |
-| `MAX_BATCH_SIZE` | Max requests per batch. Used by both LLM scheduler and embedding service. | `1` |
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
 | `MAX_QUEUE_SIZE` | Maximum number of requests that can be queued. | `1000` |
 | `MAX_IN_FLIGHT_COUNT` | Maximum number of requests being processed simultaneously. | `32` |

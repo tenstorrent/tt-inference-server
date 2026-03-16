@@ -30,9 +30,6 @@ std::string runner_type();
 /** Number of worker processes = number of bracket pairs in DEVICE_IDS. */
 size_t num_workers();
 
-/** Max requests per batch (embedding). From MAX_BATCH_SIZE. Default: defaults::MAX_BATCH_SIZE. */
-size_t batch_size();
-
 /** Max wait (ms) to fill a batch. From MAX_BATCH_DELAY_TIME_MS. Default: defaults::MAX_BATCH_DELAY_TIME_MS. */
 unsigned batch_timeout_ms();
 

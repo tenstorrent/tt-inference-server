@@ -15,7 +15,6 @@ namespace tt::config::defaults {
 
 constexpr const char* DEVICE_IDS = "(0)";
 constexpr const char* MODEL_SERVICE = "llm";
-constexpr size_t MAX_BATCH_SIZE = 1;
 constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
 constexpr const char* TT_PYTHON_PATH = "..";
 constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"

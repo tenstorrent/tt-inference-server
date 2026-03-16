@@ -8,10 +8,10 @@
 namespace llm_engine {
 
 /**
- * Keeps the device at full occupancy (batch_size) whenever possible.
+ * Keeps the device at full occupancy (max_in_flight_count) whenever possible.
  *
  * When decode sequences finish and free slots, this scheduler immediately
- * prefills enough new sequences to refill to batch_size, then resumes
+ * prefills enough new sequences to refill to max_in_flight_count, then resumes
  * decode at full capacity. Inspired by vLLM's continuous batching, adapted
  * for pure prefill/decode batches.
  *
@@ -27,13 +27,13 @@ class MaxOccupancyScheduler : public Scheduler {
   using Scheduler::Scheduler;
 
  protected:
-  bool should_prefill_first(int decode_count, int batch_size) const override {
-    return decode_count < batch_size;
+  bool should_prefill_first(int decode_count, int max_in_flight_count) const override {
+    return decode_count < max_in_flight_count;
   }
 
   int max_prefill_seqs(int decode_count,
-                       int batch_size) const override {
-    return batch_size - decode_count;
+                       int max_in_flight_count) const override {
+    return max_in_flight_count - decode_count;
   }
 };
 
