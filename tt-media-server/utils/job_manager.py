@@ -386,6 +386,7 @@ class JobManager:
 
         except asyncio.CancelledError:
             self._logger.info(f"Job {job.id} was cancelled")
+            self._cleanup_job(job)
             job.mark_cancelled()
             if self.db:
                 try:
@@ -457,6 +458,15 @@ class JobManager:
             return
 
         for job in jobs_to_remove:
+            if job.is_in_progress():
+                job.mark_cancelling()
+                if self.db:
+                    try:
+                        self.db.update_job_status(job.id, job.status.value)
+                    except Exception as e:
+                        self._logger.error(
+                            f"DB update failed, but proceeding with task cancellation: {e}"
+                        )
             self._cleanup_job(job)
             if job.result_path and isinstance(job.result_path, str):
                 try:
@@ -488,11 +498,9 @@ class JobManager:
         running_task = None
         if job._task and not job._task.done():
             self._logger.warning(f"Cancelling in-progress job {job.id}")
-            if job.cancel_event and not force:
-                # runner handles cancellation
+            if job.cancel_event:
                 job.cancel_event.set()
-            else:
-                # runner does not handle cancellation, so we cancel the task ourselves
+            if not job.cancel_event or force:
                 job._task.cancel()
             running_task = job._task
 
