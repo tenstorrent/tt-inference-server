@@ -4,7 +4,7 @@
 #pragma once
 
 #include <atomic>
-#include "config/llm_config.hpp"
+#include "config/runner_config.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 
 namespace llm_engine {

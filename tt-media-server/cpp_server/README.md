@@ -221,7 +221,7 @@ and `create_tokenizer_strategy()` factory.
 Configuration follows a unified system with clear separation of concerns:
 - **Type definitions**: `config/types.hpp` - enums and type conversions (ModelService, ModelType, LLMMode, SchedulingPolicy, etc.)
 - **Default values**: `config/defaults.hpp` - default values for all environment variables
-- **Service-specific configs**: `config/llm_config.hpp`, `config/embedding_config.hpp` - configuration structs for each service type
+- **Runner config**: `config/runner_config.hpp` - LLMConfig, EmbeddingConfig, RunnerConfig variant, and create_llm_config()
 - **Runtime settings**: `config/settings.hpp` - reads environment variables and provides runtime accessors
 
 All environment variable reads go through `config/settings.hpp` (no direct `getenv` elsewhere).
@@ -478,9 +478,7 @@ cpp_server/
 │   │   ├── settings.hpp             # Runtime config accessors (reads env vars)
 │   │   ├── types.hpp                # Type definitions and enums
 │   │   ├── defaults.hpp             # Default values for all env vars
-│   │   ├── llm_config.hpp           # LLM-specific configuration struct
-│   │   ├── embedding_config.hpp     # Embedding-specific configuration struct
-│   │   └── runner_config.hpp        # Variant wrapper for all configs
+│   │   └── runner_config.hpp        # LLMConfig, EmbeddingConfig, RunnerConfig variant
 │   ├── domain/
 │   │   ├── completion_request.hpp
 │   │   ├── completion_response.hpp
@@ -536,7 +534,7 @@ cpp_server/
 - `LLMService`: LLM-specific service implementation
 
 ### Runners
-- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`. For LLM, builds `tt::config::LLMConfig` (via `create_llm_config()` from `config/llm_config.hpp`) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/model_runner.hpp` and `model_runner.cpp`).
+- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`. For LLM, builds `tt::config::LLMConfig` (via `create_llm_config()` from `config/runner_config.hpp`) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/model_runner.hpp` and `model_runner.cpp`).
 
 ### API
 - `LLMController`: Drogon HTTP controller with OpenAI-compatible endpoints

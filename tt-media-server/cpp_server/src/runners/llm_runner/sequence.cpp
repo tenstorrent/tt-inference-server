@@ -1,5 +1,5 @@
 #include "runners/llm_runner/sequence.hpp"
-#include "config/llm_config.hpp"
+#include "config/runner_config.hpp"
 #include "llm_runner/sampling_params.hpp"
 #include <algorithm>
 #include <cassert>

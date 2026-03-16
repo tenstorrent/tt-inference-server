@@ -4,8 +4,7 @@
 #include "config/settings.hpp"
 #include "config/types.hpp"
 #include "config/defaults.hpp"
-#include "config/llm_config.hpp"
-#include "config/embedding_config.hpp"
+#include "config/runner_config.hpp"
 #include "utils/tokenizer.hpp"
 
 #include <algorithm>

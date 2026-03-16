@@ -10,7 +10,7 @@
 #include <unordered_set>
 
 #include "runners/runner_interface.hpp"
-#include "config/llm_config.hpp"
+#include "config/runner_config.hpp"
 #include "runners/sp_pipeline_runner/sp_pipeline_model_runner.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"

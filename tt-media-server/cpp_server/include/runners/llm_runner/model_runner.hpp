@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-#include "config/llm_config.hpp"
+#include "config/runner_config.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "utils/concurrent_queue.hpp"
 

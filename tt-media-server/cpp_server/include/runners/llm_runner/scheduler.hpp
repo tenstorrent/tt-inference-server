@@ -9,7 +9,7 @@
 #include <vector>
 #include <unordered_map>
 
-#include "config/llm_config.hpp"
+#include "config/runner_config.hpp"
 #include "runners/llm_runner/block_manager.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"

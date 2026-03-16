@@ -4,7 +4,7 @@
 #include "services/llm_service.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
-#include "config/llm_config.hpp"
+#include "config/runner_config.hpp"
 #include "utils/tokenizer.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker.hpp"

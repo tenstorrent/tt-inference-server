@@ -9,7 +9,7 @@
 #include <boost/interprocess/ipc/message_queue.hpp>
 
 #include "runners/llm_runner/task_queue.hpp"
-#include "config/llm_config.hpp"
+#include "config/runner_config.hpp"
 
 namespace tt::ipc {
 

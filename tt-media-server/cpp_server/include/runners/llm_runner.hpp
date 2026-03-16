@@ -5,7 +5,7 @@
 #include <memory>
 
 #include "runners/runner_interface.hpp"
-#include "config/llm_config.hpp"
+#include "config/runner_config.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/task_queue.hpp"
