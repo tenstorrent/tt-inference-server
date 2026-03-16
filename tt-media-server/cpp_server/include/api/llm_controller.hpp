@@ -20,6 +20,7 @@ public:
     METHOD_LIST_BEGIN
     ADD_METHOD_TO(LLMController::completions, "/v1/completions", drogon::Post);
     ADD_METHOD_TO(LLMController::chat_completions, "/v1/chat/completions", drogon::Post);
+    ADD_METHOD_TO(LLMController::cancel_request, "/v1/requests/{1}", drogon::Delete);
     METHOD_LIST_END
 
     LLMController();
@@ -40,6 +41,16 @@ public:
     void chat_completions(
         const drogon::HttpRequestPtr& req,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+
+    /**
+     * DELETE /v1/requests/{task_id}
+     * Cancel an in-progress completion request.
+     * Returns 200 {"cancelled": true} if found, 404 if already finished/unknown.
+     */
+    void cancel_request(
+        const drogon::HttpRequestPtr& req,
+        std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+        const std::string& task_id) const;
 
 private:
     std::shared_ptr<services::LLMService> service_;

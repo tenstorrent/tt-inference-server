@@ -420,4 +420,27 @@ void LLMController::handle_streaming(
     callback(resp);
 }
 
+void LLMController::cancel_request(
+    const drogon::HttpRequestPtr& /*req*/,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+    const std::string& task_id) const {
+
+    ZoneScopedN("API::cancel_request");
+
+    Json::Value body;
+    body["id"] = task_id;
+
+    if (service_->cancel_request(task_id)) {
+        body["cancelled"] = true;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+        resp->setStatusCode(drogon::k200OK);
+        callback(resp);
+    } else {
+        body["cancelled"] = false;
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
+        resp->setStatusCode(drogon::k404NotFound);
+        callback(resp);
+    }
+}
+
 } // namespace tt::api

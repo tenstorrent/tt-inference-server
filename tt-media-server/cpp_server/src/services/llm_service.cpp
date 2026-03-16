@@ -265,7 +265,10 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
 
             auto val = stream_callbacks_.get(token.task_id);
             if (!val.has_value()) {
-                throw std::runtime_error("callback not found for task_id: " + std::string(token.task_id));
+                // Callback already removed (request was cancelled or finished).
+                TT_LOG_WARN("[Consumer-{}] Token arrived for unknown/cancelled task {}, discarding",
+                            worker_idx, token.task_id);
+                continue;
             }
             auto callback = val.value();
             if (token.is_final()) {
@@ -456,6 +459,29 @@ void LLMService::submit_decode_continuation(
                  request.max_tokens.has_value()
                      ? std::to_string(request.max_tokens.value())
                      : "none");
+}
+
+bool LLMService::cancel_request(const std::string& task_id) {
+    auto cb = stream_callbacks_.take(task_id);
+    if (!cb.has_value()) {
+        return false;
+    }
+    pending_tasks_.fetch_sub(1);
+    TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
+
+    domain::StreamingChunkResponse final_chunk{domain::TaskID(task_id)};
+    final_chunk.id = task_id;
+    final_chunk.created = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    domain::CompletionChoice choice;
+    choice.text = "";
+    choice.index = 0;
+    choice.finish_reason = "cancelled";
+    final_chunk.choices.push_back(std::move(choice));
+    cb.value()(final_chunk, /*is_final=*/true);
+
+    TT_LOG_INFO("[LLMService] Cancelled request {}", task_id);
+    return true;
 }
 
 void LLMService::handle_connection_lost() {

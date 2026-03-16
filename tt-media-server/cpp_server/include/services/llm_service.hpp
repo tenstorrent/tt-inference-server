@@ -49,6 +49,15 @@ public:
     std::optional<StreamCallback> detach_stream_callback(const std::string& task_id);
     void submit_decode_continuation(domain::CompletionRequest request, StreamCallback callback);
 
+    /**
+     * Cancel an in-progress request by task_id. Removes the stream callback,
+     * decrements pending_tasks_, and delivers a final "cancelled" chunk to the
+     * client. The worker process keeps decoding until M3 (IPC cancel queue).
+     * @return true if the task was found and cancelled, false if already
+     *         finished or unknown.
+     */
+    bool cancel_request(const std::string& task_id);
+
     void handle_connection_lost();
 
     void set_prefill_request_callback(PrefillRequestCallback callback);
