@@ -3,6 +3,7 @@
 
 #include "services/embedding_service.hpp"
 #include "config/settings.hpp"
+#include "config/defaults.hpp"
 #include "runners/embedding_runner.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"

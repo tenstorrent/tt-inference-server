@@ -11,7 +11,7 @@
 namespace tt::runners {
 
 SpPipelineRunner::SpPipelineRunner(
-    const llm_engine::Config& config,
+    const tt::config::LLMConfig& config,
     ipc::TokenRingBuffer<65536>* result_queue,
     llm_engine::ITaskQueue* task_queue)
     : config_(config),

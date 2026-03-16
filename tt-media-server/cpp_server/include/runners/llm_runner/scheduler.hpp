@@ -9,7 +9,7 @@
 #include <vector>
 #include <unordered_map>
 
-#include "runners/llm_runner/config.hpp"
+#include "config/runner_config.hpp"
 #include "runners/llm_runner/block_manager.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
@@ -24,7 +24,7 @@ namespace llm_engine {
  */
 class Scheduler {
  public:
-  explicit Scheduler(const Config& config, ITaskQueue* task_queue, size_t batch_size);
+  explicit Scheduler(const tt::config::LLMConfig& config, ITaskQueue* task_queue, size_t batch_size);
   virtual ~Scheduler() = default;
 
   /** @return true if there are no prefill_queue, decode_queue, or in-flight sequences. */
@@ -99,7 +99,7 @@ class Scheduler {
   std::deque<Sequence*> decode_queue_;
 };
 
-std::unique_ptr<Scheduler> make_scheduler(const Config& config,
+std::unique_ptr<Scheduler> make_scheduler(const tt::config::LLMConfig& config,
                                           ITaskQueue* task_queue,
                                           size_t batch_size);
 

@@ -9,7 +9,7 @@
 #include <vector>
 #include <tokenizers_cpp.h>
 
-#include "config/constants.hpp"
+#include "config/types.hpp"
 #include "domain/chat_message.hpp"
 
 namespace tt::utils {

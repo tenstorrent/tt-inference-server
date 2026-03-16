@@ -7,6 +7,7 @@
 
 namespace tt::runners {
   using namespace llm_engine;
+  using Config = tt::config::LLMConfig;
 
 LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue)
     : config_(config), result_queue_(result_queue) {

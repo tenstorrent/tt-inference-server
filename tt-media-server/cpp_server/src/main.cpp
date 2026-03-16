@@ -12,7 +12,6 @@
 #include <sys/stat.h>
 #include <netinet/tcp.h>
 
-#include "config/constants.hpp"
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
 #include "profiling/tracy.hpp"
@@ -80,8 +79,7 @@ int main(int argc, char* argv[]) {
                       << "  -p, --port PORT     Listen port (default: 8000)\n"
                       << "  -t, --threads N     Number of IO threads (default: CPU cores)\n"
                       << "  --help              Show this help message\n"
-                      << "\nEnvironment Variables:\n"
-                      << "  TT_RUNNER_TYPE      Runner type: 'llm_test' (default)\n";
+                      << "\nEnvironment Variables:\n";
             return 0;
         }
     }

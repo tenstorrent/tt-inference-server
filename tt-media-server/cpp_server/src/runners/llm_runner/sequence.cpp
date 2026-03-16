@@ -1,11 +1,13 @@
 #include "runners/llm_runner/sequence.hpp"
-#include "runners/llm_runner/config.hpp"
+#include "config/runner_config.hpp"
 #include "llm_runner/sampling_params.hpp"
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
 
 namespace llm_engine {
+
+using Config = tt::config::LLMConfig;
 
 Sequence::Sequence(TaskID task_id, int block_size,
                    std::vector<int64_t> token_ids,

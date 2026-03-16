@@ -2,7 +2,9 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "config/settings.hpp"
-#include "runners/llm_runner/config.hpp"
+#include "config/types.hpp"
+#include "config/defaults.hpp"
+#include "config/runner_config.hpp"
 #include "utils/tokenizer.hpp"
 
 #include <algorithm>
@@ -164,20 +166,20 @@ std::string visible_devices_for_worker(size_t worker_index) {
     return "";
 }
 
-llm_engine::Config llm_engine_config() {
-    llm_engine::Config cfg;
+LLMConfig llm_engine_config() {
+    LLMConfig cfg;
     cfg.stop_token_ids = utils::active_tokenizer().stop_token_ids();
     cfg.max_in_flight_count = max_in_flight_count();
     std::string backend = env_string_lower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
     if (backend == "pipeline") {
-        cfg.runner_type = llm_engine::ModelRunnerType::Pipeline;
+        cfg.runner_type = ModelRunnerType::Pipeline;
         cfg.max_in_flight_count = 1;
     } else if (backend == "llama") {
         cfg.kvcache_block_size = 32;
         cfg.max_num_batched_tokens = 16384;
-        cfg.runner_type = llm_engine::ModelRunnerType::Llama;
+        cfg.runner_type = ModelRunnerType::Llama;
     } else {
-        cfg.runner_type = llm_engine::ModelRunnerType::Mock;
+        cfg.runner_type = ModelRunnerType::Mock;
     }
     cfg.scheduling_policy = scheduling_policy();
     return cfg;
@@ -191,7 +193,7 @@ LLMMode llm_mode() {
     return llm_mode_from_string(env_string_lower("LLM_MODE", defaults::LLM_MODE));
 }
 
-llm_engine::SchedulingPolicy scheduling_policy() {
+SchedulingPolicy scheduling_policy() {
     return scheduling_policy_from_string(env_string_lower("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY));
 }
 

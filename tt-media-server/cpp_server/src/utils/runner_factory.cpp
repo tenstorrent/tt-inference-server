@@ -14,7 +14,7 @@ namespace tt::utils::runner_factory {
 
 std::unique_ptr<runners::IRunner> create_runner(
     config::ModelService service,
-    const runners::RunnerConfig& config,
+    const config::RunnerConfig& config,
     ipc::TokenRingBuffer<65536>* result_queue,
     llm_engine::ITaskQueue* task_queue) {
 
@@ -26,10 +26,10 @@ std::unique_ptr<runners::IRunner> create_runner(
         case config::ModelService::LLM:
         default: {
             TT_LOG_INFO("[RunnerFactory] Creating LLM runner");
-            auto& cfg = std::get<llm_engine::Config>(config);
+            auto& cfg = std::get<config::LLMConfig>(config);
 
             // Choose runner based on config.runner_type
-            if (cfg.runner_type == llm_engine::ModelRunnerType::Pipeline) {
+            if (cfg.runner_type == config::ModelRunnerType::Pipeline) {
                 TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner");
                 return std::make_unique<runners::SpPipelineRunner>(cfg, result_queue, task_queue);
             }

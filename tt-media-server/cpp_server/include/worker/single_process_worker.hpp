@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <unistd.h>
 #include "runners/runner_interface.hpp"
-#include "runners/runner_config.hpp"
+#include "config/runner_config.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "ipc/shared_memory.hpp"
 
@@ -18,7 +18,7 @@ struct WorkerConfig {
     shared_ptr<llm_engine::ITaskQueue> task_queue;
     shared_ptr<tt::ipc::TokenRingBuffer<65536>> result_queue;
     int worker_id;
-    tt::runners::RunnerConfig runner_config;
+    tt::config::RunnerConfig runner_config;
 };
 
 /**
