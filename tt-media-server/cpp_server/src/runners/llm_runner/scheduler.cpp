@@ -124,6 +124,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   int num_batched_tokens = 0;
 
   int decode_count = static_cast<int>(decode_queue_.size());
+
   bool should_prefill =
       !prefill_queue_->empty() &&
       should_prefill_first(decode_count, max_in_flight_count_);
