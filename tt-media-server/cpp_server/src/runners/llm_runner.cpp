@@ -21,10 +21,6 @@ LLMRunner::LLMRunner(const Config& config,
     ZoneScopedN("LLMRunner::process_token_result");
     Sequence* seq = scheduler_->find_sequence(result.task_id);
 
-
-
-
-
     assert(seq);
 
     if (result.is_error) {
