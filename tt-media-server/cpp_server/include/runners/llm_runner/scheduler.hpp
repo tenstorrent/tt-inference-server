@@ -24,7 +24,7 @@ namespace llm_engine {
  */
 class Scheduler {
  public:
-  explicit Scheduler(const tt::config::LLMConfig& config, ITaskQueue* task_queue, size_t batch_size);
+  explicit Scheduler(const tt::config::LLMConfig& config, ITaskQueue* task_queue, size_t max_in_flight_count);
   virtual ~Scheduler() = default;
 
   /** @return true if there are no prefill_queue, decode_queue, or in-flight sequences. */
@@ -68,18 +68,18 @@ class Scheduler {
  protected:
   /**
    * @param decode_count  number of sequences currently in the decode_queue.
-   * @param batch_size    maximum batch / decode_queue capacity.
+   * @param max_in_flight_count    maximum batch / decode_queue capacity.
    * @return true if the scheduler should attempt prefill before decode.
    */
-  virtual bool should_prefill_first(int decode_count, int batch_size) const = 0;
+  virtual bool should_prefill_first(int decode_count, int max_in_flight_count) const = 0;
 
   /**
    * Maximum number of sequences to prefill in one step.
-   * Default: batch_size (full capacity). Override to limit prefill
+   * Default: max_in_flight_count (full capacity). Override to limit prefill
    * to available slots when decode sequences should be preserved.
    */
-  virtual int max_prefill_seqs(int /*decode_count*/, int batch_size) const {
-    return batch_size;
+  virtual int max_prefill_seqs(int /*decode_count*/, int max_in_flight_count) const {
+    return max_in_flight_count;
   }
 
  private:
@@ -90,7 +90,7 @@ class Scheduler {
   void try_schedule_decode(std::vector<Sequence*>& scheduled_seqs,
                            int& num_seqs);
 
-  size_t batch_size_;
+  size_t max_in_flight_count_;
   int max_num_batched_tokens_;
   std::unordered_set<int64_t> stop_token_ids_;
   BlockManager block_manager_;
@@ -101,6 +101,6 @@ class Scheduler {
 
 std::unique_ptr<Scheduler> make_scheduler(const tt::config::LLMConfig& config,
                                           ITaskQueue* task_queue,
-                                          size_t batch_size);
+                                          size_t max_in_flight_count);
 
 }  // namespace llm_engine

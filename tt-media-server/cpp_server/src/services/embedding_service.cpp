@@ -75,7 +75,7 @@ struct EmbeddingService::Impl {
 
     Impl() {
         num_workers_ = tt::config::num_workers();
-        max_batch_size_ = tt::config::batch_size();
+        max_batch_size_ = tt::config::max_in_flight_count();
         batch_timeout_ = std::chrono::milliseconds(tt::config::batch_timeout_ms());
         max_queue_size_ = tt::config::max_queue_size();
         TT_LOG_INFO("[EmbeddingService] Initialized with {} workers, batch_size={}, batch_timeout={}ms",
@@ -193,8 +193,13 @@ struct EmbeddingService::Impl {
         std::string visible_devices = tt::config::visible_devices_for_worker(wid);
         setenv("TT_VISIBLE_DEVICES", visible_devices.c_str(), 1);
 
+        size_t batch_size = tt::config::max_in_flight_count();
+        std::string batch_str = std::to_string(batch_size);
+        setenv("MAX_BATCH_SIZE", batch_str.c_str(), 1);
+
         TT_LOG_INFO("[Worker {}] Started with PID {}", worker_id, getpid());
         TT_LOG_INFO("[Worker {}] TT_VISIBLE_DEVICES={}", worker_id, visible_devices);
+        TT_LOG_INFO("[Worker {}] MAX_BATCH_SIZE={}", worker_id, batch_size);
         TT_LOG_INFO("[Worker {}] read_fd={}, write_fd={}", worker_id, read_fd, write_fd);
 
         runners::EmbeddingRunner runner(visible_devices, static_cast<int>(wid));

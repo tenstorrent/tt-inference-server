@@ -102,7 +102,7 @@ int main() {
       std::cout << "]\n";
     }
 
-    // --- Verify (batch size is 1 with current batch_size setting) ---
+    // --- Verify (batch size is 1 with current max_in_flight_count setting) ---
     bool ok = true;
     auto fail = [&](const char* msg) {
       std::cerr << "[child]  FAIL: " << msg << "\n";

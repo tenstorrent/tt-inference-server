@@ -370,7 +370,7 @@ TEST(MaxOccupancySchedulerTest, PrefillsToFillGap) {
 
   auto [b1, pf1] = sched.schedule();
   ASSERT_TRUE(pf1);
-  EXPECT_EQ(b1.size(), 2u) << "Should prefill both to fill batch_size=2";
+  EXPECT_EQ(b1.size(), 2u) << "Should prefill both to fill max_in_flight_count=2";
   sched.postprocess(b1, {1, 1});
 
   auto [b2, pf2] = sched.schedule();
@@ -387,7 +387,7 @@ TEST(MaxOccupancySchedulerTest, PrefillsOnlyGapCount_WhenOneFinishes) {
   sched.add_request(next_id(), prompt(4), {.max_tokens = 20});
   sched.add_request(next_id(), prompt(4), {.max_tokens = 20});
 
-  // Prefill first 2 (batch_size=2)
+  // Prefill first 2 (max_in_flight_count=2)
   auto [b1, pf1] = sched.schedule();
   ASSERT_TRUE(pf1);
   EXPECT_EQ(b1.size(), 2u);

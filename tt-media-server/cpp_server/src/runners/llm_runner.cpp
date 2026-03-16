@@ -12,7 +12,7 @@ namespace tt::runners {
 LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue)
     : config_(config), result_queue_(result_queue) {
 
-  scheduler_ = make_scheduler(config_, task_queue, tt::config::batch_size());
+  scheduler_ = make_scheduler(config_, task_queue, tt::config::max_in_flight_count());
 
   auto decode_cb = [this](const TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");

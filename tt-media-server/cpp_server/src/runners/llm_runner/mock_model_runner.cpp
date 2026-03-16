@@ -18,7 +18,7 @@ class MockModelRunner : public IModelRunner {
   void run(const std::vector<Sequence*>& seqs, bool is_prefill) override {
     ZoneScopedN("MockModelRunner::run");
     LLM_ENGINE_LOG("model_runner:mock") << (is_prefill ? "prefill" : "decode")
-                                        << " batch_size=" << seqs.size() << std::endl;
+                                        << " max_in_flight_count=" << seqs.size() << std::endl;
     if (is_prefill) {
       ZoneScopedN("MockModelRunner::prefill");
       for (Sequence* seq : seqs) {
