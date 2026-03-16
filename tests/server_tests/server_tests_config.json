@@ -107,6 +107,110 @@
         "weights": [
             "stable-diffusion-xl-base-1.0"
         ],
+        "device": "n300",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 2
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 20 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 2,
+                    "num_inference_steps": 20,
+                    "image_generation_time": 10
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 30 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 2,
+                    "num_inference_steps": 30,
+                    "image_generation_time": 14
+                }
+            },
+            {
+                "name": "ImageGenerationLoadTest",
+                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "enabled": true,
+                "description": "Test image generation time for 50 iterations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 2,
+                    "num_inference_steps": 50,
+                    "image_generation_time": 23
+                }
+            },
+            {
+                "name": "ImageGenerationParamTest",
+                "module": "tests.server_tests.test_cases.image_generation_param_test",
+                "enabled": true,
+                "description": "Test image gen params",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "stable-diffusion-xl-base-1.0"
+        ],
         "device": "t3k",
         "test_cases": [
             {
@@ -2883,7 +2987,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8
+                    "num_of_devices": 1
                 }
             },
             {
@@ -2912,7 +3016,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 10
                 }
@@ -2930,7 +3034,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 14
                 }
@@ -2948,7 +3052,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 23
                 }
@@ -3299,7 +3403,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8
+                    "num_of_devices": 1
                 }
             },
             {
@@ -3328,7 +3432,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 10
                 }
@@ -3346,7 +3450,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 14
                 }
@@ -3364,7 +3468,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 23
                 }

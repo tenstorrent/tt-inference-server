@@ -347,7 +347,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.GALAXY): {
-        "device_mesh_shape": (2, 1),
+        "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
@@ -377,7 +377,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
-        "request_processing_timeout_seconds": 2000,
+        "request_processing_timeout_seconds": 3000,
     },
     (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
@@ -419,7 +419,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
-        "request_processing_timeout_seconds": 2000,
+        "request_processing_timeout_seconds": 3000,
     },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
@@ -549,12 +549,14 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X4): {
         "device_mesh_shape": (1, 4),
