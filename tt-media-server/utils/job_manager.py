@@ -224,6 +224,24 @@ class JobManager:
                     f"Cancel failed: Job {job_id} is already {job.status.value}."
                 )
                 return None
+            
+            # if the job is queued, we can cancel it immediately
+            if job.status == JobStatus.QUEUED:
+                self._cleanup_job(job, force=True)
+                job.mark_cancelled()
+                if self.db:
+                    try:
+                        self.db.update_job_status(
+                            job.id,
+                            job.status.value,
+                            completed_at=job.completed_at,
+                        )
+                    except Exception as e:
+                        self._logger.error(
+                            f"DB update failed for cancelled queued job {job.id}: {e}"
+                        )
+                self._logger.info(f"Queued job {job_id} cancelled immediately.")
+                return job.to_public_dict()
 
             job.mark_cancelling()
             if self.db:
@@ -387,16 +405,17 @@ class JobManager:
         except asyncio.CancelledError:
             self._logger.info(f"Job {job.id} was cancelled")
             self._cleanup_job(job)
-            job.mark_cancelled()
-            if self.db:
-                try:
-                    self.db.update_job_status(
-                        job.id, job.status.value, completed_at=job.completed_at
-                    )
-                except Exception as e:
-                    self._logger.error(
-                        f"Failed to sync 'cancelled' to DB for {job.id}: {e}"
-                    )
+            if not job.is_terminal():
+                job.mark_cancelled()
+                if self.db:
+                    try:
+                        self.db.update_job_status(
+                            job.id, job.status.value, completed_at=job.completed_at
+                        )
+                    except Exception as e:
+                        self._logger.error(
+                            f"Failed to sync 'cancelled' to DB for {job.id}: {e}"
+                        )
             raise
         except Exception as e:
             self._logger.error(f"Job {job.id} failed: {e}")
