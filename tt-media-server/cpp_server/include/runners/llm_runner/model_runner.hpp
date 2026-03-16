@@ -21,7 +21,7 @@ class IModelRunner {
   virtual void exit() = 0;
 };
 
-std::unique_ptr<IModelRunner> make_model_runner(const tt::config::LLMConfig& config,
-                                                DecodeCallback callback);
+std::unique_ptr<IModelRunner> make_model_runner(
+    const tt::config::LLMConfig& config, DecodeCallback callback);
 
 }  // namespace llm_engine

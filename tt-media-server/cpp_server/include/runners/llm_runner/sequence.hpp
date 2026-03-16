@@ -5,13 +5,13 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
-#include <memory>
-#include <optional>
-#include "runners/llm_runner/sampling_params.hpp"
+
 #include "domain/task_id.hpp"
+#include "runners/llm_runner/sampling_params.hpp"
 
 namespace llm_engine {
 
@@ -26,9 +26,11 @@ struct TokenResult {
   bool is_error = false;
 
   TokenResult(TaskID task_id, uint64_t token_id,
-             std::optional<bool> finished = {}, bool is_error = false)
-      : task_id(std::move(task_id)), token_id(token_id),
-        finished(std::move(finished)), is_error(is_error) {}
+              std::optional<bool> finished = {}, bool is_error = false)
+      : task_id(std::move(task_id)),
+        token_id(token_id),
+        finished(std::move(finished)),
+        is_error(is_error) {}
 };
 
 class Sequence {

@@ -9,23 +9,23 @@
 //              calls schedule(), and verifies the deserialized batch.
 //
 // Exit code 0 = PASS.
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <boost/interprocess/ipc/message_queue.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
-#include "config/runner_config.hpp"
-#include "ipc/boost_ipc_task_queue.hpp"
-#include "runners/llm_runner/scheduler.hpp"
-#include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "runners/llm_runner/sequence.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
-
-#include <boost/interprocess/ipc/message_queue.hpp>
-
 #include <cassert>
 #include <cstdlib>
 #include <iostream>
-#include <sys/wait.h>
-#include <unistd.h>
+
+#include "config/runner_config.hpp"
+#include "ipc/boost_ipc_task_queue.hpp"
+#include "runners/llm_runner/prefill_first_scheduler.hpp"
+#include "runners/llm_runner/sampling_params.hpp"
+#include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/sequence.hpp"
 
 namespace ipc = boost::interprocess;
 
@@ -41,14 +41,16 @@ int main() {
   ipc::message_queue::remove(QUEUE_NAME);
 
   // --- Create the IPC queue (simulates the main server). ---
-  ipc::message_queue raw_queue(
-      ipc::create_only, QUEUE_NAME, MAX_NUM_MSGS, MAX_MSG_SIZE);
+  ipc::message_queue raw_queue(ipc::create_only, QUEUE_NAME, MAX_NUM_MSGS,
+                               MAX_MSG_SIZE);
 
   // Build two sequences with known values.
   std::string seq1_id = TaskID::generate();
   std::string seq2_id = TaskID::generate();
-  Sequence seq1(TaskID(seq1_id), 256, {1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
-  Sequence seq2(TaskID(seq2_id), 256, {10, 20, 30}, SamplingParams{.temperature = 0.7f, .max_tokens = 5});
+  Sequence seq1(TaskID(seq1_id), 256, {1, 2, 3, 4},
+                SamplingParams{.max_tokens = 10});
+  Sequence seq2(TaskID(seq2_id), 256, {10, 20, 30},
+                SamplingParams{.temperature = 0.7f, .max_tokens = 5});
 
   // Push via BoostIpcTaskQueue (opens the existing shared-memory queue).
   {
@@ -87,8 +89,7 @@ int main() {
               << " sequences, is_prefill=" << is_prefill << "\n";
 
     for (auto* s : batch) {
-      std::cout << "[child]    task_id=" << s->task_id
-                << " size=" << s->size()
+      std::cout << "[child]    task_id=" << s->task_id << " size=" << s->size()
                 << " max_tokens="
                 << (s->sampling_params->max_tokens.has_value()
                         ? std::to_string(s->sampling_params->max_tokens.value())
@@ -115,9 +116,10 @@ int main() {
     if (ok) {
       if (batch[0]->task_id.id != seq1_id) fail("seq1 task_id mismatch");
       if (batch[0]->size() != 4) fail("seq1 size mismatch");
-      if (batch[0]->sampling_params->max_tokens != 10) fail("seq1 max_tokens mismatch");
-      if ((*batch[0])[0] != 1 || (*batch[0])[1] != 2 ||
-          (*batch[0])[2] != 3 || (*batch[0])[3] != 4)
+      if (batch[0]->sampling_params->max_tokens != 10)
+        fail("seq1 max_tokens mismatch");
+      if ((*batch[0])[0] != 1 || (*batch[0])[1] != 2 || (*batch[0])[2] != 3 ||
+          (*batch[0])[3] != 4)
         fail("seq1 token values mismatch");
     }
 
@@ -136,7 +138,7 @@ int main() {
     std::cout << "[parent] PASS: IPC scheduler smoke test\n";
     return 0;
   }
-  std::cerr << "[parent] FAIL: child exited with status "
-            << WEXITSTATUS(status) << "\n";
+  std::cerr << "[parent] FAIL: child exited with status " << WEXITSTATUS(status)
+            << "\n";
   return 1;
 }

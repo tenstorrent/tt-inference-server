@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-#include "config/runner_config.hpp"
 #include "runners/llm_runner.hpp"
-#include "runners/llm_runner/sequence.hpp"
-#include "ipc/shared_memory.hpp"
+
 #include <gtest/gtest.h>
+
 #include <atomic>
 #include <thread>
 #include <unordered_map>
 #include <vector>
+
+#include "config/runner_config.hpp"
+#include "ipc/shared_memory.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
+#include "runners/llm_runner/sequence.hpp"
 namespace llm_engine {
 
 using Config = tt::config::LLMConfig;
@@ -53,8 +56,9 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   std::vector<TaskID> task_ids;
   int id_counter = 0;
   for (const auto& req : requests) {
-    Sequence& seq =
-        engine.scheduler().add_request(std::move(TaskID(TaskID::generate())), req.prompt, {.max_tokens = req.max_tokens});
+    Sequence& seq = engine.scheduler().add_request(
+        std::move(TaskID(TaskID::generate())), req.prompt,
+        {.max_tokens = req.max_tokens});
     task_ids.push_back(seq.task_id);
   }
 
@@ -84,22 +88,15 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   // 1st published token in the mocked prefill is always whitespace token id=223
   // The followed tokens using the mocked runner are increments of 223
   const std::vector<int64_t> expected_seq0 = {
-    223, 224,225, 226, 227,
-    228, 229, 230, 231, 232,
-    233, 234, 235, 236, 237,
-    238, 239, 240, 241, 242,
-    243, 244, 245, 246, 247,
-    248, 249, 250, 251, 252,
+      223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237,
+      238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252,
   };
   const std::vector<int64_t> expected_seq1 = {
-    223, 224,225, 226, 227,
-    228, 229, 230, 231, 232,
+      223, 224, 225, 226, 227, 228, 229, 230, 231, 232,
   };
   const std::vector<int64_t> expected_seq2 = {
-    223, 224,225, 226, 227,
-    228, 229, 230, 231, 232,
-    233, 234, 235, 236, 237,
-    238, 239, 240, 241, 242,
+      223, 224, 225, 226, 227, 228, 229, 230, 231, 232,
+      233, 234, 235, 236, 237, 238, 239, 240, 241, 242,
   };
 
   EXPECT_EQ(received_tokens[task_ids[0]], expected_seq0);

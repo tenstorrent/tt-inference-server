@@ -22,8 +22,7 @@ inline std::mutex& log_mutex() {
 
 class LogBuf {
  public:
-  explicit LogBuf(const char* component)
-      : buf_() {
+  explicit LogBuf(const char* component) : buf_() {
     buf_ << "[" << elapsed_ms() << " ms llm_engine:" << component << "] ";
   }
   ~LogBuf() {
@@ -46,9 +45,8 @@ class LogBuf {
 
 }  // namespace llm_engine::detail
 
-#  define LLM_ENGINE_LOG(component) \
-    llm_engine::detail::LogBuf(component)
+#define LLM_ENGINE_LOG(component) llm_engine::detail::LogBuf(component)
 #else
-#  define LLM_ENGINE_LOG(component) \
-    if (false) std::cerr
+#define LLM_ENGINE_LOG(component) \
+  if (false) std::cerr
 #endif

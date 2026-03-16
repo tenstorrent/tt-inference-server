@@ -3,11 +3,12 @@
 
 #pragma once
 
-#include "ipc/shared_memory.hpp"
-#include "ipc/boost_ipc_task_queue.hpp"
 #include <memory>
 #include <string>
 #include <vector>
+
+#include "ipc/boost_ipc_task_queue.hpp"
+#include "ipc/shared_memory.hpp"
 
 namespace tt::ipc {
 
@@ -21,39 +22,37 @@ constexpr size_t RING_BUFFER_CAPACITY = 65536;
  * Handles creation, cleanup, and coordination of IPC queues.
  */
 class QueueManager {
-public:
-    shared_ptr<BoostIpcTaskQueue> task_queue;
-    vector<shared_ptr<TokenRingBuffer<RING_BUFFER_CAPACITY>>> result_queues;
+ public:
+  shared_ptr<BoostIpcTaskQueue> task_queue;
+  vector<shared_ptr<TokenRingBuffer<RING_BUFFER_CAPACITY>>> result_queues;
 
-    explicit QueueManager(int num_workers) {
-        BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
-        task_queue = make_shared<BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
-        result_queues.reserve(num_workers);
-        for (int i = 0; i < num_workers; i++) {
-            result_queues.emplace_back(make_shared<TokenRingBuffer<RING_BUFFER_CAPACITY>>(
-                "/tt_tokens_" + to_string(i), true
-            ));
-        }
+  explicit QueueManager(int num_workers) {
+    BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
+    task_queue = make_shared<BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
+    result_queues.reserve(num_workers);
+    for (int i = 0; i < num_workers; i++) {
+      result_queues.emplace_back(
+          make_shared<TokenRingBuffer<RING_BUFFER_CAPACITY>>(
+              "/tt_tokens_" + to_string(i), true));
     }
-    
-    ~QueueManager() {
-        clear();
-    }
-    
-    void clear() {
-        BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
-        for (auto& queue : result_queues) {
-            queue->shutdown();
-        }
-    }
+  }
 
-    // Delete copy constructor and assignment operator
-    QueueManager(const QueueManager&) = delete;
-    QueueManager& operator=(const QueueManager&) = delete;
+  ~QueueManager() { clear(); }
 
-    // Allow move constructor and assignment operator
-    QueueManager(QueueManager&&) = default;
-    QueueManager& operator=(QueueManager&&) = default;
+  void clear() {
+    BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
+    for (auto& queue : result_queues) {
+      queue->shutdown();
+    }
+  }
+
+  // Delete copy constructor and assignment operator
+  QueueManager(const QueueManager&) = delete;
+  QueueManager& operator=(const QueueManager&) = delete;
+
+  // Allow move constructor and assignment operator
+  QueueManager(QueueManager&&) = default;
+  QueueManager& operator=(QueueManager&&) = default;
 };
 
-} // namespace tt::ipc
+}  // namespace tt::ipc

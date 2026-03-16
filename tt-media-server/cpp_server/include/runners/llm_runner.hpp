@@ -4,19 +4,20 @@
 #include <cstdint>
 #include <memory>
 
-#include "runners/runner_interface.hpp"
 #include "config/runner_config.hpp"
+#include "ipc/shared_memory.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/task_queue.hpp"
-#include "ipc/shared_memory.hpp"
+#include "runners/runner_interface.hpp"
 
 namespace tt::runners {
-  using namespace llm_engine;
+using namespace llm_engine;
 
 class LLMRunner : public IRunner {
  public:
-  LLMRunner(const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue);
+  LLMRunner(const config::LLMConfig& config,
+            ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue);
   ~LLMRunner() override;
 
   Scheduler& scheduler() { return *scheduler_; }

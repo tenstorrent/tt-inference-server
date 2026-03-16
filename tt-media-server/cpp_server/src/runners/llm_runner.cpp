@@ -1,18 +1,21 @@
 #include "runners/llm_runner.hpp"
-#include "profiling/tracy.hpp"
-#include "config/settings.hpp"
 
 #include <cassert>
 #include <thread>
 
+#include "config/settings.hpp"
+#include "profiling/tracy.hpp"
+
 namespace tt::runners {
-  using namespace llm_engine;
-  using Config = tt::config::LLMConfig;
+using namespace llm_engine;
+using Config = tt::config::LLMConfig;
 
-LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue)
+LLMRunner::LLMRunner(const Config& config,
+                     ipc::TokenRingBuffer<65536>* result_queue,
+                     ITaskQueue* task_queue)
     : config_(config), result_queue_(result_queue) {
-
-  scheduler_ = make_scheduler(config_, task_queue, tt::config::max_in_flight_count());
+  scheduler_ =
+      make_scheduler(config_, task_queue, tt::config::max_in_flight_count());
 
   auto decode_cb = [this](const TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");
@@ -29,7 +32,8 @@ LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_q
           .task_id = {},
           .padding = {},
       };
-      strncpy(shared.task_id, result.task_id.id.c_str(), sizeof(shared.task_id) - 1);
+      strncpy(shared.task_id, result.task_id.id.c_str(),
+              sizeof(shared.task_id) - 1);
       shared.task_id[sizeof(shared.task_id) - 1] = '\0';
       while (!result_queue_->push(shared)) {
         std::this_thread::yield();
@@ -47,12 +51,14 @@ LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_q
       ZoneScopedN("ResultQueue::push");
       auto shared = ipc::SharedToken{
           .token_index = 0,
-          .flags = static_cast<uint32_t>(finished ? ipc::SharedToken::FLAG_FINAL : 0),
+          .flags = static_cast<uint32_t>(finished ? ipc::SharedToken::FLAG_FINAL
+                                                  : 0),
           .token_id = result.token_id,
           .task_id = {},
           .padding = {},
       };
-      strncpy(shared.task_id, result.task_id.id.c_str(), sizeof(shared.task_id) - 1);
+      strncpy(shared.task_id, result.task_id.id.c_str(),
+              sizeof(shared.task_id) - 1);
       shared.task_id[sizeof(shared.task_id) - 1] = '\0';
       while (!result_queue_->push(shared)) {
         std::this_thread::yield();
@@ -67,9 +73,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_q
   model_runner_ = make_model_runner(config_, std::move(decode_cb));
 }
 
-LLMRunner::~LLMRunner() {
-  exit();
-}
+LLMRunner::~LLMRunner() { exit(); }
 
 void LLMRunner::exit() {
   if (model_runner_) {
@@ -83,9 +87,7 @@ void LLMRunner::run() {
   }
 }
 
-void LLMRunner::stop() {
-  stopped_.store(true, std::memory_order_relaxed);
-}
+void LLMRunner::stop() { stopped_.store(true, std::memory_order_relaxed); }
 
 void LLMRunner::step() {
   auto [seqs, is_prefill] = scheduler_->schedule();
