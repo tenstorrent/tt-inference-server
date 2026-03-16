@@ -329,7 +329,7 @@ void LLMController::handle_streaming(
                             sse = stream_chunk.toSSE();
                         }
                     } else if (!chunk.choices[0].text.empty() ||
-                               !chunk.choices[0].finish_reason.has_value()) {
+                               chunk.choices[0].finish_reason.has_value()) {
                         domain::StreamingChunkResponse out(req_ptr->task_id);
                         out.id = completion_id;
                         out.object = "text_completion";
@@ -442,10 +442,21 @@ void LLMController::cancel_request(
 
     ZoneScopedN("API::cancel_request");
 
+    // The client sends the SSE "id" field which carries an OpenAI-style prefix
+    // ("cmpl-" or "chatcmpl-").  Internally requests are tracked by the raw
+    // UUID that follows the prefix, so strip it before forwarding.
+    std::string raw_id = task_id;
+    for (const auto& prefix : {"chatcmpl-", "cmpl-"}) {
+        if (raw_id.rfind(prefix, 0) == 0) {
+            raw_id = raw_id.substr(std::strlen(prefix));
+            break;
+        }
+    }
+
     Json::Value body;
     body["id"] = task_id;
 
-    if (service_->cancel_request(task_id)) {
+    if (service_->cancel_request(raw_id)) {
         body["cancelled"] = true;
         auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
         resp->setStatusCode(drogon::k200OK);

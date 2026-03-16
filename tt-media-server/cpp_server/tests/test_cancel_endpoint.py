@@ -35,9 +35,10 @@ import requests
 DEFAULT_API_KEY = "your-secret-key"
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 
-# Large enough that a cancel mid-stream is reliable even against a fast
-# mock runner: ~100 k tokens × 8 µs ≈ 800 ms of generation time.
-STREAM_MAX_TOKENS = 100_000
+# Large enough for a cancel to arrive mid-stream.  When the server is started
+# with MOCK_TOKEN_DELAY_US=1000, 200 tokens ≈ 200 ms — plenty of time for the
+# DELETE to arrive before the stream finishes.
+STREAM_MAX_TOKENS = 200
 
 
 def _headers() -> dict:

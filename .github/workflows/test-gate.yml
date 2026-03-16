@@ -578,8 +578,27 @@ jobs:
       - name: Run cancel endpoint integration tests
         env:
           OPENAI_API_KEY: 'your-secret-key'
+          MOCK_TOKEN_DELAY_US: '1000'
         run: |
+          # Restart server with per-token delay so cancel DELETEs arrive mid-stream.
+          kill $(cat cpp_server.pid) 2>/dev/null || true
+          MOCK_TOKEN_DELAY_US=1000 cpp_server/build/tt_media_server_cpp -p 8000 > cpp_server.log 2>&1 &
+          echo $! > cpp_server.pid
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/health | grep -q '"status"' && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8000/health || exit 1
           python3 cpp_server/tests/test_cancel_endpoint.py --base-url http://127.0.0.1:8000
+          # Restart without delay for benchmarking.
+          kill $(cat cpp_server.pid) 2>/dev/null || true
+          cpp_server/build/tt_media_server_cpp -p 8000 > cpp_server.log 2>&1 &
+          echo $! > cpp_server.pid
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/health | grep -q '"status"' && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8000/health || exit 1
 
       - name: Run vLLM bench serve against C++ server
         env:
