@@ -519,16 +519,6 @@ jobs:
           cd cpp_server
           ./build.sh
 
-      - name: C++ format check (.clang-format)
-        run: |
-          cd cpp_server
-          find include src tests benchmarks -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
-            | xargs -0 -r clang-format-20 --dry-run --Werror || {
-            echo '::error::C++ files are not formatted per .clang-format. To fix locally, run from repo root:'
-            echo '  cd tt-media-server/cpp_server && find include src tests benchmarks -type f \( -name '"'"'*.cpp'"'"' -o -name '"'"'*.h'"'"' -o -name '"'"'*.hpp'"'"' \) -print0 | xargs -0 clang-format-20 -i'
-            exit 1
-          }
-
   cpp-server-llm-streaming:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
@@ -554,6 +544,16 @@ jobs:
           cd cpp_server
           ./build.sh
           cd ..
+
+      - name: C++ format check (.clang-format)
+        run: |
+          cd cpp_server
+          find include src tests benchmarks -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
+            | xargs -0 -r clang-format-20 --dry-run --Werror || {
+            echo '::error::C++ files are not formatted per .clang-format. To fix locally, run from repo root:'
+            echo '  cd tt-media-server/cpp_server && find include src tests benchmarks -type f \( -name '"'"'*.cpp'"'"' -o -name '"'"'*.h'"'"' -o -name '"'"'*.hpp'"'"' \) -print0 | xargs -0 clang-format-20 -i'
+            exit 1
+          }
 
       - name: Run C++ unit tests
         run: |
