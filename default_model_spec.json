@@ -314,7 +314,7 @@
           "model_name": "gpt-oss-120b",
           "inference_engine": "vLLM",
           "device_type": "T3K",
-          "tt_metal_commit": "e867533",
+          "tt_metal_commit": "bac8b34",
           "device_model_spec": {
             "device": "T3K",
             "max_concurrency": 1,
@@ -390,7 +390,7 @@
             "MESH_DEVICE": "T3K",
             "ARCH_NAME": "wormhole_b0"
           },
-          "vllm_commit": "8f36910",
+          "vllm_commit": "7c6685a",
           "hf_weights_repo": "openai/gpt-oss-120b",
           "param_count": 120,
           "min_disk_gb": 260,
@@ -398,9 +398,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-8f36910",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-bac8b34-7c6685a",
           "status": "EXPERIMENTAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/demos/gpt_oss",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/gpt_oss",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -426,10 +426,10 @@
           "model_name": "gpt-oss-120b",
           "inference_engine": "vLLM",
           "device_type": "GALAXY",
-          "tt_metal_commit": "e867533",
+          "tt_metal_commit": "bac8b34",
           "device_model_spec": {
             "device": "GALAXY",
-            "max_concurrency": 128,
+            "max_concurrency": 32,
             "max_context": 131072,
             "perf_targets_map": {},
             "default_impl": true,
@@ -477,17 +477,20 @@
               "model": "openai/gpt-oss-120b",
               "block_size": "64",
               "max_model_len": "131072",
-              "max_num_seqs": "32",
+              "max_num_seqs": "8",
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{}",
+              "override_tt_config": "{\"sample_on_device_mode\": \"all\"}",
               "data_parallel_size": 4
             },
-            "override_tt_config": {},
+            "override_tt_config": {
+              "sample_on_device_mode": "all"
+            },
             "env_vars": {
               "MESH_DEVICE": "(4, 8)",
-              "ARCH_NAME": "wormhole_b0"
+              "ARCH_NAME": "wormhole_b0",
+              "TT_MM_THROTTLE_PERF": 2
             },
             "system_requirements": null
           },
@@ -499,9 +502,10 @@
             "TORCHDYNAMO_DISABLE": "1",
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
             "MESH_DEVICE": "(4, 8)",
-            "ARCH_NAME": "wormhole_b0"
+            "ARCH_NAME": "wormhole_b0",
+            "TT_MM_THROTTLE_PERF": 2
           },
-          "vllm_commit": "8f36910",
+          "vllm_commit": "7c6685a",
           "hf_weights_repo": "openai/gpt-oss-120b",
           "param_count": 120,
           "min_disk_gb": 260,
@@ -509,10 +513,12 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-8f36910",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-bac8b34-7c6685a",
           "status": "EXPERIMENTAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/demos/gpt_oss",
-          "override_tt_config": {},
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/gpt_oss",
+          "override_tt_config": {
+            "sample_on_device_mode": "all"
+          },
           "supported_modalities": [
             "text"
           ],
@@ -12730,8 +12736,7 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{}",
-              "num_scheduler_steps": 1
+              "override_tt_config": "{}"
             },
             "override_tt_config": {},
             "env_vars": {
@@ -12748,7 +12753,6 @@
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
-            "VLLM_USE_V1": "1",
             "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
             "MESH_DEVICE": "T3K",
             "ARCH_NAME": "wormhole_b0"

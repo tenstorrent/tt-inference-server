@@ -957,8 +957,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="e867533",
-        vllm_commit="8f36910",
+        tt_metal_commit="bac8b34",
+        vllm_commit="7c6685a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -969,7 +969,8 @@ llm_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32 * 4,
+                max_concurrency=32,  # currently limiting max_concurrency=32 to allow workflows to complete
+                                     # else they will timeout due to hitting the vLLM RPC recv 30min timeout
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
@@ -978,6 +979,9 @@ llm_templates = [
                 },
                 vllm_args={
                     "data_parallel_size": 4,
+                },
+                override_tt_config={
+                    "sample_on_device_mode": "all",
                 },
             ),
         ],
