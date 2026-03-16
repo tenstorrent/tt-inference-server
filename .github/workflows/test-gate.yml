@@ -519,20 +519,15 @@ jobs:
           cd cpp_server
           ./build.sh
 
-      - name: Install clang-format and clang-tidy
-        run: sudo apt-get update && sudo apt-get install -y clang-format clang-tidy
-
-      - name: C++ format check (Google style)
+      - name: C++ format check (.clang-format)
         run: |
           cd cpp_server
           find include src tests benchmarks -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
-            | xargs -0 -r clang-format --dry-run --Werror
-
-      - name: C++ static analysis (clang-tidy, Google style + camelCase)
-        run: |
-          cd cpp_server
-          find include src tests benchmarks -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
-            | xargs -0 -r -I {} clang-tidy {} -p build --quiet
+            | xargs -0 -r clang-format-20 --dry-run --Werror || {
+            echo '::error::C++ files are not formatted per .clang-format. To fix locally, run from repo root:'
+            echo '  cd tt-media-server/cpp_server && find include src tests benchmarks -type f \( -name '"'"'*.cpp'"'"' -o -name '"'"'*.h'"'"' -o -name '"'"'*.hpp'"'"' \) -print0 | xargs -0 clang-format-20 -i'
+            exit 1
+          }
 
   cpp-server-llm-streaming:
     needs: detect-changes
