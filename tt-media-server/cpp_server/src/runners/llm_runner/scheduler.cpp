@@ -55,12 +55,23 @@ Sequence* Scheduler::find_sequence(TaskID task_id) {
 }
 
 
+void Scheduler::cancel(TaskID task_id) {
+  pending_cancels_.insert(std::move(task_id));
+}
+
 bool Scheduler::try_schedule_prefill(std::vector<Sequence*>& scheduled_seqs,
                                      int& num_seqs, int& num_batched_tokens,
                                      int seq_limit) {
   while (num_seqs < seq_limit) {
     auto seq = prefill_queue_->try_pop();
     if (!seq) break;
+
+    // Drop sequences that were cancelled while sitting in the prefill queue.
+    if (pending_cancels_.count(seq->task_id)) {
+      pending_cancels_.erase(seq->task_id);
+      delete seq;
+      continue;
+    }
 
     if (num_batched_tokens + static_cast<int>(seq->size()) >
             max_num_batched_tokens_ ||
@@ -107,6 +118,24 @@ void Scheduler::try_schedule_decode(std::vector<Sequence*>& scheduled_seqs,
 }
 
 std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
+  // Apply any pending cancellations accumulated since the last step.
+  // Sequences already in the decode queue are removed immediately;
+  // sequences still in the IPC prefill queue will be dropped in
+  // try_schedule_prefill() when they are eventually popped.
+  if (!pending_cancels_.empty()) {
+    std::deque<Sequence*> filtered;
+    for (Sequence* seq : decode_queue_) {
+      if (pending_cancels_.count(seq->task_id)) {
+        pending_cancels_.erase(seq->task_id);
+        block_manager_.deallocate(*seq);
+        sequences_.erase(seq->task_id);
+      } else {
+        filtered.push_back(seq);
+      }
+    }
+    decode_queue_ = std::move(filtered);
+  }
+
   std::vector<Sequence*> scheduled_seqs;
   if (prefill_queue_->empty() && decode_queue_.empty()) {
     auto seq =prefill_queue_->receive();

@@ -63,6 +63,13 @@ class Scheduler {
                    const std::vector<int64_t>& token_ids);
   void removeSequence(TaskID task_id);
 
+  /**
+   * Mark task_id for cancellation. Takes effect at the next schedule() call:
+   * if the sequence is in the decode queue it is immediately deallocated;
+   * if it is still in the IPC prefill queue it is dropped when popped.
+   */
+  void cancel(TaskID task_id);
+
   bool is_stop_token(int64_t token_id) const { return stop_token_ids_.count(token_id) > 0; }
 
  protected:
@@ -97,6 +104,7 @@ class Scheduler {
   ITaskQueue* prefill_queue_;
   std::unordered_map<TaskID, std::unique_ptr<Sequence>> sequences_;
   std::deque<Sequence*> decode_queue_;
+  std::unordered_set<TaskID> pending_cancels_;
 };
 
 std::unique_ptr<Scheduler> make_scheduler(const Config& config,

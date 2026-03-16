@@ -8,6 +8,7 @@
 #include "runners/runner_config.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "ipc/shared_memory.hpp"
+#include "ipc/cancel_queue.hpp"
 
 namespace tt::worker {
 
@@ -17,6 +18,7 @@ struct WorkerConfig {
     unordered_map<string, string> env_vars;
     shared_ptr<llm_engine::ITaskQueue> task_queue;
     shared_ptr<tt::ipc::TokenRingBuffer<65536>> result_queue;
+    shared_ptr<tt::ipc::CancelQueue> cancel_queue;
     int worker_id;
     tt::runners::RunnerConfig runner_config;
 };

@@ -8,6 +8,7 @@
 #include "utils/tokenizer.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker.hpp"
+#include "ipc/cancel_queue.hpp"
 #include "utils/mapper.hpp"
 #include <cassert>
 #include <unordered_set>
@@ -53,6 +54,7 @@ worker::WorkerConfig make_worker_config_for_process(int worker_id) {
     cfg.task_queue = std::make_shared<tt::ipc::BoostIpcTaskQueue>(tt::ipc::TASK_QUEUE_NAME);
     cfg.result_queue = std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
         "/tt_tokens_" + std::to_string(worker_id), false);
+    cfg.cancel_queue = std::make_shared<tt::ipc::CancelQueue>(tt::ipc::CANCEL_QUEUE_NAME);
     cfg.worker_id = worker_id;
     cfg.runner_config = tt::config::llm_engine_config();
     return cfg;
@@ -468,6 +470,13 @@ bool LLMService::cancel_request(const std::string& task_id) {
     }
     pending_tasks_.fetch_sub(1);
     TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
+
+    // M3: signal the worker to abort the sequence at the scheduler level.
+    if (queue_manager_ && queue_manager_->cancel_queue) {
+        if (!queue_manager_->cancel_queue->push(task_id)) {
+            TT_LOG_WARN("[LLMService] Cancel queue full, worker will not abort task {}", task_id);
+        }
+    }
 
     domain::StreamingChunkResponse final_chunk{domain::TaskID(task_id)};
     final_chunk.id = task_id;

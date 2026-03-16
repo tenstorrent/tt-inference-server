@@ -1,6 +1,7 @@
 #include "runners/llm_runner.hpp"
 #include "profiling/tracy.hpp"
 #include "config/settings.hpp"
+#include "utils/logger.hpp"
 
 #include <cassert>
 #include <thread>
@@ -8,8 +9,9 @@
 namespace tt::runners {
   using namespace llm_engine;
 
-LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue)
-    : config_(config), result_queue_(result_queue) {
+LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue,
+                     ITaskQueue* task_queue, ipc::CancelQueue* cancel_queue)
+    : config_(config), result_queue_(result_queue), cancel_queue_(cancel_queue) {
 
   scheduler_ = make_scheduler(config_, task_queue, tt::config::batch_size());
 
@@ -87,6 +89,14 @@ void LLMRunner::stop() {
 }
 
 void LLMRunner::step() {
+  // Drain cancel signals sent by the main process via IPC.
+  if (cancel_queue_) {
+    std::string task_id;
+    while (cancel_queue_->try_pop(task_id)) {
+      TT_LOG_DEBUG("[LLMRunner] Cancelling task {}", task_id);
+      scheduler_->cancel(llm_engine::TaskID(task_id));
+    }
+  }
   auto [seqs, is_prefill] = scheduler_->schedule();
   if (seqs.empty()) return;
   ZoneScopedN("LLMRunner::step");

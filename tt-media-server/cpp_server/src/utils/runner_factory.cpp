@@ -16,7 +16,8 @@ std::unique_ptr<runners::IRunner> create_runner(
     config::ModelService service,
     const runners::RunnerConfig& config,
     ipc::TokenRingBuffer<65536>* result_queue,
-    llm_engine::ITaskQueue* task_queue) {
+    llm_engine::ITaskQueue* task_queue,
+    ipc::CancelQueue* cancel_queue) {
 
     switch (service) {
         case config::ModelService::EMBEDDING: {
@@ -35,7 +36,7 @@ std::unique_ptr<runners::IRunner> create_runner(
             }
 
             TT_LOG_INFO("[RunnerFactory] Creating LLM runner");
-            return std::make_unique<tt::runners::LLMRunner>(cfg, result_queue, task_queue);
+            return std::make_unique<tt::runners::LLMRunner>(cfg, result_queue, task_queue, cancel_queue);
         }
     }
 }

@@ -11,6 +11,7 @@
 #include "runners/runner_config.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "ipc/shared_memory.hpp"
+#include "ipc/cancel_queue.hpp"
 
 namespace tt::utils::runner_factory {
 
@@ -27,7 +28,8 @@ std::unique_ptr<runners::IRunner> create_runner(
     config::ModelService service,
     const runners::RunnerConfig& config,
     ipc::TokenRingBuffer<65536>* result_queue,
-    llm_engine::ITaskQueue* task_queue
+    llm_engine::ITaskQueue* task_queue,
+    ipc::CancelQueue* cancel_queue = nullptr
 );
 
 /**

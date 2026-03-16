@@ -177,6 +177,7 @@ endif()
 set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/block_manager.cpp
     src/ipc/boost_ipc_task_queue.cpp
+    src/ipc/cancel_queue.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
