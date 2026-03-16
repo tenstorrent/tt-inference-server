@@ -160,7 +160,7 @@ int main(int argc, char* argv[]) {
         .setLogLevel(trantor::Logger::kDebug)
         .setLogPath("./logs")
         .addListener(host, port)
-        .setThreadNum(threads)
+        .setThreadNum(24)
         .setAfterAcceptSockOptCallback([](int fd) {
             int one = 1;
             setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
