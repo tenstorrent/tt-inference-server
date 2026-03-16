@@ -9,6 +9,7 @@
 #include "config/settings.hpp"
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <functional>
 #include <vector>
@@ -68,13 +69,13 @@ public:
      * @param task_id Unique task identifier
      * @param prompt Task prompt (text)
      * @param token_ids Pre-tokenized prompt token IDs
-     * @param max_tokens Maximum tokens to generate
+     * @param max_tokens Maximum tokens to generate (nullopt = run until EOS)
      * @return true if sent successfully
      */
     bool sendPrefillRequest(const tt::domain::TaskID& task_id,
                     const std::string& prompt,
                     const std::vector<int64_t>& token_ids,
-                    int max_tokens = 100);
+                    std::optional<int> max_tokens = std::nullopt);
 
     /**
      * @brief Send prefill result back to the decode server

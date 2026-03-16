@@ -150,9 +150,11 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
     seq->append_token(token_id);
 
     bool is_stop_token = stop_token_ids_.count(token_id) > 0;
+    bool reached_max_tokens = seq->sampling_params->max_tokens.has_value()
+        && seq->num_completion_tokens() >= static_cast<size_t>(seq->sampling_params->max_tokens.value());
     bool finished =
         (!seq->sampling_params->ignore_eos && is_stop_token) ||
-        seq->num_completion_tokens() >= static_cast<size_t>(seq->sampling_params->max_tokens);
+        reached_max_tokens;
 
     if (finished) {
       seq->status_ = SequenceStatus::FINISHED;
