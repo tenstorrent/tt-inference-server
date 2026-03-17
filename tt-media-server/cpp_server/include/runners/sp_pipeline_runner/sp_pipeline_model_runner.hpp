@@ -18,7 +18,7 @@
 namespace sp_pipeline {
 
 using DecodeCallback = std::function<void(const llm_engine::TokenResult&)>;
-using DecodeQueue = ConcurrentQueue<llm_engine::TokenResult>;
+using DecodeQueue = LockFreeConcurrentQueue<llm_engine::TokenResult>;
 
 class SpPipelineModelRunner {
  public:
