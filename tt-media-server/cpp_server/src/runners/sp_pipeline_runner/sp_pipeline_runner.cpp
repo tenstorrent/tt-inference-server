@@ -20,7 +20,7 @@ SpPipelineRunner::SpPipelineRunner(const tt::config::LLMConfig& config,
                       config.stop_token_ids.end()),
       result_queue_(resultQueue),
       task_queue_(taskQueue),
-      decode_queue_(config.max_in_flight_count),
+      decode_queue_(config.max_in_flight_count * 30),
       max_in_flight_count_(config.max_in_flight_count) {
   auto decodeCb = [this](const llm_engine::TokenResult& result) {
     decode_queue_.push(result);
