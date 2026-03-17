@@ -90,6 +90,7 @@ class ModelRunners(Enum):
     TT_XLA_VIT = "tt-xla-vit"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     MOCK = "mock"
+    MOCK_VIDEO = "mock-video"
     LLM_TEST = "llm_test"
     LLAMA_RUNNER = "llama_runner"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
@@ -144,6 +145,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.VIDEO: {
         ModelRunners.TT_MOCHI_1,
         ModelRunners.TT_WAN_2_2,
+        ModelRunners.MOCK_VIDEO,
     },
     ModelServices.TRAINING: {
         ModelRunners.TRAINING_GEMMA_LORA,
@@ -166,6 +168,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
+    ModelRunners.MOCK_VIDEO: {ModelNames.WAN_2_2},
     ModelRunners.TT_WHISPER: {
         ModelNames.OPENAI_WHISPER_LARGE_V3,
         ModelNames.DISTIL_WHISPER_LARGE_V3,
