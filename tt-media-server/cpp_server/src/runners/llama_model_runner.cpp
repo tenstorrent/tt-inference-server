@@ -31,27 +31,27 @@ bool LlamaModelRunner::initialize() {
   bool success = false;
   try {
     py::module_ sysMod = py::module_::import("sys");
-    py::list sysPath = sys_mod.attr("path");
+    py::list sysPath = sysMod.attr("path");
 
     const char* pythonPath = std::getenv("TT_PYTHON_PATH");
     if (pythonPath && *pythonPath) {
-      sys_path.attr("insert")(0, python_path);
+      sysPath.attr("insert")(0, pythonPath);
     }
     const char* metalHome = std::getenv("TT_METAL_HOME");
     if (metalHome && *metalHome) {
-      sys_path.attr("insert")(0, metal_home);
+      sysPath.attr("insert")(0, metalHome);
     }
 
     py::module_ llamaMod = py::module_::import("tt_model_runners.llama_runner");
-    g_step_seq_class = llama_mod.attr("StepSequence");
-    py::object runnerClass = llama_mod.attr("Llama31_8BRunner");
+    gStepSeqClass = llamaMod.attr("StepSequence");
+    py::object runnerClass = llamaMod.attr("Llama31_8BRunner");
 
     const char* envDev = std::getenv("TT_VISIBLE_DEVICES");
     std::string deviceId = (envDev && *envDev) ? envDev : "0";
-    g_runner = runner_class(device_id);
+    gRunner = runnerClass(deviceId);
 
     py::module_ asyncio = py::module_::import("asyncio");
-    bool warmupOk = asyncio.attr("run")(g_runner.attr("warmup")()).cast<bool>();
+    bool warmupOk = asyncio.attr("run")(gRunner.attr("warmup")()).cast<bool>();
     if (!warmupOk) {
       TT_LOG_ERROR("[LlamaModelRunner] Warmup failed");
     } else {
@@ -92,7 +92,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
       py::list pySeqs;
       for (Sequence* seq : seqs) {
         py::list token_ids;
-        if (is_prefill) {
+        if (isPrefill) {
           for (int64_t t : seq->token_ids_) token_ids.append(t);
         } else {
           token_ids.append(seq->token_ids_.back());
@@ -104,7 +104,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
         }
 
         int current_pos =
-            is_prefill ? 0 : static_cast<int>(seq->token_ids_.size() - 1);
+            isPrefill ? 0 : static_cast<int>(seq->token_ids_.size() - 1);
         int prompt_len = static_cast<int>(seq->num_prompt_tokens_);
 
         const SamplingParams* sp = seq->sampling_params.get();
@@ -141,13 +141,13 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
         double frequency_penalty =
             sp ? static_cast<double>(sp->frequency_penalty) : 0.0;
 
-        py_seqs.append(g_step_seq_class(
+        pySeqs.append(gStepSeqClass(
             seq->task_id.id, token_ids, temperature, ignore_eos, block_table,
             current_pos, prompt_len, seed, top_p, top_k, min_p,
             repetition_penalty, presence_penalty, frequency_penalty));
       }
 
-      py::object results = g_runner.attr("run")(is_prefill, py_seqs);
+      py::object results = gRunner.attr("run")(isPrefill, pySeqs);
 
       for (size_t i = 0; i < seqs.size(); ++i) {
         py::object item = results[py::int_(i)];
@@ -169,7 +169,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
     }
   }
   if (hadError) {
-    fail_sequences(seqs);
+    failSequences(seqs);
     stop_.store(true);
   }
 }
@@ -179,8 +179,8 @@ void LlamaModelRunner::exit() {
   if (!initialized_) return;
   {
     py::gil_scoped_acquire acquire;
-    g_runner = py::object();
-    g_step_seq_class = py::object();
+    gRunner = py::object();
+    gStepSeqClass = py::object();
   }
   initialized_ = false;
   TT_LOG_INFO("[LlamaModelRunner] Runner exited");
@@ -189,7 +189,7 @@ void LlamaModelRunner::exit() {
 std::unique_ptr<IModelRunner> makeLlamaModelRunner(const Config& config,
                                                    DecodeCallback callback) {
   auto runner = std::make_unique<LlamaModelRunner>(config, std::move(callback));
-  if (!runner->is_ready()) {
+  if (!runner->isReady()) {
     return nullptr;
   }
   return runner;
