@@ -477,7 +477,7 @@
               "model": "openai/gpt-oss-120b",
               "block_size": "64",
               "max_model_len": "131072",
-              "max_num_seqs": "8",
+              "max_num_seqs": 32,
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
