@@ -490,19 +490,42 @@ def run_docker_server_compose(model_spec, runtime_config, setup_config, json_fpa
             f"Check variables in {env_file}"
         )
 
-    # Start log streaming to file
-    log_proc = compose_logs(
-        compose_file, env_file=env_file, follow=True, log_file_path=docker_log_file_path
-    )
-
     # Get container ID
     container_id = _wait_for_container_id(container_name, timeout=30)
     if not container_id:
         logger.error(f"Container {container_name} failed to start after compose up")
+        # Dump any logs before failing
+        startup_logs = compose_logs(compose_file, env_file=env_file)
+        if startup_logs:
+            logger.error(f"Container logs:\n{startup_logs}")
         compose_down(compose_file, env_file=env_file)
         raise RuntimeError("Container failed to start after docker compose up")
 
     logger.info(f"Container started: {container_id}")
+
+    # Check container isn't in a restart loop
+    time.sleep(3)
+    try:
+        inspect_result = subprocess.run(
+            ["docker", "inspect", "-f", "{{.RestartCount}}", container_id],
+            capture_output=True, text=True, timeout=5,
+        )
+        restart_count = int(inspect_result.stdout.strip() or "0")
+        if restart_count > 0:
+            logs_output = compose_logs(compose_file, env_file=env_file)
+            logger.error(f"Container is crash-looping (restarts: {restart_count}). Logs:\n{logs_output}")
+            compose_down(compose_file, env_file=env_file)
+            raise RuntimeError(
+                f"Container {container_name} is crash-looping ({restart_count} restarts).\n"
+                f"Logs:\n{logs_output}"
+            )
+    except (subprocess.TimeoutExpired, ValueError):
+        pass
+
+    # Start log streaming to file
+    log_proc = compose_logs(
+        compose_file, env_file=env_file, follow=True, log_file_path=docker_log_file_path
+    )
     logger.info(f"Logs streaming to: {docker_log_file_path}")
 
     # Register cleanup

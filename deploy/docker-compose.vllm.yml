@@ -7,6 +7,10 @@
 # Usage (via run.py):
 #   python3 run.py --model Llama-3.1-8B-Instruct --workflow server \
 #     --tt-device n150 --docker-server --use-compose --no-auth
+#
+# Note on entrypoint: Release images use docker-entrypoint.sh (root → gosu)
+# which does NOT activate the Python venv. The command must include venv
+# activation explicitly via bash -c.
 
 services:
   inference-server:
@@ -21,18 +25,18 @@ services:
     env_file:
       - ${ENV_FILE:-.env}
     environment:
-      # Set explicitly so stale/empty CACHE_ROOT in .env can't break the entrypoint
       CACHE_ROOT: /home/container_app_user/cache_root
     ports:
       - "${BIND_HOST:-0.0.0.0}:${SERVICE_PORT:-8000}:${SERVICE_PORT:-8000}"
     command:
-      - python
-      - run_vllm_api_server.py
-      - --model
-      - ${HF_MODEL:?HF_MODEL is required}
-      - --tt-device
-      - ${TT_DEVICE:?TT_DEVICE is required}
-    restart: unless-stopped
+      - /bin/bash
+      - -c
+      - >-
+        source /home/container_app_user/tt-metal/python_env/bin/activate &&
+        exec python run_vllm_api_server.py
+        --model ${HF_MODEL:?HF_MODEL is required}
+        --tt-device ${TT_DEVICE:?TT_DEVICE is required}
+    restart: on-failure:3
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:${SERVICE_PORT:-8000}/health"]
       interval: 30s
