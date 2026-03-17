@@ -15,6 +15,7 @@
 #include <unordered_set>
 
 #include "config/settings.hpp"
+#include "ipc/boost_ipc_warmup_signal_queue.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
@@ -86,17 +87,44 @@ void LLMService::start() {
   TT_LOG_INFO("[LLMService] Starting (mode={}, workers={})",
               tt::config::toString(mode_), num_workers_);
 
+  if (num_workers_ > 0) {
+    tt::ipc::BoostIpcWarmupSignalQueue::remove(tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
+    warmup_queue_ = std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(
+        tt::ipc::WARMUP_SIGNALS_QUEUE_NAME, num_workers_);
+    warmup_received_ = false;
+    warmup_listener_thread_ = std::thread([this]() {
+      try {
+        int workerId = -1;
+        warmup_queue_->receive(workerId);
+        TT_LOG_INFO("[LLMService] First worker warmed up (workerId={})", workerId);
+      } catch (const std::exception& e) {
+        TT_LOG_WARN("[LLMService] Warmup listener: {} (shutdown?)", e.what());
+      }
+      is_ready_ = true;
+      warmup_received_ = true;
+      warmup_cv_.notify_all();
+    });
+  }
+
   startWorkers();
   tracy_config::tracyStartupSchedulerParent();
-  startConsumers();
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  if (num_workers_ > 0) {
+    std::unique_lock<std::mutex> lock(warmup_mutex_);
+    warmup_cv_.wait(lock, [this]() { return warmup_received_.load(); });
+    if (warmup_listener_thread_.joinable()) {
+      warmup_listener_thread_.join();
+    }
+  } else {
+    is_ready_ = true;
+  }
+
+  startConsumers();
 
   if (socket_service_ && socket_service_->isEnabled()) {
     socket_service_->start();
   }
 
-  is_ready_ = true;
   TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
   TT_LOG_INFO("[LLMService] Service started");
 }
@@ -170,6 +198,12 @@ void LLMService::stop() {
   }
 
   TT_LOG_INFO("[LLMService] Stopping...");
+
+  warmup_queue_.reset();
+  if (warmup_listener_thread_.joinable()) {
+    warmup_listener_thread_.join();
+  }
+  tt::ipc::BoostIpcWarmupSignalQueue::remove(tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
 
   // Signal shutdown on all ring buffers so blockingPop wakes up
   for (auto& q : queue_manager_->result_queues) {

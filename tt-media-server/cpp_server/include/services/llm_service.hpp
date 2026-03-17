@@ -4,8 +4,10 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
@@ -16,6 +18,7 @@
 #include "domain/completion_response.hpp"
 #include "domain/prefill_request.hpp"
 #include "ipc/queue_manager.hpp"
+#include "ipc/warmup_signal_queue.hpp"
 #include "services/base_service.hpp"
 #include "services/streamable.hpp"
 #include "sockets/inter_server_service.hpp"
@@ -96,6 +99,12 @@ class LLMService
 
   std::atomic<bool> is_ready_{false};
   std::atomic<bool> running_{false};
+
+  std::unique_ptr<tt::ipc::IWarmupSignalQueue> warmup_queue_;
+  std::thread warmup_listener_thread_;
+  std::mutex warmup_mutex_;
+  std::condition_variable warmup_cv_;
+  std::atomic<bool> warmup_received_{false};
 
   std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
   const tt::utils::Tokenizer* tokenizer_;

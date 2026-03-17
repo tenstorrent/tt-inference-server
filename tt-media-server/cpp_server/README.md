@@ -355,8 +355,8 @@ pkill -9 -f tt_media_server_cpp
 |----------|--------|---------------|-------------|
 | `/v1/completions` | POST | ✅ Yes | OpenAI-compatible text completion |
 | `/v1/chat/completions` | POST | ✅ Yes | OpenAI-compatible chat completion |
-| `/health` | GET | ❌ No | Health check |
-| `/tt-liveness` | GET | ❌ No | Liveness check with system status |
+| `/health` | GET | ❌ No | Health check (unchanged: always 200 with status + timestamp) |
+| `/tt-liveness` | GET | ❌ No | Liveness (like Python: 200 with status alive + model info; model_ready = any worker warmed up; 500 only on failure) |
 | `/docs` | GET | ❌ No | Swagger UI documentation |
 | `/openapi.json` | GET | ❌ No | OpenAPI specification |
 
@@ -441,16 +441,18 @@ curl http://localhost:8001/health
 curl http://localhost:8001/tt-liveness
 ```
 
-**Response:**
+Liveness probe (same as Python tt-liveness). Always returns 200 when the process can respond; 500 only on unrecoverable failure. The `model_ready` field reflects whether any worker has warmed up.
+
+**Response (200):**
 ```json
 {
+  "status": "alive",
   "model_ready": true,
   "queue_size": 0,
   "max_queue_size": 10000,
-  "device": "cpu",
   "workers": [
     {
-      "worker_id": "worker_0",
+      "worker_id": "0",
       "is_ready": true,
       "processed_requests": 42
     }

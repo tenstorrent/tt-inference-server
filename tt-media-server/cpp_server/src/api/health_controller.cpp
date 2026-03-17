@@ -37,36 +37,44 @@ void HealthController::ready(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   if (!service_) {
     Json::Value response;
+    response["status"] = "alive";
     response["model_ready"] = false;
     response["error"] = "no service configured";
     auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-    resp->setStatusCode(drogon::k503ServiceUnavailable);
+    resp->setStatusCode(drogon::k500InternalServerError);
     callback(resp);
     return;
   }
 
-  auto status = service_->getSystemStatus();
+  try {
+    auto status = service_->getSystemStatus();
 
-  Json::Value response;
-  response["model_ready"] = status.model_ready;
-  response["queue_size"] = static_cast<Json::UInt64>(status.queue_size);
-  response["max_queue_size"] = static_cast<Json::UInt64>(status.max_queue_size);
+    Json::Value response;
+    response["status"] = "alive";
+    response["model_ready"] = status.model_ready;
+    response["queue_size"] = static_cast<Json::UInt64>(status.queue_size);
+    response["max_queue_size"] = static_cast<Json::UInt64>(status.max_queue_size);
 
-  Json::Value workers(Json::arrayValue);
-  for (const auto& w : status.worker_info) {
-    Json::Value wj;
-    wj["worker_id"] = w.worker_id;
-    wj["is_ready"] = w.is_ready;
-    wj["processed_requests"] = static_cast<Json::UInt64>(w.processed_requests);
-    workers.append(wj);
+    Json::Value workers(Json::arrayValue);
+    for (const auto& w : status.worker_info) {
+      Json::Value wj;
+      wj["worker_id"] = w.worker_id;
+      wj["is_ready"] = w.is_ready;
+      wj["processed_requests"] = static_cast<Json::UInt64>(w.processed_requests);
+      workers.append(wj);
+    }
+    response["workers"] = workers;
+
+    callback(drogon::HttpResponse::newHttpJsonResponse(response));
+  } catch (const std::exception& e) {
+    Json::Value response;
+    response["status"] = "alive";
+    response["model_ready"] = false;
+    response["error"] = std::string("Liveness check failed: ") + e.what();
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k500InternalServerError);
+    callback(resp);
   }
-  response["workers"] = workers;
-
-  auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-  if (!status.model_ready) {
-    resp->setStatusCode(drogon::k503ServiceUnavailable);
-  }
-  callback(resp);
 }
 
 }  // namespace tt::api

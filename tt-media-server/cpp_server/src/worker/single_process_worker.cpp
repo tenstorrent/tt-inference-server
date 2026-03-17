@@ -8,7 +8,9 @@
 #include <thread>
 
 #include "config/settings.hpp"
+#include "ipc/boost_ipc_warmup_signal_queue.hpp"
 #include "profiling/tracy.hpp"
+#include "utils/logger.hpp"
 #include "utils/runner_factory.hpp"
 
 namespace tt::worker {
@@ -37,6 +39,15 @@ void SingleProcessWorker::start() {
         cfg.task_queue.get());
   }
   runner_->start();
+
+  try {
+    tt::ipc::BoostIpcWarmupSignalQueue warmupQueue(
+        tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
+    warmupQueue.sendReady(worker_id);
+  } catch (const std::exception& e) {
+    TT_LOG_WARN("[SingleProcessWorker] Worker {} failed to signal warmup: {}",
+                worker_id, e.what());
+  }
 }
 
 void SingleProcessWorker::stop() {

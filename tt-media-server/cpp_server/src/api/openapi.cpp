@@ -305,22 +305,25 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     endpoint["tags"].append("Health");
     endpoint["summary"] = "Liveness check";
     endpoint["description"] =
-        "Returns detailed system status including model liveness, queue size, "
-        "and worker information.";
+        "Liveness probe (same as Python tt-liveness). Returns 200 with "
+        "{\"status\": \"alive\", ...system status} when the process can respond. "
+        "model_ready in the body reflects whether any worker has warmed up. "
+        "Does not return 503 for model not ready; 500 only on unrecoverable failure.";
     endpoint["operationId"] = "livenessCheck";
 
     Json::Value responses;
     Json::Value resp200;
-    resp200["description"] = "System status (may return 503 if not ready)";
+    resp200["description"] =
+        "Process is alive; body includes status alive and system status (model_ready, workers, queue)";
     resp200["content"]["application/json"]["schema"]["$ref"] =
         "#/components/schemas/ReadyResponse";
     responses["200"] = resp200;
 
-    Json::Value resp503;
-    resp503["description"] = "Model not ready";
-    resp503["content"]["application/json"]["schema"]["$ref"] =
+    Json::Value resp500;
+    resp500["description"] = "Unrecoverable failure (e.g. no service configured, exception)";
+    resp500["content"]["application/json"]["schema"]["$ref"] =
         "#/components/schemas/ReadyResponse";
-    responses["503"] = resp503;
+    responses["500"] = resp500;
 
     endpoint["responses"] = responses;
 
