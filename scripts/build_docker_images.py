@@ -259,9 +259,7 @@ def generate_model_specs_json(output_path: Path = None) -> Path:
         output_path = get_repo_root_path() / "model_spec.json"
 
     num_specs = export_model_specs_json(MODEL_SPECS, output_path)
-    logger.info(
-        f"Generated model_spec.json with {num_specs} specs at {output_path}"
-    )
+    logger.info(f"Generated model_spec.json with {num_specs} specs at {output_path}")
     return output_path
 
 
