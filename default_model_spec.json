@@ -1819,7 +1819,7 @@
           "model_name": "Qwen3-32B",
           "inference_engine": "vLLM",
           "device_type": "P150X8",
-          "tt_metal_commit": "55fd115",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P150X8",
             "max_concurrency": 32,
@@ -1835,9 +1835,11 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{}"
+              "override_tt_config": "{\"trace_region_size\": 61341696}"
             },
-            "override_tt_config": {},
+            "override_tt_config": {
+              "trace_region_size": 61341696
+            },
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
@@ -1863,7 +1865,7 @@
             "MESH_DEVICE": "P150x8",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "aa4ae1e",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "Qwen/Qwen3-32B",
           "param_count": 32,
           "min_disk_gb": 84,
@@ -1871,10 +1873,12 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
-          "override_tt_config": {},
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+          "override_tt_config": {
+            "trace_region_size": 61341696
+          },
           "supported_modalities": [
             "text"
           ],
@@ -1899,7 +1903,7 @@
           "model_name": "Qwen3-32B",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "e867533",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
@@ -1990,9 +1994,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
@@ -4054,7 +4058,7 @@
           "model_name": "Llama-3.3-70B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "P150X4",
-          "tt_metal_commit": "55fd115",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P150X4",
             "max_concurrency": 32,
@@ -4138,7 +4142,7 @@
             "MESH_DEVICE": "P150x4",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "aa4ae1e",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.3-70B-Instruct",
           "param_count": 70,
           "min_disk_gb": 160,
@@ -4146,9 +4150,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "trace_region_size": 30000000
           },
@@ -4176,7 +4180,7 @@
           "model_name": "Llama-3.3-70B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "P150X8",
-          "tt_metal_commit": "55fd115",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P150X8",
             "max_concurrency": 32,
@@ -4231,9 +4235,11 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{}"
+              "override_tt_config": "{\"trace_region_size\": 51453952}"
             },
-            "override_tt_config": {},
+            "override_tt_config": {
+              "trace_region_size": 51453952
+            },
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
@@ -4258,7 +4264,7 @@
             "MESH_DEVICE": "P150x8",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "aa4ae1e",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.3-70B-Instruct",
           "param_count": 70,
           "min_disk_gb": 160,
@@ -4266,10 +4272,12 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
-          "override_tt_config": {},
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+          "override_tt_config": {
+            "trace_region_size": 51453952
+          },
           "supported_modalities": [
             "text"
           ],
@@ -4294,7 +4302,7 @@
           "model_name": "Llama-3.3-70B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "e867533",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
@@ -4386,9 +4394,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "trace_region_size": 56000000
           },
@@ -4924,7 +4932,7 @@
           "model_name": "Llama-3.1-70B",
           "inference_engine": "vLLM",
           "device_type": "P150X4",
-          "tt_metal_commit": "55fd115",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P150X4",
             "max_concurrency": 32,
@@ -5008,7 +5016,7 @@
             "MESH_DEVICE": "P150x4",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "aa4ae1e",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.1-70B",
           "param_count": 70,
           "min_disk_gb": 160,
@@ -5016,9 +5024,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "trace_region_size": 30000000
           },
@@ -5046,7 +5054,7 @@
           "model_name": "Llama-3.1-70B",
           "inference_engine": "vLLM",
           "device_type": "P150X8",
-          "tt_metal_commit": "55fd115",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P150X8",
             "max_concurrency": 32,
@@ -5101,9 +5109,11 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{}"
+              "override_tt_config": "{\"trace_region_size\": 51453952}"
             },
-            "override_tt_config": {},
+            "override_tt_config": {
+              "trace_region_size": 51453952
+            },
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
@@ -5128,7 +5138,7 @@
             "MESH_DEVICE": "P150x8",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "aa4ae1e",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.1-70B",
           "param_count": 70,
           "min_disk_gb": 160,
@@ -5136,10 +5146,12 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
-          "override_tt_config": {},
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+          "override_tt_config": {
+            "trace_region_size": 51453952
+          },
           "supported_modalities": [
             "text"
           ],
@@ -5164,7 +5176,7 @@
           "model_name": "Llama-3.1-70B",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "e867533",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
@@ -5256,9 +5268,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "trace_region_size": 56000000
           },
@@ -5678,7 +5690,7 @@
           "model_name": "Llama-3.1-70B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "P150X4",
-          "tt_metal_commit": "55fd115",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P150X4",
             "max_concurrency": 32,
@@ -5762,7 +5774,7 @@
             "MESH_DEVICE": "P150x4",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "aa4ae1e",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.1-70B-Instruct",
           "param_count": 70,
           "min_disk_gb": 160,
@@ -5770,9 +5782,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "trace_region_size": 30000000
           },
@@ -5800,7 +5812,7 @@
           "model_name": "Llama-3.1-70B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "P150X8",
-          "tt_metal_commit": "55fd115",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P150X8",
             "max_concurrency": 32,
@@ -5855,9 +5867,11 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{}"
+              "override_tt_config": "{\"trace_region_size\": 51453952}"
             },
-            "override_tt_config": {},
+            "override_tt_config": {
+              "trace_region_size": 51453952
+            },
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
@@ -5882,7 +5896,7 @@
             "MESH_DEVICE": "P150x8",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "aa4ae1e",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.1-70B-Instruct",
           "param_count": 70,
           "min_disk_gb": 160,
@@ -5890,10 +5904,12 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
-          "override_tt_config": {},
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+          "override_tt_config": {
+            "trace_region_size": 51453952
+          },
           "supported_modalities": [
             "text"
           ],
@@ -5918,7 +5934,7 @@
           "model_name": "Llama-3.1-70B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "e867533",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
@@ -6010,9 +6026,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "trace_region_size": 56000000
           },
@@ -6432,7 +6448,7 @@
           "model_name": "DeepSeek-R1-Distill-Llama-70B",
           "inference_engine": "vLLM",
           "device_type": "P150X4",
-          "tt_metal_commit": "55fd115",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P150X4",
             "max_concurrency": 32,
@@ -6516,7 +6532,7 @@
             "MESH_DEVICE": "P150x4",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "aa4ae1e",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
           "param_count": 70,
           "min_disk_gb": 160,
@@ -6524,9 +6540,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "trace_region_size": 30000000
           },
@@ -6554,7 +6570,7 @@
           "model_name": "DeepSeek-R1-Distill-Llama-70B",
           "inference_engine": "vLLM",
           "device_type": "P150X8",
-          "tt_metal_commit": "55fd115",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P150X8",
             "max_concurrency": 32,
@@ -6609,9 +6625,11 @@
               "max_num_batched_tokens": "131072",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{}"
+              "override_tt_config": "{\"trace_region_size\": 51453952}"
             },
-            "override_tt_config": {},
+            "override_tt_config": {
+              "trace_region_size": 51453952
+            },
             "env_vars": {
               "MESH_DEVICE": "P150x8",
               "ARCH_NAME": "blackhole"
@@ -6636,7 +6654,7 @@
             "MESH_DEVICE": "P150x8",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "aa4ae1e",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
           "param_count": 70,
           "min_disk_gb": 160,
@@ -6644,10 +6662,12 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
-          "override_tt_config": {},
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
+          "override_tt_config": {
+            "trace_region_size": 51453952
+          },
           "supported_modalities": [
             "text"
           ],
@@ -6672,7 +6692,7 @@
           "model_name": "DeepSeek-R1-Distill-Llama-70B",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "e867533",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
@@ -6764,9 +6784,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "trace_region_size": 56000000
           },
@@ -9489,7 +9509,7 @@
           "model_name": "Llama-3.1-8B",
           "inference_engine": "vLLM",
           "device_type": "P150X8",
-          "tt_metal_commit": "55fd115",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P150X8",
             "max_concurrency": 256,
@@ -9574,7 +9594,7 @@
             "MESH_DEVICE": "P150x8",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "aa4ae1e",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.1-8B",
           "param_count": 8,
           "min_disk_gb": 36,
@@ -9582,9 +9602,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "sample_on_device_mode": "decode_only"
           },
@@ -9612,7 +9632,7 @@
           "model_name": "Llama-3.1-8B",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "e867533",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
@@ -9705,9 +9725,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "sample_on_device_mode": "decode_only",
             "trace_region_size": 56000000
@@ -9736,7 +9756,7 @@
           "model_name": "Llama-3.1-8B",
           "inference_engine": "vLLM",
           "device_type": "P300",
-          "tt_metal_commit": "e867533",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P300",
             "max_concurrency": 32,
@@ -9790,9 +9810,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "sample_on_device_mode": "decode_only",
             "trace_region_size": 56000000
@@ -10825,7 +10845,7 @@
           "model_name": "Llama-3.1-8B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "P150X8",
-          "tt_metal_commit": "55fd115",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P150X8",
             "max_concurrency": 256,
@@ -10910,7 +10930,7 @@
             "MESH_DEVICE": "P150x8",
             "ARCH_NAME": "blackhole"
           },
-          "vllm_commit": "aa4ae1e",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
           "param_count": 8,
           "min_disk_gb": 36,
@@ -10918,9 +10938,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-55fd115-aa4ae1e",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "sample_on_device_mode": "decode_only"
           },
@@ -10948,7 +10968,7 @@
           "model_name": "Llama-3.1-8B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "P300X2",
-          "tt_metal_commit": "e867533",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P300X2",
             "max_concurrency": 32,
@@ -11041,9 +11061,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "sample_on_device_mode": "decode_only",
             "trace_region_size": 56000000
@@ -11072,7 +11092,7 @@
           "model_name": "Llama-3.1-8B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "P300",
-          "tt_metal_commit": "e867533",
+          "tt_metal_commit": "555f240",
           "device_model_spec": {
             "device": "P300",
             "max_concurrency": 32,
@@ -11126,9 +11146,9 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e867533-22be241",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-555f240-22be241",
           "status": "FUNCTIONAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
           "override_tt_config": {
             "sample_on_device_mode": "decode_only",
             "trace_region_size": 56000000

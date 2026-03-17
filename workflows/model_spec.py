@@ -978,7 +978,7 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32,  # currently limiting client-side max_concurrency=32 to allow workflows to
-                                     # complete else they will timeout due to hitting the vLLM RPC recv 30min timeout
+                # complete else they will timeout due to hitting the vLLM RPC recv 30min timeout
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
