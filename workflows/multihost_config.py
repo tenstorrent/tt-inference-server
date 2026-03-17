@@ -11,10 +11,9 @@ This module generates configuration files needed for multi-host deployment:
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
 from workflows.workflow_types import DeviceTypes
-
 
 # Fixed values for multi-host deployment
 WORKER_SSH_PORT = 2200
@@ -37,7 +36,7 @@ ENV_PASSTHROUGH = [
 class MultiHostConfig:
     """Configuration for multi-host deployment."""
 
-    hosts: list[str]
+    hosts: List[str]
     mpi_interface: str
     shared_storage_root: str
     config_pkl_dir: str
@@ -55,7 +54,7 @@ class MultiHostConfig:
 
 
 def generate_ssh_config(
-    hosts: list[str],
+    hosts: List[str],
     ssh_port: int = WORKER_SSH_PORT,
     ssh_user: str = CONTAINER_USER,
     identity_file: str = DEFAULT_IDENTITY_FILE,
@@ -91,7 +90,7 @@ def generate_ssh_config(
     return "\n".join(config_lines)
 
 
-def generate_rankfile(hosts: list[str]) -> str:
+def generate_rankfile(hosts: List[str]) -> str:
     """Generate MPI rankfile for rank-to-host mapping.
 
     Each host gets one rank. Uses real hostnames directly so that
@@ -109,7 +108,7 @@ def generate_rankfile(hosts: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_mpi_args(hosts: list[str], rankfile_path: str) -> str:
+def build_mpi_args(hosts: List[str], rankfile_path: str) -> str:
     """Build mpi_args string for override_tt_config.
 
     MPI requires --host to know available hosts, and rankfile for
@@ -153,7 +152,7 @@ def get_rank_binding_path(device_type: DeviceTypes) -> str:
 
 
 def build_override_tt_config(
-    hosts: list[str],
+    hosts: List[str],
     mpi_interface: str,
     config_pkl_dir: str,
     rankfile_path: str,
