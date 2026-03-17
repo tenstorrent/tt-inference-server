@@ -10,6 +10,9 @@
 
 namespace llm_engine {
 
+using Config = tt::config::LLMConfig;
+using ModelRunnerType = tt::config::ModelRunnerType;
+
 std::unique_ptr<IModelRunner> make_mock_model_runner(const Config& config,
                                                      DecodeCallback callback);
 #ifdef USE_METAL_CPP_LIB

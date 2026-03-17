@@ -2,20 +2,22 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
-#include "utils/logger.hpp"
+
 #include <cassert>
+#include <chrono>
 #include <cstring>
 #include <thread>
-#include <chrono>
+
+#include "utils/logger.hpp"
 
 namespace tt::runners {
 
-SpPipelineRunner::SpPipelineRunner(
-    const llm_engine::Config& config,
-    ipc::TokenRingBuffer<65536>* result_queue,
-    llm_engine::ITaskQueue* task_queue)
+SpPipelineRunner::SpPipelineRunner(const tt::config::LLMConfig& config,
+                                   ipc::TokenRingBuffer<65536>* result_queue,
+                                   llm_engine::ITaskQueue* task_queue)
     : config_(config),
-      stop_token_ids_(config.stop_token_ids.begin(), config.stop_token_ids.end()),
+      stop_token_ids_(config.stop_token_ids.begin(),
+                      config.stop_token_ids.end()),
       result_queue_(result_queue),
       task_queue_(task_queue),
       max_in_flight_count_(config.max_in_flight_count) {
@@ -23,7 +25,8 @@ SpPipelineRunner::SpPipelineRunner(
     decode_queue_.push(result);
   };
 
-  model_runner_ = std::make_unique<sp_pipeline::SpPipelineModelRunner>(std::move(decode_cb));
+  model_runner_ = std::make_unique<sp_pipeline::SpPipelineModelRunner>(
+      std::move(decode_cb));
 }
 
 SpPipelineRunner::~SpPipelineRunner() {
@@ -44,21 +47,19 @@ bool SpPipelineRunner::warmup() {
   warmup_params.max_tokens = 1;
   warmup_params.ignore_eos = true;
 
-  std::vector<int64_t> warmup_tokens = {1}; // Single token
+  std::vector<int64_t> warmup_tokens = {1};  // Single token
   llm_engine::TaskID warmup_task_id("warmup_task");
 
   auto warmup_seq = std::make_unique<llm_engine::Sequence>(
       warmup_task_id,
-      1, // block_size (doesn't matter for warmup)
-      warmup_tokens,
-      warmup_params
-  );
+      1,  // block_size (doesn't matter for warmup)
+      warmup_tokens, warmup_params);
 
   // Write the warmup sequence to the model runner
   model_runner_->write(warmup_seq->task_id.id, warmup_seq->token_ids_, 1);
 
   // Wait for the response token (with timeout)
-  const int max_attempts = 1000; // ~10 seconds with 10ms sleep
+  const int max_attempts = 1000;  // ~10 seconds with 10ms sleep
   int attempts = 0;
   bool received_token = false;
 
@@ -108,7 +109,8 @@ void SpPipelineRunner::step() {
   std::unique_ptr<llm_engine::Sequence> owned(seq);
   llm_engine::TaskID task_id = seq->task_id;
 
-  uint32_t max_tokens = seq->sampling_params->max_tokens.value_or(config_.MAX_INPUT_TOKENS);
+  uint32_t max_tokens =
+      seq->sampling_params->max_tokens.value_or(config_.MAX_INPUT_TOKENS);
   model_runner_->write(seq->task_id.id, seq->token_ids_, max_tokens);
 
   active_sequences_.emplace(task_id, std::move(owned));
@@ -118,8 +120,11 @@ void SpPipelineRunner::step() {
 void SpPipelineRunner::drain_decode_results() {
   for (const auto& dr : decode_queue_.drain()) {
     auto it = active_sequences_.find(dr.task_id);
-    if (it == active_sequences_.end()) { // safeguard for too many decode results
-      TT_LOG_WARN("SpPipelineRunner: task_id not found in active_sequences_: {}", dr.task_id.id);
+    if (it ==
+        active_sequences_.end()) {  // safeguard for too many decode results
+      TT_LOG_WARN(
+          "SpPipelineRunner: task_id not found in active_sequences_: {}",
+          dr.task_id.id);
       continue;
     }
     llm_engine::Sequence* seq = it->second.get();
@@ -134,11 +139,12 @@ void SpPipelineRunner::drain_decode_results() {
     seq->append_token(static_cast<int64_t>(dr.token_id));
 
     bool is_stop = stop_token_ids_.count(static_cast<int64_t>(dr.token_id)) > 0;
-    bool reached_max_tokens = seq->sampling_params->max_tokens.has_value() &&
-    seq->num_completion_tokens() >= static_cast<size_t>(seq->sampling_params->max_tokens.value());
+    bool reached_max_tokens =
+        seq->sampling_params->max_tokens.has_value() &&
+        seq->num_completion_tokens() >=
+            static_cast<size_t>(seq->sampling_params->max_tokens.value());
     bool finished =
-        (!seq->sampling_params->ignore_eos && is_stop) ||
-        reached_max_tokens;
+        (!seq->sampling_params->ignore_eos && is_stop) || reached_max_tokens;
 
     push_token(dr.task_id, dr.token_id, finished);
 

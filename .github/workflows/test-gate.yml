@@ -545,6 +545,17 @@ jobs:
           ./build.sh
           cd ..
 
+      - name: C++ format check (.clang-format)
+        run: |
+          cd cpp_server
+          if ! find include src tests benchmarks -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
+            | xargs -0 -r clang-format-20 --dry-run --Werror >/dev/null 2>&1; then
+            echo '::error::Some C++ files are not formatted per .clang-format.'
+            echo 'To fix locally, run from repo root:'
+            echo '  cd tt-media-server/cpp_server && find include src tests benchmarks -type f \( -name '"'"'*.cpp'"'"' -o -name '"'"'*.h'"'"' -o -name '"'"'*.hpp'"'"' \) -print0 | xargs -0 clang-format-20 -i'
+            exit 1
+          fi
+
       - name: Run C++ unit tests
         run: |
           cd cpp_server/build

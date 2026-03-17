@@ -1,8 +1,8 @@
 #pragma once
 
+#include <iostream>
 #include <optional>
 #include <vector>
-#include <iostream>
 
 namespace llm_engine {
 

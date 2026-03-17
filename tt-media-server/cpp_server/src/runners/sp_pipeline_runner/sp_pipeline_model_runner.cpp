@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "runners/sp_pipeline_runner/sp_pipeline_model_runner.hpp"
+
 #include "runners/llm_runner/debug.hpp"
 
 namespace sp_pipeline {
@@ -16,13 +17,11 @@ SpPipelineModelRunner::SpPipelineModelRunner(DecodeCallback callback)
   reader_thread_ = std::thread([this] { reader_loop(); });
 }
 
-SpPipelineModelRunner::~SpPipelineModelRunner() {
-  exit();
-}
+SpPipelineModelRunner::~SpPipelineModelRunner() { exit(); }
 
 void SpPipelineModelRunner::write(const std::string& task_id,
-                                          const std::vector<int64_t>& token_ids,
-                                          uint32_t max_tokens) {
+                                  const std::vector<int64_t>& token_ids,
+                                  uint32_t max_tokens) {
   device_input_.write(task_id, token_ids, max_tokens);
 }
 
