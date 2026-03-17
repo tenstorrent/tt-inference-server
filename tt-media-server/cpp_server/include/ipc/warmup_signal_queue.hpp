@@ -16,8 +16,8 @@ class IWarmupSignalQueue {
   /** Worker calls after runner warmup (open_only usage). */
   virtual void sendReady(int workerId) = 0;
 
-  /** Main process blocks until one worker signals (create_only usage). */
-  virtual void receive(int& workerId) = 0;
+  /** Main process blocks until one worker signals (create_only usage). Returns worker id. */
+  virtual int receive() = 0;
 
   /** Remove the named queue (main process only, before destructor). Default no-op. */
   virtual void remove() {}

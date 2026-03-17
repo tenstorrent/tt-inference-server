@@ -41,12 +41,12 @@ void BoostIpcWarmupSignalQueue::sendReady(int workerId) {
   queue_->send(&payload, sizeof(payload), /*priority=*/0);
 }
 
-void BoostIpcWarmupSignalQueue::receive(int& workerId) {
+int BoostIpcWarmupSignalQueue::receive() {
   bi_ipc::message_queue::size_type recvSize = 0;
   unsigned int priority = 0;
   int64_t payload = 0;
   queue_->receive(&payload, sizeof(payload), recvSize, priority);
-  workerId = static_cast<int>(payload);
+  return static_cast<int>(payload);
 }
 
 void BoostIpcWarmupSignalQueue::remove(const std::string& name) {

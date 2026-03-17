@@ -28,7 +28,7 @@ class BoostIpcWarmupSignalQueue : public IWarmupSignalQueue {
   ~BoostIpcWarmupSignalQueue() override;
 
   void sendReady(int workerId) override;
-  void receive(int& workerId) override;
+  int receive() override;
   void remove() override;
 
   static void remove(const std::string& name);

@@ -94,8 +94,7 @@ class BaseService : public IService {
     warmup_listener_thread_ = std::thread([this, capacity]() {
       try {
         for (size_t i = 0; i < capacity; ++i) {
-          int workerId = -1;
-          warmup_queue_->receive(workerId);
+          int workerId = warmup_queue_->receive();
           TT_LOG_INFO("[BaseService] Worker {} warmed up", workerId);
           if (i == 0) {
             warmup_received_ = true;
