@@ -969,8 +969,8 @@ llm_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32,  # currently limiting max_concurrency=32 to allow workflows to complete
-                                     # else they will timeout due to hitting the vLLM RPC recv 30min timeout
+                max_concurrency=32,  # currently limiting client-side max_concurrency=32 to allow workflows to
+                                     # complete else they will timeout due to hitting the vLLM RPC recv 30min timeout
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
@@ -979,6 +979,7 @@ llm_templates = [
                 },
                 vllm_args={
                     "data_parallel_size": 4,
+                    "max_num_seqs": 32,  # override the default inferred by max_concurrency
                 },
                 override_tt_config={
                     "sample_on_device_mode": "all",
