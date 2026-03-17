@@ -1,8 +1,8 @@
 #pragma once
 
+#include <iostream>
 #include <optional>
 #include <vector>
-#include <iostream>
 
 namespace llm_engine {
 
@@ -12,7 +12,7 @@ namespace llm_engine {
  */
 struct SamplingParams {
   float temperature = 1.0f;
-  int max_tokens = 64;
+  std::optional<int> max_tokens;
   bool ignore_eos = false;
 
   std::optional<float> top_p;

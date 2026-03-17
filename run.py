@@ -27,11 +27,20 @@ from workflows.run_docker_server import (
     generate_docker_run_command,
     run_docker_server,
 )
+from workflows.run_local_server import run_local_server
+from workflows.multihost_orchestrator import (
+    MultiHostOrchestrator,
+    get_expected_num_hosts,
+    is_multihost_deployment,
+    setup_multihost_config,
+)
+from workflows.validate_multihost import validate_multihost_args
 from workflows.run_workflows import run_workflows
 from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
+    get_default_hf_home_path,
     get_default_workflow_root_log_dir,
     get_run_id,
     load_dotenv,
@@ -197,6 +206,21 @@ def parse_arguments():
         help="[for --local-server] TT-Metal python venv directory, PYTHON_ENV_DIR in tt-metal usage, must be pre-built with python_env setup and vLLM installed.",
     )
     parser.add_argument(
+        "--tt-metal-home",
+        type=str,
+        default=os.getenv("TT_METAL_HOME"),
+        help="[for --local-server] Host path to a built tt-metal repo containing python_env/ and build/lib/. "
+        "Defaults to TT_METAL_HOME from the environment when set.",
+    )
+    parser.add_argument(
+        "--vllm-dir",
+        type=str,
+        default=os.getenv("vllm_dir"),
+        help="[for --local-server] Host path to the vLLM source tree to export as vllm_dir "
+        "and append to PYTHONPATH. Defaults to vllm_dir from the environment when set, "
+        "otherwise tt-metal-home/vllm.",
+    )
+    parser.add_argument(
         "--limit-samples-mode",
         type=str,
         help="Predefined eval dataset limit mappings: ['ci-nightly', 'ci-long', 'ci-commit', 'smoke-test']",
@@ -254,23 +278,26 @@ def parse_arguments():
         nargs="?",
         const=str(Path(__file__).resolve().parent / "persistent_volume"),
         default=None,
-        help="Host directory for persistent cache volume (bind mount). "
-        "If flag is given without a path, defaults to persistent_volume/ in the repo root. "
-        "If not provided, a Docker named volume is used instead.",
+        help="Host directory for persistent cache/log/tensor storage. "
+        "If the flag is given without a path, defaults to persistent_volume/ in the repo root. "
+        "For --docker-server, omitting it uses a Docker named volume. "
+        "For --local-server, omitting it still uses the repo persistent_volume/ path.",
     )
     parser.add_argument(
         "--host-hf-cache",
-        type=str,
+        nargs="?",
+        const=str(get_default_hf_home_path()),
         default=None,
-        help="Host HuggingFace cache directory to mount readonly for model weights. "
-        "Uses existing HF cache instead of downloading weights into the Docker volume.",
+        help="Host HuggingFace cache directory to reuse for model weights. "
+        "If the flag is given without a path, defaults to HOST_HF_HOME, then HF_HOME, then ~/.cache/huggingface. "
+        "For --local-server, tensor cache/logs still use the host volume path.",
     )
     parser.add_argument(
         "--host-weights-dir",
         type=str,
         default=None,
-        help="Host directory containing pre-downloaded model weights to mount into container. "
-        "Uses existing weights instead of downloading into the Docker volume.",
+        help="Host directory containing pre-downloaded model weights. "
+        "For --local-server, tensor cache/logs still use the host volume path.",
     )
     parser.add_argument(
         "--image-user",
@@ -297,6 +324,9 @@ def parse_arguments():
     if not args.device:
         args.device = infer_default_device(args.model, args.engine)
     args.tt_device = args.device
+
+    if not args.vllm_dir and args.tt_metal_home:
+        args.vllm_dir = str(Path(args.tt_metal_home).expanduser() / "vllm")
 
     # indirectly set additional flags for CI-mode
     if args.ci_mode:
@@ -384,6 +414,8 @@ def format_cli_args_summary(runtime_config):
         f"  local_server:               {runtime_config.local_server}",
         f"  no_auth:                    {runtime_config.no_auth}",
         f"  tt_metal_python_venv_dir:   {runtime_config.tt_metal_python_venv_dir}",
+        f"  tt_metal_home:              {runtime_config.tt_metal_home}",
+        f"  vllm_dir:                   {runtime_config.vllm_dir}",
         f"  service_port:               {runtime_config.service_port}",
         f"  bind_host:                  {runtime_config.bind_host}",
         f"  docker_override_image:      {runtime_config.override_docker_image}",
@@ -396,7 +428,7 @@ def format_cli_args_summary(runtime_config):
         f"  limit_samples_mode:         {runtime_config.limit_samples_mode}",
         f"  skip_system_sw_validation:  {runtime_config.skip_system_sw_validation}",
         "",
-        "Docker Volume Options:",
+        "Host Storage Options:",
         f"  host_volume:                {runtime_config.host_volume}",
         f"  host_hf_cache:              {runtime_config.host_hf_cache}",
         f"  host_weights_dir:           {runtime_config.host_weights_dir}",
@@ -518,8 +550,11 @@ def main():
     validate_setup(model_spec, runtime_config, json_fpath)
 
     setup_config = None
-    if runtime_config.docker_server:
-        logger.info("Running inference server in Docker container ...")
+    if runtime_config.docker_server or runtime_config.local_server:
+        if runtime_config.docker_server:
+            logger.info("Running inference server in Docker container ...")
+        else:
+            logger.info("Resolving local-server host storage ...")
         setup_config = setup_host(
             model_spec=model_spec,
             jwt_secret=os.getenv("JWT_SECRET"),
@@ -528,7 +563,10 @@ def main():
             host_volume=runtime_config.host_volume,
             host_hf_cache=runtime_config.host_hf_cache,
             host_weights_dir=runtime_config.host_weights_dir,
-            image_user=runtime_config.image_user,
+            image_user=(
+                runtime_config.image_user if runtime_config.docker_server else None
+            ),
+            local_server=runtime_config.local_server,
         )
 
     # step 4: optionally run inference server
@@ -536,17 +574,54 @@ def main():
         docker_json_fpath = None
         if runtime_config.dev_mode:
             docker_json_fpath = json_fpath
-        logger.info("Running inference server in Docker container ...")
         if runtime_config.print_docker_cmd:
-            docker_command, _ = generate_docker_run_command(
-                model_spec, runtime_config, setup_config, docker_json_fpath
-            )
-            print(f"Docker run command:\n\n{format_docker_command(docker_command)}\n")
+            if is_multihost_deployment(runtime_config):
+                # Print multi-host docker commands
+                expected_hosts = get_expected_num_hosts(runtime_config)
+                multihost_config = setup_multihost_config(
+                    model_spec, expected_hosts, dry_run=True
+                )
+                hosts = validate_multihost_args(
+                    multihost_config,
+                    tt_smi_path=multihost_config.tt_smi_path,
+                    dry_run=True,
+                )
+                orchestrator = MultiHostOrchestrator(
+                    hosts=hosts,
+                    mpi_interface=multihost_config.mpi_interface,
+                    shared_storage_root=multihost_config.shared_storage_root,
+                    config_pkl_dir=multihost_config.config_pkl_dir,
+                    docker_image=model_spec.docker_image,
+                    runtime_config=runtime_config,
+                    model_spec=model_spec,
+                    setup_config=setup_config,
+                    tt_smi_path=multihost_config.tt_smi_path,
+                )
+                orchestrator.prepare()
+
+                print("\n=== Multi-Host Deployment Commands ===\n")
+                for rank, host in enumerate(hosts):
+                    worker_cmd, _ = orchestrator.generate_worker_docker_command(
+                        host, rank
+                    )
+                    print(f"Worker {rank} on {host}:")
+                    print(f"ssh {host} {format_docker_command(worker_cmd)}\n")
+
+                controller_cmd, _ = orchestrator.generate_controller_docker_command()
+                print("Controller (run on rank-0 host):")
+                print(f"{format_docker_command(controller_cmd)}\n")
+            else:
+                docker_command, _ = generate_docker_run_command(
+                    model_spec, runtime_config, setup_config, docker_json_fpath
+                )
+                print(
+                    f"Docker run command:\n\n{format_docker_command(docker_command)}\n"
+                )
             return 0
         run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
     elif runtime_config.local_server:
         logger.info("Running inference server on localhost ...")
-        raise NotImplementedError("TODO")
+        run_local_server(model_spec, runtime_config, json_fpath, setup_config)
 
     # step 5: run workflows
     main_return_code = 0

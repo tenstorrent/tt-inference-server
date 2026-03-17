@@ -13,6 +13,10 @@ if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
   set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Min policy version for included configs")
 endif()
 
+# Optional clang-tidy during build (same approach as tt-metal: lint = build with clang-tidy)
+# Set only after FetchContent so _deps (tokenizers_cpp, sentencepiece, protobuf, etc.) are excluded.
+option(CLANG_TIDY "Run clang-tidy during build" OFF)
+
 # Find Drogon and JsonCpp (tokenizer_config parsing)
 find_package(Drogon REQUIRED)
 find_package(jsoncpp REQUIRED)
@@ -126,6 +130,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tokenizers_cpp)
 
+# Enable clang-tidy only for our code (not _deps). Must be after FetchContent.
+if(CLANG_TIDY)
+  find_program(CLANG_TIDY_EXE NAMES clang-tidy-20 clang-tidy-19 clang-tidy)
+  if(CLANG_TIDY_EXE)
+    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};--warnings-as-errors=*" CACHE STRING "clang-tidy command" FORCE)
+  else()
+    message(FATAL_ERROR "CLANG_TIDY=ON but no clang-tidy found. Install clang-tidy-20 or run install_dependencies.sh")
+  endif()
+endif()
+
 # TT Metal C++ API: headers from TT_METAL_HOME (for referencing Metal API, intellisense)
 if(NOT DEFINED TT_METAL_HOME AND DEFINED ENV{TT_METAL_HOME})
     set(TT_METAL_HOME "$ENV{TT_METAL_HOME}" CACHE PATH "TT Metal home (from TT_METAL_HOME env)")
@@ -185,6 +199,11 @@ set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/sequence.cpp
     src/runners/llm_runner/sampling_params.cpp
     src/utils/logger.cpp
+    src/config/settings.cpp
+    src/utils/tokenizer.cpp
+    src/utils/deepseek_tokenizer.cpp
+    src/utils/llama_tokenizer.cpp
+    src/utils/tokenizer_config_loader.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
 )
@@ -203,6 +222,8 @@ target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
+# Link tokenizers_cpp and JsonCpp since settings.cpp depends on tokenizer.hpp
+target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp)
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     target_compile_definitions(llm_engine PUBLIC USE_METAL_CPP_LIB)
     # Find tt_metal library directory

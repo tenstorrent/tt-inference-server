@@ -4,14 +4,15 @@
 #pragma once
 
 #include <drogon/HttpFilter.h>
-#include <string>
+
 #include <mutex>
+#include <string>
 
 /**
  * SecurityFilter - Bearer token authentication.
  *
- * Validates the Authorization header against the OPENAI_API_KEY environment variable.
- * If OPENAI_API_KEY is not set, defaults to "your-secret-key".
+ * Validates the Authorization header against the OPENAI_API_KEY environment
+ * variable. If OPENAI_API_KEY is not set, defaults to "your-secret-key".
  *
  * This is designed for high performance:
  * - Token is cached at startup (read once from env)
@@ -19,16 +20,16 @@
  * - Simple string comparison for validation
  */
 class SecurityFilter {
-public:
-    // Initialize the token (call once at startup)
-    static void initToken();
+ public:
+  // Initialize the token (call once at startup)
+  static void initToken();
 
-    // Get the expected token for comparison
-    static const std::string& getExpectedToken();
+  // Get the expected token for comparison
+  static const std::string& getExpectedToken();
 
-private:
-    static std::string cachedToken_;
-    static std::once_flag initFlag_;
+ private:
+  static std::string cachedToken;
+  static std::once_flag initFlag;
 
-    static void initializeToken();
+  static void initializeToken();
 };

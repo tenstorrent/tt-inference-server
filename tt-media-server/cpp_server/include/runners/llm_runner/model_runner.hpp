@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-#include "runners/llm_runner/config.hpp"
+#include "config/runner_config.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "utils/concurrent_queue.hpp"
 
@@ -17,11 +17,11 @@ using DecodeQueue = ConcurrentQueue<TokenResult>;
 class IModelRunner {
  public:
   virtual ~IModelRunner() = default;
-  virtual void run(const std::vector<Sequence*>& seqs, bool is_prefill) = 0;
+  virtual void run(const std::vector<Sequence*>& seqs, bool isPrefill) = 0;
   virtual void exit() = 0;
 };
 
-std::unique_ptr<IModelRunner> make_model_runner(const Config& config,
-                                                DecodeCallback callback);
+std::unique_ptr<IModelRunner> makeModelRunner(
+    const tt::config::LLMConfig& config, DecodeCallback callback);
 
 }  // namespace llm_engine

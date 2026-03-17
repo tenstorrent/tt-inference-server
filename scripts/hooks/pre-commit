@@ -6,14 +6,21 @@
 # Common virtualenv bin directories used by this repo.
 TOOL_ENV_BINS="./.pre-commit/bin ./.venv/bin /localdev/$USER/tt-metal/python_env/bin"
 
-RUFF=$(command -v ruff 2>/dev/null)
-if [ -z "$RUFF" ]; then
-    for candidate in $TOOL_ENV_BINS; do
-        if [ -x "$candidate" ]; then
-            RUFF="$candidate"
-            break
+find_tool_in_env_bins() {
+    tool_name="$1"
+    for env_bin in $TOOL_ENV_BINS; do
+        candidate="$env_bin/$tool_name"
+        if [ -x "$candidate" ] && [ ! -d "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
         fi
     done
+    return 1
+}
+
+RUFF=$(command -v ruff 2>/dev/null)
+if [ -z "$RUFF" ]; then
+    RUFF=$(find_tool_in_env_bins ruff)
 fi
 
 if [ -z "$RUFF" ]; then
@@ -63,21 +70,9 @@ fi
 echo "✅ Ruff checks passed!"
 
 PYTEST_PYTHON=""
-for env_bin in $TOOL_ENV_BINS; do
-    candidate="$env_bin/python3"
-    if [ -x "$candidate" ]; then
-        PYTEST_PYTHON="$candidate"
-        break
-    fi
-done
+PYTEST_PYTHON=$(find_tool_in_env_bins python3)
 if [ -z "$PYTEST_PYTHON" ]; then
-    for env_bin in $TOOL_ENV_BINS; do
-        candidate="$env_bin/python"
-        if [ -x "$candidate" ]; then
-            PYTEST_PYTHON="$candidate"
-            break
-        fi
-    done
+    PYTEST_PYTHON=$(find_tool_in_env_bins python)
 fi
 
 if [ -z "$PYTEST_PYTHON" ]; then

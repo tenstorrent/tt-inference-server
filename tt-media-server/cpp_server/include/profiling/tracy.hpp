@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 //
 // Single project include for Tracy. Use this instead of <tracy/Tracy.hpp>.
-// When TRACY_ENABLE is not defined, zone/plot macros are no-ops and helpers are stubs.
+// When TRACY_ENABLE is not defined, zone/plot macros are no-ops and helpers are
+// stubs.
 
 #ifndef TT_MEDIA_SERVER_PROFILING_TRACY_HPP
 #define TT_MEDIA_SERVER_PROFILING_TRACY_HPP
@@ -16,7 +17,8 @@ constexpr int TRACY_WORKER_PORT_BASE = 8087;
 
 void TracySetPortForMain();
 void TracySetPortForWorker(int worker_id);
-/** Start Tracy for the main process. Call once before any Tracy use (e.g. from register_services). */
+/** Start Tracy for the main process. Call once before any Tracy use (e.g. from
+ * register_services). */
 void TracyStartMainProcess();
 void TracyStartupSchedulerParent();
 void TracyStartupWorker(int worker_id);
@@ -34,28 +36,29 @@ inline void TracyStartupProfiler() {}
 }  // namespace tracy_config
 
 #else
-#define ZoneScopedN(name) ((void)0)
-#define ZoneScoped ((void)0)
-#define TracyPlot(name, value) ((void)0)
-#define TracyPlotConfig(...) ((void)0)
-#define TracyLockable(type, varname) type varname
+#define ZONE_SCOPED_N(name) ((void)0)
+#define ZoneScopedN(name) ZONE_SCOPED_N(name)
+#define ZONE_SCOPED ((void)0)
+#define TRACY_PLOT(name, value) ((void)0)
+#define TRACY_PLOT_CONFIG(...) ((void)0)
+#define TRACY_LOCKABLE(type, varname) type varname
 
 namespace tracy_config {
 constexpr int TRACY_MAIN_PORT = 8086;
 constexpr int TRACY_WORKER_PORT_BASE = 8087;
 
-void TracySetPortForMain();
-void TracySetPortForWorker(int worker_id);
-void TracyStartMainProcess();
-void TracyStartupSchedulerParent();
-void TracyStartupWorker(int worker_id);
-void TracyRegisterPlots();
+void tracySetPortForMain();
+void tracySetPortForWorker(int workerId);
+void tracyStartMainProcess();
+void tracyStartupSchedulerParent();
+void tracyStartupWorker(int workerId);
+void tracyRegisterPlots();
 
-inline void TracyFrameMark() {}
-inline void TracyFrameMarkStart(const char* /*name*/) {}
-inline void TracyFrameMarkEnd(const char* /*name*/) {}
-inline void TracySetThreadName(const char* /*name*/) {}
-inline void TracyStartupProfiler() {}
+inline void tracyFrameMark() {}
+inline void tracyFrameMarkStart(const char* /*name*/) {}
+inline void tracyFrameMarkEnd(const char* /*name*/) {}
+inline void tracySetThreadName(const char* /*name*/) {}
+inline void tracyStartupProfiler() {}
 }  // namespace tracy_config
 #endif
 

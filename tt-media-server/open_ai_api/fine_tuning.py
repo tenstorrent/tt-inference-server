@@ -8,8 +8,42 @@ from fastapi.responses import JSONResponse
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
+from utils.dataset_loaders.dataset_resolver import AVAILABLE_DATASET_LOADERS
+from config.constants import (
+    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
+    MODEL_SERVICE_RUNNER_MAP,
+    ModelServices,
+)
 
 router = APIRouter()
+
+
+@router.get("/datasets")
+async def list_available_datasets(api_key: str = Security(get_api_key)):
+    """
+    List all available datasets.
+
+    Returns:
+        JSONResponse: List of available datasets.
+    """
+    datasets = [loader.value for loader in AVAILABLE_DATASET_LOADERS.keys()]
+    return JSONResponse(content={"data": datasets})
+
+
+@router.get("/models")
+async def list_training_models(api_key: str = Security(get_api_key)):
+    """
+    List all available training models.
+
+    Returns:
+        JSONResponse: List of available training models.
+    """
+    runners = MODEL_SERVICE_RUNNER_MAP.get(ModelServices.TRAINING, set())
+    models = []
+    for runner in runners:
+        names = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner, set())
+        models.extend(n.value for n in names)
+    return JSONResponse(content={"data": models})
 
 
 @router.post("/jobs")
