@@ -17,7 +17,7 @@ python-multipart
 silero_vad
 tqdm
 uvicorn
-# whisperx==3.4.3
+whisperx==3.4.3
 requests
 
 
