@@ -71,3 +71,5 @@ tests/server_tests/datasets/*
 
 # ignore generated files
 model_spec.json
+# deprecated
+default_model_spec.json 
