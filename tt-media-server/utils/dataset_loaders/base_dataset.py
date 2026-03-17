@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: (c) 2025 Tenstorrent AI ULC
 #
 # SPDX-License-Identifier: Apache-2.0
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Dict
 
 from torch.utils.data import DataLoader, Dataset
 
 
-class BaseDataset(Dataset, ABC):
+class BaseDataset(Dataset):
     """Abstract base class for all PyTorch dataset implementations"""
 
     def __init__(self, model_name: str, split: str = "train", collate_fn=None):

@@ -2,7 +2,6 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "utils/runner_factory.hpp"
-#include "config/settings.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/embedding_runner.hpp"
 #include "utils/logger.hpp"
@@ -10,13 +9,11 @@
 #include "runners/sp_pipeline_runner/sp_pipeline_model_runner.hpp"
 #include "runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.hpp"
 
-#include <iostream>
-
 namespace tt::utils::runner_factory {
 
 std::unique_ptr<runners::IRunner> create_runner(
     config::ModelService service,
-    const runners::RunnerConfig& config,
+    const config::RunnerConfig& config,
     ipc::TokenRingBuffer<65536>* result_queue,
     llm_engine::ITaskQueue* task_queue) {
 
@@ -28,9 +25,9 @@ std::unique_ptr<runners::IRunner> create_runner(
         case config::ModelService::LLM:
         default: {
             TT_LOG_INFO("[RunnerFactory] Creating LLM runner");
-            auto& cfg = std::get<llm_engine::Config>(config);
+            auto& cfg = std::get<config::LLMConfig>(config);
 
-            if (cfg.runner_type == llm_engine::ModelRunnerType::Pipeline) {
+            if (cfg.runner_type == config::ModelRunnerType::Pipeline) {
                 TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner (shared memory)");
                 auto factory = [](sp_pipeline::DecodeCallback cb) -> std::unique_ptr<sp_pipeline::ISpPipelineModelRunner> {
                     return std::make_unique<sp_pipeline::SpPipelineModelRunner>(std::move(cb));
@@ -38,7 +35,7 @@ std::unique_ptr<runners::IRunner> create_runner(
                 return std::make_unique<runners::SpPipelineRunner>(cfg, result_queue, task_queue, factory);
             }
 
-            if (cfg.runner_type == llm_engine::ModelRunnerType::MockPipeline) {
+            if (cfg.runner_type == config::ModelRunnerType::MockPipeline) {
                 TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner (mock device)");
                 auto factory = [](sp_pipeline::DecodeCallback cb) -> std::unique_ptr<sp_pipeline::ISpPipelineModelRunner> {
                     return std::make_unique<sp_pipeline::MockSpPipelineModelRunner>(std::move(cb));

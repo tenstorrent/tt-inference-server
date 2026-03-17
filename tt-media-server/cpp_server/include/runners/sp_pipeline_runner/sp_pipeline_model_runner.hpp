@@ -34,8 +34,10 @@ class SpPipelineModelRunner : public ISpPipelineModelRunner {
     ShmNames() {
       const char* c2p = std::getenv("TT_IPC_SHM_C2P");
       const char* p2c = std::getenv("TT_IPC_SHM_P2C");
-      write = c2p ? std::string(c2p) : throw std::runtime_error("TT_IPC_SHM_C2P not set");
-      read = p2c ? std::string(p2c) : throw std::runtime_error("TT_IPC_SHM_P2C not set");
+      write = c2p ? std::string(c2p)
+                  : throw std::runtime_error("TT_IPC_SHM_C2P not set");
+      read = p2c ? std::string(p2c)
+                 : throw std::runtime_error("TT_IPC_SHM_P2C not set");
     }
     std::string write;
     std::string read;

@@ -27,6 +27,7 @@ class SupportedModels(Enum):
     LLAMA_3_1_70B = "meta-llama/Llama-3.1-70B"
     QWEN_3_4B = "Qwen/Qwen3-4B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
+    GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
 
 
 # MODEL environment variable
@@ -59,6 +60,7 @@ class ModelNames(Enum):
     LLAMA_3_1_70B = "Llama-3.1-70B"
     QWEN_3_4B = "Qwen3-4B"
     SPEECHT5_TTS = "speecht5_tts"
+    GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
 
 
 class ModelRunners(Enum):
@@ -181,6 +183,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
     ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
+    ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
 }
 
 
@@ -344,7 +347,7 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.GALAXY): {
-        "device_mesh_shape": (2, 1),
+        "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
@@ -374,7 +377,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
-        "request_processing_timeout_seconds": 2000,
+        "request_processing_timeout_seconds": 3000,
     },
     (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
@@ -416,7 +419,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
-        "request_processing_timeout_seconds": 2000,
+        "request_processing_timeout_seconds": 3000,
     },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
@@ -546,12 +549,14 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X4): {
         "device_mesh_shape": (1, 4),

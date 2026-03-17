@@ -3,6 +3,7 @@
 
 namespace tt::utils::mapper {
 
-llm_engine::SamplingParams map_sampling_params(const domain::CompletionRequest&);
+llm_engine::SamplingParams map_sampling_params(
+    const domain::CompletionRequest&);
 
 }

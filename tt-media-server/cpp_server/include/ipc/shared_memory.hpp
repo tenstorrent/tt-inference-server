@@ -3,18 +3,19 @@
 
 #pragma once
 
+#include <fcntl.h>
+#include <linux/futex.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+
 #include <atomic>
 #include <climits>
 #include <cstdint>
 #include <cstring>
-#include <string>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/syscall.h>
-#include <linux/futex.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include <stdexcept>
+#include <string>
 
 namespace tt::ipc {
 
@@ -28,22 +29,23 @@ namespace tt::ipc {
 
 // Fixed-size token structure for zero-copy transfer
 struct alignas(64) SharedToken {
-    uint32_t token_index;       // Token index in sequence
-    uint32_t flags;             // Bit flags: is_final, is_error, etc.
-    uint64_t token_id;          // Token ID
-    char task_id[56];       // Task ID
-    char padding[8];            // Padding to reach 128 bytes
+  uint32_t token_index;  // Token index in sequence
+  uint32_t flags;        // Bit flags: is_final, is_error, etc.
+  uint64_t token_id;     // Token ID
+  char task_id[56];      // Task ID
+  char padding[8];       // Padding to reach 128 bytes
 
-    static constexpr uint32_t FLAG_FINAL = 1;
-    static constexpr uint32_t FLAG_ERROR = 2;
-    static constexpr uint32_t FLAG_DONE = 4;
+  static constexpr uint32_t FLAG_FINAL = 1;
+  static constexpr uint32_t FLAG_ERROR = 2;
+  static constexpr uint32_t FLAG_DONE = 4;
 
-    bool is_final() const { return flags & FLAG_FINAL; }
-    bool is_error() const { return flags & FLAG_ERROR; }
-    bool is_done() const { return flags & FLAG_DONE; }
+  bool is_final() const { return flags & FLAG_FINAL; }
+  bool is_error() const { return flags & FLAG_ERROR; }
+  bool is_done() const { return flags & FLAG_DONE; }
 };
 
-static_assert(sizeof(SharedToken) == 128, "SharedToken must be 128 bytes for cache alignment");
+static_assert(sizeof(SharedToken) == 128,
+              "SharedToken must be 128 bytes for cache alignment");
 
 struct SharedEmbedding {};
 
@@ -51,36 +53,36 @@ namespace detail {
 
 inline int futex_wait(std::atomic<uint32_t>& futex_word, uint32_t expected,
                       const struct timespec* timeout = nullptr) {
-    return syscall(SYS_futex, reinterpret_cast<uint32_t*>(&futex_word),
-                   FUTEX_WAIT, expected, timeout, nullptr, 0);
+  return syscall(SYS_futex, reinterpret_cast<uint32_t*>(&futex_word),
+                 FUTEX_WAIT, expected, timeout, nullptr, 0);
 }
 
 inline void futex_wake(std::atomic<uint32_t>& futex_word, int count = 1) {
-    syscall(SYS_futex, reinterpret_cast<uint32_t*>(&futex_word),
-            FUTEX_WAKE, count, nullptr, nullptr, 0);
+  syscall(SYS_futex, reinterpret_cast<uint32_t*>(&futex_word), FUTEX_WAKE,
+          count, nullptr, nullptr, 0);
 }
 
-} // namespace detail
+}  // namespace detail
 
 /**
  * Shared memory ring buffer header.
  * Lives at the start of the shared memory region.
  */
 struct alignas(64) RingBufferHeader {
-    // Cache line 1: Write position (producer)
-    alignas(64) std::atomic<uint64_t> write_pos{0};
+  // Cache line 1: Write position (producer)
+  alignas(64) std::atomic<uint64_t> write_pos{0};
 
-    // Cache line 2: Read position (consumer)
-    alignas(64) std::atomic<uint64_t> read_pos{0};
+  // Cache line 2: Read position (consumer)
+  alignas(64) std::atomic<uint64_t> read_pos{0};
 
-    // Cache line 3: Metadata
-    alignas(64) uint64_t capacity{0};
-    uint64_t token_offset{0};
-    uint32_t version{1};
-    uint32_t worker_count{0};
-    std::atomic<bool> shutdown{false};
-    std::atomic<uint32_t> push_notify{0};   // Futex word for blocking pop
-    char padding[28];
+  // Cache line 3: Metadata
+  alignas(64) uint64_t capacity{0};
+  uint64_t token_offset{0};
+  uint32_t version{1};
+  uint32_t worker_count{0};
+  std::atomic<bool> shutdown{false};
+  std::atomic<uint32_t> push_notify{0};  // Futex word for blocking pop
+  char padding[28];
 };
 
 static_assert(sizeof(RingBufferHeader) == 192, "Header size check");
@@ -89,229 +91,227 @@ static_assert(sizeof(RingBufferHeader) == 192, "Header size check");
  * SPSC Ring Buffer for token streaming.
  * Lock-free for maximum performance.
  */
-template<size_t CAPACITY = 65536>
+template <size_t CAPACITY = 65536>
 class TokenRingBuffer {
-public:
-    static constexpr size_t BUFFER_CAPACITY = CAPACITY;
+ public:
+  static constexpr size_t BUFFER_CAPACITY = CAPACITY;
 
-    // Calculate total shared memory size needed
-    static constexpr size_t shared_memory_size() {
-        return sizeof(RingBufferHeader) + sizeof(SharedToken) * CAPACITY;
+  // Calculate total shared memory size needed
+  static constexpr size_t shared_memory_size() {
+    return sizeof(RingBufferHeader) + sizeof(SharedToken) * CAPACITY;
+  }
+
+  /**
+   * Create a new ring buffer in shared memory.
+   * @param name Shared memory name (e.g., "/tt_tokens_0")
+   * @param create If true, create new; if false, attach to existing
+   */
+  TokenRingBuffer(const std::string& name, bool create)
+      : shm_name_(name), is_owner_(create) {
+    int flags = create ? (O_CREAT | O_RDWR) : O_RDWR;
+    mode_t mode = S_IRUSR | S_IWUSR;
+
+    if (create) {
+      // Unlink existing shared memory to ensure clean state
+      shm_unlink(name.c_str());
     }
 
-    /**
-     * Create a new ring buffer in shared memory.
-     * @param name Shared memory name (e.g., "/tt_tokens_0")
-     * @param create If true, create new; if false, attach to existing
-     */
-    TokenRingBuffer(const std::string& name, bool create)
-        : shm_name_(name), is_owner_(create) {
-
-        int flags = create ? (O_CREAT | O_RDWR) : O_RDWR;
-        mode_t mode = S_IRUSR | S_IWUSR;
-
-        if (create) {
-            // Unlink existing shared memory to ensure clean state
-            shm_unlink(name.c_str());
-        }
-
-        shm_fd_ = shm_open(name.c_str(), flags, mode);
-        if (shm_fd_ < 0) {
-            throw std::runtime_error("Failed to open shared memory: " + name);
-        }
-
-        size_t size = shared_memory_size();
-
-        if (create) {
-            if (ftruncate(shm_fd_, size) < 0) {
-                close(shm_fd_);
-                shm_unlink(name.c_str());
-                throw std::runtime_error("Failed to resize shared memory");
-            }
-        }
-
-        void* ptr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
-        if (ptr == MAP_FAILED) {
-            close(shm_fd_);
-            if (create) shm_unlink(name.c_str());
-            throw std::runtime_error("Failed to mmap shared memory");
-        }
-
-        shm_ptr_ = ptr;
-        header_ = reinterpret_cast<RingBufferHeader*>(ptr);
-        tokens_ = reinterpret_cast<SharedToken*>(
-            reinterpret_cast<char*>(ptr) + sizeof(RingBufferHeader)
-        );
-
-        if (create) {
-            // Initialize header
-            new (header_) RingBufferHeader();
-            header_->capacity = CAPACITY;
-            header_->token_offset = sizeof(RingBufferHeader);
-
-            // Zero-initialize tokens
-            std::memset(tokens_, 0, sizeof(SharedToken) * CAPACITY);
-        }
+    shm_fd_ = shm_open(name.c_str(), flags, mode);
+    if (shm_fd_ < 0) {
+      throw std::runtime_error("Failed to open shared memory: " + name);
     }
 
-    ~TokenRingBuffer() {
-        if (shm_ptr_) {
-            munmap(shm_ptr_, shared_memory_size());
-        }
-        if (shm_fd_ >= 0) {
-            close(shm_fd_);
-        }
-        if (is_owner_) {
-            shm_unlink(shm_name_.c_str());
-        }
+    size_t size = shared_memory_size();
+
+    if (create) {
+      if (ftruncate(shm_fd_, size) < 0) {
+        close(shm_fd_);
+        shm_unlink(name.c_str());
+        throw std::runtime_error("Failed to resize shared memory");
+      }
     }
 
-    // Prevent copying
-    TokenRingBuffer(const TokenRingBuffer&) = delete;
-    TokenRingBuffer& operator=(const TokenRingBuffer&) = delete;
-
-    // Move is OK
-    TokenRingBuffer(TokenRingBuffer&& other) noexcept
-        : shm_name_(std::move(other.shm_name_))
-        , shm_fd_(other.shm_fd_)
-        , shm_ptr_(other.shm_ptr_)
-        , header_(other.header_)
-        , tokens_(other.tokens_)
-        , is_owner_(other.is_owner_) {
-        other.shm_fd_ = -1;
-        other.shm_ptr_ = nullptr;
-        other.header_ = nullptr;
-        other.tokens_ = nullptr;
-        other.is_owner_ = false;
+    void* ptr =
+        mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
+    if (ptr == MAP_FAILED) {
+      close(shm_fd_);
+      if (create) shm_unlink(name.c_str());
+      throw std::runtime_error("Failed to mmap shared memory");
     }
 
-    /**
-     * Push a token (producer side).
-     * Returns false if buffer is full.
-     */
-    bool push(const SharedToken& token) {
-        uint64_t write = header_->write_pos.load(std::memory_order_relaxed);
-        uint64_t read = header_->read_pos.load(std::memory_order_acquire);
+    shm_ptr_ = ptr;
+    header_ = reinterpret_cast<RingBufferHeader*>(ptr);
+    tokens_ = reinterpret_cast<SharedToken*>(reinterpret_cast<char*>(ptr) +
+                                             sizeof(RingBufferHeader));
 
-        if (write - read >= CAPACITY) {
-            return false;
-        }
+    if (create) {
+      // Initialize header
+      new (header_) RingBufferHeader();
+      header_->capacity = CAPACITY;
+      header_->token_offset = sizeof(RingBufferHeader);
 
-        size_t idx = write % CAPACITY;
-        tokens_[idx] = token;
+      // Zero-initialize tokens
+      std::memset(tokens_, 0, sizeof(SharedToken) * CAPACITY);
+    }
+  }
 
-        header_->write_pos.store(write + 1, std::memory_order_release);
+  ~TokenRingBuffer() {
+    if (shm_ptr_) {
+      munmap(shm_ptr_, shared_memory_size());
+    }
+    if (shm_fd_ >= 0) {
+      close(shm_fd_);
+    }
+    if (is_owner_) {
+      shm_unlink(shm_name_.c_str());
+    }
+  }
 
-        header_->push_notify.fetch_add(1, std::memory_order_release);
-        detail::futex_wake(header_->push_notify);
+  // Prevent copying
+  TokenRingBuffer(const TokenRingBuffer&) = delete;
+  TokenRingBuffer& operator=(const TokenRingBuffer&) = delete;
+
+  // Move is OK
+  TokenRingBuffer(TokenRingBuffer&& other) noexcept
+      : shm_name_(std::move(other.shm_name_)),
+        shm_fd_(other.shm_fd_),
+        shm_ptr_(other.shm_ptr_),
+        header_(other.header_),
+        tokens_(other.tokens_),
+        is_owner_(other.is_owner_) {
+    other.shm_fd_ = -1;
+    other.shm_ptr_ = nullptr;
+    other.header_ = nullptr;
+    other.tokens_ = nullptr;
+    other.is_owner_ = false;
+  }
+
+  /**
+   * Push a token (producer side).
+   * Returns false if buffer is full.
+   */
+  bool push(const SharedToken& token) {
+    uint64_t write = header_->write_pos.load(std::memory_order_relaxed);
+    uint64_t read = header_->read_pos.load(std::memory_order_acquire);
+
+    if (write - read >= CAPACITY) {
+      return false;
+    }
+
+    size_t idx = write % CAPACITY;
+    tokens_[idx] = token;
+
+    header_->write_pos.store(write + 1, std::memory_order_release);
+
+    header_->push_notify.fetch_add(1, std::memory_order_release);
+    detail::futex_wake(header_->push_notify);
+    return true;
+  }
+
+  /**
+   * Pop a token (consumer side). Non-blocking.
+   * Returns false if buffer is empty.
+   */
+  bool pop(SharedToken& token) {
+    uint64_t read = header_->read_pos.load(std::memory_order_relaxed);
+    uint64_t write = header_->write_pos.load(std::memory_order_acquire);
+
+    if (read >= write) {
+      return false;
+    }
+
+    size_t idx = read % CAPACITY;
+    token = tokens_[idx];
+
+    header_->read_pos.store(read + 1, std::memory_order_release);
+    return true;
+  }
+
+  /**
+   * Pop a token (consumer side). Blocks until a token is available
+   * or shutdown is signaled. Returns false only on shutdown with
+   * an empty buffer.
+   */
+  bool blocking_pop(SharedToken& token) {
+    while (!is_shutdown()) {
+      if (pop(token)) {
         return true;
-    }
+      }
 
-    /**
-     * Pop a token (consumer side). Non-blocking.
-     * Returns false if buffer is empty.
-     */
-    bool pop(SharedToken& token) {
-        uint64_t read = header_->read_pos.load(std::memory_order_relaxed);
-        uint64_t write = header_->write_pos.load(std::memory_order_acquire);
+      uint32_t snapshot = header_->push_notify.load(std::memory_order_acquire);
 
-        if (read >= write) {
-            return false;
-        }
-
-        size_t idx = read % CAPACITY;
-        token = tokens_[idx];
-
-        header_->read_pos.store(read + 1, std::memory_order_release);
+      // Re-check after capturing snapshot to avoid missed-wake race
+      if (pop(token)) {
         return true;
+      }
+
+      struct timespec timeout = {
+          0, 1'000'000};  // 1 ms — periodic wake for shutdown check
+      detail::futex_wait(header_->push_notify, snapshot, &timeout);
+    }
+    return pop(token);
+  }
+
+  /**
+   * Peek at next token without consuming.
+   */
+  bool peek(SharedToken& token) const {
+    uint64_t read = header_->read_pos.load(std::memory_order_relaxed);
+    uint64_t write = header_->write_pos.load(std::memory_order_acquire);
+
+    if (read >= write) {
+      return false;
     }
 
-    /**
-     * Pop a token (consumer side). Blocks until a token is available
-     * or shutdown is signaled. Returns false only on shutdown with
-     * an empty buffer.
-     */
-    bool blocking_pop(SharedToken& token) {
-        while (!is_shutdown()) {
-            if (pop(token)) {
-                return true;
-            }
+    token = tokens_[read % CAPACITY];
+    return true;
+  }
 
-            uint32_t snapshot = header_->push_notify.load(std::memory_order_acquire);
+  /**
+   * Get number of tokens available to read.
+   */
+  size_t available() const {
+    uint64_t write = header_->write_pos.load(std::memory_order_acquire);
+    uint64_t read = header_->read_pos.load(std::memory_order_relaxed);
+    return static_cast<size_t>(write - read);
+  }
 
-            // Re-check after capturing snapshot to avoid missed-wake race
-            if (pop(token)) {
-                return true;
-            }
+  /**
+   * Check if empty.
+   */
+  bool empty() const { return available() == 0; }
 
-            struct timespec timeout = {0, 1'000'000};  // 1 ms — periodic wake for shutdown check
-            detail::futex_wait(header_->push_notify, snapshot, &timeout);
-        }
-        return pop(token);
-    }
+  /**
+   * Signal shutdown and wake any blocked consumer.
+   */
+  void shutdown() {
+    header_->shutdown.store(true, std::memory_order_release);
+    header_->push_notify.fetch_add(1, std::memory_order_release);
+    detail::futex_wake(header_->push_notify, INT_MAX);
+  }
 
-    /**
-     * Peek at next token without consuming.
-     */
-    bool peek(SharedToken& token) const {
-        uint64_t read = header_->read_pos.load(std::memory_order_relaxed);
-        uint64_t write = header_->write_pos.load(std::memory_order_acquire);
+  /**
+   * Check if shutdown requested.
+   */
+  bool is_shutdown() const {
+    return header_->shutdown.load(std::memory_order_acquire);
+  }
 
-        if (read >= write) {
-            return false;
-        }
+  /**
+   * Get the shared memory name.
+   */
+  const std::string& name() const { return shm_name_; }
 
-        token = tokens_[read % CAPACITY];
-        return true;
-    }
-
-    /**
-     * Get number of tokens available to read.
-     */
-    size_t available() const {
-        uint64_t write = header_->write_pos.load(std::memory_order_acquire);
-        uint64_t read = header_->read_pos.load(std::memory_order_relaxed);
-        return static_cast<size_t>(write - read);
-    }
-
-    /**
-     * Check if empty.
-     */
-    bool empty() const {
-        return available() == 0;
-    }
-
-    /**
-     * Signal shutdown and wake any blocked consumer.
-     */
-    void shutdown() {
-        header_->shutdown.store(true, std::memory_order_release);
-        header_->push_notify.fetch_add(1, std::memory_order_release);
-        detail::futex_wake(header_->push_notify, INT_MAX);
-    }
-
-    /**
-     * Check if shutdown requested.
-     */
-    bool is_shutdown() const {
-        return header_->shutdown.load(std::memory_order_acquire);
-    }
-
-    /**
-     * Get the shared memory name.
-     */
-    const std::string& name() const { return shm_name_; }
-
-private:
-    std::string shm_name_;
-    int shm_fd_ = -1;
-    void* shm_ptr_ = nullptr;
-    RingBufferHeader* header_ = nullptr;
-    SharedToken* tokens_ = nullptr;
-    bool is_owner_ = false;
+ private:
+  std::string shm_name_;
+  int shm_fd_ = -1;
+  void* shm_ptr_ = nullptr;
+  RingBufferHeader* header_ = nullptr;
+  SharedToken* tokens_ = nullptr;
+  bool is_owner_ = false;
 };
 
 // Default ring buffer type
 using DefaultTokenRingBuffer = TokenRingBuffer<65536>;
 
-} // namespace tt::ipc
+}  // namespace tt::ipc
