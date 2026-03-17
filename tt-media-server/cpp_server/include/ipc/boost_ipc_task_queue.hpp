@@ -31,7 +31,7 @@ class BoostIpcTaskQueue : public llm_engine::ITaskQueue {
 
   void push(const llm_engine::Sequence& seq) override;
   llm_engine::Sequence* receive() override;
-  llm_engine::Sequence* try_pop() override;
+  llm_engine::Sequence* tryPop();
   bool empty() const override;
 
   /** Remove the named shared-memory queue (cleanup helper). */

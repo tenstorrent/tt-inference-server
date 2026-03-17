@@ -19,7 +19,7 @@ enum class ModelService {
 };
 
 /** String value for env MODEL_SERVICE (e.g. "llm", "embedding"). */
-inline std::string to_string(ModelService s) {
+inline std::string toString(ModelService s) {
   switch (s) {
     case ModelService::EMBEDDING:
       return "embedding";
@@ -30,7 +30,7 @@ inline std::string to_string(ModelService s) {
 }
 
 /** Parse MODEL_SERVICE; empty or unknown -> LLM. Expects lowercase input. */
-inline ModelService model_service_from_string(const std::string& v) {
+inline ModelService modelServiceFromString(const std::string& v) {
   if (v == "embedding") return ModelService::EMBEDDING;
   return ModelService::LLM;
 }
@@ -44,7 +44,7 @@ enum class ModelType {
 
 /** Map LLM_DEVICE_BACKEND env string to ModelType; "llama" ->
  * LLAMA_3_1_8B_INSTRUCT, else DEEPSEEK_R1_0528. Expects lowercase input. */
-inline ModelType model_type_from_device_backend(const std::string& v) {
+inline ModelType modelTypeFromDeviceBackend(const std::string& v) {
   if (v == "llama") return ModelType::LLAMA_3_1_8B_INSTRUCT;
   return ModelType::DEEPSEEK_R1_0528;
 }
@@ -56,7 +56,7 @@ enum class LLMMode {
 };
 
 /** String value for env LLM_MODE (e.g. "regular", "prefill", "decode"). */
-constexpr std::string_view to_string(LLMMode m) {
+constexpr std::string_view toString(LLMMode m) {
   switch (m) {
     case LLMMode::PREFILL_ONLY:
       return "prefill";
@@ -69,13 +69,13 @@ constexpr std::string_view to_string(LLMMode m) {
 }
 
 /** Parse LLM_MODE; empty or unknown -> REGULAR. Expects lowercase input. */
-inline LLMMode llm_mode_from_string(const std::string& v) {
+inline LLMMode llmModeFromString(const std::string& v) {
   if (v == "prefill") return LLMMode::PREFILL_ONLY;
   if (v == "decode") return LLMMode::DECODE_ONLY;
   return LLMMode::REGULAR;
 }
 
-enum class ModelRunnerType { Mock, Pipeline, Llama, MockPipeline };
+enum class ModelRunnerType { MOCK, PIPELINE, LLAMA, MOCK_PIPELINE };
 
 enum class SchedulingPolicy {
   PREFILL_FIRST,
@@ -84,7 +84,7 @@ enum class SchedulingPolicy {
 
 /** Parse SCHEDULING_POLICY; empty or unknown -> PREFILL_FIRST. Expects
  * lowercase input. */
-inline SchedulingPolicy scheduling_policy_from_string(const std::string& v) {
+inline SchedulingPolicy schedulingPolicyFromString(const std::string& v) {
   if (v == "max_occupancy") return SchedulingPolicy::MAX_OCCUPANCY;
   return SchedulingPolicy::PREFILL_FIRST;
 }

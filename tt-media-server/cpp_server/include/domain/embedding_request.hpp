@@ -31,8 +31,8 @@ struct EmbeddingRequest : BaseRequest {
   /**
    * Parse from JSON. task_id must be provided (e.g. from controller).
    */
-  static EmbeddingRequest from_json(const Json::Value& json, TaskID task_id) {
-    EmbeddingRequest req(std::move(task_id));
+  static EmbeddingRequest fromJson(const Json::Value& json, TaskID taskId) {
+    EmbeddingRequest req(std::move(taskId));
     if (json.isMember("model")) {
       req.model = json["model"].asString();
     }
@@ -48,7 +48,7 @@ struct EmbeddingRequest : BaseRequest {
   /**
    * Convert to JSON for IPC.
    */
-  Json::Value to_json() const {
+  Json::Value toJson() const {
     Json::Value json;
     json["model"] = model;
     json["input"] = input;

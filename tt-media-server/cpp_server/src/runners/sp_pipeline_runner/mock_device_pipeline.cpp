@@ -16,51 +16,49 @@ constexpr uint64_t FALLBACK_TOKEN_ID = 12345;
 }
 
 MockDevicePipeline::MockDevicePipeline(MockDeviceConfig config)
-    : config_(config) {
-  pipeline_thread_ = std::thread([this] {
-    tracy_config::TracySetThreadName("MockDevice::pipeline");
-    pipeline_loop();
+    : config(config) {
+  pipelineThread = std::thread([this] {
+    pipelineLoop();
   });
 }
 
 MockDevicePipeline::~MockDevicePipeline() { exit(); }
 
-void MockDevicePipeline::write(const std::string& task_id,
-                               const std::vector<int64_t>& token_ids,
-                               uint32_t max_tokens, RequestPhase phase) {
-  ZoneScopedN("MockDevice::write");
+void MockDevicePipeline::write(const std::string& taskId,
+                               const std::vector<int64_t>& tokenIds,
+                               uint32_t maxTokens, RequestPhase phase) {
   auto req = std::make_unique<PipelineRequest>();
-  req->task_id = task_id;
-  req->token_ids = token_ids;
-  req->max_tokens = max_tokens;
-  req->is_decode = (phase == RequestPhase::DECODE);
+  req->taskId = taskId;
+  req->tokenIds = tokenIds;
+  req->maxTokens = maxTokens;
+  req->isDecode = (phase == RequestPhase::DECODE);
 
-  std::unique_lock lock(input_mutex_);
-  input_not_full_.wait(lock, [this] {
-    return input_queue_.size() < config_.write_queue_capacity ||
-           stop_.load(std::memory_order_relaxed);
+  std::unique_lock lock(inputMutex);
+  inputNotFull.wait(lock, [this] {
+    return inputQueue.size() < config.writeQueueCapacity ||
+           stop.load(std::memory_order_relaxed);
   });
-  if (stop_.load(std::memory_order_relaxed)) return;
-  input_queue_.push_back(std::move(req));
+  if (stop.load(std::memory_order_relaxed)) return;
+  inputQueue.push_back(std::move(req));
 }
 
 std::optional<llm_engine::TokenResult> MockDevicePipeline::read() {
   ZoneScopedN("MockDevice::read");
-  std::unique_lock lock(output_mutex_);
-  output_not_empty_.wait(lock, [this] {
-    return !output_queue_.empty() || stop_.load(std::memory_order_relaxed);
+  std::unique_lock lock(outputMutex);
+  outputNotEmpty.wait(lock, [this] {
+    return !outputQueue.empty() || stop.load(std::memory_order_relaxed);
   });
-  if (output_queue_.empty()) return std::nullopt;
-  auto result = std::move(output_queue_.front());
-  output_queue_.pop_front();
+  if (outputQueue.empty()) return std::nullopt;
+  auto result = std::move(outputQueue.front());
+  outputQueue.pop_front();
   return result;
 }
 
 void MockDevicePipeline::exit() {
-  if (stop_.exchange(true)) return;
-  input_not_full_.notify_all();
-  output_not_empty_.notify_all();
-  if (pipeline_thread_.joinable()) pipeline_thread_.join();
+  if (stop.exchange(true)) return;
+  inputNotFull.notify_all();
+  outputNotEmpty.notify_all();
+  if (pipelineThread.joinable()) pipelineThread.join();
   LLM_ENGINE_LOG("mock_device_pipeline") << "exit" << std::endl;
 }
 
@@ -69,133 +67,132 @@ void MockDevicePipeline::exit() {
 // except the output queue push which is synchronised.
 // ---------------------------------------------------------------------------
 
-void MockDevicePipeline::drain_input() {
-  std::lock_guard lock(input_mutex_);
-  while (!input_queue_.empty()) {
-    auto& req = input_queue_.front();
-    if (req->is_decode) {
-      decode_queue_.push_back(std::move(req));
+void MockDevicePipeline::drainInput() {
+  std::lock_guard lock(inputMutex);
+  while (!inputQueue.empty()) {
+    auto& req = inputQueue.front();
+    if (req->isDecode) {
+      decodeQueue.push_back(std::move(req));
     } else {
-      prefill_queue_.push_back(std::move(req));
+      prefillQueue.push_back(std::move(req));
     }
-    input_queue_.pop_front();
+    inputQueue.pop_front();
   }
-  input_not_full_.notify_all();
+  inputNotFull.notify_all();
 }
 
-void MockDevicePipeline::emit_token(RequestPtr& req) {
-  uint64_t token_id =
-      req->tokens_generated < req->token_ids.size()
-          ? static_cast<uint64_t>(req->token_ids[req->tokens_generated])
+void MockDevicePipeline::emitToken(RequestPtr& req) {
+  uint64_t tokenId =
+      req->tokensGenerated < req->tokenIds.size()
+          ? static_cast<uint64_t>(req->tokenIds[req->tokensGenerated])
           : FALLBACK_TOKEN_ID;
-  ++req->tokens_generated;
+  ++req->tokensGenerated;
 
   {
-    std::lock_guard lock(output_mutex_);
-    output_queue_.emplace_back(llm_engine::TaskID(req->task_id), token_id);
+    std::lock_guard lock(outputMutex);
+    outputQueue.emplace_back(llm_engine::TaskID(req->taskId), tokenId);
   }
-  output_not_empty_.notify_one();
+  outputNotEmpty.notify_one();
 }
 
-void MockDevicePipeline::handle_completion(RequestPtr req) {
+void MockDevicePipeline::handleCompletion(RequestPtr req) {
   ZoneScopedN("MockDevice::handle_completion");
 
-  emit_token(req);
+  emitToken(req);
 
-  if (!req->is_decode) {
-    req->is_decode = true;
+  if (!req->isDecode) {
+    req->isDecode = true;
   }
 
-  if (req->tokens_generated < req->max_tokens) {
-    decode_queue_.push_back(std::move(req));
+  if (req->tokensGenerated < req->maxTokens) {
+    decodeQueue.push_back(std::move(req));
   }
 }
 
-void MockDevicePipeline::insert_in_flight(InFlightRequest entry) {
-  auto it = std::lower_bound(in_flight_pipeline_.begin(),
-                             in_flight_pipeline_.end(), entry.complete_at_tick,
+void MockDevicePipeline::insertInFlight(InFlightRequest entry) {
+  auto it = std::lower_bound(inFlightPipeline.begin(),
+                             inFlightPipeline.end(), entry.completeAtTick,
                              [](const InFlightRequest& e, size_t tick) {
-                               return e.complete_at_tick < tick;
+                               return e.completeAtTick < tick;
                              });
-  in_flight_pipeline_.insert(it, std::move(entry));
+  inFlightPipeline.insert(it, std::move(entry));
 }
 
-MockDevicePipeline::RequestPtr MockDevicePipeline::schedule_next() {
-  if (!decode_queue_.empty()) {
-    auto req = std::move(decode_queue_.front());
-    decode_queue_.pop_front();
+MockDevicePipeline::RequestPtr MockDevicePipeline::scheduleNext() {
+  if (!decodeQueue.empty()) {
+    auto req = std::move(decodeQueue.front());
+    decodeQueue.pop_front();
     return req;
   }
-  if (!prefill_queue_.empty()) {
-    auto req = std::move(prefill_queue_.front());
-    prefill_queue_.pop_front();
+  if (!prefillQueue.empty()) {
+    auto req = std::move(prefillQueue.front());
+    prefillQueue.pop_front();
     return req;
   }
   return nullptr;
 }
 
-void MockDevicePipeline::try_schedule() {
-  auto next = schedule_next();
+void MockDevicePipeline::trySchedule() {
+  auto next = scheduleNext();
   if (!next) return;
 
-  active_req_ = std::move(next);
-  if (active_req_->is_decode) {
-    feed_remaining_ = 1;
+  activeReq = std::move(next);
+  if (activeReq->isDecode) {
+    feedRemaining = 1;
   } else {
-    size_t tokens_remaining =
-        active_req_->token_ids.size() - active_req_->prefill_offset;
-    size_t chunk_tokens =
-        std::min(config_.prefill_chunk_size, tokens_remaining);
-    active_req_->prefill_offset += static_cast<uint32_t>(chunk_tokens);
-    feed_remaining_ = chunk_tokens;
+    size_t tokensRemaining =
+        activeReq->tokenIds.size() - activeReq->prefillOffset;
+    size_t chunkTokens =
+        std::min(config.prefillChunkSize, tokensRemaining);
+    activeReq->prefillOffset += static_cast<uint32_t>(chunkTokens);
+    feedRemaining = chunkTokens;
   }
 }
 
-void MockDevicePipeline::pipeline_loop() {
+void MockDevicePipeline::pipelineLoop() {
   using clock = std::chrono::steady_clock;
-  const auto tick_duration =
-      std::chrono::microseconds(config_.stage_duration_us);
+  const auto TICK_DURATION = std::chrono::microseconds(config.stageDurationUs);
 
-  while (!stop_.load(std::memory_order_relaxed)) {
-    auto tick_start = clock::now();
+  while (!stop.load(std::memory_order_relaxed)) {
+    auto tickStart = clock::now();
 
-    drain_input();
+    drainInput();
 
-    while (!in_flight_pipeline_.empty() &&
-           in_flight_pipeline_.front().complete_at_tick <= current_tick_) {
-      handle_completion(std::move(in_flight_pipeline_.front().req));
-      in_flight_pipeline_.pop_front();
+    while (!inFlightPipeline.empty() &&
+           inFlightPipeline.front().completeAtTick <= currentTick) {
+      handleCompletion(std::move(inFlightPipeline.front().req));
+      inFlightPipeline.pop_front();
     }
 
-    if (active_req_ && !active_req_->is_decode && !decode_queue_.empty()) {
-      active_req_->prefill_offset -= feed_remaining_;
-      prefill_queue_.push_front(std::move(active_req_));
-      active_req_ = nullptr;
-      feed_remaining_ = 0;
+    if (activeReq && !activeReq->isDecode && !decodeQueue.empty()) {
+      activeReq->prefillOffset -= feedRemaining;
+      prefillQueue.push_front(std::move(activeReq));
+      activeReq = nullptr;
+      feedRemaining = 0;
     }
 
-    if (!active_req_) {
-      try_schedule();
+    if (!activeReq) {
+      trySchedule();
     }
 
-    if (active_req_) {
-      --feed_remaining_;
-      if (feed_remaining_ == 0) {
-        bool is_intermediate_prefill =
-            !active_req_->is_decode &&
-            active_req_->prefill_offset < active_req_->token_ids.size();
-        if (is_intermediate_prefill) {
-          prefill_queue_.push_back(std::move(active_req_));
+    if (activeReq) {
+      --feedRemaining;
+      if (feedRemaining == 0) {
+        bool isIntermediatePrefill =
+            !activeReq->isDecode &&
+            activeReq->prefillOffset < activeReq->tokenIds.size();
+        if (isIntermediatePrefill) {
+          prefillQueue.push_back(std::move(activeReq));
         } else {
-          insert_in_flight(
-              {current_tick_ + config_.num_stages, std::move(active_req_)});
+          insertInFlight(
+              {currentTick + config.numStages, std::move(activeReq)});
         }
       }
     }
 
-    ++current_tick_;
+    ++currentTick;
 
-    while ((clock::now() - tick_start) < tick_duration) {
+    while ((clock::now() - tickStart) < TICK_DURATION) {
     }
   }
 }

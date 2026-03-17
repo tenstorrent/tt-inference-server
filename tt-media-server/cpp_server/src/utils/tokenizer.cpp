@@ -48,16 +48,16 @@ Tokenizer::Tokenizer(const std::string& path) {
         "[TokenizerUtil] Failed to create tokenizer from: " + path);
   }
 
-  std::filesystem::path config_path =
+  std::filesystem::path configPath =
       std::filesystem::path(path).parent_path() / "tokenizer_config.json";
-  if (std::filesystem::exists(config_path)) {
-    cfg_ = get_tokenizer_config(config_path.string());
+  if (std::filesystem::exists(configPath)) {
+    cfg_ = getTokenizerConfig(configPath.string());
   }
 
   TT_LOG_INFO("[TokenizerUtil] Loaded tokenizer from: {}", path);
 }
 
-bool Tokenizer::is_loaded() const { return tok_ != nullptr; }
+bool Tokenizer::isLoaded() const { return tok_ != nullptr; }
 
 std::vector<int> Tokenizer::encode(const std::string& text) const {
   if (!tok_) {
@@ -67,34 +67,34 @@ std::vector<int> Tokenizer::encode(const std::string& text) const {
   return tok_->Encode(text);
 }
 
-std::string Tokenizer::decode(const std::vector<int>& token_ids) const {
+std::string Tokenizer::decode(const std::vector<int>& tokenIds) const {
   if (!tok_) {
     throw std::runtime_error(
         "[TokenizerUtil] Tokenizer not loaded, cannot decode");
   }
-  if (token_ids.empty()) return "";
+  if (tokenIds.empty()) return "";
 
   if (cached_special_token_threshold_ == -2) {
-    cached_special_token_threshold_ = special_token_decode_threshold();
+    cached_special_token_threshold_ = specialTokenDecodeThreshold();
   }
   int threshold = cached_special_token_threshold_;
   if (threshold > 0) {
     std::vector<int> filtered;
-    filtered.reserve(token_ids.size());
-    for (int id : token_ids) {
+    filtered.reserve(tokenIds.size());
+    for (int id : tokenIds) {
       if (id < threshold) filtered.push_back(id);
     }
     if (filtered.empty()) return "";
     return tok_->Decode(filtered);
   }
-  return tok_->Decode(token_ids);
+  return tok_->Decode(tokenIds);
 }
 
 // ---------------------------------------------------------------------------
 // Factory + standalone helpers
 // ---------------------------------------------------------------------------
 
-std::string tokenizer_dir_for_model(config::ModelType model) {
+std::string tokenizerDirForModel(config::ModelType model) {
   switch (model) {
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "meta-llama/Llama-3.1-8B-Instruct";
@@ -104,8 +104,8 @@ std::string tokenizer_dir_for_model(config::ModelType model) {
   }
 }
 
-std::unique_ptr<Tokenizer> create_tokenizer(config::ModelType model,
-                                            const std::string& path) {
+std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
+                                           const std::string& path) {
   switch (model) {
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return std::make_unique<LlamaTokenizer>(path);
@@ -115,9 +115,9 @@ std::unique_ptr<Tokenizer> create_tokenizer(config::ModelType model,
   }
 }
 
-const Tokenizer& active_tokenizer() {
+const Tokenizer& activeTokenizer() {
   static auto tok =
-      create_tokenizer(config::model_type(), config::tokenizer_path());
+      createTokenizer(config::modelType(), config::tokenizerPath());
   return *tok;
 }
 

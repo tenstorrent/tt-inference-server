@@ -17,18 +17,18 @@ namespace tt::utils::service_factory {
  * Must be called early in main(), before drogon::app().run(), so that
  * worker fork()s happen in a clean process (no Drogon sockets/threads).
  */
-void register_services();
+void registerServices();
 
 namespace detail {
-inline std::unordered_map<std::type_index, std::any>& service_map() {
+inline std::unordered_map<std::type_index, std::any>& serviceMap() {
   static std::unordered_map<std::type_index, std::any> services;
   return services;
 }
 }  // namespace detail
 
 template <typename T>
-void register_service(std::shared_ptr<T> service) {
-  detail::service_map()[std::type_index(typeid(T))] = std::move(service);
+void registerService(std::shared_ptr<T> service) {
+  detail::serviceMap()[std::type_index(typeid(T))] = std::move(service);
 }
 
 /**
@@ -36,8 +36,8 @@ void register_service(std::shared_ptr<T> service) {
  * Use when you need the concrete type (e.g. LLMService, EmbeddingService).
  */
 template <typename T>
-std::shared_ptr<T> get_service_by_type() {
-  auto& map = detail::service_map();
+std::shared_ptr<T> getServiceByType() {
+  auto& map = detail::serviceMap();
   auto it = map.find(std::type_index(typeid(T)));
   if (it == map.end()) return nullptr;
   return std::any_cast<std::shared_ptr<T>>(it->second);
@@ -47,6 +47,6 @@ std::shared_ptr<T> get_service_by_type() {
  * Returns the currently configured service (LLM or Embedding) as IService.
  * Use when only interface methods are needed (e.g. get_system_status).
  */
-std::shared_ptr<services::IService> get_configured_service();
+std::shared_ptr<services::IService> getConfiguredService();
 
 }  // namespace tt::utils::service_factory

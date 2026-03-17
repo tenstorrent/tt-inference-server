@@ -25,7 +25,7 @@ struct LLMConfig {
   int eos = 1;
   int kvcache_block_size = 256;
   int num_kvcache_blocks = 512;
-  ModelRunnerType runner_type = ModelRunnerType::Mock;
+  ModelRunnerType runner_type = ModelRunnerType::MOCK;
   SchedulingPolicy scheduling_policy = SchedulingPolicy::PREFILL_FIRST;
 };
 

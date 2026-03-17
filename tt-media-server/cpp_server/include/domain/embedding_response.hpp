@@ -34,24 +34,24 @@ struct EmbeddingResponse : BaseResponse {
   /**
    * Convert to OpenAI-compatible JSON response.
    */
-  Json::Value to_openai_json() const {
+  Json::Value toOpenaiJson() const {
     Json::Value response;
     response["object"] = "list";
 
     // Data array with embedding object
     Json::Value data(Json::arrayValue);
-    Json::Value embedding_obj;
-    embedding_obj["object"] = "embedding";
-    embedding_obj["index"] = 0;
+    Json::Value embeddingObj;
+    embeddingObj["object"] = "embedding";
+    embeddingObj["index"] = 0;
 
     // Pre-size the array for better performance
-    Json::Value embedding_array(Json::arrayValue);
-    embedding_array.resize(static_cast<Json::ArrayIndex>(embedding.size()));
+    Json::Value embeddingArray(Json::arrayValue);
+    embeddingArray.resize(static_cast<Json::ArrayIndex>(embedding.size()));
     for (size_t i = 0; i < embedding.size(); ++i) {
-      embedding_array[static_cast<Json::ArrayIndex>(i)] = embedding[i];
+      embeddingArray[static_cast<Json::ArrayIndex>(i)] = embedding[i];
     }
-    embedding_obj["embedding"] = std::move(embedding_array);
-    data.append(std::move(embedding_obj));
+    embeddingObj["embedding"] = std::move(embeddingArray);
+    data.append(std::move(embeddingObj));
 
     response["data"] = std::move(data);
     response["model"] = model;
@@ -69,18 +69,18 @@ struct EmbeddingResponse : BaseResponse {
    * Parse from Python result JSON. task_id from JSON if present, otherwise a
    * new UUID.
    */
-  static EmbeddingResponse from_json(const Json::Value& json) {
+  static EmbeddingResponse fromJson(const Json::Value& json) {
     TaskID tid = json.isMember("task_id") && !json["task_id"].asString().empty()
                      ? TaskID(json["task_id"].asString())
                      : TaskID(TaskID::generate());
     EmbeddingResponse resp(std::move(tid));
 
     if (json.isMember("embedding") && json["embedding"].isArray()) {
-      const Json::Value& emb_array = json["embedding"];
-      const size_t size = emb_array.size();
-      resp.embedding.reserve(size);
-      for (Json::ArrayIndex i = 0; i < size; ++i) {
-        resp.embedding.push_back(emb_array[i].asFloat());
+      const Json::Value& embArray = json["embedding"];
+      const size_t SIZE = embArray.size();
+      resp.embedding.reserve(SIZE);
+      for (Json::ArrayIndex i = 0; i < SIZE; ++i) {
+        resp.embedding.push_back(embArray[i].asFloat());
       }
     }
 

@@ -8,22 +8,22 @@ using Config = tt::config::LLMConfig;
 
 namespace {
 
-constexpr int64_t kWhitespaceTokenId = 223;
+constexpr int64_t K_WHITESPACE_TOKEN_ID = 223;
 
 class MockModelRunner : public IModelRunner {
  public:
   MockModelRunner(const Config& config, DecodeCallback callback)
       : config_(config), decode_callback_(std::move(callback)) {}
 
-  void run(const std::vector<Sequence*>& seqs, bool is_prefill) override {
+  void run(const std::vector<Sequence*>& seqs, bool isPrefill) override {
     ZoneScopedN("MockModelRunner::run");
     LLM_ENGINE_LOG("model_runner:mock")
-        << (is_prefill ? "prefill" : "decode")
+        << (isPrefill ? "prefill" : "decode")
         << " max_in_flight_count=" << seqs.size() << std::endl;
-    if (is_prefill) {
+    if (isPrefill) {
       ZoneScopedN("MockModelRunner::prefill");
       for (Sequence* seq : seqs) {
-        decode_callback_(TokenResult(seq->task_id, kWhitespaceTokenId));
+        decode_callback_(TokenResult(seq->task_id, K_WHITESPACE_TOKEN_ID));
       }
     } else {
       ZoneScopedN("MockModelRunner::decode");
@@ -45,8 +45,8 @@ class MockModelRunner : public IModelRunner {
 
 }  // namespace
 
-std::unique_ptr<IModelRunner> make_mock_model_runner(const Config& config,
-                                                     DecodeCallback callback) {
+std::unique_ptr<IModelRunner> makeMockModelRunner(const Config& config,
+                                                  DecodeCallback callback) {
   return std::make_unique<MockModelRunner>(config, std::move(callback));
 }
 

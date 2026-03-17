@@ -20,7 +20,7 @@ class LLMController : public drogon::HttpController<LLMController> {
  public:
   METHOD_LIST_BEGIN
   ADD_METHOD_TO(LLMController::completions, "/v1/completions", drogon::Post);
-  ADD_METHOD_TO(LLMController::chat_completions, "/v1/chat/completions",
+  ADD_METHOD_TO(LLMController::chatCompletions, "/v1/chat/completions",
                 drogon::Post);
   METHOD_LIST_END
 
@@ -38,7 +38,7 @@ class LLMController : public drogon::HttpController<LLMController> {
    * POST /v1/chat/completions
    * OpenAI-compatible chat completions endpoint.
    */
-  void chat_completions(
+  void chatCompletions(
       const drogon::HttpRequestPtr& req,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
@@ -50,23 +50,23 @@ class LLMController : public drogon::HttpController<LLMController> {
    * ChatCompletionStreamChunk objects; otherwise StreamingChunkResponse.
    * Automatically uses accumulated batching when enabled via config.
    */
-  void handle_streaming(
-      std::shared_ptr<domain::CompletionRequest> req_ptr,
+  void handleStreaming(
+      std::shared_ptr<domain::CompletionRequest> reqPtr,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-      bool is_chat) const;
+      bool isChat) const;
 
   /**
    * Generate a unique completion ID (hex string).
    */
-  static std::string generate_completion_id();
+  static std::string generateCompletionId();
 
   /**
    * Build OpenAI-style error JSON (flat object/message/type/param/code).
    */
-  static Json::Value error_json(const std::string& message,
-                                const std::string& type,
-                                const Json::Value& param = Json::nullValue,
-                                const Json::Value& code = Json::nullValue);
+  static Json::Value errorJson(const std::string& message,
+                               const std::string& type,
+                               const Json::Value& param = Json::nullValue,
+                               const Json::Value& code = Json::nullValue);
 };
 
 }  // namespace tt::api

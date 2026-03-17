@@ -14,20 +14,20 @@
 namespace tt::runners {
 
 SpPipelineRunner::SpPipelineRunner(
-    const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* result_queue,
-    llm_engine::ITaskQueue* task_queue,
-    sp_pipeline::ModelRunnerFactory model_runner_factory)
+    const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* resultQueue,
+    llm_engine::ITaskQueue* taskQueue,
+    sp_pipeline::ModelRunnerFactory modelRunnerFactory)
     : config_(config),
       stop_token_ids_(config.stop_token_ids.begin(),
                       config.stop_token_ids.end()),
-      result_queue_(result_queue),
-      task_queue_(task_queue),
+      result_queue_(resultQueue),
+      task_queue_(taskQueue),
       max_in_flight_count_(config.max_in_flight_count) {
-  auto decode_cb = [this](const llm_engine::TokenResult& result) {
+  auto decodeCb = [this](const llm_engine::TokenResult& result) {
     decode_queue_.push(result);
   };
 
-  model_runner_ = model_runner_factory(std::move(decode_cb));
+  model_runner_ = modelRunnerFactory(std::move(decodeCb));
 }
 
 SpPipelineRunner::~SpPipelineRunner() {
@@ -44,46 +44,46 @@ void SpPipelineRunner::run() {
 
 bool SpPipelineRunner::warmup() {
   // Create a warmup sequence with a single token
-  llm_engine::SamplingParams warmup_params;
-  warmup_params.max_tokens = 1;
-  warmup_params.ignore_eos = true;
+  llm_engine::SamplingParams warmupParams;
+  warmupParams.max_tokens = 1;
+  warmupParams.ignore_eos = true;
 
-  std::vector<int64_t> warmup_tokens = {1};  // Single token
-  llm_engine::TaskID warmup_task_id("warmup_task");
+  std::vector<int64_t> warmupTokens = {1};  // Single token
+  llm_engine::TaskID warmupTaskId("warmup_task");
 
-  auto warmup_seq = std::make_unique<llm_engine::Sequence>(
-      warmup_task_id,
+  auto warmupSeq = std::make_unique<llm_engine::Sequence>(
+      warmupTaskId,
       1,  // block_size (doesn't matter for warmup)
-      warmup_tokens, warmup_params);
+      warmupTokens, warmupParams);
 
-  model_runner_->write(warmup_seq->task_id.id, warmup_seq->token_ids_, 1,
+  model_runner_->write(warmupSeq->task_id.id, warmupSeq->token_ids_, 1,
                        sp_pipeline::RequestPhase::PREFILL);
 
   // Wait for the response token (with timeout)
-  const int max_attempts = 1000;  // ~10 seconds with 10ms sleep
+  const int MAX_ATTEMPTS = 1000;  // ~10 seconds with 10ms sleep
   int attempts = 0;
-  bool received_token = false;
+  bool receivedToken = false;
 
-  while (attempts < max_attempts && !received_token) {
+  while (attempts < MAX_ATTEMPTS && !receivedToken) {
     // Drain decode queue to check for results
     for (const auto& dr : decode_queue_.drain()) {
-      if (dr.task_id == warmup_task_id) {
+      if (dr.task_id == warmupTaskId) {
         if (dr.is_error) {
           TT_LOG_ERROR("SpPipelineRunner: Warmup failed with error");
           return false;
         }
-        received_token = true;
+        receivedToken = true;
         break;
       }
     }
 
-    if (!received_token) {
+    if (!receivedToken) {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
       attempts++;
     }
   }
 
-  if (!received_token) {
+  if (!receivedToken) {
     TT_LOG_ERROR("SpPipelineRunner: Warmup timed out waiting for token");
     return false;
   }
@@ -97,30 +97,30 @@ void SpPipelineRunner::stop() {
 }
 
 void SpPipelineRunner::step() {
-  drain_decode_results();
+  drainDecodeResults();
 
   if (in_flight_count_ >= max_in_flight_count_) {
     return;
   }
 
-  llm_engine::Sequence* seq = task_queue_->try_pop();
+  llm_engine::Sequence* seq = task_queue_->tryPop();
   if (!seq) return;
 
   {
     ZoneScopedN("SpPipelineRunner::write_to_device");
     std::unique_ptr<llm_engine::Sequence> owned(seq);
-    llm_engine::TaskID task_id = seq->task_id;
+    llm_engine::TaskID taskId = seq->task_id;
 
-    model_runner_->write(seq->task_id.id, seq->token_ids_,
+    model_runner_->write(taskId.id, seq->token_ids_,
                          seq->sampling_params->max_tokens.value(),
                          sp_pipeline::RequestPhase::PREFILL);
 
-    active_sequences_.emplace(task_id, std::move(owned));
+    active_sequences_.emplace(taskId, std::move(owned));
     ++in_flight_count_;
   }
 }
 
-void SpPipelineRunner::drain_decode_results() {
+void SpPipelineRunner::drainDecodeResults() {
   ZoneScopedN("SpPipelineRunner::drain_decode");
   for (const auto& dr : decode_queue_.drain()) {
     auto it = active_sequences_.find(dr.task_id);
@@ -134,25 +134,24 @@ void SpPipelineRunner::drain_decode_results() {
     llm_engine::Sequence* seq = it->second.get();
 
     if (dr.is_error) {
-      push_error_token(dr.task_id);
+      pushErrorToken(dr.task_id);
       active_sequences_.erase(it);
       --in_flight_count_;
       continue;
     }
 
-    seq->append_token(static_cast<int64_t>(dr.token_id));
+    seq->appendToken(static_cast<int64_t>(dr.token_id));
 
-    bool is_stop = stop_token_ids_.count(static_cast<int64_t>(dr.token_id)) > 0;
-    bool reached_max_tokens =
+    bool isStop = stop_token_ids_.count(static_cast<int64_t>(dr.token_id)) > 0;
+    bool reachedMaxTokens =
         seq->sampling_params->max_tokens.has_value() &&
-        seq->num_completion_tokens() >=
+        seq->numCompletionTokens() >=
             static_cast<size_t>(seq->sampling_params->max_tokens.value());
     bool finished =
-        (!seq->sampling_params->ignore_eos && is_stop) || reached_max_tokens;
+        (!seq->sampling_params->ignore_eos && isStop) || reachedMaxTokens;
 
     {
-      ZoneScopedN("SpPipelineRunner::push_token");
-      push_token(dr.task_id, dr.token_id, finished);
+      pushToken(dr.task_id, dr.token_id, finished);
     }
 
     if (finished) {
@@ -162,23 +161,23 @@ void SpPipelineRunner::drain_decode_results() {
   }
 }
 
-void SpPipelineRunner::push_token(const llm_engine::TaskID& task_id,
-                                  uint64_t token_id, bool finished) {
+void SpPipelineRunner::pushToken(const llm_engine::TaskID& taskId,
+                                 uint64_t tokenId, bool finished) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;
-  shared.token_id = token_id;
-  std::strncpy(shared.task_id, task_id.id.c_str(), sizeof(shared.task_id) - 1);
+  shared.token_id = tokenId;
+  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
   shared.task_id[sizeof(shared.task_id) - 1] = '\0';
   result_queue_->push(shared);
 }
 
-void SpPipelineRunner::push_error_token(const llm_engine::TaskID& task_id) {
+void SpPipelineRunner::pushErrorToken(const llm_engine::TaskID& taskId) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR;
   shared.token_id = 0;
-  std::strncpy(shared.task_id, task_id.id.c_str(), sizeof(shared.task_id) - 1);
+  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
   shared.task_id[sizeof(shared.task_id) - 1] = '\0';
   result_queue_->push(shared);
 }

@@ -25,7 +25,7 @@ class InMemoryTaskQueue : public ITaskQueue {
     queue_.push_back(std::unique_ptr<Sequence>(Sequence::deserialize(is)));
   }
 
-  Sequence* try_pop() override {
+  Sequence* tryPop() {
     if (queue_.empty()) return nullptr;
     Sequence* seq = queue_.front().release();
     queue_.pop_front();

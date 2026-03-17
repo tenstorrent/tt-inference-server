@@ -20,14 +20,14 @@ class LlamaModelRunner : public IModelRunner {
   LlamaModelRunner(const tt::config::LLMConfig& config,
                    DecodeCallback callback);
   ~LlamaModelRunner() override;
-  void run(const std::vector<Sequence*>& seqs, bool is_prefill) override;
+  void run(const std::vector<Sequence*>& seqs, bool isPrefill) override;
   void exit() override;
 
-  bool is_ready() const { return initialized_; }
+  bool isReady() const { return initialized_; }
 
  private:
   bool initialize();
-  void fail_sequences(const std::vector<Sequence*>& seqs);
+  void failSequences(const std::vector<Sequence*>& seqs);
 
   tt::config::LLMConfig config_;
   DecodeCallback decode_callback_;
@@ -35,7 +35,7 @@ class LlamaModelRunner : public IModelRunner {
   bool initialized_ = false;
 };
 
-std::unique_ptr<IModelRunner> make_llama_model_runner(
+std::unique_ptr<IModelRunner> makeLlamaModelRunner(
     const tt::config::LLMConfig& config, DecodeCallback callback);
 
 }  // namespace llm_engine

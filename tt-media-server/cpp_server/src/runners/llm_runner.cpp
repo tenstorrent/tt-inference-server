@@ -11,15 +11,15 @@ using namespace llm_engine;
 using Config = tt::config::LLMConfig;
 
 LLMRunner::LLMRunner(const Config& config,
-                     ipc::TokenRingBuffer<65536>* result_queue,
-                     ITaskQueue* task_queue)
-    : config_(config), result_queue_(result_queue) {
+                     ipc::TokenRingBuffer<65536>* resultQueue,
+                     ITaskQueue* taskQueue)
+    : config_(config), result_queue_(resultQueue) {
   scheduler_ =
-      make_scheduler(config_, task_queue, tt::config::max_in_flight_count());
+      makeScheduler(config_, taskQueue, tt::config::maxInFlightCount());
 
-  auto decode_cb = [this](const TokenResult& result) {
+  auto decodeCb = [this](const TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");
-    Sequence* seq = scheduler_->find_sequence(result.task_id);
+    Sequence* seq = scheduler_->findSequence(result.task_id);
 
     assert(seq);
 
@@ -43,10 +43,10 @@ LLMRunner::LLMRunner(const Config& config,
     }
 
     std::vector<Sequence*> seqs = {seq};
-    std::vector<int64_t> token_ids = {static_cast<int64_t>(result.token_id)};
-    scheduler_->postprocess(seqs, token_ids);
+    std::vector<int64_t> tokenIds = {static_cast<int64_t>(result.token_id)};
+    scheduler_->postprocess(seqs, tokenIds);
 
-    bool finished = seq->is_finished();
+    bool finished = seq->isFinished();
 
     {
       ZoneScopedN("ResultQueue::push");
@@ -71,7 +71,7 @@ LLMRunner::LLMRunner(const Config& config,
     }
   };
 
-  model_runner_ = make_model_runner(config_, std::move(decode_cb));
+  model_runner_ = makeModelRunner(config_, std::move(decodeCb));
 }
 
 LLMRunner::~LLMRunner() { exit(); }

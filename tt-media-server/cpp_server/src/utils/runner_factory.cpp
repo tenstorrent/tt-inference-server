@@ -12,10 +12,10 @@
 
 namespace tt::utils::runner_factory {
 
-std::unique_ptr<runners::IRunner> create_runner(
+std::unique_ptr<runners::IRunner> createRunner(
     config::ModelService service, const config::RunnerConfig& config,
-    ipc::TokenRingBuffer<65536>* result_queue,
-    llm_engine::ITaskQueue* task_queue) {
+    ipc::TokenRingBuffer<65536>* resultQueue,
+    llm_engine::ITaskQueue* taskQueue) {
   switch (service) {
     case config::ModelService::EMBEDDING: {
       TT_LOG_INFO("[RunnerFactory] Creating Embedding runner");
@@ -25,7 +25,7 @@ std::unique_ptr<runners::IRunner> create_runner(
     default: {
       auto& cfg = std::get<config::LLMConfig>(config);
 
-      if (cfg.runner_type == config::ModelRunnerType::Pipeline) {
+      if (cfg.runner_type == config::ModelRunnerType::PIPELINE) {
         TT_LOG_INFO(
             "[RunnerFactory] Creating SP Pipeline runner (shared memory)");
         auto factory = [](sp_pipeline::DecodeCallback cb)
@@ -33,11 +33,11 @@ std::unique_ptr<runners::IRunner> create_runner(
           return std::make_unique<sp_pipeline::SpPipelineModelRunner>(
               std::move(cb));
         };
-        return std::make_unique<runners::SpPipelineRunner>(cfg, result_queue,
-                                                           task_queue, factory);
+        return std::make_unique<runners::SpPipelineRunner>(cfg, resultQueue,
+                                                           taskQueue, factory);
       }
 
-      if (cfg.runner_type == config::ModelRunnerType::MockPipeline) {
+      if (cfg.runner_type == config::ModelRunnerType::MOCK_PIPELINE) {
         TT_LOG_INFO(
             "[RunnerFactory] Creating SP Pipeline runner (mock device)");
         auto factory = [](sp_pipeline::DecodeCallback cb)
@@ -45,13 +45,13 @@ std::unique_ptr<runners::IRunner> create_runner(
           return std::make_unique<sp_pipeline::MockSpPipelineModelRunner>(
               std::move(cb));
         };
-        return std::make_unique<runners::SpPipelineRunner>(cfg, result_queue,
-                                                           task_queue, factory);
+        return std::make_unique<runners::SpPipelineRunner>(cfg, resultQueue,
+                                                           taskQueue, factory);
       }
 
       TT_LOG_INFO("[RunnerFactory] Creating LLM runner (mock)");
-      return std::make_unique<tt::runners::LLMRunner>(cfg, result_queue,
-                                                      task_queue);
+      return std::make_unique<tt::runners::LLMRunner>(cfg, resultQueue,
+                                                      taskQueue);
     }
   }
 }

@@ -21,22 +21,27 @@ namespace tt::runners {
 class SpPipelineRunner : public IRunner {
  public:
   SpPipelineRunner(const tt::config::LLMConfig& config,
+<<<<<<< HEAD
                    ipc::TokenRingBuffer<65536>* result_queue,
                    llm_engine::ITaskQueue* task_queue,
                    sp_pipeline::ModelRunnerFactory model_runner_factory);
+=======
+                   ipc::TokenRingBuffer<65536>* resultQueue,
+                   llm_engine::ITaskQueue* taskQueue);
+>>>>>>> origin/dev
   ~SpPipelineRunner() override;
 
   void run() override;
   void stop() override;
   bool warmup();
-  const char* runner_type() const override { return "SpPipelineRunner"; }
+  const char* runnerType() const { return "SpPipelineRunner"; }
 
  private:
   void step();
-  void drain_decode_results();
-  void push_token(const llm_engine::TaskID& task_id, uint64_t token_id,
-                  bool finished);
-  void push_error_token(const llm_engine::TaskID& task_id);
+  void drainDecodeResults();
+  void pushToken(const llm_engine::TaskID& taskId, uint64_t tokenId,
+                 bool finished);
+  void pushErrorToken(const llm_engine::TaskID& taskId);
 
   tt::config::LLMConfig config_;
   std::unordered_set<int64_t> stop_token_ids_;

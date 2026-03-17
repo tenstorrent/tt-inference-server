@@ -65,11 +65,11 @@ struct ChatCompletionResponse {
     json["created"] = static_cast<Json::Int64>(created);
     json["model"] = model;
 
-    Json::Value choices_array(Json::arrayValue);
+    Json::Value choicesArray(Json::arrayValue);
     for (const auto& choice : choices) {
-      choices_array.append(choice.toJson());
+      choicesArray.append(choice.toJson());
     }
-    json["choices"] = choices_array;
+    json["choices"] = choicesArray;
     json["usage"] = usage.toJson();
 
     return json;
@@ -90,11 +90,11 @@ struct ChatCompletionResponse {
     response.usage = completion.usage;
 
     for (const auto& choice : completion.choices) {
-      ChatCompletionChoice chat_choice;
-      chat_choice.index = choice.index;
-      chat_choice.message.content = choice.text;
-      chat_choice.finish_reason = choice.finish_reason.value_or("stop");
-      response.choices.push_back(std::move(chat_choice));
+      ChatCompletionChoice chatChoice;
+      chatChoice.index = choice.index;
+      chatChoice.message.content = choice.text;
+      chatChoice.finish_reason = choice.finish_reason.value_or("stop");
+      response.choices.push_back(std::move(chatChoice));
     }
 
     return response;
@@ -161,11 +161,11 @@ struct ChatCompletionStreamChunk {
     json["created"] = static_cast<Json::Int64>(created);
     json["model"] = model;
 
-    Json::Value choices_array(Json::arrayValue);
+    Json::Value choicesArray(Json::arrayValue);
     for (const auto& choice : choices) {
-      choices_array.append(choice.toJson());
+      choicesArray.append(choice.toJson());
     }
-    json["choices"] = choices_array;
+    json["choices"] = choicesArray;
 
     if (usage.has_value()) {
       json["usage"] = usage->toJson();
@@ -216,7 +216,7 @@ struct ChatCompletionStreamChunk {
    */
   static ChatCompletionStreamChunk makeContentChunk(
       const std::string& id, const std::string& model, int64_t created,
-      const CompletionChoice& completion_choice,
+      const CompletionChoice& completionChoice,
       const std::optional<CompletionUsage>& usage = std::nullopt) {
     ChatCompletionStreamChunk chunk;
     chunk.id = id;
@@ -225,11 +225,11 @@ struct ChatCompletionStreamChunk {
     chunk.usage = usage;
 
     ChatCompletionStreamChoice choice;
-    choice.index = completion_choice.index;
-    choice.delta.content = completion_choice.text;
+    choice.index = completionChoice.index;
+    choice.delta.content = completionChoice.text;
 
-    if (completion_choice.finish_reason.has_value()) {
-      const std::string& reason = completion_choice.finish_reason.value();
+    if (completionChoice.finish_reason.has_value()) {
+      const std::string& reason = completionChoice.finish_reason.value();
       choice.finish_reason = reason.empty() ? "stop" : reason;
     }
 
