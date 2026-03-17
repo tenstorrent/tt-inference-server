@@ -737,6 +737,4 @@ domain::EmbeddingResponse EmbeddingService::process_request(
   return future.get();
 }
 
-
-
 }  // namespace tt::services
