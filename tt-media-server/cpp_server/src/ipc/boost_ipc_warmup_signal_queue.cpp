@@ -15,7 +15,8 @@ BoostIpcWarmupSignalQueue::~BoostIpcWarmupSignalQueue() {
   try {
     queue_.reset();
   } catch (const bi_ipc::interprocess_exception& e) {
-    TT_LOG_WARN("[BoostIpcWarmupSignalQueue] Destructor: {} (ignored)", e.what());
+    TT_LOG_WARN("[BoostIpcWarmupSignalQueue] Destructor: {} (ignored)",
+                e.what());
   }
 }
 

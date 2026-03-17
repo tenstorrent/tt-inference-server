@@ -4,8 +4,8 @@
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
 #include <concepts>
+#include <condition_variable>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -85,7 +85,8 @@ class BaseService : public IService {
   virtual void postProcess(ResponseType& response) const = 0;
   virtual size_t currentQueueSize() const = 0;
 
-  /** Build worker list for liveness/status from workers_ and warmed_worker_ids_. */
+  /** Build worker list for liveness/status from workers_ and
+   * warmed_worker_ids_. */
   std::vector<WorkerInfo> getWorkerInfo() const {
     std::vector<WorkerInfo> out;
     std::lock_guard<std::mutex> lock(warmed_mutex_);
@@ -99,7 +100,8 @@ class BaseService : public IService {
     return out;
   }
 
-  /** Override to provide warmup queue (e.g. Boost IPC). Default: no warmup signaling. */
+  /** Override to provide warmup queue (e.g. Boost IPC). Default: no warmup
+   * signaling. */
   virtual std::unique_ptr<tt::ipc::IWarmupSignalQueue> createWarmupQueue(
       const std::string& name, size_t capacity) {
     (void)name;

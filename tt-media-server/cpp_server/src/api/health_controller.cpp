@@ -53,14 +53,16 @@ void HealthController::ready(
     response["status"] = "alive";
     response["model_ready"] = status.model_ready;
     response["queue_size"] = static_cast<Json::UInt64>(status.queue_size);
-    response["max_queue_size"] = static_cast<Json::UInt64>(status.max_queue_size);
+    response["max_queue_size"] =
+        static_cast<Json::UInt64>(status.max_queue_size);
 
     Json::Value workers(Json::arrayValue);
     for (const auto& w : status.worker_info) {
       Json::Value wj;
       wj["worker_id"] = w.worker_id;
       wj["is_ready"] = w.is_ready;
-      wj["processed_requests"] = static_cast<Json::UInt64>(w.processed_requests);
+      wj["processed_requests"] =
+          static_cast<Json::UInt64>(w.processed_requests);
       workers.append(wj);
     }
     response["workers"] = workers;
