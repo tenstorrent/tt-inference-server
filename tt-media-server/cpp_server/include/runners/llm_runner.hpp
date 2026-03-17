@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <cstdint>
 #include <memory>
 
 #include "config/runner_config.hpp"
@@ -34,7 +33,6 @@ class LLMRunner : public IRunner {
   ipc::TokenRingBuffer<65536>* result_queue_;
   std::unique_ptr<IModelRunner> model_runner_;
   std::unique_ptr<Scheduler> scheduler_;
-  DecodeQueue decode_queue_;
   std::atomic<bool> stopped_{false};
 };
 

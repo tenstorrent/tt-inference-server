@@ -20,6 +20,7 @@ namespace tt::domain {
 struct TaskID {
   static constexpr size_t K_SERIALIZED_SIZE = 36;
 
+  TaskID() = default;
   explicit TaskID(std::string taskId) : id(std::move(taskId)) {}
 
   std::string id;
