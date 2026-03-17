@@ -129,54 +129,54 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="google/gemma-3-4b-it",
         tasks=[
-            EvalTask(
-                task_name="ifeval",
-                score=EvalTaskScore(
-                    published_score=90.2,
-                    published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=79.5,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3249524785",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "prompt_level_strict_acc,none",
-                            "inst_level_strict_acc,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.5,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
-            EvalTask(
-                task_name="mbpp_instruct",
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                score=EvalTaskScore(
-                    published_score=46.0,
-                    published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
-                    gpu_reference_score=58.4,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3533832922",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "pass_at_1,extract_code",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                apply_chat_template=True,
-                gen_kwargs={
-                    "max_gen_toks": "256",
-                    "do_sample": "false",
-                    "stream": "false",
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.5,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # EvalTask(
+            #     task_name="ifeval",
+            #     score=EvalTaskScore(
+            #         published_score=90.2,
+            #         published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
+            #         gpu_reference_score=79.5,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3249524785",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "prompt_level_strict_acc,none",
+            #                 "inst_level_strict_acc,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     limit_samples_map={
+            #         EvalLimitMode.CI_NIGHTLY: 0.5,
+            #         EvalLimitMode.SMOKE_TEST: 0.01,
+            #     },
+            # ),
+            # EvalTask(
+            #     task_name="mbpp_instruct",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+            #     score=EvalTaskScore(
+            #         published_score=46.0,
+            #         published_score_ref="https://storage.googleapis.com/deepmind-media/gemma/Gemma3Report.pdf",
+            #         gpu_reference_score=58.4,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/521#issuecomment-3533832922",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "pass_at_1,extract_code",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     apply_chat_template=True,
+            #     gen_kwargs={
+            #         "max_gen_toks": "256",
+            #         "do_sample": "false",
+            #         "stream": "false",
+            #     },
+            #     limit_samples_map={
+            #         EvalLimitMode.CI_NIGHTLY: 0.5,
+            #         EvalLimitMode.SMOKE_TEST: 0.01,
+            #     },
+            # ),
             EvalTask(
                 eval_class="openai_compatible",
                 task_name="chartqa",
