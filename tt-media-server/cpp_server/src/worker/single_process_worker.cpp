@@ -23,7 +23,7 @@ SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
 SingleProcessWorker::~SingleProcessWorker() = default;
 
 void SingleProcessWorker::start() {
-  tracy_config::TracySetThreadName(
+  tracy_config::tracySetThreadName(
       ("Worker-" + to_string(cfg.worker_id)).c_str());
 
   for (const auto& [key, value] : cfg.env_vars) {

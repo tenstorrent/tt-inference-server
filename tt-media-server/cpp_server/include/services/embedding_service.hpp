@@ -28,18 +28,17 @@ class EmbeddingService
 
   void start() override;
   void stop() override;
-  bool is_model_ready() const override;
+  bool isModelReady() const;
 
  protected:
-  size_t current_queue_size() const override;
-  void post_process(domain::EmbeddingResponse& response) const override;
+  size_t currentQueueSize() const;
+  void postProcess(domain::EmbeddingResponse& response) const;
 
-  domain::EmbeddingResponse process_request(
-      domain::EmbeddingRequest request) override;
+  domain::EmbeddingResponse processRequest(domain::EmbeddingRequest request);
 
  private:
   struct Impl;
-  std::unique_ptr<Impl> impl_;
+  std::unique_ptr<Impl> impl;
 };
 
 }  // namespace tt::services

@@ -62,7 +62,7 @@ int main(int argc, char* argv[]) {
   std::string host = "0.0.0.0";
   uint16_t port = 8000;
   int threads = std::thread::hardware_concurrency();
-  tt::utils::service_factory::register_services();
+  tt::utils::service_factory::registerServices();
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -95,7 +95,7 @@ int main(int argc, char* argv[]) {
   std::signal(SIGTERM, signalHandler);
 
   auto modelSvc = tt::config::modelService();
-  std::string serviceName = tt::config::to_string(modelSvc);
+  std::string serviceName = tt::config::toString(modelSvc);
 
   TT_LOG_INFO("=================================================");
   TT_LOG_INFO("  TT Media Server (C++ Drogon Implementation)");

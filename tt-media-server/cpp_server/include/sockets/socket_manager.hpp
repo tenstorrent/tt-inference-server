@@ -65,7 +65,7 @@ class SocketManager {
    * @return true if successful
    */
   template <typename T>
-  bool sendObject(const std::string& message_type, const T& obj);
+  bool sendObject(const std::string& messageType, const T& obj);
 
   /**
    * @brief Register handler for incoming messages of specific type
@@ -73,7 +73,7 @@ class SocketManager {
    * @param handler Function to call when message is received
    */
   template <typename T>
-  void registerHandler(const std::string& message_type,
+  void registerHandler(const std::string& messageType,
                        std::function<void(const T&)> handler);
 
   /**
@@ -117,34 +117,34 @@ class SocketManager {
   bool sendRawData(const std::vector<uint8_t>& data);
   std::vector<uint8_t> receiveRawData();
 
-  Mode mode_;
-  std::string host_;
-  uint16_t port_;
+  Mode mode;
+  std::string host;
+  uint16_t port;
 
-  int server_socket_ = -1;
-  int client_socket_ = -1;
-  int peer_socket_ = -1;  // Active connection socket
+  int server_socket = -1;
+  int client_socket = -1;
+  int peer_socket = -1;  // Active connection socket
 
-  std::atomic<bool> running_{false};
-  std::atomic<bool> connected_{false};
+  std::atomic<bool> running{false};
+  std::atomic<bool> connected{false};
 
-  std::thread server_thread_;
-  std::thread message_thread_;
+  std::thread server_thread;
+  std::thread message_thread;
 
-  mutable std::mutex handlers_mutex_;
+  mutable std::mutex handlers_mutex;
   std::map<std::string, std::function<void(const std::vector<uint8_t>&)>>
-      handlers_;
+      handlers;
 
-  mutable std::mutex send_mutex_;
+  mutable std::mutex send_mutex;
 
-  std::function<void()> connection_lost_callback_;
+  std::function<void()> connection_lost_callback;
 };
 
 // Template implementations
 
 template <typename T>
-bool SocketManager::sendObject(const std::string& message_type, const T& obj) {
-  if (!connected_) {
+bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
+  if (!connected) {
     return false;
   }
 
@@ -152,7 +152,7 @@ bool SocketManager::sendObject(const std::string& message_type, const T& obj) {
     std::ostringstream oss;
     {
       cereal::BinaryOutputArchive archive(oss);
-      archive(message_type);
+      archive(messageType);
       obj.write(archive);
     }
 
@@ -167,18 +167,18 @@ bool SocketManager::sendObject(const std::string& message_type, const T& obj) {
 }
 
 template <typename T>
-void SocketManager::registerHandler(const std::string& message_type,
+void SocketManager::registerHandler(const std::string& messageType,
                                     std::function<void(const T&)> handler) {
-  std::lock_guard<std::mutex> lock(handlers_mutex_);
+  std::lock_guard<std::mutex> lock(handlers_mutex);
 
-  handlers_[message_type] = [handler](const std::vector<uint8_t>& data) {
+  handlers[messageType] = [handler](const std::vector<uint8_t>& data) {
     try {
       std::string serialized(data.begin(), data.end());
       std::istringstream iss(serialized);
 
       cereal::BinaryInputArchive archive(iss);
-      std::string msg_type;
-      archive(msg_type);
+      std::string msgType;
+      archive(msgType);
       T payload = T::read(archive);
 
       handler(payload);

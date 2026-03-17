@@ -45,7 +45,7 @@ class CallbackThreadPool {
         while (true) {
           std::function<void()> task;
           {
-            std::unique_lock lock(mutex);
+            std::unique_lock lock(std::mutex);
             cv.wait(lock, [this] { return stop || !tasks.empty(); });
             if (stop && tasks.empty()) return;
             task = std::move(tasks.front());
@@ -59,7 +59,7 @@ class CallbackThreadPool {
 
   ~CallbackThreadPool() {
     {
-      std::lock_guard lock(mutex);
+      std::lock_guard lock(std::mutex);
       stop = true;
     }
     cv.notify_all();
@@ -70,7 +70,7 @@ class CallbackThreadPool {
 
   void submit(std::function<void()> task) {
     {
-      std::lock_guard lock(mutex);
+      std::lock_guard lock(std::mutex);
       tasks.push(std::move(task));
     }
     cv.notify_one();
@@ -79,7 +79,7 @@ class CallbackThreadPool {
  private:
   std::vector<std::thread> workers;
   std::queue<std::function<void()>> tasks;
-  TracyLockable(std::mutex, mutex);
+  tracyLockable(std::mutex, std::mutex);
   std::condition_variable_any cv;
   bool stop;
 };
@@ -96,7 +96,7 @@ EmbeddingController::EmbeddingController() {
     return;
   }
 
-  service_ = tt::utils::service_factory::get_service_by_type<
+  service = tt::utils::service_factory::getServiceByType<
       services::EmbeddingService>();
   if (!service_) {
     throw std::runtime_error(
@@ -108,9 +108,9 @@ EmbeddingController::EmbeddingController() {
 
 EmbeddingController::~EmbeddingController() = default;
 
-std::string EmbeddingController::generate_task_id() { return randomHex(24); }
+std::string EmbeddingController::generateTaskId() { return randomHex(24); }
 
-void EmbeddingController::create_embedding(
+void EmbeddingController::createEmbedding(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
   auto startTime = std::chrono::steady_clock::now();
@@ -137,16 +137,16 @@ void EmbeddingController::create_embedding(
   }
 
   // Build request
-  domain::TaskID taskId(generate_task_id());
+  domain::TaskID taskId(generateTaskId());
   domain::EmbeddingRequest request =
-      domain::EmbeddingRequest::from_json(*json, std::move(taskId));
+      domain::EmbeddingRequest::fromJson(*json, std::move(taskId));
 
   // Default model if not specified
   if (request.model.empty()) {
     request.model = "BAAI/bge-large-en-v1.5";
   }
 
-  uint64_t reqNum = request_counter_.fetch_add(1);
+  uint64_t reqNum = request_counter.fetch_add(1);
 
   auto submitTime = std::chrono::steady_clock::now();
 
@@ -154,7 +154,7 @@ void EmbeddingController::create_embedding(
                             callback = std::move(callback), reqNum, startTime,
                             submitTime]() {
     try {
-      auto response = service->submit_request(std::move(request));
+      auto response = service->submitRequest(std::move(request));
       auto gotResponseTime = std::chrono::steady_clock::now();
 
       if (!response.error.empty()) {
@@ -167,7 +167,7 @@ void EmbeddingController::create_embedding(
         return;
       }
 
-      Json::Value jsonResponse = response.to_openai_json();
+      Json::Value jsonResponse = response.toOpenaiJson();
       auto builtJsonTime = std::chrono::steady_clock::now();
 
       auto resp = drogon::HttpResponse::newHttpJsonResponse(jsonResponse);

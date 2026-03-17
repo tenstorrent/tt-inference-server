@@ -23,7 +23,7 @@ namespace tt::api {
 class EmbeddingController : public drogon::HttpController<EmbeddingController> {
  public:
   METHOD_LIST_BEGIN
-  ADD_METHOD_TO(EmbeddingController::create_embedding, "/v1/embeddings",
+  ADD_METHOD_TO(EmbeddingController::createEmbedding, "/v1/embeddings",
                 drogon::Post);
   METHOD_LIST_END
 
@@ -34,15 +34,15 @@ class EmbeddingController : public drogon::HttpController<EmbeddingController> {
    * POST /v1/embeddings
    * Create embeddings for the provided input text.
    */
-  void create_embedding(
+  void createEmbedding(
       const drogon::HttpRequestPtr& req,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
  private:
-  std::shared_ptr<services::EmbeddingService> service_;
-  std::atomic<uint64_t> request_counter_{0};
+  std::shared_ptr<services::EmbeddingService> service;
+  std::atomic<uint64_t> request_counter{0};
 
-  std::string generate_task_id();
+  std::string generateTaskId();
 };
 
 }  // namespace tt::api

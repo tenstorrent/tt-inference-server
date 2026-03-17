@@ -34,7 +34,7 @@ void SpPipelineModelRunner::exit() {
 void SpPipelineModelRunner::readerLoop() {
   ReadResult readBuf;
   while (!stop.load(std::memory_order_relaxed)) {
-    if (deviceOutput.try_read(readBuf)) {
+    if (deviceOutput.tryRead(readBuf)) {
       llm_engine::TaskID tid = llm_engine::TaskID::ipc_deserialize(
           readBuf.taskId.data(), llm_engine::TaskID::kSerializedSize);
       uint64_t tokenId = readBuf.tokenIds.empty() ? 0 : readBuf.tokenIds[0];

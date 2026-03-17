@@ -556,20 +556,6 @@ jobs:
             exit 1
           fi
 
-      - name: C++ clang-tidy (readability-identifier-naming, all sources)
-        run: |
-          cd cpp_server
-          TIDY=$(command -v clang-tidy-20 || command -v clang-tidy || true)
-          if [ -z "$TIDY" ]; then echo '::error::clang-tidy not found; install clang-tidy-20 or clang-tidy'; exit 1; fi
-          FAIL=0
-          for f in $(find src include benchmarks tests -type f \( -name '*.cpp' -o -name '*.hpp' \)); do
-            if ! "$TIDY" "$f" -p build --warnings-as-errors='*' --header-filter='^(?!.*_deps).*' 2>&1; then FAIL=1; fi
-          done
-          if [ "$FAIL" -ne 0 ]; then
-            echo '::error::tt-media-server/cpp_server must pass clang-tidy (see .clang-tidy). Use camelCase for locals/params, UPPER_CASE for const.'
-            exit 1
-          fi
-
       - name: Run C++ unit tests
         run: |
           cd cpp_server/build

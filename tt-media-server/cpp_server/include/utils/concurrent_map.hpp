@@ -6,7 +6,7 @@
 #include <optional>
 #include <unordered_map>
 
-#include "profiling/tracy.hpp"
+#include "profiling/tracy.hpp"  // NOLINT(misc-include-cleaner) - TracyLockable macro
 
 template <typename Key, typename Value>
 class ConcurrentMap {
@@ -15,49 +15,49 @@ class ConcurrentMap {
   ~ConcurrentMap() = default;
 
   void insert(const Key& key, const Value& value) {
-    std::lock_guard lock(mutex_);
-    map_[key] = value;
+    std::lock_guard lock(mutex);
+    map[key] = value;
   }
 
   std::optional<Value> get(const Key& key) {
-    std::lock_guard lock(mutex_);
-    auto it = map_.find(key);
-    if (it != map_.end()) {
+    std::lock_guard lock(mutex);
+    auto it = map.find(key);
+    if (it != map.end()) {
       return it->second;
     }
     return std::nullopt;
   }
 
   void erase(const Key& key) {
-    std::lock_guard lock(mutex_);
-    map_.erase(key);
+    std::lock_guard lock(mutex);
+    map.erase(key);
   }
 
   std::optional<Value> take(const Key& key) {
-    std::lock_guard lock(mutex_);
-    auto it = map_.find(key);
-    if (it == map_.end()) {
+    std::lock_guard lock(mutex);
+    auto it = map.find(key);
+    if (it == map.end()) {
       return std::nullopt;
     }
     auto value = std::move(it->second);
-    map_.erase(it);
+    map.erase(it);
     return value;
   }
 
   bool contains(const Key& key) {
-    std::lock_guard lock(mutex_);
-    return map_.find(key) != map_.end();
+    std::lock_guard lock(mutex);
+    return map.find(key) != map.end();
   }
 
   void clear() {
-    std::lock_guard lock(mutex_);
-    map_.clear();
+    std::lock_guard lock(mutex);
+    map.clear();
   }
 
   template <typename Func>
-  void for_each(Func&& func) {
-    std::lock_guard lock(mutex_);
-    for (auto& [key, value] : map_) {
+  void forEach(Func&& func) {
+    std::lock_guard lock(mutex);
+    for (auto& [key, value] : map) {
       func(key, value);
     }
   }
@@ -66,6 +66,6 @@ class ConcurrentMap {
   ConcurrentMap& operator=(const ConcurrentMap&) = delete;
 
  private:
-  std::unordered_map<Key, Value> map_;
-  TracyLockable(std::mutex, mutex_);
+  std::unordered_map<Key, Value> map;
+  TracyLockable(std::mutex, mutex);  // NOLINT(readability-identifier-naming)
 };

@@ -66,7 +66,7 @@ LLMService::LLMService()
     : mode(tt::config::llmMode()),
       numWorkers(tt::config::numWorkers()),
       tokenizer(&tt::utils::activeTokenizer()) {
-  max_queue_size_ = tt::config::maxQueueSize();
+  max_queue_size = tt::config::maxQueueSize();
   TT_LOG_INFO("[LLMService] Initialized (mode={}, workers={})",
               tt::config::to_string(mode), numWorkers);
   queueManager = std::make_unique<tt::ipc::QueueManager>(numWorkers);
@@ -86,7 +86,7 @@ void LLMService::start() {
               tt::config::to_string(mode), numWorkers);
 
   startWorkers();
-  tracy_config::TracyStartupSchedulerParent();
+  tracy_config::tracyStartupSchedulerParent();
   startConsumers();
 
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -219,7 +219,7 @@ bool LLMService::checkWorkerAlive(size_t workerIdx) {
 
 void LLMService::consumerLoopForWorker(size_t workerIdx) {
   ZoneScopedN("LLMService::consumer_loop");
-  tracy_config::TracySetThreadName(
+  tracy_config::tracySetThreadName(
       ("Consumer-" + std::to_string(workerIdx)).c_str());
 
   TT_LOG_INFO("[Consumer-{}] Started", workerIdx);
@@ -244,7 +244,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     bool anyActivity = false;
 
     ipc::SharedToken token;
-    while (worker->cfg.result_queue->blocking_pop(token)) {
+    while (worker->cfg.result_queue->blockingPop(token)) {
       anyActivity = true;
 
       auto val = streamCallbacks.get(token.task_id);
@@ -253,7 +253,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
                                  std::string(token.task_id));
       }
       auto callback = val.value();
-      if (token.is_final()) {
+      if (token.isFinal()) {
         streamCallbacks.erase(token.task_id);
         pendingTasks.fetch_sub(1);
       }
@@ -269,11 +269,11 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       domain::CompletionChoice choice;
       choice.text = tokenizer->decode({static_cast<int>(token.token_id)});
       choice.index = token.token_index;
-      if (token.is_error()) {
+      if (token.isError()) {
         choice.finish_reason = "error";
       } else {
         choice.token_id = static_cast<int64_t>(token.token_id);
-        if (token.is_final()) {
+        if (token.isFinal()) {
           bool isStop =
               STOP_TOKEN_SET.count(static_cast<int64_t>(token.token_id)) > 0;
           choice.finish_reason = isStop ? "stop" : "length";
@@ -281,8 +281,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       }
       response.choices.push_back(std::move(choice));
 
-      callback(response, token.is_final());
-      if (token.is_final()) {
+      callback(response, token.isFinal());
+      if (token.isFinal()) {
         TracyPlot("pending_tasks", static_cast<double>(pendingTasks.load()));
       }
     }
@@ -460,7 +460,7 @@ void LLMService::submitDecodeContinuation(domain::CompletionRequest request,
 void LLMService::handleConnectionLost() {
   TT_LOG_ERROR("[LLMService] Failing pending tasks due to connection loss");
 
-  streamCallbacks.for_each(
+  streamCallbacks.forEach(
       [](const std::string& taskId,
          std::function<void(domain::StreamingChunkResponse&, bool)>& callback) {
         domain::StreamingChunkResponse errorResponse{domain::TaskID(taskId)};

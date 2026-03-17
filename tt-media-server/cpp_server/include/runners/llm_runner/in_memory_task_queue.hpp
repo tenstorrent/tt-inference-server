@@ -22,27 +22,27 @@ class InMemoryTaskQueue : public ITaskQueue {
     std::ostringstream os;
     seq.serialize(os);
     std::istringstream is(os.str());
-    queue_.push_back(std::unique_ptr<Sequence>(Sequence::deserialize(is)));
+    queue.push_back(std::unique_ptr<Sequence>(Sequence::deserialize(is)));
   }
 
-  Sequence* try_pop() override {
-    if (queue_.empty()) return nullptr;
-    Sequence* seq = queue_.front().release();
-    queue_.pop_front();
+  Sequence* tryPop() {
+    if (queue.empty()) return nullptr;
+    Sequence* seq = queue.front().release();
+    queue.pop_front();
     return seq;
   }
 
   Sequence* receive() override {
-    if (queue_.empty()) return nullptr;
-    Sequence* seq = queue_.front().release();
-    queue_.pop_front();
+    if (queue.empty()) return nullptr;
+    Sequence* seq = queue.front().release();
+    queue.pop_front();
     return seq;
   }
 
-  bool empty() const override { return queue_.empty(); }
+  bool empty() const override { return queue.empty(); }
 
  private:
-  std::deque<std::unique_ptr<Sequence>> queue_;
+  std::deque<std::unique_ptr<Sequence>> queue;
 };
 
 }  // namespace llm_engine

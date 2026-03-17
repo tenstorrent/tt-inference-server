@@ -102,7 +102,7 @@ void SpPipelineRunner::step() {
     return;
   }
 
-  llm_engine::Sequence* seq = taskQueue->try_pop();
+  llm_engine::Sequence* seq = taskQueue->tryPop();
   if (!seq) return;
 
   std::unique_ptr<llm_engine::Sequence> owned(seq);

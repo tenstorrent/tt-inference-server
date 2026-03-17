@@ -61,7 +61,7 @@ struct EmbeddingService::Impl {
   size_t num_workers_ = 3;  // Default 3 workers for devices 1, 2, 3
 
   // Shared request queue (all worker dispatch threads pull from this)
-  TracyLockable(std::mutex, queue_mutex_);
+  tracyLockable(std::mutex, queue_mutex_);
   std::queue<std::shared_ptr<PendingRequest>> request_queue_;
   std::condition_variable_any queue_cv_;
 
@@ -279,10 +279,10 @@ struct EmbeddingService::Impl {
       if (reqJson.isArray()) {
         for (const auto& item : reqJson) {
           batch.push_back(
-              domain::EmbeddingRequest::from_json(item, taskIdFromJson(item)));
+              domain::EmbeddingRequest::fromJson(item, taskIdFromJson(item)));
         }
       } else {
-        batch.push_back(domain::EmbeddingRequest::from_json(
+        batch.push_back(domain::EmbeddingRequest::fromJson(
             reqJson, taskIdFromJson(reqJson)));
       }
 
@@ -501,7 +501,7 @@ struct EmbeddingService::Impl {
     // Build batch request JSON
     Json::Value batchJson(Json::arrayValue);
     for (const auto& pending : batch) {
-      batchJson.append(pending->request.to_json());
+      batchJson.append(pending->request.toJson());
     }
 
     Json::StreamWriterBuilder builder;
@@ -705,32 +705,30 @@ struct EmbeddingService::Impl {
 
 // Public interface
 
-EmbeddingService::EmbeddingService() : impl_(std::make_unique<Impl>()) {
-  max_queue_size_ = impl_->max_queue_size_;
+EmbeddingService::EmbeddingService() : impl(std::make_unique<Impl>()) {
+  max_queue_size = impl->max_queue_size_;
 }
 
 EmbeddingService::~EmbeddingService() = default;
 
-void EmbeddingService::start() { impl_->start(); }
+void EmbeddingService::start() { mpl_->start(); }
 
-void EmbeddingService::stop() { impl_->stop(); }
+void EmbeddingService::stop() { mpl_->stop(); }
 
-bool EmbeddingService::is_model_ready() const {
-  return impl_->is_ready_.load();
+bool EmbeddingService::isModelReady() const { return impl->is_ready_.load(); }
+
+size_t EmbeddingService::currentQueueSize() const {
+  std::lock_guard lock(mpl_->queue_mutex_);
+  return impl->request_queue_.size();
 }
 
-size_t EmbeddingService::current_queue_size() const {
-  std::lock_guard lock(impl_->queue_mutex_);
-  return impl_->request_queue_.size();
-}
-
-void EmbeddingService::post_process(domain::EmbeddingResponse&) const {
+void EmbeddingService::postProcess(domain::EmbeddingResponse&) const {
   // no-op
 }
 
-domain::EmbeddingResponse EmbeddingService::process_request(
+domain::EmbeddingResponse EmbeddingService::processRequest(
     domain::EmbeddingRequest request) {
-  auto future = impl_->submitRequest(std::move(request));
+  auto future = impl->submitRequest(std::move(request));
   return future.get();
 }
 

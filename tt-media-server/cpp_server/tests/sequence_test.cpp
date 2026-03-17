@@ -15,10 +15,10 @@ namespace {
 TEST(SequenceIDTest, SerializeDeserialize_RoundTrip) {
   TaskID orig(TaskID("seq-id-test"));
 
-  std::vector<char> buf = orig.ipc_serialize();
+  std::vector<char> buf = orig.ipcSerialize();
   ASSERT_EQ(buf.size(), 36);
 
-  TaskID restored = TaskID::ipc_deserialize(buf.data(), buf.size());
+  TaskID restored = TaskID::ipcDeserialize(buf.data(), buf.size());
   EXPECT_EQ(restored.id, orig.id);
 }
 

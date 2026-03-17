@@ -69,7 +69,7 @@ LLMController::LLMController() {
   }
 
   service_ =
-      tt::utils::service_factory::get_service_by_type<services::LLMService>();
+      tt::utils::service_factory::getServiceByType<services::LLMService>();
   if (!service_) {
     throw std::runtime_error(
         "[LLMController] LLM service not found in service fabric. "
@@ -311,7 +311,7 @@ void LLMController::handle_streaming(
   // full queue throws QueueFullException here, allowing us to return a proper
   // 429.
   try {
-    service_->submit_streaming_request(
+    service_->process_streaming_request(
         *reqPtr, [loop, streamPtr, done, COMPLETION_ID, MODEL, CREATED, isChat,
                   INCLUDE_USAGE, CONTINUOUS_USAGE, completionTokens, startTime,
                   firstTokenTime, secondTokenTime, firstContentChunk, reqPtr,

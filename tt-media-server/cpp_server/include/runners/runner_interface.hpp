@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <stdexcept>
 #include <string>
 
 namespace tt::runners {
@@ -27,9 +28,9 @@ class IRunner {
 
   void start() {
     // Initialize resources and prepare for inference.
-    bool is_warmed_up = warmup();
-    if (!is_warmed_up) {
-      throw std::runtime_error(std::string(runner_type()) + " warmup failed");
+    bool isWarmedUp = warmup();
+    if (!isWarmedUp) {
+      throw std::runtime_error(std::string(runnerType()) + " warmup failed");
     }
     run();
   }
@@ -37,7 +38,7 @@ class IRunner {
   /**
    * Get the runner type for identification.
    */
-  virtual const char* runner_type() const = 0;
+  virtual const char* runnerType() const = 0;
 
  private:
   /**

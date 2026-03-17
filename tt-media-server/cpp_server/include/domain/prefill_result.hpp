@@ -24,7 +24,7 @@ struct PrefillResult {
   int remaining_tokens = 0;
   bool finished = false;
 
-  explicit PrefillResult(TaskID task_id) : task_id(std::move(task_id)) {}
+  explicit PrefillResult(TaskID taskId) : task_id(std::move(taskId)) {}
 };
 
 }  // namespace tt::domain

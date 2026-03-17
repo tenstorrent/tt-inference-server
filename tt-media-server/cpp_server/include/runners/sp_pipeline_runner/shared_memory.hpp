@@ -34,8 +34,8 @@ struct Message {
   char taskId[36];
   uint64_t tokenIds[MaxTokenIds];
 
-  static constexpr int kMessageSize = 48 + MaxTokenIds * sizeof(uint64_t);
-  static constexpr int kTotalSize = SHM_SLOTS * kMessageSize;
+  static constexpr int K_MESSAGE_SIZE = 48 + MaxTokenIds * sizeof(uint64_t);
+  static constexpr int K_TOTAL_SIZE = SHM_SLOTS * K_MESSAGE_SIZE;
 
   bool stateMatches(SlotState state) {
     return this->state.load(std::memory_order_acquire) == state;
@@ -47,9 +47,9 @@ struct Message {
 };
 
 static_assert(sizeof(Message<PREFILL_MAX_TOKEN_IDS>) ==
-              Message<PREFILL_MAX_TOKEN_IDS>::kMessageSize);
+              Message<PREFILL_MAX_TOKEN_IDS>::K_MESSAGE_SIZE);
 static_assert(sizeof(Message<DECODE_MAX_TOKEN_IDS>) ==
-              Message<DECODE_MAX_TOKEN_IDS>::kMessageSize);
+              Message<DECODE_MAX_TOKEN_IDS>::K_MESSAGE_SIZE);
 
 struct ReadResult {
   std::string taskId;
@@ -94,11 +94,11 @@ class SharedMemory {
     messages = std::span<Msg>(static_cast<Msg*>(memPointer), SHM_SLOTS);
   }
 
-  void write(const std::string& uuid, const std::vector<int64_t>& token_ids,
-             uint32_t max_tokens) {
-    if (static_cast<int>(token_ids.size()) > MaxTokenIds) {
+  void write(const std::string& uuid, const std::vector<int64_t>& tokenIds,
+             uint32_t maxTokens) {
+    if (static_cast<int>(tokenIds.size()) > MaxTokenIds) {
       throw std::runtime_error("SharedMemory::write: token count " +
-                               std::to_string(token_ids.size()) +
+                               std::to_string(tokenIds.size()) +
                                " exceeds slot capacity " +
                                std::to_string(MaxTokenIds));
     }
@@ -109,17 +109,17 @@ class SharedMemory {
       std::this_thread::yield();
     }
 
-    msg.maxTokens = max_tokens;
-    msg.numTokenIds = token_ids.size();
+    msg.maxTokens = maxTokens;
+    msg.numTokenIds = tokenIds.size();
     std::memcpy(msg.taskId, uuid.data(), 36);
-    std::memcpy(msg.tokenIds, token_ids.data(),
-                token_ids.size() * sizeof(int64_t));
+    std::memcpy(msg.tokenIds, tokenIds.data(),
+                tokenIds.size() * sizeof(int64_t));
 
     msg.switchState(TAKEN);
     advanceCurrent();
   }
 
-  bool try_read(ReadResult& out) {
+  bool tryRead(ReadResult& out) {
     auto& msg = acquireMsg();
 
     if (!msg.stateMatches(TAKEN)) {

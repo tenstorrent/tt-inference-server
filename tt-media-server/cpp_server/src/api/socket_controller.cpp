@@ -16,9 +16,9 @@ namespace tt::api {
 SocketController::SocketController(
     std::shared_ptr<services::LLMService> llmService,
     std::shared_ptr<sockets::InterServerService> socketService)
-    : llm_service_(std::move(llmService)),
-      socket_service_(std::move(socketService)) {
-  if (!socket_service_ || !socket_service_->isEnabled()) {
+    : llm_service(std::move(llmService)),
+      socket_service(std::move(socketService)) {
+  if (!socket_service || !socket_service->isEnabled()) {
     TT_LOG_INFO(
         "[SocketController] Socket service not enabled, skipping handler "
         "setup");
@@ -28,19 +28,19 @@ SocketController::SocketController(
   auto mode = tt::config::llmMode();
 
   if (mode == tt::config::LLMMode::PREFILL_ONLY) {
-    setup_prefill_mode_handlers();
+    setupPrefillModeHandlers();
   } else if (mode == tt::config::LLMMode::DECODE_ONLY) {
-    setup_decode_mode_handlers();
+    setupDecodeModeHandlers();
   }
 
-  setup_common_handlers();
+  setupCommonHandlers();
 
   TT_LOG_INFO("[SocketController] Initialized for mode: {}",
               tt::config::to_string(mode));
 }
 
-void SocketController::setup_prefill_mode_handlers() {
-  socket_service_->onPrefillRequested(
+void SocketController::setupPrefillModeHandlers() {
+  socket_service->onPrefillRequested(
       [this](const tt::sockets::PrefillRequestMessage& message) {
         TT_LOG_INFO("[SocketController] Received prefill request {}",
                     message.task_id.id);
@@ -60,7 +60,7 @@ void SocketController::setup_prefill_mode_handlers() {
             std::make_shared<std::vector<int64_t>>(message.token_ids);
         std::string taskId = message.task_id.id;
 
-        llm_service_->submit_streaming_request(
+        llm_service->process_streaming_request(
             request,
             [this, taskId, tokenIdsPtr, ORIGINAL_MAX_TOKENS](
                 const domain::StreamingChunkResponse& chunk, bool isFinal) {
@@ -85,7 +85,7 @@ void SocketController::setup_prefill_mode_handlers() {
               msg.finished = isFinal && (remainingTokens.has_value() &&
                                          remainingTokens.value() <= 0);
               msg.tokens_generated = 1;
-              socket_service_->sendPrefillResult(msg);
+              socket_service->sendPrefillResult(msg);
 
               if (isFinal) {
                 TT_LOG_INFO(
@@ -101,20 +101,20 @@ void SocketController::setup_prefill_mode_handlers() {
       });
 }
 
-void SocketController::setup_decode_mode_handlers() {
-  llm_service_->setPrefillRequestCallback(
+void SocketController::setupDecodeModeHandlers() {
+  llm_service->setPrefillRequestCallback(
       [this](const domain::PrefillRequest& request) -> bool {
-        return socket_service_->sendPrefillRequest(
+        return socket_service->sendPrefillRequest(
             request.task_id, request.prompt, request.token_ids,
             request.max_tokens);
       });
 
-  socket_service_->onPrefillComplete(
+  socket_service->onPrefillComplete(
       [this](const tt::sockets::PrefillResultMessage& msg) {
         TT_LOG_INFO("[SocketController] Received prefill result {}",
                     msg.task_id.id);
 
-        auto taken = llm_service_->detachStreamCallback(msg.task_id.id);
+        auto taken = llm_service->detachStreamCallback(msg.task_id.id);
         if (!taken.has_value()) {
           TT_LOG_WARN("[SocketController] No callback for task_id: {}",
                       msg.task_id.id);
@@ -143,8 +143,8 @@ void SocketController::setup_decode_mode_handlers() {
           request.prompt = std::move(tokens);
           request.max_tokens = msg.remaining_tokens;
 
-          llm_service_->submitDecodeContinuation(std::move(request),
-                                                 std::move(callback));
+          llm_service->submitDecodeContinuation(std::move(request),
+                                                std::move(callback));
         } else {
           domain::StreamingChunkResponse finalResponse{msg.task_id};
           finalResponse.id = msg.task_id.id;
@@ -161,16 +161,16 @@ void SocketController::setup_decode_mode_handlers() {
         }
       });
 
-  socket_service_->setConnectionLostCallback([this]() {
+  socket_service->setConnectionLostCallback([this]() {
     TT_LOG_WARN("[SocketController] Connection to prefill server lost");
-    llm_service_->handleConnectionLost();
+    llm_service->handleConnectionLost();
   });
 }
 
-void SocketController::setup_common_handlers() {
-  socket_service_->setHealthCheckCallback([](const std::string& serverId,
-                                             double /*cpu*/, double /*memory*/,
-                                             int tasks) {
+void SocketController::setupCommonHandlers() {
+  socket_service->setHealthCheckCallback([](const std::string& serverId,
+                                            double /*cpu*/, double /*memory*/,
+                                            int tasks) {
     TT_LOG_INFO("[SocketController] Health check from {} (active_tasks={})",
                 serverId, tasks);
   });

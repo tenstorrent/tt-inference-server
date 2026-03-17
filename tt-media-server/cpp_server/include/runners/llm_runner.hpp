@@ -23,7 +23,7 @@ class LLMRunner : public IRunner {
 
   void run() override;
   void stop() override;
-  const char* runner_type() const override { return "LLMRunner"; }
+  const char* runnerType() const override { return "LLMRunner"; }
 
  private:
   void step();

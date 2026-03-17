@@ -44,7 +44,7 @@ class LLMService
   void start() override;
   void stop() override;
 
-  bool is_model_ready() const override;
+  bool is_model_ready() const;
 
   using StreamCallback =
       std::function<void(domain::StreamingChunkResponse&, bool)>;
@@ -59,17 +59,16 @@ class LLMService
   std::shared_ptr<tt::sockets::InterServerService> getSocketService() const;
 
  protected:
-  void pre_process(domain::CompletionRequest& request) const override;
-  void post_process(domain::CompletionResponse& response) const override;
-  size_t current_queue_size() const override;
-  domain::CompletionResponse process_request(
-      domain::CompletionRequest request) override;
+  void pre_process(domain::CompletionRequest& request) const;
+  void post_process(domain::CompletionResponse& response) const;
+  size_t current_queue_size() const;
+  domain::CompletionResponse process_request(domain::CompletionRequest request);
 
-  void streaming_post_process(domain::StreamingChunkResponse&) const override {}
+  void streaming_post_process(domain::StreamingChunkResponse&) const {}
   void process_streaming_request(
       domain::CompletionRequest request,
       std::function<void(domain::StreamingChunkResponse&, bool isFinal)>
-          callback) override;
+          callback);
 
  private:
   void startWorkers();

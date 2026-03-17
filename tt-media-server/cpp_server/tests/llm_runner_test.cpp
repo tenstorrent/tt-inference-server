@@ -71,7 +71,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
         TaskID tid(TaskID(std::string(token.task_id)));
         tid.id = std::string(token.task_id);
         receivedTokens[tid].push_back(static_cast<int64_t>(token.token_id));
-        if (token.is_final()) {
+        if (token.isFinal()) {
           finishedCount.fetch_add(1);
         }
       }

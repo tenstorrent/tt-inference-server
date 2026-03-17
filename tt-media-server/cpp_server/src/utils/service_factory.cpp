@@ -16,8 +16,8 @@ namespace {
 std::unique_ptr<tt::api::SocketController> socketController;
 }
 
-void register_services() {
-  tracy_config::TracyStartMainProcess();
+void registerServices() {
+  tracy_config::tracyStartMainProcess();
 
   if (tt::config::isLlmServiceEnabled()) {
     auto llm = std::make_shared<services::LLMService>();
@@ -28,24 +28,24 @@ void register_services() {
           llm, llm->getSocketService());
     }
 
-    register_service(std::move(llm));
+    registerService(std::move(llm));
     TT_LOG_INFO("[ServiceFactory] LLM service registered and started");
   }
 
   if (tt::config::isEmbeddingService()) {
     auto emb = std::make_shared<services::EmbeddingService>();
     emb->start();
-    register_service(std::move(emb));
+    registerService(std::move(emb));
     TT_LOG_INFO("[ServiceFactory] Embedding service registered and started");
   }
 }
 
-std::shared_ptr<services::IService> get_configured_service() {
+std::shared_ptr<services::IService> getConfiguredService() {
   switch (tt::config::modelService()) {
     case tt::config::ModelService::LLM:
-      return get_service_by_type<services::LLMService>();
+      return getServiceByType<services::LLMService>();
     case tt::config::ModelService::EMBEDDING:
-      return get_service_by_type<services::EmbeddingService>();
+      return getServiceByType<services::EmbeddingService>();
   }
   return nullptr;
 }

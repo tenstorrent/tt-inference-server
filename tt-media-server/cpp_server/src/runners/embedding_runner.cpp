@@ -316,7 +316,7 @@ struct EmbeddingRunner::Impl {
 
 EmbeddingRunner::EmbeddingRunner(const std::string& deviceId, int visibleDevice)
     : deviceId_(deviceId),
-      visibleDevice_(visibleDevice),
+      visibleDevice(visibleDevice),
       impl(std::make_unique<Impl>(deviceId)) {
   TT_LOG_INFO(
       "[EmbeddingRunner] EmbeddingRunner created for device {} "

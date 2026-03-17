@@ -50,16 +50,16 @@ class EmbeddingRunner : public IRunner {
   // IRunner interface implementation
   void run() override;
   void stop() override;
-  const char* runner_type() const override { return "EmbeddingRunner"; }
+  const char* runnerType() const override { return "EmbeddingRunner"; }
 
   /**
    * Get the device ID.
    */
-  const std::string& deviceId() const { return deviceId_; }
+  const std::string& deviceId() const { return deviceId(); }
 
  private:
-  std::string deviceId_;
-  int visibleDevice_;
+  std::string deviceId;
+  int visibleDevice;
   struct Impl;
   std::unique_ptr<Impl> impl;
 };

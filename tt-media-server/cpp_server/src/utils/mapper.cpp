@@ -2,7 +2,7 @@
 
 namespace tt::utils::mapper {
 
-llm_engine::SamplingParams map_sampling_params(
+llm_engine::SamplingParams mapSamplingParams(
     const tt::domain::CompletionRequest& request) {
   llm_engine::SamplingParams params;
   params.temperature = request.temperature.value_or(1.0f);

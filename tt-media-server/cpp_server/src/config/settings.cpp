@@ -91,7 +91,7 @@ const std::vector<std::string>& deviceIdsParsed() {
 }  // namespace
 
 ModelService modelService() {
-  return model_service_from_string(
+  return modelServiceFromString(
       envStringLower("MODEL_SERVICE", defaults::MODEL_SERVICE));
 }
 
@@ -99,7 +99,7 @@ bool isEmbeddingService() { return modelService() == ModelService::EMBEDDING; }
 
 bool isLlmServiceEnabled() { return modelService() == ModelService::LLM; }
 
-std::string runnerType() { return to_string(modelService()); }
+std::string runnerType() { return std::to_string(modelService()); }
 
 size_t numWorkers() { return deviceIdsParsed().size(); }
 
@@ -179,16 +179,16 @@ LLMConfig llmEngineConfig() {
 }
 
 ModelType modelType() {
-  return model_type_from_device_backend(
+  return modelTypeFromDeviceBackend(
       envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND));
 }
 
 LLMMode llmMode() {
-  return llm_mode_from_string(envStringLower("LLM_MODE", defaults::LLM_MODE));
+  return llmModeFromString(envStringLower("LLM_MODE", defaults::LLM_MODE));
 }
 
 SchedulingPolicy schedulingPolicy() {
-  return scheduling_policy_from_string(
+  return schedulingPolicyFromString(
       envStringLower("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY));
 }
 

@@ -38,8 +38,8 @@ class IService {
   virtual ~IService() = default;
   virtual void start() = 0;
   virtual void stop() = 0;
-  virtual bool is_model_ready() const = 0;
-  virtual SystemStatus get_system_status() const = 0;
+  virtual bool isModelReady() const = 0;
+  virtual SystemStatus getSystemStatus() const = 0;
 };
 
 template <std::derived_from<domain::BaseRequest> RequestType,
@@ -48,31 +48,31 @@ class BaseService : public IService {
  public:
   virtual ~BaseService() = default;
 
-  ResponseType submit_request(RequestType request) {
-    pre_process(request);
-    auto response = process_request(std::move(request));
-    post_process(response);
+  ResponseType submitRequest(RequestType request) {
+    preProcess(request);
+    auto response = processRequest(std::move(request));
+    postProcess(response);
     return response;
   }
 
-  SystemStatus get_system_status() const override {
+  SystemStatus getSystemStatus() const override {
     SystemStatus status;
-    status.model_ready = is_model_ready();
-    status.queue_size = current_queue_size();
-    status.max_queue_size = max_queue_size_;
+    status.model_ready = isModelReady();
+    status.queue_size = currentQueueSize();
+    status.max_queue_size = max_queue_size;
     // worker_info is empty by default, services can populate it if needed
     return status;
   }
 
  protected:
-  virtual ResponseType process_request(RequestType request) = 0;
-  virtual void pre_process(RequestType& /*request*/) const {
-    if (current_queue_size() >= max_queue_size_) throw QueueFullException{};
+  virtual ResponseType processRequest(RequestType request) = 0;
+  virtual void preProcess(RequestType& /*request*/) const {
+    if (currentQueueSize() >= max_queue_size) throw QueueFullException{};
   }
-  virtual void post_process(ResponseType& response) const = 0;
-  virtual size_t current_queue_size() const = 0;
+  virtual void postProcess(ResponseType& response) const = 0;
+  virtual size_t currentQueueSize() const = 0;
 
-  size_t max_queue_size_ = std::numeric_limits<size_t>::max();
+  size_t max_queue_size = std::numeric_limits<size_t>::max();
 };
 
 }  // namespace tt::services

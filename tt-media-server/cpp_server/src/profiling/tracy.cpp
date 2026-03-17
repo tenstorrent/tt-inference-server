@@ -48,12 +48,12 @@ void TracyStartupWorker(int worker_id) {
   TracyStartupProfiler();
 }
 #else
-void TracySetPortForMain() {}
-void TracySetPortForWorker(int /*worker_id*/) {}
-void TracyStartMainProcess() {}
-void TracyStartupSchedulerParent() {}
-void TracyStartupWorker(int /*worker_id*/) {}
-void TracyRegisterPlots() {}
+void tracySetPortForMain() {}
+void tracySetPortForWorker(int /*worker_id*/) {}
+void tracyStartMainProcess() {}
+void tracyStartupSchedulerParent() {}
+void tracyStartupWorker(int /*worker_id*/) {}
+void tracyRegisterPlots() {}
 #endif
 
 }  // namespace tracy_config

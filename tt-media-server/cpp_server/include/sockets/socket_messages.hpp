@@ -23,8 +23,8 @@ struct PrefillRequestMessage {
   std::vector<int64_t> token_ids;
   std::optional<int> max_tokens;
 
-  explicit PrefillRequestMessage(tt::domain::TaskID task_id)
-      : task_id(std::move(task_id)) {}
+  explicit PrefillRequestMessage(tt::domain::TaskID taskId)
+      : task_id(std::move(taskId)) {}
 
   template <class Archive>
   void write(Archive& ar) const {
@@ -63,8 +63,8 @@ struct PrefillResultMessage {
   std::vector<int64_t> token_ids;
   std::optional<int> remaining_tokens;
 
-  explicit PrefillResultMessage(tt::domain::TaskID task_id)
-      : task_id(std::move(task_id)) {}
+  explicit PrefillResultMessage(tt::domain::TaskID taskId)
+      : task_id(std::move(taskId)) {}
 
   template <class Archive>
   void write(Archive& ar) const {
@@ -76,15 +76,15 @@ struct PrefillResultMessage {
   template <class Archive>
   static PrefillResultMessage read(Archive& ar) {
     std::string tid;
-    std::string gen_text;
+    std::string genText;
     bool fin;
     int tg;
     double pt;
     std::vector<int64_t> tids;
     int rt;
-    ar(tid, gen_text, fin, tg, pt, tids, rt);
+    ar(tid, genText, fin, tg, pt, tids, rt);
     PrefillResultMessage msg(tt::domain::TaskID(std::move(tid)));
-    msg.generated_text = std::move(gen_text);
+    msg.generated_text = std::move(genText);
     msg.finished = fin;
     msg.tokens_generated = tg;
     msg.processing_time_ms = pt;

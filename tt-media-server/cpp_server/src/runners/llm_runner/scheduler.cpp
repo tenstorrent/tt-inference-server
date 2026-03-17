@@ -62,12 +62,12 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
                                    int& numSeqs, int& numBatchedTokens,
                                    int seqLimit) {
   while (numSeqs < seqLimit) {
-    auto seq = prefillQueue->try_pop();
+    auto seq = prefillQueue->tryPop();
     if (!seq) break;
 
     if (numBatchedTokens + static_cast<int>(seq->size()) >
             maxNumBatchedTokens ||
-        !blockManager.can_allocate(*seq)) {
+        !blockManager.canAllocate(*seq)) {
       prefillQueue->push(*seq);
       delete seq;
       break;
@@ -90,7 +90,7 @@ void Scheduler::tryScheduleDecode(std::vector<Sequence*>& scheduledSeqs,
     Sequence* seq = decodeQueue.front();
     decodeQueue.pop_front();
     auto selfPreempt = false;
-    while (!blockManager.can_append(*seq)) {
+    while (!blockManager.canAppend(*seq)) {
       if (!decodeQueue.empty()) {
         preempt(*decodeQueue.back());
         decodeQueue.pop_back();
@@ -100,9 +100,9 @@ void Scheduler::tryScheduleDecode(std::vector<Sequence*>& scheduledSeqs,
         break;
       }
     }
-    if (!selfPreempt && blockManager.can_append(*seq)) {
+    if (!selfPreempt && blockManager.canAppend(*seq)) {
       numSeqs += 1;
-      blockManager.may_append(*seq);
+      blockManager.mayAppend(*seq);
       scheduledSeqs.push_back(seq);
     }
   }

@@ -19,8 +19,8 @@ namespace llm_engine {
 using Config = tt::config::LLMConfig;
 
 namespace {
-py::object g_runner;
-py::object g_step_seq_class;
+py::object gRunner;
+py::object gStepSeqClass;
 }  // namespace
 
 bool LlamaModelRunner::initialize() {
@@ -30,31 +30,29 @@ bool LlamaModelRunner::initialize() {
 
   bool success = false;
   try {
-    py::module_ sys_mod = py::module_::import("sys");
-    py::list sys_path = sys_mod.attr("path");
+    py::module_ sysMod = py::module_::import("sys");
+    py::list sysPath = sys_mod.attr("path");
 
-    const char* python_path = std::getenv("TT_PYTHON_PATH");
-    if (python_path && *python_path) {
-      sys_path.attr("insert")(0, python_path);
+    const char* pythonPath = std::getenv("TT_PYTHON_PATH");
+    if (pythonPath && *pythonPath) {
+      sysPath.attr("insert")(0, pythonPath);
     }
-    const char* metal_home = std::getenv("TT_METAL_HOME");
-    if (metal_home && *metal_home) {
-      sys_path.attr("insert")(0, metal_home);
+    const char* metalHome = std::getenv("TT_METAL_HOME");
+    if (metalHome && *metalHome) {
+      sysPath.attr("insert")(0, metalHome);
     }
 
-    py::module_ llama_mod =
-        py::module_::import("tt_model_runners.llama_runner");
-    g_step_seq_class = llama_mod.attr("StepSequence");
-    py::object runner_class = llama_mod.attr("Llama31_8BRunner");
+    py::module_ llamaMod = py::module_::import("tt_model_runners.llama_runner");
+    gStepSeqClass = llama_mod.attr("StepSequence");
+    py::object runnerClass = llama_mod.attr("Llama31_8BRunner");
 
-    const char* env_dev = std::getenv("TT_VISIBLE_DEVICES");
-    std::string device_id = (env_dev && *env_dev) ? env_dev : "0";
-    g_runner = runner_class(device_id);
+    const char* envDev = std::getenv("TT_VISIBLE_DEVICES");
+    std::string deviceId = (envDev && *envDev) ? envDev : "0";
+    gRunner = runner_class(deviceId);
 
     py::module_ asyncio = py::module_::import("asyncio");
-    bool warmup_ok =
-        asyncio.attr("run")(g_runner.attr("warmup")()).cast<bool>();
-    if (!warmup_ok) {
+    bool warmupOk = asyncio.attr("run")(g_runner.attr("warmup")()).cast<bool>();
+    if (!warmupOk) {
       TT_LOG_ERROR("[LlamaModelRunner] Warmup failed");
     } else {
       TT_LOG_INFO("[LlamaModelRunner] Llama runner ready (in-process)");
@@ -69,7 +67,7 @@ bool LlamaModelRunner::initialize() {
   return success;
 }
 
-void LlamaModelRunner::fail_sequences(const std::vector<Sequence*>& seqs) {
+void LlamaModelRunner::failSequences(const std::vector<Sequence*>& seqs) {
   for (Sequence* seq : seqs) {
     TokenResult dr(seq->task_id, 0, {}, true);
     decode_callback_(dr);
@@ -84,15 +82,14 @@ LlamaModelRunner::LlamaModelRunner(const Config& config,
 
 LlamaModelRunner::~LlamaModelRunner() { exit(); }
 
-void LlamaModelRunner::run(const std::vector<Sequence*>& seqs,
-                           bool is_prefill) {
+void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
   if (stop_.load() || !initialized_) return;
 
-  bool had_error = false;
+  bool hadError = false;
   {
     py::gil_scoped_acquire acquire;
     try {
-      py::list py_seqs;
+      py::list pySeqs;
       for (Sequence* seq : seqs) {
         py::list token_ids;
         if (is_prefill) {
@@ -150,28 +147,28 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs,
             repetition_penalty, presence_penalty, frequency_penalty));
       }
 
-      py::object results = g_runner.attr("run")(is_prefill, py_seqs);
+      py::object results = g_runner.attr("run")(isPrefill, py_seqs);
 
       for (size_t i = 0; i < seqs.size(); ++i) {
         py::object item = results[py::int_(i)];
-        TaskID dr_task_id(item.attr("task_id").cast<std::string>());
-        uint64_t dr_token_id =
+        TaskID drTaskId(item.attr("task_id").cast<std::string>());
+        uint64_t drTokenId =
             static_cast<uint64_t>(item.attr("token_id").cast<int64_t>());
         std::string error = item.attr("error").cast<std::string>();
-        bool dr_is_error = !error.empty();
-        if (dr_is_error) {
-          TT_LOG_ERROR("[LlamaModelRunner] sequence {} error: {}",
-                       dr_task_id.id, error);
+        bool drIsError = !error.empty();
+        if (drIsError) {
+          TT_LOG_ERROR("[LlamaModelRunner] sequence {} error: {}", drTaskId.id,
+                       error);
         }
-        TokenResult dr(dr_task_id, dr_token_id, {}, dr_is_error);
+        TokenResult dr(drTaskId, drTokenId, {}, drIsError);
         decode_callback_(dr);
       }
     } catch (const py::error_already_set& e) {
       TT_LOG_ERROR("[LlamaModelRunner] Python error in run_step: {}", e.what());
-      had_error = true;
+      hadError = true;
     }
   }
-  if (had_error) {
+  if (hadError) {
     fail_sequences(seqs);
     stop_.store(true);
   }
@@ -189,8 +186,8 @@ void LlamaModelRunner::exit() {
   TT_LOG_INFO("[LlamaModelRunner] Runner exited");
 }
 
-std::unique_ptr<IModelRunner> make_llama_model_runner(const Config& config,
-                                                      DecodeCallback callback) {
+std::unique_ptr<IModelRunner> makeLlamaModelRunner(const Config& config,
+                                                   DecodeCallback callback) {
   auto runner = std::make_unique<LlamaModelRunner>(config, std::move(callback));
   if (!runner->is_ready()) {
     return nullptr;

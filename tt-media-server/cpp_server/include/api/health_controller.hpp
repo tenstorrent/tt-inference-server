@@ -29,7 +29,7 @@ class HealthController : public drogon::HttpController<HealthController> {
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
  private:
-  std::shared_ptr<services::IService> service_;
+  std::shared_ptr<services::IService> service;
 };
 
 }  // namespace tt::api
