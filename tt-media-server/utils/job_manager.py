@@ -354,15 +354,17 @@ class JobManager:
 
         except asyncio.CancelledError:
             self._logger.info(f"Job {job.id} was cancelled")
-            self._cleanup_job(job)
             if not job.is_terminal():
                 job.mark_cancelled()
                 self._sync_status_to_db(job)
+            self._cleanup_job(job)
             raise
         except Exception as e:
             self._logger.error(f"Job {job.id} failed: {e}")
             job.mark_failed(error_code="processing_error", error_message=str(e))
             self._sync_status_to_db(job)
+            if job.cancel_event:
+                self._cleanup_job(job)
         finally:
             if not progress_monitor.done():
                 progress_monitor.cancel()
