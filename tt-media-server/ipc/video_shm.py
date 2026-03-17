@@ -11,7 +11,17 @@ Two modes:
   - "input"  (server -> runner): carries VideoRequest payloads
   - "output" (runner -> server): carries FrameResult payloads
 
-Mirrors the LLM shared_memory.py / shared_memory.hpp pattern.
+Runner side (attaches to SHM created by the device worker)::
+
+    input_shm  = VideoShm("video_in",  mode="input")
+    output_shm = VideoShm("video_out", mode="output")
+    input_shm.open(create=False)
+    output_shm.open(create=False)
+
+    req = input_shm.read_request()       # blocks until request arrives
+    for i in range(req.num_frames):
+        output_shm.write_frame(FrameResult(..., status=FrameStatus.FRAME))
+    output_shm.write_frame(FrameResult(..., status=FrameStatus.DONE))
 """
 
 from __future__ import annotations
