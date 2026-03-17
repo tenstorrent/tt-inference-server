@@ -34,13 +34,13 @@ if [ -z "$RUFF" ]; then
     echo "✅ ruff installed successfully"
 fi
 
-# update default_model_spec.json and stage it
-python3 -c 'from pathlib import Path; from workflows.model_spec import MODEL_SPECS, export_model_specs_json; export_model_specs_json(MODEL_SPECS, Path("default_model_spec.json"))'
+# update model_spec.json and stage it
+python3 -c 'from pathlib import Path; from workflows.model_spec import MODEL_SPECS, export_model_specs_json; export_model_specs_json(MODEL_SPECS, Path("model_spec.json"))'
 if [ $? -ne 0 ]; then
-    echo "❌ Failed to update default_model_spec.json"
+    echo "❌ Failed to update model_spec.json"
     exit 1
 fi
-git add default_model_spec.json
+git add model_spec.json
 
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
 

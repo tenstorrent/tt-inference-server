@@ -242,7 +242,7 @@ def log_resource_summary(details, total_builds):
 
 
 def generate_model_specs_json(output_path: Path = None) -> Path:
-    """Generate default_model_spec.json by serializing all MODEL_SPECS.
+    """Generate model_spec.json by serializing all MODEL_SPECS.
 
     This function generates a JSON file containing all model specifications
     that will be embedded in the Docker image. The JSON can be used at runtime
@@ -250,17 +250,17 @@ def generate_model_specs_json(output_path: Path = None) -> Path:
 
     Args:
         output_path: Path where the JSON file should be written.
-                    Defaults to repo_root / "default_model_spec.json"
+                    Defaults to repo_root / "model_spec.json"
 
     Returns:
         Path to the generated JSON file
     """
     if output_path is None:
-        output_path = get_repo_root_path() / "default_model_spec.json"
+        output_path = get_repo_root_path() / "model_spec.json"
 
     num_specs = export_model_specs_json(MODEL_SPECS, output_path)
     logger.info(
-        f"Generated default_model_spec.json with {num_specs} specs at {output_path}"
+        f"Generated model_spec.json with {num_specs} specs at {output_path}"
     )
     return output_path
 

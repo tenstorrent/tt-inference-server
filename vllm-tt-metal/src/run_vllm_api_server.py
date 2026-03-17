@@ -195,10 +195,10 @@ def load_model_spec(
             "Example: docker run <image> --model meta-llama/Llama-3.1-8B --tt-device n300"
         )
 
-    # Catalog mode (default_model_spec.json built into image)
+    # Catalog mode (model_spec.json built into image)
     specs_path = os.getenv(
         "MODEL_SPECS_JSON_PATH",
-        "/home/container_app_user/model_specs/default_model_spec.json",
+        "/home/container_app_user/model_specs/model_spec.json",
     )
     logger.info(f"Loading all model specs from MODEL_SPECS_JSON_PATH: {specs_path}")
     with open(specs_path, "r") as f:
