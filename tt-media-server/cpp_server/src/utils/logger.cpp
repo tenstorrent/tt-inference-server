@@ -56,7 +56,7 @@ void ZeroOverheadLogger::initialize() {
 
   // Create logger
   logger = std::make_shared<spdlog::logger>("tt-media-server", sinks.begin(),
-                                             sinks.end());
+                                            sinks.end());
 
   // Set spdlog level
   switch (level) {

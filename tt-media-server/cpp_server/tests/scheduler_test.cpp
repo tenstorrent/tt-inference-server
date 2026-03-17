@@ -127,7 +127,7 @@ TEST(PrefillFirstSchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
   auto queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
   sched.addRequest(nextId(), prompt(4),
-                    {.max_tokens = 10, .ignore_eos = false});
+                   {.max_tokens = 10, .ignore_eos = false});
 
   auto [prefill_batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);

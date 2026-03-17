@@ -285,8 +285,8 @@ class LlamaTokenizerTest : public ::testing::Test {
   std::unique_ptr<Tokenizer> tok_;
 
   void SetUp() override {
-    std::string path = tt::config::tokenizerPath(
-        tt::config::ModelType::LLAMA_3_1_8B_INSTRUCT);
+    std::string path =
+        tt::config::tokenizerPath(tt::config::ModelType::LLAMA_3_1_8B_INSTRUCT);
     if (path.empty()) {
       GTEST_SKIP() << "Llama tokenizer files not found";
     }

@@ -319,11 +319,13 @@ struct EmbeddingService::Impl {
                               reinterpret_cast<uint8_t*>(&val),
                               reinterpret_cast<uint8_t*>(&val) + sizeof(val));
       };
-      auto appendString = [&responseBuffer, &appendUint32](const std::string& s) {
+      auto appendString = [&responseBuffer,
+                           &appendUint32](const std::string& s) {
         appendUint32(static_cast<uint32_t>(s.size()));
         responseBuffer.insert(responseBuffer.end(), s.begin(), s.end());
       };
-      auto appendFloats = [&responseBuffer, &appendUint32](const std::vector<float>& floats) {
+      auto appendFloats = [&responseBuffer,
+                           &appendUint32](const std::vector<float>& floats) {
         appendUint32(static_cast<uint32_t>(floats.size()));
         const uint8_t* data = reinterpret_cast<const uint8_t*>(floats.data());
         responseBuffer.insert(responseBuffer.end(), data,
@@ -622,7 +624,8 @@ struct EmbeddingService::Impl {
       offset += len;
       return s;
     };
-    auto readFloats = [&responseBuffer, &offset, &readUint32]() -> std::vector<float> {
+    auto readFloats = [&responseBuffer, &offset,
+                       &readUint32]() -> std::vector<float> {
       uint32_t count = readUint32();
       std::vector<float> floats(count);
       std::memcpy(floats.data(), responseBuffer.data() + offset,
@@ -715,9 +718,7 @@ void EmbeddingService::start() { impl_->start(); }
 
 void EmbeddingService::stop() { impl_->stop(); }
 
-bool EmbeddingService::isModelReady() const {
-  return impl_->is_ready_.load();
-}
+bool EmbeddingService::isModelReady() const { return impl_->is_ready_.load(); }
 
 size_t EmbeddingService::currentQueueSize() const {
   std::lock_guard lock(impl_->queue_mutex_);

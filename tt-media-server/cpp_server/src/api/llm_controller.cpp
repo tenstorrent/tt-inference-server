@@ -128,7 +128,7 @@ void LLMController::completions(
   } catch (const std::exception& e) {
     auto resp = drogon::HttpResponse::newHttpJsonResponse(
         errorJson(std::string("Failed to parse request: ") + e.what(),
-                   "invalid_request_error"));
+                  "invalid_request_error"));
     resp->setStatusCode(drogon::k400BadRequest);
     callback(resp);
     return;
@@ -196,7 +196,7 @@ void LLMController::chatCompletions(
   } catch (const std::exception& e) {
     auto resp = drogon::HttpResponse::newHttpJsonResponse(
         errorJson(std::string("Failed to parse request: ") + e.what(),
-                   "invalid_request_error"));
+                  "invalid_request_error"));
     resp->setStatusCode(drogon::k400BadRequest);
     callback(resp);
     return;
@@ -207,7 +207,7 @@ void LLMController::chatCompletions(
   if (chatReq.messages.empty()) {
     auto resp = drogon::HttpResponse::newHttpJsonResponse(
         errorJson("messages is required and must be a non-empty array",
-                   "invalid_request_error", Json::Value("messages")));
+                  "invalid_request_error", Json::Value("messages")));
     resp->setStatusCode(drogon::k400BadRequest);
     callback(resp);
     return;

@@ -144,7 +144,7 @@ void SocketController::setupDecodeModeHandlers() {
           request.max_tokens = msg.remaining_tokens;
 
           llm_service_->submitDecodeContinuation(std::move(request),
-                                                   std::move(callback));
+                                                 std::move(callback));
         } else {
           domain::StreamingChunkResponse finalResponse{msg.task_id};
           finalResponse.id = msg.task_id.id;

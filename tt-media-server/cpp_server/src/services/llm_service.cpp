@@ -158,8 +158,7 @@ void LLMService::startWorkers() {
 void LLMService::startConsumers() {
   consumer_threads_.reserve(num_workers_);
   for (size_t i = 0; i < num_workers_; i++) {
-    consumer_threads_.emplace_back(&LLMService::consumerLoopForWorker, this,
-                                   i);
+    consumer_threads_.emplace_back(&LLMService::consumerLoopForWorker, this, i);
   }
   TT_LOG_INFO("[LLMService] Started {} consumer threads", num_workers_);
 }

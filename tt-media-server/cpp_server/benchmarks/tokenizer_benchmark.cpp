@@ -173,8 +173,7 @@ int main(int argc, char* argv[]) {
   }
 
   std::cout << "Loading tokenizer from: " << tokenizerFilePath << "\n";
-  auto tokenizer =
-      createTokenizer(tt::config::modelType(), tokenizerFilePath);
+  auto tokenizer = createTokenizer(tt::config::modelType(), tokenizerFilePath);
 
   if (!tokenizer->isLoaded()) {
     std::cerr << "Failed to load tokenizer from: " << tokenizerFilePath << "\n";
