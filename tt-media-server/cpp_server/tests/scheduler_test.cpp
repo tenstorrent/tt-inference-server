@@ -1,22 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-#include "runners/llm_runner/config.hpp"
 #include "runners/llm_runner/scheduler.hpp"
-#include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "runners/llm_runner/max_occupancy_scheduler.hpp"
-#include "runners/llm_runner/sequence.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
+
 #include <gtest/gtest.h>
+
 #include <vector>
+
+#include "config/runner_config.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
+#include "runners/llm_runner/max_occupancy_scheduler.hpp"
+#include "runners/llm_runner/prefill_first_scheduler.hpp"
+#include "runners/llm_runner/sampling_params.hpp"
+#include "runners/llm_runner/sequence.hpp"
 
 namespace llm_engine {
+
+using Config = tt::config::LLMConfig;
+using SchedulingPolicy = tt::config::SchedulingPolicy;
+
 namespace {
 
-  std::shared_ptr<ITaskQueue> make_queue() {
-    return std::make_shared<InMemoryTaskQueue>();
-  }
+std::shared_ptr<ITaskQueue> make_queue() {
+  return std::make_shared<InMemoryTaskQueue>();
+}
 
 Config make_config(int num_blocks = 32, int block_size = 8,
                    int max_batched_tokens = 256, int eos = 0,
@@ -36,9 +43,7 @@ std::vector<int64_t> prompt(size_t len) {
   return p;
 }
 
-TaskID next_id() {
-  return TaskID(TaskID::generate());
-}
+TaskID next_id() { return TaskID(TaskID::generate()); }
 
 // --- make_scheduler factory tests ---
 
@@ -82,7 +87,8 @@ TEST(PrefillFirstSchedulerTest, Schedule_WithOneWaiting_ReturnsPrefillBatch) {
   EXPECT_EQ(batch[0]->task_id, expected_id);
 }
 
-TEST(PrefillFirstSchedulerTest, Schedule_OneRequest_FirstCallPrefill_SecondCallEmpty) {
+TEST(PrefillFirstSchedulerTest,
+     Schedule_OneRequest_FirstCallPrefill_SecondCallEmpty) {
   Config config = make_config();
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
@@ -96,7 +102,8 @@ TEST(PrefillFirstSchedulerTest, Schedule_OneRequest_FirstCallPrefill_SecondCallE
   EXPECT_TRUE(batch2.empty());
 }
 
-TEST(PrefillFirstSchedulerTest, Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
+TEST(PrefillFirstSchedulerTest,
+     Schedule_WhenNoWaitingAndOneRunning_ReturnsDecodeBatch) {
   Config config = make_config();
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
@@ -119,7 +126,8 @@ TEST(PrefillFirstSchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
   Config config = make_config(32, 8, 256, 99, std::vector<int64_t>{99});
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
-  sched.add_request(next_id(), prompt(4), {.max_tokens = 10, .ignore_eos = false});
+  sched.add_request(next_id(), prompt(4),
+                    {.max_tokens = 10, .ignore_eos = false});
 
   auto [prefill_batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
@@ -161,7 +169,8 @@ TEST(PrefillFirstSchedulerTest, OneRequest_PrefillThenDecodeThenMaxTokens) {
   EXPECT_TRUE(sched.is_finished());
 }
 
-TEST(PrefillFirstSchedulerTest, Postprocess_WhenTokenReachesMaxTokens_MarksFinished) {
+TEST(PrefillFirstSchedulerTest,
+     Postprocess_WhenTokenReachesMaxTokens_MarksFinished) {
   Config config = make_config();
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
@@ -183,7 +192,8 @@ TEST(PrefillFirstSchedulerTest, Postprocess_WhenEosToken_MarksFinished) {
   Config config = make_config(32, 8, 256, 99, std::vector<int64_t>{99});
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
-  Sequence seq{next_id(), 256, prompt(2), SamplingParams{.max_tokens = 100, .ignore_eos = false}};
+  Sequence seq{next_id(), 256, prompt(2),
+               SamplingParams{.max_tokens = 100, .ignore_eos = false}};
   sched.add(seq);
   auto [batch, _] = sched.schedule();
   ASSERT_EQ(batch.size(), 1u);
@@ -237,7 +247,8 @@ TEST(PrefillFirstSchedulerTest, Schedule_RespectsMaxNumBatchedTokens) {
   sched.add(seq2);
   auto [batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
-  EXPECT_EQ(batch.size(), 1u) << "Only one sequence fits within max_num_batched_tokens";
+  EXPECT_EQ(batch.size(), 1u)
+      << "Only one sequence fits within max_num_batched_tokens";
 }
 
 TEST(PrefillFirstSchedulerTest, Schedule_RespectsHardcodedMaxNumSeqs) {
@@ -255,7 +266,8 @@ TEST(PrefillFirstSchedulerTest, Schedule_RespectsHardcodedMaxNumSeqs) {
   EXPECT_EQ(batch.size(), 1u) << "At most 1 sequence in one batch";
 }
 
-TEST(PrefillFirstSchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) {
+TEST(PrefillFirstSchedulerTest,
+     IsFinished_AfterAllSequencesFinish_ReturnsTrue) {
   Config config = make_config();
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
@@ -266,7 +278,8 @@ TEST(PrefillFirstSchedulerTest, IsFinished_AfterAllSequencesFinish_ReturnsTrue) 
   EXPECT_TRUE(sched.is_finished());
 }
 
-TEST(PrefillFirstSchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_DoesNotSchedulePreempted) {
+TEST(PrefillFirstSchedulerTest,
+     Schedule_WhenSingleRunningNeedsBlockAndNoneFree_DoesNotSchedulePreempted) {
   Config config = make_config(1, 8, 256, 0);
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
@@ -290,11 +303,13 @@ TEST(PrefillFirstSchedulerTest, Schedule_WhenSingleRunningNeedsBlockAndNoneFree_
   {
     auto [batch, is_prefill] = sched.schedule();
     EXPECT_TRUE(batch.empty())
-        << "Preempted sequence must not be in the batch (it needed a block, had none, was preempted)";
+        << "Preempted sequence must not be in the batch (it needed a block, "
+           "had none, was preempted)";
   }
 }
 
-TEST(PrefillFirstSchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContinuesDecode) {
+TEST(PrefillFirstSchedulerTest,
+     Schedule_WhenSingleRunningNeedsBlock_TakesLastBlockAndContinuesDecode) {
   Config config = make_config(2, 8, 256, 0);
   auto queue = make_queue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
@@ -318,8 +333,8 @@ TEST(PrefillFirstSchedulerTest, Schedule_WhenSingleRunningNeedsBlock_TakesLastBl
   {
     auto [batch, is_prefill] = sched.schedule();
     ASSERT_FALSE(is_prefill);
-    EXPECT_FALSE(batch.empty())
-        << "Batch must not be empty as it should take the last block and continue decode";
+    EXPECT_FALSE(batch.empty()) << "Batch must not be empty as it should take "
+                                   "the last block and continue decode";
   }
 }
 
@@ -338,7 +353,8 @@ TEST(PrefillFirstSchedulerTest, PrefillsAllBeforeDecode) {
   sched.postprocess(b1, {1});
 
   auto [b2, pf2] = sched.schedule();
-  ASSERT_TRUE(pf2) << "PrefillFirst: seq2 should be prefilled even with seq1 running";
+  ASSERT_TRUE(pf2)
+      << "PrefillFirst: seq2 should be prefilled even with seq1 running";
   ASSERT_EQ(b2.size(), 1u);
   EXPECT_EQ(b2[0]->task_id, seq2_id);
 }
@@ -366,7 +382,8 @@ TEST(MaxOccupancySchedulerTest, PrefillsToFillGap) {
 
   auto [b1, pf1] = sched.schedule();
   ASSERT_TRUE(pf1);
-  EXPECT_EQ(b1.size(), 2u) << "Should prefill both to fill batch_size=2";
+  EXPECT_EQ(b1.size(), 2u)
+      << "Should prefill both to fill max_in_flight_count=2";
   sched.postprocess(b1, {1, 1});
 
   auto [b2, pf2] = sched.schedule();
@@ -383,7 +400,7 @@ TEST(MaxOccupancySchedulerTest, PrefillsOnlyGapCount_WhenOneFinishes) {
   sched.add_request(next_id(), prompt(4), {.max_tokens = 20});
   sched.add_request(next_id(), prompt(4), {.max_tokens = 20});
 
-  // Prefill first 2 (batch_size=2)
+  // Prefill first 2 (max_in_flight_count=2)
   auto [b1, pf1] = sched.schedule();
   ASSERT_TRUE(pf1);
   EXPECT_EQ(b1.size(), 2u);
@@ -429,7 +446,8 @@ TEST(MaxOccupancySchedulerTest, DecodesAtFullCapacity_WhenNoWaiting) {
   EXPECT_EQ(b2.size(), 2u);
 }
 
-TEST(MaxOccupancySchedulerTest, DecodesWithoutPrefill_WhenNoWaitingAndGapExists) {
+TEST(MaxOccupancySchedulerTest,
+     DecodesWithoutPrefill_WhenNoWaitingAndGapExists) {
   Config config = make_config();
   auto queue = make_queue();
   MaxOccupancyScheduler sched{config, queue.get(), 2};
@@ -503,5 +521,5 @@ TEST(MaxOccupancySchedulerTest, ContinuousRefill_MaintainsFullOccupancy) {
   ASSERT_TRUE(pf3);
   EXPECT_EQ(b3.size(), 2u);
 }
-}
-}
+}  // namespace
+}  // namespace llm_engine

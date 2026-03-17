@@ -5,9 +5,9 @@
 
 #include <memory>
 
-#include "services/base_service.hpp"
 #include "domain/embedding_request.hpp"
 #include "domain/embedding_response.hpp"
+#include "services/base_service.hpp"
 
 namespace tt::services {
 
@@ -17,28 +17,29 @@ namespace tt::services {
  * Uses a multiprocess scheduler with EmbeddingRunner workers.
  * Synchronous: submit_request blocks until the embedding is computed.
  */
-class EmbeddingService : public BaseService<domain::EmbeddingRequest, domain::EmbeddingResponse> {
-public:
-    EmbeddingService();
-    ~EmbeddingService() override;
+class EmbeddingService
+    : public BaseService<domain::EmbeddingRequest, domain::EmbeddingResponse> {
+ public:
+  EmbeddingService();
+  ~EmbeddingService() override;
 
-    EmbeddingService(const EmbeddingService&) = delete;
-    EmbeddingService& operator=(const EmbeddingService&) = delete;
+  EmbeddingService(const EmbeddingService&) = delete;
+  EmbeddingService& operator=(const EmbeddingService&) = delete;
 
-    void start() override;
-    void stop() override;
-    bool is_model_ready() const override;
+  void start() override;
+  void stop() override;
+  bool is_model_ready() const override;
 
-protected:
-    size_t current_queue_size() const override;
-    void post_process(domain::EmbeddingResponse& response) const override;
+ protected:
+  size_t current_queue_size() const override;
+  void post_process(domain::EmbeddingResponse& response) const override;
 
-    domain::EmbeddingResponse process_request(
-        domain::EmbeddingRequest request) override;
+  domain::EmbeddingResponse process_request(
+      domain::EmbeddingRequest request) override;
 
-private:
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
-} // namespace tt::services
+}  // namespace tt::services

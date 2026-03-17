@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 //
 // Single project include for Tracy. Use this instead of <tracy/Tracy.hpp>.
-// When TRACY_ENABLE is not defined, zone/plot macros are no-ops and helpers are stubs.
+// When TRACY_ENABLE is not defined, zone/plot macros are no-ops and helpers are
+// stubs.
 
 #ifndef TT_MEDIA_SERVER_PROFILING_TRACY_HPP
 #define TT_MEDIA_SERVER_PROFILING_TRACY_HPP
@@ -16,7 +17,8 @@ constexpr int TRACY_WORKER_PORT_BASE = 8087;
 
 void TracySetPortForMain();
 void TracySetPortForWorker(int worker_id);
-/** Start Tracy for the main process. Call once before any Tracy use (e.g. from register_services). */
+/** Start Tracy for the main process. Call once before any Tracy use (e.g. from
+ * register_services). */
 void TracyStartMainProcess();
 void TracyStartupSchedulerParent();
 void TracyStartupWorker(int worker_id);

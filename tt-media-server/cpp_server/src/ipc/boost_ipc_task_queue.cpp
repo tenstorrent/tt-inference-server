@@ -2,9 +2,11 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "ipc/boost_ipc_task_queue.hpp"
-#include "utils/logger.hpp"
-#include <boost/interprocess/streams/bufferstream.hpp>
+
 #include <boost/interprocess/errors.hpp>
+#include <boost/interprocess/streams/bufferstream.hpp>
+
+#include "utils/logger.hpp"
 
 namespace tt::ipc {
 
@@ -19,13 +21,15 @@ BoostIpcTaskQueue::~BoostIpcTaskQueue() {
 }
 
 BoostIpcTaskQueue::BoostIpcTaskQueue(const std::string& name) {
-  queue_ = std::make_unique<bi_ipc::message_queue>(bi_ipc::open_only, name.c_str());
+  queue_ =
+      std::make_unique<bi_ipc::message_queue>(bi_ipc::open_only, name.c_str());
   send_buffer_.resize(queue_->get_max_msg_size());
   recv_buffer_.resize(queue_->get_max_msg_size());
 }
 
 BoostIpcTaskQueue::BoostIpcTaskQueue(const std::string& name, int size) {
-  queue_ = std::make_unique<bi_ipc::message_queue>(bi_ipc::create_only, name.c_str(), size, MAX_MSG_SIZE);
+  queue_ = std::make_unique<bi_ipc::message_queue>(
+      bi_ipc::create_only, name.c_str(), size, MAX_MSG_SIZE);
   send_buffer_.resize(queue_->get_max_msg_size());
   recv_buffer_.resize(queue_->get_max_msg_size());
 }
@@ -42,7 +46,8 @@ llm_engine::Sequence* BoostIpcTaskQueue::try_pop() {
   bi_ipc::message_queue::size_type recv_size = 0;
   unsigned int priority = 0;
 
-  if (!queue_->try_receive(recv_buffer_.data(), recv_buffer_.size(), recv_size, priority)) {
+  if (!queue_->try_receive(recv_buffer_.data(), recv_buffer_.size(), recv_size,
+                           priority)) {
     return nullptr;
   }
   bi_ipc::ibufferstream recv_stream(recv_buffer_.data(), recv_size);
@@ -52,14 +57,13 @@ llm_engine::Sequence* BoostIpcTaskQueue::try_pop() {
 llm_engine::Sequence* BoostIpcTaskQueue::receive() {
   bi_ipc::message_queue::size_type recv_size = 0;
   unsigned int priority = 0;
-  queue_->receive(recv_buffer_.data(), recv_buffer_.size(), recv_size, priority);
+  queue_->receive(recv_buffer_.data(), recv_buffer_.size(), recv_size,
+                  priority);
   bi_ipc::ibufferstream recv_stream(recv_buffer_.data(), recv_size);
   return llm_engine::Sequence::deserialize(recv_stream);
 }
 
-bool BoostIpcTaskQueue::empty() const {
-  return queue_->get_num_msg() == 0;
-}
+bool BoostIpcTaskQueue::empty() const { return queue_->get_num_msg() == 0; }
 
 void BoostIpcTaskQueue::remove(const std::string& name) {
   bi_ipc::message_queue::remove(name.c_str());

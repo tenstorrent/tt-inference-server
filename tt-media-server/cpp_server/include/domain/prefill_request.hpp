@@ -19,12 +19,12 @@ namespace tt::domain {
  * Controllers (Socket) decide how to deliver this request.
  */
 struct PrefillRequest {
-    TaskID task_id;
-    std::string prompt;
-    std::vector<int64_t> token_ids;
-    std::optional<int> max_tokens;
+  TaskID task_id;
+  std::string prompt;
+  std::vector<int64_t> token_ids;
+  std::optional<int> max_tokens;
 
-    explicit PrefillRequest(TaskID task_id) : task_id(std::move(task_id)) {}
+  explicit PrefillRequest(TaskID task_id) : task_id(std::move(task_id)) {}
 };
 
-} // namespace tt::domain
+}  // namespace tt::domain
