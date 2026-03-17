@@ -22,7 +22,7 @@ SpPipelineRunner::SpPipelineRunner(
       resultQueue(resultQueue),
       taskQueue(taskQueue),
       decodeQueue(config.max_in_flight_count),
-      maxInFlightCount(config.max_in_flight_count) {
+      maxInFlightCount(config.max_in_flight_count * 30) {
   auto decodeCb = [this](const llm_engine::TokenResult& result) {
     while (!decodeQueue.push(result)) {
       std::this_thread::yield();
