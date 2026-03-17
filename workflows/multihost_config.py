@@ -11,7 +11,7 @@ This module generates configuration files needed for multi-host deployment:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from workflows.workflow_types import DeviceTypes
 
