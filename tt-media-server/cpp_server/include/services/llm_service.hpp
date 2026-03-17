@@ -25,8 +25,6 @@
 
 namespace tt::services {
 
-worker::WorkerConfig makeWorkerConfigForProcess(int workerId);
-
 class LLMService
     : public BaseService<domain::CompletionRequest, domain::CompletionResponse>,
       public Streamable<domain::CompletionRequest,
@@ -72,7 +70,6 @@ class LLMService
           callback) override;
 
  private:
-  void startWorkers();
   void startConsumers();
 
   void consumerLoopForWorker(size_t workerIdx);
@@ -83,9 +80,6 @@ class LLMService
       const std::string& name, size_t capacity) override;
 
   tt::config::LLMMode mode_;
-
-  std::vector<std::unique_ptr<worker::SingleProcessWorker>> workers_;
-  size_t num_workers_;
 
   std::vector<std::thread> consumer_threads_;
 
