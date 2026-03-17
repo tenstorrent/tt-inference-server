@@ -23,49 +23,9 @@
 
 namespace tt::services {
 
-namespace {
-
-[[noreturn]] void execWorkerProcess(
-    size_t workerId,
-    const std::unordered_map<std::string, std::string>& envVars) {
-  for (const auto& [key, value] : envVars) {
-    setenv(key.c_str(), value.c_str(), 1);
-  }
-  char exePath[PATH_MAX];
-  ssize_t n = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
-  if (n <= 0) {
-    perror("readlink /proc/self/exe");
-    _exit(1);
-  }
-  exePath[n] = '\0';
-  char idBuf[16];
-  std::snprintf(idBuf, sizeof(idBuf), "%zu", workerId);
-  char* execArgv[] = {exePath, const_cast<char*>("--worker"), idBuf, nullptr};
-  execv(exePath, execArgv);
-  perror("execv");
-  _exit(1);
-}
-
-}  // namespace
-
-worker::WorkerConfig makeWorkerConfigForProcess(int workerId) {
-  worker::WorkerConfig cfg;
-  cfg.env_vars["TT_VISIBLE_DEVICES"] =
-      tt::config::visibleDevicesForWorker(workerId);
-  cfg.task_queue =
-      std::make_shared<tt::ipc::BoostIpcTaskQueue>(tt::ipc::TASK_QUEUE_NAME);
-  cfg.result_queue =
-      std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
-          "/tt_tokens_" + std::to_string(workerId), false);
-  cfg.worker_id = workerId;
-  cfg.runner_config = tt::config::llmEngineConfig();
-  return cfg;
-}
-
 LLMService::LLMService()
-    : mode_(tt::config::llmMode()),
-      num_workers_(tt::config::numWorkers()),
-      tokenizer_(&tt::utils::activeTokenizer()) {
+    : mode_(tt::config::llmMode()), tokenizer_(&tt::utils::activeTokenizer()) {
+  num_workers_ = tt::config::numWorkers();
   max_queue_size_ = tt::config::maxQueueSize();
   TT_LOG_INFO("[LLMService] Initialized (mode={}, workers={})",
               tt::config::toString(mode_), num_workers_);
@@ -126,33 +86,6 @@ void LLMService::preProcess(domain::CompletionRequest& request) const {
   }
   // Set prompt token count after tokenization
   request.prompt_tokens_count = static_cast<int>(tokens.size());
-}
-
-void LLMService::startWorkers() {
-  for (size_t i = 0; i < num_workers_; i++) {
-    tt::worker::WorkerConfig cfg =
-        makeWorkerConfigForProcess(static_cast<int>(i));
-    workers_.push_back(std::make_unique<tt::worker::SingleProcessWorker>(cfg));
-    auto& worker = workers_[i];
-
-    pid_t pid = fork();
-
-    if (pid < 0) {
-      throw std::runtime_error("Failed to fork worker process");
-    }
-    if (pid == 0) {
-      setpgid(0, 0);
-      try {
-        execWorkerProcess(i, cfg.env_vars);
-      } catch (const std::exception& e) {
-        TT_LOG_ERROR("[LLMService] Worker {} failed: {}", i, e.what());
-        _exit(1);
-      }
-    }
-    setpgid(pid, pid);
-    worker->pid = pid;
-    TT_LOG_INFO("[LLMService] Spawned worker {} with PID {}", i, pid);
-  }
 }
 
 void LLMService::startConsumers() {
