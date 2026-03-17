@@ -45,7 +45,6 @@ class LLMService
   void stop() override;
 
   bool is_model_ready() const override;
-  SystemStatus get_system_status() const override;
 
   using StreamCallback =
       std::function<void(domain::StreamingChunkResponse&, bool)>;
@@ -98,8 +97,6 @@ class LLMService
 
   std::atomic<bool> is_ready_{false};
   std::atomic<bool> running_{false};
-
-  std::string device_ = "cpu";
 
   std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
   const tt::utils::Tokenizer* tokenizer_;

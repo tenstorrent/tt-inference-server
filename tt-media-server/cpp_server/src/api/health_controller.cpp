@@ -51,7 +51,6 @@ void HealthController::ready(
   response["model_ready"] = status.model_ready;
   response["queue_size"] = static_cast<Json::UInt64>(status.queue_size);
   response["max_queue_size"] = static_cast<Json::UInt64>(status.max_queue_size);
-  response["device"] = status.device;
 
   Json::Value workers(Json::arrayValue);
   for (const auto& w : status.worker_info) {
