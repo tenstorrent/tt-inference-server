@@ -1,0 +1,38 @@
+# Docker Compose for multi-host MPI Worker container.
+# One worker per host. Workers run sshd and wait for MPI processes from the Controller.
+#
+# Prerequisites:
+#   - SSH public key at /tmp/authorized_keys.pub (copied by orchestrator or manually)
+#   - Shared storage mounted at SHARED_STORAGE_ROOT on all hosts
+#
+# Usage (standalone):
+#   1. Copy SSH public key to /tmp/authorized_keys.pub
+#   2. Set variables in .env or export them
+#   3. docker compose -f docker-compose.multihost-worker.yml up -d
+#
+# Usage (via run.py):
+#   Automatically managed by the MultiHostOrchestrator
+
+services:
+  worker:
+    image: ${DOCKER_IMAGE:?DOCKER_IMAGE is required}
+    container_name: ${CONTAINER_NAME:-tt-worker}
+    network_mode: host
+    pid: host
+    user: root
+    entrypoint: /usr/local/bin/multihost_entrypoint.sh
+    devices:
+      - /dev/tenstorrent:/dev/tenstorrent
+    volumes:
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - ${SHARED_STORAGE_ROOT:?SHARED_STORAGE_ROOT is required}:${SHARED_STORAGE_ROOT}
+      - /tmp/authorized_keys.pub:/tmp/authorized_keys.pub:ro
+    environment:
+      MULTIHOST_ROLE: worker
+      SSH_PORT: ${SSH_PORT:-2200}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ssh-keyscan", "-p", "${SSH_PORT:-2200}", "localhost"]
+      interval: 5s
+      retries: 10
+      start_period: 30s

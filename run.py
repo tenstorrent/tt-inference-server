@@ -23,10 +23,10 @@ from workflows.model_spec import (
     get_runtime_model_spec,
 )
 from workflows.compose_config import (
-    format_compose_yaml,
-    generate_compose_config,
-    generate_multihost_controller_compose,
-    generate_multihost_worker_compose,
+    format_env_for_display,
+    get_compose_template_path,
+    resolve_compose_vars,
+    resolve_multihost_vars,
 )
 from workflows.run_docker_server import (
     format_docker_command,
@@ -603,34 +603,34 @@ def main():
                 multihost_config = setup_multihost_config(
                     model_spec, expected_hosts, dry_run=True
                 )
-                hosts = validate_multihost_args(
+                validate_multihost_args(
                     multihost_config,
                     tt_smi_path=multihost_config.tt_smi_path,
                     dry_run=True,
                 )
-
-                print("\n=== Multi-Host Docker Compose Files ===\n")
-                for rank, host in enumerate(hosts):
-                    worker_compose, _ = generate_multihost_worker_compose(
-                        docker_image=model_spec.docker_image,
-                        shared_storage_root=multihost_config.shared_storage_root,
-                        rank=rank,
-                    )
-                    print(f"# Worker {rank} on {host}:")
-                    print(f"# Deploy: scp compose.worker-{rank}.yml {host}: && ssh {host} docker compose -f compose.worker-{rank}.yml up -d")
-                    print(format_compose_yaml(worker_compose))
-
-                # Note: Controller compose requires prepare() to generate SSH keys,
-                # which is a side effect. For --print-compose we show the structure
-                # without actual key paths.
-                print("# Controller (rank-0 host):")
-                print("# Note: SSH config and MPI rankfile paths are generated at runtime by the orchestrator.")
-                print("# Use 'run.py --docker-server' to deploy with full orchestration.\n")
-            else:
-                compose_config, _ = generate_compose_config(
-                    model_spec, runtime_config, setup_config, docker_json_fpath
+                env_vars = resolve_multihost_vars(
+                    model_spec, runtime_config, multihost_config
                 )
-                print(f"Docker Compose config:\n\n{format_compose_yaml(compose_config)}")
+                print("\n=== Multi-Host Docker Compose ===\n")
+                print("Templates:")
+                print("  Workers:    deploy/docker-compose.multihost-worker.yml")
+                print("  Controller: deploy/docker-compose.multihost-controller.yml")
+                print("\nResolved variables (add to .env):\n")
+                print(format_env_for_display(env_vars))
+                print("\nDeploy workers on each host:")
+                for rank, host in enumerate(multihost_config.hosts):
+                    print(f"  ssh {host} 'cd <repo> && docker compose -f deploy/docker-compose.multihost-worker.yml up -d'")
+                print("\nNote: SSH_CONFIG_DIR and MPIRUN_DIR are generated at runtime by the orchestrator.")
+                print("Use 'run.py --docker-server' for full automated deployment.\n")
+            else:
+                template_path = get_compose_template_path(model_spec, runtime_config)
+                env_vars = resolve_compose_vars(
+                    model_spec, runtime_config, setup_config
+                )
+                print(f"\nDocker Compose template: {template_path}\n")
+                print("Resolved variables (add to .env):\n")
+                print(format_env_for_display(env_vars))
+                print(f"\nRun:\n  docker compose -f {template_path} up -d\n")
             return 0
         run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
     elif runtime_config.local_server:

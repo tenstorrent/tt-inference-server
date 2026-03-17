@@ -1,0 +1,38 @@
+# Docker Compose for vLLM inference server on Tenstorrent hardware.
+#
+# Usage (standalone, without run.py):
+#   1. Copy .env.example to .env and fill in values
+#   2. docker compose -f docker-compose.vllm.yml up -d
+#
+# Usage (via run.py):
+#   python3 run.py --model Llama-3.1-8B-Instruct --workflow server \
+#     --tt-device n150 --docker-server --no-auth
+
+services:
+  inference-server:
+    image: ${DOCKER_IMAGE:?DOCKER_IMAGE is required}
+    container_name: ${CONTAINER_NAME:-tt-inference-server}
+    ipc: host
+    devices:
+      - /dev/tenstorrent:/dev/tenstorrent
+    volumes:
+      - /dev/hugepages-1G:/dev/hugepages-1G
+      - ${CACHE_VOLUME:-tt-inference-cache}:${CACHE_ROOT:-/home/container_app_user/cache_root}
+    env_file:
+      - ${ENV_FILE:-.env}
+    ports:
+      - "${BIND_HOST:-0.0.0.0}:${SERVICE_PORT:-8000}:${SERVICE_PORT:-8000}"
+    command:
+      - python
+      - run_vllm_api_server.py
+      - --model
+      - ${HF_MODEL:?HF_MODEL is required}
+      - --tt-device
+      - ${TT_DEVICE:?TT_DEVICE is required}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:${SERVICE_PORT:-8000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 600s
