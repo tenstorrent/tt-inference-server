@@ -30,7 +30,6 @@ struct SystemStatus {
   bool model_ready;
   size_t queue_size;
   size_t max_queue_size;
-  std::string device;
   std::vector<WorkerInfo> worker_info;
 };
 
@@ -54,6 +53,15 @@ class BaseService : public IService {
     auto response = process_request(std::move(request));
     post_process(response);
     return response;
+  }
+
+  SystemStatus get_system_status() const override {
+    SystemStatus status;
+    status.model_ready = is_model_ready();
+    status.queue_size = current_queue_size();
+    status.max_queue_size = max_queue_size_;
+    // worker_info is empty by default, services can populate it if needed
+    return status;
   }
 
  protected:

@@ -737,30 +737,4 @@ domain::EmbeddingResponse EmbeddingService::process_request(
   return future.get();
 }
 
-SystemStatus EmbeddingService::get_system_status() const {
-  SystemStatus status;
-  status.model_ready = impl_->is_ready_.load();
-
-  {
-    std::lock_guard lock(impl_->queue_mutex_);
-    status.queue_size = impl_->request_queue_.size();
-  }
-
-  status.max_queue_size = max_queue_size_;
-  status.device = "tenstorrent";
-
-  for (size_t i = 0; i < impl_->num_workers_; ++i) {
-    WorkerInfo info;
-    info.worker_id = std::to_string(i);
-    info.is_ready =
-        (i < impl_->workers_.size()) && impl_->workers_[i]->is_ready.load();
-    info.processed_requests = 0;
-    status.worker_info.push_back(info);
-    status.worker_info.push_back(
-        {"embedding-worker-" + std::to_string(i), impl_->is_ready_.load(), 0});
-  }
-
-  return status;
-}
-
 }  // namespace tt::services
