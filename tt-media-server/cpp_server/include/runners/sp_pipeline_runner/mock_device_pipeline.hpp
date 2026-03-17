@@ -60,15 +60,16 @@ class MockDevicePipeline {
 
   using RequestPtr = std::unique_ptr<PipelineRequest>;
 
-  struct PendingCompletion {
+  struct InFlightRequest {
     size_t complete_at_tick;
     RequestPtr req;
   };
 
   void pipeline_loop();
   void drain_input();
+  void emit_token(RequestPtr& req);
   void handle_completion(RequestPtr req);
-  void insert_completion(PendingCompletion completion);
+  void insert_in_flight(InFlightRequest entry);
   void try_schedule();
   RequestPtr schedule_next();
 
@@ -79,8 +80,8 @@ class MockDevicePipeline {
   RequestPtr active_req_;
   size_t feed_remaining_ = 0;
 
-  // Completions ordered by tick (always naturally sorted).
-  std::deque<PendingCompletion> pending_completions_;
+  // Requests currently traversing the pipeline, sorted by exit tick.
+  std::deque<InFlightRequest> in_flight_pipeline_;
 
   // Scheduling queues (pipeline thread only).
   std::deque<RequestPtr> decode_queue_;

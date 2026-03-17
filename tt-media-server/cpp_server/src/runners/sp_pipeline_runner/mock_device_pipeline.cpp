@@ -85,14 +85,7 @@ void MockDevicePipeline::drain_input() {
   input_not_full_.notify_all();
 }
 
-void MockDevicePipeline::handle_completion(RequestPtr req) {
-  ZoneScopedN("MockDevice::handle_completion");
-  if (!req->is_decode) {
-    req->is_decode = true;
-    decode_queue_.push_back(std::move(req));
-    return;
-  }
-
+void MockDevicePipeline::emit_token(RequestPtr& req) {
   uint64_t token_id =
       req->tokens_generated < req->token_ids.size()
           ? static_cast<uint64_t>(req->token_ids[req->tokens_generated])
@@ -101,24 +94,33 @@ void MockDevicePipeline::handle_completion(RequestPtr req) {
 
   {
     std::lock_guard lock(output_mutex_);
-    output_queue_.emplace_back(
-        llm_engine::TaskID(req->task_id), token_id);
+    output_queue_.emplace_back(llm_engine::TaskID(req->task_id), token_id);
   }
   output_not_empty_.notify_one();
+}
+
+void MockDevicePipeline::handle_completion(RequestPtr req) {
+  ZoneScopedN("MockDevice::handle_completion");
+
+  emit_token(req);
+
+  if (!req->is_decode) {
+    req->is_decode = true;
+  }
 
   if (req->tokens_generated < req->max_tokens) {
     decode_queue_.push_back(std::move(req));
   }
 }
 
-void MockDevicePipeline::insert_completion(PendingCompletion completion) {
+void MockDevicePipeline::insert_in_flight(InFlightRequest entry) {
   auto it = std::lower_bound(
-      pending_completions_.begin(), pending_completions_.end(),
-      completion.complete_at_tick,
-      [](const PendingCompletion& pc, size_t tick) {
-        return pc.complete_at_tick < tick;
+      in_flight_pipeline_.begin(), in_flight_pipeline_.end(),
+      entry.complete_at_tick,
+      [](const InFlightRequest& e, size_t tick) {
+        return e.complete_at_tick < tick;
       });
-  pending_completions_.insert(it, std::move(completion));
+  in_flight_pipeline_.insert(it, std::move(entry));
 }
 
 MockDevicePipeline::RequestPtr MockDevicePipeline::schedule_next() {
@@ -162,10 +164,17 @@ void MockDevicePipeline::pipeline_loop() {
 
     drain_input();
 
-    while (!pending_completions_.empty() &&
-           pending_completions_.front().complete_at_tick <= current_tick_) {
-      handle_completion(std::move(pending_completions_.front().req));
-      pending_completions_.pop_front();
+    while (!in_flight_pipeline_.empty() &&
+           in_flight_pipeline_.front().complete_at_tick <= current_tick_) {
+      handle_completion(std::move(in_flight_pipeline_.front().req));
+      in_flight_pipeline_.pop_front();
+    }
+
+    if (active_req_ && !active_req_->is_decode && !decode_queue_.empty()) {
+      active_req_->prefill_offset -= feed_remaining_;
+      prefill_queue_.push_front(std::move(active_req_));
+      active_req_ = nullptr;
+      feed_remaining_ = 0;
     }
 
     if (!active_req_) {
@@ -181,7 +190,7 @@ void MockDevicePipeline::pipeline_loop() {
         if (is_intermediate_prefill) {
           prefill_queue_.push_back(std::move(active_req_));
         } else {
-          insert_completion(
+          insert_in_flight(
               {current_tick_ + config_.num_stages, std::move(active_req_)});
         }
       }
