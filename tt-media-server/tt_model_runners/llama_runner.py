@@ -120,7 +120,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         return SamplingParams(
             temperature=seq.temperature,
             top_p=seq.top_p if seq.top_p is not None else 1.0,
-            top_k=seq.top_k if seq.top_k is not None else 0,
+            top_k=seq.top_k if seq.top_k is not None else 1,
             presence_penalty=seq.presence_penalty,
             frequency_penalty=seq.frequency_penalty,
             repetition_penalty=seq.repetition_penalty
@@ -140,7 +140,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         # Build lists for each parameter
         temperatures = [seq.temperature for seq in sequences]
         top_ps = [seq.top_p if seq.top_p is not None else 1.0 for seq in sequences]
-        top_ks = [seq.top_k if seq.top_k is not None else 0 for seq in sequences]
+        top_ks = [seq.top_k if seq.top_k is not None else 1 for seq in sequences]
         repetition_penalties = [
             seq.repetition_penalty if seq.repetition_penalty is not None else 1.0
             for seq in sequences
