@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include <string>
 #include <stdexcept>
+#include <string>
 
 namespace tt::runners {
 
