@@ -9,12 +9,12 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "runners/runner_interface.hpp"
+#include "config/runner_config.hpp"
 #include "ipc/shared_memory.hpp"
-#include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
-#include "config/runner_config.hpp"
+#include "runners/runner_interface.hpp"
+#include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 
 namespace tt::runners {
 

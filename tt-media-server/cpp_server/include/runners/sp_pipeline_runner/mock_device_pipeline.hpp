@@ -39,10 +39,8 @@ class MockDevicePipeline {
   MockDevicePipeline(const MockDevicePipeline&) = delete;
   MockDevicePipeline& operator=(const MockDevicePipeline&) = delete;
 
-  void write(const std::string& task_id,
-             const std::vector<int64_t>& token_ids,
-             uint32_t max_tokens,
-             RequestPhase phase);
+  void write(const std::string& task_id, const std::vector<int64_t>& token_ids,
+             uint32_t max_tokens, RequestPhase phase);
 
   std::optional<llm_engine::TokenResult> read();
 

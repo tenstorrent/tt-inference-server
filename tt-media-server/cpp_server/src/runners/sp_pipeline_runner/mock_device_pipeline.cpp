@@ -27,8 +27,7 @@ MockDevicePipeline::~MockDevicePipeline() { exit(); }
 
 void MockDevicePipeline::write(const std::string& task_id,
                                const std::vector<int64_t>& token_ids,
-                               uint32_t max_tokens,
-                               RequestPhase phase) {
+                               uint32_t max_tokens, RequestPhase phase) {
   ZoneScopedN("MockDevice::write");
   auto req = std::make_unique<PipelineRequest>();
   req->task_id = task_id;
@@ -49,8 +48,7 @@ std::optional<llm_engine::TokenResult> MockDevicePipeline::read() {
   ZoneScopedN("MockDevice::read");
   std::unique_lock lock(output_mutex_);
   output_not_empty_.wait(lock, [this] {
-    return !output_queue_.empty() ||
-           stop_.load(std::memory_order_relaxed);
+    return !output_queue_.empty() || stop_.load(std::memory_order_relaxed);
   });
   if (output_queue_.empty()) return std::nullopt;
   auto result = std::move(output_queue_.front());
@@ -114,12 +112,11 @@ void MockDevicePipeline::handle_completion(RequestPtr req) {
 }
 
 void MockDevicePipeline::insert_in_flight(InFlightRequest entry) {
-  auto it = std::lower_bound(
-      in_flight_pipeline_.begin(), in_flight_pipeline_.end(),
-      entry.complete_at_tick,
-      [](const InFlightRequest& e, size_t tick) {
-        return e.complete_at_tick < tick;
-      });
+  auto it = std::lower_bound(in_flight_pipeline_.begin(),
+                             in_flight_pipeline_.end(), entry.complete_at_tick,
+                             [](const InFlightRequest& e, size_t tick) {
+                               return e.complete_at_tick < tick;
+                             });
   in_flight_pipeline_.insert(it, std::move(entry));
 }
 

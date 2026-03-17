@@ -24,14 +24,13 @@ class ISpPipelineModelRunner {
   virtual ~ISpPipelineModelRunner() = default;
 
   virtual void write(const std::string& task_id,
-                     const std::vector<int64_t>& token_ids,
-                     uint32_t max_tokens,
+                     const std::vector<int64_t>& token_ids, uint32_t max_tokens,
                      RequestPhase phase) = 0;
   virtual void exit() = 0;
 };
 
 /// Factory: given a DecodeCallback, produce a model runner.
-using ModelRunnerFactory = std::function<
-    std::unique_ptr<ISpPipelineModelRunner>(DecodeCallback)>;
+using ModelRunnerFactory =
+    std::function<std::unique_ptr<ISpPipelineModelRunner>(DecodeCallback)>;
 
 }  // namespace sp_pipeline

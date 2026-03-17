@@ -7,8 +7,8 @@
 
 namespace sp_pipeline {
 
-MockSpPipelineModelRunner::MockSpPipelineModelRunner(
-    DecodeCallback callback, MockDeviceConfig config)
+MockSpPipelineModelRunner::MockSpPipelineModelRunner(DecodeCallback callback,
+                                                     MockDeviceConfig config)
     : decode_callback_(std::move(callback)), device_(config) {
   reader_thread_ = std::thread([this] {
     tracy_config::TracySetThreadName("MockDevice::reader");
@@ -20,8 +20,7 @@ MockSpPipelineModelRunner::~MockSpPipelineModelRunner() { exit(); }
 
 void MockSpPipelineModelRunner::write(const std::string& task_id,
                                       const std::vector<int64_t>& token_ids,
-                                      uint32_t max_tokens,
-                                      RequestPhase phase) {
+                                      uint32_t max_tokens, RequestPhase phase) {
   ZoneScopedN("MockModelRunner::write");
   device_.write(task_id, token_ids, max_tokens, phase);
 }

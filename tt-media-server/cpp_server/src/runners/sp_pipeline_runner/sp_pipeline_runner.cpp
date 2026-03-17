@@ -2,20 +2,19 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
-#include "profiling/tracy.hpp"
-#include "utils/logger.hpp"
+
 #include <cassert>
 #include <chrono>
 #include <cstring>
 #include <thread>
 
+#include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
 
 SpPipelineRunner::SpPipelineRunner(
-    const config::LLMConfig& config,
-    ipc::TokenRingBuffer<65536>* result_queue,
+    const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* result_queue,
     llm_engine::ITaskQueue* task_queue,
     sp_pipeline::ModelRunnerFactory model_runner_factory)
     : config_(config),
@@ -112,9 +111,9 @@ void SpPipelineRunner::step() {
     std::unique_ptr<llm_engine::Sequence> owned(seq);
     llm_engine::TaskID task_id = seq->task_id;
 
-    model_runner_->write(
-        seq->task_id.id, seq->token_ids_, seq->sampling_params->max_tokens.value(),
-        sp_pipeline::RequestPhase::PREFILL);
+    model_runner_->write(seq->task_id.id, seq->token_ids_,
+                         seq->sampling_params->max_tokens.value(),
+                         sp_pipeline::RequestPhase::PREFILL);
 
     active_sequences_.emplace(task_id, std::move(owned));
     ++in_flight_count_;
