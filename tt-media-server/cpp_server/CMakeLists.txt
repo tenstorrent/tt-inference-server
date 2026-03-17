@@ -13,6 +13,10 @@ if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
   set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Min policy version for included configs")
 endif()
 
+# Optional clang-tidy during build (same approach as tt-metal: lint = build with clang-tidy)
+# Set only after FetchContent so _deps (tokenizers_cpp, sentencepiece, protobuf, etc.) are excluded.
+option(CLANG_TIDY "Run clang-tidy during build" OFF)
+
 # Find Drogon and JsonCpp (tokenizer_config parsing)
 find_package(Drogon REQUIRED)
 find_package(jsoncpp REQUIRED)
@@ -125,6 +129,16 @@ FetchContent_Declare(
     GIT_SUBMODULES "msgpack" "sentencepiece"
 )
 FetchContent_MakeAvailable(tokenizers_cpp)
+
+# Enable clang-tidy only for our code (not _deps). Must be after FetchContent.
+if(CLANG_TIDY)
+  find_program(CLANG_TIDY_EXE NAMES clang-tidy-20 clang-tidy-19 clang-tidy)
+  if(CLANG_TIDY_EXE)
+    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};--warnings-as-errors=*" CACHE STRING "clang-tidy command" FORCE)
+  else()
+    message(FATAL_ERROR "CLANG_TIDY=ON but no clang-tidy found. Install clang-tidy-20 or run install_dependencies.sh")
+  endif()
+endif()
 
 # TT Metal C++ API: headers from TT_METAL_HOME (for referencing Metal API, intellisense)
 if(NOT DEFINED TT_METAL_HOME AND DEFINED ENV{TT_METAL_HOME})
