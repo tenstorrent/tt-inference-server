@@ -33,6 +33,7 @@ class LlamaModelRunner : public IModelRunner {
   DecodeCallback decode_callback_;
   std::atomic<bool> stop_{false};
   bool initialized_ = false;
+  bool last_step_was_prefill_ = true;  // so first decode gets reset_batch=true
 };
 
 std::unique_ptr<IModelRunner> makeLlamaModelRunner(

@@ -226,11 +226,16 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         return True
 
     def run(
-        self, is_prefill: bool = True, sequences: list | None = None
+        self,
+        is_prefill: bool = True,
+        sequences: list | None = None,
+        reset_batch: bool = False,
     ) -> list[StepResult]:
         """Run one scheduler step (prefill or decode), returning one token per sequence.
 
-        Called from C++ as runner.run(is_prefill, sequences) with positional args.
+        Called from C++ as runner.run(is_prefill, sequences, reset_batch) with positional args.
+        reset_batch: passed from C++; True on the first decode step after prefill to reset
+        on-device sampling state (prompt/output for penalties).
         """
         import torch
 
@@ -241,8 +246,8 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         if is_prefill:
             return self._run_prefill_batch(sequences, torch)
         if self.max_batch_size > 1 and len(sequences) > 0:
-            return self._run_decode_batch(sequences, torch)
-        return [self._run_decode(s, torch) for s in sequences]
+            return self._run_decode_batch(sequences, torch, reset_batch=reset_batch)
+        return [self._run_decode(s, torch, reset_batch=reset_batch) for s in sequences]
 
     def _run_prefill_batch(
         self, sequences: list[StepSequence], torch
@@ -274,7 +279,9 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         next_token = int(output_tokens[0].item())
         return StepResult(task_id=seq.task_id, token_id=next_token)
 
-    def _run_decode(self, seq: StepSequence, torch) -> StepResult:
+    def _run_decode(
+        self, seq: StepSequence, torch, reset_batch: bool = False
+    ) -> StepResult:
         if not seq.block_table:
             return StepResult(
                 task_id=seq.task_id,
@@ -295,13 +302,14 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             kv_cache=self._kv_cache,
             enable_trace=True,
             sampling_params=sampling_params,
+            reset_batch=reset_batch,
         )
 
         next_token = int(output_tokens[0].item())
         return StepResult(task_id=seq.task_id, token_id=next_token)
 
     def _run_decode_batch(
-        self, sequences: list[StepSequence], torch
+        self, sequences: list[StepSequence], torch, reset_batch: bool = False
     ) -> list[StepResult]:
         """Batched decode when len(sequences) <= max_batch_size.
 
@@ -315,7 +323,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         """
         B = self.max_batch_size
         if len(sequences) > B:
-            return [self._run_decode(s, torch) for s in sequences]
+            return [self._run_decode(s, torch, reset_batch) for s in sequences]
 
         n = len(sequences)
         tokens_list = []
@@ -344,6 +352,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             kv_cache=self._kv_cache,
             enable_trace=True,
             sampling_params=sampling_params,
+            reset_batch=reset_batch,
         )
 
         # Device sampling returns tokens directly, shape [batch]

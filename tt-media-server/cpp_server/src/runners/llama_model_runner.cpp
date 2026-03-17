@@ -147,7 +147,12 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
             repetition_penalty, presence_penalty, frequency_penalty));
       }
 
-      py::object results = gRunner.attr("run")(isPrefill, pySeqs);
+      // First decode step after prefill must set reset_batch=true so on-device
+      // sampling state is initialized correctly.
+      bool reset_batch = !isPrefill && last_step_was_prefill_;
+      last_step_was_prefill_ = isPrefill;
+
+      py::object results = gRunner.attr("run")(isPrefill, pySeqs, reset_batch);
 
       for (size_t i = 0; i < seqs.size(); ++i) {
         py::object item = results[py::int_(i)];
