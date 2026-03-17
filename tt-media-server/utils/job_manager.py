@@ -229,28 +229,12 @@ class JobManager:
             if job.status == JobStatus.QUEUED:
                 self._cleanup_job(job, force=True)
                 job.mark_cancelled()
-                if self.db:
-                    try:
-                        self.db.update_job_status(
-                            job.id,
-                            job.status.value,
-                            completed_at=job.completed_at,
-                        )
-                    except Exception as e:
-                        self._logger.error(
-                            f"DB update failed for cancelled queued job {job.id}: {e}"
-                        )
+                self._sync_status_to_db(job)
                 self._logger.info(f"Queued job {job_id} cancelled immediately.")
                 return job.to_public_dict()
 
             job.mark_cancelling()
-            if self.db:
-                try:
-                    self.db.update_job_status(job.id, job.status.value)
-                except Exception as e:
-                    self._logger.error(
-                        f"DB update failed, but proceeding with task cancellation: {e}"
-                    )
+            self._sync_status_to_db(job)
 
             self._cleanup_job(job)
 
@@ -279,13 +263,7 @@ class JobManager:
                     )
 
                     job.mark_cancelling()
-                    if self.db:
-                        try:
-                            self.db.update_job_status(job.id, job.status.value)
-                        except Exception as e:
-                            self._logger.error(
-                                f"Failed to update DB for job {job_id}, but proceeding with shutdown: {e}"
-                            )
+                    self._sync_status_to_db(job)
 
                     # force the job to be cancelled without waiting for the runner to handle it, since we are shutting down the server
                     task = self._cleanup_job(job, force=True)
@@ -342,13 +320,7 @@ class JobManager:
                 await asyncio.sleep(0.5)
 
         job.mark_in_progress()
-        if self.db:
-            try:
-                self.db.update_job_status(job.id, job.status.value)
-            except Exception as e:
-                self._logger.error(
-                    f"Failed to sync 'in_progress' to DB for {job.id}: {e}"
-                )
+        self._sync_status_to_db(job)
 
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
         metrics_persister = None
@@ -374,64 +346,23 @@ class JobManager:
             if job.status == JobStatus.CANCELLING:
                 self._logger.info(f"Job {job.id} was cooperatively cancelled by runner")
                 job.mark_cancelled()
-                if self.db:
-                    try:
-                        self.db.update_job_status(
-                            job.id,
-                            job.status.value,
-                            completed_at=job.completed_at,
-                            result_path=job.result_path,
-                        )
-                    except Exception as e:
-                        self._logger.error(
-                            f"Failed to sync 'cancelled' to DB for {job.id}: {e}"
-                        )
+                self._sync_status_to_db(job)
                 return  # we return here to avoid marking the job as completed
 
             job.mark_completed(result_path=result_path)
-            if self.db:
-                try:
-                    self.db.update_job_status(
-                        job.id,
-                        job.status.value,
-                        completed_at=job.completed_at,
-                        result_path=job.result_path,
-                    )
-                except Exception as e:
-                    self._logger.error(
-                        f"Failed to sync 'completed' to DB for {job.id}: {e}"
-                    )
+            self._sync_status_to_db(job)
 
         except asyncio.CancelledError:
             self._logger.info(f"Job {job.id} was cancelled")
             self._cleanup_job(job)
             if not job.is_terminal():
                 job.mark_cancelled()
-                if self.db:
-                    try:
-                        self.db.update_job_status(
-                            job.id, job.status.value, completed_at=job.completed_at
-                        )
-                    except Exception as e:
-                        self._logger.error(
-                            f"Failed to sync 'cancelled' to DB for {job.id}: {e}"
-                        )
+                self._sync_status_to_db(job)
             raise
         except Exception as e:
             self._logger.error(f"Job {job.id} failed: {e}")
             job.mark_failed(error_code="processing_error", error_message=str(e))
-            if self.db:
-                try:
-                    self.db.update_job_status(
-                        job.id,
-                        job.status.value,
-                        completed_at=job.completed_at,
-                        error_message=job.error,
-                    )
-                except Exception as e:
-                    self._logger.error(
-                        f"Failed to sync 'failed' to DB for {job.id}: {e}"
-                    )
+            self._sync_status_to_db(job)
         finally:
             if not progress_monitor.done():
                 progress_monitor.cancel()
@@ -479,13 +410,7 @@ class JobManager:
         for job in jobs_to_remove:
             if job.is_in_progress():
                 job.mark_cancelling()
-                if self.db:
-                    try:
-                        self.db.update_job_status(job.id, job.status.value)
-                    except Exception as e:
-                        self._logger.error(
-                            f"DB update failed, but proceeding with task cancellation: {e}"
-                        )
+                self._sync_status_to_db(job)
             self._cleanup_job(job)
             if job.result_path and isinstance(job.result_path, str):
                 try:
@@ -516,7 +441,7 @@ class JobManager:
     def _cleanup_job(self, job: Job, force: bool = False):
         running_task = None
         if job._task and not job._task.done():
-            self._logger.warning(f"Cancelling in-progress job {job.id}")
+            self._logger.warning(f"Cancelling active job {job.id}")
             if job.cancel_event:
                 job.cancel_event.set()
             if not job.cancel_event or force:
@@ -524,6 +449,20 @@ class JobManager:
             running_task = job._task
 
         return running_task
+    
+    def _sync_status_to_db(self, job: Job, **overrides):
+        if not self.db:
+            return
+        try:
+            self.db.update_job_status(
+                job.id,
+                job.status.value,
+                completed_at=overrides.get("completed_at", job.completed_at),
+                result_path=overrides.get("result_path", job.result_path),
+                error_message=overrides.get("error_message", job.error),
+            )
+        except Exception as e:
+            self._logger.error(f"DB sync failed for job {job.id} to '{job.status.value}': {e}")
 
     def _restore_jobs_from_db(self):
         """
