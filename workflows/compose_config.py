@@ -78,12 +78,16 @@ def resolve_compose_vars(
     """
     container_name = f"tt-inference-server-{_short_uuid()}"
 
+    from workflows.utils import default_dotenv_path
+
     env = {
         # Common
         "DOCKER_IMAGE": model_spec.docker_image,
         "CONTAINER_NAME": container_name,
         "SERVICE_PORT": str(runtime_config.service_port),
         "BIND_HOST": runtime_config.bind_host,
+        # Absolute path to secrets .env (compose resolves relative to template dir)
+        "ENV_FILE": str(default_dotenv_path),
     }
 
     # vLLM-specific
