@@ -4,15 +4,24 @@
 
 import atexit
 import logging
+import os
 import shlex
 import subprocess
+import threading
 import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-
+from typing import List
 
 from workflows.log_setup import clean_log_file
+from workflows.multihost_orchestrator import (
+    MultiHostOrchestrator,
+    get_expected_num_hosts,
+    is_multihost_deployment,
+    setup_multihost_config,
+)
+from workflows.validate_multihost import validate_multihost_args
 from workflows.utils import (
     default_dotenv_path,
     ensure_readwriteable_dir,
@@ -160,7 +169,7 @@ def generate_docker_run_command(
         *( ["--user", str(runtime_config.image_user)] if runtime_config.image_user and str(runtime_config.image_user) != "1000" else []),
         "--env-file", str(default_dotenv_path),
         "--ipc", "host",
-        "--publish", f"{runtime_config.service_port}:{runtime_config.service_port}",
+        "--publish", f"{runtime_config.bind_host}:{runtime_config.service_port}:{runtime_config.service_port}",
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]
@@ -247,7 +256,7 @@ def generate_docker_run_command(
             ]
         else:
             docker_command += [
-                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal-llama3/src,dst={user_home_path}/app/src",
+                "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal/src,dst={user_home_path}/app/src",
             ]
         # fmt: on
 
@@ -369,6 +378,13 @@ def run_docker_server(model_spec, runtime_config, setup_config, json_fpath):
         setup_config: SetupConfig object from setup_host()
         json_fpath: Path to run config JSON file
     """
+    # Check if this is a multi-host deployment
+    if is_multihost_deployment(runtime_config):
+        return run_multihost_server(
+            model_spec, runtime_config, setup_config, json_fpath
+        )
+
+    logger.info("Starting Docker inference server ...")
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
     ensure_readwriteable_dir(docker_log_file_dir)
@@ -392,3 +408,369 @@ def run_docker_server(model_spec, runtime_config, setup_config, json_fpath):
     return run_docker_command(
         docker_command, container_name, runtime_config, model_spec, docker_log_file_path
     )
+
+
+def _wait_for_container_id(container_name: str, timeout: int = 30) -> str:
+    """Wait for a container to appear and return its ID.
+
+    Args:
+        container_name: Name of the container to wait for
+        timeout: Maximum time to wait in seconds
+
+    Returns:
+        Container ID if found, empty string otherwise
+    """
+    poll_interval = 0.5
+    start_time = time.time()
+
+    while (time.time() - start_time) < timeout:
+        try:
+            container_id = subprocess.check_output(
+                ["docker", "ps", "-f", f"name={container_name}", "--format", "{{.ID}}"],
+                text=True,
+            ).strip()
+            if container_id:
+                return container_id
+        except subprocess.CalledProcessError:
+            pass
+        time.sleep(poll_interval)
+
+    return ""
+
+
+def _check_controller_status(container_name: str) -> tuple[bool, str]:
+    """Check if Controller container is still running.
+
+    Args:
+        container_name: Name of the Controller container
+
+    Returns:
+        Tuple of (is_running, status_or_error)
+    """
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", "-f", "{{.State.Status}}", container_name],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return False, f"Container not found: {result.stderr.strip()}"
+
+        status = result.stdout.strip()
+        if status != "running":
+            # Get logs from exited container
+            logs_result = subprocess.run(
+                ["docker", "logs", "--tail", "100", container_name],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            logs = logs_result.stdout + logs_result.stderr
+            return False, f"Container status: '{status}'. Logs:\n{logs}"
+        return True, status
+    except subprocess.TimeoutExpired:
+        return False, "Timeout checking container status"
+    except Exception as e:
+        return False, str(e)
+
+
+def _monitor_multihost_containers(
+    orchestrator,
+    controller_name: str,
+    docker_log_file_path: Path,
+    check_interval: int = 5,
+):
+    """Monitor Controller and Worker containers, stop all on any failure.
+
+    This function blocks until either:
+    - Controller container exits (normal or error)
+    - A Worker container exits/fails
+    - KeyboardInterrupt (Ctrl+C)
+
+    In all cases, it stops all containers and reports the status.
+
+    TODO: Integrate with SingleNode monitoring (PromptClient.wait_for_healthy + CacheMonitor)
+    to provide vLLM health checks and cache generation progress during startup.
+
+    Args:
+        orchestrator: MultiHostOrchestrator instance
+        controller_name: Name of the Controller container
+        docker_log_file_path: Path to the log file for error reporting
+        check_interval: Seconds between status checks
+    """
+    stop_event = threading.Event()
+    error_info = {"source": None, "message": None}
+
+    def monitor_workers():
+        """Background thread to monitor Worker containers."""
+        while not stop_event.is_set():
+            running, error = orchestrator.check_all_workers_status()
+            if not running:
+                error_info["source"] = "worker"
+                error_info["message"] = error
+                stop_event.set()
+                return
+            # Use wait instead of sleep to respond quickly to stop_event
+            stop_event.wait(timeout=check_interval)
+
+    worker_thread = threading.Thread(target=monitor_workers, daemon=True)
+    worker_thread.start()
+
+    logger.info(f"View logs: tail -f {docker_log_file_path}")
+    logger.info("Monitoring containers (Ctrl+C to stop)...")
+
+    try:
+        # Monitor Controller container status
+        while not stop_event.is_set():
+            running, status = _check_controller_status(controller_name)
+            if not running:
+                error_info["source"] = "controller"
+                error_info["message"] = status
+                stop_event.set()
+                break
+            stop_event.wait(timeout=check_interval)
+
+    except KeyboardInterrupt:
+        logger.info("\nReceived Ctrl+C, stopping all containers...")
+        error_info["source"] = "user"
+        error_info["message"] = "User interrupted"
+        stop_event.set()
+
+    finally:
+        stop_event.set()
+        worker_thread.join(timeout=5)
+
+        # Report what happened
+        if error_info["source"] == "controller":
+            logger.error(f"Controller container failed:\n{error_info['message']}")
+            logger.error(f"Full logs available at: {docker_log_file_path}")
+        elif error_info["source"] == "worker":
+            logger.error(f"Worker container failed:\n{error_info['message']}")
+        elif error_info["source"] == "user":
+            logger.info("User requested shutdown")
+
+        # Stop all containers
+        logger.info("Stopping Controller container...")
+        try:
+            subprocess.run(
+                ["docker", "stop", controller_name],
+                capture_output=True,
+                timeout=30,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to stop Controller: {e}")
+
+        logger.info("Stopping Worker containers...")
+        orchestrator.stop_all_workers()
+
+        logger.info("All multihost containers stopped")
+
+
+def run_multihost_with_monitoring(
+    orchestrator,
+    controller_cmd: List[str],
+    controller_name: str,
+    runtime_config,
+    model_spec,
+    docker_log_file_path: Path,
+) -> dict:
+    """Run Controller container with Worker monitoring.
+
+    Starts Controller container and monitors both Controller and Workers.
+    On any failure, stops all containers and reports error.
+
+    Args:
+        orchestrator: MultiHostOrchestrator instance
+        controller_cmd: Docker command to start Controller
+        controller_name: Name for the Controller container
+        runtime_config: RuntimeConfig object
+        model_spec: ModelSpec object
+        docker_log_file_path: Path to log file
+
+    Returns:
+        Dict with container info
+    """
+    docker_log_file = open(docker_log_file_path, "w", buffering=1)
+    logger.info(f"Running multihost server with log file: {docker_log_file_path}")
+
+    # Start Controller (output to log file)
+    subprocess.Popen(
+        controller_cmd,
+        stdout=docker_log_file,
+        stderr=docker_log_file,
+        text=True,
+    )
+
+    # Wait for container to appear
+    container_id = _wait_for_container_id(controller_name, timeout=30)
+    if not container_id:
+        docker_log_file.close()
+        logger.error(f"Controller container {controller_name} failed to start.")
+        logger.error(f"Docker image: {model_spec.docker_image}")
+        logger.error(f"Check logs at: {docker_log_file_path}")
+        orchestrator.stop_all_workers()
+        raise RuntimeError("Controller container failed to start")
+
+    logger.info(f"Controller container started: {container_id}")
+
+    # Show worker status
+    worker_status = []
+    for host in orchestrator.hosts:
+        running, _ = orchestrator.check_worker_status(host)
+        status_icon = "✓" if running else "✗"
+        worker_status.append(f"{host} {status_icon}")
+    logger.info(f"Workers: {'  '.join(worker_status)}")
+
+    # Handle workflow-specific behavior (similar to single-node run_docker_command)
+    skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
+    if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
+        # For release/benchmarks/evals/tests: register cleanup and return immediately
+
+        def teardown_multihost():
+            logger.info("atexit: Stopping multihost inference server containers...")
+            try:
+                subprocess.run(
+                    ["docker", "stop", controller_name],
+                    capture_output=True,
+                    timeout=30,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to stop Controller: {e}")
+            orchestrator.stop_all_workers()
+            docker_log_file.close()
+            clean_log_file(docker_log_file_path)
+            logger.info("multihost cleanup finished.")
+
+        atexit.register(teardown_multihost)
+    else:
+        # For SERVER workflow: block until containers exit or user interrupts
+        _monitor_multihost_containers(
+            orchestrator=orchestrator,
+            controller_name=controller_name,
+            docker_log_file_path=docker_log_file_path,
+        )
+        docker_log_file.close()
+
+    return {
+        "container_name": controller_name,
+        "container_id": container_id,
+        "docker_log_file_path": str(docker_log_file_path),
+        "service_port": runtime_config.service_port,
+    }
+
+
+def run_multihost_server(model_spec, runtime_config, setup_config, json_fpath):
+    """Run multi-host distributed vLLM server.
+
+    Starts Worker containers on remote hosts, then starts Controller container
+    that runs the vLLM API server and coordinates MPI processes.
+
+    Args:
+        model_spec: ModelSpec object
+        runtime_config: RuntimeConfig object
+        setup_config: SetupConfig object from setup_host()
+        json_fpath: Path to run config JSON file
+
+    Returns:
+        Dict with container info
+    """
+    # Setup multi-host configuration (reads from .env or prompts interactively)
+    expected_hosts = get_expected_num_hosts(runtime_config)
+    multihost_config = setup_multihost_config(model_spec, expected_hosts)
+
+    # Validate multi-host configuration (including system software versions)
+    hosts = validate_multihost_args(
+        multihost_config,
+        model_spec=model_spec,
+        tt_smi_path=multihost_config.tt_smi_path,
+    )
+    logger.info(f"Starting multi-host deployment with {len(hosts)} hosts: {hosts}")
+
+    # Create DEEPSEEK_V3_CACHE directory if it doesn't exist
+    deepseek_cache = multihost_config.deepseek_cache
+    if deepseek_cache:
+        cache_path = Path(deepseek_cache)
+        if not cache_path.exists():
+            logger.info(f"Creating DEEPSEEK_V3_CACHE directory: {cache_path}")
+            cache_path.mkdir(parents=True, exist_ok=True)
+            os.chmod(cache_path, 0o1777)  # Sticky bit + world-writable for UID 1000
+
+    # Ensure Docker image is available
+    assert ensure_docker_image(model_spec.docker_image), (
+        f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
+    )
+
+    # Create orchestrator
+    orchestrator = MultiHostOrchestrator(
+        hosts=hosts,
+        mpi_interface=multihost_config.mpi_interface,
+        shared_storage_root=multihost_config.shared_storage_root,
+        config_pkl_dir=multihost_config.config_pkl_dir,
+        docker_image=model_spec.docker_image,
+        runtime_config=runtime_config,
+        model_spec=model_spec,
+        setup_config=setup_config,
+        tt_smi_path=multihost_config.tt_smi_path,
+    )
+
+    try:
+        # Prepare configuration files
+        setup = orchestrator.prepare()
+        logger.info(f"Generated multi-host configs in: {setup.config_dir}")
+
+        # Start Worker containers on all hosts
+        logger.info("Starting Worker containers on remote hosts...")
+        worker_ids = orchestrator.start_all_workers()
+        logger.info(f"Started {len(worker_ids)} Worker containers")
+
+        # Wait for Workers to be ready
+        logger.info("Waiting for Worker containers to be ready...")
+        if not orchestrator.wait_for_workers_ready(timeout=120):
+            raise RuntimeError("Worker containers failed to become ready")
+        logger.info("All Worker containers are ready")
+
+        # Log first Worker docker command for reference
+        if orchestrator.hosts:
+            first_host = orchestrator.hosts[0]
+            worker_cmd, _ = orchestrator.generate_worker_docker_command(
+                first_host, rank=0
+            )
+            logger.info(
+                f"Worker docker command (host: {first_host}):\n{format_docker_command(worker_cmd)}\n"
+            )
+
+        # Generate and log Controller command
+        controller_cmd, controller_name = (
+            orchestrator.generate_controller_docker_command()
+        )
+        logger.info(
+            f"Controller docker command:\n{format_docker_command(controller_cmd)}\n"
+        )
+
+        # Setup logging
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
+        ensure_readwriteable_dir(docker_log_file_dir)
+        docker_log_file_path = (
+            docker_log_file_dir
+            / f"multihost_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
+        )
+
+        # Run Controller container with monitoring
+        # This monitors both Controller and Workers, stops all on any failure
+        return run_multihost_with_monitoring(
+            orchestrator=orchestrator,
+            controller_cmd=controller_cmd,
+            controller_name=controller_name,
+            runtime_config=runtime_config,
+            model_spec=model_spec,
+            docker_log_file_path=docker_log_file_path,
+        )
+    except Exception:
+        # Stop Worker containers on error during setup phase
+        logger.error(
+            "Error during multi-host deployment setup, stopping Worker containers..."
+        )
+        orchestrator.stop_all_workers()
+        raise

@@ -1,5 +1,46 @@
 # TT Media Server - C++ Drogon Implementation
 
+## LLM Engine
+
+The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runners/llm_engine/` (sources). The engine uses the server's logging (`[DEBUG] [llm_engine:...]`) instead of its own.
+
+### Main featuresrmance C++ implementation of the TT Media Server using the Drogon web framework. This implementation is designed to benchmark the overhead of the Python FastAPI server by providing an identical API with minimal overhead.
+
+## Logging
+
+```cpp
+#include "utils/logger.hpp"
+
+// Initialize once at startup (optional - auto-initializes on first use)
+tt::utils::initialize_logger();
+
+// High-performance macros with zero overhead when disabled
+TT_LOG_DEBUG("Debug info: request_id={}, latency={}ms", id, latency);
+TT_LOG_INFO("Server starting on port {}", port);
+TT_LOG_ERROR("Connection failed: {}", error);
+```
+
+#### Configuration
+
+```bash
+# Environment variables
+export TT_LOG_LEVEL=debug             # Runtime log level (trace, debug, info, warn, error, critical, off)
+export TT_LOG_FILE=./logs/server.log  # Enable file logging (optional)
+```
+
+Available log levels (from most to least verbose):
+- `trace` - Most detailed logging
+- `debug` - Debug information
+- `info` - Informational messages (default)
+- `warn` - Warning messages
+- `error` - Error messages only
+- `critical` - Critical errors only
+- `off` - Disable all logging
+
+## LLM engine
+
+The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runners/llm_engine/` (sources). The engine uses the server's logging (`[DEBUG] [llm_engine:...]`) instead of its own.dia Server - C++ Drogon Implementation
+
 A high-performance C++ implementation of the TT Media Server using the Drogon web framework. This implementation is designed to benchmark the overhead of the Python FastAPI server by providing an identical API with minimal overhead.
 
 ## LLM engine
@@ -15,7 +56,41 @@ The LLM engine lives under `include/runners/llm_runner/` (headers) and `src/runn
 
 The engine does **not** support chunked prefill: each request is prefilled in full when it is scheduled (subject to batch token limits).
 
-**Device backend** — Host–device communication is behind an `IDeviceBackend` abstraction (`init`, `write`, `read`, `terminate`). Two implementations: **mock** (no hardware; echoes written pages back as read data) and **sockets** (TT device, H2D/D2H sockets, loopback kernels). The backend is chosen from `llm_engine::Config::device`, set via `LLM_DEVICE_BACKEND` (see Environment Variables). Default is mock.
+**Device backend** — Host–device communication is behind an `IDeviceBackend` abstraction (`init`, `write`, `read`, `terminate`). Two implementations: **mock** (no hardware; echoes written pages back as read data) and **sockets** (TT device, H2D/D2H sockets, loopback kernels). The backend is selected via `LLM_DEVICE_BACKEND` environment variable (see Environment Variables). Default is mock.
+
+### Choosing a Scheduling Policy
+
+The LLM engine supports two scheduling policies that trade off individual request latency vs. overall throughput:
+
+#### Prefill First (Default)
+**When to use:** Low to moderate request rates, latency-sensitive applications
+
+**Behavior:** Always prefills new requests when the prefill_queue has waiting requests. Decode is only attempted when nothing can be prefilled.
+
+**Advantages:**
+- **Better Time-To-First-Token (TTFT)** for individual requests
+- New requests get processed immediately without waiting for decode batches
+- Optimal for scenarios where user-perceived latency is critical
+
+**Trade-offs:**
+- Decode sequences may be interrupted when new requests arrive
+- Lower overall device occupancy during mixed workloads
+
+#### Max Occupancy
+**When to use:** High request rates, throughput-oriented applications
+
+**Behavior:** Keeps the device at full occupancy (`max_in_flight_count` from MAX_IN_FLIGHT_COUNT env var) whenever possible. When decode sequences finish and free slots, immediately prefills enough new sequences to refill capacity, then resumes decode at full width.
+
+**Advantages:**
+- **Better average TTFT across all users** under high load
+- Maximizes device utilization and overall throughput
+- Decode batches run at full capacity for better efficiency
+
+**Trade-offs:**
+- Individual requests may wait longer for their first token
+- Decode sequences lose one decode step during each prefill batch
+
+**Configuration:** Set via the `SCHEDULING_POLICY` environment variable (see `config/types.hpp` for valid values, `config/defaults.hpp` for defaults). The policy is selected at runtime based on your workload characteristics.
 
 ### Run unit tests
 
@@ -104,7 +179,7 @@ recompilation needed:
 
 | `LLM_DEVICE_BACKEND` | Model | Tokenizer |
 |----------------------|-------|-----------|
-| `mock` or `ttrun` (default when unset: `mock`) | DeepSeek V3 | `tokenizers/deepseek-ai/DeepSeek-R1-0528/` |
+| `mock` or `pipeline` (default when unset: `mock`) | DeepSeek V3 | `tokenizers/deepseek-ai/DeepSeek-R1-0528/` |
 | `llama` | Llama 3.1 8B Instruct | `tokenizers/meta-llama/Llama-3.1-8B-Instruct/` |
 
 The runtime selection uses an OOP strategy pattern — see
@@ -143,20 +218,30 @@ and `create_tokenizer_strategy()` factory.
 
 ### Environment Variables
 
-Configuration is read via `config/settings.hpp` (defaults with env overrides, similar to `tt-media-server/config/settings.py`). No direct `getenv` elsewhere.
+Configuration follows a unified system with clear separation of concerns:
+- **Type definitions**: `config/types.hpp` - enums and type conversions (ModelService, ModelType, LLMMode, SchedulingPolicy, etc.)
+- **Default values**: `config/defaults.hpp` - default values for all environment variables
+- **Runner config**: `config/runner_config.hpp` - LLMConfig, EmbeddingConfig, RunnerConfig variant, and llm_engine_config()
+- **Runtime settings**: `config/settings.hpp` - reads environment variables and provides runtime accessors
+
+All environment variable reads go through `config/settings.hpp` (no direct `getenv` elsewhere).
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DEVICE_IDS` | Bracket-pair device list, one worker per pair (e.g. `(0,1,2,3),(4,5,6,7)`). num_workers = number of pairs; each worker's `TT_VISIBLE_DEVICES` = that pair's contents. | `(0),(1),(2),(3)` |
+| `DEVICE_IDS` | Bracket-pair device list, one worker per pair (e.g. `(0,1,2,3),(4,5,6,7)`). num_workers = number of pairs; each worker's `TT_VISIBLE_DEVICES` = that pair's contents. | `(0)` |
 | `MODEL_SERVICE` | Service mode: `embedding` or `llm`. Same as tt-media-server. | `llm` |
-| `MAX_BATCH_SIZE` | Max requests per batch (embedding). Same as tt-media-server. | `1` |
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
+| `MAX_QUEUE_SIZE` | Maximum number of requests that can be queued. | `1000` |
+| `MAX_IN_FLIGHT_COUNT` | Maximum number of requests being processed simultaneously. | `32` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
-| `LLM_DEVICE_BACKEND` | LLM device backend and model: `mock` or `ttrun` (DeepSeek V3 tokenizer), `llama` (Llama 3.1 8B Instruct). | `mock` |
+| `LLM_DEVICE_BACKEND` | LLM device backend and model: `mock` or `pipeline` (DeepSeek V3 tokenizer), `llama` (Llama 3.1 8B Instruct). | `mock` |
 | `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
 | `LLM_MODE` | LLM operating mode: `regular`, `prefill`, or `decode`. See Prefill/Decode Split Mode. | `regular` |
 | `SOCKET_HOST` | Socket host for prefill/decode communication. Decode server: bind address. Prefill server: decode server address. | `localhost` |
 | `SOCKET_PORT` | Socket port for prefill/decode communication. | `9000` |
+| `SCHEDULING_POLICY` | LLM scheduling policy: `prefill_first` (prioritize new requests) or `max_occupancy` (maximize throughput). See Choosing a Scheduling Policy. | `prefill_first` |
+| `ENABLE_ACCUMULATED_STREAMING` | Enable token accumulation before streaming (send multiple tokens per chunk). | `false` |
+| `MAX_ACCUMULATED_TOKENS` | Maximum tokens to accumulate before streaming when `ENABLE_ACCUMULATED_STREAMING` is true. | `5` |
 
 ### Prefill/Decode Split Mode
 
@@ -329,7 +414,7 @@ curl -X POST http://localhost:8001/v1/completions \
 ```
 data: {"id":"cmpl-abc123","choices":[{"text":"token_0","index":0}],...}
 
-data: {"id":"cmpl-abc123","choices":[{"text":"token_1","index":1}],...}
+data: {"id":"cmpl-abc123","choices":[{"text":"token_1","index":0}],...}
 
 ...
 
@@ -389,8 +474,10 @@ cpp_server/
 │   │   ├── embedding_controller.hpp
 │   │   └── health_controller.hpp
 │   ├── config/
-│   │   ├── settings.hpp             # Env-based config (defaults + overrides)
-│   │   └── constants.hpp            # Default env values, ModelType, etc.
+│   │   ├── settings.hpp             # Runtime config accessors (reads env vars)
+│   │   ├── types.hpp                # Type definitions and enums
+│   │   ├── defaults.hpp             # Default values for all env vars
+│   │   └── runner_config.hpp        # LLMConfig, EmbeddingConfig, RunnerConfig variant
 │   ├── domain/
 │   │   ├── completion_request.hpp
 │   │   ├── completion_response.hpp
@@ -446,7 +533,7 @@ cpp_server/
 - `LLMService`: LLM-specific service implementation
 
 ### Runners
-- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`. For LLM, builds `llm_engine::Config` (including `model_runner` and `device` from config/settings) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/config.hpp` and `model_runner.cpp`).
+- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`. For LLM, builds `tt::config::LLMConfig` (via `llm_engine_config()` from `config/runner_config.hpp`) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/model_runner.hpp` and `model_runner.cpp`).
 
 ### API
 - `LLMController`: Drogon HTTP controller with OpenAI-compatible endpoints
@@ -457,7 +544,7 @@ The server supports the following runner types, selected via the `LLM_DEVICE_BAC
 
 | Runner | Value | Description |
 |--------|-------|-------------|
-| Mock / TtRun | `mock` or `ttrun` (default when unset: `mock`) | Mock: no device. TtRun: TT device. Both use DeepSeek V3 tokenizer. |
+| Mock / Pipeline | `mock` or `pipeline` (default when unset: `mock`) | Mock: no device. Pipeline: TT device. Both use DeepSeek V3 tokenizer. |
 | Llama runner | `llama` | In-process pybind11: embeds Python and calls `tt_model_runners.llama_runner.Llama31_8BRunner` (TT device). Requires `TT_METAL_HOME`, `HF_MODEL`, tokenizer under `tokenizers/meta-llama/Llama-3.1-8B-Instruct/`. |
 
 ### LLM mock runner (default)
@@ -534,12 +621,11 @@ The server includes tokenizer support for encode/decode:
    ```bash
    ./build.sh
    ```
-<<<<<<< HEAD
+
 4. Tokenizer files are stored per-model under `tokenizers/<model-name>/`. The
    active tokenizer is selected at runtime based on `LLM_DEVICE_BACKEND` (see
    [Runtime model selection](#runtime-model-selection) above).
-=======
-4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`, and `tokenizer_config.json` at `cpp_server/tokenizers/tokenizer_config.json`. The server loads them automatically from those paths relative to the executable.
+
    To fetch DeepSeek R1 0528 tokenizer and config from Hugging Face into `tokenizers/`:
    ```bash
    mkdir -p cpp_server/tokenizers
@@ -555,7 +641,6 @@ Token generation timing:
 - Target: 120,000 tokens/second
 - Token interval: ~8.33 microseconds
 - Uses `std::chrono::high_resolution_clock` for precise timing
->>>>>>> dev
 
 ## Comparison with Python FastAPI
 

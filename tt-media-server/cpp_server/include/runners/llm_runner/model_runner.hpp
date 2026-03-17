@@ -3,35 +3,25 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <vector>
 
-#include "runners/llm_runner/config.hpp"
+#include "config/runner_config.hpp"
 #include "runners/llm_runner/sequence.hpp"
-#include "profiling/tracy.hpp"
+#include "utils/concurrent_queue.hpp"
 
 namespace llm_engine {
 
 using DecodeCallback = std::function<void(const TokenResult&)>;
-
-class DecodeQueue {
- public:
-  void push(const TokenResult& result);
-  std::vector<TokenResult> drain();
-
- private:
-  TracyLockable(std::mutex, mutex_);
-  std::vector<TokenResult> pending_;
-};
+using DecodeQueue = ConcurrentQueue<TokenResult>;
 
 class IModelRunner {
  public:
   virtual ~IModelRunner() = default;
-  virtual void run(const std::vector<Sequence*>& seqs, bool is_prefill) = 0;
+  virtual void run(const std::vector<Sequence*>& seqs, bool isPrefill) = 0;
   virtual void exit() = 0;
 };
 
-std::unique_ptr<IModelRunner> make_model_runner(const Config& config,
-                                                DecodeCallback callback);
+std::unique_ptr<IModelRunner> makeModelRunner(
+    const tt::config::LLMConfig& config, DecodeCallback callback);
 
 }  // namespace llm_engine

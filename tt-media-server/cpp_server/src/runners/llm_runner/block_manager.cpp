@@ -1,17 +1,20 @@
 #include "runners/llm_runner/block_manager.hpp"
-#include "runners/llm_runner/debug.hpp"
-#include "runners/llm_runner/hash.hpp"
+
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
 
+#include "profiling/tracy.hpp"
+#include "runners/llm_runner/debug.hpp"
+#include "runners/llm_runner/hash.hpp"
+
 namespace llm_engine {
 
-Block::Block(int block_id) : block_id(block_id) {}
+Block::Block(int blockId) : block_id(blockId) {}
 
-void Block::update(int64_t hash, std::vector<int64_t> token_ids) {
+void Block::update(int64_t hash, std::vector<int64_t> tokenIds) {
   this->hash = hash;
-  this->token_ids = std::move(token_ids);
+  this->token_ids = std::move(tokenIds);
 }
 
 void Block::reset() {
@@ -20,137 +23,149 @@ void Block::reset() {
   token_ids.clear();
 }
 
-BlockManager::BlockManager(int num_blocks, int block_size)
- : block_size_(block_size) {
-  if (num_blocks <= 0) {
+BlockManager::BlockManager(int numBlocks, int blockSize)
+    : block_size_(blockSize) {
+  if (numBlocks <= 0) {
     throw std::invalid_argument(
-        "BlockManager: num_blocks must be positive, got " + std::to_string(num_blocks));
+        "BlockManager: num_blocks must be positive, got " +
+        std::to_string(numBlocks));
   }
-  blocks_.reserve(static_cast<size_t>(num_blocks));
-  for (int i = 0; i < num_blocks; ++i) {
+  blocks_.reserve(static_cast<size_t>(numBlocks));
+  for (int i = 0; i < numBlocks; ++i) {
     blocks_.emplace_back(i);
   }
-  for (int i = 0; i < num_blocks; ++i) {
+  for (int i = 0; i < numBlocks; ++i) {
     free_block_ids_.push_back(i);
   }
 }
 
-int64_t BlockManager::compute_hash(const std::vector<int64_t>& token_ids,
+int64_t BlockManager::computeHash(const std::vector<int64_t>& tokenIds,
                                   int64_t prefix) {
-  return hash_token_ids(token_ids, prefix);
+  return hashTokenIds(tokenIds, prefix);
 }
 
-Block& BlockManager::allocate_block(int block_id) {
-  Block& block = blocks_[static_cast<size_t>(block_id)];
+Block& BlockManager::allocateBlock(int blockId) {
+  ZoneScopedN("BlockManager::allocate_block");
+  Block& block = blocks_[static_cast<size_t>(blockId)];
   assert(block.ref_count == 0);
   block.reset();
   free_block_ids_.erase(
-      std::find(free_block_ids_.begin(), free_block_ids_.end(), block_id));
-  used_block_ids_.insert(block_id);
-  LLM_ENGINE_LOG("block_manager") << "allocate_block block_id=" << block_id
-                                 << " free=" << free_block_ids_.size()
-                                 << " used=" << used_block_ids_.size() << std::endl;
-  return blocks_[static_cast<size_t>(block_id)];
+      std::find(free_block_ids_.begin(), free_block_ids_.end(), blockId));
+  used_block_ids_.insert(blockId);
+  LLM_ENGINE_LOG("block_manager")
+      << "allocate_block block_id=" << blockId
+      << " free=" << free_block_ids_.size()
+      << " used=" << used_block_ids_.size() << std::endl;
+  return blocks_[static_cast<size_t>(blockId)];
 }
 
-void BlockManager::deallocate_block(int block_id) {
+void BlockManager::deallocateBlock(int blockId) {
+  ZoneScopedN("BlockManager::deallocate_block");
   assert(blocks_[static_cast<size_t>(block_id)].ref_count == 0);
-  used_block_ids_.erase(block_id);
-  free_block_ids_.push_back(block_id);
-  LLM_ENGINE_LOG("block_manager") << "deallocate_block block_id=" << block_id
-                                 << " free=" << free_block_ids_.size() << std::endl;
+  used_block_ids_.erase(blockId);
+  free_block_ids_.push_back(blockId);
+  LLM_ENGINE_LOG("block_manager")
+      << "deallocate_block block_id=" << blockId
+      << " free=" << free_block_ids_.size() << std::endl;
 }
 
-bool BlockManager::can_allocate(const Sequence& seq) const {
+bool BlockManager::canAllocate(const Sequence& seq) const {
   return static_cast<int>(free_block_ids_.size()) >=
-         static_cast<int>(seq.num_blocks());
+         static_cast<int>(seq.numBlocks());
 }
 
 void BlockManager::allocate(Sequence& seq) {
+  ZoneScopedN("BlockManager::allocate");
   assert(seq.block_table_.empty());
-  LLM_ENGINE_LOG("block_manager") << "allocate task_id=" << seq.task_id
-                                << " num_blocks=" << seq.num_blocks()
-                                << " free=" << free_block_ids_.size() << std::endl;
+  LLM_ENGINE_LOG("block_manager")
+      << "allocate task_id=" << seq.task_id << " num_blocks=" << seq.numBlocks()
+      << " free=" << free_block_ids_.size() << std::endl;
   int64_t h = -1;
-  bool cache_miss = false;
-  for (size_t i = 0; i < seq.num_blocks(); ++i) {
-    std::vector<int64_t> token_ids = seq.block(i);
-    h = (token_ids.size() == static_cast<size_t>(block_size_))
-            ? compute_hash(token_ids, h)
+  bool cacheMiss = false;
+  for (size_t i = 0; i < seq.numBlocks(); ++i) {
+    std::vector<int64_t> tokenIds = seq.block(i);
+    h = (tokenIds.size() == static_cast<size_t>(block_size_))
+            ? computeHash(tokenIds, h)
             : -1;
     auto it = hash_to_block_id_.find(h);
-    int block_id = (it != hash_to_block_id_.end()) ? it->second : -1;
-    if (block_id == -1 ||
-        blocks_[static_cast<size_t>(block_id)].token_ids != token_ids) {
-      cache_miss = true;
+    int blockId = (it != hash_to_block_id_.end()) ? it->second : -1;
+    if (blockId == -1 ||
+        blocks_[static_cast<size_t>(blockId)].token_ids != tokenIds) {
+      cacheMiss = true;
     }
-    if (cache_miss) {
-      block_id = free_block_ids_.front();
-      Block& block = allocate_block(block_id);
+    if (cacheMiss) {
+      blockId = free_block_ids_.front();
+      Block& block = allocateBlock(blockId);
       if (h != -1) {
-        block.update(h, token_ids);
-        hash_to_block_id_[h] = block_id;
+        block.update(h, tokenIds);
+        hash_to_block_id_[h] = blockId;
       }
-      seq.block_table_.push_back(block_id);
+      seq.block_table_.push_back(blockId);
     } else {
       seq.num_cached_tokens_ += static_cast<size_t>(block_size_);
-      if (used_block_ids_.count(block_id)) {
-        blocks_[static_cast<size_t>(block_id)].ref_count += 1;
+      if (used_block_ids_.count(blockId)) {
+        blocks_[static_cast<size_t>(blockId)].ref_count += 1;
       } else {
-        Block& block = allocate_block(block_id);
+        Block& block = allocateBlock(blockId);
         if (h != -1) {
-          block.update(h, token_ids);
-          hash_to_block_id_[h] = block_id;
+          block.update(h, tokenIds);
+          hash_to_block_id_[h] = blockId;
         }
       }
-      seq.block_table_.push_back(block_id);
+      seq.block_table_.push_back(blockId);
     }
   }
 }
 
 void BlockManager::deallocate(Sequence& seq) {
-  LLM_ENGINE_LOG("block_manager") << "deallocate task_id=" << seq.task_id
-                                 << " num_blocks=" << seq.block_table_.size() << std::endl;
+  ZoneScopedN("BlockManager::deallocate");
+  LLM_ENGINE_LOG("block_manager")
+      << "deallocate task_id=" << seq.task_id
+      << " num_blocks=" << seq.block_table_.size() << std::endl;
   for (auto it = seq.block_table_.rbegin(); it != seq.block_table_.rend();
        ++it) {
-    int block_id = *it;
-    Block& block = blocks_[static_cast<size_t>(block_id)];
+    int blockId = *it;
+    Block& block = blocks_[static_cast<size_t>(blockId)];
     block.ref_count -= 1;
     if (block.ref_count == 0) {
-      deallocate_block(block_id);
+      deallocateBlock(blockId);
     }
   }
   seq.num_cached_tokens_ = 0;
   seq.block_table_.clear();
 }
 
-bool BlockManager::can_append(const Sequence& seq) const {
-  int need_one = (seq.size() % block_size_ == 1) ? 1 : 0;
-  return static_cast<int>(free_block_ids_.size()) >= need_one;
+bool BlockManager::canAppend(const Sequence& seq) const {
+  int needOne = (seq.size() % block_size_ == 1) ? 1 : 0;
+  return static_cast<int>(free_block_ids_.size()) >= needOne;
 }
 
-void BlockManager::may_append(Sequence& seq) {
-  std::vector<int>& block_table = seq.block_table_;
-  Block& last_block = blocks_[static_cast<size_t>(block_table.back())];
+void BlockManager::mayAppend(Sequence& seq) {
+  ZoneScopedN("BlockManager::may_append");
+  std::vector<int>& blockTable = seq.block_table_;
+  Block& lastBlock = blocks_[static_cast<size_t>(blockTable.back())];
   size_t len = seq.size();
   if (len % static_cast<size_t>(block_size_) == 1) {
     LLM_ENGINE_LOG("block_manager") << "may_append task_id=" << seq.task_id
-                                  << " new_block len=" << len << std::endl;
+                                    << " new_block len=" << len << std::endl;
     assert(last_block.hash != -1);
-    int block_id = free_block_ids_.front();
-    allocate_block(block_id);
-    block_table.push_back(block_id);
+    int blockId = free_block_ids_.front();
+    allocateBlock(blockId);
+    blockTable.push_back(blockId);
   } else if (len % static_cast<size_t>(block_size_) == 0) {
     assert(last_block.hash == -1);
-    LLM_ENGINE_LOG("block_manager") << "may_append task_id=" << seq.task_id
-                                  << " fill_last_block len=" << len << std::endl;
-    std::vector<int64_t> token_ids = seq.block(seq.num_blocks() - 1);
-    int64_t prefix = (block_table.size() > 1)
-                         ? blocks_[static_cast<size_t>(block_table[block_table.size() - 2])].hash
-                         : -1;
-    int64_t h = compute_hash(token_ids, prefix);
-    last_block.update(h, token_ids);
-    hash_to_block_id_[h] = last_block.block_id;
+    LLM_ENGINE_LOG("block_manager")
+        << "may_append task_id=" << seq.task_id
+        << " fill_last_block len=" << len << std::endl;
+    std::vector<int64_t> tokenIds = seq.block(seq.numBlocks() - 1);
+    int64_t prefix =
+        (blockTable.size() > 1)
+            ? blocks_[static_cast<size_t>(blockTable[blockTable.size() - 2])]
+                  .hash
+            : -1;
+    int64_t h = computeHash(tokenIds, prefix);
+    lastBlock.update(h, tokenIds);
+    hash_to_block_id_[h] = lastBlock.block_id;
   } else {
     assert(last_block.hash == -1);
   }

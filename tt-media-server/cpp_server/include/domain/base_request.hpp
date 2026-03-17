@@ -1,12 +1,13 @@
 #pragma once
 
-#include <string>
+#include "domain/task_id.hpp"
 
 namespace tt::domain {
 
 struct BaseRequest {
-        // Internal task tracking
-        std::string task_id;
-    };
+  TaskID task_id;
 
-} // namespace tt::domain
+  explicit BaseRequest(TaskID taskId) : task_id(std::move(taskId)) {}
+};
+
+}  // namespace tt::domain

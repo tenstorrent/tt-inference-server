@@ -102,8 +102,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.T3K: "T3K",
             DeviceTypes.GALAXY: "TG",
             DeviceTypes.GALAXY_T3K: "T3K",
-            DeviceTypes.DUAL_GALAXY: "DUAL",
-            DeviceTypes.QUAD_GALAXY: "QUAD",
+            DeviceTypes.DUAL_GALAXY: "(8,8)",
+            DeviceTypes.QUAD_GALAXY: "(8,16)",
             DeviceTypes.GPU: "GPU",
         }
         if self not in mapping:
@@ -166,6 +166,30 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P300X2,
         )
         return self in blackhole_devices
+
+    def is_multihost(self) -> bool:
+        """Check if this device type requires multi-host deployment."""
+        return self in {DeviceTypes.DUAL_GALAXY, DeviceTypes.QUAD_GALAXY}
+
+    def get_multihost_num_hosts(self) -> int:
+        """Get expected number of hosts for multi-host device types.
+
+        Returns:
+            Number of hosts required for this device type.
+
+        Raises:
+            ValueError: If device type is not a multi-host type.
+        """
+        host_counts = {
+            DeviceTypes.DUAL_GALAXY: 2,
+            DeviceTypes.QUAD_GALAXY: 4,
+        }
+        if self not in host_counts:
+            raise ValueError(
+                f"Device type {self.name} is not a multi-host device type. "
+                f"Supported: {[d.name for d in host_counts.keys()]}"
+            )
+        return host_counts[self]
 
     def get_data_parallel_subdevice(self, data_parallel: int) -> "DeviceTypes":
         data_parallel_map = {

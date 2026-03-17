@@ -190,10 +190,15 @@ def build_eval_command(
     if task.max_concurrent:
         optional_model_args.append(f"num_concurrent={task.max_concurrent}")
 
-    # newer lm-evals expect full completions api route
-    _base_url = (
-        base_url if task.workflow_venv_type == WorkflowVenvType.EVALS_META else api_url
-    )
+    # lm-eval (text) expects full completions api route in base_url
+    # lmms-eval (vision) expects base_url WITHOUT the endpoint path
+    if task.workflow_venv_type in [
+        WorkflowVenvType.EVALS_META,
+        WorkflowVenvType.EVALS_VISION,
+    ]:
+        _base_url = base_url
+    else:
+        _base_url = api_url
 
     # Set OPENAI_API_BASE for vision and audio models
     if task.workflow_venv_type in [

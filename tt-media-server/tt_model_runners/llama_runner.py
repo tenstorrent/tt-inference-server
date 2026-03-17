@@ -33,6 +33,7 @@ _tt_metal = os.environ.get("TT_METAL_HOME")
 if _tt_metal and _tt_metal not in sys.path:
     sys.path.insert(0, _tt_metal)
 
+from models.common.sampling import SamplingParams
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 
 # Llama 3.1 8B stop tokens (must match C++ config in settings.cpp):
@@ -52,13 +53,18 @@ class StepSequence:
 
     task_id: str
     token_ids: list[int]
-    max_tokens: int
     temperature: float
     ignore_eos: bool
     block_table: list[int]
     current_pos: int
     prompt_len: int
     seed: int | None = None
+    top_p: float | None = None
+    top_k: int | None = None
+    min_p: float | None = None
+    repetition_penalty: float | None = None
+    presence_penalty: float = 0.0
+    frequency_penalty: float = 0.0
 
 
 @dataclass
@@ -68,21 +74,6 @@ class StepResult:
     task_id: str
     token_id: int
     error: str = ""
-
-
-def _sample(logits_1d, temperature: float, seed: int | None = None) -> int:
-    """Host-side sampling. Argmax when temperature <= 0."""
-    import torch
-
-    if temperature <= 0:
-        return int(torch.argmax(logits_1d).item())
-    probs = torch.softmax(logits_1d.float() / temperature, dim=-1)
-    if seed is not None:
-        gen = torch.Generator().manual_seed(seed)
-        idx = torch.multinomial(probs, 1, generator=gen)
-    else:
-        idx = torch.multinomial(probs, 1)
-    return int(idx.item())
 
 
 class Llama31_8BRunner(BaseMetalDeviceRunner):
@@ -97,14 +88,14 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
     - warmup_prefill=True (default) compiles operators and captures traces;
       skipping it causes "unsafe device buffer allocation" that corrupts output.
     - enable_trace=True for decode to match vLLM behaviour.
-    - Sampling is done on host from returned logits.
+    - Sampling is done on device using SamplingParams forwarded from C++.
     """
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.model = None
         self.hf_model_name = os.environ.get("HF_MODEL", DEFAULT_HF_MODEL)
-        self.max_batch_size = int(os.environ.get("MAX_BATCH_SIZE", 16))
+        self.max_batch_size = int(os.environ.get("MAX_BATCH_SIZE", 32))
         self.max_seq_len = int(os.environ.get("MAX_MODEL_LEN", "8192"))
         self._kv_cache = None
         self._max_num_blocks_per_seq = 0
@@ -123,6 +114,50 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         n = min(len(block_ids), max_blocks)
         page_table[0, :n] = torch.tensor(block_ids[:n], dtype=torch.int32)
         return page_table
+
+    def _build_sampling_params(self, seq: StepSequence) -> SamplingParams:
+        """Build SamplingParams from StepSequence sampling fields."""
+        return SamplingParams(
+            temperature=seq.temperature,
+            top_p=seq.top_p if seq.top_p is not None else 1.0,
+            top_k=seq.top_k if seq.top_k is not None else 0,
+            presence_penalty=seq.presence_penalty,
+            frequency_penalty=seq.frequency_penalty,
+            repetition_penalty=seq.repetition_penalty
+            if seq.repetition_penalty is not None
+            else 1.0,
+            seed=seq.seed,
+        )
+
+    def _build_batch_sampling_params(
+        self, sequences: list[StepSequence]
+    ) -> SamplingParams:
+        """Build SamplingParams with list-valued fields for batched decode.
+
+        Each field is a list where element i corresponds to sequences[i].
+        This enables per-sequence sampling parameters in batched mode.
+        """
+        # Build lists for each parameter
+        temperatures = [seq.temperature for seq in sequences]
+        top_ps = [seq.top_p if seq.top_p is not None else 1.0 for seq in sequences]
+        top_ks = [seq.top_k if seq.top_k is not None else 0 for seq in sequences]
+        repetition_penalties = [
+            seq.repetition_penalty if seq.repetition_penalty is not None else 1.0
+            for seq in sequences
+        ]
+        presence_penalties = [seq.presence_penalty for seq in sequences]
+        frequency_penalties = [seq.frequency_penalty for seq in sequences]
+        seeds = [seq.seed for seq in sequences]
+
+        return SamplingParams(
+            temperature=temperatures,
+            top_p=top_ps,
+            top_k=top_ks,
+            presence_penalty=presence_penalties,
+            frequency_penalty=frequency_penalties,
+            repetition_penalty=repetition_penalties,
+            seed=seeds if any(s is not None for s in seeds) else None,
+        )
 
     def _allocate_kv_cache(self) -> None:
         import torch
@@ -170,8 +205,8 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         self.model.warmup_model_prefill(
             kv_cache=self._kv_cache,
             enable_trace=True,
-            can_sample_on_device=False,
-            non_greedy_decoding_on_device=False,
+            can_sample_on_device=True,
+            non_greedy_decoding_on_device=True,
         )
 
         # Warmup decode
@@ -180,8 +215,8 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             enable_trace=True,
             max_batch_size=self.max_batch_size,
             num_blocks=self._max_num_blocks_per_seq,
-            can_sample_on_device=False,
-            non_greedy_decoding_on_device=False,
+            can_sample_on_device=True,
+            non_greedy_decoding_on_device=True,
         )
 
         self.logger.info(
@@ -225,17 +260,18 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         prompt_len = len(seq.token_ids)
         page_table = self._page_table_from_block_ids(seq.block_table, torch)
         tokens = torch.tensor([seq.token_ids], dtype=torch.int64)
+        sampling_params = self._build_sampling_params(seq)
 
-        logits = self.model.prefill_forward(
+        output_tokens, _log_probs = self.model.prefill_forward(
             tokens,
             page_table=page_table,
             kv_cache=self._kv_cache,
             prompt_lens=[prompt_len],
             warmup_prefill=False,
+            sampling_params=sampling_params,
         )
 
-        logits_1d = logits[0, -1, :] if logits.dim() >= 3 else logits.flatten()
-        next_token = _sample(logits_1d, seq.temperature, seq.seed)
+        next_token = int(output_tokens[0].item())
         return StepResult(task_id=seq.task_id, token_id=next_token)
 
     def _run_decode(self, seq: StepSequence, torch) -> StepResult:
@@ -250,26 +286,32 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         last_token = seq.token_ids[-1]
         tokens = torch.tensor([[last_token]], dtype=torch.int64)
         current_pos = torch.tensor([seq.current_pos], dtype=torch.int64)
+        sampling_params = self._build_sampling_params(seq)
 
-        logits, _log_probs = self.model.decode_forward(
+        output_tokens, _log_probs = self.model.decode_forward(
             tokens,
             current_pos,
             page_table=page_table,
             kv_cache=self._kv_cache,
             enable_trace=True,
+            sampling_params=sampling_params,
         )
 
-        logits_1d = logits[0, -1, :]
-        next_token = _sample(logits_1d, seq.temperature, seq.seed)
+        next_token = int(output_tokens[0].item())
         return StepResult(task_id=seq.task_id, token_id=next_token)
 
     def _run_decode_batch(
         self, sequences: list[StepSequence], torch
     ) -> list[StepResult]:
         """Batched decode when len(sequences) <= max_batch_size.
+
         tt-metal requires batch == max_batch_size. Fill unused slots by repeating
         real sequences so every slot points to valid KV blocks (no reserved
         block 0 needed). Results from repeated slots are discarded.
+
+        Per-sequence sampling parameters are supported: each sequence can have
+        different temperature, top_p, top_k, etc. Parameters are passed as
+        list-valued fields in SamplingParams.
         """
         B = self.max_batch_size
         if len(sequences) > B:
@@ -279,28 +321,36 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         tokens_list = []
         start_pos_list = []
         page_tables = []
+        padded_sequences = []
         for i in range(B):
             seq = sequences[i % n]
             tokens_list.append(seq.token_ids[-1])
             start_pos_list.append(seq.current_pos)
             page_tables.append(self._page_table_from_block_ids(seq.block_table, torch))
+            padded_sequences.append(seq)
 
         tokens_batch = torch.tensor([[t] for t in tokens_list], dtype=torch.int64)
         start_pos_batch = torch.tensor(start_pos_list, dtype=torch.int64)
         page_table_batch = torch.cat(page_tables, dim=0)
 
-        logits, _log_probs = self.model.decode_forward(
+        # Build per-sequence sampling parameters for batched decode (including padded slots)
+        # Each field in SamplingParams is a list where element i corresponds to padded_sequences[i]
+        sampling_params = self._build_batch_sampling_params(padded_sequences)
+
+        output_tokens, _log_probs = self.model.decode_forward(
             tokens_batch,
             start_pos_batch,
             page_table=page_table_batch,
             kv_cache=self._kv_cache,
             enable_trace=True,
+            sampling_params=sampling_params,
         )
 
+        # Device sampling returns tokens directly, shape [batch]
         return [
             StepResult(
                 task_id=seq.task_id,
-                token_id=_sample(logits[i, -1, :], seq.temperature, seq.seed),
+                token_id=int(output_tokens[i].item()),
             )
             for i, seq in enumerate(sequences)
         ]

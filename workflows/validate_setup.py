@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import grp
 import logging
 import os
 import stat
@@ -13,13 +12,17 @@ from evals.eval_config import EVAL_CONFIGS
 from tests.test_config import TEST_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
+    check_path_permissions_for_uid,
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
+    get_groups_for_uid,
     get_repo_root_path,
+    resolve_hf_snapshot_dir,
     run_command,
 )
 from workflows.workflow_types import (
     DeviceTypes,
+    InferenceEngine,
     WorkflowType,
     WorkflowVenvType,
 )
@@ -44,6 +47,10 @@ def validate_runtime_args(model_spec, runtime_config):
             f"model:={runtime_config.model} does not support device:={runtime_config.device}"
         )
 
+    assert not (args.docker_server and args.local_server), (
+        "Cannot run --docker-server and --local-server"
+    )
+
     if workflow_type == WorkflowType.EVALS:
         assert model_spec.model_name in EVAL_CONFIGS, (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
@@ -64,13 +71,16 @@ def validate_runtime_args(model_spec, runtime_config):
     if workflow_type == WorkflowType.REPORTS:
         pass
     if workflow_type == WorkflowType.SERVER:
-        if args.local_server:
-            raise NotImplementedError(
-                f"Workflow {args.workflow} not implemented for --local-server"
-            )
         if not (args.docker_server or args.local_server):
             raise ValueError(
-                f"Workflow {args.workflow} requires --docker-server argument"
+                f"Workflow {args.workflow} requires --docker-server or --local-server"
+            )
+        if (
+            args.local_server
+            and model_spec.inference_engine != InferenceEngine.VLLM.value
+        ):
+            raise NotImplementedError(
+                "--local-server currently supports only vLLM-backed model specs"
             )
 
         # For partitioning Galaxy per tray as T3K
@@ -99,9 +109,10 @@ def validate_runtime_args(model_spec, runtime_config):
                 "GPU support for running inference server not implemented yet"
             )
 
-    assert not (args.docker_server and args.local_server), (
-        "Cannot run --docker-server and --local-server"
-    )
+    if args.local_server and not args.tt_metal_home:
+        raise ValueError(
+            "--local-server requires --tt-metal-home or TT_METAL_HOME to be set"
+        )
 
     # Validate mutual exclusivity of weight source options
     weight_source_args = [
@@ -119,6 +130,28 @@ def validate_runtime_args(model_spec, runtime_config):
             "Setting ENABLE_AUTO_TOOL_CHOICE has been deprecated, use the VLLM_OVERRIDE_ARGS env var directly or via --vllm-override-args in run.py CLI.\n"
             'Enable auto tool choice by adding --vllm-override-args \'{"enable-auto-tool-choice": true, "tool-call-parser": <parser-name>}\' when calling run.py'
         )
+
+
+def _get_local_server_python_env_dir(runtime_config) -> Path:
+    tt_metal_home = Path(runtime_config.tt_metal_home).expanduser().resolve()
+    if runtime_config.tt_metal_python_venv_dir:
+        return Path(runtime_config.tt_metal_python_venv_dir).expanduser().resolve()
+    return tt_metal_home / "python_env"
+
+
+def _validate_local_vllm_installation(runtime_config):
+    venv_python = _get_local_server_python_env_dir(runtime_config) / "bin" / "python"
+    if not venv_python.exists():
+        raise ValueError(f"⛔ Missing required python venv interpreter: {venv_python}")
+
+    return_code = run_command([str(venv_python), "-c", "import vllm"], logger=logger)
+    if return_code != 0:
+        raise ValueError(
+            "⛔ --local-server with inference engine vLLM requires the `vllm` Python "
+            f"package to be installed in the tt-metal python environment. Could not "
+            f"import `vllm` with: {venv_python}"
+        )
+    logger.info(f"✅ validated vLLM Python package import with: {venv_python}")
 
 
 def validate_local_setup(model_spec, runtime_config, json_fpath):
@@ -152,84 +185,13 @@ def validate_local_setup(model_spec, runtime_config, json_fpath):
             )
         logger.info("✅ validating system software dependencies completed")
 
+    if (
+        runtime_config.local_server
+        and model_spec.inference_engine == InferenceEngine.VLLM.value
+    ):
+        _validate_local_vllm_installation(runtime_config)
+
     logger.info("✅ validating local setup completed")
-
-
-def _get_groups_for_uid(uid):
-    """Return the set of GIDs that a given UID belongs to on this host."""
-    gids = set()
-    try:
-        import pwd
-
-        pw = pwd.getpwuid(uid)
-        gids.add(pw.pw_gid)
-        username = pw.pw_name
-        for group in grp.getgrall():
-            if username in group.gr_mem:
-                gids.add(group.gr_gid)
-    except KeyError:
-        # UID doesn't exist on the host; can only rely on "other" bits
-        pass
-    return gids
-
-
-def _check_path_permissions_for_uid(path, uid, need_write=False):
-    """Check whether the given UID can access a path based on POSIX permission bits.
-
-    Best-effort pre-flight check. Cannot detect ACLs, SELinux, or other
-    security modules, but catches common UID/permission mismatches.
-
-    Args:
-        path: Filesystem path to check.
-        uid: Numeric UID that will access the path (i.e. --image-user).
-        need_write: If True, also check write permission.
-
-    Returns:
-        Tuple of (ok: bool, reason: str). reason is empty when ok is True.
-    """
-    path = Path(path)
-    if not path.exists():
-        return False, f"path does not exist: {path}"
-
-    st = path.stat()
-    mode = st.st_mode
-    gids = _get_groups_for_uid(uid)
-
-    if uid == st.st_uid:
-        has_read = bool(mode & stat.S_IRUSR)
-        has_write = bool(mode & stat.S_IWUSR)
-        has_exec = bool(mode & stat.S_IXUSR)
-        scope = "owner"
-    elif st.st_gid in gids:
-        has_read = bool(mode & stat.S_IRGRP)
-        has_write = bool(mode & stat.S_IWGRP)
-        has_exec = bool(mode & stat.S_IXGRP)
-        scope = "group"
-    else:
-        has_read = bool(mode & stat.S_IROTH)
-        has_write = bool(mode & stat.S_IWOTH)
-        has_exec = bool(mode & stat.S_IXOTH)
-        scope = "other"
-
-    if not has_read:
-        return False, (
-            f"UID {uid} lacks read permission ({scope}) on {path} "
-            f"(owner={st.st_uid}, gid={st.st_gid}, mode={oct(mode)})"
-        )
-
-    if path.is_dir() and not has_exec:
-        return False, (
-            f"UID {uid} lacks execute/traverse permission ({scope}) on directory {path} "
-            f"(owner={st.st_uid}, gid={st.st_gid}, mode={oct(mode)})"
-        )
-
-    if need_write and not has_write:
-        return False, (
-            f"UID {uid} lacks write permission ({scope}) on {path} "
-            f"(owner={st.st_uid}, gid={st.st_gid}, mode={oct(mode)})"
-        )
-
-    return True, ""
 
 
 def _try_fix_path_permissions_for_uid(path, uid, need_write=False):
@@ -248,7 +210,7 @@ def _try_fix_path_permissions_for_uid(path, uid, need_write=False):
 
     st = path.stat()
     mode = st.st_mode
-    gids = _get_groups_for_uid(uid)
+    gids = get_groups_for_uid(uid)
 
     if uid == st.st_uid:
         new_bits = stat.S_IRUSR
@@ -306,12 +268,12 @@ def validate_bind_mount_permissions(args):
         checks.append(("--host-weights-dir", args.host_weights_dir, False))
 
     for flag, host_path, need_write in checks:
-        ok, reason = _check_path_permissions_for_uid(
+        ok, reason = check_path_permissions_for_uid(
             host_path, uid, need_write=need_write
         )
         if not ok:
             _try_fix_path_permissions_for_uid(host_path, uid, need_write=need_write)
-            ok, reason = _check_path_permissions_for_uid(
+            ok, reason = check_path_permissions_for_uid(
                 host_path, uid, need_write=need_write
             )
         if not ok:
@@ -329,6 +291,64 @@ def validate_bind_mount_permissions(args):
         )
 
 
+def validate_local_server_paths(args):
+    """Validate required host paths for --local-server execution."""
+    if not args.local_server:
+        return
+    if not args.tt_metal_home:
+        raise ValueError(
+            "--local-server requires --tt-metal-home or TT_METAL_HOME to be set"
+        )
+
+    tt_metal_home = Path(args.tt_metal_home).expanduser().resolve()
+    if not tt_metal_home.exists():
+        raise ValueError(f"⛔ --tt-metal-home path does not exist: {tt_metal_home}")
+    if not tt_metal_home.is_dir():
+        raise ValueError(f"⛔ --tt-metal-home is not a directory: {tt_metal_home}")
+
+    python_env_dir = _get_local_server_python_env_dir(args)
+    vllm_dir = (
+        Path(args.vllm_dir).expanduser().resolve()
+        if getattr(args, "vllm_dir", None)
+        else (tt_metal_home / "vllm").resolve()
+    )
+    venv_python = python_env_dir / "bin" / "python"
+    build_lib_dir = tt_metal_home / "build" / "lib"
+    entrypoint_path = (
+        get_repo_root_path() / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
+    )
+
+    required_paths = [
+        ("python venv interpreter", venv_python),
+        ("tt-metal build/lib", build_lib_dir),
+        ("vLLM source dir", vllm_dir),
+        ("local server entrypoint", entrypoint_path),
+    ]
+    for label, path in required_paths:
+        if not path.exists():
+            raise ValueError(f"⛔ Missing required {label}: {path}")
+
+    if args.host_hf_cache:
+        host_hf_cache = Path(args.host_hf_cache).expanduser().resolve()
+        if not host_hf_cache.exists():
+            raise ValueError(f"⛔ --host-hf-cache path does not exist: {host_hf_cache}")
+        snapshot_dir = resolve_hf_snapshot_dir(
+            args.runtime_model_spec["hf_weights_repo"], host_hf_cache
+        )
+        if snapshot_dir is None:
+            raise ValueError(
+                f"⛔ --host-hf-cache did not contain a cached snapshot for "
+                f"{args.runtime_model_spec['hf_weights_repo']}: {host_hf_cache}"
+            )
+
+    if args.host_weights_dir:
+        host_weights_dir = Path(args.host_weights_dir).expanduser().resolve()
+        if not host_weights_dir.exists():
+            raise ValueError(
+                f"⛔ --host-weights-dir path does not exist: {host_weights_dir}"
+            )
+
+
 def validate_setup(model_spec, runtime_config, json_fpath):
     """Top-level validation orchestrator called from run.py main().
 
@@ -341,3 +361,5 @@ def validate_setup(model_spec, runtime_config, json_fpath):
     validate_local_setup(model_spec, runtime_config, json_fpath)
     if runtime_config.docker_server:
         validate_bind_mount_permissions(runtime_config)
+    elif runtime_config.local_server:
+        validate_local_server_paths(runtime_config)
