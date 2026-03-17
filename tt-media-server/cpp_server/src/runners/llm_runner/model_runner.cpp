@@ -16,8 +16,8 @@ using ModelRunnerType = tt::config::ModelRunnerType;
 std::unique_ptr<IModelRunner> makeMockModelRunner(const Config& config,
                                                   DecodeCallback callback);
 #ifdef USE_METAL_CPP_LIB
-std::unique_ptr<IModelRunner> make_llama_model_runner(const Config& config,
-                                                      DecodeCallback callback);
+std::unique_ptr<IModelRunner> makeLlamaModelRunner(const Config& config,
+                                                   DecodeCallback callback);
 #endif
 
 std::unique_ptr<IModelRunner> makeModelRunner(const Config& config,
@@ -27,7 +27,7 @@ std::unique_ptr<IModelRunner> makeModelRunner(const Config& config,
       return makeMockModelRunner(config, std::move(callback));
 #ifdef USE_METAL_CPP_LIB
     case ModelRunnerType::LLAMA:
-      return make_llama_model_runner(config, std::move(callback));
+      return makeLlamaModelRunner(config, std::move(callback));
 #endif
     default:
       throw std::invalid_argument("Invalid model runner type");
