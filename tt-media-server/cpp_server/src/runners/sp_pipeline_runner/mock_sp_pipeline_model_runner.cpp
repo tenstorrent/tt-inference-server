@@ -11,7 +11,6 @@ MockSpPipelineModelRunner::MockSpPipelineModelRunner(DecodeCallback callback,
                                                      MockDeviceConfig config)
     : decode_callback_(std::move(callback)), device_(config) {
   reader_thread_ = std::thread([this] {
-    tracy_config::TracySetThreadName("MockDevice::reader");
     reader_loop();
   });
 }

@@ -21,10 +21,11 @@ enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
 struct TokenResult {
   TaskID task_id;
-  uint64_t token_id;
+  uint64_t token_id = 0;
   std::optional<bool> finished;
   bool is_error = false;
 
+  TokenResult() = default;
   TokenResult(TaskID taskId, uint64_t tokenId,
               std::optional<bool> finished = {}, bool isError = false)
       : task_id(std::move(taskId)),

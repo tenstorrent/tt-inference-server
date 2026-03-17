@@ -15,7 +15,7 @@
 namespace sp_pipeline {
 
 using DecodeCallback = std::function<void(const llm_engine::TokenResult&)>;
-using DecodeQueue = ConcurrentQueue<llm_engine::TokenResult>;
+using DecodeQueue = LockFreeConcurrentQueue<llm_engine::TokenResult>;
 
 enum class RequestPhase { PREFILL, DECODE };
 
@@ -23,8 +23,8 @@ class ISpPipelineModelRunner {
  public:
   virtual ~ISpPipelineModelRunner() = default;
 
-  virtual void write(const std::string& task_id,
-                     const std::vector<int64_t>& token_ids, uint32_t max_tokens,
+  virtual void write(const std::string& taskId,
+                     const std::vector<int64_t>& tokenIds, uint32_t maxTokens,
                      RequestPhase phase) = 0;
   virtual void exit() = 0;
 };
