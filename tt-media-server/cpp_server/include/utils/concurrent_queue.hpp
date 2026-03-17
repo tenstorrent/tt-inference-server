@@ -41,8 +41,12 @@ class ConcurrentQueue {
   TRACY_LOCKABLE(std::mutex, mutex);
 };
 
+#ifdef __cpp_lib_hardware_interference_size
 static constexpr size_t CACHE_LINE_SIZE =
     std::hardware_destructive_interference_size;
+#else
+static constexpr size_t CACHE_LINE_SIZE = 64;
+#endif
 namespace {
 inline size_t nextPowerOfTwo(size_t n) { return std::bit_ceil(n); }
 constexpr std::memory_order RELAXED = std::memory_order_relaxed;
