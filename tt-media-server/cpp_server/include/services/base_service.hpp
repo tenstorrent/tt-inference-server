@@ -74,6 +74,8 @@ class BaseService : public IService {
     return status;
   }
 
+  bool isModelReady() const override { return is_ready_.load(); }
+
  protected:
   virtual ResponseType processRequest(RequestType request) = 0;
   virtual void preProcess(RequestType& /*request*/) const {
@@ -103,6 +105,7 @@ class BaseService : public IService {
           int workerId = warmup_queue_->receive();
           TT_LOG_INFO("[BaseService] Worker {} warmed up", workerId);
           if (i == 0) {
+            is_ready_ = true;
             warmup_received_ = true;
             warmup_cv_.notify_all();
           }
@@ -130,6 +133,7 @@ class BaseService : public IService {
     if (warmup_listener_thread_.joinable()) {
       warmup_listener_thread_.join();
     }
+    is_ready_ = false;
   }
 
   virtual worker::WorkerConfig makeWorkerConfig(int workerId);
@@ -142,6 +146,7 @@ class BaseService : public IService {
   std::mutex warmup_mutex_;
   std::condition_variable warmup_cv_;
   std::atomic<bool> warmup_received_{false};
+  std::atomic<bool> is_ready_{false};
   std::vector<std::unique_ptr<worker::SingleProcessWorker>> workers_;
   size_t num_workers_ = 0;
 };

@@ -61,9 +61,7 @@ void LLMService::start() {
   startWarmupListener(tt::ipc::WARMUP_SIGNALS_QUEUE_NAME, num_workers_);
   startWorkers();
   tracy_config::tracyStartupSchedulerParent();
-
   waitForFirstWarmup();
-  is_ready_ = true;
   startConsumers();
 
   if (socket_service_ && socket_service_->isEnabled()) {
@@ -73,8 +71,6 @@ void LLMService::start() {
   TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
   TT_LOG_INFO("[LLMService] Service started");
 }
-
-bool LLMService::isModelReady() const { return is_ready_.load(); }
 
 size_t LLMService::currentQueueSize() const { return pending_tasks_.load(); }
 
@@ -143,7 +139,6 @@ void LLMService::stop() {
     socket_service_->stop();
   }
 
-  is_ready_ = false;
   TT_LOG_INFO("[LLMService] Stopped");
   queue_manager_->clear();
 }

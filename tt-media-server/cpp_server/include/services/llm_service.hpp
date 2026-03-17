@@ -42,8 +42,6 @@ class LLMService
   void start() override;
   void stop() override;
 
-  bool isModelReady() const override;
-
   using StreamCallback =
       std::function<void(domain::StreamingChunkResponse&, bool)>;
   std::optional<StreamCallback> detachStreamCallback(const std::string& taskId);
@@ -91,7 +89,6 @@ class LLMService
 
   std::atomic<size_t> pending_tasks_{0};
 
-  std::atomic<bool> is_ready_{false};
   std::atomic<bool> running_{false};
 
   std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
