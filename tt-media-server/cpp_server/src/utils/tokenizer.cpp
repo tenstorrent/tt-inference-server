@@ -105,7 +105,7 @@ std::string tokenizerDirForModel(config::ModelType model) {
 }
 
 std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
-                                            const std::string& path) {
+                                           const std::string& path) {
   switch (model) {
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return std::make_unique<LlamaTokenizer>(path);

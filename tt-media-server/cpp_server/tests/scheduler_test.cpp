@@ -26,8 +26,8 @@ std::shared_ptr<ITaskQueue> makeQueue() {
 }
 
 Config makeConfig(int numBlocks = 32, int blockSize = 8,
-                   int maxBatchedTokens = 256, int eos = 0,
-                   std::vector<int64_t> stopTokenIds = {}) {
+                  int maxBatchedTokens = 256, int eos = 0,
+                  std::vector<int64_t> stopTokenIds = {}) {
   Config c;
   c.num_kvcache_blocks = numBlocks;
   c.kvcache_block_size = blockSize;
@@ -127,7 +127,7 @@ TEST(PrefillFirstSchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
   auto queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
   sched.addRequest(nextId(), prompt(4),
-                    {.max_tokens = 10, .ignore_eos = false});
+                   {.max_tokens = 10, .ignore_eos = false});
 
   auto [prefill_batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);

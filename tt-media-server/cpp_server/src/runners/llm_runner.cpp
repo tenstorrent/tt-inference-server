@@ -14,8 +14,7 @@ LLMRunner::LLMRunner(const Config& config,
                      ipc::TokenRingBuffer<65536>* resultQueue,
                      ITaskQueue* taskQueue)
     : config(config), resultQueue(resultQueue) {
-  scheduler =
-      makeScheduler(config, taskQueue, tt::config::maxInFlightCount());
+  scheduler = makeScheduler(config, taskQueue, tt::config::maxInFlightCount());
 
   auto decodeCb = [this](const TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");

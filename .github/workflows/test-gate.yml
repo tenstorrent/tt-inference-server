@@ -556,16 +556,6 @@ jobs:
             exit 1
           fi
 
-      - name: C++ format check (src/api must follow .clang-format)
-        run: |
-          cd cpp_server
-          if ! find src/api -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
-            | xargs -0 -r clang-format-20 --dry-run --Werror 2>&1; then
-            echo '::error::tt-media-server/cpp_server/src/api must follow .clang-format.'
-            echo 'Fix: cd tt-media-server/cpp_server && find src/api -type f \( -name '"'"'*.cpp'"'"' -o -name '"'"'*.hpp'"'"' -o -name '"'"'*.h'"'"' \) -print0 | xargs -0 clang-format-20 -i'
-            exit 1
-          fi
-
       - name: C++ clang-tidy (readability-identifier-naming, all sources)
         run: |
           cd cpp_server

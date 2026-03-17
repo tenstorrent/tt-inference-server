@@ -22,12 +22,10 @@ void setSocketKeepAlive(int socketFd) {
   setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
 
   int interval = 5;
-  setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPINTVL, &interval,
-             sizeof(interval));
+  setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval));
 
   int maxProbes = 3;
-  setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPCNT, &maxProbes,
-             sizeof(maxProbes));
+  setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPCNT, &maxProbes, sizeof(maxProbes));
 }
 }  // namespace
 
@@ -291,8 +289,8 @@ bool SocketManager::sendRawData(const std::vector<uint8_t>& data) {
   // Send actual data
   size_t totalSent = 0;
   while (totalSent < data.size()) {
-    sent = send(peer_socket_, data.data() + totalSent,
-                data.size() - totalSent, MSG_NOSIGNAL);
+    sent = send(peer_socket_, data.data() + totalSent, data.size() - totalSent,
+                MSG_NOSIGNAL);
     if (sent <= 0) {
       connected_ = false;
       return false;

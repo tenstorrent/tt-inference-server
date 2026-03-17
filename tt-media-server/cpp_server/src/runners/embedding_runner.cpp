@@ -314,8 +314,7 @@ struct EmbeddingRunner::Impl {
 
 // Public interface implementation
 
-EmbeddingRunner::EmbeddingRunner(const std::string& deviceId,
-                                 int visibleDevice)
+EmbeddingRunner::EmbeddingRunner(const std::string& deviceId, int visibleDevice)
     : deviceId_(deviceId),
       visibleDevice_(visibleDevice),
       impl(std::make_unique<Impl>(deviceId)) {

@@ -28,8 +28,8 @@ class MockModelRunner : public IModelRunner {
     } else {
       ZoneScopedN("MockModelRunner::decode");
       for (Sequence* seq : seqs) {
-        decodeCallback(TokenResult(
-            seq->task_id, static_cast<uint64_t>(seq->last_token + 1)));
+        decodeCallback(TokenResult(seq->task_id,
+                                   static_cast<uint64_t>(seq->last_token + 1)));
       }
     }
   }
@@ -46,7 +46,7 @@ class MockModelRunner : public IModelRunner {
 }  // namespace
 
 std::unique_ptr<IModelRunner> makeMockModelRunner(const Config& config,
-                                                 DecodeCallback callback) {
+                                                  DecodeCallback callback) {
   return std::make_unique<MockModelRunner>(config, std::move(callback));
 }
 

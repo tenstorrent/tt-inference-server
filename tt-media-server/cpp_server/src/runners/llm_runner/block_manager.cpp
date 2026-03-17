@@ -78,8 +78,7 @@ void BlockManager::allocate(Sequence& seq) {
   ZoneScopedN("BlockManager::allocate");
   assert(seq.block_table_.empty());
   LLM_ENGINE_LOG("block_manager")
-      << "allocate task_id=" << seq.task_id
-      << " num_blocks=" << seq.numBlocks()
+      << "allocate task_id=" << seq.task_id << " num_blocks=" << seq.numBlocks()
       << " free=" << free_block_ids_.size() << std::endl;
   int64_t h = -1;
   bool cacheMiss = false;

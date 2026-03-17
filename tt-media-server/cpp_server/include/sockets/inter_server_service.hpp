@@ -40,9 +40,8 @@ class InterServerService {
   /**
    * @brief Health info callback type
    */
-  using HealthCallback =
-      std::function<void(const std::string& serverId, double cpu,
-                         double memory, int activeTasks)>;
+  using HealthCallback = std::function<void(
+      const std::string& serverId, double cpu, double memory, int activeTasks)>;
 
   InterServerService();
   ~InterServerService();

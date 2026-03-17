@@ -24,8 +24,7 @@ std::shared_ptr<ITaskQueue> makeQueue() {
   return std::make_shared<InMemoryTaskQueue>();
 }
 
-Config makeEngineConfig(int numBlocks = 128, int blockSize = 8,
-                       int eos = 32) {
+Config makeEngineConfig(int numBlocks = 128, int blockSize = 8, int eos = 32) {
   Config c;
   c.num_kvcache_blocks = numBlocks;
   c.kvcache_block_size = blockSize;

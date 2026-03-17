@@ -114,8 +114,7 @@ BenchmarkResult benchmarkEncode(const Tokenizer& tokenizer,
   return {numTokens, latencyMs, perTokenUs, throughput};
 }
 
-BenchmarkResult benchmarkDecode(const Tokenizer& tokenizer,
-                                size_t numTokens) {
+BenchmarkResult benchmarkDecode(const Tokenizer& tokenizer, size_t numTokens) {
   std::vector<int> tokens;
   for (size_t i = 0; i < numTokens; ++i) {
     tokens.push_back(100 + (i % 1000));
@@ -174,12 +173,10 @@ int main(int argc, char* argv[]) {
   }
 
   std::cout << "Loading tokenizer from: " << tokenizerFilePath << "\n";
-  auto tokenizer =
-      createTokenizer(tt::config::modelType(), tokenizerFilePath);
+  auto tokenizer = createTokenizer(tt::config::modelType(), tokenizerFilePath);
 
   if (!tokenizer->isLoaded()) {
-    std::cerr << "Failed to load tokenizer from: " << tokenizerFilePath
-              << "\n";
+    std::cerr << "Failed to load tokenizer from: " << tokenizerFilePath << "\n";
     std::cerr << "Usage: " << argv[0] << " [tokenizer_path]\n";
     std::cerr << "Example: " << argv[0] << " tokenizers/tokenizer.json\n";
     return 1;
@@ -189,7 +186,7 @@ int main(int argc, char* argv[]) {
   std::cout << "Running benchmarks...\n";
 
   std::vector<size_t> encodeTargets = {50,   100,  200,   400,   800,  1600,
-                                      3200, 6400, 12800, 25600, 51200};
+                                       3200, 6400, 12800, 25600, 51200};
 
   printHeader(std::cout, "TOKENIZATION (text -> tokens)");
 
@@ -200,7 +197,7 @@ int main(int argc, char* argv[]) {
   }
 
   std::vector<size_t> decodeTargets = {128,  256,   512,   1024,  2048,  4096,
-                                      8192, 16384, 32768, 65536, 131072};
+                                       8192, 16384, 32768, 65536, 131072};
 
   printHeader(std::cout, "DETOKENIZATION (tokens -> text)");
 

@@ -11,8 +11,7 @@ namespace llm_engine {
 
 using Config = tt::config::LLMConfig;
 
-Sequence::Sequence(TaskID taskId, int blockSize,
-                   std::vector<int64_t> tokenIds,
+Sequence::Sequence(TaskID taskId, int blockSize, std::vector<int64_t> tokenIds,
                    const SamplingParams& samplingParams)
     : task_id(std::move(taskId)),
       status_(SequenceStatus::WAITING),
@@ -61,8 +60,7 @@ void Sequence::serialize(std::ostream& os) const {
            sizeof(numPromptTokens_));
   os.write(reinterpret_cast<const char*>(&numCachedTokens_),
            sizeof(numCachedTokens_));
-  os.write(reinterpret_cast<const char*>(&tokenIdsSize),
-           sizeof(tokenIdsSize));
+  os.write(reinterpret_cast<const char*>(&tokenIdsSize), sizeof(tokenIdsSize));
   os.write(reinterpret_cast<const char*>(token_ids_.data()),
            tokenIdsSize * sizeof(int64_t));
   os.write(reinterpret_cast<const char*>(&blockTableSize),

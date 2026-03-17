@@ -19,8 +19,7 @@ namespace tt::domain {
 
 /** Legacy format: "Role: content\n\n" per message, ending with "Assistant: ".
  */
-inline std::string messagesToPrompt(
-    const std::vector<ChatMessage>& messages) {
+inline std::string messagesToPrompt(const std::vector<ChatMessage>& messages) {
   std::ostringstream out;
   for (const auto& m : messages) {
     std::string role = m.role.empty() ? "user" : m.role;

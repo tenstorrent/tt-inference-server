@@ -25,8 +25,8 @@ namespace llm_engine {
  */
 class Scheduler {
  public:
-  explicit Scheduler(const tt::config::LLMConfig& config,
-                     ITaskQueue* taskQueue, size_t maxInFlightCount);
+  explicit Scheduler(const tt::config::LLMConfig& config, ITaskQueue* taskQueue,
+                     size_t maxInFlightCount);
   virtual ~Scheduler() = default;
 
   /** @return true if there are no prefill_queue, decode_queue, or in-flight
@@ -35,7 +35,7 @@ class Scheduler {
 
   /** Creates a sequence, takes ownership, and enqueues it for prefill. */
   Sequence& addRequest(TaskID taskId, std::vector<int64_t> prompt,
-                      const SamplingParams& params = SamplingParams());
+                       const SamplingParams& params = SamplingParams());
 
   /** Enqueues an externally-owned sequence for prefill (prefill_queue). */
   void add(Sequence& seq);
@@ -79,25 +79,22 @@ class Scheduler {
    * @return true if the scheduler should attempt prefill before decode.
    */
   virtual bool shouldPrefillFirst(int decodeCount,
-                                 int maxInFlightCount) const = 0;
+                                  int maxInFlightCount) const = 0;
 
   /**
    * Maximum number of sequences to prefill in one step.
    * Default: maxInFlightCount (full capacity). Override to limit prefill
    * to available slots when decode sequences should be preserved.
    */
-  virtual int maxPrefillSeqs(int /*decodeCount*/,
-                            int maxInFlightCount) const {
+  virtual int maxPrefillSeqs(int /*decodeCount*/, int maxInFlightCount) const {
     return maxInFlightCount;
   }
 
  private:
   int blockSize;
-  bool trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
-                         int& numSeqs, int& numBatchedTokens,
-                         int seqLimit);
-  void tryScheduleDecode(std::vector<Sequence*>& scheduledSeqs,
-                        int& numSeqs);
+  bool trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs, int& numSeqs,
+                          int& numBatchedTokens, int seqLimit);
+  void tryScheduleDecode(std::vector<Sequence*>& scheduledSeqs, int& numSeqs);
 
   size_t maxInFlightCount;
   int maxNumBatchedTokens;
@@ -109,7 +106,7 @@ class Scheduler {
 };
 
 std::unique_ptr<Scheduler> makeScheduler(const tt::config::LLMConfig& config,
-                                          ITaskQueue* taskQueue,
-                                          size_t maxInFlightCount);
+                                         ITaskQueue* taskQueue,
+                                         size_t maxInFlightCount);
 
 }  // namespace llm_engine

@@ -16,8 +16,7 @@ SpPipelineRunner::SpPipelineRunner(const tt::config::LLMConfig& config,
                                    ipc::TokenRingBuffer<65536>* resultQueue,
                                    llm_engine::ITaskQueue* taskQueue)
     : config(config),
-      stopTokenIds(config.stop_token_ids.begin(),
-                   config.stop_token_ids.end()),
+      stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
       taskQueue(taskQueue),
       maxInFlightCount(config.max_in_flight_count) {
@@ -25,8 +24,8 @@ SpPipelineRunner::SpPipelineRunner(const tt::config::LLMConfig& config,
     decodeQueue.push(result);
   };
 
-  modelRunner = std::make_unique<sp_pipeline::SpPipelineModelRunner>(
-      std::move(decodeCb));
+  modelRunner =
+      std::make_unique<sp_pipeline::SpPipelineModelRunner>(std::move(decodeCb));
 }
 
 SpPipelineRunner::~SpPipelineRunner() {
@@ -120,11 +119,9 @@ void SpPipelineRunner::step() {
 void SpPipelineRunner::drainDecodeResults() {
   for (const auto& dr : decodeQueue.drain()) {
     auto it = activeSequences.find(dr.task_id);
-    if (it ==
-        activeSequences.end()) {  // safeguard for too many decode results
-      TT_LOG_WARN(
-          "SpPipelineRunner: task_id not found in activeSequences: {}",
-          dr.task_id.id);
+    if (it == activeSequences.end()) {  // safeguard for too many decode results
+      TT_LOG_WARN("SpPipelineRunner: task_id not found in activeSequences: {}",
+                  dr.task_id.id);
       continue;
     }
     llm_engine::Sequence* seq = it->second.get();
@@ -156,7 +153,7 @@ void SpPipelineRunner::drainDecodeResults() {
 }
 
 void SpPipelineRunner::pushToken(const llm_engine::TaskID& taskId,
-                                uint64_t tokenId, bool finished) {
+                                 uint64_t tokenId, bool finished) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;

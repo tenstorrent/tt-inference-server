@@ -15,8 +15,8 @@ using Config = tt::config::LLMConfig;
 using SchedulingPolicy = tt::config::SchedulingPolicy;
 
 std::unique_ptr<Scheduler> makeScheduler(const Config& config,
-                                          ITaskQueue* taskQueue,
-                                          size_t maxInFlightCount) {
+                                         ITaskQueue* taskQueue,
+                                         size_t maxInFlightCount) {
   switch (config.scheduling_policy) {
     case SchedulingPolicy::MAX_OCCUPANCY:
       return std::make_unique<MaxOccupancyScheduler>(config, taskQueue,
@@ -33,8 +33,7 @@ Scheduler::Scheduler(const Config& config, ITaskQueue* taskQueue,
     : blockSize(config.kvcache_block_size),
       maxInFlightCount(maxInFlightCount),
       maxNumBatchedTokens(config.max_num_batched_tokens),
-      stopTokenIds(config.stop_token_ids.begin(),
-                  config.stop_token_ids.end()),
+      stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       blockManager(config.num_kvcache_blocks, config.kvcache_block_size),
       prefillQueue(taskQueue) {}
 
@@ -43,9 +42,9 @@ bool Scheduler::isFinished() const {
 }
 
 Sequence& Scheduler::addRequest(TaskID taskId, std::vector<int64_t> prompt,
-                               const SamplingParams& params) {
+                                const SamplingParams& params) {
   auto seq = std::make_unique<Sequence>(std::move(taskId), blockSize,
-                                       std::move(prompt), params);
+                                        std::move(prompt), params);
   auto id = seq->task_id;
   add(*seq);
   sequences[id] = std::move(seq);
@@ -76,8 +75,7 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
 
     numSeqs += 1;
     blockManager.allocate(*seq);
-    numBatchedTokens +=
-        static_cast<int>(seq->size() - seq->numCachedTokens_);
+    numBatchedTokens += static_cast<int>(seq->size() - seq->numCachedTokens_);
     auto id = seq->task_id;
     sequences[id] = std::make_unique<Sequence>(std::move(*seq));
     scheduledSeqs.push_back(sequences[id].get());
@@ -87,7 +85,7 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
 }
 
 void Scheduler::tryScheduleDecode(std::vector<Sequence*>& scheduledSeqs,
-                                 int& numSeqs) {
+                                  int& numSeqs) {
   while (!decodeQueue.empty() && numSeqs < maxInFlightCount) {
     Sequence* seq = decodeQueue.front();
     decodeQueue.pop_front();
@@ -124,9 +122,8 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
 
   int decodeCount = static_cast<int>(decodeQueue.size());
 
-  bool shouldPrefill =
-      !prefillQueue->empty() &&
-      shouldPrefillFirst(decodeCount, maxInFlightCount);
+  bool shouldPrefill = !prefillQueue->empty() &&
+                       shouldPrefillFirst(decodeCount, maxInFlightCount);
 
   if (shouldPrefill) {
     int seqLimit = maxPrefillSeqs(decodeCount, maxInFlightCount);
@@ -161,8 +158,8 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
         seq->sampling_params->max_tokens.has_value() &&
         seq->numCompletionTokens() >=
             static_cast<size_t>(seq->sampling_params->max_tokens.value());
-    bool finished = (!seq->sampling_params->ignore_eos && isStopToken) ||
-                    reachedMaxTokens;
+    bool finished =
+        (!seq->sampling_params->ignore_eos && isStopToken) || reachedMaxTokens;
 
     if (finished) {
       seq->status_ = SequenceStatus::FINISHED;

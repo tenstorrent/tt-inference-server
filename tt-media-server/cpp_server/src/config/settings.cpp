@@ -34,8 +34,7 @@ std::string envString(const char* name, const std::string& defaultValue) {
 }
 
 /** Read env string and convert to lowercase for case-insensitive parsing. */
-std::string envStringLower(const char* name,
-                           const std::string& defaultValue) {
+std::string envStringLower(const char* name, const std::string& defaultValue) {
   return toLower(envString(name, defaultValue));
 }
 
@@ -96,9 +95,7 @@ ModelService modelService() {
       envStringLower("MODEL_SERVICE", defaults::MODEL_SERVICE));
 }
 
-bool isEmbeddingService() {
-  return modelService() == ModelService::EMBEDDING;
-}
+bool isEmbeddingService() { return modelService() == ModelService::EMBEDDING; }
 
 bool isLlmServiceEnabled() { return modelService() == ModelService::LLM; }
 
@@ -153,9 +150,7 @@ std::string tokenizerConfigPath(ModelType model) {
   return "";
 }
 
-std::string tokenizerConfigPath() {
-  return tokenizerConfigPath(modelType());
-}
+std::string tokenizerConfigPath() { return tokenizerConfigPath(modelType()); }
 
 std::string visibleDevicesForWorker(size_t workerIndex) {
   const auto& ids = deviceIdsParsed();
@@ -208,7 +203,7 @@ std::string socketHost() {
 
 bool enableAccumulatedStreaming() {
   return envUlong("ENABLE_ACCUMULATED_STREAMING",
-                   defaults::ENABLE_ACCUMULATED_STREAMING);
+                  defaults::ENABLE_ACCUMULATED_STREAMING);
 }
 
 size_t maxAccumulatedTokens() {

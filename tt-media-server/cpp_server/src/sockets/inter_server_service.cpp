@@ -180,7 +180,7 @@ void InterServerService::setupMessageHandlers() {
             message.active_tasks);
         if (healthCheckCallback) {
           healthCheckCallback(message.server_id, message.cpu_usage,
-                                 message.memory_usage, message.active_tasks);
+                              message.memory_usage, message.active_tasks);
         }
       });
 }

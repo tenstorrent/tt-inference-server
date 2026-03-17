@@ -110,7 +110,7 @@ class Tokenizer {
  * LLAMA_3_1_8B_INSTRUCT -> LlamaTokenizer
  */
 std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
-                                            const std::string& path);
+                                           const std::string& path);
 
 /**
  * Tokenizer directory name for a given model type. Used to resolve tokenizer

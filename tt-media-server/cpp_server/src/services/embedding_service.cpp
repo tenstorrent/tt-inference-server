@@ -119,7 +119,7 @@ struct EmbeddingService::Impl {
       } else if (pid == 0) {
         // Child process
         workerProcessMain(static_cast<int>(i), worker->request_pipe,
-                         worker->response_pipe);
+                          worker->response_pipe);
         // Never returns
       } else {
         // Parent process
@@ -197,7 +197,7 @@ struct EmbeddingService::Impl {
   }
 
   [[noreturn]] void workerProcessMain(int workerId, int requestPipe[2],
-                                        int responsePipe[2]) {
+                                      int responsePipe[2]) {
     // Save our FDs first, before closing anything
     int readFd = requestPipe[0];
     int writeFd = responsePipe[1];
@@ -211,8 +211,7 @@ struct EmbeddingService::Impl {
     setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
 
     TT_LOG_INFO("[Worker {}] Started with PID {}", workerId, getpid());
-    TT_LOG_INFO("[Worker {}] TT_VISIBLE_DEVICES={}", workerId,
-                visibleDevices);
+    TT_LOG_INFO("[Worker {}] TT_VISIBLE_DEVICES={}", workerId, visibleDevices);
     TT_LOG_INFO("[Worker {}] read_fd={}, write_fd={}", workerId, readFd,
                 writeFd);
 
@@ -279,8 +278,8 @@ struct EmbeddingService::Impl {
       };
       if (reqJson.isArray()) {
         for (const auto& item : reqJson) {
-          batch.push_back(domain::EmbeddingRequest::from_json(
-              item, taskIdFromJson(item)));
+          batch.push_back(
+              domain::EmbeddingRequest::from_json(item, taskIdFromJson(item)));
         }
       } else {
         batch.push_back(domain::EmbeddingRequest::from_json(
@@ -306,19 +305,19 @@ struct EmbeddingService::Impl {
       //     [model_len: uint32_t][model: chars]
 
       std::vector<uint8_t> responseBuffer;
-      responseBuffer.reserve(batch.size() * (4 + 32 + 1 + 4 + 1024 * 4 + 4 +
-                                             4 + 32));  // Estimate size
+      responseBuffer.reserve(batch.size() * (4 + 32 + 1 + 4 + 1024 * 4 + 4 + 4 +
+                                             32));  // Estimate size
 
       // Helper to append data
       auto appendUint32 = [&](uint32_t val) {
         responseBuffer.insert(responseBuffer.end(),
-                               reinterpret_cast<uint8_t*>(&val),
-                               reinterpret_cast<uint8_t*>(&val) + sizeof(val));
+                              reinterpret_cast<uint8_t*>(&val),
+                              reinterpret_cast<uint8_t*>(&val) + sizeof(val));
       };
       auto appendInt32 = [&](int32_t val) {
         responseBuffer.insert(responseBuffer.end(),
-                               reinterpret_cast<uint8_t*>(&val),
-                               reinterpret_cast<uint8_t*>(&val) + sizeof(val));
+                              reinterpret_cast<uint8_t*>(&val),
+                              reinterpret_cast<uint8_t*>(&val) + sizeof(val));
       };
       auto appendString = [&](const std::string& s) {
         appendUint32(static_cast<uint32_t>(s.size()));
@@ -328,7 +327,7 @@ struct EmbeddingService::Impl {
         appendUint32(static_cast<uint32_t>(floats.size()));
         const uint8_t* data = reinterpret_cast<const uint8_t*>(floats.data());
         responseBuffer.insert(responseBuffer.end(), data,
-                               data + floats.size() * sizeof(float));
+                              data + floats.size() * sizeof(float));
       };
 
       appendUint32(static_cast<uint32_t>(batch.size()));
@@ -436,13 +435,13 @@ struct EmbeddingService::Impl {
         if (totalBatches % 10 == 0) {
           double avgQueueWait = totalQueueWaitMs / totalBatches;
           double avgDispatch = totalDispatchMs / totalBatches;
-          double throughput = (totalRequests * 1000.0) /
-                              (totalQueueWaitMs + totalDispatchMs);
+          double throughput =
+              (totalRequests * 1000.0) / (totalQueueWaitMs + totalDispatchMs);
           TT_LOG_DEBUG(
               "[EmbeddingService] Worker {} batches={} requests={} "
               "avg_queue_wait={}ms avg_dispatch={}ms throughput={} req/s",
-              workerIdx, totalBatches, totalRequests, avgQueueWait,
-              avgDispatch, throughput);
+              workerIdx, totalBatches, totalRequests, avgQueueWait, avgDispatch,
+              throughput);
         }
       } else if (!batch.empty()) {
         // Worker died while we were grabbing work, put it back or error out
@@ -657,8 +656,7 @@ struct EmbeddingService::Impl {
     auto t5 = std::chrono::steady_clock::now();
 
     // Log timing breakdown
-    double checkMs =
-        std::chrono::duration<double, std::milli>(t1 - t0).count();
+    double checkMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
     double buildJsonMs =
         std::chrono::duration<double, std::milli>(t2 - t1).count();
     double writePipeMs =
@@ -667,8 +665,7 @@ struct EmbeddingService::Impl {
         std::chrono::duration<double, std::milli>(t4 - t3).count();
     double parseBinaryMs =
         std::chrono::duration<double, std::milli>(t5 - t4).count();
-    double totalMs =
-        std::chrono::duration<double, std::milli>(t5 - t0).count();
+    double totalMs = std::chrono::duration<double, std::milli>(t5 - t0).count();
     double overheadMs = totalMs - waitWorkerMs;
 
     // Always log timing for every batch

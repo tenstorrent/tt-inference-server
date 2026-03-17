@@ -57,8 +57,7 @@ llm_engine::Sequence* BoostIpcTaskQueue::try_pop() {
 llm_engine::Sequence* BoostIpcTaskQueue::receive() {
   bi_ipc::message_queue::size_type recvSize = 0;
   unsigned int priority = 0;
-  queue_->receive(recv_buffer_.data(), recv_buffer_.size(), recvSize,
-                  priority);
+  queue_->receive(recv_buffer_.data(), recv_buffer_.size(), recvSize, priority);
   bi_ipc::ibufferstream recvStream(recv_buffer_.data(), recvSize);
   return llm_engine::Sequence::deserialize(recvStream);
 }
