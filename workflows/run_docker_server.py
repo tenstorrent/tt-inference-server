@@ -460,6 +460,15 @@ def run_docker_server_compose(model_spec, runtime_config, setup_config, json_fpa
     logger.info(f"Container name: {container_name}")
     logger.info(f"Env file: {env_file}")
 
+    # Ensure named volume exists (compose external: true requires it)
+    cache_volume = compose_vars.get("CACHE_VOLUME")
+    if cache_volume and not cache_volume.startswith("/"):
+        subprocess.run(
+            ["docker", "volume", "create", cache_volume],
+            capture_output=True,
+        )
+        logger.info(f"Ensured Docker volume exists: {cache_volume}")
+
     # Setup log file
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"

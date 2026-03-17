@@ -40,3 +40,4 @@ services:
 volumes:
   cache:
     name: ${CACHE_VOLUME:-tt-inference-cache}
+    external: true

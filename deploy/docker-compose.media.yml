@@ -38,3 +38,4 @@ services:
 volumes:
   cache:
     name: ${CACHE_VOLUME:-tt-media-cache}
+    external: true
