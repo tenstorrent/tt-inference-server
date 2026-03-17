@@ -542,7 +542,7 @@ jobs:
       - name: Build C++ server
         run: |
           cd cpp_server
-          ./build.sh
+          ./build.sh --clang-tidy
           cd ..
 
       - name: C++ format check (.clang-format)

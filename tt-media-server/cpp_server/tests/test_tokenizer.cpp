@@ -21,7 +21,7 @@ using namespace tt::domain;
 
 class TokenizerTest : public ::testing::Test {
  protected:
-  std::unique_ptr<Tokenizer> tok_;
+  std::unique_ptr<Tokenizer> tok;
 
   void SetUp() override {
     std::string path = tt::config::tokenizerPath();
@@ -29,13 +29,13 @@ class TokenizerTest : public ::testing::Test {
       FAIL() << "Tokenizer not found for model: "
              << activeTokenizer().modelName();
     }
-    tok_ = createTokenizer(tt::config::modelType(), path);
-    if (!tok_->isLoaded()) {
+    tok = createTokenizer(tt::config::modelType(), path);
+    if (!tok->isLoaded()) {
       FAIL() << "Failed to load tokenizer from: " << path;
     }
   }
 
-  Tokenizer& tokenizer() { return *tok_; }
+  Tokenizer& tokenizer() { return *tok; }
 };
 
 TEST_F(TokenizerTest, EncodeDecodeRoundTrip) {
@@ -58,7 +58,7 @@ TEST_F(TokenizerTest, EmptyTokensDecode) {
 
 class DeepseekTokenizerTest : public ::testing::Test {
  protected:
-  std::unique_ptr<Tokenizer> tok_;
+  std::unique_ptr<Tokenizer> tok;
 
   void SetUp() override {
     std::string path =
@@ -66,13 +66,13 @@ class DeepseekTokenizerTest : public ::testing::Test {
     if (path.empty()) {
       GTEST_SKIP() << "DeepSeek tokenizer files not found";
     }
-    tok_ = createTokenizer(tt::config::ModelType::DEEPSEEK_R1_0528, path);
-    if (!tok_->isLoaded()) {
+    tok = createTokenizer(tt::config::ModelType::DEEPSEEK_R1_0528, path);
+    if (!tok->isLoaded()) {
       FAIL() << "Failed to load DeepSeek tokenizer from: " << path;
     }
   }
 
-  Tokenizer& tokenizer() { return *tok_; }
+  Tokenizer& tokenizer() { return *tok; }
 };
 
 TEST_F(DeepseekTokenizerTest, CompareWithExpectedTokens) {
@@ -282,7 +282,7 @@ TEST_F(DeepseekTokenizerTest,
 
 class LlamaTokenizerTest : public ::testing::Test {
  protected:
-  std::unique_ptr<Tokenizer> tok_;
+  std::unique_ptr<Tokenizer> tok;
 
   void SetUp() override {
     std::string path =
@@ -290,13 +290,13 @@ class LlamaTokenizerTest : public ::testing::Test {
     if (path.empty()) {
       GTEST_SKIP() << "Llama tokenizer files not found";
     }
-    tok_ = createTokenizer(tt::config::ModelType::LLAMA_3_1_8B_INSTRUCT, path);
-    if (!tok_->isLoaded()) {
+    tok = createTokenizer(tt::config::ModelType::LLAMA_3_1_8B_INSTRUCT, path);
+    if (!tok->isLoaded()) {
       FAIL() << "Failed to load Llama tokenizer from: " << path;
     }
   }
 
-  Tokenizer& tokenizer() { return *tok_; }
+  Tokenizer& tokenizer() { return *tok; }
 };
 
 TEST_F(LlamaTokenizerTest, ApplyChatTemplate) {
