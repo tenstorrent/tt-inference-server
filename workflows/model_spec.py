@@ -2022,7 +2022,7 @@ vlm_templates = [
             "google/medgemma-4b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="38e9934",
+        tt_metal_commit="b4e0e39",
         vllm_commit="7c6685a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -2066,7 +2066,7 @@ vlm_templates = [
             "google/medgemma-27b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="38e9934",
+        tt_metal_commit="b4e0e39",
         vllm_commit="7c6685a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
