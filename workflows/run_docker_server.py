@@ -446,9 +446,10 @@ def run_docker_server_compose(model_spec, runtime_config, setup_config, json_fpa
     compose_vars = resolve_compose_vars(model_spec, runtime_config, setup_config)
     container_name = compose_vars["CONTAINER_NAME"]
 
-    # Write compose variables to .env (merges with existing secrets)
-    env_file = default_dotenv_path
-    write_compose_env(compose_vars, env_file)
+    # Write compose variables to .env.compose (separate from .env secrets)
+    # - .env.compose: compose template ${VAR} substitution (DOCKER_IMAGE, HF_MODEL, etc.)
+    # - .env: container secrets (HF_TOKEN, JWT_SECRET) via env_file: directive in template
+    env_file = write_compose_env(compose_vars)
 
     # Ensure image is available
     assert ensure_docker_image(model_spec.docker_image), (

@@ -35,6 +35,7 @@ from workflows.workflow_types import (
 logger = logging.getLogger("run_log")
 
 DEPLOY_DIR = get_repo_root_path() / "deploy"
+COMPOSE_ENV_PATH = get_repo_root_path() / ".env.compose"
 
 
 def _short_uuid():
@@ -201,24 +202,45 @@ def is_compose_available() -> bool:
 
 def write_compose_env(
     compose_vars: dict,
-    env_file: Path,
+    env_file: Path = None,
 ) -> Path:
-    """Write compose variables to an env file, merging with existing secrets.
+    """Write compose variables to a dedicated .env.compose file.
 
-    Merges compose variables with existing .env content (which may contain
-    HF_TOKEN, JWT_SECRET, etc.) so that `docker compose` can read everything
-    from a single file.
+    Uses a separate file from .env (which holds secrets like HF_TOKEN,
+    JWT_SECRET) to avoid polluting the secrets file with container-internal
+    paths like CACHE_ROOT.
+
+    Docker Compose reads template ${VAR} substitutions from --env-file,
+    while the container's runtime secrets come from the env_file: directive
+    in the compose template (which points to .env).
 
     Args:
         compose_vars: Dict from resolve_compose_vars()
-        env_file: Path to write the env file
+        env_file: Path to write (defaults to .env.compose in repo root)
 
     Returns:
         Path to the written file
     """
-    write_dotenv(compose_vars, dotenv_path=env_file)
+    if env_file is None:
+        env_file = COMPOSE_ENV_PATH
+
+    # Write fresh (not merge) — compose vars are fully resolved each run
+    with open(env_file, "w") as f:
+        for key, value in compose_vars.items():
+            f.write(f"{key}={value}\n")
+
     logger.info(f"Wrote compose variables to {env_file}")
     return env_file
+
+
+def _compose_cmd(compose_file: Path, env_file: Optional[Path] = None) -> list:
+    """Build base docker compose command with file and env-file flags."""
+    cmd = ["docker", "compose", "-f", str(compose_file)]
+    # --env-file controls template ${VAR} substitution (compose variables)
+    # This is separate from env_file: in the compose template (secrets/.env)
+    env_file = env_file or COMPOSE_ENV_PATH
+    cmd.extend(["--env-file", str(env_file)])
+    return cmd
 
 
 def compose_up(
@@ -230,15 +252,13 @@ def compose_up(
 
     Args:
         compose_file: Path to docker-compose.yml
-        env_file: Optional path to .env file (Compose reads .env by default)
+        env_file: Path to compose env file (defaults to .env.compose)
         detach: Run in detached mode (default True)
 
     Returns:
         CompletedProcess result
     """
-    cmd = ["docker", "compose", "-f", str(compose_file)]
-    if env_file:
-        cmd.extend(["--env-file", str(env_file)])
+    cmd = _compose_cmd(compose_file, env_file)
     cmd.append("up")
     if detach:
         cmd.append("-d")
@@ -259,15 +279,13 @@ def compose_down(
 
     Args:
         compose_file: Path to docker-compose.yml
-        env_file: Optional path to .env file
+        env_file: Path to compose env file (defaults to .env.compose)
         timeout: Shutdown timeout in seconds
 
     Returns:
         CompletedProcess result
     """
-    cmd = ["docker", "compose", "-f", str(compose_file)]
-    if env_file:
-        cmd.extend(["--env-file", str(env_file)])
+    cmd = _compose_cmd(compose_file, env_file)
     cmd.extend(["down", "-t", str(timeout)])
 
     logger.info(f"Running: {' '.join(cmd)}")
@@ -282,14 +300,12 @@ def compose_ps(
 
     Args:
         compose_file: Path to docker-compose.yml
-        env_file: Optional path to .env file
+        env_file: Path to compose env file (defaults to .env.compose)
 
     Returns:
         Output string from docker compose ps
     """
-    cmd = ["docker", "compose", "-f", str(compose_file)]
-    if env_file:
-        cmd.extend(["--env-file", str(env_file)])
+    cmd = _compose_cmd(compose_file, env_file)
     cmd.append("ps")
 
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -306,16 +322,14 @@ def compose_logs(
 
     Args:
         compose_file: Path to docker-compose.yml
-        env_file: Optional path to .env file
+        env_file: Path to compose env file (defaults to .env.compose)
         follow: Follow log output (blocking unless log_file_path is set)
         log_file_path: If set, redirect logs to this file and return Popen
 
     Returns:
         Popen process if log_file_path is set, None otherwise
     """
-    cmd = ["docker", "compose", "-f", str(compose_file)]
-    if env_file:
-        cmd.extend(["--env-file", str(env_file)])
+    cmd = _compose_cmd(compose_file, env_file)
     cmd.append("logs")
     if follow:
         cmd.append("-f")
