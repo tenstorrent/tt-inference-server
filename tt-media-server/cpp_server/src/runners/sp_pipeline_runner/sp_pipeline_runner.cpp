@@ -18,8 +18,7 @@ SpPipelineRunner::SpPipelineRunner(
     llm_engine::ITaskQueue* taskQueue,
     sp_pipeline::ModelRunnerFactory modelRunnerFactory)
     : config(config),
-      stopTokenIds(config.stop_token_ids.begin(),
-                      config.stop_token_ids.end()),
+      stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
       taskQueue(taskQueue),
       decodeQueue(config.max_in_flight_count),
@@ -60,7 +59,7 @@ bool SpPipelineRunner::warmup() {
       warmupTokens, warmupParams);
 
   modelRunner->write(warmupSeq->task_id.id, warmupSeq->token_ids_, 1,
-                       sp_pipeline::RequestPhase::PREFILL);
+                     sp_pipeline::RequestPhase::PREFILL);
 
   // Wait for the response token (with timeout)
   const int MAX_ATTEMPTS = 1000;  // ~10 seconds with 10ms sleep
@@ -116,8 +115,8 @@ void SpPipelineRunner::step() {
     llm_engine::TaskID taskId = seq->task_id;
 
     modelRunner->write(taskId.id, seq->token_ids_,
-                         seq->sampling_params->max_tokens.value(),
-                         sp_pipeline::RequestPhase::PREFILL);
+                       seq->sampling_params->max_tokens.value(),
+                       sp_pipeline::RequestPhase::PREFILL);
 
     activeSequences.emplace(taskId, std::move(owned));
     ++inFlightCount;
@@ -129,8 +128,7 @@ void SpPipelineRunner::drainDecodeResults() {
   decodeQueue.popMany(results, maxInFlightCount);
   for (const auto& dr : results) {
     auto it = activeSequences.find(dr.task_id);
-    if (it ==
-        activeSequences.end()) {  // safeguard for too many decode results
+    if (it == activeSequences.end()) {  // safeguard for too many decode results
       TT_LOG_WARN(
           "SpPipelineRunner: task_id not found in active_sequences_: {}",
           dr.task_id.id);

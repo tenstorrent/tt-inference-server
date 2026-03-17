@@ -17,9 +17,7 @@ constexpr uint64_t FALLBACK_TOKEN_ID = 12345;
 
 MockDevicePipeline::MockDevicePipeline(MockDeviceConfig config)
     : config(config) {
-  pipelineThread = std::thread([this] {
-    pipelineLoop();
-  });
+  pipelineThread = std::thread([this] { pipelineLoop(); });
 }
 
 MockDevicePipeline::~MockDevicePipeline() { exit(); }
@@ -110,8 +108,8 @@ void MockDevicePipeline::handleCompletion(RequestPtr req) {
 }
 
 void MockDevicePipeline::insertInFlight(InFlightRequest entry) {
-  auto it = std::lower_bound(inFlightPipeline.begin(),
-                             inFlightPipeline.end(), entry.completeAtTick,
+  auto it = std::lower_bound(inFlightPipeline.begin(), inFlightPipeline.end(),
+                             entry.completeAtTick,
                              [](const InFlightRequest& e, size_t tick) {
                                return e.completeAtTick < tick;
                              });
@@ -142,8 +140,7 @@ void MockDevicePipeline::trySchedule() {
   } else {
     size_t tokensRemaining =
         activeReq->tokenIds.size() - activeReq->prefillOffset;
-    size_t chunkTokens =
-        std::min(config.prefillChunkSize, tokensRemaining);
+    size_t chunkTokens = std::min(config.prefillChunkSize, tokensRemaining);
     activeReq->prefillOffset += static_cast<uint32_t>(chunkTokens);
     feedRemaining = chunkTokens;
   }

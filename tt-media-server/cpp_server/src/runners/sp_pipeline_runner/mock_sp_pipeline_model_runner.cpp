@@ -10,9 +10,7 @@ namespace sp_pipeline {
 MockSpPipelineModelRunner::MockSpPipelineModelRunner(DecodeCallback callback,
                                                      MockDeviceConfig config)
     : decode_callback_(std::move(callback)), device_(config) {
-  reader_thread_ = std::thread([this] {
-    reader_loop();
-  });
+  reader_thread_ = std::thread([this] { reader_loop(); });
 }
 
 MockSpPipelineModelRunner::~MockSpPipelineModelRunner() { exit(); }

@@ -17,7 +17,7 @@ namespace sp_pipeline {
 
 using DecodeCallback = std::function<void(const llm_engine::TokenResult&)>;
 
-class SpPipelineModelRunner: public ISpPipelineModelRunner {
+class SpPipelineModelRunner : public ISpPipelineModelRunner {
  public:
   explicit SpPipelineModelRunner(DecodeCallback callback);
   ~SpPipelineModelRunner() override;
