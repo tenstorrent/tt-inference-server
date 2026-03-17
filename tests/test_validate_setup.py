@@ -6,14 +6,18 @@
 
 import os
 from argparse import Namespace
-from unittest.mock import patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import check_path_permissions_for_uid
 from workflows.validate_setup import (
     _try_fix_path_permissions_for_uid,  # noqa: F401
     validate_bind_mount_permissions,
+    validate_local_setup,
+    validate_local_server_paths,
+    validate_runtime_args,
 )
 
 
@@ -300,3 +304,235 @@ class TestValidateBindMountPermissions:
                     validate_bind_mount_permissions(args)
         finally:
             os.chmod(d, 0o700)
+
+
+class TestLocalServerValidation:
+    def _make_model_spec(self):
+        model_spec = MagicMock()
+        model_spec.model_id = "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
+        model_spec.model_name = "Mistral-7B-Instruct-v0.3"
+        model_spec.inference_engine = "vLLM"
+        return model_spec
+
+    def _make_runtime_config(self):
+        runtime_config = RuntimeConfig(
+            model="Mistral-7B-Instruct-v0.3",
+            workflow="server",
+            device="n150",
+            local_server=True,
+        )
+        runtime_config.runtime_model_spec = {
+            "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3"
+        }
+        return runtime_config
+
+    def test_runtime_args_require_tt_metal_home_for_local_server(self):
+        model_spec = self._make_model_spec()
+        runtime_config = self._make_runtime_config()
+
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS",
+            {model_spec.model_id: model_spec},
+        ):
+            with pytest.raises(
+                ValueError, match="requires --tt-metal-home or TT_METAL_HOME"
+            ):
+                validate_runtime_args(model_spec, runtime_config)
+
+    def test_runtime_args_allow_tt_metal_home_from_env(self):
+        model_spec = self._make_model_spec()
+        runtime_config = self._make_runtime_config()
+        runtime_config.tt_metal_home = "/env/tt-metal"
+
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS",
+            {model_spec.model_id: model_spec},
+        ):
+            validate_runtime_args(model_spec, runtime_config)
+
+    def test_validate_local_server_paths_passes(self, tmp_path):
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        build_lib_dir = tt_metal_home / "build" / "lib"
+        vllm_dir = tt_metal_home / "vllm"
+        python_bin_dir.mkdir(parents=True)
+        build_lib_dir.mkdir(parents=True)
+        vllm_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        args = Namespace(
+            local_server=True,
+            tt_metal_home=str(tt_metal_home),
+            tt_metal_python_venv_dir=None,
+            vllm_dir=None,
+            host_hf_cache=None,
+            host_weights_dir=None,
+            runtime_model_spec={
+                "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3"
+            },
+        )
+
+        validate_local_server_paths(args)
+
+    def test_validate_local_server_paths_requires_python(self, tmp_path):
+        tt_metal_home = tmp_path / "tt-metal"
+        (tt_metal_home / "vllm").mkdir(parents=True)
+        (tt_metal_home / "build" / "lib").mkdir(parents=True)
+
+        args = Namespace(
+            local_server=True,
+            tt_metal_home=str(tt_metal_home),
+            tt_metal_python_venv_dir=None,
+            vllm_dir=None,
+            host_hf_cache=None,
+            host_weights_dir=None,
+            runtime_model_spec={
+                "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3"
+            },
+        )
+
+        with pytest.raises(ValueError, match="python venv interpreter"):
+            validate_local_server_paths(args)
+
+    def test_validate_local_server_paths_requires_cached_hf_snapshot(self, tmp_path):
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        build_lib_dir = tt_metal_home / "build" / "lib"
+        vllm_dir = tt_metal_home / "vllm"
+        python_bin_dir.mkdir(parents=True)
+        build_lib_dir.mkdir(parents=True)
+        vllm_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        hf_home = tmp_path / "hf_home"
+        hf_home.mkdir()
+        args = Namespace(
+            local_server=True,
+            tt_metal_home=str(tt_metal_home),
+            tt_metal_python_venv_dir=None,
+            vllm_dir=None,
+            host_hf_cache=str(hf_home),
+            host_weights_dir=None,
+            runtime_model_spec={
+                "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3"
+            },
+        )
+
+        with pytest.raises(ValueError, match="did not contain a cached snapshot"):
+            validate_local_server_paths(args)
+
+    def test_validate_local_server_paths_accepts_cached_hf_snapshot(self, tmp_path):
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        build_lib_dir = tt_metal_home / "build" / "lib"
+        vllm_dir = tt_metal_home / "vllm"
+        python_bin_dir.mkdir(parents=True)
+        build_lib_dir.mkdir(parents=True)
+        vllm_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        snapshot_dir = (
+            tmp_path
+            / "hf_home"
+            / "hub"
+            / "models--mistralai--Mistral-7B-Instruct-v0.3"
+            / "snapshots"
+            / "abc123"
+        )
+        snapshot_dir.mkdir(parents=True)
+
+        args = Namespace(
+            local_server=True,
+            tt_metal_home=str(tt_metal_home),
+            tt_metal_python_venv_dir=None,
+            vllm_dir=None,
+            host_hf_cache=str(tmp_path / "hf_home"),
+            host_weights_dir=None,
+            runtime_model_spec={
+                "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3"
+            },
+        )
+
+        validate_local_server_paths(args)
+
+    def test_validate_local_server_paths_accepts_explicit_vllm_dir(self, tmp_path):
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        build_lib_dir = tt_metal_home / "build" / "lib"
+        python_bin_dir.mkdir(parents=True)
+        build_lib_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        explicit_vllm_dir = tmp_path / "custom-vllm"
+        explicit_vllm_dir.mkdir()
+        args = Namespace(
+            local_server=True,
+            tt_metal_home=str(tt_metal_home),
+            tt_metal_python_venv_dir=None,
+            vllm_dir=str(explicit_vllm_dir),
+            host_hf_cache=None,
+            host_weights_dir=None,
+            runtime_model_spec={
+                "hf_weights_repo": "mistralai/Mistral-7B-Instruct-v0.3"
+            },
+        )
+
+        validate_local_server_paths(args)
+
+    @patch("workflows.validate_setup.run_command", return_value=0)
+    @patch("workflows.validate_setup.ensure_readwriteable_dir")
+    @patch("workflows.validate_setup.get_default_workflow_root_log_dir")
+    def test_validate_local_setup_checks_vllm_installation(
+        self,
+        mock_get_log_dir,
+        mock_ensure_dir,
+        mock_run_command,
+        tmp_path,
+    ):
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        python_bin_dir.mkdir(parents=True)
+        venv_python = python_bin_dir / "python"
+        venv_python.write_text("")
+
+        model_spec = self._make_model_spec()
+        runtime_config = self._make_runtime_config()
+        runtime_config.tt_metal_home = str(tt_metal_home)
+        runtime_config.skip_system_sw_validation = True
+
+        mock_get_log_dir.return_value = tmp_path / "logs"
+
+        validate_local_setup(model_spec, runtime_config, tmp_path / "runtime.json")
+
+        mock_ensure_dir.assert_called_once_with(tmp_path / "logs")
+        mock_run_command.assert_called_once_with(
+            [str(venv_python), "-c", "import vllm"], logger=ANY
+        )
+
+    @patch("workflows.validate_setup.run_command", return_value=1)
+    @patch("workflows.validate_setup.ensure_readwriteable_dir")
+    @patch("workflows.validate_setup.get_default_workflow_root_log_dir")
+    def test_validate_local_setup_raises_when_vllm_not_installed(
+        self,
+        mock_get_log_dir,
+        mock_ensure_dir,
+        mock_run_command,
+        tmp_path,
+    ):
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        python_bin_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        model_spec = self._make_model_spec()
+        runtime_config = self._make_runtime_config()
+        runtime_config.tt_metal_home = str(tt_metal_home)
+        runtime_config.skip_system_sw_validation = True
+
+        mock_get_log_dir.return_value = tmp_path / "logs"
+
+        with pytest.raises(ValueError, match="requires the `vllm` Python package"):
+            validate_local_setup(model_spec, runtime_config, tmp_path / "runtime.json")
+
+        mock_ensure_dir.assert_called_once_with(tmp_path / "logs")
+        mock_run_command.assert_called_once()

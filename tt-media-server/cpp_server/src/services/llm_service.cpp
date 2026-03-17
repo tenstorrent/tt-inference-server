@@ -40,8 +40,7 @@ namespace {
   exePath[n] = '\0';
   char idBuf[16];
   std::snprintf(idBuf, sizeof(idBuf), "%zu", workerId);
-  char* execArgv[] = {exePath, const_cast<char*>("--worker"), idBuf,
-                     nullptr};
+  char* execArgv[] = {exePath, const_cast<char*>("--worker"), idBuf, nullptr};
   execv(exePath, execArgv);
   perror("execv");
   _exit(1);
@@ -71,7 +70,6 @@ LLMService::LLMService()
   TT_LOG_INFO("[LLMService] Initialized (mode={}, workers={})",
               tt::config::to_string(mode), numWorkers);
   queueManager = std::make_unique<tt::ipc::QueueManager>(numWorkers);
-
   socketService = std::make_shared<tt::sockets::InterServerService>();
   socketService->initializeFromConfig();
 }
@@ -104,23 +102,6 @@ void LLMService::start() {
 
 bool LLMService::is_model_ready() const { return isReady.load(); }
 
-SystemStatus LLMService::get_system_status() const {
-  SystemStatus status;
-  status.model_ready = isReady.load();
-  status.queue_size = pendingTasks.load();
-  status.max_queue_size = max_queue_size_;
-  status.device = device;
-
-  for (const auto& w : workers) {
-    WorkerInfo info;
-    info.worker_id = std::to_string(w->worker_id);
-    info.is_ready = w->is_ready;
-    info.processed_requests = 0;  // TODO: track per-worker stats
-    status.worker_info.push_back(info);
-  }
-  return status;
-}
-
 size_t LLMService::current_queue_size() const { return pendingTasks.load(); }
 
 void LLMService::pre_process(domain::CompletionRequest& request) const {
@@ -129,7 +110,7 @@ void LLMService::pre_process(domain::CompletionRequest& request) const {
     auto text = std::get<std::string>(request.prompt);
     static auto cfg = tt::utils::getTokenizerConfig();
     bool hasBos = text.size() >= cfg.bos_token.size() &&
-                   text.compare(0, cfg.bos_token.size(), cfg.bos_token) == 0;
+                  text.compare(0, cfg.bos_token.size(), cfg.bos_token) == 0;
     if (cfg.add_bos_token && !cfg.bos_token.empty() && !hasBos) {
       text = cfg.bos_token + text;
     }
@@ -430,8 +411,8 @@ void LLMService::post_process(domain::CompletionResponse&) const {
   // no-op
 }
 
-std::shared_ptr<tt::sockets::InterServerService>
-LLMService::getSocketService() const {
+std::shared_ptr<tt::sockets::InterServerService> LLMService::getSocketService()
+    const {
   return socketService;
 }
 

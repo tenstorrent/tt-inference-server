@@ -380,11 +380,13 @@ def get_default_hf_home_path() -> Path:
     return Path(default_hf_home)
 
 
-def get_weights_hf_cache_dir(hf_repo: str) -> Path:
-    local_repo_name = hf_repo.replace("/", "--")
-    hf_home = get_default_hf_home_path()
+def get_default_persistent_volume_root(repo_root: Optional[Path] = None) -> Path:
+    root = repo_root or get_repo_root_path()
+    return Path(root).resolve() / "persistent_volume"
 
-    # Check both potential snapshot directory locations
+
+def resolve_hf_snapshot_dir(hf_repo: str, hf_home: Path) -> Optional[Path]:
+    local_repo_name = hf_repo.replace("/", "--")
     possible_snapshot_dirs = [
         hf_home / f"models--{local_repo_name}" / "snapshots",
         hf_home / "hub" / f"models--{local_repo_name}" / "snapshots",
@@ -401,11 +403,13 @@ def get_weights_hf_cache_dir(hf_repo: str) -> Path:
     if not valid_snapshot_dir:
         return None
 
-    # Get the most recent snapshot
     snapshots = list(valid_snapshot_dir.glob("*"))
-    most_recent_snapshot = max(snapshots, key=lambda p: p.stat().st_mtime)
+    return max(snapshots, key=lambda p: p.stat().st_mtime)
 
-    return most_recent_snapshot
+
+def get_weights_hf_cache_dir(hf_repo: str) -> Path:
+    hf_home = get_default_hf_home_path()
+    return resolve_hf_snapshot_dir(hf_repo, hf_home)
 
 
 def is_streaming_enabled_for_whisper(self) -> bool:

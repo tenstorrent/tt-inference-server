@@ -45,14 +45,12 @@ class LLMService
   void stop() override;
 
   bool is_model_ready() const override;
-  SystemStatus get_system_status() const override;
 
   using StreamCallback =
       std::function<void(domain::StreamingChunkResponse&, bool)>;
-  std::optional<StreamCallback> detachStreamCallback(
-      const std::string& taskId);
+  std::optional<StreamCallback> detachStreamCallback(const std::string& taskId);
   void submitDecodeContinuation(domain::CompletionRequest request,
-                               StreamCallback callback);
+                                StreamCallback callback);
 
   void handleConnectionLost();
 
@@ -98,8 +96,6 @@ class LLMService
 
   std::atomic<bool> isReady{false};
   std::atomic<bool> running{false};
-
-  std::string device = "cpu";
 
   std::unique_ptr<tt::ipc::QueueManager> queueManager;
   const tt::utils::Tokenizer* tokenizer;
