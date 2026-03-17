@@ -22,6 +22,12 @@ from workflows.model_spec import (
     export_model_specs_json,
     get_runtime_model_spec,
 )
+from workflows.compose_config import (
+    format_compose_yaml,
+    generate_compose_config,
+    generate_multihost_controller_compose,
+    generate_multihost_worker_compose,
+)
 from workflows.run_docker_server import (
     format_docker_command,
     generate_docker_run_command,
@@ -255,6 +261,11 @@ def parse_arguments():
         "--print-docker-cmd",
         action="store_true",
         help="Print simplified Docker run command and exit (does not start server)",
+    )
+    parser.add_argument(
+        "--print-compose",
+        action="store_true",
+        help="Print Docker Compose YAML and exit (does not start server)",
     )
     parser.add_argument(
         "--host-volume",
@@ -585,6 +596,41 @@ def main():
                 print(
                     f"Docker run command:\n\n{format_docker_command(docker_command)}\n"
                 )
+            return 0
+        if runtime_config.print_compose:
+            if is_multihost_deployment(runtime_config):
+                expected_hosts = get_expected_num_hosts(runtime_config)
+                multihost_config = setup_multihost_config(
+                    model_spec, expected_hosts, dry_run=True
+                )
+                hosts = validate_multihost_args(
+                    multihost_config,
+                    tt_smi_path=multihost_config.tt_smi_path,
+                    dry_run=True,
+                )
+
+                print("\n=== Multi-Host Docker Compose Files ===\n")
+                for rank, host in enumerate(hosts):
+                    worker_compose, _ = generate_multihost_worker_compose(
+                        docker_image=model_spec.docker_image,
+                        shared_storage_root=multihost_config.shared_storage_root,
+                        rank=rank,
+                    )
+                    print(f"# Worker {rank} on {host}:")
+                    print(f"# Deploy: scp compose.worker-{rank}.yml {host}: && ssh {host} docker compose -f compose.worker-{rank}.yml up -d")
+                    print(format_compose_yaml(worker_compose))
+
+                # Note: Controller compose requires prepare() to generate SSH keys,
+                # which is a side effect. For --print-compose we show the structure
+                # without actual key paths.
+                print("# Controller (rank-0 host):")
+                print("# Note: SSH config and MPI rankfile paths are generated at runtime by the orchestrator.")
+                print("# Use 'run.py --docker-server' to deploy with full orchestration.\n")
+            else:
+                compose_config, _ = generate_compose_config(
+                    model_spec, runtime_config, setup_config, docker_json_fpath
+                )
+                print(f"Docker Compose config:\n\n{format_compose_yaml(compose_config)}")
             return 0
         run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
     elif runtime_config.local_server:
