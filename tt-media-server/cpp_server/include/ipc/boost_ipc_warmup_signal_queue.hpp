@@ -29,10 +29,12 @@ class BoostIpcWarmupSignalQueue : public IWarmupSignalQueue {
 
   void sendReady(int workerId) override;
   void receive(int& workerId) override;
+  void remove() override;
 
   static void remove(const std::string& name);
 
  private:
+  std::string name_;
   std::unique_ptr<boost::interprocess::message_queue> queue_;
 };
 

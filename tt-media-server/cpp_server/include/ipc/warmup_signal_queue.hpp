@@ -18,6 +18,9 @@ class IWarmupSignalQueue {
 
   /** Main process blocks until one worker signals (create_only usage). */
   virtual void receive(int& workerId) = 0;
+
+  /** Remove the named queue (main process only, before destructor). Default no-op. */
+  virtual void remove() {}
 };
 
 }  // namespace tt::ipc

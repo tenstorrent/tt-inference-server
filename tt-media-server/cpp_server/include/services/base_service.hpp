@@ -3,15 +3,21 @@
 
 #pragma once
 
+#include <atomic>
+#include <condition_variable>
 #include <concepts>
 #include <functional>
 #include <limits>
+#include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "domain/base_request.hpp"
 #include "domain/base_response.hpp"
+#include "ipc/warmup_signal_queue.hpp"
 namespace tt::services {
 
 class QueueFullException : public std::runtime_error {
@@ -72,7 +78,59 @@ class BaseService : public IService {
   virtual void postProcess(ResponseType& response) const = 0;
   virtual size_t currentQueueSize() const = 0;
 
+  /** Override to provide warmup queue (e.g. Boost IPC). Default: no warmup signaling. */
+  virtual std::unique_ptr<tt::ipc::IWarmupSignalQueue> createWarmupQueue(
+      const std::string& name, size_t capacity) {
+    (void)name;
+    (void)capacity;
+    return nullptr;
+  }
+
+  /** Called from warmup listener when first worker signals. Override to log. */
+  virtual void onFirstWarmup(int /*workerId*/) {}
+
+  void startWarmupListener(const std::string& name, size_t capacity) {
+    warmup_queue_ = createWarmupQueue(name, capacity);
+    if (!warmup_queue_) return;
+    warmup_received_ = false;
+    warmup_listener_thread_ = std::thread([this]() {
+      try {
+        int workerId = -1;
+        warmup_queue_->receive(workerId);
+        onFirstWarmup(workerId);
+      } catch (...) {
+      }
+      warmup_received_ = true;
+      warmup_cv_.notify_all();
+    });
+  }
+
+  void waitForFirstWarmup() {
+    if (!warmup_queue_) return;
+    std::unique_lock<std::mutex> lock(warmup_mutex_);
+    warmup_cv_.wait(lock, [this]() { return warmup_received_.load(); });
+    if (warmup_listener_thread_.joinable()) {
+      warmup_listener_thread_.join();
+    }
+  }
+
+  void stopWarmupListener() {
+    if (warmup_queue_) {
+      warmup_queue_->remove();
+      warmup_queue_.reset();
+    }
+    if (warmup_listener_thread_.joinable()) {
+      warmup_listener_thread_.join();
+    }
+  }
+
   size_t max_queue_size_ = std::numeric_limits<size_t>::max();
+
+  std::unique_ptr<tt::ipc::IWarmupSignalQueue> warmup_queue_;
+  std::thread warmup_listener_thread_;
+  std::mutex warmup_mutex_;
+  std::condition_variable warmup_cv_;
+  std::atomic<bool> warmup_received_{false};
 };
 
 }  // namespace tt::services

@@ -63,6 +63,16 @@ worker::WorkerConfig makeWorkerConfigForProcess(int workerId) {
   return cfg;
 }
 
+std::unique_ptr<tt::ipc::IWarmupSignalQueue> LLMService::createWarmupQueue(
+    const std::string& name, size_t capacity) {
+  tt::ipc::BoostIpcWarmupSignalQueue::remove(name);
+  return std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(name, capacity);
+}
+
+void LLMService::onFirstWarmup(int workerId) {
+  TT_LOG_INFO("[LLMService] First worker warmed up (workerId={})", workerId);
+}
+
 LLMService::LLMService()
     : mode_(tt::config::llmMode()),
       num_workers_(tt::config::numWorkers()),
@@ -83,42 +93,21 @@ void LLMService::start() {
   if (running_.exchange(true)) {
     return;  // Already running
   }
+  if (num_workers_ == 0) {
+    running_ = false;
+    throw std::invalid_argument(
+        "LLMService requires at least one worker (num_workers > 0)");
+  }
 
   TT_LOG_INFO("[LLMService] Starting (mode={}, workers={})",
               tt::config::toString(mode_), num_workers_);
 
-  if (num_workers_ > 0) {
-    tt::ipc::BoostIpcWarmupSignalQueue::remove(tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
-    warmup_queue_ = std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(
-        tt::ipc::WARMUP_SIGNALS_QUEUE_NAME, num_workers_);
-    warmup_received_ = false;
-    warmup_listener_thread_ = std::thread([this]() {
-      try {
-        int workerId = -1;
-        warmup_queue_->receive(workerId);
-        TT_LOG_INFO("[LLMService] First worker warmed up (workerId={})", workerId);
-      } catch (const std::exception& e) {
-        TT_LOG_WARN("[LLMService] Warmup listener: {} (shutdown?)", e.what());
-      }
-      is_ready_ = true;
-      warmup_received_ = true;
-      warmup_cv_.notify_all();
-    });
-  }
-
+  startWarmupListener(tt::ipc::WARMUP_SIGNALS_QUEUE_NAME, num_workers_);
   startWorkers();
   tracy_config::tracyStartupSchedulerParent();
 
-  if (num_workers_ > 0) {
-    std::unique_lock<std::mutex> lock(warmup_mutex_);
-    warmup_cv_.wait(lock, [this]() { return warmup_received_.load(); });
-    if (warmup_listener_thread_.joinable()) {
-      warmup_listener_thread_.join();
-    }
-  } else {
-    is_ready_ = true;
-  }
-
+  waitForFirstWarmup();
+  is_ready_ = true;
   startConsumers();
 
   if (socket_service_ && socket_service_->isEnabled()) {
@@ -199,11 +188,7 @@ void LLMService::stop() {
 
   TT_LOG_INFO("[LLMService] Stopping...");
 
-  warmup_queue_.reset();
-  if (warmup_listener_thread_.joinable()) {
-    warmup_listener_thread_.join();
-  }
-  tt::ipc::BoostIpcWarmupSignalQueue::remove(tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
+  stopWarmupListener();
 
   // Signal shutdown on all ring buffers so blockingPop wakes up
   for (auto& q : queue_manager_->result_queues) {

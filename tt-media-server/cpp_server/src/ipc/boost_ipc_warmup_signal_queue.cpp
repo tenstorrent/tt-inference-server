@@ -19,15 +19,21 @@ BoostIpcWarmupSignalQueue::~BoostIpcWarmupSignalQueue() {
   }
 }
 
-BoostIpcWarmupSignalQueue::BoostIpcWarmupSignalQueue(const std::string& name) {
+BoostIpcWarmupSignalQueue::BoostIpcWarmupSignalQueue(const std::string& name)
+    : name_(name) {
   queue_ =
       std::make_unique<bi_ipc::message_queue>(bi_ipc::open_only, name.c_str());
 }
 
 BoostIpcWarmupSignalQueue::BoostIpcWarmupSignalQueue(const std::string& name,
-                                                     size_t capacity) {
+                                                     size_t capacity)
+    : name_(name) {
   queue_ = std::make_unique<bi_ipc::message_queue>(
       bi_ipc::create_only, name.c_str(), capacity, WARMUP_SIGNAL_MSG_SIZE);
+}
+
+void BoostIpcWarmupSignalQueue::remove() {
+  BoostIpcWarmupSignalQueue::remove(name_);
 }
 
 void BoostIpcWarmupSignalQueue::sendReady(int workerId) {
