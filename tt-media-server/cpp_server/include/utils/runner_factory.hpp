@@ -6,11 +6,11 @@
 #include <memory>
 #include <string>
 
-#include "config/constants.hpp"
-#include "runners/runner_interface.hpp"
-#include "runners/runner_config.hpp"
-#include "runners/llm_runner/task_queue.hpp"
+#include "config/runner_config.hpp"
+#include "config/types.hpp"
 #include "ipc/shared_memory.hpp"
+#include "runners/llm_runner/task_queue.hpp"
+#include "runners/runner_interface.hpp"
 
 namespace tt::utils::runner_factory {
 
@@ -24,11 +24,9 @@ namespace tt::utils::runner_factory {
  * @return Unique pointer to the created runner
  */
 std::unique_ptr<runners::IRunner> create_runner(
-    config::ModelService service,
-    const runners::RunnerConfig& config,
+    config::ModelService service, const config::RunnerConfig& config,
     ipc::TokenRingBuffer<65536>* result_queue,
-    llm_engine::ITaskQueue* task_queue
-);
+    llm_engine::ITaskQueue* task_queue);
 
 /**
  * Get the runner type string for the current configuration.
@@ -36,4 +34,4 @@ std::unique_ptr<runners::IRunner> create_runner(
  */
 std::string get_runner_type();
 
-} // namespace tt::utils::runner_factory
+}  // namespace tt::utils::runner_factory

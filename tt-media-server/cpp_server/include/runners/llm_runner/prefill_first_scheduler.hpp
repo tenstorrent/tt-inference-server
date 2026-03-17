@@ -21,7 +21,7 @@ class PrefillFirstScheduler : public Scheduler {
 
  protected:
   bool should_prefill_first(int /*decode_count*/,
-                            int /*max_num_seqs*/) const override {
+                            int /*max_in_flight_count*/) const override {
     return true;
   }
 };

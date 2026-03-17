@@ -6883,20 +6883,20 @@
           "model_name": "DeepSeek-R1-0528",
           "inference_engine": "vLLM",
           "device_type": "GALAXY",
-          "tt_metal_commit": "e3d97e5",
+          "tt_metal_commit": "0900acd",
           "device_model_spec": {
             "device": "GALAXY",
             "max_concurrency": 256,
-            "max_context": 65536,
+            "max_context": 2048,
             "perf_targets_map": {},
             "default_impl": true,
             "perf_reference": [],
             "vllm_args": {
               "model": "deepseek-ai/DeepSeek-R1-0528",
               "block_size": "64",
-              "max_model_len": "65536",
+              "max_model_len": "2048",
               "max_num_seqs": "256",
-              "max_num_batched_tokens": "65536",
+              "max_num_batched_tokens": "2048",
               "max-log-len": "32",
               "seed": "9472",
               "override_tt_config": "{}"
@@ -6914,11 +6914,10 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
             "MESH_DEVICE": "TG",
             "ARCH_NAME": "wormhole_b0"
           },
-          "vllm_commit": "a186bf4",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "deepseek-ai/DeepSeek-R1-0528",
           "param_count": null,
           "min_disk_gb": null,
@@ -6926,16 +6925,16 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e3d97e5-a186bf4",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-0900acd-22be241",
           "status": "EXPERIMENTAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e3d97e5/models/demos/deepseek_v3",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/0900acd/models/demos/deepseek_v3",
           "override_tt_config": {},
           "supported_modalities": [
             "text"
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -6954,27 +6953,36 @@
           "model_name": "DeepSeek-R1-0528",
           "inference_engine": "vLLM",
           "device_type": "DUAL_GALAXY",
-          "tt_metal_commit": "e3d97e5",
+          "tt_metal_commit": "0900acd",
           "device_model_spec": {
             "device": "DUAL_GALAXY",
             "max_concurrency": 256,
-            "max_context": 65536,
+            "max_context": 2048,
             "perf_targets_map": {},
             "default_impl": true,
             "perf_reference": [],
             "vllm_args": {
               "model": "deepseek-ai/DeepSeek-R1-0528",
-              "block_size": "64",
-              "max_model_len": "65536",
-              "max_num_seqs": "256",
-              "max_num_batched_tokens": "65536",
+              "block_size": "32",
+              "max_model_len": "2048",
+              "max_num_seqs": "32",
+              "max_num_batched_tokens": "2048",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{}"
+              "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\", \"fabric_reliability_mode\": \"RELAXED_INIT\", \"trace_mode\": \"none\", \"env_passthrough\": [\"DEEPSEEK_V3_CACHE\", \"DEEPSEEK_V3_HF_MODEL\"]}",
+              "data_parallel_size": 8
             },
-            "override_tt_config": {},
+            "override_tt_config": {
+              "fabric_config": "FABRIC_1D",
+              "fabric_reliability_mode": "RELAXED_INIT",
+              "trace_mode": "none",
+              "env_passthrough": [
+                "DEEPSEEK_V3_CACHE",
+                "DEEPSEEK_V3_HF_MODEL"
+              ]
+            },
             "env_vars": {
-              "MESH_DEVICE": "DUAL"
+              "MESH_DEVICE": "(8,8)"
             },
             "system_requirements": null
           },
@@ -6984,10 +6992,9 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
-            "MESH_DEVICE": "DUAL"
+            "MESH_DEVICE": "(8,8)"
           },
-          "vllm_commit": "a186bf4",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "deepseek-ai/DeepSeek-R1-0528",
           "param_count": null,
           "min_disk_gb": null,
@@ -6995,16 +7002,24 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e3d97e5-a186bf4",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64:0.9.0-0900acd-22be241",
           "status": "EXPERIMENTAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e3d97e5/models/demos/deepseek_v3",
-          "override_tt_config": {},
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/0900acd/models/demos/deepseek_v3",
+          "override_tt_config": {
+            "fabric_config": "FABRIC_1D",
+            "fabric_reliability_mode": "RELAXED_INIT",
+            "trace_mode": "none",
+            "env_passthrough": [
+              "DEEPSEEK_V3_CACHE",
+              "DEEPSEEK_V3_HF_MODEL"
+            ]
+          },
           "supported_modalities": [
             "text"
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }
@@ -7023,27 +7038,36 @@
           "model_name": "DeepSeek-R1-0528",
           "inference_engine": "vLLM",
           "device_type": "QUAD_GALAXY",
-          "tt_metal_commit": "e3d97e5",
+          "tt_metal_commit": "0900acd",
           "device_model_spec": {
             "device": "QUAD_GALAXY",
-            "max_concurrency": 256,
-            "max_context": 65536,
+            "max_concurrency": 512,
+            "max_context": 2048,
             "perf_targets_map": {},
             "default_impl": true,
             "perf_reference": [],
             "vllm_args": {
               "model": "deepseek-ai/DeepSeek-R1-0528",
-              "block_size": "64",
-              "max_model_len": "65536",
-              "max_num_seqs": "256",
-              "max_num_batched_tokens": "65536",
+              "block_size": "32",
+              "max_model_len": "2048",
+              "max_num_seqs": "32",
+              "max_num_batched_tokens": "2048",
               "max-log-len": "32",
               "seed": "9472",
-              "override_tt_config": "{}"
+              "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\", \"fabric_reliability_mode\": \"RELAXED_INIT\", \"trace_mode\": \"none\", \"env_passthrough\": [\"DEEPSEEK_V3_CACHE\", \"DEEPSEEK_V3_HF_MODEL\"]}",
+              "data_parallel_size": 16
             },
-            "override_tt_config": {},
+            "override_tt_config": {
+              "fabric_config": "FABRIC_1D",
+              "fabric_reliability_mode": "RELAXED_INIT",
+              "trace_mode": "none",
+              "env_passthrough": [
+                "DEEPSEEK_V3_CACHE",
+                "DEEPSEEK_V3_HF_MODEL"
+              ]
+            },
             "env_vars": {
-              "MESH_DEVICE": "QUAD"
+              "MESH_DEVICE": "(8,16)"
             },
             "system_requirements": null
           },
@@ -7053,10 +7077,9 @@
             "VLLM_RPC_TIMEOUT": "900000",
             "VLLM_TARGET_DEVICE": "tt",
             "TORCHDYNAMO_DISABLE": "1",
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
-            "MESH_DEVICE": "QUAD"
+            "MESH_DEVICE": "(8,16)"
           },
-          "vllm_commit": "a186bf4",
+          "vllm_commit": "22be241",
           "hf_weights_repo": "deepseek-ai/DeepSeek-R1-0528",
           "param_count": null,
           "min_disk_gb": null,
@@ -7064,16 +7087,24 @@
           "model_type": "LLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e3d97e5-a186bf4",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64:0.9.0-0900acd-22be241",
           "status": "EXPERIMENTAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/e3d97e5/models/demos/deepseek_v3",
-          "override_tt_config": {},
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/0900acd/models/demos/deepseek_v3",
+          "override_tt_config": {
+            "fabric_config": "FABRIC_1D",
+            "fabric_reliability_mode": "RELAXED_INIT",
+            "trace_mode": "none",
+            "env_passthrough": [
+              "DEEPSEEK_V3_CACHE",
+              "DEEPSEEK_V3_HF_MODEL"
+            ]
+          },
           "supported_modalities": [
             "text"
           ],
           "subdevice_type": null,
           "uses_tensor_model_cache": true,
-          "has_builtin_warmup": false,
+          "has_builtin_warmup": true,
           "cli_args": {}
         }
       }

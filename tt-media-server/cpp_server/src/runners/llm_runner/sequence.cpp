@@ -1,11 +1,15 @@
 #include "runners/llm_runner/sequence.hpp"
-#include "runners/llm_runner/config.hpp"
-#include "llm_runner/sampling_params.hpp"
+
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
 
+#include "config/runner_config.hpp"
+#include "llm_runner/sampling_params.hpp"
+
 namespace llm_engine {
+
+using Config = tt::config::LLMConfig;
 
 Sequence::Sequence(TaskID task_id, int block_size,
                    std::vector<int64_t> token_ids,
@@ -29,7 +33,8 @@ std::vector<int64_t> Sequence::block(size_t i) const {
   }
   size_t start = i * block_size_;
   size_t end = std::min(start + block_size_, token_ids_.size());
-  return std::vector<int64_t>(token_ids_.begin() + start, token_ids_.begin() + end);
+  return std::vector<int64_t>(token_ids_.begin() + start,
+                              token_ids_.begin() + end);
 }
 
 std::vector<int64_t> Sequence::completion_token_ids() const {
@@ -52,12 +57,18 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&id_size), sizeof(id_size));
   os.write(task_id.id.c_str(), id_size);
   os.write(reinterpret_cast<const char*>(&last_token), sizeof(last_token));
-  os.write(reinterpret_cast<const char*>(&num_prompt_tokens_), sizeof(num_prompt_tokens_));
-  os.write(reinterpret_cast<const char*>(&num_cached_tokens_), sizeof(num_cached_tokens_));
-  os.write(reinterpret_cast<const char*>(&token_ids_size), sizeof(token_ids_size));
-  os.write(reinterpret_cast<const char*>(token_ids_.data()), token_ids_size * sizeof(int64_t));
-  os.write(reinterpret_cast<const char*>(&block_table_size), sizeof(block_table_size));
-  os.write(reinterpret_cast<const char*>(block_table_.data()), block_table_size * sizeof(int));
+  os.write(reinterpret_cast<const char*>(&num_prompt_tokens_),
+           sizeof(num_prompt_tokens_));
+  os.write(reinterpret_cast<const char*>(&num_cached_tokens_),
+           sizeof(num_cached_tokens_));
+  os.write(reinterpret_cast<const char*>(&token_ids_size),
+           sizeof(token_ids_size));
+  os.write(reinterpret_cast<const char*>(token_ids_.data()),
+           token_ids_size * sizeof(int64_t));
+  os.write(reinterpret_cast<const char*>(&block_table_size),
+           sizeof(block_table_size));
+  os.write(reinterpret_cast<const char*>(block_table_.data()),
+           block_table_size * sizeof(int));
   os.write(reinterpret_cast<const char*>(&status_), sizeof(status_));
   os.write(reinterpret_cast<const char*>(&block_size_), sizeof(block_size_));
   sampling_params->serialize(os);
@@ -70,23 +81,27 @@ Sequence* Sequence::deserialize(std::istream& is) {
   is.read(task_id_str.data(), task_id_size);
 
   Config default_config;
-  Sequence* seq = new Sequence(TaskID(std::move(task_id_str)),
-                               default_config.kvcache_block_size,
-                               std::vector<int64_t>{});
+  Sequence* seq =
+      new Sequence(TaskID(std::move(task_id_str)),
+                   default_config.kvcache_block_size, std::vector<int64_t>{});
 
   is.read(reinterpret_cast<char*>(&seq->last_token), sizeof(seq->last_token));
-  is.read(reinterpret_cast<char*>(&seq->num_prompt_tokens_), sizeof(seq->num_prompt_tokens_));
-  is.read(reinterpret_cast<char*>(&seq->num_cached_tokens_), sizeof(seq->num_cached_tokens_));
+  is.read(reinterpret_cast<char*>(&seq->num_prompt_tokens_),
+          sizeof(seq->num_prompt_tokens_));
+  is.read(reinterpret_cast<char*>(&seq->num_cached_tokens_),
+          sizeof(seq->num_cached_tokens_));
 
   size_t token_ids_size;
   is.read(reinterpret_cast<char*>(&token_ids_size), sizeof(token_ids_size));
   seq->token_ids_.resize(token_ids_size);
-  is.read(reinterpret_cast<char*>(seq->token_ids_.data()), token_ids_size * sizeof(int64_t));
+  is.read(reinterpret_cast<char*>(seq->token_ids_.data()),
+          token_ids_size * sizeof(int64_t));
 
   size_t block_table_size;
   is.read(reinterpret_cast<char*>(&block_table_size), sizeof(block_table_size));
   seq->block_table_.resize(block_table_size);
-  is.read(reinterpret_cast<char*>(seq->block_table_.data()), block_table_size * sizeof(int));
+  is.read(reinterpret_cast<char*>(seq->block_table_.data()),
+          block_table_size * sizeof(int));
 
   is.read(reinterpret_cast<char*>(&seq->status_), sizeof(seq->status_));
   is.read(reinterpret_cast<char*>(&seq->block_size_), sizeof(seq->block_size_));
