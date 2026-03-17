@@ -99,6 +99,11 @@ def resolve_compose_vars(
         env["DEVICE"] = model_spec.device_type.name.lower()
 
     # Volume configuration
+    # NOTE: CACHE_ROOT is intentionally NOT written to .env because it's a
+    # container-internal path (/home/container_app_user/cache_root). Writing it
+    # to .env would cause run.py's get_default_workflow_root_log_dir() to try
+    # creating host directories at the container path. The compose templates
+    # use ${CACHE_ROOT:-/home/container_app_user/cache_root} as default.
     if setup_config:
         if setup_config.host_model_volume_root:
             env["CACHE_VOLUME"] = str(setup_config.host_model_volume_root)
@@ -106,8 +111,6 @@ def resolve_compose_vars(
             from workflows.run_docker_server import generate_docker_volume_name
 
             env["CACHE_VOLUME"] = generate_docker_volume_name(model_spec)
-
-        env["CACHE_ROOT"] = str(setup_config.cache_root)
 
         if (
             setup_config.container_model_weights_path
