@@ -24,8 +24,7 @@
 namespace tt::services {
 
 LLMService::LLMService()
-    : mode_(tt::config::llmMode()),
-      tokenizer_(&tt::utils::activeTokenizer()) {
+    : mode_(tt::config::llmMode()), tokenizer_(&tt::utils::activeTokenizer()) {
   num_workers_ = tt::config::numWorkers();
   max_queue_size_ = tt::config::maxQueueSize();
   TT_LOG_INFO("[LLMService] Initialized (mode={}, workers={})",

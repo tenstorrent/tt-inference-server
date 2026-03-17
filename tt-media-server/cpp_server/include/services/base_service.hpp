@@ -78,7 +78,7 @@ class BaseService : public IService {
 
   // Worker management - override makeWorkerConfig to customize worker setup
   virtual worker::WorkerConfig makeWorkerConfig(int workerId);
-  
+
   // Default worker startup implementation
   virtual void startWorkers();
 
@@ -92,9 +92,11 @@ class BaseService : public IService {
 // Template implementation - outside the namespace to avoid pollution
 #include <sys/wait.h>
 #include <unistd.h>
+
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
+
 #include "config/settings.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
 #include "ipc/queue_manager.hpp"
