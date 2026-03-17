@@ -25,51 +25,50 @@ namespace tt::services {
 
 namespace {
 
-[[noreturn]] void exec_worker_process(
-    size_t worker_id,
-    const std::unordered_map<std::string, std::string>& env_vars) {
-  for (const auto& [key, value] : env_vars) {
+[[noreturn]] void execWorkerProcess(
+    size_t workerId,
+    const std::unordered_map<std::string, std::string>& envVars) {
+  for (const auto& [key, value] : envVars) {
     setenv(key.c_str(), value.c_str(), 1);
   }
-  char exe_path[PATH_MAX];
-  ssize_t n = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+  char exePath[PATH_MAX];
+  ssize_t n = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
   if (n <= 0) {
     perror("readlink /proc/self/exe");
     _exit(1);
   }
-  exe_path[n] = '\0';
-  char id_buf[16];
-  std::snprintf(id_buf, sizeof(id_buf), "%zu", worker_id);
-  char* exec_argv[] = {exe_path, const_cast<char*>("--worker"), id_buf,
-                       nullptr};
-  execv(exe_path, exec_argv);
+  exePath[n] = '\0';
+  char idBuf[16];
+  std::snprintf(idBuf, sizeof(idBuf), "%zu", workerId);
+  char* execArgv[] = {exePath, const_cast<char*>("--worker"), idBuf, nullptr};
+  execv(exePath, execArgv);
   perror("execv");
   _exit(1);
 }
 
 }  // namespace
 
-worker::WorkerConfig make_worker_config_for_process(int worker_id) {
+worker::WorkerConfig makeWorkerConfigForProcess(int workerId) {
   worker::WorkerConfig cfg;
   cfg.env_vars["TT_VISIBLE_DEVICES"] =
-      tt::config::visible_devices_for_worker(worker_id);
+      tt::config::visibleDevicesForWorker(workerId);
   cfg.task_queue =
       std::make_shared<tt::ipc::BoostIpcTaskQueue>(tt::ipc::TASK_QUEUE_NAME);
   cfg.result_queue =
       std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
-          "/tt_tokens_" + std::to_string(worker_id), false);
-  cfg.worker_id = worker_id;
-  cfg.runner_config = tt::config::llm_engine_config();
+          "/tt_tokens_" + std::to_string(workerId), false);
+  cfg.worker_id = workerId;
+  cfg.runner_config = tt::config::llmEngineConfig();
   return cfg;
 }
 
 LLMService::LLMService()
-    : mode_(tt::config::llm_mode()),
-      num_workers_(tt::config::num_workers()),
-      tokenizer_(&tt::utils::active_tokenizer()) {
-  max_queue_size_ = tt::config::max_queue_size();
+    : mode_(tt::config::llmMode()),
+      num_workers_(tt::config::numWorkers()),
+      tokenizer_(&tt::utils::activeTokenizer()) {
+  max_queue_size_ = tt::config::maxQueueSize();
   TT_LOG_INFO("[LLMService] Initialized (mode={}, workers={})",
-              tt::config::to_string(mode_), num_workers_);
+              tt::config::toString(mode_), num_workers_);
   queue_manager_ = std::make_unique<tt::ipc::QueueManager>(num_workers_);
 
   socket_service_ = std::make_shared<tt::sockets::InterServerService>();
@@ -85,11 +84,11 @@ void LLMService::start() {
   }
 
   TT_LOG_INFO("[LLMService] Starting (mode={}, workers={})",
-              tt::config::to_string(mode_), num_workers_);
+              tt::config::toString(mode_), num_workers_);
 
-  start_workers();
-  tracy_config::TracyStartupSchedulerParent();
-  start_consumers();
+  startWorkers();
+  tracy_config::tracyStartupSchedulerParent();
+  startConsumers();
 
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
@@ -98,22 +97,22 @@ void LLMService::start() {
   }
 
   is_ready_ = true;
-  TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
+  TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
   TT_LOG_INFO("[LLMService] Service started");
 }
 
-bool LLMService::is_model_ready() const { return is_ready_.load(); }
+bool LLMService::isModelReady() const { return is_ready_.load(); }
 
-size_t LLMService::current_queue_size() const { return pending_tasks_.load(); }
+size_t LLMService::currentQueueSize() const { return pending_tasks_.load(); }
 
-void LLMService::pre_process(domain::CompletionRequest& request) const {
-  BaseService::pre_process(request);
+void LLMService::preProcess(domain::CompletionRequest& request) const {
+  BaseService::preProcess(request);
   if (std::holds_alternative<std::string>(request.prompt)) {
     auto text = std::get<std::string>(request.prompt);
-    static auto cfg = tt::utils::get_tokenizer_config();
-    bool has_bos = text.size() >= cfg.bos_token.size() &&
-                   text.compare(0, cfg.bos_token.size(), cfg.bos_token) == 0;
-    if (cfg.add_bos_token && !cfg.bos_token.empty() && !has_bos) {
+    static auto cfg = tt::utils::getTokenizerConfig();
+    bool hasBos = text.size() >= cfg.bos_token.size() &&
+                  text.compare(0, cfg.bos_token.size(), cfg.bos_token) == 0;
+    if (cfg.add_bos_token && !cfg.bos_token.empty() && !hasBos) {
       text = cfg.bos_token + text;
     }
     request.prompt = tokenizer_->encode(text);
@@ -129,10 +128,10 @@ void LLMService::pre_process(domain::CompletionRequest& request) const {
   request.prompt_tokens_count = static_cast<int>(tokens.size());
 }
 
-void LLMService::start_workers() {
+void LLMService::startWorkers() {
   for (size_t i = 0; i < num_workers_; i++) {
     tt::worker::WorkerConfig cfg =
-        make_worker_config_for_process(static_cast<int>(i));
+        makeWorkerConfigForProcess(static_cast<int>(i));
     workers_.push_back(std::make_unique<tt::worker::SingleProcessWorker>(cfg));
     auto& worker = workers_[i];
 
@@ -144,7 +143,7 @@ void LLMService::start_workers() {
     if (pid == 0) {
       setpgid(0, 0);
       try {
-        exec_worker_process(i, cfg.env_vars);
+        execWorkerProcess(i, cfg.env_vars);
       } catch (const std::exception& e) {
         TT_LOG_ERROR("[LLMService] Worker {} failed: {}", i, e.what());
         _exit(1);
@@ -156,10 +155,10 @@ void LLMService::start_workers() {
   }
 }
 
-void LLMService::start_consumers() {
+void LLMService::startConsumers() {
   consumer_threads_.reserve(num_workers_);
   for (size_t i = 0; i < num_workers_; i++) {
-    consumer_threads_.emplace_back(&LLMService::consumer_loop_for_worker, this,
+    consumer_threads_.emplace_back(&LLMService::consumerLoopForWorker, this,
                                    i);
   }
   TT_LOG_INFO("[LLMService] Started {} consumer threads", num_workers_);
@@ -173,7 +172,7 @@ void LLMService::stop() {
 
   TT_LOG_INFO("[LLMService] Stopping...");
 
-  // Signal shutdown on all ring buffers so blocking_pop wakes up
+  // Signal shutdown on all ring buffers so blockingPop wakes up
   for (auto& q : queue_manager_->result_queues) {
     q->shutdown();
   }
@@ -202,8 +201,8 @@ void LLMService::stop() {
   queue_manager_->clear();
 }
 
-bool LLMService::check_worker_alive(size_t worker_idx) {
-  auto* worker = workers_[worker_idx].get();
+bool LLMService::checkWorkerAlive(size_t workerIdx) {
+  auto* worker = workers_[workerIdx].get();
   if (worker->pid <= 0) {
     return false;
   }
@@ -220,35 +219,35 @@ bool LLMService::check_worker_alive(size_t worker_idx) {
   return true;  // Error in waitpid, assume alive
 }
 
-void LLMService::consumer_loop_for_worker(size_t worker_idx) {
+void LLMService::consumerLoopForWorker(size_t workerIdx) {
   ZoneScopedN("LLMService::consumer_loop");
-  tracy_config::TracySetThreadName(
-      ("Consumer-" + std::to_string(worker_idx)).c_str());
+  tracy_config::tracySetThreadName(
+      ("Consumer-" + std::to_string(workerIdx)).c_str());
 
-  TT_LOG_INFO("[Consumer-{}] Started", worker_idx);
+  TT_LOG_INFO("[Consumer-{}] Started", workerIdx);
 
-  auto* worker = workers_[worker_idx].get();
+  auto* worker = workers_[workerIdx].get();
   if (!worker->cfg.result_queue) {
-    TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", worker_idx);
+    TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", workerIdx);
     return;
   }
 
-  const auto stop_ids = tokenizer_->stop_token_ids();
-  const std::unordered_set<int64_t> stop_token_set(stop_ids.begin(),
-                                                   stop_ids.end());
+  const auto STOP_IDS = tokenizer_->stopTokenIds();
+  const std::unordered_set<int64_t> STOP_TOKEN_SET(STOP_IDS.begin(),
+                                                   STOP_IDS.end());
 
   while (running_) {
-    if (!check_worker_alive(worker_idx)) {
+    if (!checkWorkerAlive(workerIdx)) {
       TT_LOG_ERROR("[Consumer-{}] Worker process died, exiting consumer",
-                   worker_idx);
+                   workerIdx);
       break;
     }
 
-    bool any_activity = false;
+    bool anyActivity = false;
 
     ipc::SharedToken token;
-    while (worker->cfg.result_queue->blocking_pop(token)) {
-      any_activity = true;
+    while (worker->cfg.result_queue->blockingPop(token)) {
+      anyActivity = true;
 
       auto val = stream_callbacks_.get(token.task_id);
       if (!val.has_value()) {
@@ -256,7 +255,7 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
                                  std::string(token.task_id));
       }
       auto callback = val.value();
-      if (token.is_final()) {
+      if (token.isFinal()) {
         stream_callbacks_.erase(token.task_id);
         pending_tasks_.fetch_sub(1);
       }
@@ -272,62 +271,62 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
       domain::CompletionChoice choice;
       choice.text = tokenizer_->decode({static_cast<int>(token.token_id)});
       choice.index = token.token_index;
-      if (token.is_error()) {
+      if (token.isError()) {
         choice.finish_reason = "error";
       } else {
         choice.token_id = static_cast<int64_t>(token.token_id);
-        if (token.is_final()) {
-          bool is_stop =
-              stop_token_set.count(static_cast<int64_t>(token.token_id)) > 0;
-          choice.finish_reason = is_stop ? "stop" : "length";
+        if (token.isFinal()) {
+          bool isStop =
+              STOP_TOKEN_SET.count(static_cast<int64_t>(token.token_id)) > 0;
+          choice.finish_reason = isStop ? "stop" : "length";
         }
       }
       response.choices.push_back(std::move(choice));
 
-      callback(response, token.is_final());
-      if (token.is_final()) {
-        TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
+      callback(response, token.isFinal());
+      if (token.isFinal()) {
+        TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
       }
     }
 
-    if (!any_activity) {
+    if (!anyActivity) {
       std::this_thread::yield();
     }
   }
 
-  TT_LOG_INFO("[Consumer-{}] Stopped", worker_idx);
+  TT_LOG_INFO("[Consumer-{}] Stopped", workerIdx);
 }
 
-domain::CompletionResponse LLMService::process_request(
+domain::CompletionResponse LLMService::processRequest(
     domain::CompletionRequest request) {
-  ZoneScopedN("LLMService::process_request");
+  ZoneScopedN("LLMService::processRequest");
 
   std::mutex mtx;
   std::condition_variable cv;
   bool done = false;
 
-  std::string accumulated_text;
-  int completion_tokens = 0;
-  std::string finish_reason = "stop";
+  std::string accumulatedText;
+  int completionTokens = 0;
+  std::string finishReason = "stop";
 
-  const int prompt_tokens =
+  const int PROMPT_TOKENS =
       std::holds_alternative<std::vector<int>>(request.prompt)
           ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
           : 0;
-  const std::string task_id = request.task_id.id;
-  const std::string model = request.model.value_or("default");
+  const std::string TASK_ID = request.task_id.id;
+  const std::string MODEL = request.model.value_or("default");
 
-  process_streaming_request(
+  processStreamingRequest(
       std::move(request),
-      [&](domain::StreamingChunkResponse& chunk, bool is_final) {
+      [&](domain::StreamingChunkResponse& chunk, bool isFinal) {
         if (!chunk.choices.empty()) {
-          accumulated_text.append(chunk.choices[0].text);
-          completion_tokens++;
+          accumulatedText.append(chunk.choices[0].text);
+          completionTokens++;
           if (chunk.choices[0].finish_reason.has_value()) {
-            finish_reason = chunk.choices[0].finish_reason.value();
+            finishReason = chunk.choices[0].finish_reason.value();
           }
         }
-        if (is_final) {
+        if (isFinal) {
           std::lock_guard<std::mutex> lock(mtx);
           done = true;
           cv.notify_one();
@@ -337,138 +336,138 @@ domain::CompletionResponse LLMService::process_request(
   std::unique_lock<std::mutex> lock(mtx);
   cv.wait(lock, [&] { return done; });
 
-  domain::CompletionResponse response{domain::TaskID(task_id)};
-  response.id = task_id;
-  response.model = model;
+  domain::CompletionResponse response{domain::TaskID(TASK_ID)};
+  response.id = TASK_ID;
+  response.model = MODEL;
   response.created = std::chrono::duration_cast<std::chrono::seconds>(
                          std::chrono::system_clock::now().time_since_epoch())
                          .count();
 
   domain::CompletionChoice choice;
-  choice.text = std::move(accumulated_text);
+  choice.text = std::move(accumulatedText);
   choice.index = 0;
-  choice.finish_reason = finish_reason;
+  choice.finish_reason = finishReason;
   response.choices.push_back(std::move(choice));
 
-  response.usage = {prompt_tokens, completion_tokens,
-                    prompt_tokens + completion_tokens, std::nullopt,
+  response.usage = {PROMPT_TOKENS, completionTokens,
+                    PROMPT_TOKENS + completionTokens, std::nullopt,
                     std::nullopt};
 
   return response;
 }
 
-void LLMService::process_streaming_request(
+void LLMService::processStreamingRequest(
     domain::CompletionRequest request,
-    std::function<void(domain::StreamingChunkResponse&, bool is_final)>
+    std::function<void(domain::StreamingChunkResponse&, bool isFinal)>
         callback) {
   assert(callback != nullptr);
 
-  ZoneScopedN("LLMService::process_streaming_request");
+  ZoneScopedN("LLMService::processStreamingRequest");
   if (request.task_id.id.empty()) {
     throw std::runtime_error("task_id must be set before submitting request");
   }
-  std::string task_id = request.task_id.id;
+  std::string taskId = request.task_id.id;
 
   pending_tasks_.fetch_add(1);
-  TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
+  TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
 
-  stream_callbacks_.insert(task_id, std::move(callback));
+  stream_callbacks_.insert(taskId, std::move(callback));
 
   auto prompt = std::get<std::vector<int>>(request.prompt);
-  std::vector<int64_t> token_ids(prompt.begin(), prompt.end());
+  std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
 
   if (mode_ == tt::config::LLMMode::DECODE_ONLY) {
     if (!prefill_request_callback_) {
-      stream_callbacks_.erase(task_id);
+      stream_callbacks_.erase(taskId);
       pending_tasks_.fetch_sub(1);
       throw std::runtime_error("No prefill request callback configured");
     }
 
-    domain::PrefillRequest prefill_req{domain::TaskID(task_id)};
-    prefill_req.token_ids = token_ids;
-    prefill_req.max_tokens = request.max_tokens;
+    domain::PrefillRequest prefillReq{domain::TaskID(taskId)};
+    prefillReq.token_ids = tokenIds;
+    prefillReq.max_tokens = request.max_tokens;
 
-    bool sent = prefill_request_callback_(prefill_req);
+    bool sent = prefill_request_callback_(prefillReq);
 
     if (!sent) {
-      stream_callbacks_.erase(task_id);
+      stream_callbacks_.erase(taskId);
       pending_tasks_.fetch_sub(1);
       throw std::runtime_error(
           "Failed to send prefill request (not connected)");
     }
     TT_LOG_DEBUG("[LLMService:DECODE] Forwarded prefill request {} ({} tokens)",
-                 task_id, token_ids.size());
+                 taskId, tokenIds.size());
     return;
   }
 
   auto sequence = std::make_unique<llm_engine::Sequence>(
-      llm_engine::TaskID(task_id),
-      tt::config::llm_engine_config().kvcache_block_size, std::move(token_ids));
+      llm_engine::TaskID(taskId),
+      tt::config::llmEngineConfig().kvcache_block_size, std::move(tokenIds));
   sequence->num_prompt_tokens_ = prompt.size();
   sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(
-      tt::utils::mapper::map_sampling_params(request));
+      tt::utils::mapper::mapSamplingParams(request));
   queue_manager_->task_queue->push(*std::move(sequence));
 }
 
-void LLMService::post_process(domain::CompletionResponse&) const {
+void LLMService::postProcess(domain::CompletionResponse&) const {
   // no-op
 }
 
-std::shared_ptr<tt::sockets::InterServerService>
-LLMService::get_socket_service() const {
+std::shared_ptr<tt::sockets::InterServerService> LLMService::getSocketService()
+    const {
   return socket_service_;
 }
 
-void LLMService::set_prefill_request_callback(PrefillRequestCallback callback) {
+void LLMService::setPrefillRequestCallback(PrefillRequestCallback callback) {
   prefill_request_callback_ = std::move(callback);
 }
 
-std::optional<LLMService::StreamCallback> LLMService::detach_stream_callback(
-    const std::string& task_id) {
-  auto val = stream_callbacks_.take(task_id);
+std::optional<LLMService::StreamCallback> LLMService::detachStreamCallback(
+    const std::string& taskId) {
+  auto val = stream_callbacks_.take(taskId);
   if (val.has_value()) {
     pending_tasks_.fetch_sub(1);
   }
   return val;
 }
 
-void LLMService::submit_decode_continuation(domain::CompletionRequest request,
-                                            StreamCallback callback) {
-  std::string task_id = request.task_id.id;
+void LLMService::submitDecodeContinuation(domain::CompletionRequest request,
+                                          StreamCallback callback) {
+  std::string taskId = request.task_id.id;
 
   pending_tasks_.fetch_add(1);
-  TracyPlot("pending_tasks", static_cast<double>(pending_tasks_.load()));
-  stream_callbacks_.insert(task_id, std::move(callback));
+  TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
+  stream_callbacks_.insert(taskId, std::move(callback));
 
   auto prompt = std::get<std::vector<int>>(request.prompt);
-  std::vector<int64_t> token_ids(prompt.begin(), prompt.end());
+  std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
 
   auto sequence = std::make_unique<llm_engine::Sequence>(
-      llm_engine::TaskID(task_id),
-      tt::config::llm_engine_config().kvcache_block_size, std::move(token_ids));
+      llm_engine::TaskID(taskId),
+      tt::config::llmEngineConfig().kvcache_block_size, std::move(tokenIds));
   sequence->num_prompt_tokens_ = prompt.size();
   sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(
-      tt::utils::mapper::map_sampling_params(request));
+      tt::utils::mapper::mapSamplingParams(request));
   queue_manager_->task_queue->push(*std::move(sequence));
 
   TT_LOG_DEBUG(
       "[LLMService:DECODE] Queued decode continuation for task {} "
       "(prompt_tokens={}, max_tokens={})",
-      task_id, prompt.size(),
+      taskId, prompt.size(),
       request.max_tokens.has_value()
           ? std::to_string(request.max_tokens.value())
           : "none");
 }
 
-void LLMService::handle_connection_lost() {
+void LLMService::handleConnectionLost() {
   TT_LOG_ERROR("[LLMService] Failing pending tasks due to connection loss");
 
-  stream_callbacks_.for_each(
-      [](const std::string& task_id,
+  stream_callbacks_.forEach(
+      [](const std::string& taskId,
          std::function<void(domain::StreamingChunkResponse&, bool)>& callback) {
-        domain::StreamingChunkResponse error_response{domain::TaskID(task_id)};
-        error_response.id = task_id;
-        error_response.created =
+        domain::StreamingChunkResponse errorResponse{domain::TaskID(taskId)};
+        errorResponse.id = taskId;
+        errorResponse.created =
             std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch())
                 .count();
@@ -477,10 +476,10 @@ void LLMService::handle_connection_lost() {
         choice.text = "";
         choice.index = 0;
         choice.finish_reason = "error";
-        error_response.choices.push_back(std::move(choice));
-        error_response.error = "Connection to remote server lost";
+        errorResponse.choices.push_back(std::move(choice));
+        errorResponse.error = "Connection to remote server lost";
 
-        callback(error_response, true);
+        callback(errorResponse, true);
       });
 
   stream_callbacks_.clear();

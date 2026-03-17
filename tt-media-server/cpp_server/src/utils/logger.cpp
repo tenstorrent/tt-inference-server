@@ -15,136 +15,136 @@
 
 namespace tt::utils {
 
-ZeroOverheadLogger::Level ZeroOverheadLogger::level_ = ZeroOverheadLogger::INFO;
-std::shared_ptr<spdlog::logger> ZeroOverheadLogger::logger_;
-bool ZeroOverheadLogger::initialized_ = false;
+ZeroOverheadLogger::Level ZeroOverheadLogger::level = ZeroOverheadLogger::INFO;
+std::shared_ptr<spdlog::logger> ZeroOverheadLogger::logger;
+bool ZeroOverheadLogger::initialized = false;
 
 void ZeroOverheadLogger::initialize() {
-  if (initialized_) {
+  if (initialized) {
     return;
   }
 
   // Set log level from environment variable
-  const char* log_level_env = std::getenv("TT_LOG_LEVEL");
-  if (log_level_env) {
-    level_ = parse_log_level(log_level_env);
+  const char* logLevelEnv = std::getenv("TT_LOG_LEVEL");
+  if (logLevelEnv) {
+    level = parseLogLevel(logLevelEnv);
   }
 
   // Create spdlog sinks
   std::vector<spdlog::sink_ptr> sinks;
 
   // Always add console sink
-  auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-  console_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [tt-media-server] [%l] %v");
-  sinks.push_back(console_sink);
+  auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+  consoleSink->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [tt-media-server] [%l] %v");
+  sinks.push_back(consoleSink);
 
   // Check for file logging configuration
-  const char* log_file_env = std::getenv("TT_LOG_FILE");
-  if (log_file_env && std::strlen(log_file_env) > 0) {
-    std::filesystem::path log_path(log_file_env);
+  const char* logFileEnv = std::getenv("TT_LOG_FILE");
+  if (logFileEnv && std::strlen(logFileEnv) > 0) {
+    std::filesystem::path logPath(logFileEnv);
 
     // Create directory if it doesn't exist
-    if (log_path.has_parent_path()) {
-      std::filesystem::create_directories(log_path.parent_path());
+    if (logPath.has_parent_path()) {
+      std::filesystem::create_directories(logPath.parent_path());
     }
 
-    auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-        log_file_env, 1024 * 1024 * 50, 5);  // 50MB, 5 files
-    file_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [tt-media-server] [%l] %v");
-    sinks.push_back(file_sink);
+    auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+        logFileEnv, 1024 * 1024 * 50, 5);  // 50MB, 5 files
+    fileSink->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [tt-media-server] [%l] %v");
+    sinks.push_back(fileSink);
   }
 
   // Create logger
-  logger_ = std::make_shared<spdlog::logger>("tt-media-server", sinks.begin(),
+  logger = std::make_shared<spdlog::logger>("tt-media-server", sinks.begin(),
                                              sinks.end());
 
   // Set spdlog level
-  switch (level_) {
+  switch (level) {
     case TRACE:
-      logger_->set_level(spdlog::level::trace);
+      logger->set_level(spdlog::level::trace);
       break;
     case DEBUG:
-      logger_->set_level(spdlog::level::debug);
+      logger->set_level(spdlog::level::debug);
       break;
     case INFO:
-      logger_->set_level(spdlog::level::info);
+      logger->set_level(spdlog::level::info);
       break;
     case WARN:
-      logger_->set_level(spdlog::level::warn);
+      logger->set_level(spdlog::level::warn);
       break;
     case ERROR:
-      logger_->set_level(spdlog::level::err);
+      logger->set_level(spdlog::level::err);
       break;
     case CRITICAL:
-      logger_->set_level(spdlog::level::critical);
+      logger->set_level(spdlog::level::critical);
       break;
     case OFF:
-      logger_->set_level(spdlog::level::off);
+      logger->set_level(spdlog::level::off);
       break;
   }
 
   // Register logger globally
-  spdlog::register_logger(logger_);
+  spdlog::register_logger(logger);
 
-  initialized_ = true;
+  initialized = true;
 
   // Log initialization message
-  logger_->info("Logger initialized with level: {}", level_to_string(level_));
+  logger->info("Logger initialized with level: {}", levelToString(level));
 }
 
-std::shared_ptr<spdlog::logger> ZeroOverheadLogger::get_logger() {
-  if (!initialized_) {
+std::shared_ptr<spdlog::logger> ZeroOverheadLogger::getLogger() {
+  if (!initialized) {
     initialize();
   }
-  return logger_;
+  return logger;
 }
 
-void ZeroOverheadLogger::log_impl(Level level, const char* fmt_str) {
-  auto logger = get_logger();
+void ZeroOverheadLogger::logImpl(Level level, const char* fmtStr) {
+  auto logger = getLogger();
   switch (level) {
     case TRACE:
-      logger->trace(fmt_str);
+      logger->trace(fmtStr);
       break;
     case DEBUG:
-      logger->debug(fmt_str);
+      logger->debug(fmtStr);
       break;
     case INFO:
-      logger->info(fmt_str);
+      logger->info(fmtStr);
       break;
     case WARN:
-      logger->warn(fmt_str);
+      logger->warn(fmtStr);
       break;
     case ERROR:
-      logger->error(fmt_str);
+      logger->error(fmtStr);
       break;
     case CRITICAL:
-      logger->critical(fmt_str);
+      logger->critical(fmtStr);
       break;
     case OFF:
       break;
   }
 }
 
-ZeroOverheadLogger::Level ZeroOverheadLogger::parse_log_level(
-    const std::string& level_str) {
-  std::string lower_level = level_str;
-  std::transform(lower_level.begin(), lower_level.end(), lower_level.begin(),
+ZeroOverheadLogger::Level ZeroOverheadLogger::parseLogLevel(
+    const std::string& levelStr) {
+  std::string lowerLevel = levelStr;
+  std::transform(lowerLevel.begin(), lowerLevel.end(), lowerLevel.begin(),
                  ::tolower);
 
-  if (lower_level == "trace") return TRACE;
-  if (lower_level == "debug") return DEBUG;
-  if (lower_level == "info") return INFO;
-  if (lower_level == "warn" || lower_level == "warning") return WARN;
-  if (lower_level == "error") return ERROR;
-  if (lower_level == "critical") return CRITICAL;
-  if (lower_level == "off") return OFF;
+  if (lowerLevel == "trace") return TRACE;
+  if (lowerLevel == "debug") return DEBUG;
+  if (lowerLevel == "info") return INFO;
+  if (lowerLevel == "warn" || lowerLevel == "warning") return WARN;
+  if (lowerLevel == "error") return ERROR;
+  if (lowerLevel == "critical") return CRITICAL;
+  if (lowerLevel == "off") return OFF;
 
-  std::cerr << "Unknown log level '" << level_str << "', using 'info'"
+  std::cerr << "Unknown log level '" << levelStr << "', using 'info'"
             << std::endl;
   return INFO;
 }
 
-std::string ZeroOverheadLogger::level_to_string(Level level) {
+std::string ZeroOverheadLogger::levelToString(Level level) {
   switch (level) {
     case TRACE:
       return "TRACE";
@@ -165,6 +165,6 @@ std::string ZeroOverheadLogger::level_to_string(Level level) {
   }
 }
 
-void initialize_logger() { ZeroOverheadLogger::initialize(); }
+void initializeLogger() { ZeroOverheadLogger::initialize(); }
 
 }  // namespace tt::utils

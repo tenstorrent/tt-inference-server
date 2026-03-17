@@ -18,38 +18,38 @@ namespace tt::config {
  */
 
 /** Model service from MODEL_SERVICE. Default from defaults::MODEL_SERVICE. */
-ModelService model_service();
+ModelService modelService();
 
 /** True when model_service() == EMBEDDING. */
-bool is_embedding_service();
+bool isEmbeddingService();
 
 /** True when model_service() == LLM. */
-bool is_llm_service_enabled();
+bool isLlmServiceEnabled();
 
 /** Get runner type string based on current model service configuration. */
-std::string runner_type();
+std::string runnerType();
 
 /** Number of worker processes = number of bracket pairs in DEVICE_IDS. */
-size_t num_workers();
+size_t numWorkers();
 
 /** Max wait (ms) to fill a batch. From MAX_BATCH_DELAY_TIME_MS. Default:
  * defaults::MAX_BATCH_DELAY_TIME_MS. */
-unsigned batch_timeout_ms();
+unsigned batchTimeoutMs();
 
 /** Path prepended to Python sys.path for embedding runner. From TT_PYTHON_PATH.
  * Default: defaults::TT_PYTHON_PATH. */
-std::string python_path();
+std::string pythonPath();
 
 /** Tokenizer path: tokenizers/<model>/tokenizer.json relative to executable.
  * Empty if not found. No-arg overload uses the current model_type(). */
-std::string tokenizer_path();
-std::string tokenizer_path(ModelType model);
+std::string tokenizerPath();
+std::string tokenizerPath(ModelType model);
 
 /** Tokenizer config path: tokenizers/<model>/tokenizer_config.json relative to
  * executable. Empty if not found. No-arg overload uses the current
  * model_type(). */
-std::string tokenizer_config_path();
-std::string tokenizer_config_path(ModelType model);
+std::string tokenizerConfigPath();
+std::string tokenizerConfigPath(ModelType model);
 
 /**
  * Parse DEVICE_IDS and return the content inside the Nth bracket pair.
@@ -58,43 +58,43 @@ std::string tokenizer_config_path(ModelType model);
  * TT_VISIBLE_DEVICES value, matching the Python scheduler flow in
  * model_services/scheduler.py.
  */
-std::string visible_devices_for_worker(size_t worker_index);
+std::string visibleDevicesForWorker(size_t workerIndex);
 
 /** Model type derived from LLM_DEVICE_BACKEND (llama -> LLAMA_3_1_8B_INSTRUCT,
  * else DEEPSEEK_R1_0528). */
-ModelType model_type();
+ModelType modelType();
 
 /** LLM mode from LLM_MODE. Default: defaults::LLM_MODE ("regular"). */
-LLMMode llm_mode();
+LLMMode llmMode();
 
 /** Socket host from SOCKET_HOST. Default: defaults::SOCKET_HOST. */
-std::string socket_host();
+std::string socketHost();
 
 /** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
-uint16_t socket_port();
+uint16_t socketPort();
 
 /** Enable accumulated streaming from ENABLE_ACCUMULATED_STREAMING. Default:
  * defaults::ENABLE_ACCUMULATED_STREAMING. */
-bool enable_accumulated_streaming();
+bool enableAccumulatedStreaming();
 
 /** Max accumulated tokens from MAX_ACCUMULATED_TOKENS. Default:
  * defaults::MAX_ACCUMULATED_TOKENS. */
-size_t max_accumulated_tokens();
+size_t maxAccumulatedTokens();
 
 /** Max in-flight requests before 429. From MAX_QUEUE_SIZE. Default:
  * defaults::MAX_QUEUE_SIZE. */
-size_t max_queue_size();
+size_t maxQueueSize();
 
 /** Scheduling policy from SCHEDULING_POLICY. Default:
  * defaults::SCHEDULING_POLICY ("prefill_first"). */
-SchedulingPolicy scheduling_policy();
+SchedulingPolicy schedulingPolicy();
 
 /** Max in-flight requests from MAX_IN_FLIGHT_COUNT. Default:
  * defaults::MAX_IN_FLIGHT_COUNT. */
-size_t max_in_flight_count();
+size_t maxInFlightCount();
 
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
-LLMConfig llm_engine_config();
+LLMConfig llmEngineConfig();
 
 }  // namespace tt::config

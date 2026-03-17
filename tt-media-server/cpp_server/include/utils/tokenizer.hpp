@@ -41,8 +41,8 @@ struct TokenizerConfig {
  * @throws std::runtime_error if config path is empty, file cannot be loaded, or
  * tokens are missing when flags are set.
  */
-TokenizerConfig get_tokenizer_config();
-TokenizerConfig get_tokenizer_config(const std::string& config_path);
+TokenizerConfig getTokenizerConfig();
+TokenizerConfig getTokenizerConfig(const std::string& configPath);
 
 /**
  * Tokenizer utility wrapping mlc-ai/tokenizers-cpp (HuggingFace /
@@ -81,21 +81,21 @@ class Tokenizer {
    * out.
    * @throws std::runtime_error if tokenizer not loaded.
    */
-  std::string decode(const std::vector<int>& token_ids) const;
+  std::string decode(const std::vector<int>& tokenIds) const;
 
   /** Check if tokenizer is loaded and ready. */
-  bool is_loaded() const;
+  bool isLoaded() const;
 
-  virtual std::string model_name() const = 0;
-  virtual int special_token_decode_threshold() const = 0;
-  virtual std::vector<int64_t> stop_token_ids() const = 0;
+  virtual std::string modelName() const = 0;
+  virtual int specialTokenDecodeThreshold() const = 0;
+  virtual std::vector<int64_t> stopTokenIds() const = 0;
 
   /**
    * Apply the model-specific chat template to a list of messages.
    */
-  virtual std::string apply_chat_template(
+  virtual std::string applyChatTemplate(
       const std::vector<tt::domain::ChatMessage>& messages,
-      bool add_generation_prompt = true) const = 0;
+      bool addGenerationPrompt = true) const = 0;
 
  protected:
   std::unique_ptr<tokenizers::Tokenizer> tok_;
@@ -109,14 +109,14 @@ class Tokenizer {
  * DEEPSEEK_R1_0528 -> DeepseekTokenizer
  * LLAMA_3_1_8B_INSTRUCT -> LlamaTokenizer
  */
-std::unique_ptr<Tokenizer> create_tokenizer(config::ModelType model,
-                                            const std::string& path);
+std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
+                                           const std::string& path);
 
 /**
  * Tokenizer directory name for a given model type. Used to resolve tokenizer
  * file paths before a Tokenizer instance exists.
  */
-std::string tokenizer_dir_for_model(config::ModelType model);
+std::string tokenizerDirForModel(config::ModelType model);
 
 /**
  * Global active tokenizer, auto-initialized from LLM_DEVICE_BACKEND on first
@@ -124,6 +124,6 @@ std::string tokenizer_dir_for_model(config::ModelType model);
  * for metadata access (model_name, stop_token_ids, apply_chat_template); for
  * encode/decode in multithreaded contexts, create separate instances.
  */
-const Tokenizer& active_tokenizer();
+const Tokenizer& activeTokenizer();
 
 }  // namespace tt::utils

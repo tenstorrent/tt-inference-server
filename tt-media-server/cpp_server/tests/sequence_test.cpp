@@ -16,10 +16,10 @@ namespace {
 TEST(SequenceIDTest, SerializeDeserialize_RoundTrip) {
   TaskID orig(TaskID("seq-id-test"));
 
-  std::vector<char> buf = orig.ipc_serialize();
+  std::vector<char> buf = orig.ipcSerialize();
   ASSERT_EQ(buf.size(), 36);
 
-  TaskID restored = TaskID::ipc_deserialize(buf.data(), buf.size());
+  TaskID restored = TaskID::ipcDeserialize(buf.data(), buf.size());
   EXPECT_EQ(restored.id, orig.id);
 }
 
@@ -149,17 +149,17 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   EXPECT_EQ(restored->status_, orig.status_);
 
   const auto& sp = *restored->sampling_params;
-  const auto& sp_orig = *orig.sampling_params;
-  EXPECT_FLOAT_EQ(sp.temperature, sp_orig.temperature);
-  EXPECT_EQ(sp.max_tokens, sp_orig.max_tokens);
-  EXPECT_EQ(sp.ignore_eos, sp_orig.ignore_eos);
+  const auto& spOrig = *orig.sampling_params;
+  EXPECT_FLOAT_EQ(sp.temperature, spOrig.temperature);
+  EXPECT_EQ(sp.max_tokens, spOrig.max_tokens);
+  EXPECT_EQ(sp.ignore_eos, spOrig.ignore_eos);
   ASSERT_TRUE(sp.top_p.has_value());
-  EXPECT_FLOAT_EQ(*sp.top_p, *sp_orig.top_p);
+  EXPECT_FLOAT_EQ(*sp.top_p, *spOrig.top_p);
   ASSERT_TRUE(sp.seed.has_value());
-  EXPECT_EQ(*sp.seed, *sp_orig.seed);
-  EXPECT_EQ(sp.stop_token_ids, sp_orig.stop_token_ids);
+  EXPECT_EQ(*sp.seed, *spOrig.seed);
+  EXPECT_EQ(sp.stop_token_ids, spOrig.stop_token_ids);
   ASSERT_TRUE(sp.allowed_token_ids.has_value());
-  EXPECT_EQ(*sp.allowed_token_ids, *sp_orig.allowed_token_ids);
+  EXPECT_EQ(*sp.allowed_token_ids, *spOrig.allowed_token_ids);
 }
 
 TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
@@ -182,8 +182,8 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
 TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
   Sequence orig(TaskID("seq-append"), 256, {10, 20},
                 SamplingParams{.max_tokens = 5});
-  orig.append_token(30);
-  orig.append_token(40);
+  orig.appendToken(30);
+  orig.appendToken(40);
   orig.num_cached_tokens_ = 256;
 
   std::ostringstream os;

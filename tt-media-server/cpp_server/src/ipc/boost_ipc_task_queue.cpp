@@ -38,29 +38,28 @@ void BoostIpcTaskQueue::push(const llm_engine::Sequence& seq) {
   std::lock_guard<std::mutex> lock(push_mutex_);
   bi_ipc::obufferstream stream(send_buffer_.data(), send_buffer_.size());
   seq.serialize(stream);
-  auto bytes_written = stream.tellp();
-  queue_->send(send_buffer_.data(), bytes_written, /*priority=*/0);
+  auto bytesWritten = stream.tellp();
+  queue_->send(send_buffer_.data(), bytesWritten, /*priority=*/0);
 }
 
-llm_engine::Sequence* BoostIpcTaskQueue::try_pop() {
-  bi_ipc::message_queue::size_type recv_size = 0;
+llm_engine::Sequence* BoostIpcTaskQueue::tryPop() {
+  bi_ipc::message_queue::size_type recvSize = 0;
   unsigned int priority = 0;
 
-  if (!queue_->try_receive(recv_buffer_.data(), recv_buffer_.size(), recv_size,
+  if (!queue_->try_receive(recv_buffer_.data(), recv_buffer_.size(), recvSize,
                            priority)) {
     return nullptr;
   }
-  bi_ipc::ibufferstream recv_stream(recv_buffer_.data(), recv_size);
-  return llm_engine::Sequence::deserialize(recv_stream);
+  bi_ipc::ibufferstream recvStream(recv_buffer_.data(), recvSize);
+  return llm_engine::Sequence::deserialize(recvStream);
 }
 
 llm_engine::Sequence* BoostIpcTaskQueue::receive() {
-  bi_ipc::message_queue::size_type recv_size = 0;
+  bi_ipc::message_queue::size_type recvSize = 0;
   unsigned int priority = 0;
-  queue_->receive(recv_buffer_.data(), recv_buffer_.size(), recv_size,
-                  priority);
-  bi_ipc::ibufferstream recv_stream(recv_buffer_.data(), recv_size);
-  return llm_engine::Sequence::deserialize(recv_stream);
+  queue_->receive(recv_buffer_.data(), recv_buffer_.size(), recvSize, priority);
+  bi_ipc::ibufferstream recvStream(recv_buffer_.data(), recvSize);
+  return llm_engine::Sequence::deserialize(recvStream);
 }
 
 bool BoostIpcTaskQueue::empty() const { return queue_->get_num_msg() == 0; }

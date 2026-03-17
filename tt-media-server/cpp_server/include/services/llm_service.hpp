@@ -25,7 +25,7 @@
 
 namespace tt::services {
 
-worker::WorkerConfig make_worker_config_for_process(int worker_id);
+worker::WorkerConfig makeWorkerConfigForProcess(int workerId);
 
 class LLMService
     : public BaseService<domain::CompletionRequest, domain::CompletionResponse>,
@@ -44,41 +44,40 @@ class LLMService
   void start() override;
   void stop() override;
 
-  bool is_model_ready() const override;
+  bool isModelReady() const override;
 
   using StreamCallback =
       std::function<void(domain::StreamingChunkResponse&, bool)>;
-  std::optional<StreamCallback> detach_stream_callback(
-      const std::string& task_id);
-  void submit_decode_continuation(domain::CompletionRequest request,
-                                  StreamCallback callback);
+  std::optional<StreamCallback> detachStreamCallback(const std::string& taskId);
+  void submitDecodeContinuation(domain::CompletionRequest request,
+                                StreamCallback callback);
 
-  void handle_connection_lost();
+  void handleConnectionLost();
 
-  void set_prefill_request_callback(PrefillRequestCallback callback);
+  void setPrefillRequestCallback(PrefillRequestCallback callback);
 
-  std::shared_ptr<tt::sockets::InterServerService> get_socket_service() const;
+  std::shared_ptr<tt::sockets::InterServerService> getSocketService() const;
 
  protected:
-  void pre_process(domain::CompletionRequest& request) const override;
-  void post_process(domain::CompletionResponse& response) const override;
-  size_t current_queue_size() const override;
-  domain::CompletionResponse process_request(
+  void preProcess(domain::CompletionRequest& request) const override;
+  void postProcess(domain::CompletionResponse& response) const override;
+  size_t currentQueueSize() const override;
+  domain::CompletionResponse processRequest(
       domain::CompletionRequest request) override;
 
-  void streaming_post_process(domain::StreamingChunkResponse&) const override {}
-  void process_streaming_request(
+  void streamingPostProcess(domain::StreamingChunkResponse&) const override {}
+  void processStreamingRequest(
       domain::CompletionRequest request,
-      std::function<void(domain::StreamingChunkResponse&, bool is_final)>
+      std::function<void(domain::StreamingChunkResponse&, bool isFinal)>
           callback) override;
 
  private:
-  void start_workers();
-  void start_consumers();
+  void startWorkers();
+  void startConsumers();
 
-  void consumer_loop_for_worker(size_t worker_idx);
+  void consumerLoopForWorker(size_t workerIdx);
 
-  bool check_worker_alive(size_t worker_idx);
+  bool checkWorkerAlive(size_t workerIdx);
 
   tt::config::LLMMode mode_;
 

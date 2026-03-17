@@ -7,7 +7,7 @@ namespace tt::domain {
 struct BaseResponse {
   TaskID task_id;
 
-  explicit BaseResponse(TaskID task_id) : task_id(std::move(task_id)) {}
+  explicit BaseResponse(TaskID taskId) : task_id(std::move(taskId)) {}
 };
 
 }  // namespace tt::domain

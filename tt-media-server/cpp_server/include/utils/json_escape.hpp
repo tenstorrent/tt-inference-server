@@ -12,7 +12,7 @@ namespace tt::utils {
  * Escape a string for safe embedding inside a JSON string literal.
  * Handles: \, ", and control characters U+0000–U+001F.
  */
-inline std::string json_escape(const std::string& s) {
+inline std::string jsonEscape(const std::string& s) {
   std::string result;
   result.reserve(s.size() + 8);
   for (unsigned char c : s) {

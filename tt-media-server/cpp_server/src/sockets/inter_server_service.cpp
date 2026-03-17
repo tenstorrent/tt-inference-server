@@ -17,7 +17,7 @@ InterServerService::InterServerService()
 InterServerService::~InterServerService() { stop(); }
 
 bool InterServerService::initializeFromConfig() {
-  auto mode = tt::config::llm_mode();
+  auto mode = tt::config::llmMode();
 
   if (mode == tt::config::LLMMode::REGULAR) {
     TT_LOG_INFO(
@@ -26,8 +26,8 @@ bool InterServerService::initializeFromConfig() {
     return false;
   }
 
-  auto host = tt::config::socket_host();
-  auto port = tt::config::socket_port();
+  auto host = tt::config::socketHost();
+  auto port = tt::config::socketPort();
 
   bool success = false;
 
@@ -74,16 +74,16 @@ void InterServerService::stop() {
 bool InterServerService::isEnabled() const { return enabled_; }
 
 bool InterServerService::sendPrefillRequest(
-    const tt::domain::TaskID& task_id, const std::string& prompt,
-    const std::vector<int64_t>& token_ids, std::optional<int> max_tokens) {
+    const tt::domain::TaskID& taskId, const std::string& prompt,
+    const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens) {
   if (!enabled_) {
     return false;
   }
 
-  PrefillRequestMessage message(task_id);
+  PrefillRequestMessage message(taskId);
   message.prompt = prompt;
-  message.token_ids = token_ids;
-  message.max_tokens = max_tokens;
+  message.token_ids = tokenIds;
+  message.max_tokens = maxTokens;
 
   return socket_manager_.sendObject("prefill_request", message);
 }
@@ -97,18 +97,18 @@ bool InterServerService::sendPrefillResult(
   return socket_manager_.sendObject("prefill_result", message);
 }
 
-bool InterServerService::sendHealthCheck(const std::string& server_id,
-                                         double cpu_usage, double memory_usage,
-                                         int active_tasks) {
+bool InterServerService::sendHealthCheck(const std::string& serverId,
+                                         double cpuUsage, double memoryUsage,
+                                         int activeTasks) {
   if (!enabled_) {
     return false;
   }
 
   HealthCheckMessage message;
-  message.server_id = server_id;
-  message.cpu_usage = cpu_usage;
-  message.memory_usage = memory_usage;
-  message.active_tasks = active_tasks;
+  message.server_id = serverId;
+  message.cpu_usage = cpuUsage;
+  message.memory_usage = memoryUsage;
+  message.active_tasks = activeTasks;
 
   return socket_manager_.sendObject("health_check", message);
 }

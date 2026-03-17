@@ -14,20 +14,18 @@
 namespace tt::sockets {
 
 namespace {
-void setSocketKeepAlive(int socket_fd) {
+void setSocketKeepAlive(int socketFd) {
   int enable = 1;
-  setsockopt(socket_fd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable));
+  setsockopt(socketFd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable));
 
   int idle = 10;
-  setsockopt(socket_fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
+  setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
 
   int interval = 5;
-  setsockopt(socket_fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval,
-             sizeof(interval));
+  setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval));
 
-  int max_probes = 3;
-  setsockopt(socket_fd, IPPROTO_TCP, TCP_KEEPCNT, &max_probes,
-             sizeof(max_probes));
+  int maxProbes = 3;
+  setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPCNT, &maxProbes, sizeof(maxProbes));
 }
 }  // namespace
 
@@ -145,12 +143,12 @@ void SocketManager::serverLoop() {
   while (running_) {
     TT_LOG_INFO("[SocketManager] Waiting for client connection...");
 
-    struct sockaddr_in client_addr;
-    socklen_t client_len = sizeof(client_addr);
+    struct sockaddr_in clientAddr;
+    socklen_t clientLen = sizeof(clientAddr);
 
-    int new_socket =
-        accept(server_socket_, (struct sockaddr*)&client_addr, &client_len);
-    if (new_socket < 0) {
+    int newSocket =
+        accept(server_socket_, (struct sockaddr*)&clientAddr, &clientLen);
+    if (newSocket < 0) {
       if (running_) {
         TT_LOG_ERROR("[SocketManager] Accept failed: {}", strerror(errno));
       }
@@ -158,15 +156,15 @@ void SocketManager::serverLoop() {
     }
 
     // Set non-blocking mode and keep-alive
-    int flags = fcntl(new_socket, F_GETFL, 0);
-    fcntl(new_socket, F_SETFL, flags | O_NONBLOCK);
-    setSocketKeepAlive(new_socket);
+    int flags = fcntl(newSocket, F_GETFL, 0);
+    fcntl(newSocket, F_SETFL, flags | O_NONBLOCK);
+    setSocketKeepAlive(newSocket);
 
-    peer_socket_ = new_socket;
+    peer_socket_ = newSocket;
     connected_ = true;
 
     TT_LOG_INFO("[SocketManager] Client connected from {}:{}",
-                inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+                inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
 
     // Wait until disconnected
     while (running_ && connected_) {
@@ -177,8 +175,8 @@ void SocketManager::serverLoop() {
       close(peer_socket_);
       peer_socket_ = -1;
     }
-    bool was_connected = connected_.exchange(false);
-    if (was_connected && connection_lost_callback_) {
+    bool wasConnected = connected_.exchange(false);
+    if (wasConnected && connection_lost_callback_) {
       connection_lost_callback_();
     }
 
@@ -196,11 +194,11 @@ void SocketManager::clientLoop() {
       continue;
     }
 
-    struct sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(port_);
+    struct sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(port_);
 
-    if (inet_pton(AF_INET, host_.c_str(), &server_addr.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, host_.c_str(), &serverAddr.sin_addr) <= 0) {
       TT_LOG_ERROR("[SocketManager] Invalid address: {}", host_);
       close(client_socket_);
       std::this_thread::sleep_for(std::chrono::seconds(5));
@@ -209,8 +207,8 @@ void SocketManager::clientLoop() {
 
     TT_LOG_INFO("[SocketManager] Attempting to connect to {}:{}", host_, port_);
 
-    if (connect(client_socket_, (struct sockaddr*)&server_addr,
-                sizeof(server_addr)) < 0) {
+    if (connect(client_socket_, (struct sockaddr*)&serverAddr,
+                sizeof(serverAddr)) < 0) {
       TT_LOG_ERROR("[SocketManager] Connection failed: {}", strerror(errno));
       close(client_socket_);
       std::this_thread::sleep_for(std::chrono::seconds(5));
@@ -237,8 +235,8 @@ void SocketManager::clientLoop() {
       client_socket_ = -1;
     }
     peer_socket_ = -1;
-    bool was_connected = connected_.exchange(false);
-    if (was_connected && connection_lost_callback_) {
+    bool wasConnected = connected_.exchange(false);
+    if (wasConnected && connection_lost_callback_) {
       connection_lost_callback_();
     }
 
@@ -280,24 +278,24 @@ bool SocketManager::sendRawData(const std::vector<uint8_t>& data) {
 
   // Send data size first
   uint32_t size = static_cast<uint32_t>(data.size());
-  uint32_t net_size = htonl(size);
+  uint32_t netSize = htonl(size);
 
-  ssize_t sent = send(peer_socket_, &net_size, sizeof(net_size), MSG_NOSIGNAL);
-  if (sent != sizeof(net_size)) {
+  ssize_t sent = send(peer_socket_, &netSize, sizeof(netSize), MSG_NOSIGNAL);
+  if (sent != sizeof(netSize)) {
     connected_ = false;
     return false;
   }
 
   // Send actual data
-  size_t total_sent = 0;
-  while (total_sent < data.size()) {
-    sent = send(peer_socket_, data.data() + total_sent,
-                data.size() - total_sent, MSG_NOSIGNAL);
+  size_t totalSent = 0;
+  while (totalSent < data.size()) {
+    sent = send(peer_socket_, data.data() + totalSent, data.size() - totalSent,
+                MSG_NOSIGNAL);
     if (sent <= 0) {
       connected_ = false;
       return false;
     }
-    total_sent += sent;
+    totalSent += sent;
   }
 
   return true;
@@ -309,9 +307,9 @@ std::vector<uint8_t> SocketManager::receiveRawData() {
   }
 
   // Read data size first
-  uint32_t net_size;
+  uint32_t netSize;
   ssize_t received =
-      recv(peer_socket_, &net_size, sizeof(net_size), MSG_DONTWAIT);
+      recv(peer_socket_, &netSize, sizeof(netSize), MSG_DONTWAIT);
   if (received <= 0) {
     if (received == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
       connected_ = false;
@@ -319,12 +317,12 @@ std::vector<uint8_t> SocketManager::receiveRawData() {
     return {};
   }
 
-  if (received != sizeof(net_size)) {
+  if (received != sizeof(netSize)) {
     connected_ = false;
     return {};
   }
 
-  uint32_t size = ntohl(net_size);
+  uint32_t size = ntohl(netSize);
   if (size == 0 || size > 1024 * 1024) {  // Max 1MB per message
     connected_ = false;
     return {};
@@ -332,16 +330,16 @@ std::vector<uint8_t> SocketManager::receiveRawData() {
 
   // Read actual data
   std::vector<uint8_t> data(size);
-  size_t total_received = 0;
-  int retry_count = 0;
-  const int max_retries = 1000;  // 1 second timeout (1000 * 1ms)
+  size_t totalReceived = 0;
+  int retryCount = 0;
+  const int MAX_RETRIES = 1000;  // 1 second timeout (1000 * 1ms)
 
-  while (total_received < size) {
-    received = recv(peer_socket_, data.data() + total_received,
-                    size - total_received, 0);
+  while (totalReceived < size) {
+    received = recv(peer_socket_, data.data() + totalReceived,
+                    size - totalReceived, 0);
     if (received > 0) {
-      total_received += received;
-      retry_count = 0;  // Reset retry count on successful receive
+      totalReceived += received;
+      retryCount = 0;  // Reset retry count on successful receive
     } else if (received == 0) {
       // Connection closed by peer
       connected_ = false;
@@ -350,7 +348,7 @@ std::vector<uint8_t> SocketManager::receiveRawData() {
       // received < 0: check if it's a temporary error
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
         // Non-blocking socket has no data yet, wait briefly and retry
-        if (++retry_count > max_retries) {
+        if (++retryCount > MAX_RETRIES) {
           TT_LOG_ERROR("[SocketManager] Timeout waiting for message data");
           connected_ = false;
           return {};
@@ -374,17 +372,17 @@ void SocketManager::handleIncomingMessage(const std::vector<uint8_t>& data) {
     std::istringstream iss(serialized);
 
     cereal::BinaryInputArchive archive(iss);
-    std::string message_type;
-    archive(message_type);  // Use operator() instead of loadBinaryValue
+    std::string messageType;
+    archive(messageType);  // Use operator() instead of loadBinaryValue
 
     // Find handler for this message type
     std::lock_guard<std::mutex> lock(handlers_mutex_);
-    auto it = handlers_.find(message_type);
+    auto it = handlers_.find(messageType);
     if (it != handlers_.end()) {
       it->second(data);
     } else {
       TT_LOG_DEBUG("[SocketManager] No handler for message type: {}",
-                   message_type);
+                   messageType);
     }
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SocketManager] Message handling error: {}", e.what());

@@ -23,7 +23,7 @@ SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
 SingleProcessWorker::~SingleProcessWorker() = default;
 
 void SingleProcessWorker::start() {
-  tracy_config::TracySetThreadName(
+  tracy_config::tracySetThreadName(
       ("Worker-" + to_string(cfg.worker_id)).c_str());
 
   for (const auto& [key, value] : cfg.env_vars) {
@@ -32,8 +32,8 @@ void SingleProcessWorker::start() {
 
   {
     ZoneScopedN("Worker::init");
-    runner_ = tt::utils::runner_factory::create_runner(
-        tt::config::model_service(), cfg.runner_config, cfg.result_queue.get(),
+    runner_ = tt::utils::runner_factory::createRunner(
+        tt::config::modelService(), cfg.runner_config, cfg.result_queue.get(),
         cfg.task_queue.get());
   }
   runner_->start();
@@ -48,11 +48,11 @@ void SingleProcessWorker::stop() {
     killpg(pid, SIGTERM);
 
     int status;
-    int wait_result = waitpid(pid, &status, WNOHANG);
-    if (wait_result == 0) {
+    int waitResult = waitpid(pid, &status, WNOHANG);
+    if (waitResult == 0) {
       this_thread::sleep_for(chrono::milliseconds(500));
-      wait_result = waitpid(pid, &status, WNOHANG);
-      if (wait_result == 0) {
+      waitResult = waitpid(pid, &status, WNOHANG);
+      if (waitResult == 0) {
         killpg(pid, SIGKILL);
         waitpid(pid, &status, 0);
       }

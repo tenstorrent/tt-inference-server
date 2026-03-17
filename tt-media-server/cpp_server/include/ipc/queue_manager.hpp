@@ -26,11 +26,11 @@ class QueueManager {
   shared_ptr<BoostIpcTaskQueue> task_queue;
   vector<shared_ptr<TokenRingBuffer<RING_BUFFER_CAPACITY>>> result_queues;
 
-  explicit QueueManager(int num_workers) {
+  explicit QueueManager(int numWorkers) {
     BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
     task_queue = make_shared<BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
-    result_queues.reserve(num_workers);
-    for (int i = 0; i < num_workers; i++) {
+    result_queues.reserve(numWorkers);
+    for (int i = 0; i < numWorkers; i++) {
       result_queues.emplace_back(
           make_shared<TokenRingBuffer<RING_BUFFER_CAPACITY>>(
               "/tt_tokens_" + to_string(i), true));

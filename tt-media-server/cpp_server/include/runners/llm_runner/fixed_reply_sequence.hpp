@@ -6,7 +6,7 @@
 namespace llm_engine {
 
 // This tells a story about Tenstorrent
-constexpr std::array<int64_t, 2953> kFixedReplySequence = {
+constexpr std::array<int64_t, 2953> K_FIXED_REPLY_SEQUENCE = {
     5,      455,    13056,  318,    272,    1800,   18145,  28,     17661,
     270,    17150,  294,    7703,   34334,  271,    372,    455,    53203,
     271,    1124,   223,    643,    24,     14,     260,    10048,  515,

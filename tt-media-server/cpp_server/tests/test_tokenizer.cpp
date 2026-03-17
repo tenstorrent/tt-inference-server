@@ -24,13 +24,13 @@ class TokenizerTest : public ::testing::Test {
   std::unique_ptr<Tokenizer> tok_;
 
   void SetUp() override {
-    std::string path = tt::config::tokenizer_path();
+    std::string path = tt::config::tokenizerPath();
     if (path.empty()) {
       FAIL() << "Tokenizer not found for model: "
-             << active_tokenizer().model_name();
+             << activeTokenizer().modelName();
     }
-    tok_ = create_tokenizer(tt::config::model_type(), path);
-    if (!tok_->is_loaded()) {
+    tok_ = createTokenizer(tt::config::modelType(), path);
+    if (!tok_->isLoaded()) {
       FAIL() << "Failed to load tokenizer from: " << path;
     }
   }
@@ -62,12 +62,12 @@ class DeepseekTokenizerTest : public ::testing::Test {
 
   void SetUp() override {
     std::string path =
-        tt::config::tokenizer_path(tt::config::ModelType::DEEPSEEK_R1_0528);
+        tt::config::tokenizerPath(tt::config::ModelType::DEEPSEEK_R1_0528);
     if (path.empty()) {
       GTEST_SKIP() << "DeepSeek tokenizer files not found";
     }
-    tok_ = create_tokenizer(tt::config::ModelType::DEEPSEEK_R1_0528, path);
-    if (!tok_->is_loaded()) {
+    tok_ = createTokenizer(tt::config::ModelType::DEEPSEEK_R1_0528, path);
+    if (!tok_->isLoaded()) {
       FAIL() << "Failed to load DeepSeek tokenizer from: " << path;
     }
   }
@@ -79,7 +79,7 @@ TEST_F(DeepseekTokenizerTest, CompareWithExpectedTokens) {
   // Pre-computed expected tokens from DeepSeek R1 05 28 tokenizer (without
   // special tokens) Generated using: tokenizer.encode(text,
   // add_special_tokens=False)
-  std::map<std::string, std::vector<int>> expected_tokens = {
+  std::map<std::string, std::vector<int>> expectedTokens = {
       {"Hello, world!", {19923, 14, 2058, 3}},
       {"The quick brown fox jumps over the lazy dog.",
        {671, 4787, 13769, 46012, 54994, 1060, 270, 41638, 6397, 16}},
@@ -184,45 +184,45 @@ TEST_F(DeepseekTokenizerTest, CompareWithExpectedTokens) {
        {40433, 9062, 7809, 1499, 7172, 16}},
   };
 
-  size_t total_matches = 0;
-  size_t total_mismatches = 0;
+  size_t totalMatches = 0;
+  size_t totalMismatches = 0;
 
-  for (const auto& [prompt, expected] : expected_tokens) {
-    auto cpp_tokens = tokenizer().encode(prompt);
+  for (const auto& [prompt, expected] : expectedTokens) {
+    auto cppTokens = tokenizer().encode(prompt);
 
-    EXPECT_GT(cpp_tokens.size(), 0) << "Empty C++ tokens for: " << prompt;
+    EXPECT_GT(cppTokens.size(), 0) << "Empty C++ tokens for: " << prompt;
 
-    if (cpp_tokens == expected) {
-      ++total_matches;
+    if (cppTokens == expected) {
+      ++totalMatches;
     } else {
-      ++total_mismatches;
+      ++totalMismatches;
 
-      std::stringstream cpp_ss, exp_ss;
-      cpp_ss << "[";
-      for (size_t j = 0; j < cpp_tokens.size(); ++j) {
-        cpp_ss << cpp_tokens[j];
-        if (j < cpp_tokens.size() - 1) cpp_ss << ", ";
+      std::stringstream cppSs, expSs;
+      cppSs << "[";
+      for (size_t j = 0; j < cppTokens.size(); ++j) {
+        cppSs << cppTokens[j];
+        if (j < cppTokens.size() - 1) cppSs << ", ";
       }
-      cpp_ss << "]";
+      cppSs << "]";
 
-      exp_ss << "[";
+      expSs << "[";
       for (size_t j = 0; j < expected.size(); ++j) {
-        exp_ss << expected[j];
-        if (j < expected.size() - 1) exp_ss << ", ";
+        expSs << expected[j];
+        if (j < expected.size() - 1) expSs << ", ";
       }
-      exp_ss << "]";
+      expSs << "]";
 
-      EXPECT_EQ(cpp_tokens, expected)
+      EXPECT_EQ(cppTokens, expected)
           << "Token mismatch for prompt: \"" << prompt << "\"\n"
-          << "  C++ tokens:      " << cpp_ss.str() << "\n"
-          << "  Expected tokens: " << exp_ss.str();
+          << "  C++ tokens:      " << cppSs.str() << "\n"
+          << "  Expected tokens: " << expSs.str();
     }
   }
 
   std::cout << "\nTokenizer Validation Summary:\n";
-  std::cout << "  Total prompts:  " << expected_tokens.size() << "\n";
-  std::cout << "  Matches:        " << total_matches << "\n";
-  std::cout << "  Mismatches:     " << total_mismatches << "\n";
+  std::cout << "  Total prompts:  " << expectedTokens.size() << "\n";
+  std::cout << "  Matches:        " << totalMatches << "\n";
+  std::cout << "  Mismatches:     " << totalMismatches << "\n";
 }
 
 TEST_F(DeepseekTokenizerTest, ApplyChatTemplateMatchesDeepSeekR10528Format) {
@@ -236,17 +236,17 @@ TEST_F(DeepseekTokenizerTest, ApplyChatTemplateMatchesDeepSeekR10528Format) {
   // Expected output from HuggingFace transformers
   // tokenizer.apply_chat_template(..., add_generation_prompt=True) for
   // DeepSeek-R1-0528 (add_bos_token=true, add_eos_token=false).
-  const std::string expected =
+  const std::string EXPECTED =
       "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>Hi!<｜User｜>How "
       "are you?<｜Assistant｜>";
 
-  std::string actual = tokenizer().apply_chat_template(messages, true);
+  std::string actual = tokenizer().applyChatTemplate(messages, true);
 
-  EXPECT_EQ(actual, expected)
+  EXPECT_EQ(actual, EXPECTED)
 
       << "apply_chat_template output should match HuggingFace DeepSeek-R1-0528 "
          "format.\n"
-      << "  Expected length: " << expected.size() << "\n"
+      << "  Expected length: " << EXPECTED.size() << "\n"
       << "  Actual length:   " << actual.size();
 }
 
@@ -262,17 +262,17 @@ TEST_F(DeepseekTokenizerTest,
   // Expected output from HuggingFace transformers
   // tokenizer.apply_chat_template(..., add_generation_prompt=True) for
   // DeepSeek-R1-0528 (add_bos_token=true, add_eos_token=false).
-  const std::string expected =
+  const std::string EXPECTED =
       "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>Hi!<｜User｜>How "
       "are you?";
 
-  std::string actual = tokenizer().apply_chat_template(messages, false);
+  std::string actual = tokenizer().applyChatTemplate(messages, false);
 
-  EXPECT_EQ(actual, expected)
+  EXPECT_EQ(actual, EXPECTED)
 
       << "apply_chat_template output should match HuggingFace DeepSeek-R1-0528 "
          "format.\n"
-      << "  Expected length: " << expected.size() << "\n"
+      << "  Expected length: " << EXPECTED.size() << "\n"
       << "  Actual length:   " << actual.size();
 }
 
@@ -285,13 +285,13 @@ class LlamaTokenizerTest : public ::testing::Test {
   std::unique_ptr<Tokenizer> tok_;
 
   void SetUp() override {
-    std::string path = tt::config::tokenizer_path(
+    std::string path = tt::config::tokenizerPath(
         tt::config::ModelType::LLAMA_3_1_8B_INSTRUCT);
     if (path.empty()) {
       GTEST_SKIP() << "Llama tokenizer files not found";
     }
-    tok_ = create_tokenizer(tt::config::ModelType::LLAMA_3_1_8B_INSTRUCT, path);
-    if (!tok_->is_loaded()) {
+    tok_ = createTokenizer(tt::config::ModelType::LLAMA_3_1_8B_INSTRUCT, path);
+    if (!tok_->isLoaded()) {
       FAIL() << "Failed to load Llama tokenizer from: " << path;
     }
   }
@@ -306,7 +306,7 @@ TEST_F(LlamaTokenizerTest, ApplyChatTemplate) {
       {"user", "How are you?"},
   };
 
-  const std::string expected =
+  const std::string EXPECTED =
       "<|begin_of_text|>"
       "<|start_header_id|>system<|end_header_id|>\n\n"
       "Cutting Knowledge Date: December 2023\n"
@@ -320,12 +320,12 @@ TEST_F(LlamaTokenizerTest, ApplyChatTemplate) {
       "How are you?<|eot_id|>"
       "<|start_header_id|>assistant<|end_header_id|>\n\n";
 
-  std::string actual = tokenizer().apply_chat_template(messages, true);
+  std::string actual = tokenizer().applyChatTemplate(messages, true);
 
-  EXPECT_EQ(actual, expected)
+  EXPECT_EQ(actual, EXPECTED)
       << "apply_chat_template output should match Llama 3.1 8B Instruct "
          "format.\n"
-      << "  Expected length: " << expected.size() << "\n"
+      << "  Expected length: " << EXPECTED.size() << "\n"
       << "  Actual length:   " << actual.size();
 }
 
@@ -336,7 +336,7 @@ TEST_F(LlamaTokenizerTest, ApplyChatTemplateNoGenerationPrompt) {
       {"user", "How are you?"},
   };
 
-  const std::string expected =
+  const std::string EXPECTED =
       "<|begin_of_text|>"
       "<|start_header_id|>system<|end_header_id|>\n\n"
       "Cutting Knowledge Date: December 2023\n"
@@ -349,11 +349,11 @@ TEST_F(LlamaTokenizerTest, ApplyChatTemplateNoGenerationPrompt) {
       "<|start_header_id|>user<|end_header_id|>\n\n"
       "How are you?<|eot_id|>";
 
-  std::string actual = tokenizer().apply_chat_template(messages, false);
+  std::string actual = tokenizer().applyChatTemplate(messages, false);
 
-  EXPECT_EQ(actual, expected)
+  EXPECT_EQ(actual, EXPECTED)
       << "apply_chat_template output should match Llama 3.1 8B Instruct "
          "format.\n"
-      << "  Expected length: " << expected.size() << "\n"
+      << "  Expected length: " << EXPECTED.size() << "\n"
       << "  Actual length:   " << actual.size();
 }
