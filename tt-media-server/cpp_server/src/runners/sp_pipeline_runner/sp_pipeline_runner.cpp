@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
+#include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 #include <cassert>
 #include <cstring>
@@ -13,7 +14,8 @@ namespace tt::runners {
 SpPipelineRunner::SpPipelineRunner(
     const llm_engine::Config& config,
     ipc::TokenRingBuffer<65536>* result_queue,
-    llm_engine::ITaskQueue* task_queue)
+    llm_engine::ITaskQueue* task_queue,
+    sp_pipeline::ModelRunnerFactory model_runner_factory)
     : config_(config),
       stop_token_ids_(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       result_queue_(result_queue),
@@ -23,7 +25,7 @@ SpPipelineRunner::SpPipelineRunner(
     decode_queue_.push(result);
   };
 
-  model_runner_ = std::make_unique<sp_pipeline::SpPipelineModelRunner>(std::move(decode_cb));
+  model_runner_ = model_runner_factory(std::move(decode_cb));
 }
 
 SpPipelineRunner::~SpPipelineRunner() {
@@ -54,8 +56,8 @@ bool SpPipelineRunner::warmup() {
       warmup_params
   );
 
-  // Write the warmup sequence to the model runner
-  model_runner_->write(warmup_seq->task_id.id, warmup_seq->token_ids_, 1);
+  model_runner_->write(warmup_seq->task_id.id, warmup_seq->token_ids_, 1,
+                       sp_pipeline::RequestPhase::PREFILL);
 
   // Wait for the response token (with timeout)
   const int max_attempts = 1000; // ~10 seconds with 10ms sleep
@@ -97,7 +99,6 @@ void SpPipelineRunner::stop() {
 void SpPipelineRunner::step() {
   drain_decode_results();
 
-  // Check if we can accept more in-flight requests
   if (in_flight_count_ >= max_in_flight_count_) {
     return;
   }
@@ -105,17 +106,22 @@ void SpPipelineRunner::step() {
   llm_engine::Sequence* seq = task_queue_->try_pop();
   if (!seq) return;
 
-  std::unique_ptr<llm_engine::Sequence> owned(seq);
-  llm_engine::TaskID task_id = seq->task_id;
+  {
+    ZoneScopedN("SpPipelineRunner::write_to_device");
+    std::unique_ptr<llm_engine::Sequence> owned(seq);
+    llm_engine::TaskID task_id = seq->task_id;
 
-  model_runner_->write(
-      seq->task_id.id, seq->token_ids_, seq->sampling_params->max_tokens);
+    model_runner_->write(
+        seq->task_id.id, seq->token_ids_, seq->sampling_params->max_tokens,
+        sp_pipeline::RequestPhase::PREFILL);
 
-  active_sequences_.emplace(task_id, std::move(owned));
-  ++in_flight_count_;
+    active_sequences_.emplace(task_id, std::move(owned));
+    ++in_flight_count_;
+  }
 }
 
 void SpPipelineRunner::drain_decode_results() {
+  ZoneScopedN("SpPipelineRunner::drain_decode");
   for (const auto& dr : decode_queue_.drain()) {
     auto it = active_sequences_.find(dr.task_id);
     if (it == active_sequences_.end()) { // safeguard for too many decode results
@@ -138,7 +144,10 @@ void SpPipelineRunner::drain_decode_results() {
         (!seq->sampling_params->ignore_eos && is_stop) ||
         seq->num_completion_tokens() >= static_cast<size_t>(seq->sampling_params->max_tokens);
 
-    push_token(dr.task_id, dr.token_id, finished);
+    {
+      ZoneScopedN("SpPipelineRunner::push_token");
+      push_token(dr.task_id, dr.token_id, finished);
+    }
 
     if (finished) {
       active_sequences_.erase(it);

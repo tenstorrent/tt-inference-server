@@ -187,6 +187,8 @@ set(LLM_ENGINE_SOURCES
     src/utils/logger.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
+    src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
+    src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
 )
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
@@ -311,6 +313,14 @@ if(USE_EXTERNAL_FMT)
 else()
     target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog)
 endif()
+
+# Mock pipeline direct benchmark (no server overhead)
+add_executable(mock_pipeline_benchmark benchmarks/mock_pipeline_benchmark.cpp)
+target_link_libraries(mock_pipeline_benchmark PRIVATE llm_engine)
+target_include_directories(mock_pipeline_benchmark PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
 # Source files
 set(SOURCES

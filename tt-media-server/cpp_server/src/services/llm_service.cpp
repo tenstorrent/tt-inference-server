@@ -125,6 +125,7 @@ size_t LLMService::current_queue_size() const {
 }
 
 void LLMService::pre_process(domain::CompletionRequest& request) const {
+    ZoneScopedN("LLMService::pre_process");
     BaseService::pre_process(request);
     if (std::holds_alternative<std::string>(request.prompt)) {
         auto text = std::get<std::string>(request.prompt);
@@ -134,7 +135,10 @@ void LLMService::pre_process(domain::CompletionRequest& request) const {
         if (cfg.add_bos_token && !cfg.bos_token.empty() && !has_bos) {
             text = cfg.bos_token + text;
         }
-        request.prompt = tokenizer_->encode(text);
+        {
+            ZoneScopedN("Tokenizer::encode");
+            request.prompt = tokenizer_->encode(text);
+        }
     }
     const auto& tokens = std::get<std::vector<int>>(request.prompt);
     if (tokens.size() > llm_engine::Config::MAX_INPUT_TOKENS) {
@@ -281,7 +285,10 @@ void LLMService::consumer_loop_for_worker(size_t worker_idx) {
             ).count();
 
             domain::CompletionChoice choice;
-            choice.text = tokenizer_->decode({static_cast<int>(token.token_id)});
+            {
+                ZoneScopedN("Tokenizer::decode");
+                choice.text = tokenizer_->decode({static_cast<int>(token.token_id)});
+            }
             choice.index = token.token_index;
             if (token.is_error()) {
                 choice.finish_reason = "error";
@@ -408,7 +415,10 @@ void LLMService::process_streaming_request(
         tt::config::llm_engine_config().kvcache_block_size, std::move(token_ids));
     sequence->num_prompt_tokens_ = prompt.size();
     sequence->sampling_params = std::make_unique<llm_engine::SamplingParams>(tt::utils::mapper::map_sampling_params(request));
-    queue_manager_->task_queue->push(*std::move(sequence));
+    {
+        ZoneScopedN("TaskQueue::push");
+        queue_manager_->task_queue->push(*std::move(sequence));
+    }
 }
 
 void LLMService::post_process(domain::CompletionResponse&) const {

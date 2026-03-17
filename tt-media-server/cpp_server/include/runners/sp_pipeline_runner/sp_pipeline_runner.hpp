@@ -11,7 +11,7 @@
 
 #include "runners/runner_interface.hpp"
 #include "runners/llm_runner/config.hpp"
-#include "runners/sp_pipeline_runner/sp_pipeline_model_runner.hpp"
+#include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "ipc/shared_memory.hpp"
@@ -22,7 +22,8 @@ class SpPipelineRunner : public IRunner {
  public:
   SpPipelineRunner(const llm_engine::Config& config,
                    ipc::TokenRingBuffer<65536>* result_queue,
-                   llm_engine::ITaskQueue* task_queue);
+                   llm_engine::ITaskQueue* task_queue,
+                   sp_pipeline::ModelRunnerFactory model_runner_factory);
   ~SpPipelineRunner() override;
 
   void run() override;
@@ -40,7 +41,7 @@ class SpPipelineRunner : public IRunner {
   std::unordered_set<int64_t> stop_token_ids_;
   ipc::TokenRingBuffer<65536>* result_queue_;
   llm_engine::ITaskQueue* task_queue_;
-  std::unique_ptr<sp_pipeline::SpPipelineModelRunner> model_runner_;
+  std::unique_ptr<sp_pipeline::ISpPipelineModelRunner> model_runner_;
   sp_pipeline::DecodeQueue decode_queue_;
   std::unordered_map<llm_engine::TaskID, std::unique_ptr<llm_engine::Sequence>> active_sequences_;
   std::atomic<bool> stopped_{false};

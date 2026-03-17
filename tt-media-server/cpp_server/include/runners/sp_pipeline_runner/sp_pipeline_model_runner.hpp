@@ -6,32 +6,28 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
-#include <functional>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include "runners/llm_runner/sequence.hpp"
+#include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 #include "runners/sp_pipeline_runner/shared_memory.hpp"
-#include "utils/concurrent_queue.hpp"
 
 namespace sp_pipeline {
 
-using DecodeCallback = std::function<void(const llm_engine::TokenResult&)>;
-using DecodeQueue = ConcurrentQueue<llm_engine::TokenResult>;
-
-class SpPipelineModelRunner {
+class SpPipelineModelRunner : public ISpPipelineModelRunner {
  public:
   explicit SpPipelineModelRunner(DecodeCallback callback);
-  ~SpPipelineModelRunner();
+  ~SpPipelineModelRunner() override;
 
   SpPipelineModelRunner(const SpPipelineModelRunner&) = delete;
   SpPipelineModelRunner& operator=(const SpPipelineModelRunner&) = delete;
 
   void write(const std::string& task_id,
                      const std::vector<int64_t>& token_ids,
-                     uint32_t max_tokens);
-  void exit();
+                     uint32_t max_tokens,
+                     RequestPhase phase) override;
+  void exit() override;
 
  private:
   struct ShmNames {

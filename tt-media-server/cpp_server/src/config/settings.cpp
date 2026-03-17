@@ -172,6 +172,9 @@ llm_engine::Config llm_engine_config() {
     if (backend == "pipeline") {
         cfg.runner_type = llm_engine::ModelRunnerType::Pipeline;
         cfg.max_in_flight_count = 1;
+    } else if (backend == "mock_pipeline") {
+        cfg.runner_type = llm_engine::ModelRunnerType::MockPipeline;
+        cfg.max_in_flight_count = 64;
     } else if (backend == "llama") {
         cfg.max_num_seqs = 32;
         cfg.kvcache_block_size = 32;
