@@ -134,7 +134,7 @@ def resolve_multihost_vars(
     multihost_config,
     setup=None,
 ) -> dict:
-    """Resolve compose variables for multi-host deployment.
+    """Resolve compose variables for multi-host deployment (display/dry-run).
 
     Args:
         model_spec: ModelSpec object
@@ -161,6 +161,80 @@ def resolve_multihost_vars(
     if setup:
         env["SSH_CONFIG_DIR"] = str(setup.config_dir)
         env["MPIRUN_DIR"] = str(setup.config_dir / "mpirun")
+
+    return env
+
+
+def resolve_multihost_worker_vars(
+    model_spec,
+    multihost_config,
+    rank: int,
+) -> dict:
+    """Resolve compose variables for a multi-host Worker.
+
+    Args:
+        model_spec: ModelSpec object
+        multihost_config: MultiHostConfig
+        rank: MPI rank for this worker
+
+    Returns:
+        Dict of environment variable name → value for worker compose template
+    """
+    return {
+        "DOCKER_IMAGE": model_spec.docker_image,
+        "CONTAINER_NAME": f"tt-worker-{rank}-{_short_uuid()}",
+        "SHARED_STORAGE_ROOT": multihost_config.shared_storage_root,
+        "SSH_PORT": str(multihost_config.ssh_port),
+    }
+
+
+def resolve_multihost_controller_vars(
+    model_spec,
+    runtime_config,
+    multihost_config,
+    setup,
+    runtime_model_spec_json_path,
+    setup_config=None,
+) -> dict:
+    """Resolve compose variables for multi-host Controller.
+
+    Args:
+        model_spec: ModelSpec object
+        runtime_config: RuntimeConfig object
+        multihost_config: MultiHostConfig
+        setup: MultiHostSetup with generated config paths
+        runtime_model_spec_json_path: Path to merged model spec JSON
+        setup_config: Optional SetupConfig for cache volume
+
+    Returns:
+        Dict of environment variable name → value for controller compose template
+    """
+    from workflows.utils import default_dotenv_path
+
+    device = DeviceTypes.from_string(runtime_config.device)
+
+    env = {
+        "DOCKER_IMAGE": model_spec.docker_image,
+        "CONTAINER_NAME": f"tt-controller-{_short_uuid()}",
+        "ENV_FILE": str(default_dotenv_path),
+        "HF_MODEL": model_spec.hf_model_repo,
+        "TT_DEVICE": runtime_config.device,
+        "SHARED_STORAGE_ROOT": multihost_config.shared_storage_root,
+        "MULTIHOST_HOSTS": ",".join(multihost_config.hosts),
+        "MPI_INTERFACE": multihost_config.mpi_interface,
+        "MESH_DEVICE": device.to_mesh_device_str(),
+        "SSH_CONFIG_DIR": str(setup.config_dir),
+        "MPIRUN_DIR": str(setup.config_dir / "mpirun"),
+        "RUNTIME_MODEL_SPEC_JSON": str(runtime_model_spec_json_path),
+    }
+
+    # Cache volume
+    if setup_config:
+        if setup_config.host_model_volume_root:
+            env["CACHE_VOLUME"] = str(setup_config.host_model_volume_root)
+        else:
+            from workflows.run_docker_server import generate_docker_volume_name
+            env["CACHE_VOLUME"] = generate_docker_volume_name(model_spec)
 
     return env
 
