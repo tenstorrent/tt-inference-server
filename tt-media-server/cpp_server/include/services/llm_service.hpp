@@ -81,7 +81,6 @@ class LLMService
 
   std::unique_ptr<tt::ipc::IWarmupSignalQueue> createWarmupQueue(
       const std::string& name, size_t capacity) override;
-  void onFirstWarmup(int workerId) override;
 
   tt::config::LLMMode mode_;
 

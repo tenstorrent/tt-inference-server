@@ -18,6 +18,7 @@
 #include "domain/base_request.hpp"
 #include "domain/base_response.hpp"
 #include "ipc/warmup_signal_queue.hpp"
+#include "utils/logger.hpp"
 namespace tt::services {
 
 class QueueFullException : public std::runtime_error {
@@ -86,22 +87,27 @@ class BaseService : public IService {
     return nullptr;
   }
 
-  /** Called from warmup listener when first worker signals. Override to log. */
-  virtual void onFirstWarmup(int /*workerId*/) {}
-
   void startWarmupListener(const std::string& name, size_t capacity) {
     warmup_queue_ = createWarmupQueue(name, capacity);
     if (!warmup_queue_) return;
     warmup_received_ = false;
-    warmup_listener_thread_ = std::thread([this]() {
+    warmup_listener_thread_ = std::thread([this, capacity]() {
       try {
-        int workerId = -1;
-        warmup_queue_->receive(workerId);
-        onFirstWarmup(workerId);
+        for (size_t i = 0; i < capacity; ++i) {
+          int workerId = -1;
+          warmup_queue_->receive(workerId);
+          TT_LOG_INFO("[BaseService] Worker {} warmed up", workerId);
+          if (i == 0) {
+            warmup_received_ = true;
+            warmup_cv_.notify_all();
+          }
+        }
+      } catch (const std::exception& e) {
+        TT_LOG_WARN("[BaseService] Warmup listener failed: {} (shutdown?)",
+                    e.what());
       } catch (...) {
+        TT_LOG_WARN("[BaseService] Warmup listener failed: unknown exception");
       }
-      warmup_received_ = true;
-      warmup_cv_.notify_all();
     });
   }
 
@@ -109,9 +115,6 @@ class BaseService : public IService {
     if (!warmup_queue_) return;
     std::unique_lock<std::mutex> lock(warmup_mutex_);
     warmup_cv_.wait(lock, [this]() { return warmup_received_.load(); });
-    if (warmup_listener_thread_.joinable()) {
-      warmup_listener_thread_.join();
-    }
   }
 
   void stopWarmupListener() {

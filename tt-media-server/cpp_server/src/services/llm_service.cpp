@@ -69,10 +69,6 @@ std::unique_ptr<tt::ipc::IWarmupSignalQueue> LLMService::createWarmupQueue(
   return std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(name, capacity);
 }
 
-void LLMService::onFirstWarmup(int workerId) {
-  TT_LOG_INFO("[LLMService] First worker warmed up (workerId={})", workerId);
-}
-
 LLMService::LLMService()
     : mode_(tt::config::llmMode()),
       num_workers_(tt::config::numWorkers()),

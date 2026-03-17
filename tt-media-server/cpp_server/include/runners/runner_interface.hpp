@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <functional>
 #include <string>
 
 namespace tt::runners {
@@ -25,11 +26,17 @@ class IRunner {
    */
   bool warmup() { return true; }
 
-  void start() {
-    // Initialize resources and prepare for inference.
+  /**
+   * Warm up then run the inference loop. Optional onWarmupDone is invoked
+   * after warmup() and before run() so the worker can signal readiness.
+   */
+  void start(std::function<void()> onWarmupDone = nullptr) {
     bool isWarmedUp = warmup();
     if (!isWarmedUp) {
       throw std::runtime_error(std::string(runnerType()) + " warmup failed");
+    }
+    if (onWarmupDone) {
+      onWarmupDone();
     }
     run();
   }

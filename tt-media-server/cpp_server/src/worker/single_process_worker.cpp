@@ -38,16 +38,20 @@ void SingleProcessWorker::start() {
         tt::config::modelService(), cfg.runner_config, cfg.result_queue.get(),
         cfg.task_queue.get());
   }
-  runner_->start();
-
-  try {
-    tt::ipc::BoostIpcWarmupSignalQueue warmupQueue(
-        tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
-    warmupQueue.sendReady(worker_id);
-  } catch (const std::exception& e) {
-    TT_LOG_WARN("[SingleProcessWorker] Worker {} failed to signal warmup: {}",
-                worker_id, e.what());
-  }
+  TT_LOG_INFO("[SingleProcessWorker] Worker {} starting runner (warmup may take a while)",
+              worker_id);
+  runner_->start([this]() {
+    try {
+      tt::ipc::BoostIpcWarmupSignalQueue warmupQueue(
+          tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
+      warmupQueue.sendReady(worker_id);
+      TT_LOG_INFO("[SingleProcessWorker] Worker {} signaled warmup complete",
+                  worker_id);
+    } catch (const std::exception& e) {
+      TT_LOG_WARN("[SingleProcessWorker] Worker {} failed to signal warmup: {}",
+                  worker_id, e.what());
+    }
+  });
 }
 
 void SingleProcessWorker::stop() {
