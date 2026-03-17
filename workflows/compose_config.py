@@ -19,11 +19,14 @@ Compose templates:
 """
 
 import logging
+import os
+import shutil
+import subprocess
 import uuid
 from pathlib import Path
 from typing import Optional
 
-from workflows.utils import get_repo_root_path
+from workflows.utils import get_repo_root_path, write_dotenv
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
@@ -167,3 +170,159 @@ def format_env_for_display(env_vars: dict) -> str:
     for key, value in env_vars.items():
         lines.append(f"{key}={value}")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Compose availability check
+# ---------------------------------------------------------------------------
+
+
+def is_compose_available() -> bool:
+    """Check if Docker Compose v2 is available."""
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Compose execution
+# ---------------------------------------------------------------------------
+
+
+def write_compose_env(
+    compose_vars: dict,
+    env_file: Path,
+) -> Path:
+    """Write compose variables to an env file, merging with existing secrets.
+
+    Merges compose variables with existing .env content (which may contain
+    HF_TOKEN, JWT_SECRET, etc.) so that `docker compose` can read everything
+    from a single file.
+
+    Args:
+        compose_vars: Dict from resolve_compose_vars()
+        env_file: Path to write the env file
+
+    Returns:
+        Path to the written file
+    """
+    write_dotenv(compose_vars, dotenv_path=env_file)
+    logger.info(f"Wrote compose variables to {env_file}")
+    return env_file
+
+
+def compose_up(
+    compose_file: Path,
+    env_file: Optional[Path] = None,
+    detach: bool = True,
+) -> subprocess.CompletedProcess:
+    """Run `docker compose up` with the given compose file.
+
+    Args:
+        compose_file: Path to docker-compose.yml
+        env_file: Optional path to .env file (Compose reads .env by default)
+        detach: Run in detached mode (default True)
+
+    Returns:
+        CompletedProcess result
+    """
+    cmd = ["docker", "compose", "-f", str(compose_file)]
+    if env_file:
+        cmd.extend(["--env-file", str(env_file)])
+    cmd.append("up")
+    if detach:
+        cmd.append("-d")
+
+    logger.info(f"Running: {' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        logger.error(f"docker compose up failed: {result.stderr}")
+    return result
+
+
+def compose_down(
+    compose_file: Path,
+    env_file: Optional[Path] = None,
+    timeout: int = 30,
+) -> subprocess.CompletedProcess:
+    """Run `docker compose down` to stop and remove containers.
+
+    Args:
+        compose_file: Path to docker-compose.yml
+        env_file: Optional path to .env file
+        timeout: Shutdown timeout in seconds
+
+    Returns:
+        CompletedProcess result
+    """
+    cmd = ["docker", "compose", "-f", str(compose_file)]
+    if env_file:
+        cmd.extend(["--env-file", str(env_file)])
+    cmd.extend(["down", "-t", str(timeout)])
+
+    logger.info(f"Running: {' '.join(cmd)}")
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def compose_ps(
+    compose_file: Path,
+    env_file: Optional[Path] = None,
+) -> str:
+    """Run `docker compose ps` to check container status.
+
+    Args:
+        compose_file: Path to docker-compose.yml
+        env_file: Optional path to .env file
+
+    Returns:
+        Output string from docker compose ps
+    """
+    cmd = ["docker", "compose", "-f", str(compose_file)]
+    if env_file:
+        cmd.extend(["--env-file", str(env_file)])
+    cmd.append("ps")
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return result.stdout
+
+
+def compose_logs(
+    compose_file: Path,
+    env_file: Optional[Path] = None,
+    follow: bool = False,
+    log_file_path: Optional[Path] = None,
+) -> Optional[subprocess.Popen]:
+    """Run `docker compose logs` to stream container logs.
+
+    Args:
+        compose_file: Path to docker-compose.yml
+        env_file: Optional path to .env file
+        follow: Follow log output (blocking unless log_file_path is set)
+        log_file_path: If set, redirect logs to this file and return Popen
+
+    Returns:
+        Popen process if log_file_path is set, None otherwise
+    """
+    cmd = ["docker", "compose", "-f", str(compose_file)]
+    if env_file:
+        cmd.extend(["--env-file", str(env_file)])
+    cmd.append("logs")
+    if follow:
+        cmd.append("-f")
+
+    if log_file_path:
+        log_file = open(log_file_path, "w", buffering=1)
+        proc = subprocess.Popen(
+            cmd, stdout=log_file, stderr=log_file, text=True
+        )
+        return proc
+    else:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return result.stdout

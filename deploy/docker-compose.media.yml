@@ -1,13 +1,18 @@
 # Docker Compose for tt-media-server (image, video, audio, embedding models)
 # on Tenstorrent hardware. Also used for forge-based models.
 #
+# The media server image uses docker-entrypoint.sh which:
+# 1. Runs as root to fix CACHE_ROOT volume permissions (group ownership + chmod 2775)
+# 2. Drops to container_app_user via gosu
+# This is handled by the image's built-in ENTRYPOINT — no special compose config needed.
+#
 # Usage (standalone, without run.py):
 #   1. Copy .env.example to .env and fill in values
 #   2. docker compose -f docker-compose.media.yml up -d
 #
 # Usage (via run.py):
 #   python3 run.py --model Wan2.2-T2V-A14B-Diffusers --workflow server \
-#     --tt-device galaxy --docker-server --no-auth
+#     --tt-device galaxy --docker-server --use-compose
 
 services:
   inference-server:

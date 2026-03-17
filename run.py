@@ -32,6 +32,7 @@ from workflows.run_docker_server import (
     format_docker_command,
     generate_docker_run_command,
     run_docker_server,
+    run_docker_server_compose,
 )
 from workflows.multihost_orchestrator import (
     MultiHostOrchestrator,
@@ -266,6 +267,11 @@ def parse_arguments():
         "--print-compose",
         action="store_true",
         help="Print Docker Compose YAML and exit (does not start server)",
+    )
+    parser.add_argument(
+        "--use-compose",
+        action="store_true",
+        help="Use Docker Compose backend instead of raw docker run (requires docker compose v2)",
     )
     parser.add_argument(
         "--host-volume",
@@ -632,7 +638,10 @@ def main():
                 print(format_env_for_display(env_vars))
                 print(f"\nRun:\n  docker compose -f {template_path} up -d\n")
             return 0
-        run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
+        if runtime_config.use_compose:
+            run_docker_server_compose(model_spec, runtime_config, setup_config, docker_json_fpath)
+        else:
+            run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
     elif runtime_config.local_server:
         logger.info("Running inference server on localhost ...")
         raise NotImplementedError("TODO")

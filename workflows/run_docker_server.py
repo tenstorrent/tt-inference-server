@@ -408,6 +408,129 @@ def run_docker_server(model_spec, runtime_config, setup_config, json_fpath):
     )
 
 
+def run_docker_server_compose(model_spec, runtime_config, setup_config, json_fpath):
+    """Run inference server using Docker Compose.
+
+    Uses static compose templates from deploy/ with variables resolved from
+    ModelSpec/RuntimeConfig. Falls back to raw docker run if Compose is unavailable.
+
+    Args:
+        model_spec: ModelSpec object
+        runtime_config: RuntimeConfig object
+        setup_config: SetupConfig object from setup_host()
+        json_fpath: Path to run config JSON file
+
+    Returns:
+        Dict with container info
+    """
+    from workflows.compose_config import (
+        compose_down,
+        compose_logs,
+        compose_up,
+        get_compose_template_path,
+        is_compose_available,
+        resolve_compose_vars,
+        write_compose_env,
+    )
+
+    if not is_compose_available():
+        logger.warning(
+            "Docker Compose not available, falling back to docker run"
+        )
+        return run_docker_server(model_spec, runtime_config, setup_config, json_fpath)
+
+    logger.info("Starting Docker inference server via Compose ...")
+
+    # Resolve compose template and variables
+    compose_file = get_compose_template_path(model_spec, runtime_config)
+    compose_vars = resolve_compose_vars(model_spec, runtime_config, setup_config)
+    container_name = compose_vars["CONTAINER_NAME"]
+
+    # Write compose variables to .env (merges with existing secrets)
+    env_file = default_dotenv_path
+    write_compose_env(compose_vars, env_file)
+
+    # Ensure image is available
+    assert ensure_docker_image(model_spec.docker_image), (
+        f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
+    )
+
+    logger.info(f"Compose template: {compose_file}")
+    logger.info(f"Container name: {container_name}")
+    logger.info(f"Env file: {env_file}")
+
+    # Setup log file
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
+    ensure_readwriteable_dir(docker_log_file_dir)
+    server_prefix = (
+        "vllm" if model_spec.model_type in (ModelType.LLM, ModelType.VLM) else "media"
+    )
+    docker_log_file_path = (
+        docker_log_file_dir
+        / f"{server_prefix}_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
+    )
+
+    # Start via compose
+    result = compose_up(compose_file, env_file=env_file)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"docker compose up failed:\n{result.stderr}\n"
+            f"Template: {compose_file}\n"
+            f"Check variables in {env_file}"
+        )
+
+    # Start log streaming to file
+    log_proc = compose_logs(
+        compose_file, env_file=env_file, follow=True, log_file_path=docker_log_file_path
+    )
+
+    # Get container ID
+    container_id = _wait_for_container_id(container_name, timeout=30)
+    if not container_id:
+        logger.error(f"Container {container_name} failed to start after compose up")
+        compose_down(compose_file, env_file=env_file)
+        raise RuntimeError("Container failed to start after docker compose up")
+
+    logger.info(f"Container started: {container_id}")
+    logger.info(f"Logs streaming to: {docker_log_file_path}")
+
+    # Register cleanup
+    skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
+    if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
+
+        def teardown_compose():
+            logger.info("atexit: Stopping inference server via compose down ...")
+            compose_down(compose_file, env_file=env_file)
+            if log_proc:
+                log_proc.terminate()
+            clean_log_file(docker_log_file_path)
+            logger.info("compose cleanup finished.")
+
+        atexit.register(teardown_compose)
+    else:
+
+        def exit_log_messages():
+            logger.info(f"Created Docker container ID: {container_id}")
+            logger.info(
+                f"View logs: docker compose -f {compose_file} logs -f"
+            )
+            logger.info(
+                f"Stop: docker compose -f {compose_file} down"
+            )
+            logger.info(f"Log file: {docker_log_file_path}")
+
+        atexit.register(exit_log_messages)
+
+    return {
+        "container_name": container_name,
+        "container_id": container_id,
+        "docker_log_file_path": str(docker_log_file_path),
+        "service_port": runtime_config.service_port,
+        "compose_file": str(compose_file),
+    }
+
+
 def _wait_for_container_id(container_name: str, timeout: int = 30) -> str:
     """Wait for a container to appear and return its ID.
 
