@@ -214,7 +214,6 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
 # These packages are required for the application to run in production
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    gosu \
     libjsoncpp-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -243,14 +242,18 @@ WORKDIR ${HOME_DIR}/tt-metal
 # Set up bashrc
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
-# Switch back to root for entrypoint (it will drop to non-root user via gosu)
-USER root
-COPY docker-entrypoint.sh ${HOME_DIR}/tt-metal
-RUN chmod +x ${HOME_DIR}/tt-metal/docker-entrypoint.sh
+# Create CACHE_ROOT as the non-root user.
+# This seeds Docker named volumes with UID 1000 ownership on first mount,
+# eliminating the need for runtime root permission fixup (docker-entrypoint.sh).
+# For bind mounts, host-side permissions should be set before starting the container
+# (run.py's setup_host.py handles this, or set manually: chown 1000:1000 /host/path).
+ENV CACHE_ROOT=${HOME_DIR}/cache_root
+RUN mkdir -p ${CACHE_ROOT}
+
 RUN chmod +x ${TT_METAL_HOME}/server/run_uvicorn.sh
 
 EXPOSE 8000
-ENTRYPOINT ["./docker-entrypoint.sh"]
-# Default to uvicorn
+
+# Run as non-root user directly — no root entrypoint, no gosu
 ENV SERVER_MODE=uvicorn
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else source ./run_uvicorn.sh; fi"]
