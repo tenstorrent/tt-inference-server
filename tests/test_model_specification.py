@@ -3,18 +3,21 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import json
 import re
 
 import pytest
 
 from workflows.model_spec import (
     MODEL_SPECS,
+    MODEL_SPECS_SCHEMA_VERSION,
     VERSION,
     DeviceModelSpec,
     ImplSpec,
     ModelSpec,
     ModelSpecTemplate,
     VersionRequirement,
+    export_model_specs_json,
     get_model_spec_map,
     spec_templates,
     SystemRequirements,
@@ -409,6 +412,36 @@ class TestSystemIntegration:
             assert isinstance(spec, ModelSpec)
             assert model_id.startswith("id_")
             assert spec.model_id == model_id
+
+    def test_export_model_specs_json_includes_metadata(
+        self, sample_impl, sample_device_model_spec, tmp_path
+    ):
+        """Test exported model spec JSON includes top-level metadata."""
+        spec = ModelSpec(
+            device_type=DeviceTypes.N150,
+            impl=sample_impl,
+            hf_model_repo="test/TestModel-7B",
+            model_id="id_test-impl_TestModel-7B_n150",
+            model_name="TestModel-7B",
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_spec=sample_device_model_spec,
+        )
+        output_path = tmp_path / "model_spec.json"
+
+        num_specs = export_model_specs_json({spec.model_id: spec}, output_path)
+
+        assert num_specs == 1
+        data = json.loads(output_path.read_text())
+        assert data["schema_version"] == MODEL_SPECS_SCHEMA_VERSION
+        assert data["release_version"] == VERSION
+        assert (
+            data["model_specs"][spec.hf_model_repo][spec.device_type.to_string()][
+                spec.inference_engine
+            ][spec.impl.impl_id]["model_id"]
+            == spec.model_id
+        )
 
     def test_real_spec_templates(self):
         """Test that real spec templates generate valid specs."""
