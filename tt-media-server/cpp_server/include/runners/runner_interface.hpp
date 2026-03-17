@@ -5,7 +5,6 @@
 
 #include <stdexcept>
 #include <string>
-#include <stdexcept>
 
 namespace tt::runners {
 
