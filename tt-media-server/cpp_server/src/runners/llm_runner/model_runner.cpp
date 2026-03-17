@@ -17,7 +17,7 @@ std::unique_ptr<IModelRunner> makeMockModelRunner(const Config& config,
                                                   DecodeCallback callback);
 #ifdef USE_METAL_CPP_LIB
 std::unique_ptr<IModelRunner> makeLlamaModelRunner(const Config& config,
-                                                      DecodeCallback callback);
+                                                   DecodeCallback callback);
 #endif
 
 std::unique_ptr<IModelRunner> makeModelRunner(const Config& config,
