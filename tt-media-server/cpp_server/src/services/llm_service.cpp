@@ -103,23 +103,6 @@ bool LLMService::is_model_ready() const {
     return is_ready_.load();
 }
 
-SystemStatus LLMService::get_system_status() const {
-    SystemStatus status;
-    status.model_ready = is_ready_.load();
-    status.queue_size = pending_tasks_.load();
-    status.max_queue_size = max_queue_size_;
-    status.device = device_;
-
-    for (const auto& w : workers_) {
-        WorkerInfo info;
-        info.worker_id = std::to_string(w->worker_id);
-        info.is_ready = w->is_ready;
-        info.processed_requests = 0;  // TODO: track per-worker stats
-        status.worker_info.push_back(info);
-    }
-    return status;
-}
-
 size_t LLMService::current_queue_size() const {
     return pending_tasks_.load();
 }
