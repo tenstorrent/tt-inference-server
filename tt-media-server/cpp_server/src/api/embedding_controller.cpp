@@ -9,7 +9,6 @@
 #include <mutex>
 #include <queue>
 #include <random>
-#include <sstream>
 #include <thread>
 #include <vector>
 
@@ -40,17 +39,17 @@ std::string randomHex(size_t length) {
 // Simple thread pool for handling response callbacks
 class CallbackThreadPool {
  public:
-  CallbackThreadPool(size_t numThreads = 8) : stop_(false) {
+  CallbackThreadPool(size_t numThreads = 8) : stop(false) {
     for (size_t i = 0; i < numThreads; ++i) {
-      workers_.emplace_back([this] {
+      workers.emplace_back([this] {
         while (true) {
           std::function<void()> task;
           {
-            std::unique_lock lock(mutex_);
-            cv_.wait(lock, [this] { return stop_ || !tasks_.empty(); });
-            if (stop_ && tasks_.empty()) return;
-            task = std::move(tasks_.front());
-            tasks_.pop();
+            std::unique_lock lock(mutex);
+            cv.wait(lock, [this] { return stop || !tasks.empty(); });
+            if (stop && tasks.empty()) return;
+            task = std::move(tasks.front());
+            tasks.pop();
           }
           task();
         }
@@ -60,29 +59,29 @@ class CallbackThreadPool {
 
   ~CallbackThreadPool() {
     {
-      std::lock_guard lock(mutex_);
-      stop_ = true;
+      std::lock_guard lock(mutex);
+      stop = true;
     }
-    cv_.notify_all();
-    for (auto& worker : workers_) {
+    cv.notify_all();
+    for (auto& worker : workers) {
       if (worker.joinable()) worker.join();
     }
   }
 
   void submit(std::function<void()> task) {
     {
-      std::lock_guard lock(mutex_);
-      tasks_.push(std::move(task));
+      std::lock_guard lock(mutex);
+      tasks.push(std::move(task));
     }
-    cv_.notify_one();
+    cv.notify_one();
   }
 
  private:
-  std::vector<std::thread> workers_;
-  std::queue<std::function<void()>> tasks_;
-  TracyLockable(std::mutex, mutex_);
-  std::condition_variable_any cv_;
-  bool stop_;
+  std::vector<std::thread> workers;
+  std::queue<std::function<void()>> tasks;
+  TracyLockable(std::mutex, mutex);
+  std::condition_variable_any cv;
+  bool stop;
 };
 
 // Global thread pool for callbacks
