@@ -7,7 +7,6 @@
 
 #include <sstream>
 
-#include "config/runner_config.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
 
 namespace llm_engine {
@@ -128,7 +127,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   params.allowed_token_ids = {1, 2, 3};
 
   Sequence orig(TaskID(TaskID::generate()), 256, {1, 2, 3, 4, 5}, params);
-  orig.num_cached_tokens_ = 256;
+  orig.numCachedTokens_ = 256;
   orig.block_table_ = {0, 1};
   orig.status_ = SequenceStatus::IN_FLIGHT;
   orig.last_token = 5;
@@ -142,24 +141,24 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
 
   EXPECT_EQ(restored->task_id, orig.task_id);
   EXPECT_EQ(restored->last_token, orig.last_token);
-  EXPECT_EQ(restored->num_prompt_tokens_, orig.num_prompt_tokens_);
-  EXPECT_EQ(restored->num_cached_tokens_, orig.num_cached_tokens_);
+  EXPECT_EQ(restored->numPromptTokens_, orig.numPromptTokens_);
+  EXPECT_EQ(restored->numCachedTokens_, orig.numCachedTokens_);
   EXPECT_EQ(restored->token_ids_, orig.token_ids_);
   EXPECT_EQ(restored->block_table_, orig.block_table_);
   EXPECT_EQ(restored->status_, orig.status_);
 
   const auto& sp = *restored->sampling_params;
-  const auto& sp_orig = *orig.sampling_params;
-  EXPECT_FLOAT_EQ(sp.temperature, sp_orig.temperature);
-  EXPECT_EQ(sp.max_tokens, sp_orig.max_tokens);
-  EXPECT_EQ(sp.ignore_eos, sp_orig.ignore_eos);
+  const auto& spOrig = *orig.sampling_params;
+  EXPECT_FLOAT_EQ(sp.temperature, spOrig.temperature);
+  EXPECT_EQ(sp.max_tokens, spOrig.max_tokens);
+  EXPECT_EQ(sp.ignore_eos, spOrig.ignore_eos);
   ASSERT_TRUE(sp.top_p.has_value());
-  EXPECT_FLOAT_EQ(*sp.top_p, *sp_orig.top_p);
+  EXPECT_FLOAT_EQ(*sp.top_p, *spOrig.top_p);
   ASSERT_TRUE(sp.seed.has_value());
-  EXPECT_EQ(*sp.seed, *sp_orig.seed);
-  EXPECT_EQ(sp.stop_token_ids, sp_orig.stop_token_ids);
+  EXPECT_EQ(*sp.seed, *spOrig.seed);
+  EXPECT_EQ(sp.stop_token_ids, spOrig.stop_token_ids);
   ASSERT_TRUE(sp.allowed_token_ids.has_value());
-  EXPECT_EQ(*sp.allowed_token_ids, *sp_orig.allowed_token_ids);
+  EXPECT_EQ(*sp.allowed_token_ids, *spOrig.allowed_token_ids);
 }
 
 TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
@@ -175,16 +174,16 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
   ASSERT_NE(restored.get(), nullptr);
   EXPECT_EQ(restored->task_id, orig.task_id);
   EXPECT_TRUE(restored->token_ids_.empty());
-  EXPECT_EQ(restored->num_prompt_tokens_, 0u);
+  EXPECT_EQ(restored->numPromptTokens_, 0u);
   EXPECT_EQ(restored->last_token, 0);
 }
 
 TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
   Sequence orig(TaskID("seq-append"), 256, {10, 20},
                 SamplingParams{.max_tokens = 5});
-  orig.append_token(30);
-  orig.append_token(40);
-  orig.num_cached_tokens_ = 256;
+  orig.appendToken(30);
+  orig.appendToken(40);
+  orig.numCachedTokens_ = 256;
 
   std::ostringstream os;
   orig.serialize(os);
@@ -198,8 +197,8 @@ TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
   EXPECT_EQ((*restored)[2], 30);
   EXPECT_EQ((*restored)[3], 40);
   EXPECT_EQ(restored->last_token, 40);
-  EXPECT_EQ(restored->num_prompt_tokens_, 2u);
-  EXPECT_EQ(restored->num_cached_tokens_, 256u);
+  EXPECT_EQ(restored->numPromptTokens_, 2u);
+  EXPECT_EQ(restored->numCachedTokens_, 256u);
 }
 
 }  // namespace

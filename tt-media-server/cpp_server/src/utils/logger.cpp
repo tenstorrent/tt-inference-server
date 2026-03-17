@@ -25,33 +25,33 @@ void ZeroOverheadLogger::initialize() {
   }
 
   // Set log level from environment variable
-  const char* log_level_env = std::getenv("TT_LOG_LEVEL");
-  if (log_level_env) {
-    level_ = parse_log_level(log_level_env);
+  const char* logLevelEnv = std::getenv("TT_LOG_LEVEL");
+  if (logLevelEnv) {
+    level_ = parse_log_level(logLevelEnv);
   }
 
   // Create spdlog sinks
   std::vector<spdlog::sink_ptr> sinks;
 
   // Always add console sink
-  auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-  console_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [tt-media-server] [%l] %v");
-  sinks.push_back(console_sink);
+  auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+  consoleSink->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [tt-media-server] [%l] %v");
+  sinks.push_back(consoleSink);
 
   // Check for file logging configuration
-  const char* log_file_env = std::getenv("TT_LOG_FILE");
-  if (log_file_env && std::strlen(log_file_env) > 0) {
-    std::filesystem::path log_path(log_file_env);
+  const char* logFileEnv = std::getenv("TT_LOG_FILE");
+  if (logFileEnv && std::strlen(logFileEnv) > 0) {
+    std::filesystem::path logPath(logFileEnv);
 
     // Create directory if it doesn't exist
-    if (log_path.has_parent_path()) {
-      std::filesystem::create_directories(log_path.parent_path());
+    if (logPath.has_parent_path()) {
+      std::filesystem::create_directories(logPath.parent_path());
     }
 
-    auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-        log_file_env, 1024 * 1024 * 50, 5);  // 50MB, 5 files
-    file_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [tt-media-server] [%l] %v");
-    sinks.push_back(file_sink);
+    auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+        logFileEnv, 1024 * 1024 * 50, 5);  // 50MB, 5 files
+    fileSink->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [tt-media-server] [%l] %v");
+    sinks.push_back(fileSink);
   }
 
   // Create logger
@@ -99,26 +99,26 @@ std::shared_ptr<spdlog::logger> ZeroOverheadLogger::get_logger() {
   return logger_;
 }
 
-void ZeroOverheadLogger::log_impl(Level level, const char* fmt_str) {
+void ZeroOverheadLogger::log_impl(Level level, const char* fmtStr) {
   auto logger = get_logger();
   switch (level) {
     case TRACE:
-      logger->trace(fmt_str);
+      logger->trace(fmtStr);
       break;
     case DEBUG:
-      logger->debug(fmt_str);
+      logger->debug(fmtStr);
       break;
     case INFO:
-      logger->info(fmt_str);
+      logger->info(fmtStr);
       break;
     case WARN:
-      logger->warn(fmt_str);
+      logger->warn(fmtStr);
       break;
     case ERROR:
-      logger->error(fmt_str);
+      logger->error(fmtStr);
       break;
     case CRITICAL:
-      logger->critical(fmt_str);
+      logger->critical(fmtStr);
       break;
     case OFF:
       break;
@@ -126,20 +126,20 @@ void ZeroOverheadLogger::log_impl(Level level, const char* fmt_str) {
 }
 
 ZeroOverheadLogger::Level ZeroOverheadLogger::parse_log_level(
-    const std::string& level_str) {
-  std::string lower_level = level_str;
-  std::transform(lower_level.begin(), lower_level.end(), lower_level.begin(),
+    const std::string& levelStr) {
+  std::string lowerLevel = levelStr;
+  std::transform(lowerLevel.begin(), lowerLevel.end(), lowerLevel.begin(),
                  ::tolower);
 
-  if (lower_level == "trace") return TRACE;
-  if (lower_level == "debug") return DEBUG;
-  if (lower_level == "info") return INFO;
-  if (lower_level == "warn" || lower_level == "warning") return WARN;
-  if (lower_level == "error") return ERROR;
-  if (lower_level == "critical") return CRITICAL;
-  if (lower_level == "off") return OFF;
+  if (lowerLevel == "trace") return TRACE;
+  if (lowerLevel == "debug") return DEBUG;
+  if (lowerLevel == "info") return INFO;
+  if (lowerLevel == "warn" || lowerLevel == "warning") return WARN;
+  if (lowerLevel == "error") return ERROR;
+  if (lowerLevel == "critical") return CRITICAL;
+  if (lowerLevel == "off") return OFF;
 
-  std::cerr << "Unknown log level '" << level_str << "', using 'info'"
+  std::cerr << "Unknown log level '" << levelStr << "', using 'info'"
             << std::endl;
   return INFO;
 }

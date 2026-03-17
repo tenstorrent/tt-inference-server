@@ -7,19 +7,21 @@
 
 namespace tt::utils {
 
-static const char* DS_USER_TAG =
+namespace {
+const char* kDsUserTag =
     "<\xEF\xBD\x9C"
     "User\xEF\xBD\x9C>";
-static const char* DS_ASSISTANT_TAG =
+const char* kDsAssistantTag =
     "<\xEF\xBD\x9C"
     "Assistant\xEF\xBD\x9C>";
+}  // namespace
 
-std::string DeepseekTokenizer::apply_chat_template(
+std::string DeepseekTokenizer::applyChatTemplate(
     const std::vector<domain::ChatMessage>& messages,
-    bool add_generation_prompt) const {
+    bool addGenerationPrompt) const {
   std::ostringstream out;
 
-  if (cfg_.add_bos_token) out << cfg_.bos_token;
+  if (cfg.add_bos_token) out << cfg.bos_token;
 
   for (const auto& m : messages) {
     if (m.role == "system") out << m.content;
@@ -28,15 +30,15 @@ std::string DeepseekTokenizer::apply_chat_template(
   for (const auto& m : messages) {
     if (m.role == "system") continue;
     if (m.role == "user") {
-      out << DS_USER_TAG << m.content;
+      out << kDsUserTag << m.content;
     } else if (m.role == "assistant") {
-      out << DS_ASSISTANT_TAG << m.content;
-      if (cfg_.add_eos_token) out << cfg_.eos_token;
+      out << kDsAssistantTag << m.content;
+      if (cfg.add_eos_token) out << cfg.eos_token;
     }
   }
 
-  if (add_generation_prompt) {
-    out << DS_ASSISTANT_TAG;
+  if (addGenerationPrompt) {
+    out << kDsAssistantTag;
   }
   return out.str();
 }

@@ -13,76 +13,76 @@
 namespace tt::runners {
 
 SpPipelineRunner::SpPipelineRunner(const tt::config::LLMConfig& config,
-                                   ipc::TokenRingBuffer<65536>* result_queue,
-                                   llm_engine::ITaskQueue* task_queue)
-    : config_(config),
-      stop_token_ids_(config.stop_token_ids.begin(),
-                      config.stop_token_ids.end()),
-      result_queue_(result_queue),
-      task_queue_(task_queue),
-      max_in_flight_count_(config.max_in_flight_count) {
-  auto decode_cb = [this](const llm_engine::TokenResult& result) {
-    decode_queue_.push(result);
+                                   ipc::TokenRingBuffer<65536>* resultQueue,
+                                   llm_engine::ITaskQueue* taskQueue)
+    : config(config),
+      stopTokenIds(config.stop_token_ids.begin(),
+                   config.stop_token_ids.end()),
+      resultQueue(resultQueue),
+      taskQueue(taskQueue),
+      maxInFlightCount(config.max_in_flight_count) {
+  auto decodeCb = [this](const llm_engine::TokenResult& result) {
+    decodeQueue.push(result);
   };
 
-  model_runner_ = std::make_unique<sp_pipeline::SpPipelineModelRunner>(
-      std::move(decode_cb));
+  modelRunner = std::make_unique<sp_pipeline::SpPipelineModelRunner>(
+      std::move(decodeCb));
 }
 
 SpPipelineRunner::~SpPipelineRunner() {
-  if (model_runner_) {
-    model_runner_->exit();
+  if (modelRunner) {
+    modelRunner->exit();
   }
 }
 
 void SpPipelineRunner::run() {
-  while (!stopped_.load(std::memory_order_relaxed)) {
+  while (!stopped.load(std::memory_order_relaxed)) {
     step();
   }
 }
 
 bool SpPipelineRunner::warmup() {
   // Create a warmup sequence with a single token
-  llm_engine::SamplingParams warmup_params;
-  warmup_params.max_tokens = 1;
-  warmup_params.ignore_eos = true;
+  llm_engine::SamplingParams warmupParams;
+  warmupParams.max_tokens = 1;
+  warmupParams.ignore_eos = true;
 
-  std::vector<int64_t> warmup_tokens = {1};  // Single token
-  llm_engine::TaskID warmup_task_id("warmup_task");
+  std::vector<int64_t> warmupTokens = {1};  // Single token
+  llm_engine::TaskID warmupTaskId("warmup_task");
 
-  auto warmup_seq = std::make_unique<llm_engine::Sequence>(
-      warmup_task_id,
+  auto warmupSeq = std::make_unique<llm_engine::Sequence>(
+      warmupTaskId,
       1,  // block_size (doesn't matter for warmup)
-      warmup_tokens, warmup_params);
+      warmupTokens, warmupParams);
 
   // Write the warmup sequence to the model runner
-  model_runner_->write(warmup_seq->task_id.id, warmup_seq->token_ids_, 1);
+  modelRunner->write(warmupSeq->task_id.id, warmupSeq->token_ids_, 1);
 
   // Wait for the response token (with timeout)
-  const int max_attempts = 1000;  // ~10 seconds with 10ms sleep
+  const int MAX_ATTEMPTS = 1000;  // ~10 seconds with 10ms sleep
   int attempts = 0;
-  bool received_token = false;
+  bool receivedToken = false;
 
-  while (attempts < max_attempts && !received_token) {
+  while (attempts < MAX_ATTEMPTS && !receivedToken) {
     // Drain decode queue to check for results
-    for (const auto& dr : decode_queue_.drain()) {
-      if (dr.task_id == warmup_task_id) {
+    for (const auto& dr : decodeQueue.drain()) {
+      if (dr.task_id == warmupTaskId) {
         if (dr.is_error) {
           TT_LOG_ERROR("SpPipelineRunner: Warmup failed with error");
           return false;
         }
-        received_token = true;
+        receivedToken = true;
         break;
       }
     }
 
-    if (!received_token) {
+    if (!receivedToken) {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
       attempts++;
     }
   }
 
-  if (!received_token) {
+  if (!receivedToken) {
     TT_LOG_ERROR("SpPipelineRunner: Warmup timed out waiting for token");
     return false;
   }
@@ -92,88 +92,88 @@ bool SpPipelineRunner::warmup() {
 }
 
 void SpPipelineRunner::stop() {
-  stopped_.store(true, std::memory_order_relaxed);
+  stopped.store(true, std::memory_order_relaxed);
 }
 
 void SpPipelineRunner::step() {
-  drain_decode_results();
+  drainDecodeResults();
 
   // Check if we can accept more in-flight requests
-  if (in_flight_count_ >= max_in_flight_count_) {
+  if (inFlightCount >= maxInFlightCount) {
     return;
   }
 
-  llm_engine::Sequence* seq = task_queue_->try_pop();
+  llm_engine::Sequence* seq = taskQueue->try_pop();
   if (!seq) return;
 
   std::unique_ptr<llm_engine::Sequence> owned(seq);
-  llm_engine::TaskID task_id = seq->task_id;
+  llm_engine::TaskID taskId = seq->task_id;
 
-  uint32_t max_tokens =
-      seq->sampling_params->max_tokens.value_or(config_.MAX_INPUT_TOKENS);
-  model_runner_->write(seq->task_id.id, seq->token_ids_, max_tokens);
+  uint32_t maxTokens =
+      seq->sampling_params->max_tokens.value_or(config.MAX_INPUT_TOKENS);
+  modelRunner->write(seq->task_id.id, seq->token_ids_, maxTokens);
 
-  active_sequences_.emplace(task_id, std::move(owned));
-  ++in_flight_count_;
+  activeSequences.emplace(taskId, std::move(owned));
+  ++inFlightCount;
 }
 
-void SpPipelineRunner::drain_decode_results() {
-  for (const auto& dr : decode_queue_.drain()) {
-    auto it = active_sequences_.find(dr.task_id);
+void SpPipelineRunner::drainDecodeResults() {
+  for (const auto& dr : decodeQueue.drain()) {
+    auto it = activeSequences.find(dr.task_id);
     if (it ==
-        active_sequences_.end()) {  // safeguard for too many decode results
+        activeSequences.end()) {  // safeguard for too many decode results
       TT_LOG_WARN(
-          "SpPipelineRunner: task_id not found in active_sequences_: {}",
+          "SpPipelineRunner: task_id not found in activeSequences: {}",
           dr.task_id.id);
       continue;
     }
     llm_engine::Sequence* seq = it->second.get();
 
     if (dr.is_error) {
-      push_error_token(dr.task_id);
-      active_sequences_.erase(it);
-      --in_flight_count_;
+      pushErrorToken(dr.task_id);
+      activeSequences.erase(it);
+      --inFlightCount;
       continue;
     }
 
-    seq->append_token(static_cast<int64_t>(dr.token_id));
+    seq->appendToken(static_cast<int64_t>(dr.token_id));
 
-    bool is_stop = stop_token_ids_.count(static_cast<int64_t>(dr.token_id)) > 0;
-    bool reached_max_tokens =
+    bool isStop = stopTokenIds.count(static_cast<int64_t>(dr.token_id)) > 0;
+    bool reachedMaxTokens =
         seq->sampling_params->max_tokens.has_value() &&
-        seq->num_completion_tokens() >=
+        seq->numCompletionTokens() >=
             static_cast<size_t>(seq->sampling_params->max_tokens.value());
     bool finished =
-        (!seq->sampling_params->ignore_eos && is_stop) || reached_max_tokens;
+        (!seq->sampling_params->ignore_eos && isStop) || reachedMaxTokens;
 
-    push_token(dr.task_id, dr.token_id, finished);
+    pushToken(dr.task_id, dr.token_id, finished);
 
     if (finished) {
-      active_sequences_.erase(it);
-      --in_flight_count_;
+      activeSequences.erase(it);
+      --inFlightCount;
     }
   }
 }
 
-void SpPipelineRunner::push_token(const llm_engine::TaskID& task_id,
-                                  uint64_t token_id, bool finished) {
+void SpPipelineRunner::pushToken(const llm_engine::TaskID& taskId,
+                                uint64_t tokenId, bool finished) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;
-  shared.token_id = token_id;
-  std::strncpy(shared.task_id, task_id.id.c_str(), sizeof(shared.task_id) - 1);
+  shared.token_id = tokenId;
+  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
   shared.task_id[sizeof(shared.task_id) - 1] = '\0';
-  result_queue_->push(shared);
+  resultQueue->push(shared);
 }
 
-void SpPipelineRunner::push_error_token(const llm_engine::TaskID& task_id) {
+void SpPipelineRunner::pushErrorToken(const llm_engine::TaskID& taskId) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR;
   shared.token_id = 0;
-  std::strncpy(shared.task_id, task_id.id.c_str(), sizeof(shared.task_id) - 1);
+  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
   shared.task_id[sizeof(shared.task_id) - 1] = '\0';
-  result_queue_->push(shared);
+  resultQueue->push(shared);
 }
 
 }  // namespace tt::runners

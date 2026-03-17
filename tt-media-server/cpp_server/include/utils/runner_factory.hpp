@@ -23,15 +23,15 @@ namespace tt::utils::runner_factory {
  * @param task_queue Task queue for worker communication (used by LLM runner)
  * @return Unique pointer to the created runner
  */
-std::unique_ptr<runners::IRunner> create_runner(
+std::unique_ptr<runners::IRunner> createRunner(
     config::ModelService service, const config::RunnerConfig& config,
-    ipc::TokenRingBuffer<65536>* result_queue,
-    llm_engine::ITaskQueue* task_queue);
+    ipc::TokenRingBuffer<65536>* resultQueue,
+    llm_engine::ITaskQueue* taskQueue);
 
 /**
  * Get the runner type string for the current configuration.
  * @return Runner type string (e.g., "llm", "embedding")
  */
-std::string get_runner_type();
+std::string getRunnerType();
 
 }  // namespace tt::utils::runner_factory

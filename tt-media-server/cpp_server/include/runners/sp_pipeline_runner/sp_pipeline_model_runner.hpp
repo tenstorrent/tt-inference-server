@@ -28,8 +28,8 @@ class SpPipelineModelRunner {
   SpPipelineModelRunner(const SpPipelineModelRunner&) = delete;
   SpPipelineModelRunner& operator=(const SpPipelineModelRunner&) = delete;
 
-  void write(const std::string& task_id, const std::vector<int64_t>& token_ids,
-             uint32_t max_tokens);
+  void write(const std::string& taskId, const std::vector<int64_t>& tokenIds,
+             uint32_t maxTokens);
   void exit();
 
  private:
@@ -46,14 +46,14 @@ class SpPipelineModelRunner {
     std::string read;
   };
 
-  void reader_loop();
+  void readerLoop();
 
-  DecodeCallback decode_callback_;
-  ShmNames shm_names_;
-  PrefillSharedMemory device_input_;
-  DecodeSharedMemory device_output_;
-  std::atomic<bool> stop_{false};
-  std::thread reader_thread_;
+  DecodeCallback decodeCallback;
+  ShmNames shmNames;
+  PrefillSharedMemory deviceInput;
+  DecodeSharedMemory deviceOutput;
+  std::atomic<bool> stop{false};
+  std::thread readerThread;
 };
 
 }  // namespace sp_pipeline

@@ -35,7 +35,7 @@ void sseSend(const std::string& sse, trantor::EventLoop* loop,
     return;
   }
   accumulator->push(sse);
-  if (accumulator->size() >= tt::config::max_accumulated_tokens()) {
+  if (accumulator->size() >= tt::config::maxAccumulatedTokens()) {
     auto accumulated = accumulator->drain();
     std::string batch;
     for (auto& s : accumulated) batch.append(s);
@@ -62,7 +62,7 @@ void flushAccumulated(
 namespace tt::api {
 
 LLMController::LLMController() {
-  if (!tt::config::is_llm_service_enabled()) {
+  if (!tt::config::isLlmServiceEnabled()) {
     TT_LOG_INFO(
         "[LLMController] Skipping initialization (TT_MODEL_SERVICE != llm)");
     return;
@@ -222,7 +222,7 @@ void LLMController::chat_completions(
   }
 
   auto request = std::make_shared<domain::CompletionRequest>(
-      chatReq.to_completion_request());
+      chatReq.toCompletionRequest());
 
   if (request->stream) {
     handle_streaming(request, std::move(callback), true);
@@ -280,7 +280,7 @@ void LLMController::handle_streaming(
   const bool CONTINUOUS_USAGE = reqPtr->stream_options.has_value() &&
                                 reqPtr->stream_options->continuous_usage_stats;
 
-  auto accumulator = tt::config::enable_accumulated_streaming()
+  auto accumulator = tt::config::enableAccumulatedStreaming()
                          ? std::make_shared<ConcurrentQueue<std::string>>()
                          : nullptr;
 

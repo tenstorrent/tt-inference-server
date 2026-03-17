@@ -19,7 +19,7 @@ namespace tt::domain {
 
 /** Legacy format: "Role: content\n\n" per message, ending with "Assistant: ".
  */
-inline std::string messages_to_prompt(
+inline std::string messagesToPrompt(
     const std::vector<ChatMessage>& messages) {
   std::ostringstream out;
   for (const auto& m : messages) {
@@ -72,8 +72,8 @@ struct ChatCompletionRequest : BaseRequest {
   std::optional<int> truncate_prompt_tokens;
 
   static ChatCompletionRequest fromJson(const Json::Value& json,
-                                        TaskID task_id) {
-    ChatCompletionRequest req(std::move(task_id));
+                                        TaskID taskId) {
+    ChatCompletionRequest req(std::move(taskId));
 
     if (json.isMember("model") && !json["model"].isNull()) {
       req.model = json["model"].asString();
@@ -170,10 +170,10 @@ struct ChatCompletionRequest : BaseRequest {
 
   /** Convert to CompletionRequest: messages -> prompt, then same pipeline as
    * /completions. */
-  CompletionRequest to_completion_request() const {
+  CompletionRequest toCompletionRequest() const {
     CompletionRequest out(task_id);
     out.model = model;
-    out.prompt = tt::utils::active_tokenizer().apply_chat_template(messages);
+    out.prompt = tt::utils::activeTokenizer().applyChatTemplate(messages);
 
     out.echo = echo;
     out.max_tokens = max_tokens;

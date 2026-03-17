@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <cstdint>
 #include <memory>
 
 #include "config/runner_config.hpp"
@@ -17,10 +16,10 @@ using namespace llm_engine;
 class LLMRunner : public IRunner {
  public:
   LLMRunner(const config::LLMConfig& config,
-            ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue);
+            ipc::TokenRingBuffer<65536>* resultQueue, ITaskQueue* taskQueue);
   ~LLMRunner() override;
 
-  Scheduler& scheduler() { return *scheduler_; }
+  Scheduler& getScheduler() { return *scheduler; }
 
   void run() override;
   void stop() override;
@@ -30,12 +29,12 @@ class LLMRunner : public IRunner {
   void step();
   void exit();
 
-  config::LLMConfig config_;
-  ipc::TokenRingBuffer<65536>* result_queue_;
-  std::unique_ptr<IModelRunner> model_runner_;
-  std::unique_ptr<Scheduler> scheduler_;
-  DecodeQueue decode_queue_;
-  std::atomic<bool> stopped_{false};
+  config::LLMConfig config;
+  ipc::TokenRingBuffer<65536>* resultQueue;
+  std::unique_ptr<IModelRunner> modelRunner;
+  std::unique_ptr<Scheduler> scheduler;
+  DecodeQueue decodeQueue;
+  std::atomic<bool> stopped{false};
 };
 
 }  // namespace tt::runners

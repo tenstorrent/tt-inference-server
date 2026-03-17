@@ -5,12 +5,10 @@
 
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include "config/settings.hpp"
 #include "domain/task_id.hpp"
 #include "sockets/socket_manager.hpp"
 #include "sockets/socket_messages.hpp"
@@ -43,8 +41,8 @@ class InterServerService {
    * @brief Health info callback type
    */
   using HealthCallback =
-      std::function<void(const std::string& server_id, double cpu,
-                         double memory, int active_tasks)>;
+      std::function<void(const std::string& serverId, double cpu,
+                         double memory, int activeTasks)>;
 
   InterServerService();
   ~InterServerService();
@@ -78,10 +76,10 @@ class InterServerService {
    * @param max_tokens Maximum tokens to generate (nullopt = run until EOS)
    * @return true if sent successfully
    */
-  bool sendPrefillRequest(const tt::domain::TaskID& task_id,
+  bool sendPrefillRequest(const tt::domain::TaskID& taskId,
                           const std::string& prompt,
-                          const std::vector<int64_t>& token_ids,
-                          std::optional<int> max_tokens = std::nullopt);
+                          const std::vector<int64_t>& tokenIds,
+                          std::optional<int> maxTokens = std::nullopt);
 
   /**
    * @brief Send prefill result back to the decode server
@@ -98,8 +96,8 @@ class InterServerService {
    * @param active_tasks Number of active tasks
    * @return true if sent successfully
    */
-  bool sendHealthCheck(const std::string& server_id, double cpu_usage,
-                       double memory_usage, int active_tasks);
+  bool sendHealthCheck(const std::string& serverId, double cpuUsage,
+                       double memoryUsage, int activeTasks);
 
   /**
    * @brief Set callback for when prefill server receives a request
@@ -138,11 +136,11 @@ class InterServerService {
  private:
   void setupMessageHandlers();
 
-  SocketManager& socket_manager_;
-  PrefillRequestedCallback prefill_requested_callback_;
-  PrefillCompleteCallback prefill_complete_callback_;
-  HealthCallback health_check_callback_;
-  bool enabled_ = false;
+  SocketManager& socketManager;
+  PrefillRequestedCallback prefillRequestedCallback;
+  PrefillCompleteCallback prefillCompleteCallback;
+  HealthCallback healthCheckCallback;
+  bool enabled = false;
 };
 
 }  // namespace tt::sockets

@@ -25,7 +25,7 @@ SocketController::SocketController(
     return;
   }
 
-  auto mode = tt::config::llm_mode();
+  auto mode = tt::config::llmMode();
 
   if (mode == tt::config::LLMMode::PREFILL_ONLY) {
     setup_prefill_mode_handlers();
@@ -102,7 +102,7 @@ void SocketController::setup_prefill_mode_handlers() {
 }
 
 void SocketController::setup_decode_mode_handlers() {
-  llm_service_->set_prefill_request_callback(
+  llm_service_->setPrefillRequestCallback(
       [this](const domain::PrefillRequest& request) -> bool {
         return socket_service_->sendPrefillRequest(
             request.task_id, request.prompt, request.token_ids,
@@ -114,7 +114,7 @@ void SocketController::setup_decode_mode_handlers() {
         TT_LOG_INFO("[SocketController] Received prefill result {}",
                     msg.task_id.id);
 
-        auto taken = llm_service_->detach_stream_callback(msg.task_id.id);
+        auto taken = llm_service_->detachStreamCallback(msg.task_id.id);
         if (!taken.has_value()) {
           TT_LOG_WARN("[SocketController] No callback for task_id: {}",
                       msg.task_id.id);
@@ -143,7 +143,7 @@ void SocketController::setup_decode_mode_handlers() {
           request.prompt = std::move(tokens);
           request.max_tokens = msg.remaining_tokens;
 
-          llm_service_->submit_decode_continuation(std::move(request),
+          llm_service_->submitDecodeContinuation(std::move(request),
                                                    std::move(callback));
         } else {
           domain::StreamingChunkResponse finalResponse{msg.task_id};
@@ -163,7 +163,7 @@ void SocketController::setup_decode_mode_handlers() {
 
   socket_service_->setConnectionLostCallback([this]() {
     TT_LOG_WARN("[SocketController] Connection to prefill server lost");
-    llm_service_->handle_connection_lost();
+    llm_service_->handleConnectionLost();
   });
 }
 

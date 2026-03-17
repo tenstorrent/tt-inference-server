@@ -13,26 +13,26 @@
 namespace tt::utils::service_factory {
 
 namespace {
-std::unique_ptr<tt::api::SocketController> socket_controller_;
+std::unique_ptr<tt::api::SocketController> socketController;
 }
 
 void register_services() {
   tracy_config::TracyStartMainProcess();
 
-  if (tt::config::is_llm_service_enabled()) {
+  if (tt::config::isLlmServiceEnabled()) {
     auto llm = std::make_shared<services::LLMService>();
     llm->start();
 
-    if (tt::config::llm_mode() != tt::config::LLMMode::REGULAR) {
-      socket_controller_ = std::make_unique<tt::api::SocketController>(
-          llm, llm->get_socket_service());
+    if (tt::config::llmMode() != tt::config::LLMMode::REGULAR) {
+      socketController = std::make_unique<tt::api::SocketController>(
+          llm, llm->getSocketService());
     }
 
     register_service(std::move(llm));
     TT_LOG_INFO("[ServiceFactory] LLM service registered and started");
   }
 
-  if (tt::config::is_embedding_service()) {
+  if (tt::config::isEmbeddingService()) {
     auto emb = std::make_shared<services::EmbeddingService>();
     emb->start();
     register_service(std::move(emb));
@@ -41,7 +41,7 @@ void register_services() {
 }
 
 std::shared_ptr<services::IService> get_configured_service() {
-  switch (tt::config::model_service()) {
+  switch (tt::config::modelService()) {
     case tt::config::ModelService::LLM:
       return get_service_by_type<services::LLMService>();
     case tt::config::ModelService::EMBEDDING:

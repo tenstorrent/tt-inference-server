@@ -92,7 +92,7 @@ CallbackThreadPool& getCallbackPool() {
 }  // namespace
 
 EmbeddingController::EmbeddingController() {
-  if (!tt::config::is_embedding_service()) {
+  if (!tt::config::isEmbeddingService()) {
     return;
   }
 

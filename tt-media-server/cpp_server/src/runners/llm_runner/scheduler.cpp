@@ -6,7 +6,6 @@
 #include <cassert>
 
 #include "profiling/tracy.hpp"
-#include "runners/llm_runner/debug.hpp"
 #include "runners/llm_runner/max_occupancy_scheduler.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
 
@@ -15,165 +14,165 @@ namespace llm_engine {
 using Config = tt::config::LLMConfig;
 using SchedulingPolicy = tt::config::SchedulingPolicy;
 
-std::unique_ptr<Scheduler> make_scheduler(const Config& config,
-                                          ITaskQueue* task_queue,
-                                          size_t max_in_flight_count) {
+std::unique_ptr<Scheduler> makeScheduler(const Config& config,
+                                          ITaskQueue* taskQueue,
+                                          size_t maxInFlightCount) {
   switch (config.scheduling_policy) {
     case SchedulingPolicy::MAX_OCCUPANCY:
-      return std::make_unique<MaxOccupancyScheduler>(config, task_queue,
-                                                     max_in_flight_count);
+      return std::make_unique<MaxOccupancyScheduler>(config, taskQueue,
+                                                     maxInFlightCount);
     case SchedulingPolicy::PREFILL_FIRST:
     default:
-      return std::make_unique<PrefillFirstScheduler>(config, task_queue,
-                                                     max_in_flight_count);
+      return std::make_unique<PrefillFirstScheduler>(config, taskQueue,
+                                                     maxInFlightCount);
   }
 }
 
-Scheduler::Scheduler(const Config& config, ITaskQueue* task_queue,
-                     size_t max_in_flight_count)
-    : block_size_(config.kvcache_block_size),
-      max_in_flight_count_(max_in_flight_count),
-      max_num_batched_tokens_(config.max_num_batched_tokens),
-      stop_token_ids_(config.stop_token_ids.begin(),
-                      config.stop_token_ids.end()),
-      block_manager_(config.num_kvcache_blocks, config.kvcache_block_size),
-      prefill_queue_(task_queue) {}
+Scheduler::Scheduler(const Config& config, ITaskQueue* taskQueue,
+                     size_t maxInFlightCount)
+    : blockSize(config.kvcache_block_size),
+      maxInFlightCount(maxInFlightCount),
+      maxNumBatchedTokens(config.max_num_batched_tokens),
+      stopTokenIds(config.stop_token_ids.begin(),
+                  config.stop_token_ids.end()),
+      blockManager(config.num_kvcache_blocks, config.kvcache_block_size),
+      prefillQueue(taskQueue) {}
 
-bool Scheduler::is_finished() const {
-  return prefill_queue_->empty() && decode_queue_.empty();
+bool Scheduler::isFinished() const {
+  return prefillQueue->empty() && decodeQueue.empty();
 }
 
-Sequence& Scheduler::add_request(TaskID task_id, std::vector<int64_t> prompt,
-                                 const SamplingParams& params) {
-  auto seq = std::make_unique<Sequence>(std::move(task_id), block_size_,
-                                        std::move(prompt), params);
+Sequence& Scheduler::addRequest(TaskID taskId, std::vector<int64_t> prompt,
+                               const SamplingParams& params) {
+  auto seq = std::make_unique<Sequence>(std::move(taskId), blockSize,
+                                       std::move(prompt), params);
   auto id = seq->task_id;
   add(*seq);
-  sequences_[id] = std::move(seq);
-  return *sequences_[id].get();
+  sequences[id] = std::move(seq);
+  return *sequences[id].get();
 }
 
-void Scheduler::add(Sequence& seq) { prefill_queue_->push(seq); }
+void Scheduler::add(Sequence& seq) { prefillQueue->push(seq); }
 
-Sequence* Scheduler::find_sequence(TaskID task_id) {
-  auto it = sequences_.find(task_id);
-  return it != sequences_.end() ? it->second.get() : nullptr;
+Sequence* Scheduler::findSequence(TaskID taskId) {
+  auto it = sequences.find(taskId);
+  return it != sequences.end() ? it->second.get() : nullptr;
 }
 
-bool Scheduler::try_schedule_prefill(std::vector<Sequence*>& scheduled_seqs,
-                                     int& num_seqs, int& num_batched_tokens,
-                                     int seq_limit) {
-  while (num_seqs < seq_limit) {
-    auto seq = prefill_queue_->try_pop();
+bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
+                                   int& numSeqs, int& numBatchedTokens,
+                                   int seqLimit) {
+  while (numSeqs < seqLimit) {
+    auto seq = prefillQueue->try_pop();
     if (!seq) break;
 
-    if (num_batched_tokens + static_cast<int>(seq->size()) >
-            max_num_batched_tokens_ ||
-        !block_manager_.can_allocate(*seq)) {
-      prefill_queue_->push(*seq);
+    if (numBatchedTokens + static_cast<int>(seq->size()) >
+            maxNumBatchedTokens ||
+        !blockManager.can_allocate(*seq)) {
+      prefillQueue->push(*seq);
       delete seq;
       break;
     }
 
-    num_seqs += 1;
-    block_manager_.allocate(*seq);
-    num_batched_tokens +=
-        static_cast<int>(seq->size() - seq->num_cached_tokens_);
+    numSeqs += 1;
+    blockManager.allocate(*seq);
+    numBatchedTokens +=
+        static_cast<int>(seq->size() - seq->numCachedTokens_);
     auto id = seq->task_id;
-    sequences_[id] = std::make_unique<Sequence>(std::move(*seq));
-    scheduled_seqs.push_back(sequences_[id].get());
+    sequences[id] = std::make_unique<Sequence>(std::move(*seq));
+    scheduledSeqs.push_back(sequences[id].get());
     delete seq;
   }
-  return !scheduled_seqs.empty();
+  return !scheduledSeqs.empty();
 }
 
-void Scheduler::try_schedule_decode(std::vector<Sequence*>& scheduled_seqs,
-                                    int& num_seqs) {
-  while (!decode_queue_.empty() && num_seqs < max_in_flight_count_) {
-    Sequence* seq = decode_queue_.front();
-    decode_queue_.pop_front();
-    auto self_preempt = false;
-    while (!block_manager_.can_append(*seq)) {
-      if (!decode_queue_.empty()) {
-        preempt(*decode_queue_.back());
-        decode_queue_.pop_back();
+void Scheduler::tryScheduleDecode(std::vector<Sequence*>& scheduledSeqs,
+                                 int& numSeqs) {
+  while (!decodeQueue.empty() && numSeqs < maxInFlightCount) {
+    Sequence* seq = decodeQueue.front();
+    decodeQueue.pop_front();
+    auto selfPreempt = false;
+    while (!blockManager.can_append(*seq)) {
+      if (!decodeQueue.empty()) {
+        preempt(*decodeQueue.back());
+        decodeQueue.pop_back();
       } else {
         preempt(*seq);
-        self_preempt = true;
+        selfPreempt = true;
         break;
       }
     }
-    if (!self_preempt && block_manager_.can_append(*seq)) {
-      num_seqs += 1;
-      block_manager_.may_append(*seq);
-      scheduled_seqs.push_back(seq);
+    if (!selfPreempt && blockManager.can_append(*seq)) {
+      numSeqs += 1;
+      blockManager.may_append(*seq);
+      scheduledSeqs.push_back(seq);
     }
   }
 }
 
 std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
-  std::vector<Sequence*> scheduled_seqs;
-  if (prefill_queue_->empty() && decode_queue_.empty()) {
-    auto seq = prefill_queue_->receive();
+  std::vector<Sequence*> scheduledSeqs;
+  if (prefillQueue->empty() && decodeQueue.empty()) {
+    auto seq = prefillQueue->receive();
     if (seq) {
-      prefill_queue_->push(*seq);
+      prefillQueue->push(*seq);
       delete seq;
     }
   }
-  int num_seqs = 0;
-  int num_batched_tokens = 0;
+  int numSeqs = 0;
+  int numBatchedTokens = 0;
 
-  int decode_count = static_cast<int>(decode_queue_.size());
+  int decodeCount = static_cast<int>(decodeQueue.size());
 
-  bool should_prefill =
-      !prefill_queue_->empty() &&
-      should_prefill_first(decode_count, max_in_flight_count_);
+  bool shouldPrefill =
+      !prefillQueue->empty() &&
+      shouldPrefillFirst(decodeCount, maxInFlightCount);
 
-  if (should_prefill) {
-    int seq_limit = max_prefill_seqs(decode_count, max_in_flight_count_);
-    if (seq_limit > 0 && try_schedule_prefill(scheduled_seqs, num_seqs,
-                                              num_batched_tokens, seq_limit)) {
-      return {scheduled_seqs, true};
+  if (shouldPrefill) {
+    int seqLimit = maxPrefillSeqs(decodeCount, maxInFlightCount);
+    if (seqLimit > 0 && trySchedulePrefill(scheduledSeqs, numSeqs,
+                                           numBatchedTokens, seqLimit)) {
+      return {scheduledSeqs, true};
     }
   }
 
-  try_schedule_decode(scheduled_seqs, num_seqs);
-  return {scheduled_seqs, false};
+  tryScheduleDecode(scheduledSeqs, numSeqs);
+  return {scheduledSeqs, false};
 }
 
 void Scheduler::preempt(Sequence& seq) {
   ZoneScopedN("Scheduler::preempt");
   seq.status_ = SequenceStatus::WAITING;
-  block_manager_.deallocate(seq);
-  prefill_queue_->push(seq);
-  sequences_.erase(seq.task_id);
+  blockManager.deallocate(seq);
+  prefillQueue->push(seq);
+  sequences.erase(seq.task_id);
 }
 
 void Scheduler::postprocess(std::vector<Sequence*>& seqs,
-                            const std::vector<int64_t>& token_ids) {
+                            const std::vector<int64_t>& tokenIds) {
   ZoneScopedN("Scheduler::postprocess");
   for (size_t i = 0; i < seqs.size(); ++i) {
     Sequence* seq = seqs[i];
-    int64_t token_id = token_ids[i];
-    seq->append_token(token_id);
+    int64_t tokenId = tokenIds[i];
+    seq->appendToken(tokenId);
 
-    bool is_stop_token = stop_token_ids_.count(token_id) > 0;
-    bool reached_max_tokens =
+    bool isStopToken = stopTokenIds.count(tokenId) > 0;
+    bool reachedMaxTokens =
         seq->sampling_params->max_tokens.has_value() &&
-        seq->num_completion_tokens() >=
+        seq->numCompletionTokens() >=
             static_cast<size_t>(seq->sampling_params->max_tokens.value());
-    bool finished = (!seq->sampling_params->ignore_eos && is_stop_token) ||
-                    reached_max_tokens;
+    bool finished = (!seq->sampling_params->ignore_eos && isStopToken) ||
+                    reachedMaxTokens;
 
     if (finished) {
       seq->status_ = SequenceStatus::FINISHED;
-      block_manager_.deallocate(*seq);
+      blockManager.deallocate(*seq);
     } else {
       seq->status_ = SequenceStatus::RUNNING;
-      decode_queue_.push_back(seq);
+      decodeQueue.push_back(seq);
     }
   }
 }
 
-void Scheduler::removeSequence(TaskID task_id) { sequences_.erase(task_id); }
+void Scheduler::removeSequence(TaskID taskId) { sequences.erase(taskId); }
 }  // namespace llm_engine

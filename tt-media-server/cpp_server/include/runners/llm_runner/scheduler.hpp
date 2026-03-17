@@ -21,32 +21,32 @@ namespace llm_engine {
  * Schedules prefill and decode batches. Each step returns either a prefill-only
  * or a decode-only batch (no mixed batches).
  * Subclasses control which is attempted first (prefill or decode) via
- * should_prefill_first().
+ * shouldPrefillFirst().
  */
 class Scheduler {
  public:
   explicit Scheduler(const tt::config::LLMConfig& config,
-                     ITaskQueue* task_queue, size_t max_in_flight_count);
+                     ITaskQueue* taskQueue, size_t maxInFlightCount);
   virtual ~Scheduler() = default;
 
   /** @return true if there are no prefill_queue, decode_queue, or in-flight
    * sequences. */
-  bool is_finished() const;
+  bool isFinished() const;
 
   /** Creates a sequence, takes ownership, and enqueues it for prefill. */
-  Sequence& add_request(TaskID task_id, std::vector<int64_t> prompt,
-                        const SamplingParams& params = SamplingParams());
+  Sequence& addRequest(TaskID taskId, std::vector<int64_t> prompt,
+                      const SamplingParams& params = SamplingParams());
 
   /** Enqueues an externally-owned sequence for prefill (prefill_queue). */
   void add(Sequence& seq);
 
   /** Looks up a sequence by task_id. Returns nullptr if not found. */
-  Sequence* find_sequence(TaskID task_id);
+  Sequence* findSequence(TaskID taskId);
 
   /**
    * Produces the next batch to run.
    * @return Pair of (scheduled sequences, is_prefill). The batch is either
-   *         prefill-only or decode-only; should_prefill_first() determines
+   *         prefill-only or decode-only; shouldPrefillFirst() determines
    *         which is attempted first.
    */
   std::pair<std::vector<Sequence*>, bool> schedule();
@@ -65,51 +65,51 @@ class Scheduler {
    * @param token_ids  One token per sequence from the model.
    */
   void postprocess(std::vector<Sequence*>& seqs,
-                   const std::vector<int64_t>& token_ids);
-  void removeSequence(TaskID task_id);
+                   const std::vector<int64_t>& tokenIds);
+  void removeSequence(TaskID taskId);
 
-  bool is_stop_token(int64_t token_id) const {
-    return stop_token_ids_.count(token_id) > 0;
+  bool isStopToken(int64_t tokenId) const {
+    return stopTokenIds.count(tokenId) > 0;
   }
 
  protected:
   /**
-   * @param decode_count  number of sequences currently in the decode_queue.
-   * @param max_in_flight_count    maximum batch / decode_queue capacity.
+   * @param decodeCount  number of sequences currently in the decode_queue.
+   * @param maxInFlightCount    maximum batch / decode_queue capacity.
    * @return true if the scheduler should attempt prefill before decode.
    */
-  virtual bool should_prefill_first(int decode_count,
-                                    int max_in_flight_count) const = 0;
+  virtual bool shouldPrefillFirst(int decodeCount,
+                                 int maxInFlightCount) const = 0;
 
   /**
    * Maximum number of sequences to prefill in one step.
-   * Default: max_in_flight_count (full capacity). Override to limit prefill
+   * Default: maxInFlightCount (full capacity). Override to limit prefill
    * to available slots when decode sequences should be preserved.
    */
-  virtual int max_prefill_seqs(int /*decode_count*/,
-                               int max_in_flight_count) const {
-    return max_in_flight_count;
+  virtual int maxPrefillSeqs(int /*decodeCount*/,
+                            int maxInFlightCount) const {
+    return maxInFlightCount;
   }
 
  private:
-  int block_size_;
-  bool try_schedule_prefill(std::vector<Sequence*>& scheduled_seqs,
-                            int& num_seqs, int& num_batched_tokens,
-                            int seq_limit);
-  void try_schedule_decode(std::vector<Sequence*>& scheduled_seqs,
-                           int& num_seqs);
+  int blockSize;
+  bool trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
+                         int& numSeqs, int& numBatchedTokens,
+                         int seqLimit);
+  void tryScheduleDecode(std::vector<Sequence*>& scheduledSeqs,
+                        int& numSeqs);
 
-  size_t max_in_flight_count_;
-  int max_num_batched_tokens_;
-  std::unordered_set<int64_t> stop_token_ids_;
-  BlockManager block_manager_;
-  ITaskQueue* prefill_queue_;
-  std::unordered_map<TaskID, std::unique_ptr<Sequence>> sequences_;
-  std::deque<Sequence*> decode_queue_;
+  size_t maxInFlightCount;
+  int maxNumBatchedTokens;
+  std::unordered_set<int64_t> stopTokenIds;
+  BlockManager blockManager;
+  ITaskQueue* prefillQueue;
+  std::unordered_map<TaskID, std::unique_ptr<Sequence>> sequences;
+  std::deque<Sequence*> decodeQueue;
 };
 
-std::unique_ptr<Scheduler> make_scheduler(const tt::config::LLMConfig& config,
-                                          ITaskQueue* task_queue,
-                                          size_t max_in_flight_count);
+std::unique_ptr<Scheduler> makeScheduler(const tt::config::LLMConfig& config,
+                                          ITaskQueue* taskQueue,
+                                          size_t maxInFlightCount);
 
 }  // namespace llm_engine

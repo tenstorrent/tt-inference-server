@@ -11,20 +11,20 @@ using namespace llm_engine;
 using Config = tt::config::LLMConfig;
 
 LLMRunner::LLMRunner(const Config& config,
-                     ipc::TokenRingBuffer<65536>* result_queue,
-                     ITaskQueue* task_queue)
-    : config_(config), result_queue_(result_queue) {
-  scheduler_ =
-      make_scheduler(config_, task_queue, tt::config::max_in_flight_count());
+                     ipc::TokenRingBuffer<65536>* resultQueue,
+                     ITaskQueue* taskQueue)
+    : config(config), resultQueue(resultQueue) {
+  scheduler =
+      makeScheduler(config, taskQueue, tt::config::maxInFlightCount());
 
-  auto decode_cb = [this](const TokenResult& result) {
+  auto decodeCb = [this](const TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");
-    Sequence* seq = scheduler_->find_sequence(result.task_id);
+    Sequence* seq = scheduler->findSequence(result.task_id);
 
     assert(seq);
 
     if (result.is_error) {
-      scheduler_->removeSequence(result.task_id);
+      scheduler->removeSequence(result.task_id);
       auto shared = ipc::SharedToken{
           .token_index = 0,
           .flags = static_cast<uint32_t>(ipc::SharedToken::FLAG_FINAL |
@@ -36,17 +36,17 @@ LLMRunner::LLMRunner(const Config& config,
       strncpy(shared.task_id, result.task_id.id.c_str(),
               sizeof(shared.task_id) - 1);
       shared.task_id[sizeof(shared.task_id) - 1] = '\0';
-      while (!result_queue_->push(shared)) {
+      while (!this->resultQueue->push(shared)) {
         std::this_thread::yield();
       }
       return;
     }
 
     std::vector<Sequence*> seqs = {seq};
-    std::vector<int64_t> token_ids = {static_cast<int64_t>(result.token_id)};
-    scheduler_->postprocess(seqs, token_ids);
+    std::vector<int64_t> tokenIds = {static_cast<int64_t>(result.token_id)};
+    scheduler->postprocess(seqs, tokenIds);
 
-    bool finished = seq->is_finished();
+    bool finished = seq->isFinished();
 
     {
       ZoneScopedN("ResultQueue::push");
@@ -61,39 +61,39 @@ LLMRunner::LLMRunner(const Config& config,
       strncpy(shared.task_id, result.task_id.id.c_str(),
               sizeof(shared.task_id) - 1);
       shared.task_id[sizeof(shared.task_id) - 1] = '\0';
-      while (!result_queue_->push(shared)) {
+      while (!this->resultQueue->push(shared)) {
         std::this_thread::yield();
       }
     }
 
     if (finished) {
-      scheduler_->removeSequence(result.task_id);
+      scheduler->removeSequence(result.task_id);
     }
   };
 
-  model_runner_ = make_model_runner(config_, std::move(decode_cb));
+  modelRunner = make_model_runner(config, std::move(decodeCb));
 }
 
 LLMRunner::~LLMRunner() { exit(); }
 
 void LLMRunner::exit() {
-  if (model_runner_) {
-    model_runner_->exit();
+  if (modelRunner) {
+    modelRunner->exit();
   }
 }
 
 void LLMRunner::run() {
-  while (!stopped_.load(std::memory_order_relaxed)) {
+  while (!stopped.load(std::memory_order_relaxed)) {
     step();
   }
 }
 
-void LLMRunner::stop() { stopped_.store(true, std::memory_order_relaxed); }
+void LLMRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
 
 void LLMRunner::step() {
-  auto [seqs, is_prefill] = scheduler_->schedule();
+  auto [seqs, is_prefill] = scheduler->schedule();
   if (seqs.empty()) return;
   ZoneScopedN("LLMRunner::step");
-  model_runner_->run(seqs, is_prefill);
+  modelRunner->run(seqs, is_prefill);
 }
 }  // namespace tt::runners

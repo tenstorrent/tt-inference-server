@@ -4,7 +4,6 @@
 #include <json/json.h>
 
 #include <fstream>
-#include <mutex>
 #include <sstream>
 
 #include "config/settings.hpp"
@@ -14,14 +13,14 @@ namespace tt::utils {
 
 namespace {
 
-std::string extract_token(const Json::Value& v) {
+std::string extractToken(const Json::Value& v) {
   if (v.isNull() || !v) return {};
   if (v.isString()) return v.asString();
   if (v.isObject() && v.isMember("content")) return v["content"].asString();
   return {};
 }
 
-bool load_from_path(const std::string& path, TokenizerConfig& out) {
+bool loadFromPath(const std::string& path, TokenizerConfig& out) {
   std::ifstream f(path, std::ios::binary);
   if (!f) return false;
 
@@ -39,13 +38,13 @@ bool load_from_path(const std::string& path, TokenizerConfig& out) {
   }
 
   if (root.isMember("bos_token"))
-    out.bos_token = extract_token(root["bos_token"]);
+    out.bos_token = extractToken(root["bos_token"]);
   if (root.isMember("eos_token"))
-    out.eos_token = extract_token(root["eos_token"]);
+    out.eos_token = extractToken(root["eos_token"]);
   if (root.isMember("pad_token"))
-    out.pad_token = extract_token(root["pad_token"]);
+    out.pad_token = extractToken(root["pad_token"]);
   if (root.isMember("unk_token"))
-    out.unk_token = extract_token(root["unk_token"]);
+    out.unk_token = extractToken(root["unk_token"]);
   if (root.isMember("chat_template") && root["chat_template"].isString()) {
     out.chat_template = root["chat_template"].asString();
   }
@@ -60,14 +59,14 @@ bool load_from_path(const std::string& path, TokenizerConfig& out) {
 
 }  // namespace
 
-static TokenizerConfig load_and_validate(const std::string& path) {
+static TokenizerConfig loadAndValidate(const std::string& path) {
   if (path.empty()) {
     throw std::runtime_error(
         "[TokenizerUtil] Tokenizer config not found (tokenizer_config.json "
         "missing)");
   }
   TokenizerConfig cfg;
-  if (!load_from_path(path, cfg)) {
+  if (!loadFromPath(path, cfg)) {
     throw std::runtime_error(
         "[TokenizerUtil] Failed to load tokenizer config: " + path);
   }
@@ -84,14 +83,14 @@ static TokenizerConfig load_and_validate(const std::string& path) {
   return cfg;
 }
 
-TokenizerConfig get_tokenizer_config() {
+TokenizerConfig getTokenizerConfig() {
   static TokenizerConfig cached =
-      load_and_validate(tt::config::tokenizer_config_path());
+      loadAndValidate(tt::config::tokenizerConfigPath());
   return cached;
 }
 
-TokenizerConfig get_tokenizer_config(const std::string& config_path) {
-  return load_and_validate(config_path);
+TokenizerConfig getTokenizerConfig(const std::string& configPath) {
+  return loadAndValidate(configPath);
 }
 
 }  // namespace tt::utils

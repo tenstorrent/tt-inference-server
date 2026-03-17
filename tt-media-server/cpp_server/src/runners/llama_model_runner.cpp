@@ -108,7 +108,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs,
 
         int current_pos =
             is_prefill ? 0 : static_cast<int>(seq->token_ids_.size() - 1);
-        int prompt_len = static_cast<int>(seq->num_prompt_tokens_);
+        int prompt_len = static_cast<int>(seq->numPromptTokens_);
 
         const SamplingParams* sp = seq->sampling_params.get();
         double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;

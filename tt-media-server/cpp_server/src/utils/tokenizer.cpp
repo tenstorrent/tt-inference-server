@@ -34,67 +34,67 @@ Tokenizer::Tokenizer(const std::string& path) {
   f.close();
 
   if (path.size() >= 5 && path.compare(path.size() - 5, 5, ".json") == 0) {
-    tok_ = tokenizers::Tokenizer::FromBlobJSON(blob);
+    tok = tokenizers::Tokenizer::FromBlobJSON(blob);
   } else if (path.size() >= 7 &&
              path.compare(path.size() - 7, 7, ".model") == 0) {
-    tok_ = tokenizers::Tokenizer::FromBlobSentencePiece(blob);
+    tok = tokenizers::Tokenizer::FromBlobSentencePiece(blob);
   } else {
     throw std::runtime_error(
         "[TokenizerUtil] Unknown extension; use .json or .model: " + path);
   }
 
-  if (!tok_) {
+  if (!tok) {
     throw std::runtime_error(
         "[TokenizerUtil] Failed to create tokenizer from: " + path);
   }
 
-  std::filesystem::path config_path =
+  std::filesystem::path configPath =
       std::filesystem::path(path).parent_path() / "tokenizer_config.json";
-  if (std::filesystem::exists(config_path)) {
-    cfg_ = get_tokenizer_config(config_path.string());
+  if (std::filesystem::exists(configPath)) {
+    cfg = getTokenizerConfig(configPath.string());
   }
 
   TT_LOG_INFO("[TokenizerUtil] Loaded tokenizer from: {}", path);
 }
 
-bool Tokenizer::is_loaded() const { return tok_ != nullptr; }
+bool Tokenizer::isLoaded() const { return tok != nullptr; }
 
 std::vector<int> Tokenizer::encode(const std::string& text) const {
-  if (!tok_) {
+  if (!tok) {
     throw std::runtime_error(
         "[TokenizerUtil] Tokenizer not loaded, cannot encode");
   }
-  return tok_->Encode(text);
+  return tok->Encode(text);
 }
 
-std::string Tokenizer::decode(const std::vector<int>& token_ids) const {
-  if (!tok_) {
+std::string Tokenizer::decode(const std::vector<int>& tokenIds) const {
+  if (!tok) {
     throw std::runtime_error(
         "[TokenizerUtil] Tokenizer not loaded, cannot decode");
   }
-  if (token_ids.empty()) return "";
+  if (tokenIds.empty()) return "";
 
-  if (cached_special_token_threshold_ == -2) {
-    cached_special_token_threshold_ = special_token_decode_threshold();
+  if (cachedSpecialTokenThreshold == -2) {
+    cachedSpecialTokenThreshold = specialTokenDecodeThreshold();
   }
-  int threshold = cached_special_token_threshold_;
+  int threshold = cachedSpecialTokenThreshold;
   if (threshold > 0) {
     std::vector<int> filtered;
-    filtered.reserve(token_ids.size());
-    for (int id : token_ids) {
+    filtered.reserve(tokenIds.size());
+    for (int id : tokenIds) {
       if (id < threshold) filtered.push_back(id);
     }
     if (filtered.empty()) return "";
-    return tok_->Decode(filtered);
+    return tok->Decode(filtered);
   }
-  return tok_->Decode(token_ids);
+  return tok->Decode(tokenIds);
 }
 
 // ---------------------------------------------------------------------------
 // Factory + standalone helpers
 // ---------------------------------------------------------------------------
 
-std::string tokenizer_dir_for_model(config::ModelType model) {
+std::string tokenizerDirForModel(config::ModelType model) {
   switch (model) {
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
       return "meta-llama/Llama-3.1-8B-Instruct";
@@ -104,7 +104,7 @@ std::string tokenizer_dir_for_model(config::ModelType model) {
   }
 }
 
-std::unique_ptr<Tokenizer> create_tokenizer(config::ModelType model,
+std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
                                             const std::string& path) {
   switch (model) {
     case config::ModelType::LLAMA_3_1_8B_INSTRUCT:
@@ -115,10 +115,10 @@ std::unique_ptr<Tokenizer> create_tokenizer(config::ModelType model,
   }
 }
 
-const Tokenizer& active_tokenizer() {
-  static auto tok =
-      create_tokenizer(config::model_type(), config::tokenizer_path());
-  return *tok;
+const Tokenizer& activeTokenizer() {
+  static auto tokenizer =
+      createTokenizer(config::modelType(), config::tokenizerPath());
+  return *tokenizer;
 }
 
 }  // namespace tt::utils

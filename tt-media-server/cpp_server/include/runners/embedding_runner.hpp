@@ -21,9 +21,9 @@ namespace tt::runners {
  */
 class EmbeddingRunner : public IRunner {
  public:
-  /** @param device_id e.g. "device_0". @param visible_device TT device index
+  /** @param deviceId e.g. "device_0". @param visibleDevice TT device index
    * (1-based) for logging. */
-  EmbeddingRunner(const std::string& device_id, int visible_device = 0);
+  EmbeddingRunner(const std::string& deviceId, int visibleDevice = 0);
   ~EmbeddingRunner() override;
 
   // Prevent copying
@@ -55,13 +55,13 @@ class EmbeddingRunner : public IRunner {
   /**
    * Get the device ID.
    */
-  const std::string& device_id() const { return device_id_; }
+  const std::string& deviceId() const { return deviceId_; }
 
  private:
-  std::string device_id_;
-  int visible_device_;
+  std::string deviceId_;
+  int visibleDevice_;
   struct Impl;
-  std::unique_ptr<Impl> impl_;
+  std::unique_ptr<Impl> impl;
 };
 
 }  // namespace tt::runners
