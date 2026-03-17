@@ -10,6 +10,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -84,8 +85,19 @@ class BaseService : public IService {
   virtual void postProcess(ResponseType& response) const = 0;
   virtual size_t currentQueueSize() const = 0;
 
-  /** Override to supply worker list for liveness/status (like Python scheduler.get_worker_info()). */
-  virtual std::vector<WorkerInfo> getWorkerInfo() const { return {}; }
+  /** Build worker list for liveness/status from workers_ and warmed_worker_ids_. */
+  std::vector<WorkerInfo> getWorkerInfo() const {
+    std::vector<WorkerInfo> out;
+    std::lock_guard<std::mutex> lock(warmed_mutex_);
+    for (const auto& w : workers_) {
+      WorkerInfo info;
+      info.worker_id = std::to_string(w->worker_id);
+      info.is_ready = (warmed_worker_ids_.count(w->worker_id) != 0);
+      info.processed_requests = 0;
+      out.push_back(info);
+    }
+    return out;
+  }
 
   /** Override to provide warmup queue (e.g. Boost IPC). Default: no warmup signaling. */
   virtual std::unique_ptr<tt::ipc::IWarmupSignalQueue> createWarmupQueue(
@@ -104,6 +116,10 @@ class BaseService : public IService {
         for (size_t i = 0; i < capacity; ++i) {
           int workerId = warmup_queue_->receive();
           TT_LOG_INFO("[BaseService] Worker {} warmed up", workerId);
+          {
+            std::lock_guard<std::mutex> lock(warmed_mutex_);
+            warmed_worker_ids_.insert(workerId);
+          }
           if (i == 0) {
             is_ready_ = true;
             warmup_received_ = true;
@@ -133,6 +149,10 @@ class BaseService : public IService {
     if (warmup_listener_thread_.joinable()) {
       warmup_listener_thread_.join();
     }
+    {
+      std::lock_guard<std::mutex> lock(warmed_mutex_);
+      warmed_worker_ids_.clear();
+    }
     is_ready_ = false;
   }
 
@@ -147,6 +167,8 @@ class BaseService : public IService {
   std::condition_variable warmup_cv_;
   std::atomic<bool> warmup_received_{false};
   std::atomic<bool> is_ready_{false};
+  mutable std::mutex warmed_mutex_;
+  mutable std::set<int> warmed_worker_ids_;
   std::vector<std::unique_ptr<worker::SingleProcessWorker>> workers_;
   size_t num_workers_ = 0;
 };
