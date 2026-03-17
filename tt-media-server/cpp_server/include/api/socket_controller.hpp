@@ -26,8 +26,8 @@ namespace tt::api {
  */
 class SocketController {
  public:
-  SocketController(std::shared_ptr<services::LLMService> llm_service,
-                   std::shared_ptr<sockets::InterServerService> socket_service);
+  SocketController(std::shared_ptr<services::LLMService> llmService,
+                   std::shared_ptr<sockets::InterServerService> socketService);
 
   ~SocketController() = default;
 
@@ -35,9 +35,9 @@ class SocketController {
   SocketController& operator=(const SocketController&) = delete;
 
  private:
-  void setup_prefill_mode_handlers();
-  void setup_decode_mode_handlers();
-  void setup_common_handlers();
+  void setupPrefillModeHandlers();
+  void setupDecodeModeHandlers();
+  void setupCommonHandlers();
 
   std::shared_ptr<services::LLMService> llm_service_;
   std::shared_ptr<sockets::InterServerService> socket_service_;

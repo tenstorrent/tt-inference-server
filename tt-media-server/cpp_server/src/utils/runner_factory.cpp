@@ -13,10 +13,10 @@
 
 namespace tt::utils::runner_factory {
 
-std::unique_ptr<runners::IRunner> create_runner(
+std::unique_ptr<runners::IRunner> createRunner(
     config::ModelService service, const config::RunnerConfig& config,
-    ipc::TokenRingBuffer<65536>* result_queue,
-    llm_engine::ITaskQueue* task_queue) {
+    ipc::TokenRingBuffer<65536>* resultQueue,
+    llm_engine::ITaskQueue* taskQueue) {
   switch (service) {
     case config::ModelService::EMBEDDING: {
       TT_LOG_INFO("[RunnerFactory] Creating Embedding runner");
@@ -28,15 +28,15 @@ std::unique_ptr<runners::IRunner> create_runner(
       auto& cfg = std::get<config::LLMConfig>(config);
 
       // Choose runner based on config.runner_type
-      if (cfg.runner_type == config::ModelRunnerType::Pipeline) {
+      if (cfg.runner_type == config::ModelRunnerType::PIPELINE) {
         TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner");
-        return std::make_unique<runners::SpPipelineRunner>(cfg, result_queue,
-                                                           task_queue);
+        return std::make_unique<runners::SpPipelineRunner>(cfg, resultQueue,
+                                                           taskQueue);
       }
 
       TT_LOG_INFO("[RunnerFactory] Creating LLM runner");
-      return std::make_unique<tt::runners::LLMRunner>(cfg, result_queue,
-                                                      task_queue);
+      return std::make_unique<tt::runners::LLMRunner>(cfg, resultQueue,
+                                                      taskQueue);
     }
   }
 }

@@ -161,7 +161,7 @@ struct StreamingChunkResponse : BaseResponse {
     for (size_t i = 0; i < choices.size(); ++i) {
       if (i > 0) result.append(",");
       result.append("{\"text\":\"");
-      result.append(tt::utils::json_escape(choices[i].text));
+      result.append(tt::utils::jsonEscape(choices[i].text));
       result.append("\",\"index\":");
       result.append(std::to_string(choices[i].index));
       result.append(",\"logprobs\":null,\"finish_reason\":");

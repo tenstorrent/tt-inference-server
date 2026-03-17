@@ -14,7 +14,7 @@
 namespace tt::api {
 
 HealthController::HealthController() {
-  service_ = tt::utils::service_factory::get_configured_service();
+  service_ = tt::utils::service_factory::getConfiguredService();
   TT_LOG_INFO("[HealthController] Initialized (service={})",
               (service_ ? "yes" : "no"));
 }
@@ -45,7 +45,7 @@ void HealthController::ready(
     return;
   }
 
-  auto status = service_->get_system_status();
+  auto status = service_->getSystemStatus();
 
   Json::Value response;
   response["model_ready"] = status.model_ready;

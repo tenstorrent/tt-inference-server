@@ -13,20 +13,20 @@ namespace llm_engine {
 using Config = tt::config::LLMConfig;
 using ModelRunnerType = tt::config::ModelRunnerType;
 
-std::unique_ptr<IModelRunner> make_mock_model_runner(const Config& config,
-                                                     DecodeCallback callback);
+std::unique_ptr<IModelRunner> makeMockModelRunner(const Config& config,
+                                                  DecodeCallback callback);
 #ifdef USE_METAL_CPP_LIB
 std::unique_ptr<IModelRunner> make_llama_model_runner(const Config& config,
                                                       DecodeCallback callback);
 #endif
 
-std::unique_ptr<IModelRunner> make_model_runner(const Config& config,
-                                                DecodeCallback callback) {
+std::unique_ptr<IModelRunner> makeModelRunner(const Config& config,
+                                              DecodeCallback callback) {
   switch (config.runner_type) {
-    case ModelRunnerType::Mock:
-      return make_mock_model_runner(config, std::move(callback));
+    case ModelRunnerType::MOCK:
+      return makeMockModelRunner(config, std::move(callback));
 #ifdef USE_METAL_CPP_LIB
-    case ModelRunnerType::Llama:
+    case ModelRunnerType::LLAMA:
       return make_llama_model_runner(config, std::move(callback));
 #endif
     default:

@@ -7,40 +7,40 @@
 
 namespace tt::utils {
 
-static const char* LLAMA_HEADER_START = "<|start_header_id|>";
-static const char* LLAMA_HEADER_END = "<|end_header_id|>";
-static const char* LLAMA_EOT = "<|eot_id|>";
-static const char* LLAMA_SYSTEM_PREAMBLE =
+static const char* llamaHeaderStart = "<|start_header_id|>";
+static const char* llamaHeaderEnd = "<|end_header_id|>";
+static const char* llamaEot = "<|eot_id|>";
+static const char* llamaSystemPreamble =
     "Cutting Knowledge Date: December 2023\n"
     "Today Date: 26 Jul 2024\n\n";
 
-std::string LlamaTokenizer::apply_chat_template(
+std::string LlamaTokenizer::applyChatTemplate(
     const std::vector<domain::ChatMessage>& messages,
-    bool add_generation_prompt) const {
+    bool addGenerationPrompt) const {
   std::ostringstream out;
 
-  std::string system_content;
+  std::string systemContent;
   for (const auto& m : messages) {
     if (m.role == "system") {
-      if (!system_content.empty()) system_content += "\n\n";
-      system_content += m.content;
+      if (!systemContent.empty()) systemContent += "\n\n";
+      systemContent += m.content;
     }
   }
 
   if (cfg_.add_bos_token) out << cfg_.bos_token;
 
-  out << LLAMA_HEADER_START << "system" << LLAMA_HEADER_END << "\n\n"
-      << LLAMA_SYSTEM_PREAMBLE << system_content << LLAMA_EOT;
+  out << llamaHeaderStart << "system" << llamaHeaderEnd << "\n\n"
+      << llamaSystemPreamble << systemContent << llamaEot;
 
   for (const auto& m : messages) {
     if (m.role == "system") continue;
     std::string role = m.role.empty() ? "user" : m.role;
-    out << LLAMA_HEADER_START << role << LLAMA_HEADER_END << "\n\n"
-        << m.content << LLAMA_EOT;
+    out << llamaHeaderStart << role << llamaHeaderEnd << "\n\n"
+        << m.content << llamaEot;
   }
 
-  if (add_generation_prompt) {
-    out << LLAMA_HEADER_START << "assistant" << LLAMA_HEADER_END << "\n\n";
+  if (addGenerationPrompt) {
+    out << llamaHeaderStart << "assistant" << llamaHeaderEnd << "\n\n";
   }
   return out.str();
 }

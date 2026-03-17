@@ -15,12 +15,12 @@ class ConcurrentMap {
   ~ConcurrentMap() = default;
 
   void insert(const Key& key, const Value& value) {
-    std::lock_guard lock(mutex_);
+    std::lock_guard lock(mutex);
     map_[key] = value;
   }
 
   std::optional<Value> get(const Key& key) {
-    std::lock_guard lock(mutex_);
+    std::lock_guard lock(mutex);
     auto it = map_.find(key);
     if (it != map_.end()) {
       return it->second;
@@ -29,12 +29,12 @@ class ConcurrentMap {
   }
 
   void erase(const Key& key) {
-    std::lock_guard lock(mutex_);
+    std::lock_guard lock(mutex);
     map_.erase(key);
   }
 
   std::optional<Value> take(const Key& key) {
-    std::lock_guard lock(mutex_);
+    std::lock_guard lock(mutex);
     auto it = map_.find(key);
     if (it == map_.end()) {
       return std::nullopt;
@@ -45,18 +45,18 @@ class ConcurrentMap {
   }
 
   bool contains(const Key& key) {
-    std::lock_guard lock(mutex_);
+    std::lock_guard lock(mutex);
     return map_.find(key) != map_.end();
   }
 
   void clear() {
-    std::lock_guard lock(mutex_);
+    std::lock_guard lock(mutex);
     map_.clear();
   }
 
   template <typename Func>
-  void for_each(Func&& func) {
-    std::lock_guard lock(mutex_);
+  void forEach(Func&& func) {
+    std::lock_guard lock(mutex);
     for (auto& [key, value] : map_) {
       func(key, value);
     }
@@ -67,5 +67,5 @@ class ConcurrentMap {
 
  private:
   std::unordered_map<Key, Value> map_;
-  TracyLockable(std::mutex, mutex_);
+  TRACY_LOCKABLE(std::mutex, mutex);
 };

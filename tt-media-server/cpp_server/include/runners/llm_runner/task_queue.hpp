@@ -19,7 +19,7 @@ class ITaskQueue {
  public:
   virtual ~ITaskQueue() = default;
   virtual void push(const Sequence& seq) = 0;
-  virtual Sequence* try_pop() = 0;  // non-blocking pop;
+  virtual Sequence* tryPop() = 0;   // non-blocking pop;
   virtual Sequence* receive() = 0;  // blocking pop;
   virtual bool empty() const = 0;
 };

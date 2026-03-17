@@ -39,9 +39,9 @@ struct alignas(64) SharedToken {
   static constexpr uint32_t FLAG_ERROR = 2;
   static constexpr uint32_t FLAG_DONE = 4;
 
-  bool is_final() const { return flags & FLAG_FINAL; }
-  bool is_error() const { return flags & FLAG_ERROR; }
-  bool is_done() const { return flags & FLAG_DONE; }
+  bool isFinal() const { return flags & FLAG_FINAL; }
+  bool isError() const { return flags & FLAG_ERROR; }
+  bool isDone() const { return flags & FLAG_DONE; }
 };
 
 static_assert(sizeof(SharedToken) == 128,
@@ -51,15 +51,15 @@ struct SharedEmbedding {};
 
 namespace detail {
 
-inline int futex_wait(std::atomic<uint32_t>& futex_word, uint32_t expected,
-                      const struct timespec* timeout = nullptr) {
-  return syscall(SYS_futex, reinterpret_cast<uint32_t*>(&futex_word),
-                 FUTEX_WAIT, expected, timeout, nullptr, 0);
+inline int futexWait(std::atomic<uint32_t>& futexWord, uint32_t expected,
+                     const struct timespec* timeout = nullptr) {
+  return syscall(SYS_futex, reinterpret_cast<uint32_t*>(&futexWord), FUTEX_WAIT,
+                 expected, timeout, nullptr, 0);
 }
 
-inline void futex_wake(std::atomic<uint32_t>& futex_word, int count = 1) {
-  syscall(SYS_futex, reinterpret_cast<uint32_t*>(&futex_word), FUTEX_WAKE,
-          count, nullptr, nullptr, 0);
+inline void futexWake(std::atomic<uint32_t>& futexWord, int count = 1) {
+  syscall(SYS_futex, reinterpret_cast<uint32_t*>(&futexWord), FUTEX_WAKE, count,
+          nullptr, nullptr, 0);
 }
 
 }  // namespace detail
@@ -97,7 +97,7 @@ class TokenRingBuffer {
   static constexpr size_t BUFFER_CAPACITY = CAPACITY;
 
   // Calculate total shared memory size needed
-  static constexpr size_t shared_memory_size() {
+  static constexpr size_t sharedMemorySize() {
     return sizeof(RingBufferHeader) + sizeof(SharedToken) * CAPACITY;
   }
 
@@ -121,7 +121,7 @@ class TokenRingBuffer {
       throw std::runtime_error("Failed to open shared memory: " + name);
     }
 
-    size_t size = shared_memory_size();
+    size_t size = sharedMemorySize();
 
     if (create) {
       if (ftruncate(shm_fd_, size) < 0) {
@@ -157,7 +157,7 @@ class TokenRingBuffer {
 
   ~TokenRingBuffer() {
     if (shm_ptr_) {
-      munmap(shm_ptr_, shared_memory_size());
+      munmap(shm_ptr_, sharedMemorySize());
     }
     if (shm_fd_ >= 0) {
       close(shm_fd_);
@@ -204,7 +204,7 @@ class TokenRingBuffer {
     header_->write_pos.store(write + 1, std::memory_order_release);
 
     header_->push_notify.fetch_add(1, std::memory_order_release);
-    detail::futex_wake(header_->push_notify);
+    detail::futexWake(header_->push_notify);
     return true;
   }
 
@@ -232,8 +232,8 @@ class TokenRingBuffer {
    * or shutdown is signaled. Returns false only on shutdown with
    * an empty buffer.
    */
-  bool blocking_pop(SharedToken& token) {
-    while (!is_shutdown()) {
+  bool blockingPop(SharedToken& token) {
+    while (!isShutdown()) {
       if (pop(token)) {
         return true;
       }
@@ -247,7 +247,7 @@ class TokenRingBuffer {
 
       struct timespec timeout = {
           0, 1'000'000};  // 1 ms — periodic wake for shutdown check
-      detail::futex_wait(header_->push_notify, snapshot, &timeout);
+      detail::futexWait(header_->push_notify, snapshot, &timeout);
     }
     return pop(token);
   }
@@ -287,13 +287,13 @@ class TokenRingBuffer {
   void shutdown() {
     header_->shutdown.store(true, std::memory_order_release);
     header_->push_notify.fetch_add(1, std::memory_order_release);
-    detail::futex_wake(header_->push_notify, INT_MAX);
+    detail::futexWake(header_->push_notify, INT_MAX);
   }
 
   /**
    * Check if shutdown requested.
    */
-  bool is_shutdown() const {
+  bool isShutdown() const {
     return header_->shutdown.load(std::memory_order_acquire);
   }
 

@@ -17,14 +17,14 @@ using namespace llm_engine;
 class LLMRunner : public IRunner {
  public:
   LLMRunner(const config::LLMConfig& config,
-            ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue);
+            ipc::TokenRingBuffer<65536>* resultQueue, ITaskQueue* taskQueue);
   ~LLMRunner() override;
 
   Scheduler& scheduler() { return *scheduler_; }
 
   void run() override;
   void stop() override;
-  const char* runner_type() const override { return "LLMRunner"; }
+  const char* runnerType() const { return "LLMRunner"; }
 
  private:
   void step();

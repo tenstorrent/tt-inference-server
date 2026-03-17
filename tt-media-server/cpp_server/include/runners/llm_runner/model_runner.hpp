@@ -17,11 +17,11 @@ using DecodeQueue = ConcurrentQueue<TokenResult>;
 class IModelRunner {
  public:
   virtual ~IModelRunner() = default;
-  virtual void run(const std::vector<Sequence*>& seqs, bool is_prefill) = 0;
+  virtual void run(const std::vector<Sequence*>& seqs, bool isPrefill) = 0;
   virtual void exit() = 0;
 };
 
-std::unique_ptr<IModelRunner> make_model_runner(
+std::unique_ptr<IModelRunner> makeModelRunner(
     const tt::config::LLMConfig& config, DecodeCallback callback);
 
 }  // namespace llm_engine

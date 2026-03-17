@@ -14,15 +14,15 @@ SpPipelineModelRunner::SpPipelineModelRunner(DecodeCallback callback)
       device_output_(shm_names_.read) {
   device_input_.open();
   device_output_.open();
-  reader_thread_ = std::thread([this] { reader_loop(); });
+  reader_thread_ = std::thread([this] { readerLoop(); });
 }
 
 SpPipelineModelRunner::~SpPipelineModelRunner() { exit(); }
 
-void SpPipelineModelRunner::write(const std::string& task_id,
-                                  const std::vector<int64_t>& token_ids,
-                                  uint32_t max_tokens) {
-  device_input_.write(task_id, token_ids, max_tokens);
+void SpPipelineModelRunner::write(const std::string& taskId,
+                                  const std::vector<int64_t>& tokenIds,
+                                  uint32_t maxTokens) {
+  device_input_.write(taskId, tokenIds, maxTokens);
 }
 
 void SpPipelineModelRunner::exit() {
@@ -31,14 +31,14 @@ void SpPipelineModelRunner::exit() {
   LLM_ENGINE_LOG("sp_pipeline") << "model runner exit" << std::endl;
 }
 
-void SpPipelineModelRunner::reader_loop() {
-  ReadResult read_buf;
+void SpPipelineModelRunner::readerLoop() {
+  ReadResult readBuf;
   while (!stop_.load(std::memory_order_relaxed)) {
-    if (device_output_.try_read(read_buf)) {
-      llm_engine::TaskID tid = llm_engine::TaskID::ipc_deserialize(
-          read_buf.taskId.data(), llm_engine::TaskID::kSerializedSize);
-      uint64_t token_id = read_buf.tokenIds.empty() ? 0 : read_buf.tokenIds[0];
-      llm_engine::TokenResult result(std::move(tid), token_id);
+    if (device_output_.tryRead(readBuf)) {
+      llm_engine::TaskID tid = llm_engine::TaskID::ipcDeserialize(
+          readBuf.taskId.data(), llm_engine::TaskID::K_SERIALIZED_SIZE);
+      uint64_t tokenId = readBuf.tokenIds.empty() ? 0 : readBuf.tokenIds[0];
+      llm_engine::TokenResult result(std::move(tid), tokenId);
       decode_callback_(result);
     } else {
       std::this_thread::yield();

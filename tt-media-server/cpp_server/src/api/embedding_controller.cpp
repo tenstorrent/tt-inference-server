@@ -23,8 +23,8 @@ namespace tt::api {
 
 namespace {
 // Generate random hex string for task IDs
-std::string random_hex(size_t length) {
-  static const char hex_chars[] = "0123456789abcdef";
+std::string randomHex(size_t length) {
+  static const char HEX_CHARS[] = "0123456789abcdef";
   static std::random_device rd;
   static std::mt19937 gen(rd());
   static std::uniform_int_distribution<> dist(0, 15);
@@ -32,7 +32,7 @@ std::string random_hex(size_t length) {
   std::string result;
   result.reserve(length);
   for (size_t i = 0; i < length; ++i) {
-    result += hex_chars[dist(gen)];
+    result += HEX_CHARS[dist(gen)];
   }
   return result;
 }
@@ -40,13 +40,13 @@ std::string random_hex(size_t length) {
 // Simple thread pool for handling response callbacks
 class CallbackThreadPool {
  public:
-  CallbackThreadPool(size_t num_threads = 8) : stop_(false) {
-    for (size_t i = 0; i < num_threads; ++i) {
+  CallbackThreadPool(size_t numThreads = 8) : stop_(false) {
+    for (size_t i = 0; i < numThreads; ++i) {
       workers_.emplace_back([this] {
         while (true) {
           std::function<void()> task;
           {
-            std::unique_lock lock(mutex_);
+            std::unique_lock lock(mutex);
             cv_.wait(lock, [this] { return stop_ || !tasks_.empty(); });
             if (stop_ && tasks_.empty()) return;
             task = std::move(tasks_.front());
@@ -60,7 +60,7 @@ class CallbackThreadPool {
 
   ~CallbackThreadPool() {
     {
-      std::lock_guard lock(mutex_);
+      std::lock_guard lock(mutex);
       stop_ = true;
     }
     cv_.notify_all();
@@ -71,7 +71,7 @@ class CallbackThreadPool {
 
   void submit(std::function<void()> task) {
     {
-      std::lock_guard lock(mutex_);
+      std::lock_guard lock(mutex);
       tasks_.push(std::move(task));
     }
     cv_.notify_one();
@@ -80,24 +80,24 @@ class CallbackThreadPool {
  private:
   std::vector<std::thread> workers_;
   std::queue<std::function<void()>> tasks_;
-  TracyLockable(std::mutex, mutex_);
+  TRACY_LOCKABLE(std::mutex, mutex);
   std::condition_variable_any cv_;
   bool stop_;
 };
 
 // Global thread pool for callbacks
-CallbackThreadPool& get_callback_pool() {
+CallbackThreadPool& getCallbackPool() {
   static CallbackThreadPool pool(16);  // 16 threads for handling callbacks
   return pool;
 }
 }  // namespace
 
 EmbeddingController::EmbeddingController() {
-  if (!tt::config::is_embedding_service()) {
+  if (!tt::config::isEmbeddingService()) {
     return;
   }
 
-  service_ = tt::utils::service_factory::get_service_by_type<
+  service_ = tt::utils::service_factory::getServiceByType<
       services::EmbeddingService>();
   if (!service_) {
     throw std::runtime_error(
@@ -109,12 +109,12 @@ EmbeddingController::EmbeddingController() {
 
 EmbeddingController::~EmbeddingController() = default;
 
-std::string EmbeddingController::generate_task_id() { return random_hex(24); }
+std::string EmbeddingController::generateTaskId() { return randomHex(24); }
 
-void EmbeddingController::create_embedding(
+void EmbeddingController::createEmbedding(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-  auto start_time = std::chrono::steady_clock::now();
+  auto startTime = std::chrono::steady_clock::now();
 
   // Parse request body
   auto json = req->getJsonObject();
@@ -138,25 +138,25 @@ void EmbeddingController::create_embedding(
   }
 
   // Build request
-  domain::TaskID task_id(generate_task_id());
+  domain::TaskID taskId(generateTaskId());
   domain::EmbeddingRequest request =
-      domain::EmbeddingRequest::from_json(*json, std::move(task_id));
+      domain::EmbeddingRequest::fromJson(*json, std::move(taskId));
 
   // Default model if not specified
   if (request.model.empty()) {
     request.model = "BAAI/bge-large-en-v1.5";
   }
 
-  uint64_t req_num = request_counter_.fetch_add(1);
+  uint64_t reqNum = request_counter_.fetch_add(1);
 
-  auto submit_time = std::chrono::steady_clock::now();
+  auto submitTime = std::chrono::steady_clock::now();
 
-  get_callback_pool().submit([service = service_, request = std::move(request),
-                              callback = std::move(callback), req_num,
-                              start_time, submit_time]() {
+  getCallbackPool().submit([service = service_, request = std::move(request),
+                            callback = std::move(callback), reqNum, startTime,
+                            submitTime]() {
     try {
-      auto response = service->submit_request(std::move(request));
-      auto got_response_time = std::chrono::steady_clock::now();
+      auto response = service->submitRequest(std::move(request));
+      auto gotResponseTime = std::chrono::steady_clock::now();
 
       if (!response.error.empty()) {
         Json::Value error;
@@ -168,28 +168,28 @@ void EmbeddingController::create_embedding(
         return;
       }
 
-      Json::Value json_response = response.to_openai_json();
-      auto built_json_time = std::chrono::steady_clock::now();
+      Json::Value jsonResponse = response.toOpenaiJson();
+      auto builtJsonTime = std::chrono::steady_clock::now();
 
-      auto resp = drogon::HttpResponse::newHttpJsonResponse(json_response);
+      auto resp = drogon::HttpResponse::newHttpJsonResponse(jsonResponse);
 
-      if (req_num % 100 == 0) {
-        double parse_ms =
-            std::chrono::duration<double, std::milli>(submit_time - start_time)
+      if (reqNum % 100 == 0) {
+        double parseMs =
+            std::chrono::duration<double, std::milli>(submitTime - startTime)
                 .count();
-        double wait_ms = std::chrono::duration<double, std::milli>(
-                             got_response_time - submit_time)
+        double waitMs = std::chrono::duration<double, std::milli>(
+                            gotResponseTime - submitTime)
+                            .count();
+        double buildMs = std::chrono::duration<double, std::milli>(
+                             builtJsonTime - gotResponseTime)
                              .count();
-        double build_ms = std::chrono::duration<double, std::milli>(
-                              built_json_time - got_response_time)
-                              .count();
-        double total_ms = std::chrono::duration<double, std::milli>(
-                              built_json_time - start_time)
-                              .count();
+        double totalMs =
+            std::chrono::duration<double, std::milli>(builtJsonTime - startTime)
+                .count();
         TT_LOG_DEBUG(
             "[EmbeddingController] req={} parse={}ms wait={}ms build={}ms "
             "total={}ms",
-            req_num, parse_ms, wait_ms, build_ms, total_ms);
+            reqNum, parseMs, waitMs, buildMs, totalMs);
       }
 
       callback(resp);

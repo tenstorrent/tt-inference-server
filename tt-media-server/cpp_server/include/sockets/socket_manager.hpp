@@ -65,7 +65,7 @@ class SocketManager {
    * @return true if successful
    */
   template <typename T>
-  bool sendObject(const std::string& message_type, const T& obj);
+  bool sendObject(const std::string& messageType, const T& obj);
 
   /**
    * @brief Register handler for incoming messages of specific type
@@ -73,7 +73,7 @@ class SocketManager {
    * @param handler Function to call when message is received
    */
   template <typename T>
-  void registerHandler(const std::string& message_type,
+  void registerHandler(const std::string& messageType,
                        std::function<void(const T&)> handler);
 
   /**
@@ -143,7 +143,7 @@ class SocketManager {
 // Template implementations
 
 template <typename T>
-bool SocketManager::sendObject(const std::string& message_type, const T& obj) {
+bool SocketManager::sendObject(const std::string& messageType, const T& obj) {
   if (!connected_) {
     return false;
   }
@@ -152,7 +152,7 @@ bool SocketManager::sendObject(const std::string& message_type, const T& obj) {
     std::ostringstream oss;
     {
       cereal::BinaryOutputArchive archive(oss);
-      archive(message_type);
+      archive(messageType);
       obj.write(archive);
     }
 
@@ -167,18 +167,18 @@ bool SocketManager::sendObject(const std::string& message_type, const T& obj) {
 }
 
 template <typename T>
-void SocketManager::registerHandler(const std::string& message_type,
+void SocketManager::registerHandler(const std::string& messageType,
                                     std::function<void(const T&)> handler) {
   std::lock_guard<std::mutex> lock(handlers_mutex_);
 
-  handlers_[message_type] = [handler](const std::vector<uint8_t>& data) {
+  handlers_[messageType] = [handler](const std::vector<uint8_t>& data) {
     try {
       std::string serialized(data.begin(), data.end());
       std::istringstream iss(serialized);
 
       cereal::BinaryInputArchive archive(iss);
-      std::string msg_type;
-      archive(msg_type);
+      std::string msgType;
+      archive(msgType);
       T payload = T::read(archive);
 
       handler(payload);

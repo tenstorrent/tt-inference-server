@@ -28,8 +28,8 @@ class SecurityFilter {
   static const std::string& getExpectedToken();
 
  private:
-  static std::string cachedToken_;
-  static std::once_flag initFlag_;
+  static std::string cachedToken;
+  static std::once_flag initFlag;
 
   static void initializeToken();
 };
