@@ -178,6 +178,8 @@ LLMConfig llm_engine_config() {
     cfg.runner_type = ModelRunnerType::Llama;
   } else if (backend == "mock") {
     cfg.runner_type = ModelRunnerType::Mock;
+  } else if (backend == "mock_pipeline") {
+    cfg.runner_type = ModelRunnerType::MockPipeline;
   } else {
     cfg.runner_type = ModelRunnerType::MockPipeline;
   }

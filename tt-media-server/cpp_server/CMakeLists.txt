@@ -321,7 +321,6 @@ else()
     target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog)
 endif()
 
-# Mock pipeline direct benchmark (no server overhead)
 # Source files
 set(SOURCES
     src/main.cpp
