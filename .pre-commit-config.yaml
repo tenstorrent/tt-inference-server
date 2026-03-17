@@ -1,14 +1,4 @@
 repos:
-- repo: https://github.com/pre-commit/mirrors-clang-format
-  rev: v19.1.4
-  hooks:
-    - id: clang-format
-      name: clang-format (cpp_server)
-      entry: git-clang-format
-      require_serial: true
-      files: ^tt-media-server/cpp_server/
-      types_or: [c++, c]
-      args: ["--style=file"]
 - repo: local
   hooks:
     # Run the linter.
