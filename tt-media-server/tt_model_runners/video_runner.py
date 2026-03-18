@@ -11,8 +11,8 @@ This is the external runner process that pairs with SPRunner on the server side.
 SPRunner runs inside the standard device_worker and communicates via VideoShm.
 
 Multi-rank mode:
-- Rank 0: Reads from SHM, runs DiT inference, streams frames, distributes to ranks 1-3
-- Ranks 1-3: Listen on sockets and receive requests (for future TP processing)
+- Rank 0: Reads from SHM, runs DiT inference, writes frames to output SHM, distributes to ranks 1-3
+- Ranks 1-3: Listen on sockets, receive requests from rank 0, and run DiT inference on their devices
 
 Environment variables required:
     TT_VIDEO_SHM_INPUT:  Name of input  SHM segment (default ``tt_video_in``)
@@ -30,7 +30,7 @@ Usage:
     export MODEL_RUNNER=tt_mochi_1
     python -m tt_model_runners.video_runner
 
-    # Ranks 1-3 (workers, for future use):
+    # Ranks 1-3 (workers with inference):
     export RANK=1  # or 2, 3
     export TT_VISIBLE_DEVICES=1  # or 2, 3
     export MODEL_RUNNER=tt_mochi_1
@@ -282,10 +282,29 @@ def run_rank0_coordinator() -> None:
 
 
 def run_worker_rank(rank: int) -> None:
-    """Ranks 1-3: Listen on socket and receive forwarded requests."""
+    """Ranks 1-3: Listen on socket, receive requests from rank 0, and run DiT inference."""
+    model_runner = os.environ.get("MODEL_RUNNER", "")
+    device_id = os.environ.get("TT_VISIBLE_DEVICES", "0")
     config = RANK_CONFIG[rank]
-    print(f"Rank {rank}: Starting worker on {config['ip']}:{config['port']}")
 
+    if not model_runner:
+        print(f"Rank {rank}: MODEL_RUNNER environment variable not set")
+        sys.exit(1)
+
+    print(f"Rank {rank}: model={model_runner}, device={device_id}")
+
+    runner = create_dit_runner(model_runner, device_id)
+    print(f"Rank {rank}: Setting up device...")
+    runner.set_device()
+    print(f"Rank {rank}: Loading weights...")
+    runner.load_weights()
+    print(f"Rank {rank}: Running warmup...")
+    import asyncio
+
+    asyncio.run(runner.warmup())
+    print(f"Rank {rank}: Model ready for inference")
+
+    print(f"Rank {rank}: Starting worker on {config['ip']}:{config['port']}")
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_sock.bind((config["ip"], config["port"]))
@@ -308,11 +327,31 @@ def run_worker_rank(rank: int) -> None:
                 f"steps={req.num_inference_steps}, seed={req.seed}"
             )
 
+            try:
+                from domain.video_generate_request import VideoGenerateRequest
+
+                video_gen_req = VideoGenerateRequest(
+                    prompt=req.prompt,
+                    negative_prompt=req.negative_prompt,
+                    num_inference_steps=req.num_inference_steps,
+                    seed=req.seed,
+                )
+
+                print(f"Rank {rank}: Starting inference for task {req.task_id}")
+                frames = runner.run([video_gen_req])
+                print(
+                    f"Rank {rank}: Inference done for task {req.task_id}, "
+                    f"shape={frames.shape}"
+                )
+            except Exception as e:
+                print(f"Rank {rank}: Inference failed for task {req.task_id}: {e}")
+
     except KeyboardInterrupt:
         print(f"Rank {rank}: Interrupted by user")
     except Exception as e:
         print(f"Rank {rank}: Error: {e}")
     finally:
+        runner.close_device()
         server_sock.close()
 
     print(f"Rank {rank}: Shutdown complete")
