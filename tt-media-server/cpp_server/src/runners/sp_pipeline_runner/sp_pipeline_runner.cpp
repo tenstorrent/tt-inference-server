@@ -13,10 +13,9 @@
 
 namespace tt::runners {
 
-SpPipelineRunner::SpPipelineRunner(
-    const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* resultQueue,
-    llm_engine::ITaskQueue* taskQueue,
-    sp_pipeline::ModelRunnerFactory modelRunnerFactory)
+SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
+                                   ipc::TokenRingBuffer<65536>* resultQueue,
+                                   llm_engine::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
@@ -29,7 +28,7 @@ SpPipelineRunner::SpPipelineRunner(
     }
   };
 
-  modelRunner = modelRunnerFactory(std::move(decodeCb));
+  modelRunner = sp_pipeline::makeModelRunner(config, std::move(decodeCb));
 }
 
 SpPipelineRunner::~SpPipelineRunner() {

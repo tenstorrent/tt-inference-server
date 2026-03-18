@@ -205,6 +205,7 @@ set(LLM_ENGINE_SOURCES
     src/utils/llama_tokenizer.cpp
     src/utils/tokenizer_config_loader.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
+    src/runners/sp_pipeline_runner/i_sp_pipeline_model_runner.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
     src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
     src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp

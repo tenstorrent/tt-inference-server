@@ -5,8 +5,6 @@
 
 #include "runners/embedding_runner.hpp"
 #include "runners/llm_runner.hpp"
-#include "runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.hpp"
-#include "runners/sp_pipeline_runner/sp_pipeline_model_runner.hpp"
 #include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
 #include "utils/logger.hpp"
 
@@ -25,28 +23,11 @@ std::unique_ptr<runners::IRunner> createRunner(
     default: {
       auto& cfg = std::get<config::LLMConfig>(config);
 
-      if (cfg.runner_type == config::ModelRunnerType::PIPELINE) {
-        TT_LOG_INFO(
-            "[RunnerFactory] Creating SP Pipeline runner (shared memory)");
-        auto factory = [](sp_pipeline::DecodeCallback cb)
-            -> std::unique_ptr<sp_pipeline::ISpPipelineModelRunner> {
-          return std::make_unique<sp_pipeline::SpPipelineModelRunner>(
-              std::move(cb));
-        };
+      if (cfg.runner_type == config::ModelRunnerType::PIPELINE ||
+          cfg.runner_type == config::ModelRunnerType::MOCK_PIPELINE) {
+        TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner");
         return std::make_unique<runners::SpPipelineRunner>(cfg, resultQueue,
-                                                           taskQueue, factory);
-      }
-
-      if (cfg.runner_type == config::ModelRunnerType::MOCK_PIPELINE) {
-        TT_LOG_INFO(
-            "[RunnerFactory] Creating SP Pipeline runner (mock device)");
-        auto factory = [](sp_pipeline::DecodeCallback cb)
-            -> std::unique_ptr<sp_pipeline::ISpPipelineModelRunner> {
-          return std::make_unique<sp_pipeline::MockSpPipelineModelRunner>(
-              std::move(cb));
-        };
-        return std::make_unique<runners::SpPipelineRunner>(cfg, resultQueue,
-                                                           taskQueue, factory);
+                                                           taskQueue);
       }
 
       TT_LOG_INFO("[RunnerFactory] Creating LLM runner (mock)");

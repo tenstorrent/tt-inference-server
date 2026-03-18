@@ -22,8 +22,7 @@ class SpPipelineRunner : public IRunner {
  public:
   SpPipelineRunner(const tt::config::LLMConfig& config,
                    ipc::TokenRingBuffer<65536>* resultQueue,
-                   llm_engine::ITaskQueue* taskQueue,
-                   sp_pipeline::ModelRunnerFactory modelRunnerFactory);
+                   llm_engine::ITaskQueue* taskQueue);
   ~SpPipelineRunner() override;
 
   void run() override;

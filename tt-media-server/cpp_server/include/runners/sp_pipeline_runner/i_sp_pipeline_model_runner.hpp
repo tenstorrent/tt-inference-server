@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "config/runner_config.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "utils/concurrent_queue.hpp"
 
@@ -29,8 +30,7 @@ class ISpPipelineModelRunner {
   virtual void exit() = 0;
 };
 
-/// Factory: given a DecodeCallback, produce a model runner.
-using ModelRunnerFactory =
-    std::function<std::unique_ptr<ISpPipelineModelRunner>(DecodeCallback)>;
+std::unique_ptr<ISpPipelineModelRunner> makeModelRunner(
+    const tt::config::LLMConfig& config, DecodeCallback callback);
 
 }  // namespace sp_pipeline
