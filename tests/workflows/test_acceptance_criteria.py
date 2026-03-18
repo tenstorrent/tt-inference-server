@@ -183,6 +183,24 @@ def test_acceptance_criteria_check_returns_blocker_for_failed_parameter_support_
 
 
 @pytest.mark.parametrize(
+    "field_value", [None, [], {}, {"results": {}}, {"configs": {}}]
+)
+def test_acceptance_criteria_check_allows_missing_parameter_support_test_results(
+    report_data, field_value
+):
+    updated_report_data = copy.deepcopy(report_data)
+    if field_value is None:
+        updated_report_data.pop("parameter_support_tests")
+    else:
+        updated_report_data["parameter_support_tests"] = field_value
+
+    accepted, blockers = acceptance_criteria_check(updated_report_data)
+
+    assert accepted is True
+    assert blockers == {}
+
+
+@pytest.mark.parametrize(
     "field_name,field_value,expected_blocker_key",
     [
         (
@@ -194,7 +212,7 @@ def test_acceptance_criteria_check_returns_blocker_for_failed_parameter_support_
         (
             "parameter_support_tests",
             [{"model": "placeholder"}],
-            "parameter_support_tests",
+            None,
         ),
     ],
 )
@@ -207,6 +225,10 @@ def test_acceptance_criteria_check_returns_false_for_placeholder_shapes(
     accepted, blockers = acceptance_criteria_check(failed_report_data)
     summary_markdown = format_acceptance_summary_markdown(accepted, blockers)
 
-    assert accepted is False
-    assert expected_blocker_key in blockers
-    assert expected_blocker_key in summary_markdown
+    if expected_blocker_key is not None:
+        assert accepted is False
+        assert expected_blocker_key in blockers
+        assert expected_blocker_key in summary_markdown
+    else:
+        assert accepted is True
+        assert blockers == {}

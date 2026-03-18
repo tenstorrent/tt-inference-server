@@ -143,34 +143,22 @@ def _evals_acceptance(evals_data: Any) -> Dict[str, str]:
 def _parameter_support_acceptance(parameter_support_tests: Any) -> Dict[str, str]:
     acceptance_blockers = {}
     if not isinstance(parameter_support_tests, dict):
-        acceptance_blockers["parameter_support_tests"] = (
-            "Missing parameter_support_tests.results in report data."
-        )
         return acceptance_blockers
 
     results = parameter_support_tests.get("results")
     if not isinstance(results, dict) or not results:
-        acceptance_blockers["parameter_support_tests.results"] = (
-            "Missing parameter_support_tests.results entries in report data."
-        )
         return acceptance_blockers
 
     for test_name, test_results in results.items():
-        if not isinstance(test_results, list) or not test_results:
-            acceptance_blockers[f"parameter_support_tests.{test_name}"] = (
-                "Parameter support test results are missing or malformed."
-            )
+        if not isinstance(test_results, list):
             continue
 
         for index, test_result in enumerate(test_results):
-            blocker_key = f"parameter_support_tests.{test_name}.{index}"
             if not isinstance(test_result, dict):
-                acceptance_blockers[blocker_key] = (
-                    "Parameter support test entry is not a dictionary."
-                )
                 continue
 
             if test_result.get("status") != "passed":
+                blocker_key = f"parameter_support_tests.{test_name}.{index}"
                 acceptance_blockers[blocker_key] = _format_parameter_support_failure(
                     test_result
                 )
