@@ -70,6 +70,8 @@ except ImportError:
         resolve_release_output_dir,
     )
 
+RELEASE_BRANCH_PATTERN = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+
 
 def map_perf_status_to_model_status(perf_status):
     """Map CI perf_status string to ModelStatusTypes enum value."""
@@ -624,11 +626,87 @@ def build_template_snapshots(
     return snapshots
 
 
-def read_git_base_model_spec_content(model_spec_path: Path, ref: str = "HEAD") -> str:
+def parse_release_branch_version(ref_name: str) -> Optional[Tuple[int, int, int]]:
+    """Return semantic version tuple for release refs like `v0.10.0`."""
+    branch_name = ref_name.rsplit("/", 1)[-1]
+    match = RELEASE_BRANCH_PATTERN.fullmatch(branch_name)
+    if not match:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
+def list_release_branch_refs(
+    repo_root: Path,
+) -> List[Tuple[Tuple[int, int, int], str, str]]:
+    """List local/remote git branches that match `vMAJOR.MINOR.PATCH`."""
+    result = subprocess.run(
+        [
+            "git",
+            "for-each-ref",
+            "--format=%(refname) %(refname:short)",
+            "refs/heads",
+            "refs/remotes",
+        ],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to list release branches: {result.stderr.strip() or result.stdout.strip()}"
+        )
+
+    release_refs = []
+    for line in result.stdout.splitlines():
+        stripped_line = line.strip()
+        if not stripped_line:
+            continue
+
+        full_ref, short_ref = stripped_line.split(maxsplit=1)
+        if short_ref.endswith("/HEAD"):
+            continue
+
+        version = parse_release_branch_version(short_ref)
+        if version is None:
+            continue
+
+        release_refs.append((version, full_ref, short_ref))
+
+    return release_refs
+
+
+def resolve_latest_release_branch_ref(repo_root: Path) -> str:
+    """Resolve the highest semantic version release branch ref."""
+    release_refs = list_release_branch_refs(repo_root)
+    if not release_refs:
+        raise RuntimeError(
+            "Could not find any release branches matching vMAJOR.MINOR.PATCH"
+        )
+
+    def sort_key(release_ref):
+        version, full_ref, short_ref = release_ref
+        is_local_branch = full_ref.startswith("refs/heads/")
+        is_origin_branch = full_ref.startswith("refs/remotes/origin/")
+        return (
+            version,
+            1 if is_local_branch else 0,
+            1 if is_origin_branch else 0,
+            short_ref,
+        )
+
+    _, _, resolved_ref = max(release_refs, key=sort_key)
+    return resolved_ref
+
+
+def read_git_base_model_spec_content(
+    model_spec_path: Path, ref: Optional[str] = None
+) -> str:
     """Read the git base version of `model_spec.py`."""
     repo_root = model_spec_path.parent.parent.resolve()
+    resolved_ref = ref or resolve_latest_release_branch_ref(repo_root)
     relative_path = model_spec_path.resolve().relative_to(repo_root).as_posix()
-    git_object = f"{ref}:{relative_path}"
+    git_object = f"{resolved_ref}:{relative_path}"
     result = subprocess.run(
         ["git", "show", git_object],
         cwd=repo_root,
@@ -685,12 +763,13 @@ def build_release_diff_records_from_git(
     model_spec_path: Path,
     current_content: Optional[str] = None,
     ci_metadata_by_occurrence: Optional[Dict[Tuple[str, int], CiMetadata]] = None,
+    base_ref: Optional[str] = None,
 ) -> List[ReleaseDiffRecord]:
     """Build final release-diff records from the git diff of `model_spec.py`."""
     current_text = (
         current_content if current_content is not None else model_spec_path.read_text()
     )
-    base_text = read_git_base_model_spec_content(model_spec_path)
+    base_text = read_git_base_model_spec_content(model_spec_path, ref=base_ref)
     before_snapshots = build_template_snapshots(
         model_spec_path, base_text, "model_spec_release_diff_before"
     )
@@ -759,21 +838,26 @@ def generate_release_diff_outputs_from_git(
     output_dir: Path,
     current_content: Optional[str] = None,
     ci_metadata_by_occurrence: Optional[Dict[Tuple[str, int], CiMetadata]] = None,
+    base_ref: Optional[str] = None,
 ):
     """Generate markdown and JSON release-diff artifacts from git-derived records."""
     update_records = build_release_diff_records_from_git(
         model_spec_path,
         current_content=current_content,
         ci_metadata_by_occurrence=ci_metadata_by_occurrence,
+        base_ref=base_ref,
     )
     return write_release_diff_outputs(update_records, output_dir)
 
 
 def apply_release_version_to_manual_updates_from_git(
-    model_spec_path: Path, current_content: str, release_version: str
+    model_spec_path: Path,
+    current_content: str,
+    release_version: str,
+    base_ref: Optional[str] = None,
 ):
     """Stamp release_version on templates whose tt_metal_commit changed in git."""
-    base_text = read_git_base_model_spec_content(model_spec_path)
+    base_text = read_git_base_model_spec_content(model_spec_path, ref=base_ref)
     before_snapshots = build_template_snapshots(
         model_spec_path, base_text, "model_spec_release_version_before"
     )
@@ -1139,10 +1223,15 @@ def main():
         if not model_spec_path.exists():
             raise FileNotFoundError(f"Error: File not found: {args.model_spec_path}")
 
+        base_release_ref = resolve_latest_release_branch_ref(
+            model_spec_path.parent.parent.resolve()
+        )
+        print(f"Using latest release branch base ref: {base_release_ref}")
+
         current_content = model_spec_path.read_text()
         updated_content, release_version_updates = (
             apply_release_version_to_manual_updates_from_git(
-                model_spec_path, current_content, VERSION
+                model_spec_path, current_content, VERSION, base_ref=base_release_ref
             )
         )
 
@@ -1160,7 +1249,10 @@ def main():
 
         release_output_dir = resolve_release_output_dir(args.out_root)
         generate_release_diff_outputs_from_git(
-            model_spec_path, release_output_dir, current_content=updated_content
+            model_spec_path,
+            release_output_dir,
+            current_content=updated_content,
+            base_ref=base_release_ref,
         )
 
         # Regenerate docs/model_support/ and update README.md Model Support section.
@@ -1206,6 +1298,10 @@ def main():
     model_spec_path = Path(args.model_spec_path)
     if not model_spec_path.exists():
         raise FileNotFoundError(f"Error: File not found: {args.model_spec_path}")
+    base_release_ref = resolve_latest_release_branch_ref(
+        model_spec_path.parent.parent.resolve()
+    )
+    print(f"Using latest release branch base ref: {base_release_ref}")
 
     with open(model_spec_path, "r") as f:
         content = f.read()
@@ -1336,6 +1432,7 @@ def main():
                 release_output_dir,
                 current_content=updated_content,
                 ci_metadata_by_occurrence=ci_metadata_by_occurrence,
+                base_ref=base_release_ref,
             )
 
             # Regenerate docs/model_support/ and update README.md Model Support section.
@@ -1352,6 +1449,7 @@ def main():
                 release_output_dir,
                 current_content=content,
                 ci_metadata_by_occurrence=ci_metadata_by_occurrence,
+                base_ref=base_release_ref,
             )
 
 
