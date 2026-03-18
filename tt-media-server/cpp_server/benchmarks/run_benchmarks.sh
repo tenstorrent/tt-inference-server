@@ -7,13 +7,15 @@ ENDPOINT="/v1/chat/completions"
 DATASET="random"
 NUM_PROMPTS="${NUM_PROMPTS:-1000}"
 RESULTS_DIR="${RESULTS_DIR:-bench_results}"
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+# JOB_SUFFIX is appended to each filename. In CI this is the numeric GitHub job ID
+# so the infra collect_data pipeline can map results to jobs.
+JOB_SUFFIX="${JOB_SUFFIX:-$(date +%Y%m%d-%H%M%S)}"
 
 mkdir -p "$RESULTS_DIR"
 
 run_bench() {
     local isl=$1 osl=$2 concurrency=$3
-    local filename="${RESULTS_DIR}/bench_isl${isl}_osl${osl}_conc${concurrency}_${TIMESTAMP}.json"
+    local filename="${RESULTS_DIR}/bench_isl${isl}_osl${osl}_conc${concurrency}_${JOB_SUFFIX}.json"
 
     echo "=== Running: ISL=${isl} OSL=${osl} max-concurrency=${concurrency} ==="
     vllm bench serve \
@@ -63,4 +65,3 @@ done
 
 echo ""
 echo "All benchmarks complete. Results in ${RESULTS_DIR}/"
-echo "Run: python plot_benchmarks.py ${RESULTS_DIR}/ to generate plots."
