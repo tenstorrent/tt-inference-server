@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import logging
+from dataclasses import dataclass
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
@@ -17,6 +18,12 @@ from workflows.workflow_config import (
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
+
+
+@dataclass(frozen=True)
+class WorkflowResult:
+    workflow_name: str
+    return_code: int
 
 
 class WorkflowSetup:
@@ -110,11 +117,14 @@ def run_single_workflow(model_spec, runtime_config, json_fpath):
     manager = WorkflowSetup(model_spec, runtime_config, json_fpath)
     manager.setup_workflow()
     return_code = manager.run_workflow_script()
-    return return_code
+    return WorkflowResult(
+        workflow_name=manager.workflow_config.name,
+        return_code=return_code,
+    )
 
 
 def run_workflows(model_spec, runtime_config, json_fpath):
-    return_codes = []
+    workflow_results = []
     if WorkflowType.from_string(runtime_config.workflow) == WorkflowType.RELEASE:
         logger.info("Running release workflow ...")
         done_trace_capture = False
@@ -131,16 +141,19 @@ def run_workflows(model_spec, runtime_config, json_fpath):
                 runtime_config.disable_trace_capture = True
             logger.info(f"Next workflow in release: {wf.name}")
             runtime_config.workflow = wf.name
-            return_code = run_single_workflow(model_spec, runtime_config, json_fpath)
-            return_codes.append(return_code)
+            workflow_results.append(
+                run_single_workflow(model_spec, runtime_config, json_fpath)
+            )
             done_trace_capture = True
-        return return_codes
+        return workflow_results
     else:
-        return_codes.append(run_single_workflow(model_spec, runtime_config, json_fpath))
+        workflow_results.append(
+            run_single_workflow(model_spec, runtime_config, json_fpath)
+        )
         if WorkflowType.from_string(runtime_config.workflow) != WorkflowType.REPORTS:
             runtime_config.workflow = WorkflowType.REPORTS.name
-            return_codes.append(
+            workflow_results.append(
                 run_single_workflow(model_spec, runtime_config, json_fpath)
             )
 
-    return return_codes
+    return workflow_results
