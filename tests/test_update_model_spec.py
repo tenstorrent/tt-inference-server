@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import json
 
 import pytest
@@ -10,6 +10,7 @@ from scripts.release.update_model_spec import (
     build_release_diff_records_from_git,
     generate_release_diff_outputs_from_git,
     main,
+    resolve_latest_release_branch_ref,
     update_template_fields,
 )
 
@@ -44,6 +45,49 @@ def make_snapshot(
         "template_key": build_template_key(impl_id, weights, devices, inference_engine),
         "occurrence_key": (impl_id, occurrence_index),
     }
+
+
+def test_resolve_latest_release_branch_ref_selects_highest_semver_branch():
+    repo_root = Path("/tmp/repo")
+    git_output = "\n".join(
+        [
+            "refs/heads/main main",
+            "refs/heads/stable stable",
+            "refs/heads/v0.9.0 v0.9.0",
+            "refs/remotes/origin/HEAD origin/HEAD",
+            "refs/remotes/origin/v0.10.0 origin/v0.10.0",
+            "refs/remotes/origin/patch-v0.10.0 origin/patch-v0.10.0",
+            "refs/heads/v0.11.0 v0.11.0",
+        ]
+    )
+
+    with patch(
+        "scripts.release.update_model_spec.subprocess.run",
+        return_value=Mock(returncode=0, stdout=git_output, stderr=""),
+    ):
+        assert resolve_latest_release_branch_ref(repo_root) == "v0.11.0"
+
+
+def test_resolve_latest_release_branch_ref_errors_without_release_branches():
+    repo_root = Path("/tmp/repo")
+    git_output = "\n".join(
+        [
+            "refs/heads/main main",
+            "refs/heads/stable stable",
+            "refs/remotes/origin/HEAD origin/HEAD",
+            "refs/remotes/origin/patch-v0.10.0 origin/patch-v0.10.0",
+        ]
+    )
+
+    with patch(
+        "scripts.release.update_model_spec.subprocess.run",
+        return_value=Mock(returncode=0, stdout=git_output, stderr=""),
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match="Could not find any release branches matching vMAJOR.MINOR.PATCH",
+        ):
+            resolve_latest_release_branch_ref(repo_root)
 
 
 def test_build_release_diff_records_from_git_includes_ci_and_manual_changes():
@@ -240,6 +284,86 @@ def test_generate_release_diff_outputs_from_git_handles_no_changes(tmp_path):
     assert json.loads(json_path.read_text()) == []
 
 
+def test_build_release_diff_records_from_git_uses_provided_base_ref():
+    model_spec_path = Path("/tmp/workflows/model_spec.py")
+    changed_snapshot = make_snapshot(
+        "ci_impl",
+        0,
+        "changed-text",
+        status="COMPLETE",
+        tt_metal_commit="bbbbbbb",
+        vllm_commit="2222222",
+    )
+
+    with patch(
+        "scripts.release.update_model_spec.read_git_base_model_spec_content",
+        return_value="base-content",
+    ) as read_base_mock, patch(
+        "scripts.release.update_model_spec.build_template_snapshots",
+        side_effect=[[changed_snapshot], [changed_snapshot]],
+    ):
+        build_release_diff_records_from_git(
+            model_spec_path,
+            current_content="current-content",
+            base_ref="origin/v0.10.0",
+        )
+
+    read_base_mock.assert_called_once_with(model_spec_path, ref="origin/v0.10.0")
+
+
+def test_release_diff_uses_latest_release_branch_not_head():
+    model_spec_path = Path("/tmp/workflows/model_spec.py")
+    current_snapshot = make_snapshot(
+        "release_impl",
+        0,
+        "release-template",
+        tt_metal_commit="bbbbbbb",
+        vllm_commit="2222222",
+        status="COMPLETE",
+    )
+    head_snapshot = make_snapshot(
+        "release_impl",
+        0,
+        "head-template",
+        tt_metal_commit="aaaaaaa",
+        vllm_commit="1111111",
+        status="FUNCTIONAL",
+    )
+
+    def read_base_content(_, ref=None):
+        if ref == "HEAD":
+            return "head-base"
+        return "release-base"
+
+    def build_snapshots(_, content, __):
+        if content == "head-base":
+            return [head_snapshot]
+        if content in {"release-base", "current-content"}:
+            return [current_snapshot]
+        raise AssertionError(f"Unexpected content: {content}")
+
+    with patch(
+        "scripts.release.update_model_spec.read_git_base_model_spec_content",
+        side_effect=read_base_content,
+    ), patch(
+        "scripts.release.update_model_spec.build_template_snapshots",
+        side_effect=build_snapshots,
+    ):
+        head_records = build_release_diff_records_from_git(
+            model_spec_path,
+            current_content="current-content",
+            base_ref="HEAD",
+        )
+        release_records = build_release_diff_records_from_git(
+            model_spec_path,
+            current_content="current-content",
+            base_ref="v0.10.0",
+        )
+
+    assert len(head_records) == 1
+    assert release_records == []
+
+
 def test_build_release_diff_records_from_git_rejects_duplicate_template_keys():
     model_spec_path = Path("/tmp/workflows/model_spec.py")
     duplicate_before_snapshots = [
@@ -421,6 +545,31 @@ def test_apply_release_version_to_manual_updates_from_git_updates_tt_metal_chang
     )
 
 
+def test_apply_release_version_to_manual_updates_from_git_uses_provided_base_ref(
+    tmp_path,
+):
+    model_spec_path = tmp_path / "workflows" / "model_spec.py"
+    model_spec_path.parent.mkdir(parents=True)
+    current_content = "spec_templates = []\n"
+    model_spec_path.write_text(current_content)
+
+    with patch(
+        "scripts.release.update_model_spec.read_git_base_model_spec_content",
+        return_value="base-content",
+    ) as read_base_mock, patch(
+        "scripts.release.update_model_spec.build_template_snapshots",
+        side_effect=[[], []],
+    ):
+        apply_release_version_to_manual_updates_from_git(
+            model_spec_path,
+            current_content,
+            "0.10.0",
+            base_ref="origin/v0.10.0",
+        )
+
+    read_base_mock.assert_called_once_with(model_spec_path, ref="origin/v0.10.0")
+
+
 def test_main_output_only_updates_release_version_before_generating_outputs(tmp_path):
     model_spec_path = tmp_path / "workflows" / "model_spec.py"
     model_spec_path.parent.mkdir(parents=True)
@@ -460,9 +609,12 @@ def test_main_output_only_updates_release_version_before_generating_outputs(tmp_
         "argparse.ArgumentParser.parse_args",
         return_value=args,
     ), patch(
+        "scripts.release.update_model_spec.resolve_latest_release_branch_ref",
+        return_value="origin/v0.10.0",
+    ), patch(
         "scripts.release.update_model_spec.apply_release_version_to_manual_updates_from_git",
         return_value=(updated_content, 1),
-    ), patch(
+    ) as apply_release_mock, patch(
         "scripts.release.update_model_spec.resolve_release_output_dir",
         return_value=release_output_dir,
     ), patch(
@@ -475,7 +627,9 @@ def test_main_output_only_updates_release_version_before_generating_outputs(tmp_
         main()
 
     assert model_spec_path.read_text() == updated_content
+    assert apply_release_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
     assert diff_mock.call_args.kwargs["current_content"] == updated_content
+    assert diff_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
     readme_mock.assert_called_once_with(model_spec_path, str(readme_path))
     export_mock.assert_called_once_with(model_spec_path, output_json_path)
 
@@ -513,6 +667,9 @@ def test_main_uses_resolved_release_output_dir_for_diff_outputs(tmp_path):
         "argparse.ArgumentParser.parse_args",
         return_value=args,
     ), patch(
+        "scripts.release.update_model_spec.resolve_latest_release_branch_ref",
+        return_value="origin/v0.10.0",
+    ), patch(
         "scripts.release.update_model_spec.resolve_release_output_dir",
         return_value=release_output_dir,
     ) as resolve_mock, patch(
@@ -525,4 +682,5 @@ def test_main_uses_resolved_release_output_dir_for_diff_outputs(tmp_path):
     resolve_mock.assert_called_once_with(None)
     export_mock.assert_called_once_with(model_spec_path, output_json_path)
     assert diff_mock.call_args.args[1] == release_output_dir
+    assert diff_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
     assert diff_mock.call_args.kwargs["current_content"] == "spec_templates = []\n"

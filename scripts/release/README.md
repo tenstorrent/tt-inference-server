@@ -165,7 +165,7 @@ python3 scripts/release/update_model_spec.py --output-only
   - `tt_metal_commit`: from Models CI run id, or manual edits.
   - `release_version`: where tt_metal_commit has been changed.
 - `default_model_spec.json`: all model specs fully expanded from the ModelSpecTemplates in `workflows/model_spec.py`
-- `release_logs/v{VERSION}/pre_release_models_diff.json`: summary of changed `ModelSpecTemplate` records derived from the git diff of `workflows/model_spec.py`, with CI links when available. This is used for post-release as well. and in `scripts/release/post_release.py`.
+- `release_logs/v{VERSION}/pre_release_models_diff.json`: summary of changed `ModelSpecTemplate` records derived from the git diff of `workflows/model_spec.py` against the previous release version branch, with CI links when available. This is used for post-release as well. and in `scripts/release/post_release.py`.
 - `release_logs/v{VERSION}/pre_release_models_diff.md`: This markdown version of `pre_release_models_diff.json` is used by `scripts/release/generate_release_notes.py`.
 - `release_logs/v{VERSION}/models_ci_all_results_*.json`: this has full Models CI parsed data for analysis
 - `release_logs/v{VERSION}/models_ci_last_good_*.json`: this may be used downstream for release process
@@ -258,6 +258,7 @@ After the release branch is completed, prepare the next release as development s
 git checkout main
 git pull
 git checkout -b post-release-vx.y.z
+git checkout vx.y.z -- release_logs
 ```
 
 ### step 8: run post_release.py
@@ -274,13 +275,15 @@ on `tt_metal_commit`, leave `release_version` unchanged.
 
 ```bash
 python3 scripts/release/post_release.py --increment minor
+rm -rf release_logs
 ```
 
 This helper:
 
 - increments `VERSION`
 - updates `workflows/model_spec.py` using `release_logs/v{VERSION}/pre_release_models_diff.json`
-- regenerates `default_model_spec.json` and model support docs
+- generates and stages `default_model_spec.json`
+- generates `doc/model_support`
 - writes `release_logs/post_release_pr.md`
 
 Open a PR from the post-release branch back to `main`. That PR carries the next
