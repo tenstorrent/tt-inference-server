@@ -71,9 +71,13 @@ class TestSPRunnerRequestConversion:
 
         mock_input = MagicMock()
         mock_output = MagicMock()
-        MockVideoShm.side_effect = lambda *a, **kw: (
-            mock_input if kw.get("mode") == "input" else mock_output
-        )
+
+        def mock_video_shm_factory(*args, **kwargs):
+            if kwargs.get("mode") == "input":
+                return mock_input
+            return mock_output
+
+        MockVideoShm.side_effect = mock_video_shm_factory
 
         h, w, c, n = 2, 3, 3, 1
         blob = bytes([0x01] * (n * h * w * c))
@@ -103,9 +107,13 @@ class TestSPRunnerRequestConversion:
 
         mock_input = MagicMock()
         mock_output = MagicMock()
-        MockVideoShm.side_effect = lambda *a, **kw: (
-            mock_input if kw.get("mode") == "input" else mock_output
-        )
+
+        def mock_video_shm_factory(*args, **kwargs):
+            if kwargs.get("mode") == "input":
+                return mock_input
+            return mock_output
+
+        MockVideoShm.side_effect = mock_video_shm_factory
 
         mock_output.read_response.return_value = VideoResponse(
             "tid", VideoStatus.SUCCESS, 1, 2, 2, 3, bytes(12), ""
@@ -125,9 +133,13 @@ class TestSPRunnerRequestConversion:
 
         mock_input = MagicMock()
         mock_output = MagicMock()
-        MockVideoShm.side_effect = lambda *a, **kw: (
-            mock_input if kw.get("mode") == "input" else mock_output
-        )
+
+        def mock_video_shm_factory(*args, **kwargs):
+            if kwargs.get("mode") == "input":
+                return mock_input
+            return mock_output
+
+        MockVideoShm.side_effect = mock_video_shm_factory
 
         mock_output.read_response.return_value = VideoResponse(
             "tid", VideoStatus.SUCCESS, 1, 2, 2, 3, bytes(12), ""
@@ -152,9 +164,13 @@ class TestSPRunnerResponseHandling:
 
         mock_input = MagicMock()
         mock_output = MagicMock()
-        MockVideoShm.side_effect = lambda *a, **kw: (
-            mock_input if kw.get("mode") == "input" else mock_output
-        )
+
+        def mock_video_shm_factory(*args, **kwargs):
+            if kwargs.get("mode") == "input":
+                return mock_input
+            return mock_output
+
+        MockVideoShm.side_effect = mock_video_shm_factory
 
         num_frames = 3
         blob = (
@@ -181,9 +197,13 @@ class TestSPRunnerResponseHandling:
 
         mock_input = MagicMock()
         mock_output = MagicMock()
-        MockVideoShm.side_effect = lambda *a, **kw: (
-            mock_input if kw.get("mode") == "input" else mock_output
-        )
+
+        def mock_video_shm_factory(*args, **kwargs):
+            if kwargs.get("mode") == "input":
+                return mock_input
+            return mock_output
+
+        MockVideoShm.side_effect = mock_video_shm_factory
 
         mock_output.read_response.return_value = VideoResponse(
             "tid", VideoStatus.ERROR, 0, 0, 0, 0, b"", "inference failed"
@@ -202,9 +222,13 @@ class TestSPRunnerResponseHandling:
 
         mock_input = MagicMock()
         mock_output = MagicMock()
-        MockVideoShm.side_effect = lambda *a, **kw: (
-            mock_input if kw.get("mode") == "input" else mock_output
-        )
+
+        def mock_video_shm_factory(*args, **kwargs):
+            if kwargs.get("mode") == "input":
+                return mock_input
+            return mock_output
+
+        MockVideoShm.side_effect = mock_video_shm_factory
 
         mock_output.read_response.return_value = None
 
@@ -515,9 +539,13 @@ class TestSPRunnerLifecycle:
 
         mock_input = MagicMock()
         mock_output = MagicMock()
-        MockVideoShm.side_effect = lambda *a, **kw: (
-            mock_input if kw.get("mode") == "input" else mock_output
-        )
+
+        def mock_video_shm_factory(*args, **kwargs):
+            if kwargs.get("mode") == "input":
+                return mock_input
+            return mock_output
+
+        MockVideoShm.side_effect = mock_video_shm_factory
 
         runner = SPRunner("dev0")
         runner.set_device()
@@ -551,9 +579,13 @@ class TestSPRunnerLifecycle:
 
         mock_input = MagicMock()
         mock_output = MagicMock()
-        MockVideoShm.side_effect = lambda *a, **kw: (
-            mock_input if kw.get("mode") == "input" else mock_output
-        )
+
+        def mock_video_shm_factory(*args, **kwargs):
+            if kwargs.get("mode") == "input":
+                return mock_input
+            return mock_output
+
+        MockVideoShm.side_effect = mock_video_shm_factory
 
         mock_output.read_response.return_value = None
 
