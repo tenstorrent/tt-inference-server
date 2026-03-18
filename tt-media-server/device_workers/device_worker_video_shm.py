@@ -70,6 +70,12 @@ def _collect_frames(
             break
 
         raw_frames.append(result)
+        logger.info(
+            f"Frame {len(raw_frames)}/{task_id}: "
+            f"status={result.status.name} "
+            f"{result.height}x{result.width}x{result.channels} "
+            f"({len(result.frame_data)} bytes)"
+        )
 
     if not raw_frames:
         return None, f"Runner returned zero frames for task {task_id}"
@@ -97,17 +103,8 @@ def device_worker_video_shm(
     logger = TTLogger()
     shutdown = False
 
-    input_shm_name = os.environ.get("TT_VIDEO_SHM_INPUT")
-    output_shm_name = os.environ.get("TT_VIDEO_SHM_OUTPUT")
-    if not input_shm_name or not output_shm_name:
-        error_queue.put(
-            (
-                worker_id,
-                -1,
-                "TT_VIDEO_SHM_INPUT and TT_VIDEO_SHM_OUTPUT env vars must be set",
-            )
-        )
-        return
+    input_shm_name = os.environ.get("TT_VIDEO_SHM_INPUT", "tt_video_in")
+    output_shm_name = os.environ.get("TT_VIDEO_SHM_OUTPUT", "tt_video_out")
 
     def is_shutdown() -> bool:
         return shutdown
@@ -167,7 +164,7 @@ def device_worker_video_shm(
                     result_queue.put((worker_id, task_id, frames))
                     logger.debug(
                         f"Worker {worker_id} task {task_id} completed "
-                        f"with {len(frames)} frames"
+                        f"with {frames.shape[1]} frames"
                     )
                 except Exception as e:
                     error_msg = (
