@@ -93,6 +93,7 @@ class ModelRunners(Enum):
     LLM_TEST = "llm_test"
     LLAMA_RUNNER = "llama_runner"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
+    TT_XLA_SDXL = "tt-xla-sdxl"
 
 
 class ModelServices(Enum):
@@ -117,6 +118,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW,
         ModelRunners.TT_QWEN_IMAGE,
         ModelRunners.TT_QWEN_IMAGE_2512,
+        ModelRunners.TT_XLA_SDXL,
     },
     ModelServices.LLM: {
         ModelRunners.VLLM,
@@ -184,6 +186,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
+    ModelRunners.TT_XLA_SDXL: {ModelNames.STABLE_DIFFUSION_XL_BASE},
 }
 
 
@@ -837,6 +840,13 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
+}
+
+ModelConfigs[(ModelRunners.TT_XLA_SDXL, DeviceTypes.P150X4)] = {
+    "device_mesh_shape": (1, 1),
+    "is_galaxy": False,
+    "device_ids": DeviceIds.DEVICE_IDS_4.value,
+    "max_batch_size": 1,
 }
 
 for runner in [
