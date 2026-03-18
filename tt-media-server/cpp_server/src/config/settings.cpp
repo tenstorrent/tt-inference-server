@@ -224,4 +224,13 @@ size_t maxQueueSize() {
       envUlong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));
 }
 
+std::string kvMigrationHost() {
+  return envString("KV_MIGRATION_HOST", defaults::KV_MIGRATION_HOST);
+}
+
+uint16_t kvMigrationPort() {
+  return static_cast<uint16_t>(
+      envUlong("KV_MIGRATION_PORT", defaults::KV_MIGRATION_PORT));
+}
+
 }  // namespace tt::config
