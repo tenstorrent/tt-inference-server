@@ -67,26 +67,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout tt-shield
-        uses: actions/checkout@v4
-        with:
-          repository: tenstorrent/tt-shield
-          path: .tt-shield
-          ref: main
-          sparse-checkout: .github
-          fetch-depth: 1
-          token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
-
-      - name: Copy model config files and generate script
+      - name: Copy model config files to generate script directory
         run: |
-          DEST=".tt-shield/.github/scripts/generate_model_ci_workflows"
+          DEST=".github/scripts/generate_model_ci_workflows"
           cp .github/workflows/models-ci-config.json "$DEST/models-ci-config.json"
           cp .github/workflows/models-ci-config-schema.json "$DEST/models-ci-config-schema.json"
 
       - name: Generate CI matrix
         id: set-matrix
         run: |
-          cd .tt-shield/.github/scripts/generate_model_ci_workflows
+          cd .github/scripts/generate_model_ci_workflows
 
           SCHEDULE="${{ inputs.schedule }}"
           echo "Generating matrices for schedule: $SCHEDULE"

@@ -1,0 +1,117 @@
+name: Find latest sha
+description: "Find the latest sha for a given ref"
+
+inputs:
+  ref:
+    description: "The ref to find the latest sha for"
+    required: true
+    default: "main"
+  repository:
+    description: "The repo to find the latest sha for"
+    required: true
+    default: "tenstorrent/vllm"
+  gh_token:
+    description: 'GitHub token'
+    required: false
+    default: ${{ github.token }}
+outputs:
+  latest_sha:
+    description: "The latest sha for the given ref"
+    value: ${{ steps.find-latest-sha.outputs.latest_sha }}
+  full_sha:
+    description: "The full sha for the given ref"
+    value: ${{ steps.find-latest-sha.outputs.full_sha }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Find latest sha
+      shell: bash
+      id: find-latest-sha
+      run: |
+        # Disable pipefail temporarily to handle broken pipe gracefully
+        set +o pipefail
+
+        # Function to make API call with exponential backoff
+        make_api_call() {
+            local attempt=1
+            local max_attempts=5
+            local backoff=1
+
+            while [ $attempt -le $max_attempts ]; do
+                echo "Attempt $attempt of $max_attempts..."
+
+                # Make the API call and capture both response and HTTP code
+                response=$(curl -s -w "\n%{http_code}" \
+                    -H "Authorization: token ${{ inputs.gh_token }}" \
+                    -H "Accept: application/vnd.github.v3+json" \
+                    "https://api.github.com/repos/${{inputs.repository}}/commits/${{inputs.ref}}")
+
+                # Split response and HTTP code
+                http_code=$(echo "$response" | tail -n1)
+                json_response=$(echo "$response" | sed '$d')
+
+                # Check for rate limiting (403 or 429)
+                if [ "$http_code" = "403" ] || [ "$http_code" = "429" ]; then
+                    # Check rate limit headers
+                    rate_limit_response=$(curl -s -I \
+                        -H "Authorization: token ${{ inputs.gh_token }}" \
+                        "https://api.github.com/rate_limit")
+
+                    echo "Rate limited. Waiting ${backoff} seconds before retry..."
+                    echo "Rate limit info:"
+                    echo "$rate_limit_response" | grep -i "x-ratelimit"
+
+                    sleep $backoff
+                    backoff=$((backoff * 2))
+                    attempt=$((attempt + 1))
+                    continue
+                fi
+
+                # Check for successful response
+                if [ "$http_code" = "200" ]; then
+                    echo "$json_response"
+                    return 0
+                fi
+
+                # Other errors
+                echo "HTTP $http_code error. Response: $json_response" >&2
+                sleep $backoff
+                backoff=$((backoff * 2))
+                attempt=$((attempt + 1))
+            done
+
+            echo "Failed after $max_attempts attempts" >&2
+            return 1
+        }
+
+        # Get the response with retry logic
+        response=$(make_api_call)
+
+        if [ $? -eq 0 ] && [ -n "$response" ]; then
+            # Save response to temp file to avoid pipe issues
+            echo "$response" > /tmp/github_response.json
+
+            # Extract sha using grep (simple and reliable for GitHub's JSON format)
+            full_sha=$(grep -o '"sha"[[:space:]]*:[[:space:]]*"[a-f0-9]*"' /tmp/github_response.json 2>/dev/null | head -1 | cut -d'"' -f4) || true
+
+            # Clean up temp file
+            rm -f /tmp/github_response.json
+
+            if [ -n "$full_sha" ]; then
+                short_sha=${full_sha:0:7}
+                echo "Latest sha: $short_sha"
+                echo "Full sha: $full_sha"
+
+                # Set output
+                echo "latest_sha=${short_sha}" >> $GITHUB_OUTPUT
+                echo "full_sha=${full_sha}" >> $GITHUB_OUTPUT
+            else
+                echo "Error: Could not extract SHA from response"
+                echo "Response preview: ${response:0:500}"
+                exit 1
+            fi
+        else
+            echo "Error: Failed to get valid response from GitHub API"
+            exit 1
+        fi

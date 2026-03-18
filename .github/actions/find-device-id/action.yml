@@ -1,0 +1,27 @@
+name: 'Find Device ID'
+description: 'Find device-id for a given device type'
+inputs:
+  device-type:
+    description: 'Device type'
+    required: true
+outputs:
+  device-id:
+    description: 'Device ID'
+    value: ${{ steps.find-device-id.outputs.device-id }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Find Device-ID From Devices Info
+      id: find-device-id
+      working-directory: .github/scripts
+      shell: bash
+      run: |
+        if command -v tt-smi-metal >/dev/null 2>&1; then
+          tt-smi-metal -s | tee device_info_${{ inputs.device-type }}.json
+          device_id=$(python3 find_pci_id.py device_info_${{ inputs.device-type }}.json ${{ inputs.device-type }})
+        else
+          echo "tt-smi-metal command not found, creating empty device info file"
+          echo "{}" > device_info_${{ inputs.device-type }}.json
+          device_id="not-specified"
+        fi
+        echo "device-id=${device_id}" >> $GITHUB_OUTPUT

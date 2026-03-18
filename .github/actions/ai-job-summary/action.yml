@@ -1,0 +1,356 @@
+name: AI Job Summary
+description: Use AI to summarize CI job logs
+
+inputs:
+  log-path:
+    description: Path to log file or directory containing logs
+    required: false
+    default: ""
+  job-url:
+    description: "GitHub job URL to fetch logs from (for testing). Example: https://github.com/org/repo/actions/runs/123/job/456"
+    required: false
+    default: ""
+  output-path:
+    description: Path to write the summary output file (default writes to .ai-summaries/ directory)
+    required: false
+    default: ""
+  output-format:
+    description: Output format (markdown or json)
+    required: false
+    default: markdown
+  add-to-step-summary:
+    description: Whether to append summary to GITHUB_STEP_SUMMARY
+    required: false
+    default: "false"
+  api-key:
+    description: TT Chat API key
+    required: true
+  api-url:
+    description: TT Chat API URL
+    required: true
+  api-model:
+    description: LLM model to use
+    required: false
+    default: anthropic/claude-sonnet-4-5-20250929
+  config-path:
+    description: Path to config file (defaults to tt-shield.yaml)
+    required: false
+    default: ""
+  job-status:
+    description: "Caller job status (e.g. from job.status). When 'success', skips LLM call and writes a minimal summary."
+    required: false
+    default: ""
+
+outputs:
+  summary-file:
+    description: Path to the generated summary file
+    value: ${{ steps.summarize.outputs.summary_file }}
+  summary-dir:
+    description: Directory containing all summary files (for artifact upload)
+    value: ${{ steps.summarize.outputs.summary_dir }}
+  summary-content:
+    description: The summary content (for direct use in subsequent steps)
+    value: ${{ steps.summarize.outputs.summary_content }}
+  status:
+    description: Status extracted from summary (SUCCESS, CRASHED, TESTS_FAILED, EVALS_BELOW_TARGET, UNKNOWN)
+    value: ${{ steps.summarize.outputs.status }}
+
+runs:
+  using: composite
+  steps:
+    - name: Download log from GitHub job URL
+      id: download-log
+      if: inputs.job-url != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        echo "::group::Download log from job URL"
+        JOB_URL="${{ inputs.job-url }}"
+        echo "Fetching log from: $JOB_URL"
+
+        # Parse the job URL to extract owner, repo, run_id, and job_id
+        # Format: https://github.com/OWNER/REPO/actions/runs/RUN_ID/job/JOB_ID
+        if [[ "$JOB_URL" =~ github\.com/([^/]+)/([^/]+)/actions/runs/([0-9]+)/job/([0-9]+) ]]; then
+          OWNER="${BASH_REMATCH[1]}"
+          REPO="${BASH_REMATCH[2]}"
+          RUN_ID="${BASH_REMATCH[3]}"
+          JOB_ID="${BASH_REMATCH[4]}"
+          echo "Parsed: owner=$OWNER repo=$REPO run_id=$RUN_ID job_id=$JOB_ID"
+        else
+          echo "::error::Could not parse job URL: $JOB_URL"
+          echo "Expected format: https://github.com/OWNER/REPO/actions/runs/RUN_ID/job/JOB_ID"
+          echo "::endgroup::"
+          exit 1
+        fi
+
+        # Create temp directory for downloaded log
+        mkdir -p /tmp/ai-summary-logs
+
+        # Download the job log using gh CLI
+        LOG_FILE="/tmp/ai-summary-logs/job_${JOB_ID}.log"
+        echo "Downloading log to: $LOG_FILE"
+
+        gh api "repos/${OWNER}/${REPO}/actions/jobs/${JOB_ID}/logs" > "$LOG_FILE" 2>&1 || {
+          echo "::error::Failed to download job log"
+          cat "$LOG_FILE" || true
+          echo "::endgroup::"
+          exit 1
+        }
+
+        echo "Downloaded $(wc -l < "$LOG_FILE") lines"
+
+        # Fetch job name from API
+        JOB_NAME=$(gh api "repos/${OWNER}/${REPO}/actions/jobs/${JOB_ID}" --jq '.name' 2>/dev/null || echo "")
+        echo "Job name: $JOB_NAME"
+
+        echo "log_file=$LOG_FILE" >> "$GITHUB_OUTPUT"
+        echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
+        echo "job_url=$JOB_URL" >> "$GITHUB_OUTPUT"
+        echo "job_name=$JOB_NAME" >> "$GITHUB_OUTPUT"
+        echo "::endgroup::"
+
+    - name: Find log file
+      id: find-log
+      shell: bash
+      run: |
+        echo "::group::Find log file"
+        # Use downloaded log if available, otherwise use log-path input
+        if [ -n "${{ steps.download-log.outputs.log_file }}" ]; then
+          LOG_FILE="${{ steps.download-log.outputs.log_file }}"
+          JOB_ID="${{ steps.download-log.outputs.job_id }}"
+          JOB_URL="${{ steps.download-log.outputs.job_url }}"
+          JOB_NAME="${{ steps.download-log.outputs.job_name }}"
+          echo "Using downloaded log: $LOG_FILE"
+          echo "log_file=$LOG_FILE" >> "$GITHUB_OUTPUT"
+          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
+          echo "job_url=$JOB_URL" >> "$GITHUB_OUTPUT"
+          echo "job_name=$JOB_NAME" >> "$GITHUB_OUTPUT"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+          exit 0
+        fi
+
+        LOG_INPUT="${{ inputs.log-path }}"
+
+        if [ -z "$LOG_INPUT" ]; then
+          echo "::error::Either log-path or job-url must be provided"
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+          exit 0
+        fi
+
+        if [ -f "$LOG_INPUT" ]; then
+          LOG_FILE="$LOG_INPUT"
+          echo "Found log file: $LOG_FILE"
+        elif [ -d "$LOG_INPUT" ]; then
+          # Pass directory through - extract.py will merge all .log files by timestamp
+          LOG_COUNT=$(find "$LOG_INPUT" -name "*.log" -type f 2>/dev/null | wc -l)
+          if [ "$LOG_COUNT" -eq 0 ]; then
+            echo "::warning::No .log files found in directory $LOG_INPUT"
+            echo "log_file=" >> "$GITHUB_OUTPUT"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::endgroup::"
+            exit 0
+          fi
+          LOG_FILE="$LOG_INPUT"
+          echo "Found log directory with $LOG_COUNT .log files - will merge by timestamp"
+        else
+          echo "::warning::Log path not found: $LOG_INPUT"
+          echo "log_file=" >> "$GITHUB_OUTPUT"
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+          exit 0
+        fi
+
+        if [ -z "$LOG_FILE" ]; then
+          echo "::warning::No log file/directory found at $LOG_INPUT"
+          echo "log_file=" >> "$GITHUB_OUTPUT"
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "log_file=$LOG_FILE" >> "$GITHUB_OUTPUT"
+          # Use GitHub context for job metadata when running in CI
+          JOB_ID="${GITHUB_JOB:-unknown}"
+          JOB_NAME="${GITHUB_JOB:-}"
+          if [ -n "$GITHUB_SERVER_URL" ] && [ -n "$GITHUB_REPOSITORY" ] && [ -n "$GITHUB_RUN_ID" ]; then
+            JOB_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          else
+            JOB_URL=""
+          fi
+          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
+          echo "job_url=$JOB_URL" >> "$GITHUB_OUTPUT"
+          echo "job_name=$JOB_NAME" >> "$GITHUB_OUTPUT"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+        fi
+        echo "::endgroup::"
+
+    - name: Install uv
+      if: steps.find-log.outputs.found == 'true'
+      uses: astral-sh/setup-uv@v5
+
+    - name: AI job summary
+      id: summarize
+      if: steps.find-log.outputs.found == 'true'
+      shell: bash
+      env:
+        TT_CHAT_API_KEY: ${{ inputs.api-key }}
+        TT_CHAT_URL: ${{ inputs.api-url }}
+        TT_CHAT_MODEL: ${{ inputs.api-model }}
+      run: |
+        LOG_FILE="${{ steps.find-log.outputs.log_file }}"
+        JOB_ID="${{ steps.find-log.outputs.job_id }}"
+        JOB_URL="${{ steps.find-log.outputs.job_url }}"
+        JOB_NAME="${{ steps.find-log.outputs.job_name }}"
+        OUTPUT_FORMAT="${{ inputs.output-format }}"
+
+        # Convert log path to absolute path (we'll cd later)
+        if [[ "$LOG_FILE" != /* ]]; then
+          LOG_FILE="$GITHUB_WORKSPACE/$LOG_FILE"
+        fi
+
+        # Check path exists (file or directory)
+        if [ ! -e "$LOG_FILE" ]; then
+          echo "::error::Log path not found: $LOG_FILE"
+          exit 1
+        fi
+
+        # Generate output path
+        # Default: .ai-summaries/ai_summary_<RUN_ID>_<JOB_ID>.md
+        # This allows multiple jobs in one run to write summaries to a shared directory
+        USER_OUTPUT="${{ inputs.output-path }}"
+        if [ -z "$USER_OUTPUT" ]; then
+          # Default - use .ai-summaries directory with run+job ID for uniqueness
+          SUMMARY_DIR="$GITHUB_WORKSPACE/.ai-summaries"
+          mkdir -p "$SUMMARY_DIR"
+          OUTPUT_FILE="${SUMMARY_DIR}/ai_summary_${GITHUB_RUN_ID}_${JOB_ID}.md"
+        elif [[ "$USER_OUTPUT" != /* ]]; then
+          # Relative path - make absolute
+          OUTPUT_FILE="$GITHUB_WORKSPACE/$USER_OUTPUT"
+        else
+          OUTPUT_FILE="$USER_OUTPUT"
+        fi
+
+        # Path to ai-summary tool
+        TOOL_DIR="${GITHUB_ACTION_PATH}/../../tools/ai-summary"
+
+        if [ ! -d "$TOOL_DIR" ]; then
+          echo "::error::ai-summary tool not found at $TOOL_DIR"
+          exit 1
+        fi
+
+        # Determine config path
+        CONFIG_PATH="${{ inputs.config-path }}"
+        if [ -z "$CONFIG_PATH" ]; then
+          CONFIG_PATH="$TOOL_DIR/config/tt-shield.yaml"
+        fi
+
+        # Ensure output directory exists
+        mkdir -p "$(dirname "$OUTPUT_FILE")"
+
+        echo "::group::Setup and run summarization"
+
+        # Enter tool directory, sync dependencies with uv, and run
+        cd "$TOOL_DIR"
+
+        # Install/sync dependencies with uv
+        uv sync --quiet
+
+        # Build command args as array (safer than eval with string interpolation)
+        CMD_ARGS=("$LOG_FILE" --output "$OUTPUT_FORMAT")
+        if [ -f "$CONFIG_PATH" ]; then
+          echo "Using config: $CONFIG_PATH"
+          CMD_ARGS+=(--config "$CONFIG_PATH")
+        fi
+        if [ -n "$JOB_URL" ]; then
+          CMD_ARGS+=(--job-url "$JOB_URL")
+        fi
+        if [ -n "$JOB_NAME" ]; then
+          CMD_ARGS+=(--job-name "$JOB_NAME")
+        fi
+        if [ "${{ inputs.job-status }}" == "success" ]; then
+          CMD_ARGS+=(--extract-only)
+        fi
+
+        # Run summarization using uv run
+        # Only redirect stdout to file; stderr goes to step log for visibility
+        echo "Summarizing: $LOG_FILE"
+        uv run ai-job-summary "${CMD_ARGS[@]}" > "$OUTPUT_FILE" || {
+          echo "::endgroup::"
+          echo "::warning::ai-job-summary failed, check logs"
+          cat "$OUTPUT_FILE" || true
+          echo "status=ERROR" >> "$GITHUB_OUTPUT"
+          echo "summary_file=" >> "$GITHUB_OUTPUT"
+          exit 0
+        }
+
+        echo "::endgroup::"
+
+        echo "Summary written to: $OUTPUT_FILE"
+        echo "summary_file=$OUTPUT_FILE" >> "$GITHUB_OUTPUT"
+        echo "summary_dir=$GITHUB_WORKSPACE/.ai-summaries" >> "$GITHUB_OUTPUT"
+
+        # Extract status from summary for easy consumption
+        if [ "$OUTPUT_FORMAT" == "json" ]; then
+          if grep -q '"has_crash": true' "$OUTPUT_FILE"; then
+            STATUS="CRASHED"
+          elif grep -q '"has_timeout": true' "$OUTPUT_FILE"; then
+            STATUS="TIMEOUT"
+          elif grep -q '"failed_tests": \[' "$OUTPUT_FILE" && ! grep -q '"failed_tests": \[\]' "$OUTPUT_FILE"; then
+            STATUS="TESTS_FAILED"
+          elif grep -q 'EVALS' "$OUTPUT_FILE"; then
+            STATUS="EVALS_BELOW_TARGET"
+          else
+            STATUS="SUCCESS"
+          fi
+        else
+          # Match only the header line (### emoji STATUS) to avoid matching LLM text
+          if grep -qE "^### .* CRASHED" "$OUTPUT_FILE"; then
+            STATUS="CRASHED"
+          elif grep -qE "^### .* TIMEOUT" "$OUTPUT_FILE"; then
+            STATUS="TIMEOUT"
+          elif grep -qE "^### .* TESTS FAILED" "$OUTPUT_FILE"; then
+            STATUS="TESTS_FAILED"
+          elif grep -qE "^### .* EVALS BELOW TARGET" "$OUTPUT_FILE"; then
+            STATUS="EVALS_BELOW_TARGET"
+          elif grep -qE "^### .* SUCCESS" "$OUTPUT_FILE"; then
+            STATUS="SUCCESS"
+          else
+            STATUS="UNKNOWN"
+          fi
+        fi
+        echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+        # Set summary content as output (truncate if too long for GH output)
+        CONTENT=$(cat "$OUTPUT_FILE")
+        if [ ${#CONTENT} -gt 50000 ]; then
+          CONTENT="${CONTENT:0:50000}... (truncated)"
+        fi
+
+        {
+          echo "summary_content<<SUMMARY_EOF"
+          echo "$CONTENT"
+          echo "SUMMARY_EOF"
+        } >> "$GITHUB_OUTPUT"
+
+        # Display summary in step log for easy viewing
+        echo ""
+        echo "========================================"
+        echo "          AI JOB SUMMARY"
+        echo "========================================"
+        cat "$OUTPUT_FILE"
+        echo "========================================"
+
+    - name: Add to step summary
+      if: steps.find-log.outputs.found == 'true' && inputs.add-to-step-summary == 'true' && steps.summarize.outputs.summary_file != ''
+      shell: bash
+      run: |
+        OUTPUT_FILE="${{ steps.summarize.outputs.summary_file }}"
+        OUTPUT_FORMAT="${{ inputs.output-format }}"
+
+        if [ "$OUTPUT_FORMAT" == "json" ]; then
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat "$OUTPUT_FILE" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+        else
+          cat "$OUTPUT_FILE" >> "$GITHUB_STEP_SUMMARY"
+        fi

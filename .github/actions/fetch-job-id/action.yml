@@ -1,0 +1,62 @@
+name: 'Fetch job ID'
+description: 'Fetch job ID for the current workflow run'
+inputs:
+  job_name:
+    description: 'Job name to fetch the ID for'
+    required: true
+outputs:
+  job_id:
+    description: 'Fetched job ID for the current workflow run'
+    value: ${{ steps.fetch-job-id-context.outputs.job-id || steps.fetch-job-id-fallback.outputs.job-id || steps.fetch-job-id-action.outputs.job-id }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Try to fetch job ID from GitHub context
+      id: fetch-job-id-context
+      env:
+        JOB_ID: ${{ job.check_run_id }}
+      shell: bash
+      run: |
+        echo "Attempting to fetch job ID for job name: '${{ inputs.job_name }}' from GitHub context..."
+
+        if [ -n "$JOB_ID" ]; then
+          echo "Fetched job ID from GitHub context: $JOB_ID for job name: '${{ inputs.job_name }}'"
+          echo "Capturing job-id output: $JOB_ID to GITHUB_OUTPUT..."
+          echo "job-id=$JOB_ID" >> "$GITHUB_OUTPUT"
+          echo "should_continue=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "Job ID not found in GitHub context for job name: '${{ inputs.job_name }}'!"
+          echo "Proceeding to check job name length..."
+          echo "should_continue=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    # NOTE: Due to job name length constraints when using tt-github-actions action (i.e. GitHub API limits),
+    # we first check the job name length here and fallback to an 'unknown' job ID
+    # if the job name is too long (> 200 characters).
+    - name: Fallback to unknown job ID if job name is too long
+      id: fetch-job-id-fallback
+      if: steps.fetch-job-id-context.outputs.should_continue == 'true'
+      shell: bash
+      run: |
+        job_name="${{ inputs.job_name }}"
+        job_name_length=${#job_name}
+        echo "Job name length: $job_name_length characters"
+
+        if [ $job_name_length -gt 200 ]; then
+          echo "Job name is too long (> 200 characters), using fallback job ID"
+          fallback_job_id="unknown_$(date +%s)"
+          echo "Capturing job-id output: $fallback_job_id to GITHUB_OUTPUT..."
+          echo "job-id=$fallback_job_id" >> "$GITHUB_OUTPUT"
+          echo "should_continue=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "Job name is under 200 characters, will use tt-github-actions/.github/actions/job_id to fetch job ID"
+          echo "Proceeding to fetch with tenstorrent/tt-github-actions/.github/actions/job_id@main..."
+          echo "should_continue=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Try to fetch job ID from tt-github-actions action
+      id: fetch-job-id-action
+      if: steps.fetch-job-id-context.outputs.should_continue == 'true' && steps.fetch-job-id-fallback.outputs.should_continue == 'true'
+      uses: tenstorrent/tt-github-actions/.github/actions/job_id@main
+      with:
+        job_name: ${{ inputs.job_name }}

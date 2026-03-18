@@ -39,20 +39,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout tt-shield
-        uses: actions/checkout@v4
-        with:
-          repository: tenstorrent/tt-shield
-          path: .tt-shield
-          ref: main
-          sparse-checkout: .github
-          fetch-depth: 1
-          token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
-
       - name: Resolve tt-metal SHA
         id: tt-metal
         if: ${{ inputs.tt-metal-ref != '' }}
-        uses: ./.tt-shield/.github/actions/find-latest-sha
+        uses: ./.github/actions/find-latest-sha
         with:
           ref: ${{ inputs.tt-metal-ref }}
           repository: tenstorrent/tt-metal
@@ -60,7 +50,7 @@ jobs:
       - name: Resolve tt-inference-server SHA
         id: inference-server
         if: ${{ inputs.inference-server-ref != '' }}
-        uses: ./.tt-shield/.github/actions/find-latest-sha
+        uses: ./.github/actions/find-latest-sha
         with:
           ref: ${{ inputs.inference-server-ref }}
           repository: tenstorrent/tt-inference-server
@@ -68,7 +58,7 @@ jobs:
       - name: Resolve vllm SHA
         id: vllm
         if: ${{ inputs.vllm-ref != '' }}
-        uses: ./.tt-shield/.github/actions/find-latest-sha
+        uses: ./.github/actions/find-latest-sha
         with:
           ref: ${{ inputs.vllm-ref }}
           repository: tenstorrent/vllm

@@ -1,0 +1,43 @@
+# CI Matrix Exclusions
+#
+# Use this file to exclude model/device combinations from CI matrices
+# without modifying the upstream model_spec.py
+#
+# Exclusion rules are applied in order. A model/device is excluded if it
+# matches ANY rule.
+#
+# Supported fields per rule:
+#   - model: Model name (exact match or substring)
+#   - device: Device type (e.g., GALAXY, N150, T3K)
+#   - schedule: Only exclude from this schedule (nightly, release, weekly, bi_weekly)
+#   - server_type: Only exclude from this server type (tt-inference-server, etc.)
+#   - reason: (optional) Reason for exclusion (for documentation)
+#
+# Examples:
+#
+# Exclude a specific model from all devices and schedules:
+#   - model: "Llama-3.1-8B-Instruct"
+#     reason: "Temporarily disabled due to flaky tests"
+#
+# Exclude all models on a specific device:
+#   - device: "P150X8"
+#     reason: "Hardware under maintenance"
+#
+# Exclude a specific model/device combination:
+#   - model: "Qwen3-32B"
+#     device: "GALAXY"
+#     reason: "OOM issues on GALAXY"
+#
+# Exclude only from nightly schedule:
+#   - model: "whisper-large-v3"
+#     schedule: "nightly"
+#     reason: "Only run on release"
+#
+# Exclude from a specific server type:
+#   - model: "stable-diffusion"
+#     server_type: "forge-media-inference-server"
+#     reason: "Use media-inference-server instead"
+
+exclusions:
+  - device: "GALAXY_BH"
+    reason: "Disabling GALAXY_BH jobs"

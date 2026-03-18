@@ -1,0 +1,64 @@
+name: Save build results to a JSON file
+description: "Saves build results to a JSON file uploaded as an artifact"
+
+inputs:
+  build-results:
+    description: "Build results to save"
+    required: true
+  artifact-name:
+    description: "The name of the artifact to upload"
+    required: true
+    default: "build-results"
+  json-file:
+    description: "The file path to save the build results"
+    required: true
+    default: "build-results.json"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Save build results as JSON file
+      id: save-build-results
+      shell: bash
+      run: |
+        build_results="${{ inputs.build-results }}"
+        json_file="${{ inputs.json-file }}"
+
+        echo "Saving build results to JSON file..."
+        echo "Input build results: "
+        echo "$build_results"
+        echo "Output JSON file: "
+        echo "$json_file"
+
+        python3 .github/actions/save-build-results/kvs_to_json.py "$build_results" "$json_file"
+
+        if [ $? -ne 0 ]; then
+          echo "ERROR: Failed to save build results to JSON file."
+          exit 1
+        fi
+
+        echo "✅ Build results saved successfully!"
+        echo "Generated JSON content:"
+        cat "$json_file"
+
+    - name: Upload file as an artifact
+      id: upload-artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.json-file }}
+
+    - name: Add artifact to job summary
+      shell: bash
+      run: |
+        echo "## 📦 Build Results Artifact" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Artifact Name:** \`${{ inputs.artifact-name }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📄 Contents Preview" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+        cat "${{ inputs.json-file }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY

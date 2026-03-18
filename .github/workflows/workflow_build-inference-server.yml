@@ -58,19 +58,9 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Checkout tt-shield
-      uses: actions/checkout@v4
-      with:
-        repository: tenstorrent/tt-shield
-        path: .tt-shield
-        ref: main
-        sparse-checkout: .github
-        fetch-depth: 1
-        token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
-
     - name: Fetch job id
       id: fetch-job-id
-      uses: ./.tt-shield/.github/actions/fetch-job-id
+      uses: ./.github/actions/fetch-job-id
       with:
         job_name: "build-${{ inputs.inference-server-type }}"
 
@@ -231,7 +221,7 @@ jobs:
 
     - name: Save build results to a file
       if: always()
-      uses: ./.tt-shield/.github/actions/save-build-results
+      uses: ./.github/actions/save-build-results
       with:
         build-results: |
           tt-metal-commit=${{ inputs.tt-metal-commit }}

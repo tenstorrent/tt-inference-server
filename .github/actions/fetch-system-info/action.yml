@@ -1,0 +1,39 @@
+name: 'Fetch system info'
+description: 'Fetch Tenstorrent device system information using tt-smi-metal and tt-topology'
+inputs:
+  runner-label:
+    description: 'Runner label'
+    required: false
+  output-path:
+    description: 'Optional path to save system info JSON file'
+    required: false
+outputs:
+  system_info:
+    description: 'Fetched system info as JSON'
+    value: ${{ steps.fetch.outputs.system_info }}
+  system_info_path:
+    description: 'Path to the fetched system info JSON file'
+    value: ${{ steps.fetch.outputs.system_info_path }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Fetch system info
+      id: fetch
+      shell: bash
+      run: |
+        system_info_path="${{ inputs.output-path }}"
+        if [ -z "$system_info_path" ]; then
+          system_info_path="$RUNNER_TEMP/system_info.json"
+        fi
+
+        fetch_system_info_cmd=("python3" "${{ github.workspace }}/.github/scripts/fetch_system_info.py" "--output-path" "$system_info_path" "--runner-label" "${{ inputs.runner-label }}" )
+        echo "Running command: ${fetch_system_info_cmd[*]}"
+        "${fetch_system_info_cmd[@]}"
+
+        echo "system_info_path=$system_info_path" >> "$GITHUB_OUTPUT"
+
+        echo "Capturing system_info output to GITHUB_OUTPUT..."
+        echo "system_info<<EOF" >> "$GITHUB_OUTPUT"
+        cat "$system_info_path" >> "$GITHUB_OUTPUT"
+        echo "" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"

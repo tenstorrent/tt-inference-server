@@ -1,0 +1,51 @@
+# Device-to-Runner Mappings Configuration
+# Defines how logical devices map to actual GitHub runner labels
+
+# Default mappings (apply to all schedules and models unless overridden)
+defaults:
+  N150:
+    label: "n150"
+    type: "n150"
+  N300:
+    label: "n300"
+    type: "n300"
+  T3K:
+    label: "llmbox"
+    type: "t3k"
+  GALAXY:
+    label: "6u"
+    type: "galaxy"
+  GALAXY_BH:
+    label: "bh-galaxy"
+    type: "galaxy"
+  P100:
+    label: "p100"
+    type: "p100"
+  P150X4:
+    label: "bh-qb-ae"
+    type: "p150x4"
+  P150X8:
+    label: "bh-lb"
+    type: "p150x8"
+  P300X2:
+    label: "bh-qb-ge"
+    type: "p300x2"
+
+# Overrides (each override MUST specify a schedule)
+# - If 'models' field is absent: override applies to ALL models on that schedule
+# - If 'models' field is present: override applies only to those specific models on that schedule
+overrides:
+  - schedule: "nightly"
+    devices:
+      N150:
+        label: "tt-ubuntu-2204-n150-stable"
+        type: "n150"
+      N300:
+        label: "tt-ubuntu-2204-n300-stable"
+        type: "n300"
+    models:
+      - "Llama-3.2-3B-Instruct"
+      - "Llama-3.2-11B-Vision-Instruct"
+      - "Mistral-7B-Instruct-v0.3"
+      - "Qwen2.5-VL-3B-Instruct"
+      - "Qwen2.5-VL-7B-Instruct"

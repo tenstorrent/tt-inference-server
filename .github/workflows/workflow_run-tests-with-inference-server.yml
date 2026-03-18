@@ -72,19 +72,9 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Checkout tt-shield
-      uses: actions/checkout@v4
-      with:
-        repository: tenstorrent/tt-shield
-        path: .tt-shield
-        ref: main
-        sparse-checkout: .github
-        fetch-depth: 1
-        token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
-
     - name: Fetch job id
       id: fetch-job-id
-      uses: ./.tt-shield/.github/actions/fetch-job-id
+      uses: ./.github/actions/fetch-job-id
       if: always() && !cancelled()
       with:
         job_name: "run-tests-with-inference-server (${{ matrix.workflow }}, ${{ matrix.config.model }}, ${{ matrix.config.runner.label }}, ${{ matrix.config.runner.type }}${{ matrix.config.impl && format(', {0}', matrix.config.impl) || '' }})"
@@ -99,7 +89,7 @@ jobs:
 
     - name: Find device-id
       id: find-device-id
-      uses: ./.tt-shield/.github/actions/find-device-id
+      uses: ./.github/actions/find-device-id
       with:
         device-type: ${{ matrix.config.runner.type }}
 
@@ -269,7 +259,7 @@ jobs:
       id: fetch-system-info
       if: always() && !cancelled()
       continue-on-error: true
-      uses: ./.tt-shield/.github/actions/fetch-system-info
+      uses: ./.github/actions/fetch-system-info
       with:
         runner-label: ${{ matrix.config.runner.label }}
 
@@ -337,7 +327,7 @@ jobs:
       id: summarize
       if: always() && !cancelled()
       continue-on-error: true
-      uses: ./.tt-shield/.github/actions/ai-job-summary
+      uses: ./.github/actions/ai-job-summary
       with:
         log-path: tt-inference-server/${{ env.WORKFLOW_LOGS }}
         output-path: tt-inference-server/${{ env.WORKFLOW_LOGS }}/ai_summaries/ai_summary_${{ steps.fetch-job-id.outputs.job_id }}.md
@@ -410,8 +400,8 @@ jobs:
         fi
 
         if [ "$GENERATE_EMPTY" = true ]; then
-          chmod +x .tt-shield/.github/scripts/generate-empty-report.sh
-          .tt-shield/.github/scripts/generate-empty-report.sh \
+          chmod +x .github/scripts/generate-empty-report.sh
+          .github/scripts/generate-empty-report.sh \
             "$REPORT_FILE" \
             "${{ steps.fetch-job-id.outputs.job_id }}" \
             "${{ matrix.config.model }}" \

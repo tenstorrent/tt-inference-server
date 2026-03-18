@@ -1,0 +1,13 @@
+[project]
+name = "generate-ci-matrix"
+version = "0.1.0"
+description = "CI matrix generation scripts"
+requires-python = ">=3.10"
+dependencies = [
+    "PyYAML>=6.0",
+    "pytest>=7.0",
+    "jsonschema>=4.0",
+]
+
+[tool.setuptools]
+py-modules = ["generate_ci_matrix"]
