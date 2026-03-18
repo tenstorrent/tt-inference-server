@@ -25,7 +25,8 @@ if project_root not in sys.path:
 
 from workflows.model_spec import ModelSpec
 from workflows.utils import (
-    get_weights_hf_cache_dir,
+    get_default_persistent_volume_root,
+    resolve_hf_snapshot_dir,
 )
 from workflows.validate_setup import _try_fix_path_permissions_for_uid
 from workflows.workflow_types import ModelSource, WorkflowVenvType
@@ -43,6 +44,7 @@ class SetupConfig:
     host_weights_dir: str = (
         None  # --host-weights-dir: host dir with pre-downloaded weights
     )
+    local_server: bool = False
     model_source: str = os.getenv(
         "MODEL_SOURCE", ModelSource.HUGGINGFACE.value
     )  # Either 'huggingface', 'local' or 'noaction'
@@ -74,17 +76,12 @@ class SetupConfig:
             f"volume_id_{self.model_spec.impl.impl_id}-{self.model_spec.model_name}"
         )
 
-        # Container paths (always set)
-        self.container_tt_metal_cache_dir = (
-            self.cache_root / "tt_metal_cache" / f"cache_{self.model_spec.model_name}"
-        )
-        # Default: weights downloaded into volume by ensure_weights_available()
-        self.container_model_weights_path = (
-            self.cache_root / "weights" / self.model_spec.model_name
-        )
-
-        # --host-volume: host bind mount for cache_root
+        if self.local_server and not self.host_volume:
+            self.host_volume = str(
+                get_default_persistent_volume_root(Path(self.repo_root))
+            )
         if self.host_volume:
+            self.host_volume = str(Path(self.host_volume).expanduser().resolve())
             self.persistent_volume_root = Path(self.host_volume)
             volume_dir_name = (
                 f"volume_id_{self.model_spec.impl.impl_id}"
@@ -98,6 +95,21 @@ class SetupConfig:
                 / f"cache_{self.model_spec.model_name}"
             )
 
+        if self.host_hf_cache:
+            self.host_hf_cache = str(Path(self.host_hf_cache).expanduser().resolve())
+        if self.host_weights_dir:
+            self.host_weights_dir = str(
+                Path(self.host_weights_dir).expanduser().resolve()
+            )
+
+        # container paths (always set)
+        self.container_tt_metal_cache_dir = (
+            self.cache_root / "tt_metal_cache" / f"cache_{self.model_spec.model_name}"
+        )
+        self.container_model_weights_path = (
+            self.cache_root / "weights" / self.model_spec.model_name
+        )
+
         # --host-hf-cache: readonly mount of host HF cache for weights
         if self.host_hf_cache and self.model_source == ModelSource.HUGGINGFACE.value:
             self.container_readonly_model_weights_dir = (
@@ -106,7 +118,9 @@ class SetupConfig:
             self.container_model_weights_mount_dir = (
                 self.container_readonly_model_weights_dir / self.model_spec.model_name
             )
-            snapshot_dir = get_weights_hf_cache_dir(self.model_spec.hf_weights_repo)
+            snapshot_dir = resolve_hf_snapshot_dir(
+                self.model_spec.hf_weights_repo, Path(self.host_hf_cache)
+            )
             if snapshot_dir:
                 self.update_host_model_weights_snapshot_dir(snapshot_dir)
 
@@ -122,7 +136,7 @@ class SetupConfig:
             self.host_model_weights_mount_dir = host_weights_path
             self.container_model_weights_path = self.container_model_weights_mount_dir
 
-        # LOCAL source: separate readonly bind mount (unchanged)
+        # Local source: separate readonly bind mount
         elif self.model_source == ModelSource.LOCAL.value:
             self.container_readonly_model_weights_dir = (
                 self.containter_user_home / "readonly_weights_mount"
@@ -133,7 +147,6 @@ class SetupConfig:
             model_weights_dir = os.getenv("MODEL_WEIGHTS_DIR")
             if model_weights_dir:
                 self.update_host_model_weights_mount_dir(Path(model_weights_dir))
-
         elif self.model_source == ModelSource.NOACTION.value:
             pass
 
@@ -214,6 +227,7 @@ class HostSetupManager:
         host_hf_cache: str = None,
         host_weights_dir: str = None,
         image_user: str = None,
+        local_server: bool = False,
     ):
         self.model_spec = model_spec
         self.automatic = automatic
@@ -222,6 +236,7 @@ class HostSetupManager:
             host_volume=host_volume,
             host_hf_cache=host_hf_cache,
             host_weights_dir=host_weights_dir,
+            local_server=local_server,
         )
         self.jwt_secret = jwt_secret
         self.hf_token = hf_token
@@ -275,25 +290,21 @@ class HostSetupManager:
 
     def check_setup(self) -> bool:
         if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
-            # Default (Docker volume, no host mount options): container handles download
             if (
                 not self.setup_config.host_hf_cache
-                and not self.setup_config.host_volume
+                and not self.setup_config.host_model_volume_root
                 and not self.setup_config.host_weights_dir
             ):
                 return True
-            # --host-hf-cache: check for existing HF cache snapshot
             if self.setup_config.host_hf_cache:
                 return self.check_model_weights_dir(
                     self.setup_config.host_model_weights_snapshot_dir
                 )
-            # --host-weights-dir: check host-provided weights directory
             if self.setup_config.host_weights_dir:
                 return self.check_model_weights_dir(
                     Path(self.setup_config.host_weights_dir)
                 )
-            # --host-volume (without --host-hf-cache): check host volume dir
-            if self.setup_config.host_volume:
+            if self.setup_config.host_model_volume_root:
                 host_weights_dir = (
                     self.setup_config.host_model_volume_root
                     / "weights"
@@ -313,18 +324,14 @@ class HostSetupManager:
     def check_disk_space(self) -> bool:
         if self.setup_config.model_source != ModelSource.HUGGINGFACE.value:
             return True
-        # --host-weights-dir: weights already exist, skip disk check
         if self.setup_config.host_weights_dir:
             return True
-        # Determine which path to check disk space for
         if self.setup_config.host_hf_cache:
             check_path = self.setup_config.host_hf_cache
-        elif self.setup_config.host_volume:
+        elif self.setup_config.host_model_volume_root:
             check_path = str(self.setup_config.host_model_volume_root)
         else:
-            # Docker volume mode: Docker manages storage, skip disk check
             return True
-
         total, used, free = shutil.disk_usage(check_path)
         free_gb = free // (1024**3)
         if free_gb >= self.model_spec.min_disk_gb:
@@ -360,6 +367,19 @@ class HostSetupManager:
             f"❌ Insufficient RAM: {int(available_gb)}GB (Required: {self.model_spec.min_ram_gb}GB)"
         )
         return False
+
+    def get_hf_env_vars(self):
+        self.hf_token = self.hf_token or os.getenv("HF_TOKEN", "")
+        if not self.hf_token and not self.automatic:
+            self.hf_token = getpass.getpass("Enter your HF_TOKEN: ").strip()
+        assert self.check_hf_access(self.hf_token), "⛔ HF_TOKEN validation failed."
+
+        if self.setup_config.host_hf_cache:
+            hf_home = Path(self.setup_config.host_hf_cache)
+            hf_home.mkdir(parents=True, exist_ok=True)
+            os.environ["HOST_HF_HOME"] = str(hf_home)
+            os.environ["HF_HOME"] = str(hf_home)
+            logger.info(f"✅ HF_HOME set to {self.setup_config.host_hf_cache}")
 
     def check_hf_access(self, token: str) -> int:
         if not token or not token.startswith("hf_"):
@@ -409,6 +429,7 @@ class HostSetupManager:
             print("1) Download from Hugging Face (default)")
             print("2) Local folder")
             choice = input("Enter your choice: ").strip() or "1"
+            # Map numeric choice to source type
             if choice == "1":
                 self.setup_config.model_source = ModelSource.HUGGINGFACE.value
             elif choice == "2":
@@ -417,19 +438,7 @@ class HostSetupManager:
                 raise ValueError("⛔ Invalid model source choice.")
 
         if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
-            # Validate HF token access
-            self.hf_token = self.hf_token or os.getenv("HF_TOKEN", "")
-            if not self.hf_token and not self.automatic:
-                self.hf_token = getpass.getpass("Enter your HF_TOKEN: ").strip()
-            assert self.check_hf_access(self.hf_token), "⛔ HF_TOKEN validation failed."
-
-            # Set HF_HOME for --host-hf-cache mode
-            if self.setup_config.host_hf_cache:
-                hf_home = Path(self.setup_config.host_hf_cache)
-                hf_home.mkdir(parents=True, exist_ok=True)
-                os.environ["HF_HOME"] = str(hf_home)
-                logger.info(f"✅ HF_HOME set to {self.setup_config.host_hf_cache}")
-
+            self.get_hf_env_vars()
         elif self.setup_config.model_source == ModelSource.LOCAL.value:
             if self.automatic:
                 _host_model_weights_mount_dir = os.getenv("MODEL_WEIGHTS_DIR")
@@ -444,7 +453,6 @@ class HostSetupManager:
             self.setup_config.update_host_model_weights_mount_dir(
                 Path(_host_model_weights_mount_dir)
             )
-
         assert self.check_disk_space(), "⛔ Insufficient disk space."
 
         if not self.jwt_secret:
@@ -509,15 +517,15 @@ class HostSetupManager:
         logger.info("✅ Weight repacking completed.")
 
     def setup_weights_huggingface(self):
-        # --host-weights-dir: weights already provided, skip download
         if self.setup_config.host_weights_dir:
             logger.info(
                 f"Using pre-downloaded weights from --host-weights-dir: {self.setup_config.host_weights_dir}"
             )
             return
-
-        if not self.setup_config.host_hf_cache and not self.setup_config.host_volume:
-            # Docker volume mode: container downloads on startup via ensure_weights_available()
+        if (
+            not self.setup_config.host_hf_cache
+            and not self.setup_config.host_model_volume_root
+        ):
             logger.info(
                 "Weights will be downloaded into Docker volume on first container start"
             )
@@ -526,7 +534,6 @@ class HostSetupManager:
         assert self.hf_token, "⛔ HF_TOKEN not set."
         if self.model_spec.repacked == 1:
             raise ValueError("⛔ Repacked models are not supported for Hugging Face.")
-
         # setup venv using uv
         venv_config = VENV_CONFIGS[WorkflowVenvType.HF_SETUP]
         venv_config.setup(model_spec=self.model_spec)
@@ -537,53 +544,52 @@ class HostSetupManager:
             f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
         )
         hf_repo = self.model_spec.hf_weights_repo
-
         if self.setup_config.host_hf_cache:
-            # --host-hf-cache: download to host HF cache (standard hf download)
+            os.environ["HOST_HF_HOME"] = self.setup_config.host_hf_cache
             os.environ["HF_HOME"] = self.setup_config.host_hf_cache
-            # fmt: off
             cmd = [
                 str(hf_exec),
-                "download", hf_repo,
-                "--exclude", "original/**",
+                "download",
+                hf_repo,
+                "--exclude",
+                "original/**",
             ]
-            # fmt: on
             logger.info(f"Downloading model to host HF cache: {hf_repo}")
             logger.info(f"Command: {shlex.join(cmd)}")
             result = subprocess.run(cmd)
             assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
-            self.setup_config.update_host_model_weights_snapshot_dir(
-                get_weights_hf_cache_dir(self.model_spec.hf_weights_repo),
+            snapshot_dir = resolve_hf_snapshot_dir(
+                self.model_spec.hf_weights_repo, Path(self.setup_config.host_hf_cache)
             )
+            self.setup_config.update_host_model_weights_snapshot_dir(snapshot_dir)
             logger.info(
                 f"✅ Using weights directory: {self.setup_config.host_model_weights_mount_dir}"
             )
             return
 
-        if self.setup_config.host_volume:
-            # --host-volume: download directly into host volume dir
-            host_weights_dir = (
-                self.setup_config.host_model_volume_root
-                / "weights"
-                / self.model_spec.model_name
-            )
-            if self.check_model_weights_dir(host_weights_dir):
-                logger.info("Weights already exist in host volume, skipping download")
-                return
-            host_weights_dir.mkdir(parents=True, exist_ok=True)
-            # fmt: off
-            cmd = [
-                str(hf_exec),
-                "download", hf_repo,
-                "--local-dir", str(host_weights_dir),
-                "--exclude", "original/**",
-            ]
-            # fmt: on
-            logger.info(f"Downloading model to host volume: {hf_repo}")
-            logger.info(f"Command: {shlex.join(cmd)}")
-            result = subprocess.run(cmd)
-            assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
-            logger.info(f"✅ Using weights directory: {host_weights_dir}")
+        host_weights_dir = (
+            self.setup_config.host_model_volume_root
+            / "weights"
+            / self.model_spec.model_name
+        )
+        if self.check_model_weights_dir(host_weights_dir):
+            logger.info("Weights already exist in host volume, skipping download")
+            return
+        host_weights_dir.mkdir(parents=True, exist_ok=True)
+        cmd = [
+            str(hf_exec),
+            "download",
+            hf_repo,
+            "--local-dir",
+            str(host_weights_dir),
+            "--exclude",
+            "original/**",
+        ]
+        logger.info(f"Downloading model to host volume: {hf_repo}")
+        logger.info(f"Command: {shlex.join(cmd)}")
+        result = subprocess.run(cmd)
+        assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
+        logger.info(f"✅ Using weights directory: {host_weights_dir}")
 
     def setup_weights_local(self):
         if self.setup_config.host_model_weights_mount_dir.exists():
@@ -604,11 +610,13 @@ class HostSetupManager:
                 continue
             dir_path.mkdir(parents=True, exist_ok=True)
 
-        if self.image_user is None:
+        if (
+            self.setup_config.local_server
+            or self.image_user is None
+            or not self.setup_config.persistent_volume_root
+        ):
             return
         volume_root = self.setup_config.persistent_volume_root
-        if not volume_root:
-            return
         for dir_path in dirs_to_create:
             if not dir_path:
                 continue
@@ -642,6 +650,9 @@ class HostSetupManager:
 
     def run_setup(self):
         self.make_host_dirs()
+        if self.setup_config.local_server:
+            logger.info("✅ resolved local-server host storage paths")
+            return
         setup_completed = self.check_setup()
         if setup_completed:
             return
@@ -659,6 +670,7 @@ def setup_host(
     host_hf_cache=None,
     host_weights_dir=None,
     image_user=None,
+    local_server=False,
 ):
     automatic = bool(automatic_setup)
 
@@ -671,6 +683,7 @@ def setup_host(
         host_hf_cache=host_hf_cache,
         host_weights_dir=host_weights_dir,
         image_user=image_user,
+        local_server=local_server,
     )
     manager.run_setup()
     return manager.setup_config
@@ -684,9 +697,9 @@ def main():
         help="Replicate release workflow: run check_model_weights_dir and exit (for local/CI debug).",
     )
     parser.add_argument(
-        "--runtime-model-spec-json",
+        "--model-spec-json",
         type=str,
-        help="Path to runtime model spec JSON file (required for --check-weights or full setup).",
+        help="Path to model spec JSON file (required for --check-weights or full setup).",
         default=None,
     )
     parser.add_argument(
@@ -729,14 +742,14 @@ def main():
     args = parser.parse_args()
 
     if args.check_weights:
-        if not args.runtime_model_spec_json:
+        if not args.model_spec_json:
             print(
-                "[setup_host] --check-weights requires --runtime-model-spec-json",
+                "[setup_host] --check-weights requires --model-spec-json",
                 file=sys.stderr,
                 flush=True,
             )
             sys.exit(2)
-        model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+        model_spec = ModelSpec.from_json(args.model_spec_json)
         manager = HostSetupManager(
             model_spec=model_spec,
             jwt_secret=args.jwt_secret or "",
@@ -774,11 +787,9 @@ def main():
         )
         sys.exit(0 if ok else 1)
 
-    if not args.runtime_model_spec_json:
-        parser.error(
-            "Full setup requires --runtime-model-spec-json (or use --check-weights)."
-        )
-    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    if not args.model_spec_json:
+        parser.error("Full setup requires --model-spec-json (or use --check-weights).")
+    model_spec = ModelSpec.from_json(args.model_spec_json)
     raise NotImplementedError("⛔ Not implemented")
     setup_host(
         model_spec=model_spec,

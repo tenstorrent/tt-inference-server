@@ -45,7 +45,7 @@ python3 run.py --model Llama-3.2-1B-Instruct --tt-device n150 --workflow benchma
   - [Required Arguments](#required-arguments)
   - [Model and Device Arguments](#model-and-device-arguments)
   - [Server Arguments](#server-arguments)
-  - [Docker Volume Options](#docker-volume-options)
+  - [Host Storage Options](#host-storage-options)
   - [Advanced Arguments](#advanced-arguments)
 - [Serving LLMs with vLLM](#serving-llms-with-vllm)
   - [Server Workflow](#server-workflow)
@@ -110,24 +110,24 @@ You will need to accept the terms for any specific gated datasets or model repos
 | Option                   | Default | Description                                                                 |
 |--------------------------|---------|-----------------------------------------------------------------------------|
 | `--docker-server`        | false   | Run inference server inside a Docker container.                             |
-| `--local-server`         | false   | Run inference server on localhost (not yet implemented).                    |
+| `--local-server`         | false   | Run the vLLM inference server directly on the host. Requires `--tt-metal-home` and host-backed persistence for logs and TT caches. |
 | `-it`, `--interactive`   | false   | Run Docker in interactive mode (`sleep infinity`).                          |
 | `--service-port`         | `8000`  | Service port. Also reads from `$SERVICE_PORT` env var.                     |
 | `--no-auth`              | false   | Disable vLLM API key authorization (skips `JWT_SECRET` requirement).       |
 | `--print-docker-cmd`     | false   | Print the generated Docker run command and exit without starting.          |
 
-### Docker Volume Options
+### Host Storage Options
 
-When using `--docker-server`, these options control how model weights and caches are persisted. Only one of `--host-volume`, `--host-hf-cache`, `--host-weights-dir` can be specified at a time.
+When using `--docker-server`, these options control how model weights and caches are persisted. For `--local-server`, they select the weights source while TT caches and logs still use a host persistent volume root. Only one of `--host-volume`, `--host-hf-cache`, `--host-weights-dir` can be specified explicitly at a time.
 
 | Option              | Default                | Description                                                                 |
 |---------------------|------------------------|-----------------------------------------------------------------------------|
-| `--host-volume`     | None (Docker named volume) | Host directory for persistent cache volume (bind mount).               |
-| `--host-hf-cache`   | None                   | Host HuggingFace cache directory to mount readonly for model weights.      |
-| `--host-weights-dir` | None                  | Host directory with pre-downloaded model weights to mount readonly.        |
-| `--image-user`      | `1000`                 | UID passed to `docker run --user`. Must match the UID the image was built with. Default release images use UID `1000`. Only override when using a custom image built with a different UID. |
+| `--host-volume`     | None for Docker, repo `persistent_volume/` for local when omitted | Host directory for persistent cache/log/tensor storage. |
+| `--host-hf-cache`   | None                   | Host HuggingFace cache directory to reuse for model weights. Bare `--host-hf-cache` defaults to `HOST_HF_HOME`, then `HF_HOME`, then `~/.cache/huggingface`. |
+| `--host-weights-dir` | None                  | Host directory with pre-downloaded model weights. |
+| `--image-user`      | `1000`                 | UID passed to `docker run --user`. Docker only; `--local-server` ignores this flag and runs as the invoking host user. Must match the UID the image was built with. Default release images use UID `1000`. Only override when using a custom image built with a different UID. |
 
-See [Docker Volume Options](../workflows/README.md#docker-volume-options) in the workflows reference for detailed descriptions of each strategy and file permission requirements.
+See [Host Storage Options](../workflows/README.md#host-storage-options) in the workflows reference for detailed descriptions of each strategy and file permission requirements.
 
 ### Advanced Arguments
 
@@ -153,8 +153,9 @@ This section describes how to use `run.py` automation to also run the inference 
 
 **Options:**
 1. `run.py --docker-server`: automates Docker image pull, weight download, host setup, and container launch.
-2. Direct `docker run`: use the container interface with `--model` and `--tt-device` (see [Direct Docker Run](#direct-docker-run)).
-3. Custom: build tt-metal and vLLM from source.
+2. `run.py --local-server`: launches the vLLM server directly from a host tt-metal checkout while reusing host filesystem storage.
+3. Direct `docker run`: use the container interface with `--model` and `--tt-device` (see [Direct Docker Run](#direct-docker-run)).
+4. Custom: build tt-metal and vLLM from source.
 
 Each combination of `{model_name}` and `{tt-device}` corresponds to a specific run configuration. Loading model weights to the device, starting the model, and compiling kernel binaries for all input sizes can take several minutes (e.g. ~5 minutes for 70B+ models).
 
@@ -195,9 +196,22 @@ INFO: Stop running container via: docker stop 6b8c7038a44a
 
 The running container can be viewed with `docker ps -a` and stopped with `docker stop <container-id>`.
 
+#### Local server
+
+To run the vLLM server directly on the host, use `--local-server` and point `--tt-metal-home` at a built tt-metal checkout containing `python_env/` and `build/lib/`:
+
+```bash
+python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow server \
+  --local-server --tt-metal-home /opt/tt-metal
+```
+
+If you omit all host storage flags, local server runs use `REPO_ROOT/persistent_volume/` for logs, TT caches, and downloaded weights. `--host-hf-cache` reuses an existing Hugging Face cache for weights, and `--host-weights-dir` points at a pre-downloaded weights directory. In both of those modes, TT caches and logs still use the host volume path.
+
+Because `--local-server` launches a host process, it uses the invoking host user's permissions. If that `persistent_volume/` tree was previously created by Docker or another UID, fix ownership or permissions before retrying. `--image-user` does not apply here.
+
 #### Direct Docker Run
 
-The inference server container can be used independently from `run.py` via a direct `docker run` command. The container entrypoint (`run_vllm_api_server.py`) accepts `--model` and `--tt-device` to resolve the model configuration from a bundled model spec catalog (`default_model_spec.json`).
+The inference server container can be used independently from `run.py` via a direct `docker run` command. The container entrypoint (`run_vllm_api_server.py`) accepts `--model` and `--tt-device` to resolve the model configuration from a bundled model spec catalog (`model_spec.json`).
 
 ```bash
 docker run \
@@ -242,11 +256,13 @@ If not set via `.env` or environment, `run.py` will prompt interactively on firs
 
 By default (Docker named volume mode), model weights are downloaded inside the container on first start via `ensure_weights_available()`. No host-side download is needed.
 
-When using `--host-volume` or `--host-hf-cache`, weights are downloaded on the host by `setup_host()` before container launch. When using `--host-weights-dir`, weights are assumed to already exist at the specified path.
+When using `--host-volume` or `--host-hf-cache` with `--docker-server`, weights are downloaded on the host by `setup_host()` before container launch. When using `--host-weights-dir`, weights are assumed to already exist at the specified path.
 
-**Permissions note:** The container runs as a non-root user with no root-level entrypoint. The runtime UID is baked into the image (UID `1000` for default release images). When using `--host-volume`, the host directory must be writable by that UID (e.g. `sudo chown 1000 <path>`). When using `--host-hf-cache` or `--host-weights-dir`, the host path is mounted readonly and only needs read access; TT Metal caches are stored in a separate Docker named volume. The default Docker named volume strategy requires no host permission setup.
+For `--local-server`, `setup_host()` resolves the host paths and creates the cache root, but the local vLLM process handles downloads itself unless `MODEL_WEIGHTS_DIR` is pointed at an existing `--host-hf-cache` snapshot or `--host-weights-dir`.
 
-See [Docker Volume Options](../workflows/README.md#docker-volume-options) for details on each strategy.
+**Permissions note for Docker modes:** The container runs as a non-root user with no root-level entrypoint. The runtime UID is baked into the image (UID `1000` for default release images). When using `--host-volume`, the host directory must be writable by that UID (e.g. `sudo chown 1000 <path>`). When using `--host-hf-cache` or `--host-weights-dir`, the host path is mounted readonly and only needs read access; TT Metal caches are stored in a separate Docker named volume. The default Docker named volume strategy requires no host permission setup. For `--local-server`, the host process instead uses the current host user's permissions.
+
+See [Host Storage Options](../workflows/README.md#host-storage-options) for details on each strategy.
 
 ##### Release Docker Images
 

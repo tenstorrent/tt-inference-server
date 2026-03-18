@@ -12,9 +12,9 @@ namespace llm_engine {
 
 class Block {
  public:
-  explicit Block(int block_id);
+  explicit Block(int blockId);
 
-  void update(int64_t hash, std::vector<int64_t> token_ids);
+  void update(int64_t hash, std::vector<int64_t> tokenIds);
   void reset();
 
   int block_id = 0;
@@ -25,20 +25,20 @@ class Block {
 
 class BlockManager {
  public:
-  BlockManager(int num_blocks, int block_size);
+  BlockManager(int numBlocks, int blockSize);
 
-  static int64_t compute_hash(const std::vector<int64_t>& token_ids,
-                              int64_t prefix = -1);
+  static int64_t computeHash(const std::vector<int64_t>& tokenIds,
+                             int64_t prefix = -1);
 
-  bool can_allocate(const Sequence& seq) const;
+  bool canAllocate(const Sequence& seq) const;
   void allocate(Sequence& seq);
   void deallocate(Sequence& seq);
-  bool can_append(const Sequence& seq) const;
-  void may_append(Sequence& seq);
+  bool canAppend(const Sequence& seq) const;
+  void mayAppend(Sequence& seq);
 
  private:
-  Block& allocate_block(int block_id);
-  void deallocate_block(int block_id);
+  Block& allocateBlock(int blockId);
+  void deallocateBlock(int blockId);
 
   int block_size_;
   std::vector<Block> blocks_;

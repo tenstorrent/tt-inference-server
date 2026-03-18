@@ -18,7 +18,7 @@
 namespace sp_pipeline {
 
 using DecodeCallback = std::function<void(const llm_engine::TokenResult&)>;
-using DecodeQueue = ConcurrentQueue<llm_engine::TokenResult>;
+using DecodeQueue = LockFreeConcurrentQueue<llm_engine::TokenResult>;
 
 class SpPipelineModelRunner {
  public:
@@ -28,9 +28,8 @@ class SpPipelineModelRunner {
   SpPipelineModelRunner(const SpPipelineModelRunner&) = delete;
   SpPipelineModelRunner& operator=(const SpPipelineModelRunner&) = delete;
 
-  void write(const std::string& task_id,
-                     const std::vector<int64_t>& token_ids,
-                     uint32_t max_tokens);
+  void write(const std::string& taskId, const std::vector<int64_t>& tokenIds,
+             uint32_t maxTokens);
   void exit();
 
  private:
@@ -38,14 +37,16 @@ class SpPipelineModelRunner {
     ShmNames() {
       const char* c2p = std::getenv("TT_IPC_SHM_C2P");
       const char* p2c = std::getenv("TT_IPC_SHM_P2C");
-      write = c2p ? std::string(c2p) : throw std::runtime_error("TT_IPC_SHM_C2P not set");
-      read = p2c ? std::string(p2c) : throw std::runtime_error("TT_IPC_SHM_P2C not set");
+      write = c2p ? std::string(c2p)
+                  : throw std::runtime_error("TT_IPC_SHM_C2P not set");
+      read = p2c ? std::string(p2c)
+                 : throw std::runtime_error("TT_IPC_SHM_P2C not set");
     }
     std::string write;
     std::string read;
   };
 
-  void reader_loop();
+  void readerLoop();
 
   DecodeCallback decode_callback_;
   ShmNames shm_names_;

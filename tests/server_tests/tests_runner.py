@@ -3,9 +3,9 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import json
+import logging
 import os
 import time
-import logging
 from datetime import datetime
 from typing import List
 
@@ -58,9 +58,14 @@ class ServerRunner:
                     descrtiption=case.description,
                 )
                 self.reports.append(report)
-                logger.info(
-                    f"✅ Test case {test_name} passed in {duration:.2f}s after {attempts} attempt(s)"
-                )
+                if report.success:
+                    logger.info(
+                        f"✅ Test case {test_name} passed in {duration:.2f}s after {attempts} attempt(s)"
+                    )
+                else:
+                    logger.error(
+                        f"❌ Test case {test_name} failed in {duration:.2f}s after {attempts} attempt(s)"
+                    )
 
             except SystemExit as e:
                 duration = time.perf_counter() - start_time

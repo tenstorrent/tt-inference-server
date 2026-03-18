@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+import logging
 import os
 import time
 import traceback
@@ -10,6 +11,9 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict
 
 from tests.server_tests.test_classes import TestConfig
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 
 class BaseTest(ABC):
@@ -31,7 +35,7 @@ class BaseTest(ABC):
 
         for attempt in range(self.retry_attempts + 1):
             try:
-                print(
+                logger.info(
                     f"Running tests (attempt {attempt + 1}/{self.retry_attempts + 1})"
                 )
 
@@ -41,7 +45,12 @@ class BaseTest(ABC):
                     )
                 )
 
-                print("Tests completed successfully")
+                success = result.get("success", False)
+                if success:
+                    logger.info("Tests completed successfully")
+                else:
+                    logger.error("Tests failed")
+
                 # Return both result and logs
                 return {
                     "success": True if result.get("success", False) else False,
@@ -53,7 +62,7 @@ class BaseTest(ABC):
             except asyncio.TimeoutError as e:
                 last_exception = e
                 error_msg = f"Tests timed out after {self.timeout} seconds (attempt {attempt + 1}/{self.retry_attempts + 1})"
-                print(error_msg)
+                logger.error(error_msg)
                 self.logs.append(
                     {
                         "timestamp": time.time(),
@@ -68,7 +77,7 @@ class BaseTest(ABC):
             except SystemExit as e:
                 last_exception = e
                 error_msg = f"SystemExit encountered (attempt {attempt + 1}/{self.retry_attempts + 1}): {str(e)}"
-                print(error_msg)
+                logger.error(error_msg)
                 self.logs.append(
                     {
                         "timestamp": time.time(),
@@ -85,10 +94,10 @@ class BaseTest(ABC):
             except Exception as e:
                 last_exception = e
                 error_msg = f"Test failed with exception (attempt {attempt + 1}/{self.retry_attempts + 1}): {str(e)}"
-                print(error_msg)
-                print(f"Exception type: {type(e).__name__}")
+                logger.error(error_msg)
+                logger.error(f"Exception type: {type(e).__name__}")
                 traceback_str = traceback.format_exc()
-                print(f"Traceback: {traceback_str}")
+                logger.error(f"Traceback: {traceback_str}")
                 self.logs.append(
                     {
                         "timestamp": time.time(),
@@ -102,11 +111,11 @@ class BaseTest(ABC):
                 )
 
             if attempt < self.retry_attempts:
-                print(f"Retrying in {self.retry_delay} seconds...")
+                logger.info(f"Retrying in {self.retry_delay} seconds...")
                 time.sleep(self.retry_delay)
 
         # All retries exhausted - return failure with logs
-        print(f"All {self.retry_attempts + 1} attempts failed. Last exception:")
+        logger.error(f"All {self.retry_attempts + 1} attempts failed. Last exception:")
 
         if self.config.get("break_on_failure"):
             raise SystemExit(f"Test failed after all retries. Logs: {self.logs}")
