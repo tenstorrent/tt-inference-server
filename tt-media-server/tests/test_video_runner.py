@@ -16,6 +16,10 @@ sys.modules["ttnn"] = Mock()
 mock_settings = Mock()
 mock_settings.enable_telemetry = False
 mock_settings.model_runner = "sp_runner"
+mock_settings.use_dynamic_batcher = False
+mock_settings.is_galaxy = False
+mock_settings.device_mesh_shape = (1, 1)
+mock_settings.default_throttle_level = ""
 mock_settings_module = Mock()
 mock_settings_module.settings = mock_settings
 mock_settings_module.get_settings = Mock(return_value=mock_settings)
@@ -211,30 +215,33 @@ class TestWriteErrorToShm:
 
 
 class TestCreateDitRunner:
+    @staticmethod
+    def _make_dit_module(mock_mochi, mock_wan):
+        mock_mochi.__name__ = "TTMochi1Runner"
+        mock_wan.__name__ = "TTWan22Runner"
+        mod = Mock()
+        mod.TTMochi1Runner = mock_mochi
+        mod.TTWan22Runner = mock_wan
+        return {"tt_model_runners.dit_runners": mod}
+
     def test_creates_mochi_runner(self):
         mock_mochi = Mock()
         mock_wan = Mock()
-        with patch(
-            "tt_model_runners.dit_runners.TTMochi1Runner", mock_mochi, create=True
-        ), patch("tt_model_runners.dit_runners.TTWan22Runner", mock_wan, create=True):
-            create_dit_runner("tt_mochi_1", "0")
+        with patch.dict(sys.modules, self._make_dit_module(mock_mochi, mock_wan)):
+            create_dit_runner("tt-mochi-1", "0")
             mock_mochi.assert_called_once_with("0")
 
     def test_creates_wan_runner(self):
         mock_mochi = Mock()
         mock_wan = Mock()
-        with patch(
-            "tt_model_runners.dit_runners.TTMochi1Runner", mock_mochi, create=True
-        ), patch("tt_model_runners.dit_runners.TTWan22Runner", mock_wan, create=True):
-            create_dit_runner("tt_wan_2_2", "1")
+        with patch.dict(sys.modules, self._make_dit_module(mock_mochi, mock_wan)):
+            create_dit_runner("tt-wan2.2", "1")
             mock_wan.assert_called_once_with("1")
 
     def test_raises_on_unsupported_runner(self):
         mock_mochi = Mock()
         mock_wan = Mock()
-        with patch(
-            "tt_model_runners.dit_runners.TTMochi1Runner", mock_mochi, create=True
-        ), patch("tt_model_runners.dit_runners.TTWan22Runner", mock_wan, create=True):
+        with patch.dict(sys.modules, self._make_dit_module(mock_mochi, mock_wan)):
             with pytest.raises(ValueError, match="Unsupported MODEL_RUNNER"):
                 create_dit_runner("invalid_runner", "0")
 

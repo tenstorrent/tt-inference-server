@@ -14,6 +14,10 @@ mock_settings = Mock()
 mock_settings.enable_telemetry = False
 mock_settings.max_batch_size = 1
 mock_settings.model_runner = "sp_runner"
+mock_settings.use_dynamic_batcher = False
+mock_settings.is_galaxy = False
+mock_settings.device_mesh_shape = (1, 1)
+mock_settings.default_throttle_level = ""
 mock_settings_module = Mock()
 mock_settings_module.settings = mock_settings
 mock_settings_module.get_settings = Mock(return_value=mock_settings)
