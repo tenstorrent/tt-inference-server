@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from workflows.runtime_config import RuntimeConfig
 
 VERSION = get_version()
+MODEL_SPECS_SCHEMA_VERSION = "0.1.0"
 
 
 def generate_docker_tag(
@@ -3280,7 +3281,9 @@ def get_model_spec_map(
 def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
     """Export MODEL_SPECS to a nested JSON file.
 
-    Output is nested: hf_model_repo > device_type > inference_engine > impl_id.
+    Output is wrapped with metadata and nested model specs:
+    schema_version, release_version, model_specs[hf_model_repo][device_type]
+    [inference_engine][impl_id].
 
     Args:
         model_specs: Dictionary mapping model_id to ModelSpec objects.
@@ -3305,8 +3308,14 @@ def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
         )
         num_specs += 1
 
+    export_data = {
+        "schema_version": MODEL_SPECS_SCHEMA_VERSION,
+        "release_version": VERSION,
+        "model_specs": nested_specs,
+    }
+
     with open(output_path, "w") as f:
-        json.dump(nested_specs, f, indent=2)
+        json.dump(export_data, f, indent=2)
 
     return num_specs
 

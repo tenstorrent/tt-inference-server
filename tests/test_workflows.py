@@ -318,7 +318,7 @@ class TestHostSetupIntegration:
         config = manager.setup_config
 
         assert config.host_model_volume_root is not None
-        assert str(config.persistent_volume_root) == host_volume
+        assert config.persistent_volume_root.resolve() == Path(host_volume).resolve()
         assert config.host_tt_metal_cache_dir is not None
 
     def test_setup_config_host_hf_cache_mode(self, temp_dir):
@@ -336,7 +336,7 @@ class TestHostSetupIntegration:
         )
         config = manager.setup_config
 
-        assert config.host_hf_cache == hf_cache
+        assert Path(config.host_hf_cache).resolve() == Path(hf_cache).resolve()
         assert config.container_readonly_model_weights_dir is not None
         assert config.container_model_weights_mount_dir is not None
 
