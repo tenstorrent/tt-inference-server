@@ -211,7 +211,7 @@ Because `--local-server` launches a host process, it uses the invoking host user
 
 #### Direct Docker Run
 
-The inference server container can be used independently from `run.py` via a direct `docker run` command. The container entrypoint (`run_vllm_api_server.py`) accepts `--model` and `--tt-device` to resolve the model configuration from a bundled model spec catalog (`default_model_spec.json`).
+The inference server container can be used independently from `run.py` via a direct `docker run` command. The container entrypoint (`run_vllm_api_server.py`) accepts `--model` and `--tt-device` to resolve the model configuration from a bundled model spec catalog (`model_spec.json`).
 
 ```bash
 docker run \

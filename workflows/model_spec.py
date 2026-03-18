@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from workflows.runtime_config import RuntimeConfig
 
 VERSION = get_version()
+MODEL_SPECS_SCHEMA_VERSION = "0.1.0"
 
 
 def generate_docker_tag(
@@ -2323,7 +2324,7 @@ vlm_templates = [
 video_templates = [
     ModelSpecTemplate(
         weights=["genmo/mochi-1-preview"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2374,7 +2375,7 @@ video_templates = [
     ),
     ModelSpecTemplate(
         weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2435,7 +2436,7 @@ image_templates = [
             "stabilityai/stable-diffusion-xl-base-1.0",
             "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
         ],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2534,7 +2535,7 @@ image_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-dev", "black-forest-labs/FLUX.1-schnell"],
-        tt_metal_commit="c180ef7",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2651,7 +2652,7 @@ image_templates = [
 audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="cce3da6",
+        tt_metal_commit="555f240",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2788,7 +2789,7 @@ embedding_templates = [
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-Embedding-8B"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -3220,7 +3221,9 @@ def get_model_spec_map(
 def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
     """Export MODEL_SPECS to a nested JSON file.
 
-    Output is nested: hf_model_repo > device_type > inference_engine > impl_id.
+    Output is wrapped with metadata and nested model specs:
+    schema_version, release_version, model_specs[hf_model_repo][device_type]
+    [inference_engine][impl_id].
 
     Args:
         model_specs: Dictionary mapping model_id to ModelSpec objects.
@@ -3245,8 +3248,14 @@ def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
         )
         num_specs += 1
 
+    export_data = {
+        "schema_version": MODEL_SPECS_SCHEMA_VERSION,
+        "release_version": VERSION,
+        "model_specs": nested_specs,
+    }
+
     with open(output_path, "w") as f:
-        json.dump(nested_specs, f, indent=2)
+        json.dump(export_data, f, indent=2)
 
     return num_specs
 

@@ -206,7 +206,7 @@ class TestSetupHostCombinations:
         )
 
         assert config.host_model_volume_root is not None
-        assert str(config.persistent_volume_root) == host_volume
+        assert config.persistent_volume_root.resolve() == Path(host_volume).resolve()
         assert config.host_tt_metal_cache_dir is not None
         # Weights still default to cache_root path (downloaded into host volume)
         assert config.container_model_weights_path == (
@@ -223,7 +223,7 @@ class TestSetupHostCombinations:
             host_hf_cache=hf_cache,
         )
 
-        assert config.host_hf_cache == hf_cache
+        assert Path(config.host_hf_cache).resolve() == Path(hf_cache).resolve()
         assert config.container_readonly_model_weights_dir is not None
         assert config.container_model_weights_mount_dir is not None
         assert config.container_readonly_model_weights_dir == (
@@ -245,7 +245,7 @@ class TestSetupHostCombinations:
             host_weights_dir=str(weights_dir),
         )
 
-        assert config.host_model_weights_mount_dir == weights_dir
+        assert config.host_model_weights_mount_dir.resolve() == weights_dir.resolve()
         assert config.container_readonly_model_weights_dir == (
             Path("/home/container_app_user/readonly_weights_mount")
         )
@@ -287,7 +287,9 @@ class TestSetupHostCombinations:
 
         assert config.host_model_volume_root is not None
         assert config.host_hf_cache == str(hf_cache.resolve())
-        assert config.host_model_weights_snapshot_dir == snapshot_dir
+        assert (
+            config.host_model_weights_snapshot_dir.resolve() == snapshot_dir.resolve()
+        )
 
     def test_local_model_source_mode(self, tiny_model_spec, temp_dir):
         """Mode 5: MODEL_SOURCE=local with MODEL_WEIGHTS_DIR env var.
@@ -308,7 +310,7 @@ class TestSetupHostCombinations:
 
         assert config.model_source == ModelSource.LOCAL.value
         assert config.container_readonly_model_weights_dir is not None
-        assert config.host_model_weights_mount_dir == weights_dir
+        assert config.host_model_weights_mount_dir.resolve() == weights_dir.resolve()
         assert config.container_model_weights_path == (
             config.container_readonly_model_weights_dir / weights_dir.name
         )
@@ -445,8 +447,10 @@ class TestSetupHostRunSetup:
             host_weights_dir=str(weights_dir),
         )
 
-        assert setup_config.host_weights_dir == str(weights_dir)
-        assert setup_config.host_model_weights_mount_dir == weights_dir
+        assert Path(setup_config.host_weights_dir).resolve() == weights_dir.resolve()
+        assert (
+            setup_config.host_model_weights_mount_dir.resolve() == weights_dir.resolve()
+        )
         assert setup_config.container_model_weights_path is not None
 
     def test_host_weights_dir_mode_runs_setup_when_incomplete(
@@ -472,7 +476,7 @@ class TestSetupHostRunSetup:
 
         # Should still complete without error; setup_weights_huggingface returns
         # early for host_weights_dir
-        assert setup_config.host_weights_dir == str(weights_dir)
+        assert Path(setup_config.host_weights_dir).resolve() == weights_dir.resolve()
 
     def test_local_server_skips_image_user_permission_fixes(
         self, tiny_model_spec, temp_dir
@@ -530,7 +534,10 @@ class TestSetupHostRunSetup:
             manager.run_setup()
 
         assert manager.setup_config.model_source == ModelSource.LOCAL.value
-        assert manager.setup_config.host_model_weights_mount_dir == weights_dir
+        assert (
+            manager.setup_config.host_model_weights_mount_dir.resolve()
+            == weights_dir.resolve()
+        )
 
 
 class TestSetupHostDockerCommand:
@@ -647,7 +654,7 @@ class TestSetupHostDockerCommand:
 
         cmd_str = _join_docker_cmd(docker_command)
         # Readonly weights mount present
-        assert f"type=bind,src={weights_dir}" in cmd_str
+        assert f"type=bind,src={weights_dir.resolve()}" in cmd_str
         assert "readonly" in cmd_str
         # MODEL_WEIGHTS_DIR set to container mount path
         model_weights_dir = _find_env_var(docker_command, "MODEL_WEIGHTS_DIR")
