@@ -311,6 +311,43 @@ class TestRequestRoundtrip:
         assert len(raw_bytes) <= VideoShm.MAX_PROMPT_LEN
         assert len(got.prompt) == 512
 
+    def test_long_negative_prompt_truncated(self, input_pair):
+        writer, reader = input_pair
+        req = _make_request(negative_prompt="x" * 2000)
+        writer.write_request(req)
+        got = reader.read_request()
+        assert len(got.negative_prompt) == VideoShm.MAX_NEG_PROMPT_LEN
+
+    def test_multiple_requests_sequential(self, input_pair):
+        writer, reader = input_pair
+        for i in range(5):
+            req = _make_request(
+                task_id=f"task-{i:036d}",
+                prompt=f"prompt {i}",
+                seed=i * 10,
+            )
+            writer.write_request(req)
+            got = reader.read_request()
+            assert got.task_id == req.task_id
+            assert got.prompt == req.prompt
+            assert got.seed == i * 10
+
+    def test_guidance_scale_precision(self, input_pair):
+        writer, reader = input_pair
+        req = _make_request(guidance_scale=7.5, guidance_scale_2=1.25)
+        writer.write_request(req)
+        got = reader.read_request()
+        assert abs(got.guidance_scale - 7.5) < 1e-5
+        assert abs(got.guidance_scale_2 - 1.25) < 1e-5
+
+    def test_zero_seed_and_steps(self, input_pair):
+        writer, reader = input_pair
+        req = _make_request(seed=0, num_inference_steps=0)
+        writer.write_request(req)
+        got = reader.read_request()
+        assert got.seed == 0
+        assert got.num_inference_steps == 0
+
 
 # ── Frame roundtrip ──
 
@@ -379,6 +416,50 @@ class TestFrameRoundtrip:
         writer.write_frame(frame)
         got = reader.read_frame()
         assert got.frame_data == large_data
+
+    def test_multiple_frames_sequential(self, output_pair):
+        writer, reader = output_pair
+        for i in range(5):
+            frame = _make_frame(frame_index=i, total_frames=5, data_len=32)
+            writer.write_frame(frame)
+            got = reader.read_frame()
+            assert got.frame_index == i
+            assert got.total_frames == 5
+
+    def test_empty_frame_data(self, output_pair):
+        writer, reader = output_pair
+        frame = _make_frame(
+            status=FrameStatus.DONE,
+            height=0,
+            width=0,
+            channels=0,
+            data_len=0,
+        )
+        writer.write_frame(frame)
+        got = reader.read_frame()
+        assert got.frame_data == b""
+        assert got.height == 0
+
+    def test_frame_preserves_all_fields(self, output_pair):
+        writer, reader = output_pair
+        frame = FrameResult(
+            task_id="abcdef12-3456-7890-abcd-ef1234567890",
+            status=FrameStatus.FRAME,
+            frame_index=42,
+            total_frames=100,
+            height=720,
+            width=1280,
+            channels=4,
+            frame_data=b"\xde\xad" * 64,
+        )
+        writer.write_frame(frame)
+        got = reader.read_frame()
+        assert got.frame_index == 42
+        assert got.total_frames == 100
+        assert got.height == 720
+        assert got.width == 1280
+        assert got.channels == 4
+        assert got.frame_data == b"\xde\xad" * 64
 
 
 # ── Slot states ──
@@ -494,6 +575,30 @@ class TestShutdownSignaling:
         t = threading.Thread(target=trigger_shutdown)
         t.start()
         shm.write_request(_make_request())
+        t.join()
+
+        shm.close()
+        _force_cleanup_shm(name)
+
+    def test_write_frame_returns_on_shutdown(self):
+        name = _unique_name("sd_wf")
+        shutdown = False
+
+        shm = VideoShm(name, mode="output", is_shutdown=lambda: shutdown)
+        shm.open()
+
+        for i in range(VideoShm.SLOTS):
+            off = i * shm._slot_size
+            struct.pack_into("<i", shm._buf, off, VideoShm._TAKEN)
+
+        def trigger_shutdown():
+            nonlocal shutdown
+            time.sleep(0.05)
+            shutdown = True
+
+        t = threading.Thread(target=trigger_shutdown)
+        t.start()
+        shm.write_frame(_make_frame(data_len=64))
         t.join()
 
         shm.close()

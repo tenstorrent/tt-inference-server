@@ -446,6 +446,197 @@ class TestDeviceWorkerVideoShm:
         _, _, msg = error_queue.put.call_args[0][0]
         assert "device init failed" in msg
 
+    @patch("device_workers.device_worker_video_shm.initialize_device_worker")
+    def test_init_returns_none_runner_exits(self, mock_init, mock_queues):
+        from device_workers.device_worker_video_shm import device_worker_video_shm
+
+        task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
+        mock_init.return_value = (None, MagicMock())
+
+        device_worker_video_shm(
+            "w0",
+            task_queue,
+            result_queue,
+            warmup_signals_queue,
+            error_queue,
+        )
+
+        task_queue.get_many.assert_not_called()
+
+    @patch("device_workers.device_worker_video_shm.initialize_device_worker")
+    def test_warmup_queue_closed_does_not_crash(self, mock_init, mock_queues):
+        from device_workers.device_worker_video_shm import device_worker_video_shm
+
+        task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
+        warmup_signals_queue._closed = True
+
+        mock_runner = MagicMock()
+        mock_loop = MagicMock()
+        mock_init.return_value = (mock_runner, mock_loop)
+
+        task_queue.get_many.side_effect = _create_get_many_side_effect(
+            [[SHUTDOWN_SIGNAL]]
+        )
+
+        device_worker_video_shm(
+            "w0",
+            task_queue,
+            result_queue,
+            warmup_signals_queue,
+            error_queue,
+        )
+
+        warmup_signals_queue.put.assert_not_called()
+
+    @patch("device_workers.device_worker_video_shm.initialize_device_worker")
+    def test_warmup_queue_none_does_not_crash(self, mock_init, mock_queues):
+        from device_workers.device_worker_video_shm import device_worker_video_shm
+
+        task_queue, result_queue, _, error_queue = mock_queues
+
+        mock_runner = MagicMock()
+        mock_loop = MagicMock()
+        mock_init.return_value = (mock_runner, mock_loop)
+
+        task_queue.get_many.side_effect = _create_get_many_side_effect(
+            [[SHUTDOWN_SIGNAL]]
+        )
+
+        device_worker_video_shm(
+            "w0",
+            task_queue,
+            result_queue,
+            None,
+            error_queue,
+        )
+
+        mock_runner.close_device.assert_called_once()
+
+    @patch("device_workers.device_worker_video_shm.initialize_device_worker")
+    def test_multiple_requests_processed(self, mock_init, mock_queues):
+        from device_workers.device_worker_video_shm import device_worker_video_shm
+
+        task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
+
+        mock_runner = MagicMock()
+        mock_loop = MagicMock()
+        mock_init.return_value = (mock_runner, mock_loop)
+
+        frames_a = np.ones((1, 2, 4, 4, 3), dtype=np.uint8)
+        frames_b = np.zeros((1, 1, 4, 4, 3), dtype=np.uint8)
+        mock_runner.run.side_effect = [frames_a, frames_b]
+
+        req_a = MockVideoGenerateRequest(task_id="a")
+        req_b = MockVideoGenerateRequest(task_id="b")
+        task_queue.get_many.side_effect = _create_get_many_side_effect(
+            [[req_a], [req_b]]
+        )
+
+        with pytest.raises(WorkerExitException):
+            device_worker_video_shm(
+                "w0",
+                task_queue,
+                result_queue,
+                warmup_signals_queue,
+                error_queue,
+            )
+
+        assert mock_runner.run.call_count == 2
+        assert result_queue.put.call_count == 2
+
+    @patch("device_workers.device_worker_video_shm.initialize_device_worker")
+    def test_result_queue_name_passed(self, mock_init, mock_queues):
+        from device_workers.device_worker_video_shm import device_worker_video_shm
+
+        task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
+
+        mock_runner = MagicMock()
+        mock_loop = MagicMock()
+        mock_init.return_value = (mock_runner, mock_loop)
+
+        task_queue.get_many.side_effect = _create_get_many_side_effect(
+            [[SHUTDOWN_SIGNAL]]
+        )
+
+        device_worker_video_shm(
+            "w0",
+            task_queue,
+            result_queue,
+            warmup_signals_queue,
+            error_queue,
+            result_queue_name="my_queue",
+        )
+
+        mock_runner.close_device.assert_called_once()
+
+
+class TestSPRunnerLifecycle:
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_close_device_sets_shutdown(self, MockVideoShm):
+        from tt_model_runners.sp_runner import SPRunner
+
+        mock_input = MagicMock()
+        mock_output = MagicMock()
+        instances = [mock_input, mock_output]
+        MockVideoShm.side_effect = lambda *a, **kw: instances.pop(0)
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+        runner.close_device()
+
+        assert runner._shutdown is True
+        mock_input.unlink.assert_called_once()
+        mock_input.close.assert_called_once()
+        mock_output.unlink.assert_called_once()
+        mock_output.close.assert_called_once()
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_load_weights_is_noop(self, MockVideoShm):
+        from tt_model_runners.sp_runner import SPRunner
+
+        runner = SPRunner("dev0")
+        assert runner.load_weights() is True
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_warmup_returns_true(self, MockVideoShm):
+        import asyncio
+        from tt_model_runners.sp_runner import SPRunner
+
+        runner = SPRunner("dev0")
+        result = asyncio.get_event_loop().run_until_complete(runner.warmup())
+        assert result is True
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_timeout_during_collect_frames(self, MockVideoShm):
+        from tt_model_runners.sp_runner import SPRunner, FRAME_TIMEOUT_S
+
+        mock_input = MagicMock()
+        mock_output = MagicMock()
+        instances = [mock_input, mock_output]
+        MockVideoShm.side_effect = lambda *a, **kw: instances.pop(0)
+
+        mock_output.read_frame.return_value = None
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+
+        import time
+
+        original_monotonic = time.monotonic
+        call_count = [0]
+        base_time = [original_monotonic()]
+
+        def mock_monotonic():
+            call_count[0] += 1
+            if call_count[0] % 2 == 1:
+                return base_time[0]
+            return base_time[0] + FRAME_TIMEOUT_S + 1
+
+        req = MockVideoGenerateRequest(task_id="tid")
+        with patch("time.monotonic", side_effect=mock_monotonic):
+            with pytest.raises(RuntimeError, match="timed out"):
+                runner.run([req])
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
