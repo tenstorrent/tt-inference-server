@@ -50,8 +50,9 @@ void SingleProcessWorker::start() {
       TT_LOG_INFO("[SingleProcessWorker] Worker {} signaled warmup complete",
                   worker_id);
     } catch (const std::exception& e) {
-      TT_LOG_WARN("[SingleProcessWorker] Worker {} failed to signal warmup: {}",
-                  worker_id, e.what());
+      TT_LOG_ERROR(
+          "[SingleProcessWorker] Worker {} failed to signal warmup: {}",
+          worker_id, e.what());
     }
   });
 }
