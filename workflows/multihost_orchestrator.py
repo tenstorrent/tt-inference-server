@@ -32,7 +32,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
 
 from workflows.multihost_config import (
     CONTAINER_USER,
@@ -293,7 +293,7 @@ class MultiHostSetup:
     ssh_key_path: Path
     rankfile_path: Path
     override_tt_config: dict
-    worker_container_ids: dict[str, str]  # host -> container_id
+    worker_container_ids: Dict[str, str]  # host -> container_id
 
 
 class MultiHostOrchestrator:
@@ -304,7 +304,7 @@ class MultiHostOrchestrator:
 
     def __init__(
         self,
-        hosts: list[str],
+        hosts: List[str],
         mpi_interface: str,
         shared_storage_root: str,
         config_pkl_dir: str,
@@ -399,7 +399,7 @@ class MultiHostOrchestrator:
 
     def generate_worker_docker_command(
         self, host: str, rank: int
-    ) -> tuple[list[str], str]:
+    ) -> tuple[List[str], str]:
         """Generate docker run command for a Worker container.
 
         Worker containers run sshd and wait for MPI processes from Controller.
@@ -449,7 +449,7 @@ class MultiHostOrchestrator:
 
         return cmd, container_name
 
-    def generate_controller_docker_command(self) -> tuple[list[str], str]:
+    def generate_controller_docker_command(self) -> tuple[List[str], str]:
         """Generate docker run command for Controller container.
 
         Controller runs vLLM API server and initiates MPI processes.
@@ -794,7 +794,7 @@ class MultiHostOrchestrator:
                 return False
         return True
 
-    def start_all_workers(self) -> dict[str, str]:
+    def start_all_workers(self) -> Dict[str, str]:
         """Start Worker containers on all hosts.
 
         Ensures image and SSH public key are available on all hosts before starting.

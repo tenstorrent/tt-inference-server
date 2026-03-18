@@ -20,6 +20,7 @@ SpPipelineRunner::SpPipelineRunner(const tt::config::LLMConfig& config,
                       config.stop_token_ids.end()),
       result_queue_(resultQueue),
       task_queue_(taskQueue),
+      decode_queue_(config.max_in_flight_count * 30),
       max_in_flight_count_(config.max_in_flight_count) {
   auto decodeCb = [this](const llm_engine::TokenResult& result) {
     decode_queue_.push(result);
@@ -64,8 +65,9 @@ bool SpPipelineRunner::warmup() {
   bool receivedToken = false;
 
   while (attempts < MAX_ATTEMPTS && !receivedToken) {
-    // Drain decode queue to check for results
-    for (const auto& dr : decode_queue_.drain()) {
+    std::vector<llm_engine::TokenResult> results;
+    decode_queue_.popMany(results, max_in_flight_count_);
+    for (const auto& dr : results) {
       if (dr.task_id == warmupTaskId) {
         if (dr.is_error) {
           TT_LOG_ERROR("SpPipelineRunner: Warmup failed with error");
@@ -118,7 +120,9 @@ void SpPipelineRunner::step() {
 }
 
 void SpPipelineRunner::drainDecodeResults() {
-  for (const auto& dr : decode_queue_.drain()) {
+  std::vector<llm_engine::TokenResult> results;
+  decode_queue_.popMany(results, max_in_flight_count_);
+  for (const auto& dr : results) {
     auto it = active_sequences_.find(dr.task_id);
     if (it ==
         active_sequences_.end()) {  // safeguard for too many decode results

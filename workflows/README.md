@@ -475,7 +475,7 @@ Each workflow run script receives the runtime model spec JSON path (`--runtime-m
 .
 ├── run.py                          # Main CLI entry point
 ├── VERSION                         # Current project version
-├── default_model_spec.json         # Bundled model spec catalog (used by container interface)
+├── model_spec.json         # Bundled model spec catalog (used by container interface)
 ├── workflows/
 │   ├── model_spec.py               # ModelSpecTemplate, ModelSpec, ImplSpec, DeviceModelSpec
 │   ├── runtime_config.py           # RuntimeConfig dataclass (CLI/runtime state)
@@ -599,7 +599,7 @@ Key concepts:
 - **default_impl_map**: Maps each device type to a bool indicating whether this implementation is the default for that device. The default implementation is used when `--impl` is not specified on the CLI.
 - **device_configurations**: The set of hardware devices supported for this model implementation.
 - **RuntimeConfig**: Captures all CLI/runtime state (workflow, service port, Docker flags, overrides) separately from the static model definition. Created via `RuntimeConfig.from_args()` and applied to the model spec via `model_spec.apply_overrides(runtime_config)`.
-- **default_model_spec.json**: Exported at `run.py` startup from `MODEL_SPECS` and bundled into Docker images. The container interface uses this catalog to resolve a model spec from `--model` + `--tt-device` without needing `run.py`.
+- **model_spec.json**: Exported at `run.py` startup from `MODEL_SPECS` and bundled into Docker images. The container interface uses this catalog to resolve a model spec from `--model` + `--tt-device` without needing `run.py`.
 
 Performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json`. The key is the default-impl `ModelSpec`'s first model weights name (e.g. `Llama-3.3-70B`), which uniquely defines targets for all weight variants of the same architecture. Targets can be added directly to a specific `ModelSpec` for additional comparison points.
 
