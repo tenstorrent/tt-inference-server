@@ -2324,7 +2324,7 @@ vlm_templates = [
 video_templates = [
     ModelSpecTemplate(
         weights=["genmo/mochi-1-preview"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2375,7 +2375,7 @@ video_templates = [
     ),
     ModelSpecTemplate(
         weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2436,7 +2436,7 @@ image_templates = [
             "stabilityai/stable-diffusion-xl-base-1.0",
             "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
         ],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2535,7 +2535,7 @@ image_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-dev", "black-forest-labs/FLUX.1-schnell"],
-        tt_metal_commit="c180ef7",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2652,7 +2652,7 @@ image_templates = [
 audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="cce3da6",
+        tt_metal_commit="555f240",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2789,7 +2789,7 @@ embedding_templates = [
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-Embedding-8B"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
