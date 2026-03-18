@@ -677,9 +677,6 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     props["is_ready"]["type"] = "boolean";
     props["is_ready"]["description"] = "Whether worker is ready";
 
-    props["processed_requests"]["type"] = "integer";
-    props["processed_requests"]["description"] = "Number of requests processed";
-
     schema["properties"] = props;
     return schema;
   }

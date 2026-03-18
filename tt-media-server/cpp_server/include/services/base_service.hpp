@@ -34,7 +34,6 @@ class QueueFullException : public std::runtime_error {
 struct WorkerInfo {
   std::string worker_id;
   bool is_ready;
-  size_t processed_requests;
 };
 
 struct SystemStatus {
@@ -94,7 +93,6 @@ class BaseService : public IService {
       WorkerInfo info;
       info.worker_id = std::to_string(w->worker_id);
       info.is_ready = (warmed_worker_ids_.count(w->worker_id) != 0);
-      info.processed_requests = 0;
       out.push_back(info);
     }
     return out;

@@ -61,8 +61,6 @@ void HealthController::ready(
       Json::Value wj;
       wj["worker_id"] = w.worker_id;
       wj["is_ready"] = w.is_ready;
-      wj["processed_requests"] =
-          static_cast<Json::UInt64>(w.processed_requests);
       workers.append(wj);
     }
     response["workers"] = workers;

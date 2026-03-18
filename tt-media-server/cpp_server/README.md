@@ -453,8 +453,7 @@ Liveness probe (same as Python tt-liveness). Always returns 200 when the process
   "workers": [
     {
       "worker_id": "0",
-      "is_ready": true,
-      "processed_requests": 42
+      "is_ready": true
     }
   ]
 }
