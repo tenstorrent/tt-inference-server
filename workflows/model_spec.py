@@ -1573,7 +1573,7 @@ llm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 38281216,
+                    "trace_region_size": 49037312,
                 },
                 env_vars={
                     "MAX_PREFILL_CHUNK_SIZE": "32",
