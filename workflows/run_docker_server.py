@@ -1,3 +1,4 @@
+  --> workflows/run_docker_server.py:74:9
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
@@ -71,7 +72,7 @@ def get_cpp_server_docker_env_vars(model_spec):
     }
 
     logger.info(
-        f"Cpp server environment variables: SERVER_MODE=cpp, DEFAULT_THROTTLE_LEVEL=0, LLM_DEVICE_BACKEND=llama, MODEL_SERVICE=llm, MAX_BATCH_SIZE=32, SCHEDULING_POLICY=max_occupancy, DEVICE_IDS=''"
+        "Cpp server environment variables: SERVER_MODE=cpp, DEFAULT_THROTTLE_LEVEL=0, LLM_DEVICE_BACKEND=llama, MODEL_SERVICE=llm, MAX_BATCH_SIZE=32, SCHEDULING_POLICY=max_occupancy, DEVICE_IDS=''"
     )
     return env_vars
 
