@@ -1,4 +1,3 @@
-  --> workflows/run_docker_server.py:74:9
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
