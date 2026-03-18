@@ -171,8 +171,12 @@ LLMConfig llmEngineConfig() {
     cfg.kvcache_block_size = 32;
     cfg.max_num_batched_tokens = 16384;
     cfg.runner_type = ModelRunnerType::LLAMA;
-  } else {
+  } else if (backend == "mock") {
     cfg.runner_type = ModelRunnerType::MOCK;
+  } else if (backend == "mock_pipeline") {
+    cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
+  } else {
+    cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
   }
   cfg.scheduling_policy = schedulingPolicy();
   return cfg;
