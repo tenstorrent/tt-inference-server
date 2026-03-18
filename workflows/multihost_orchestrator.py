@@ -32,7 +32,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from workflows.multihost_config import (
     CONTAINER_USER,
@@ -399,7 +399,7 @@ class MultiHostOrchestrator:
 
     def generate_worker_docker_command(
         self, host: str, rank: int
-    ) -> tuple[List[str], str]:
+    ) -> Tuple[List[str], str]:
         """Generate docker run command for a Worker container.
 
         Worker containers run sshd and wait for MPI processes from Controller.
@@ -449,7 +449,7 @@ class MultiHostOrchestrator:
 
         return cmd, container_name
 
-    def generate_controller_docker_command(self) -> tuple[List[str], str]:
+    def generate_controller_docker_command(self) -> Tuple[List[str], str]:
         """Generate docker run command for Controller container.
 
         Controller runs vLLM API server and initiates MPI processes.
@@ -941,7 +941,7 @@ class MultiHostOrchestrator:
             except Exception as e:
                 logger.warning(f"Failed to stop Worker on {host}: {e}")
 
-    def check_worker_status(self, host: str) -> tuple[bool, Optional[str]]:
+    def check_worker_status(self, host: str) -> Tuple[bool, Optional[str]]:
         """Check if Worker container is still running on a host.
 
         Args:
@@ -1001,7 +1001,7 @@ class MultiHostOrchestrator:
         except Exception as e:
             return False, str(e)
 
-    def check_all_workers_status(self) -> tuple[bool, Optional[str]]:
+    def check_all_workers_status(self) -> Tuple[bool, Optional[str]]:
         """Check if all Worker containers are running.
 
         Returns:
