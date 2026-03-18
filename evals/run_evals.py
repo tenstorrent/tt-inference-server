@@ -465,8 +465,11 @@ def main():
 
     # For LLM models, use PromptClient for health checks and trace capture
     else:
-        # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
         prompt_client = PromptClient(env_config, model_spec=model_spec)
+        logger.info(
+            "Using tensor_cache_timeout:=%ss for first-run tensor cache generation when cache monitoring is active",
+            prompt_client.cache_monitor.get_tensor_cache_timeout(),
+        )
         if not prompt_client.wait_for_healthy():
             logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
             return 1

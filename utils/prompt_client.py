@@ -145,46 +145,59 @@ class PromptClient:
         Returns:
             bool: True if service becomes healthy, False if timeout exceeded
         """
-        timeout = float(timeout)
+        base_timeout = float(timeout)
+        effective_timeout = base_timeout
         if self.server_ready:
             return True
 
         start_time = time.time()
-        original_timeout = timeout
-        cache_generation_detected = False
+        using_tensor_cache_timeout = False
         last_cache_status_log = 0
         cache_status_log_interval = 60  # Log cache status every 60 seconds
 
         logger.info(
-            f"Waiting for vLLM service to become healthy (base timeout: {timeout}s)"
+            f"Waiting for vLLM service to become healthy (base timeout: {base_timeout}s)"
         )
 
-        while time.time() - start_time < timeout:
+        while time.time() - start_time < effective_timeout:
             req_time = time.time()
 
             # Check cache generation status
             cache_status = self.cache_monitor.get_cache_generation_status()
             current_time = time.time()
+            effective_timeout = self.cache_monitor.get_effective_timeout(
+                default_timeout=base_timeout, cache_status=cache_status
+            )
+
+            if cache_status.is_stalled:
+                logger.error(
+                    "⛔ Tensor cache generation stalled after %.1fs without cache growth in %s. "
+                    "Aborting server startup wait so the workflow can stop the server cleanly.",
+                    cache_status.no_progress_duration,
+                    cache_status.cache_dir,
+                )
+                return False
 
             # Log cache status periodically
             if current_time - last_cache_status_log > cache_status_log_interval:
                 if cache_status.is_generating:
-                    logger.info(
-                        "🔄 Cache generation in progress - this may take 40-60 minutes for new models"
-                    )
-                    if not cache_generation_detected:
-                        # First time detecting cache generation - extend timeout
-                        extended_timeout = 90 * 60.0
-                        timeout = extended_timeout
-                        cache_generation_detected = True
+                    if not using_tensor_cache_timeout:
                         logger.info(
-                            f"⏰ using extended timeout:={timeout}s due to cache generation"
+                            "⏰ Using tensor_cache_timeout:=%ss for first-run tensor cache generation",
+                            effective_timeout,
                         )
-                else:
+                        using_tensor_cache_timeout = True
                     logger.info(
-                        f"📁 No active cache generation detected, using standard timeout:={timeout}s"
+                        "🔄 Tensor cache generation in progress - tracking %s file(s), %s total bytes",
+                        cache_status.file_count,
+                        cache_status.total_size_bytes,
                     )
-                    timeout = original_timeout
+                else:
+                    if using_tensor_cache_timeout:
+                        using_tensor_cache_timeout = False
+                    logger.info(
+                        f"📁 No active tensor cache generation detected, using standard timeout:={effective_timeout}s"
+                    )
                 last_cache_status_log = current_time
 
             # Try health check
@@ -219,27 +232,35 @@ class PromptClient:
             # Provide different messaging based on cache status
             if cache_status.is_generating:
                 logger.info(
-                    f"🔄 Cache generation in progress. Waited {total_time_waited:.1f}s, "
-                    f"next check in {sleep_interval:.1f}s (timeout: {timeout}s)"
+                    f"🔄 Tensor cache generation in progress. Waited {total_time_waited:.1f}s, "
+                    f"next check in {sleep_interval:.1f}s (timeout: {effective_timeout}s, "
+                    f"no progress: {cache_status.no_progress_duration:.1f}s)"
                 )
             else:
                 logger.info(
                     f"⏳ Service not ready after {total_time_waited:.1f}s, "
-                    f"waiting {sleep_interval:.1f}s before polling (timeout: {timeout}s)"
+                    f"waiting {sleep_interval:.1f}s before polling (timeout: {effective_timeout}s)"
                 )
 
             time.sleep(sleep_interval)
 
         # Final status check
         final_cache_status = self.cache_monitor.get_cache_generation_status()
-        if final_cache_status.is_generating:
+        if final_cache_status.is_stalled:
             logger.error(
-                f"⛔ Service did not become healthy within {timeout}s. "
-                f"Cache generation appears to still be in progress. "
+                f"⛔ Tensor cache generation stalled for {final_cache_status.no_progress_duration:.1f}s "
+                f"in {final_cache_status.cache_dir}"
+            )
+        elif final_cache_status.is_generating:
+            logger.error(
+                f"⛔ Service did not become healthy within {effective_timeout}s. "
+                f"Tensor cache generation appears to still be in progress. "
                 f"Consider increasing the timeout or checking the docker logs."
             )
         else:
-            logger.error(f"⛔ Service did not become healthy within {timeout}s")
+            logger.error(
+                f"⛔ Service did not become healthy within {effective_timeout}s"
+            )
 
         return False
 
@@ -419,9 +440,9 @@ class PromptClient:
             }
             completions_url = f"{self._get_api_base_url()}/chat/completions"
         else:
-            assert len(images) == 0, (
-                "legacy API does not support images, use --use_chat_api option."
-            )
+            assert (
+                len(images) == 0
+            ), "legacy API does not support images, use --use_chat_api option."
             json_data = {
                 "model": vllm_model,
                 "prompt": prompt,
