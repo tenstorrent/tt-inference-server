@@ -15,6 +15,7 @@
 #include <unordered_set>
 
 #include "config/settings.hpp"
+#include "ipc/boost_ipc_warmup_signal_queue.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
@@ -22,6 +23,12 @@
 #include "worker/single_process_worker.hpp"
 
 namespace tt::services {
+
+std::unique_ptr<tt::ipc::IWarmupSignalQueue> LLMService::createWarmupQueue(
+    const std::string& name, size_t capacity) {
+  tt::ipc::BoostIpcWarmupSignalQueue::remove(name);
+  return std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(name, capacity);
+}
 
 LLMService::LLMService()
     : mode_(tt::config::llmMode()), tokenizer_(&tt::utils::activeTokenizer()) {
@@ -42,26 +49,28 @@ void LLMService::start() {
   if (running_.exchange(true)) {
     return;  // Already running
   }
+  if (num_workers_ == 0) {
+    running_ = false;
+    throw std::invalid_argument(
+        "LLMService requires at least one worker (num_workers > 0)");
+  }
 
   TT_LOG_INFO("[LLMService] Starting (mode={}, workers={})",
               tt::config::toString(mode_), num_workers_);
 
+  startWarmupListener(tt::ipc::WARMUP_SIGNALS_QUEUE_NAME, num_workers_);
   startWorkers();
   tracy_config::tracyStartupSchedulerParent();
+  waitForFirstWarmup();
   startConsumers();
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   if (socket_service_ && socket_service_->isEnabled()) {
     socket_service_->start();
   }
 
-  is_ready_ = true;
   TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
   TT_LOG_INFO("[LLMService] Service started");
 }
-
-bool LLMService::isModelReady() const { return is_ready_.load(); }
 
 size_t LLMService::currentQueueSize() const { return pending_tasks_.load(); }
 
@@ -104,6 +113,8 @@ void LLMService::stop() {
 
   TT_LOG_INFO("[LLMService] Stopping...");
 
+  stopWarmupListener();
+
   // Signal shutdown on all ring buffers so blockingPop wakes up
   for (auto& q : queue_manager_->result_queues) {
     q->shutdown();
@@ -128,7 +139,6 @@ void LLMService::stop() {
     socket_service_->stop();
   }
 
-  is_ready_ = false;
   TT_LOG_INFO("[LLMService] Stopped");
   queue_manager_->clear();
 }

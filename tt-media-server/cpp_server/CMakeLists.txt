@@ -352,6 +352,7 @@ set(SOURCES
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
+    src/ipc/boost_ipc_warmup_signal_queue.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
     src/utils/tokenizer.cpp
