@@ -257,8 +257,9 @@ class CacheMonitor:
         self, is_generating: bool
     ) -> Tuple[int, int, Optional[float], float, bool]:
         if not is_generating:
+            total_size_bytes, file_count = self._get_tensor_cache_snapshot()
             self._reset_progress_tracking()
-            return 0, 0, None, 0.0, False
+            return total_size_bytes, file_count, None, 0.0, False
 
         current_time = time.time()
         total_size_bytes, file_count = self._get_tensor_cache_snapshot()
