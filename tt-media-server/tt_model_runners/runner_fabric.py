@@ -95,6 +95,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.MOCK: lambda wid: __import__(
         "tt_model_runners.mock_runner", fromlist=["MockRunner"]
     ).MockRunner(wid),
+    ModelRunners.SP_RUNNER: lambda wid: __import__(
+        "tt_model_runners.sp_runner", fromlist=["SPRunner"]
+    ).SPRunner(wid),
     ModelRunners.TT_SPEECHT5_TTS: lambda wid: __import__(
         "tt_model_runners.speecht5_runner", fromlist=["TTSpeechT5Runner"]
     ).TTSpeechT5Runner(wid),
