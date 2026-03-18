@@ -2,29 +2,45 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Shared memory video generation runner.
+"""Shared memory video generation runner with multi-rank support.
 
 This runner reads VideoGenerateRequest from shared memory, processes them using
 DiT runners (Mochi, Wan, etc.), and writes generated video frames back to shared memory.
+
+Multi-rank mode:
+- Rank 0: Reads from shared memory, processes with DiT model, and distributes to ranks 1-3
+- Ranks 1-3: Listen on sockets and receive requests (for future processing)
 
 Environment variables required:
     TT_IPC_SHM_VIDEO_REQ: Name of request shared memory segment (C++ to Python)
     TT_IPC_SHM_VIDEO_RESP: Name of response shared memory segment (Python to C++)
     TT_VISIBLE_DEVICES: Device ID(s) to use
     MODEL_RUNNER: DiT runner to use (e.g., tt_mochi_1, tt_wan_2_2)
+    OMPI_COMM_WORLD_RANK or RANK: Rank ID (0-3)
 
 Usage:
+    # Rank 0 (coordinator with inference):
+    export RANK=0
     export TT_IPC_SHM_VIDEO_REQ=tt_video_req_12345
     export TT_IPC_SHM_VIDEO_RESP=tt_video_resp_12345
     export TT_VISIBLE_DEVICES=0
     export MODEL_RUNNER=tt_mochi_1
     python video_runner.py
+
+    # Ranks 1-3 (workers, for future use):
+    export RANK=1  # or 2, 3
+    export TT_VISIBLE_DEVICES=1  # or 2, 3
+    export MODEL_RUNNER=tt_mochi_1
+    python video_runner.py
 """
 
 import os
+import pickle
 import signal
+import socket
 import struct
 import sys
+import time
 from dataclasses import dataclass
 from multiprocessing import shared_memory as _shm
 from typing import Optional
@@ -36,10 +52,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from config.constants import ModelRunners
 from domain.video_generate_request import VideoGenerateRequest
-from tt_model_runners.dit_runners import TTMochi1Runner, TTWan22Runner
-from utils.logger import setup_logger
 
-logger = setup_logger(__name__)
+# DO NOT import dit_runners here - delay import until needed (rank 0 only)
 
 _shutdown = False
 
@@ -47,6 +61,20 @@ _shutdown = False
 def _handle_sigterm(signum, frame):
     global _shutdown
     _shutdown = True
+
+
+def _rank() -> int:
+    r = os.environ.get("OMPI_COMM_WORLD_RANK") or os.environ.get("RANK")
+    return int(r) if r is not None else 0
+
+
+# Socket configuration for ranks
+RANK_CONFIG = {
+    0: {"ip": "127.0.0.1", "port": 9000},  # Rank 0 (coordinator)
+    1: {"ip": "127.0.0.1", "port": 9001},  # Rank 1 (worker)
+    2: {"ip": "127.0.0.1", "port": 9002},  # Rank 2 (worker)
+    3: {"ip": "127.0.0.1", "port": 9003},  # Rank 3 (worker)
+}
 
 
 @dataclass(frozen=True)
@@ -77,14 +105,14 @@ class VideoRequestSharedMemory:
         state(4) + task_id(36) + prompt_len(4) + prompt(512)
         + negative_prompt_len(4) + negative_prompt(512)
         + num_inference_steps(4) + seed(8)
-    Total per slot: 1064 bytes
+    Total per slot: 1084 bytes
     """
 
     SLOTS = 16
     TASK_ID_SIZE = 36
     MAX_PROMPT_SIZE = 512
 
-    _SLOT_SIZE = 1064  # Fixed size per slot
+    _SLOT_SIZE = 1084  # Fixed size per slot
     _STATE_OFF = 0
     _TASK_ID_OFF = 4
     _PROMPT_LEN_OFF = 40
@@ -112,7 +140,7 @@ class VideoRequestSharedMemory:
                 temp_shm = _shm.SharedMemory(name=self._name, create=False)
                 temp_shm.close()
                 temp_shm.unlink()
-                logger.info(f"Unlinked existing SHM: {self._name}")
+                print(f"Unlinked existing SHM: {self._name}")
             except FileNotFoundError:
                 pass  # Doesn't exist, that's fine
 
@@ -122,11 +150,9 @@ class VideoRequestSharedMemory:
             )
             os.chmod(f"/dev/shm/{self._name}", 0o666)
             self._buf = self._shm.buf
-            logger.info(
-                f"Opened video request SHM: {self._name} ({self._total_size} bytes)"
-            )
+            print(f"Opened video request SHM: {self._name} ({self._total_size} bytes)")
         except Exception as e:
-            logger.error(f"Failed to open video request SHM: {e}")
+            print(f"Failed to open video request SHM: {e}")
             raise
 
     def close(self) -> None:
@@ -145,6 +171,7 @@ class VideoRequestSharedMemory:
         while not _shutdown:
             if struct.unpack_from("<i", buf, state_off)[0] == self._TAKEN:
                 break
+            time.sleep(0.001)  # Small sleep to avoid busy waiting
         else:
             return None
 
@@ -191,6 +218,7 @@ class VideoRequestSharedMemory:
         while not _shutdown:
             if struct.unpack_from("<i", buf, state_off)[0] == self._FREE:
                 break
+            time.sleep(0.001)
         else:
             return
 
@@ -290,7 +318,7 @@ class VideoResponseSharedMemory:
                 temp_shm = _shm.SharedMemory(name=self._name, create=False)
                 temp_shm.close()
                 temp_shm.unlink()
-                logger.info(f"Unlinked existing SHM: {self._name}")
+                print(f"Unlinked existing SHM: {self._name}")
             except FileNotFoundError:
                 pass  # Doesn't exist, that's fine
 
@@ -300,11 +328,11 @@ class VideoResponseSharedMemory:
             )
             os.chmod(f"/dev/shm/{self._name}", 0o666)
             self._buf = self._shm.buf
-            logger.info(
+            print(
                 f"Opened video response SHM: {self._name} ({self._total_size} bytes, {self._total_size // (1024 * 1024)} MB)"
             )
         except Exception as e:
-            logger.error(f"Failed to open video response SHM: {e}")
+            print(f"Failed to open video response SHM: {e}")
             raise
 
     def close(self) -> None:
@@ -324,6 +352,7 @@ class VideoResponseSharedMemory:
         while not _shutdown:
             if struct.unpack_from("<i", buf, state_off)[0] == self._FREE:
                 break
+            time.sleep(0.001)
         else:
             return
 
@@ -384,14 +413,12 @@ class VideoResponseSharedMemory:
         Returns:
             VideoResponse or None if timeout
         """
-        import time
-
         buf = self._buf
         start_time = time.time()
 
         while not _shutdown:
             if time.time() - start_time > timeout:
-                logger.error(
+                print(
                     f"Timeout waiting for response with task_id={expected_task_id[:20]}"
                 )
                 return None
@@ -482,8 +509,46 @@ class VideoResponseSharedMemory:
         self.close()
 
 
+def send_request_via_socket(sock: socket.socket, request: VideoRequest) -> None:
+    """Send VideoRequest via socket using pickle."""
+    data = pickle.dumps(request)
+    # Send length first (4 bytes)
+    sock.sendall(struct.pack("<I", len(data)))
+    # Send data
+    sock.sendall(data)
+
+
+def recv_request_via_socket(conn: socket.socket) -> Optional[VideoRequest]:
+    """Receive VideoRequest via socket using pickle."""
+    try:
+        # Receive length first (4 bytes)
+        length_data = conn.recv(4)
+        if not length_data:
+            return None
+        length = struct.unpack("<I", length_data)[0]
+
+        # Receive data
+        data = b""
+        while len(data) < length:
+            chunk = conn.recv(min(length - len(data), 4096))
+            if not chunk:
+                return None
+            data += chunk
+
+        return pickle.loads(data)
+    except Exception as e:
+        print(f"Error receiving request: {e}")
+        return None
+
+
 def create_dit_runner(model_runner: str, device_id: str):
-    """Create appropriate DiT runner based on MODEL_RUNNER environment variable."""
+    """Create appropriate DiT runner based on MODEL_RUNNER environment variable.
+
+    Import is done here (lazy import) to avoid loading ttnn unless needed.
+    """
+    # Import dit_runners only when needed (rank 0 only)
+    from tt_model_runners.dit_runners import TTMochi1Runner, TTWan22Runner
+
     runner_map = {
         ModelRunners.TT_MOCHI_1.value: TTMochi1Runner,
         ModelRunners.TT_WAN_2_2.value: TTWan22Runner,
@@ -496,134 +561,207 @@ def create_dit_runner(model_runner: str, device_id: str):
             f"Supported: {list(runner_map.keys())}"
         )
 
-    logger.info(f"Creating {runner_class.__name__} for device {device_id}")
+    print(f"Creating {runner_class.__name__} for device {device_id}")
     return runner_class(device_id)
 
 
-def _run_video_bridge() -> None:
-    """Run the shared memory bridge for video generation."""
+def run_rank0_coordinator() -> None:
+    """Rank 0: Read from shared memory, process with DiT model, and distribute to workers."""
     req_name = os.environ.get("TT_IPC_SHM_VIDEO_REQ")
     resp_name = os.environ.get("TT_IPC_SHM_VIDEO_RESP")
     model_runner = os.environ.get("MODEL_RUNNER", "")
     device_id = os.environ.get("TT_VISIBLE_DEVICES", "0")
 
     if not (req_name and resp_name):
-        logger.error("TT_IPC_SHM_VIDEO_REQ or TT_IPC_SHM_VIDEO_RESP not set")
-        print("Example usage:", file=sys.stderr)
-        print("  export TT_IPC_SHM_VIDEO_REQ=tt_video_req_12345", file=sys.stderr)
-        print("  export TT_IPC_SHM_VIDEO_RESP=tt_video_resp_12345", file=sys.stderr)
-        print("  export TT_VISIBLE_DEVICES=0", file=sys.stderr)
-        print("  export MODEL_RUNNER=tt_mochi_1", file=sys.stderr)
-        print("  python video_runner.py", file=sys.stderr)
+        print("TT_IPC_SHM_VIDEO_REQ or TT_IPC_SHM_VIDEO_RESP not set")
         sys.exit(1)
 
     if not model_runner:
-        logger.error("MODEL_RUNNER environment variable not set")
+        print("MODEL_RUNNER environment variable not set")
         sys.exit(1)
 
-    logger.info(
-        f"Video Runner: Initializing with model={model_runner}, device={device_id}"
-    )
-    logger.info(f"Video Runner: Request SHM={req_name}, Response SHM={resp_name}")
+    print(f"Rank 0: Initializing with model={model_runner}, device={device_id}")
+    print(f"Rank 0: Request SHM={req_name}, Response SHM={resp_name}")
 
-    # Initialize DiT runner
+    # Initialize DiT runner (imports ttnn here, only for rank 0)
+    runner = None
     try:
-        runner = create_dit_runner(model_runner, device_id)
-        logger.info("Video Runner: Setting up device...")
-        runner.set_device()
-        logger.info("Video Runner: Loading weights...")
-        runner.load_weights()
-        logger.info("Video Runner: Running warmup...")
-        import asyncio
+        # runner = create_dit_runner(model_runner, device_id)
+        print("Rank 0: Setting up device...")
+        #        runner.set_device()
+        print("Rank 0: Loading weights...")
+        #        runner.load_weights()
+        print("Rank 0: Running warmup...")
 
-        asyncio.run(runner.warmup())
-        logger.info("Video Runner: Model ready for inference")
+        #       asyncio.run(runner.warmup())
+        print("Rank 0: Model ready for inference")
     except Exception as e:
-        logger.error(f"Video Runner: Failed to initialize model: {e}")
+        print(f"Rank 0: Failed to initialize model: {e}")
         raise
 
     # Open shared memory
+    req_shm = VideoRequestSharedMemory(req_name)
+    resp_shm = VideoResponseSharedMemory(resp_name)
+    req_shm.open()
+    resp_shm.open()
+
+    # Sleep for 5 seconds to let workers start
+    print("Rank 0: Sleeping for 5 seconds to let workers start...")
+    time.sleep(5)
+
+    # Connect to worker ranks
+    worker_sockets = {}
+    for rank in [1, 2, 3]:
+        config = RANK_CONFIG[rank]
+        print(f"Rank 0: Connecting to rank {rank} at {config['ip']}:{config['port']}")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.connect((config["ip"], config["port"]))
+            worker_sockets[rank] = sock
+            print(f"Rank 0: Connected to rank {rank}")
+        except Exception as e:
+            print(f"Rank 0: Failed to connect to rank {rank}: {e}")
+            sock.close()
+
+    if worker_sockets:
+        print(f"Rank 0: Connected to {len(worker_sockets)} workers")
+    else:
+        print("Rank 0: No workers connected, running in standalone mode")
+
+    print("Rank 0: SHM bridge started successfully")
+
     try:
-        with VideoRequestSharedMemory(req_name) as req_shm, VideoResponseSharedMemory(
-            resp_name
-        ) as resp_shm:
-            logger.info("Video Runner: SHM bridge started successfully")
+        while not _shutdown:
+            # Read request from shared memory
+            req = req_shm.read()
+            if req is None:
+                break
 
-            while not _shutdown:
-                # Read request
-                req = req_shm.read()
-                if req is None:
-                    break
+            task_id_str = req.task_id.decode("utf-8", errors="ignore").rstrip("\x00")
+            print(
+                f"Rank 0: Received from SHM - task_id={task_id_str}, "
+                f"prompt='{req.prompt[:50]}...', "
+                f"steps={req.num_inference_steps}, seed={req.seed}"
+            )
 
-                task_id_str = req.task_id.decode("utf-8", errors="ignore").rstrip(
-                    "\x00"
-                )
-                logger.info(
-                    f"Video Runner: Received task_id={task_id_str}, "
-                    f"prompt='{req.prompt[:50]}...', "
-                    f"steps={req.num_inference_steps}, seed={req.seed}"
-                )
-
-                # Process request
+            # Distribute to workers (if any)
+            for rank, sock in worker_sockets.items():
                 try:
-                    # Create VideoGenerateRequest
-                    video_req = VideoGenerateRequest(
-                        prompt=req.prompt,
-                        negative_prompt=req.negative_prompt,
-                        num_inference_steps=req.num_inference_steps,
-                        seed=req.seed,
-                    )
-
-                    # Run inference
-                    logger.info(
-                        f"Video Runner: Starting inference for task {task_id_str}"
-                    )
-                    frames = runner.run([video_req])
-                    logger.info(
-                        f"Video Runner: Inference completed, frames shape: {frames.shape}"
-                    )
-
-                    # Write response
-                    response = VideoResponse(
-                        task_id=req.task_id,
-                        frames=frames,
-                        status="success",
-                    )
-                    resp_shm.write(response)
-                    logger.info(f"Video Runner: Sent response for task {task_id_str}")
-
+                    send_request_via_socket(sock, req)
+                    print(f"Rank 0: Sent request to rank {rank}")
                 except Exception as e:
-                    logger.error(
-                        f"Video Runner: Inference failed for task {task_id_str}: {e}"
-                    )
-                    error_response = VideoResponse(
-                        task_id=req.task_id,
-                        frames=None,
-                        status="error",
-                        error_message=str(e)[:255],
-                    )
-                    resp_shm.write(error_response)
+                    print(f"Rank 0: Failed to send to rank {rank}: {e}")
+
+            # Process request with local DiT model
+            try:
+                # Create VideoGenerateRequest
+                video_req = VideoGenerateRequest(
+                    prompt=req.prompt,
+                    negative_prompt=req.negative_prompt,
+                    num_inference_steps=req.num_inference_steps,
+                    seed=req.seed,
+                )
+
+                # Run inference
+                print(f"Rank 0: Starting inference for task {task_id_str}")
+                frames = runner.run([video_req])
+                print(f"Rank 0: Inference completed, frames shape: {frames.shape}")
+
+                # Write response
+                response = VideoResponse(
+                    task_id=req.task_id,
+                    frames=frames,
+                    status="success",
+                )
+                resp_shm.write(response)
+                print(f"Rank 0: Sent response for task {task_id_str}")
+
+            except Exception as e:
+                print(f"Rank 0: Inference failed for task {task_id_str}: {e}")
+                error_response = VideoResponse(
+                    task_id=req.task_id,
+                    frames=None,
+                    status="error",
+                    error_message=str(e)[:255],
+                )
+                resp_shm.write(error_response)
 
     except KeyboardInterrupt:
-        logger.info("Video Runner: Interrupted by user")
-    except Exception as e:
-        logger.error(f"Video Runner: Error: {e}")
-        raise
+        print("Rank 0: Interrupted by user")
     finally:
         # Cleanup
+        for rank, sock in worker_sockets.items():
+            print(f"Rank 0: Closing connection to rank {rank}")
+            sock.close()
+        req_shm.close()
+        resp_shm.close()
         if runner:
-            logger.info("Video Runner: Closing device...")
+            print("Rank 0: Closing device...")
             runner.close_device()
 
-    logger.info("Video Runner: Shutdown complete")
+    print("Rank 0: Shutdown complete")
+
+
+def run_worker_rank(rank: int) -> None:
+    """Ranks 1-3: Listen on socket and process requests."""
+    config = RANK_CONFIG[rank]
+    print(f"Rank {rank}: Starting worker on {config['ip']}:{config['port']}")
+
+    # Create listening socket
+    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_sock.bind((config["ip"], config["port"]))
+    server_sock.listen(1)
+
+    print(f"Rank {rank}: Listening for connections...")
+
+    try:
+        # Accept connection from rank 0
+        conn, addr = server_sock.accept()
+        print(f"Rank {rank}: Accepted connection from {addr}")
+
+        while not _shutdown:
+            # Receive request
+            req = recv_request_via_socket(conn)
+            if req is None:
+                break
+
+            task_id_str = req.task_id.decode("utf-8", errors="ignore").rstrip("\x00")
+            print(
+                f"Rank {rank}: Received request - task_id={task_id_str}, "
+                f"prompt='{req.prompt[:50]}...', "
+                f"steps={req.num_inference_steps}, "
+                f"seed={req.seed}"
+            )
+
+            # TODO: Process request with DiT runner in future
+            # For now, just print it
+            print(f"[Rank {rank}] Request: {req}")
+
+    except KeyboardInterrupt:
+        print(f"Rank {rank}: Interrupted by user")
+    except Exception as e:
+        print(f"Rank {rank}: Error: {e}")
+    finally:
+        server_sock.close()
+
+    print(f"Rank {rank}: Shutdown complete")
 
 
 def main() -> None:
     signal.signal(signal.SIGTERM, _handle_sigterm)
     signal.signal(signal.SIGINT, _handle_sigterm)
 
-    logger.info("Video Runner: Starting video generation shared memory bridge")
-    _run_video_bridge()
+    rank = _rank()
+    print(f"Starting video runner with rank={rank}")
+
+    if rank == 0:
+        run_rank0_coordinator()
+    elif rank in [1, 2, 3]:
+        run_worker_rank(rank)
+    else:
+        print(f"Invalid rank: {rank}. Must be 0-3")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
