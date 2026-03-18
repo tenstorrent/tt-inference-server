@@ -53,7 +53,6 @@ class StepSequence:
 
     task_id: str
     token_ids: list[int]
-    max_tokens: int
     temperature: float
     ignore_eos: bool
     block_table: list[int]
@@ -121,7 +120,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         return SamplingParams(
             temperature=seq.temperature,
             top_p=seq.top_p if seq.top_p is not None else 1.0,
-            top_k=seq.top_k if seq.top_k is not None else 0,
+            top_k=seq.top_k if seq.top_k is not None else 1,
             presence_penalty=seq.presence_penalty,
             frequency_penalty=seq.frequency_penalty,
             repetition_penalty=seq.repetition_penalty
@@ -141,7 +140,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         # Build lists for each parameter
         temperatures = [seq.temperature for seq in sequences]
         top_ps = [seq.top_p if seq.top_p is not None else 1.0 for seq in sequences]
-        top_ks = [seq.top_k if seq.top_k is not None else 0 for seq in sequences]
+        top_ks = [seq.top_k if seq.top_k is not None else 1 for seq in sequences]
         repetition_penalties = [
             seq.repetition_penalty if seq.repetition_penalty is not None else 1.0
             for seq in sequences
@@ -227,11 +226,16 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         return True
 
     def run(
-        self, is_prefill: bool = True, sequences: list | None = None
+        self,
+        is_prefill: bool = True,
+        sequences: list | None = None,
+        reset_batch: bool = False,
     ) -> list[StepResult]:
         """Run one scheduler step (prefill or decode), returning one token per sequence.
 
-        Called from C++ as runner.run(is_prefill, sequences) with positional args.
+        Called from C++ as runner.run(is_prefill, sequences, reset_batch) with positional args.
+        reset_batch: passed from C++; True on the first decode step after prefill to reset
+        on-device sampling state (prompt/output for penalties).
         """
         import torch
 
@@ -242,8 +246,8 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         if is_prefill:
             return self._run_prefill_batch(sequences, torch)
         if self.max_batch_size > 1 and len(sequences) > 0:
-            return self._run_decode_batch(sequences, torch)
-        return [self._run_decode(s, torch) for s in sequences]
+            return self._run_decode_batch(sequences, torch, reset_batch=reset_batch)
+        return [self._run_decode(s, torch, reset_batch=reset_batch) for s in sequences]
 
     def _run_prefill_batch(
         self, sequences: list[StepSequence], torch
@@ -275,7 +279,9 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         next_token = int(output_tokens[0].item())
         return StepResult(task_id=seq.task_id, token_id=next_token)
 
-    def _run_decode(self, seq: StepSequence, torch) -> StepResult:
+    def _run_decode(
+        self, seq: StepSequence, torch, reset_batch: bool = False
+    ) -> StepResult:
         if not seq.block_table:
             return StepResult(
                 task_id=seq.task_id,
@@ -296,13 +302,14 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             kv_cache=self._kv_cache,
             enable_trace=True,
             sampling_params=sampling_params,
+            reset_batch=reset_batch,
         )
 
         next_token = int(output_tokens[0].item())
         return StepResult(task_id=seq.task_id, token_id=next_token)
 
     def _run_decode_batch(
-        self, sequences: list[StepSequence], torch
+        self, sequences: list[StepSequence], torch, reset_batch: bool = False
     ) -> list[StepResult]:
         """Batched decode when len(sequences) <= max_batch_size.
 
@@ -316,7 +323,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         """
         B = self.max_batch_size
         if len(sequences) > B:
-            return [self._run_decode(s, torch) for s in sequences]
+            return [self._run_decode(s, torch, reset_batch) for s in sequences]
 
         n = len(sequences)
         tokens_list = []
@@ -345,6 +352,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             kv_cache=self._kv_cache,
             enable_trace=True,
             sampling_params=sampling_params,
+            reset_batch=reset_batch,
         )
 
         # Device sampling returns tokens directly, shape [batch]

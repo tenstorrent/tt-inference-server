@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from workflows.runtime_config import RuntimeConfig
 
 VERSION = get_version()
+MODEL_SPECS_SCHEMA_VERSION = "0.1.0"
 
 
 def generate_docker_tag(
@@ -42,11 +43,16 @@ def generate_docker_tag(
 
 
 def generate_default_docker_link(
-    version: str, tt_metal_commit: str, vllm_commit: Optional[str]
+    version: str,
+    tt_metal_commit: str,
+    vllm_commit: Optional[str],
+    multihost: bool = False,
 ) -> str:
     _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
     if vllm_commit is None:
         _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server"
+    elif multihost:
+        _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64"
     else:
         _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     return f"{_default_docker_repo}:{_default_docker_tag}"
@@ -461,7 +467,10 @@ class ModelSpec:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_link = generate_default_docker_link(
-                VERSION, self.tt_metal_commit, self.vllm_commit
+                VERSION,
+                self.tt_metal_commit,
+                self.vllm_commit,
+                multihost=self.device_type.is_multihost(),
             )
             object.__setattr__(self, "docker_image", _default_docker_link)
 
@@ -957,8 +966,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="e867533",
-        vllm_commit="8f36910",
+        tt_metal_commit="bac8b34",
+        vllm_commit="7c6685a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -969,14 +978,20 @@ llm_templates = [
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=32 * 4,
+                max_concurrency=32,  # currently limiting client-side max_concurrency=32 to allow workflows to
+                # complete else they will timeout due to hitting the vLLM RPC recv 30min timeout
                 max_context=128 * 1024,
                 default_impl=True,
                 env_vars={
                     "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid
+                    "TT_MM_THROTTLE_PERF": 2,
                 },
                 vllm_args={
                     "data_parallel_size": 4,
+                    "max_num_seqs": 32,  # override the default inferred by max_concurrency
+                },
+                override_tt_config={
+                    "sample_on_device_mode": "all",
                 },
             ),
         ],
@@ -1233,8 +1248,8 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="555f240",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1242,6 +1257,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 61341696,
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
@@ -1262,7 +1280,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="e867533",
+        tt_metal_commit="555f240",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1476,33 +1494,56 @@ llm_templates = [
             "deepseek-ai/DeepSeek-R1-0528",
         ],
         impl=deepseek_r1_galaxy_impl,
-        tt_metal_commit="e3d97e5",
-        vllm_commit="a186bf4",
+        tt_metal_commit="0900acd",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32 * 8,
-                max_context=64 * 1024,
+                max_context=2048,
                 default_impl=True,
+                vllm_args={
+                    "max_model_len": "2048",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.DUAL_GALAXY,
-                max_concurrency=32 * 8,
-                max_context=64 * 1024,
+                max_concurrency=32 * 8,  # 32 per DP rank * 8 ranks
+                max_context=2048,
                 default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 8,
+                    "block_size": "32",
+                    "max_model_len": "2048",
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
+                    "fabric_reliability_mode": "RELAXED_INIT",
+                    "trace_mode": "none",
+                    "env_passthrough": ["DEEPSEEK_V3_CACHE", "DEEPSEEK_V3_HF_MODEL"],
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.QUAD_GALAXY,
-                max_concurrency=32 * 8,
-                max_context=64 * 1024,
+                max_concurrency=32 * 16,  # 32 per DP rank * 16 ranks
+                max_context=2048,
                 default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 16,
+                    "block_size": "32",
+                    "max_model_len": "2048",
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
+                    "fabric_reliability_mode": "RELAXED_INIT",
+                    "trace_mode": "none",
+                    "env_passthrough": ["DEEPSEEK_V3_CACHE", "DEEPSEEK_V3_HF_MODEL"],
+                },
             ),
         ],
-        env_vars={
-            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
-        },
         status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1550,8 +1591,8 @@ llm_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="555f240",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1578,6 +1619,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 51453952,
+                },
                 system_requirements=SystemRequirements(
                     firmware=VersionRequirement(
                         specifier=">=18.12.0",
@@ -1610,7 +1654,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="e867533",
+        tt_metal_commit="555f240",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1824,8 +1868,8 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="555f240",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1856,7 +1900,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="e867533",
+        tt_metal_commit="555f240",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1989,6 +2033,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "disable_mm_preprocessor_cache": True,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2002,6 +2047,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "disable_mm_preprocessor_cache": True,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2031,6 +2077,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "disable_mm_preprocessor_cache": True,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2049,6 +2096,7 @@ vlm_templates = [
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
+                    "disable_mm_preprocessor_cache": True,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2096,6 +2144,9 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "disable_mm_preprocessor_cache": True,
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -2273,7 +2324,7 @@ vlm_templates = [
 video_templates = [
     ModelSpecTemplate(
         weights=["genmo/mochi-1-preview"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2324,7 +2375,7 @@ video_templates = [
     ),
     ModelSpecTemplate(
         weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2385,7 +2436,7 @@ image_templates = [
             "stabilityai/stable-diffusion-xl-base-1.0",
             "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
         ],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2484,7 +2535,7 @@ image_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-dev", "black-forest-labs/FLUX.1-schnell"],
-        tt_metal_commit="c180ef7",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2601,7 +2652,7 @@ image_templates = [
 audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="cce3da6",
+        tt_metal_commit="555f240",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2738,7 +2789,7 @@ embedding_templates = [
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-Embedding-8B"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -3170,7 +3221,9 @@ def get_model_spec_map(
 def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
     """Export MODEL_SPECS to a nested JSON file.
 
-    Output is nested: hf_model_repo > device_type > inference_engine > impl_id.
+    Output is wrapped with metadata and nested model specs:
+    schema_version, release_version, model_specs[hf_model_repo][device_type]
+    [inference_engine][impl_id].
 
     Args:
         model_specs: Dictionary mapping model_id to ModelSpec objects.
@@ -3195,8 +3248,14 @@ def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
         )
         num_specs += 1
 
+    export_data = {
+        "schema_version": MODEL_SPECS_SCHEMA_VERSION,
+        "release_version": VERSION,
+        "model_specs": nested_specs,
+    }
+
     with open(output_path, "w") as f:
-        json.dump(nested_specs, f, indent=2)
+        json.dump(export_data, f, indent=2)
 
     return num_specs
 

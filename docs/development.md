@@ -126,6 +126,9 @@ pre-commit install
 
 run pre-commit:
 ```bash
+# run git hooks script directly
+.git/hooks/pre-commit
+
 # pre-commit behaviour is defined in .pre-commit-config.yaml
 # by default it runs only on git staged files
 pre-commit run
