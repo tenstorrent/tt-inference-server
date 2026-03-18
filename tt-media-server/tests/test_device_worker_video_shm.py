@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 import sys
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
@@ -567,6 +567,7 @@ class TestSPRunnerLifecycle:
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_warmup_returns_true(self, MockVideoShm):
         import asyncio
+
         from tt_model_runners.sp_runner import SPRunner
 
         runner = SPRunner("dev0")
