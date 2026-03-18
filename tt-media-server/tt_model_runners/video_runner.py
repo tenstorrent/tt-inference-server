@@ -51,7 +51,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from config.constants import ModelRunners
-from ipc.video_shm import FrameResult, FrameStatus, VideoRequest, VideoShm
+from ipc.video_shm import VideoRequest, VideoResponse, VideoShm, VideoStatus
 
 _shutdown = False
 
@@ -126,12 +126,12 @@ def create_dit_runner(model_runner: str, device_id: str):
     return runner_class(device_id)
 
 
-def _write_frames_to_shm(
+def _write_response_to_shm(
     output_shm: VideoShm,
     task_id: str,
     frames: np.ndarray,
 ) -> None:
-    """Stream frames one-by-one into output VideoShm, followed by a DONE sentinel.
+    """Write the full video blob into output VideoShm.
 
     Expects *frames* with shape ``(1, num_frames, H, W, C)`` or
     ``(num_frames, H, W, C)`` — uint8 or float [0,1].
@@ -143,45 +143,31 @@ def _write_frames_to_shm(
     if frames.dtype != np.uint8:
         frames = (frames.clip(0.0, 1.0) * 255).astype(np.uint8)
 
-    for idx in range(num_frames):
-        output_shm.write_frame(
-            FrameResult(
-                task_id=task_id,
-                status=FrameStatus.FRAME,
-                frame_index=idx,
-                total_frames=num_frames,
-                height=h,
-                width=w,
-                channels=c,
-                frame_data=frames[idx].tobytes(),
-            )
-        )
-
-    output_shm.write_frame(
-        FrameResult(
+    output_shm.write_response(
+        VideoResponse(
             task_id=task_id,
-            status=FrameStatus.DONE,
-            frame_index=num_frames,
-            total_frames=num_frames,
-            height=0,
-            width=0,
-            channels=0,
-            frame_data=b"",
+            status=VideoStatus.SUCCESS,
+            num_frames=num_frames,
+            height=h,
+            width=w,
+            channels=c,
+            frame_data=frames.tobytes(),
+            error_message="",
         )
     )
 
 
-def _write_error_to_shm(output_shm: VideoShm, task_id: str) -> None:
-    output_shm.write_frame(
-        FrameResult(
+def _write_error_to_shm(output_shm: VideoShm, task_id: str, error: str = "") -> None:
+    output_shm.write_response(
+        VideoResponse(
             task_id=task_id,
-            status=FrameStatus.ERROR,
-            frame_index=0,
-            total_frames=0,
+            status=VideoStatus.ERROR,
+            num_frames=0,
             height=0,
             width=0,
             channels=0,
             frame_data=b"",
+            error_message=error[:256],
         )
     )
 
@@ -276,12 +262,12 @@ def run_rank0_coordinator() -> None:
                 frames = runner.run([video_gen_req])
                 print(f"Rank 0: Inference done, shape={frames.shape}")
 
-                _write_frames_to_shm(output_shm, req.task_id, frames)
-                print(f"Rank 0: All frames written for task {req.task_id}")
+                _write_response_to_shm(output_shm, req.task_id, frames)
+                print(f"Rank 0: Response written for task {req.task_id}")
 
             except Exception as e:
                 print(f"Rank 0: Inference failed for task {req.task_id}: {e}")
-                _write_error_to_shm(output_shm, req.task_id)
+                _write_error_to_shm(output_shm, req.task_id, str(e))
 
     except KeyboardInterrupt:
         print("Rank 0: Interrupted by user")

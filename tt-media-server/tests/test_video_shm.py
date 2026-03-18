@@ -22,7 +22,7 @@ mock_settings_module.get_settings = Mock(return_value=mock_settings)
 sys.modules["config.settings"] = mock_settings_module
 sys.modules["telemetry.telemetry_client"] = Mock()
 
-from ipc.video_shm import FrameResult, FrameStatus, VideoRequest, VideoShm
+from ipc.video_shm import VideoRequest, VideoResponse, VideoShm, VideoStatus
 
 
 # ── Helpers ──
@@ -61,26 +61,26 @@ def _make_request(**overrides) -> VideoRequest:
     return VideoRequest(**defaults)
 
 
-def _make_frame(
+def _make_response(
     task_id: str = "abcdef12-3456-7890-abcd-ef1234567890",
-    status: FrameStatus = FrameStatus.FRAME,
-    frame_index: int = 0,
-    total_frames: int = 81,
-    height: int = 480,
-    width: int = 832,
+    status: VideoStatus = VideoStatus.SUCCESS,
+    num_frames: int = 3,
+    height: int = 4,
+    width: int = 4,
     channels: int = 3,
     data_byte: int = 0xAB,
-    data_len: int = 128,
-) -> FrameResult:
-    return FrameResult(
+    error_message: str = "",
+) -> VideoResponse:
+    data_len = num_frames * height * width * channels
+    return VideoResponse(
         task_id=task_id,
         status=status,
-        frame_index=frame_index,
-        total_frames=total_frames,
+        num_frames=num_frames,
         height=height,
         width=width,
         channels=channels,
         frame_data=bytes([data_byte] * data_len),
+        error_message=error_message,
     )
 
 
@@ -349,113 +349,113 @@ class TestRequestRoundtrip:
         assert got.num_inference_steps == 0
 
 
-# ── Frame roundtrip ──
+# ── Response roundtrip ──
 
 
-class TestFrameRoundtrip:
-    def test_basic_frame(self, output_pair):
+class TestResponseRoundtrip:
+    def test_basic_response(self, output_pair):
         writer, reader = output_pair
-        frame = _make_frame()
-        writer.write_frame(frame)
-        got = reader.read_frame()
+        resp = _make_response()
+        writer.write_response(resp)
+        got = reader.read_response()
 
         assert got is not None
-        assert got.task_id == frame.task_id
-        assert got.status == FrameStatus.FRAME
-        assert got.frame_index == 0
-        assert got.total_frames == 81
-        assert got.height == 480
-        assert got.width == 832
+        assert got.task_id == resp.task_id
+        assert got.status == VideoStatus.SUCCESS
+        assert got.num_frames == 3
+        assert got.height == 4
+        assert got.width == 4
         assert got.channels == 3
-        assert got.frame_data == frame.frame_data
+        assert got.frame_data == resp.frame_data
+        assert got.error_message == ""
 
-    def test_done_sentinel(self, output_pair):
+    def test_error_response(self, output_pair):
         writer, reader = output_pair
-        done = _make_frame(status=FrameStatus.DONE, data_len=0)
-        writer.write_frame(done)
-        got = reader.read_frame()
-        assert got.status == FrameStatus.DONE
-        assert got.frame_data == b""
-
-    def test_error_sentinel(self, output_pair):
-        writer, reader = output_pair
-        err = _make_frame(status=FrameStatus.ERROR, data_len=0)
-        writer.write_frame(err)
-        got = reader.read_frame()
-        assert got.status == FrameStatus.ERROR
-
-    def test_oversized_frame_raises(self, output_pair):
-        writer, _ = output_pair
-        oversized = bytes(VideoShm.MAX_FRAME_SIZE + 1)
-        frame = FrameResult(
-            task_id="tid",
-            status=FrameStatus.FRAME,
-            frame_index=0,
-            total_frames=1,
-            height=720,
-            width=1280,
-            channels=3,
-            frame_data=oversized,
-        )
-        with pytest.raises(ValueError, match="exceeds MAX_FRAME_SIZE"):
-            writer.write_frame(frame)
-
-    def test_large_frame_data(self, output_pair):
-        writer, reader = output_pair
-        large_data = bytes(range(256)) * 1024
-        frame = FrameResult(
-            task_id="abcdef12-3456-7890-abcd-ef1234567890",
-            status=FrameStatus.FRAME,
-            frame_index=0,
-            total_frames=1,
-            height=480,
-            width=832,
-            channels=3,
-            frame_data=large_data,
-        )
-        writer.write_frame(frame)
-        got = reader.read_frame()
-        assert got.frame_data == large_data
-
-    def test_multiple_frames_sequential(self, output_pair):
-        writer, reader = output_pair
-        for i in range(5):
-            frame = _make_frame(frame_index=i, total_frames=5, data_len=32)
-            writer.write_frame(frame)
-            got = reader.read_frame()
-            assert got.frame_index == i
-            assert got.total_frames == 5
-
-    def test_empty_frame_data(self, output_pair):
-        writer, reader = output_pair
-        frame = _make_frame(
-            status=FrameStatus.DONE,
+        resp = _make_response(
+            status=VideoStatus.ERROR,
+            num_frames=0,
             height=0,
             width=0,
             channels=0,
-            data_len=0,
+            error_message="pipeline exploded",
         )
-        writer.write_frame(frame)
-        got = reader.read_frame()
+        writer.write_response(resp)
+        got = reader.read_response()
+        assert got.status == VideoStatus.ERROR
+        assert got.error_message == "pipeline exploded"
+        assert got.frame_data == b""
+
+    def test_oversized_response_raises(self, output_pair):
+        writer, _ = output_pair
+        oversized = bytes(VideoShm.MAX_VIDEO_SIZE + 1)
+        resp = VideoResponse(
+            task_id="tid",
+            status=VideoStatus.SUCCESS,
+            num_frames=1,
+            height=1,
+            width=1,
+            channels=1,
+            frame_data=oversized,
+            error_message="",
+        )
+        with pytest.raises(ValueError, match="exceeds MAX_VIDEO_SIZE"):
+            writer.write_response(resp)
+
+    def test_large_response_data(self, output_pair):
+        writer, reader = output_pair
+        large_data = bytes(range(256)) * 4096
+        resp = VideoResponse(
+            task_id="abcdef12-3456-7890-abcd-ef1234567890",
+            status=VideoStatus.SUCCESS,
+            num_frames=1,
+            height=1,
+            width=len(large_data),
+            channels=1,
+            frame_data=large_data,
+            error_message="",
+        )
+        writer.write_response(resp)
+        got = reader.read_response()
+        assert got.frame_data == large_data
+
+    def test_multiple_responses_sequential(self, output_pair):
+        writer, reader = output_pair
+        for i in range(4):
+            resp = _make_response(num_frames=i + 1, height=2, width=2)
+            writer.write_response(resp)
+            got = reader.read_response()
+            assert got.num_frames == i + 1
+
+    def test_empty_frame_data(self, output_pair):
+        writer, reader = output_pair
+        resp = _make_response(
+            status=VideoStatus.ERROR,
+            num_frames=0,
+            height=0,
+            width=0,
+            channels=0,
+            error_message="err",
+        )
+        writer.write_response(resp)
+        got = reader.read_response()
         assert got.frame_data == b""
         assert got.height == 0
 
-    def test_frame_preserves_all_fields(self, output_pair):
+    def test_response_preserves_all_fields(self, output_pair):
         writer, reader = output_pair
-        frame = FrameResult(
+        resp = VideoResponse(
             task_id="abcdef12-3456-7890-abcd-ef1234567890",
-            status=FrameStatus.FRAME,
-            frame_index=42,
-            total_frames=100,
+            status=VideoStatus.SUCCESS,
+            num_frames=10,
             height=720,
             width=1280,
             channels=4,
             frame_data=b"\xde\xad" * 64,
+            error_message="",
         )
-        writer.write_frame(frame)
-        got = reader.read_frame()
-        assert got.frame_index == 42
-        assert got.total_frames == 100
+        writer.write_response(resp)
+        got = reader.read_response()
+        assert got.num_frames == 10
         assert got.height == 720
         assert got.width == 1280
         assert got.channels == 4
@@ -491,7 +491,7 @@ class TestRingBufferWrapping:
     def test_position_wraps_after_slots(self, input_pair):
         writer, reader = input_pair
         req = _make_request()
-        for _ in range(VideoShm.SLOTS + 2):
+        for _ in range(VideoShm.INPUT_SLOTS + 2):
             writer.write_request(req)
             got = reader.read_request()
             assert got is not None
@@ -499,15 +499,15 @@ class TestRingBufferWrapping:
         assert writer._pos == 2
         assert reader._pos == 2
 
-    def test_multiple_frames_wrap(self, output_pair):
+    def test_responses_wrap(self, output_pair):
         writer, reader = output_pair
-        for i in range(VideoShm.SLOTS + 3):
-            frame = _make_frame(frame_index=i, data_len=64)
-            writer.write_frame(frame)
-            got = reader.read_frame()
-            assert got.frame_index == i
-        assert writer._pos == 3
-        assert reader._pos == 3
+        for i in range(VideoShm.OUTPUT_SLOTS + 1):
+            resp = _make_response(num_frames=i + 1, height=2, width=2)
+            writer.write_response(resp)
+            got = reader.read_response()
+            assert got.num_frames == i + 1
+        assert writer._pos == 1
+        assert reader._pos == 1
 
 
 # ── Shutdown signaling ──
@@ -535,8 +535,8 @@ class TestShutdownSignaling:
         shm.close()
         _force_cleanup_shm(name)
 
-    def test_read_frame_returns_none_on_shutdown(self):
-        name = _unique_name("sd_frm")
+    def test_read_response_returns_none_on_shutdown(self):
+        name = _unique_name("sd_resp")
         shutdown = False
 
         shm = VideoShm(name, mode="output", is_shutdown=lambda: shutdown)
@@ -549,7 +549,7 @@ class TestShutdownSignaling:
 
         t = threading.Thread(target=trigger_shutdown)
         t.start()
-        result = shm.read_frame()
+        result = shm.read_response()
         t.join()
         assert result is None
 
@@ -563,7 +563,7 @@ class TestShutdownSignaling:
         shm = VideoShm(name, mode="input", is_shutdown=lambda: shutdown)
         shm.open()
 
-        for i in range(VideoShm.SLOTS):
+        for i in range(VideoShm.INPUT_SLOTS):
             off = i * shm._slot_size
             struct.pack_into("<i", shm._buf, off, VideoShm._TAKEN)
 
@@ -580,14 +580,14 @@ class TestShutdownSignaling:
         shm.close()
         _force_cleanup_shm(name)
 
-    def test_write_frame_returns_on_shutdown(self):
-        name = _unique_name("sd_wf")
+    def test_write_response_returns_on_shutdown(self):
+        name = _unique_name("sd_wr_resp")
         shutdown = False
 
         shm = VideoShm(name, mode="output", is_shutdown=lambda: shutdown)
         shm.open()
 
-        for i in range(VideoShm.SLOTS):
+        for i in range(VideoShm.OUTPUT_SLOTS):
             off = i * shm._slot_size
             struct.pack_into("<i", shm._buf, off, VideoShm._TAKEN)
 
@@ -598,7 +598,7 @@ class TestShutdownSignaling:
 
         t = threading.Thread(target=trigger_shutdown)
         t.start()
-        shm.write_frame(_make_frame(data_len=64))
+        shm.write_response(_make_response(height=2, width=2))
         t.join()
 
         shm.close()
@@ -648,14 +648,14 @@ class TestCrossThreadRoundtrip:
 
 
 class TestTimeout:
-    def test_read_frame_timeout(self):
-        """read_frame(timeout_s) returns None after the deadline."""
-        name = _unique_name("tmout_f")
+    def test_read_response_timeout(self):
+        """read_response(timeout_s) returns None after the deadline."""
+        name = _unique_name("tmout_resp")
         shm = VideoShm(name, mode="output")
         shm.open()
 
         start = time.monotonic()
-        result = shm.read_frame(timeout_s=0.15)
+        result = shm.read_response(timeout_s=0.15)
         elapsed = time.monotonic() - start
 
         assert result is None
@@ -682,30 +682,32 @@ class TestTimeout:
         shm.close()
         _force_cleanup_shm(name)
 
-    def test_read_frame_returns_before_timeout_when_data_available(self, output_pair):
-        """Timeout should not fire when a frame is available promptly."""
+    def test_read_response_returns_before_timeout_when_data_available(
+        self, output_pair
+    ):
+        """Timeout should not fire when data is available promptly."""
         writer, reader = output_pair
-        frame = _make_frame(data_len=64)
+        resp = _make_response(height=2, width=2)
 
         def delayed_write():
             time.sleep(0.05)
-            writer.write_frame(frame)
+            writer.write_response(resp)
 
         t = threading.Thread(target=delayed_write)
         t.start()
 
-        result = reader.read_frame(timeout_s=5.0)
+        result = reader.read_response(timeout_s=5.0)
         t.join()
         assert result is not None
-        assert result.frame_data == frame.frame_data
+        assert result.frame_data == resp.frame_data
 
 
-# ── Error frame protocol (end-to-end) ──
+# ── Error response protocol (end-to-end) ──
 
 
-class TestErrorFrameProtocol:
-    def test_runner_error_frame_received_by_server(self):
-        """Simulate runner writing ERROR frame after a pipeline exception."""
+class TestErrorResponseProtocol:
+    def test_runner_error_response_received_by_server(self):
+        """Simulate runner writing an ERROR response after a pipeline exception."""
         in_name = _unique_name("eproto_in")
         out_name = _unique_name("eproto_out")
 
@@ -729,17 +731,16 @@ class TestErrorFrameProtocol:
             req = runner_in.read_request(timeout_s=2.0)
             assert req is not None
 
-            # Simulate pipeline that raises after 0 frames
-            runner_out.write_frame(
-                FrameResult(
+            runner_out.write_response(
+                VideoResponse(
                     task_id=req.task_id,
-                    status=FrameStatus.ERROR,
-                    frame_index=0,
-                    total_frames=0,
+                    status=VideoStatus.ERROR,
+                    num_frames=0,
                     height=0,
                     width=0,
                     channels=0,
                     frame_data=b"",
+                    error_message="pipeline crashed",
                 )
             )
 
@@ -754,10 +755,11 @@ class TestErrorFrameProtocol:
 
         server_out = VideoShm(out_name, mode="output")
         server_out.open(create=False)
-        result = server_out.read_frame(timeout_s=2.0)
+        result = server_out.read_response(timeout_s=2.0)
 
         assert result is not None
-        assert result.status == FrameStatus.ERROR
+        assert result.status == VideoStatus.ERROR
+        assert result.error_message == "pipeline crashed"
 
         server_in.close()
         server_out.close()

@@ -4,12 +4,12 @@
 
 """Video shared memory IPC for cross-process video generation.
 
-Wraps a slot-based ring buffer in POSIX shared memory for video request/frame
+Wraps a slot-based ring buffer in POSIX shared memory for video request/response
 exchange between the server process and an external runner process.
 
 Two modes:
   - "input"  (server -> runner): carries VideoRequest payloads
-  - "output" (runner -> server): carries FrameResult payloads
+  - "output" (runner -> server): carries VideoResponse payloads (full video blob)
 
 Runner side (attaches to SHM created by the device worker)::
 
@@ -18,10 +18,8 @@ Runner side (attaches to SHM created by the device worker)::
     input_shm.open(create=False)
     output_shm.open(create=False)
 
-    req = input_shm.read_request()       # blocks until request arrives
-    for i in range(req.num_frames):
-        output_shm.write_frame(FrameResult(..., status=FrameStatus.FRAME))
-    output_shm.write_frame(FrameResult(..., status=FrameStatus.DONE))
+    req = input_shm.read_request()
+    output_shm.write_response(VideoResponse(...))   # entire video in one shot
 """
 
 from __future__ import annotations
@@ -35,10 +33,9 @@ from multiprocessing import shared_memory as _shm
 from typing import Callable
 
 
-class FrameStatus(IntEnum):
-    FRAME = 0
-    DONE = 1
-    ERROR = 2
+class VideoStatus(IntEnum):
+    SUCCESS = 0
+    ERROR = 1
 
 
 @dataclass(frozen=True)
@@ -56,15 +53,15 @@ class VideoRequest:
 
 
 @dataclass(frozen=True)
-class FrameResult:
+class VideoResponse:
     task_id: str
-    status: FrameStatus
-    frame_index: int
-    total_frames: int
+    status: VideoStatus
+    num_frames: int
     height: int
     width: int
     channels: int
     frame_data: bytes
+    error_message: str
 
 
 class VideoShm:
@@ -78,21 +75,24 @@ class VideoShm:
         num_inference_steps(4) seed(8) height(4) width(4)
         num_frames(4) guidance_scale(4) guidance_scale_2(4)
 
-    Output slot (2 764 868 B):
-        state(4) task_id(36) status(4) frame_index(4)
-        total_frames(4) height(4) width(4) channels(4)
-        frame_data_length(4) frame_data(MAX_FRAME_SIZE)
+    Output slot (~256 MB):
+        state(4) task_id(36) status(4)
+        error_len(4) error_msg(256)
+        num_frames(4) height(4) width(4) channels(4) data_len(4)
+        frame_data(MAX_VIDEO_SIZE)
     """
 
-    SLOTS = 8
+    INPUT_SLOTS = 8
+    OUTPUT_SLOTS = 4
     TASK_ID_SIZE = 36
     MAX_PROMPT_LEN = 2048
     MAX_NEG_PROMPT_LEN = 512
-    MAX_FRAME_SIZE = 1280 * 720 * 3
+    MAX_ERROR_LEN = 256
+    MAX_VIDEO_SIZE = 256 * 1024 * 1024  # 256 MB – fits 168 * 848 * 480 * 3
 
     _FREE = 0
     _TAKEN = 1
-    _POLL_INTERVAL_S = 0.0001  # 100µs between slot polls; negligible for video fps
+    _POLL_INTERVAL_S = 0.0001
 
     # ── Input slot field offsets ──
     _IN_STATE = 0
@@ -114,14 +114,15 @@ class VideoShm:
     _OUT_STATE = 0
     _OUT_TASK_ID = 4
     _OUT_STATUS = 40
-    _OUT_FRAME_INDEX = 44
-    _OUT_TOTAL_FRAMES = 48
-    _OUT_HEIGHT = 52
-    _OUT_WIDTH = 56
-    _OUT_CHANNELS = 60
-    _OUT_FRAME_DATA_LEN = 64
-    _OUT_FRAME_DATA = 68
-    OUTPUT_SLOT_SIZE = 68 + MAX_FRAME_SIZE
+    _OUT_ERROR_LEN = 44
+    _OUT_ERROR = 48
+    _OUT_NUM_FRAMES = 48 + MAX_ERROR_LEN  # 304
+    _OUT_HEIGHT = 48 + MAX_ERROR_LEN + 4  # 308
+    _OUT_WIDTH = 48 + MAX_ERROR_LEN + 8  # 312
+    _OUT_CHANNELS = 48 + MAX_ERROR_LEN + 12  # 316
+    _OUT_DATA_LEN = 48 + MAX_ERROR_LEN + 16  # 320
+    _OUT_DATA = 48 + MAX_ERROR_LEN + 20  # 324
+    OUTPUT_SLOT_SIZE = _OUT_DATA + MAX_VIDEO_SIZE
 
     def __init__(
         self,
@@ -134,10 +135,11 @@ class VideoShm:
             raise ValueError(f"mode must be 'input' or 'output', got {mode!r}")
         self._name = name.lstrip("/")
         self._mode = mode
+        self._slots = self.INPUT_SLOTS if mode == "input" else self.OUTPUT_SLOTS
         self._slot_size = (
             self.INPUT_SLOT_SIZE if mode == "input" else self.OUTPUT_SLOT_SIZE
         )
-        self._total_size = self.SLOTS * self._slot_size
+        self._total_size = self._slots * self._slot_size
         self._shm: _shm.SharedMemory | None = None
         self._buf: memoryview | None = None
         self._pos = 0
@@ -234,7 +236,7 @@ class VideoShm:
         )
 
         struct.pack_into("<i", buf, state_off, self._TAKEN)
-        self._pos = (self._pos + 1) % self.SLOTS
+        self._pos = (self._pos + 1) % self._slots
 
     def read_request(self, timeout_s: float | None = None) -> VideoRequest | None:
         """Blocking read of a VideoRequest from the next input slot."""
@@ -275,7 +277,7 @@ class VideoShm:
         )[0]
 
         struct.pack_into("<i", buf, state_off, self._FREE)
-        self._pos = (self._pos + 1) % self.SLOTS
+        self._pos = (self._pos + 1) % self._slots
 
         return VideoRequest(
             task_id=task_id,
@@ -290,14 +292,14 @@ class VideoShm:
             guidance_scale_2=guidance_scale_2,
         )
 
-    # ── Output SHM: frame read / write ──
+    # ── Output SHM: response read / write (full video blob) ──
 
-    def write_frame(self, frame: FrameResult) -> None:
-        """Write a FrameResult into the next free output slot (spin-waits)."""
-        if len(frame.frame_data) > self.MAX_FRAME_SIZE:
+    def write_response(self, response: VideoResponse) -> None:
+        """Write a VideoResponse (entire video) into the next free output slot."""
+        if len(response.frame_data) > self.MAX_VIDEO_SIZE:
             raise ValueError(
-                f"frame_data ({len(frame.frame_data)} bytes) exceeds "
-                f"MAX_FRAME_SIZE ({self.MAX_FRAME_SIZE})"
+                f"frame_data ({len(response.frame_data)} bytes) exceeds "
+                f"MAX_VIDEO_SIZE ({self.MAX_VIDEO_SIZE})"
             )
         buf = self._buf
         off = self._pos * self._slot_size
@@ -310,25 +312,32 @@ class VideoShm:
         else:
             return
 
-        self._pack_task_id(buf, off + self._OUT_TASK_ID, frame.task_id)
+        self._pack_task_id(buf, off + self._OUT_TASK_ID, response.task_id)
+        struct.pack_into("<I", buf, off + self._OUT_STATUS, int(response.status))
 
-        struct.pack_into("<I", buf, off + self._OUT_STATUS, int(frame.status))
-        struct.pack_into("<I", buf, off + self._OUT_FRAME_INDEX, frame.frame_index)
-        struct.pack_into("<I", buf, off + self._OUT_TOTAL_FRAMES, frame.total_frames)
-        struct.pack_into("<I", buf, off + self._OUT_HEIGHT, frame.height)
-        struct.pack_into("<I", buf, off + self._OUT_WIDTH, frame.width)
-        struct.pack_into("<I", buf, off + self._OUT_CHANNELS, frame.channels)
+        self._pack_string(
+            buf,
+            off + self._OUT_ERROR_LEN,
+            off + self._OUT_ERROR,
+            response.error_message,
+            self.MAX_ERROR_LEN,
+        )
 
-        data_len = len(frame.frame_data)
-        struct.pack_into("<I", buf, off + self._OUT_FRAME_DATA_LEN, data_len)
-        data_off = off + self._OUT_FRAME_DATA
-        buf[data_off : data_off + data_len] = frame.frame_data
+        struct.pack_into("<I", buf, off + self._OUT_NUM_FRAMES, response.num_frames)
+        struct.pack_into("<I", buf, off + self._OUT_HEIGHT, response.height)
+        struct.pack_into("<I", buf, off + self._OUT_WIDTH, response.width)
+        struct.pack_into("<I", buf, off + self._OUT_CHANNELS, response.channels)
+
+        data_len = len(response.frame_data)
+        struct.pack_into("<I", buf, off + self._OUT_DATA_LEN, data_len)
+        data_off = off + self._OUT_DATA
+        buf[data_off : data_off + data_len] = response.frame_data
 
         struct.pack_into("<i", buf, state_off, self._TAKEN)
-        self._pos = (self._pos + 1) % self.SLOTS
+        self._pos = (self._pos + 1) % self._slots
 
-    def read_frame(self, timeout_s: float | None = None) -> FrameResult | None:
-        """Blocking read of a FrameResult from the next output slot."""
+    def read_response(self, timeout_s: float | None = None) -> VideoResponse | None:
+        """Blocking read of a VideoResponse from the next output slot."""
         buf = self._buf
         off = self._pos * self._slot_size
         state_off = off + self._OUT_STATE
@@ -344,31 +353,33 @@ class VideoShm:
             return None
 
         task_id = self._unpack_task_id(buf, off + self._OUT_TASK_ID)
+        status = VideoStatus(struct.unpack_from("<I", buf, off + self._OUT_STATUS)[0])
+        error_message = self._unpack_string(
+            buf, off + self._OUT_ERROR_LEN, off + self._OUT_ERROR
+        )
 
-        status = FrameStatus(struct.unpack_from("<I", buf, off + self._OUT_STATUS)[0])
-        frame_index = struct.unpack_from("<I", buf, off + self._OUT_FRAME_INDEX)[0]
-        total_frames = struct.unpack_from("<I", buf, off + self._OUT_TOTAL_FRAMES)[0]
+        num_frames = struct.unpack_from("<I", buf, off + self._OUT_NUM_FRAMES)[0]
         height = struct.unpack_from("<I", buf, off + self._OUT_HEIGHT)[0]
         width = struct.unpack_from("<I", buf, off + self._OUT_WIDTH)[0]
         channels = struct.unpack_from("<I", buf, off + self._OUT_CHANNELS)[0]
 
-        data_len = struct.unpack_from("<I", buf, off + self._OUT_FRAME_DATA_LEN)[0]
-        data_len = min(data_len, self.MAX_FRAME_SIZE)
-        data_off = off + self._OUT_FRAME_DATA
+        data_len = struct.unpack_from("<I", buf, off + self._OUT_DATA_LEN)[0]
+        data_len = min(data_len, self.MAX_VIDEO_SIZE)
+        data_off = off + self._OUT_DATA
         frame_data = bytes(buf[data_off : data_off + data_len])
 
         struct.pack_into("<i", buf, state_off, self._FREE)
-        self._pos = (self._pos + 1) % self.SLOTS
+        self._pos = (self._pos + 1) % self._slots
 
-        return FrameResult(
+        return VideoResponse(
             task_id=task_id,
             status=status,
-            frame_index=frame_index,
-            total_frames=total_frames,
+            num_frames=num_frames,
             height=height,
             width=width,
             channels=channels,
             frame_data=frame_data,
+            error_message=error_message,
         )
 
     # ── Helpers ──

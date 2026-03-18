@@ -20,11 +20,10 @@ Environment variables:
 from __future__ import annotations
 
 import os
-import time
 
 import numpy as np
 
-from ipc.video_shm import FrameResult, FrameStatus, VideoRequest, VideoShm
+from ipc.video_shm import VideoRequest, VideoShm, VideoStatus
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 DEFAULT_VIDEO_HEIGHT = 480
@@ -32,7 +31,7 @@ DEFAULT_VIDEO_WIDTH = 832
 DEFAULT_VIDEO_NUM_FRAMES = 81
 DEFAULT_VIDEO_GUIDANCE_SCALE = 3.0
 DEFAULT_VIDEO_GUIDANCE_SCALE_2 = 4.0
-FRAME_TIMEOUT_S = 120.0
+RESPONSE_TIMEOUT_S = 300.0
 
 
 class SPRunner(BaseDeviceRunner):
@@ -106,52 +105,15 @@ class SPRunner(BaseDeviceRunner):
         self._input_shm.write_request(video_req)
         self.logger.info(f"SPRunner: request {task_id} sent to SHM")
 
-        frames, error = self._collect_frames(task_id)
-        if error:
-            raise RuntimeError(error)
+        resp = self._output_shm.read_response(timeout_s=RESPONSE_TIMEOUT_S)
+        if resp is None:
+            raise RuntimeError(
+                f"Response timed out after {RESPONSE_TIMEOUT_S}s for task {task_id}"
+            )
+        if resp.status == VideoStatus.ERROR:
+            raise RuntimeError(f"Runner error for task {task_id}: {resp.error_message}")
 
-        return frames
-
-    def _collect_frames(self, task_id: str) -> tuple[np.ndarray | None, str | None]:
-        raw_frames: list[FrameResult] = []
-        while True:
-            t_start = time.monotonic()
-            result = self._output_shm.read_frame(timeout_s=FRAME_TIMEOUT_S)
-            if result is None:
-                elapsed = time.monotonic() - t_start
-                if elapsed >= FRAME_TIMEOUT_S * 0.8:
-                    return None, (
-                        f"Frame read timed out after {FRAME_TIMEOUT_S}s "
-                        f"for task {task_id}"
-                    )
-                return None, "SHM shutdown during frame read"
-
-            if result.status == FrameStatus.ERROR:
-                return None, f"Runner reported error for task {task_id}"
-
-            if result.status == FrameStatus.DONE:
-                break
-
-            raw_frames.append(result)
-
-        if not raw_frames:
-            return None, f"Runner returned zero frames for task {task_id}"
-
-        first = raw_frames[0]
-        expected_size = first.height * first.width * first.channels
-        for f in raw_frames:
-            if len(f.frame_data) != expected_size:
-                return None, (
-                    f"Frame {f.frame_index}/{task_id} size mismatch: "
-                    f"expected {expected_size}, got {len(f.frame_data)}"
-                )
-
-        frames = np.stack(
-            [
-                np.frombuffer(f.frame_data, dtype=np.uint8).reshape(
-                    first.height, first.width, first.channels
-                )
-                for f in raw_frames
-            ]
+        frames = np.frombuffer(resp.frame_data, dtype=np.uint8).reshape(
+            resp.num_frames, resp.height, resp.width, resp.channels
         )
-        return frames[np.newaxis], None
+        return frames[np.newaxis]

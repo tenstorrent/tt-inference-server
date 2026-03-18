@@ -23,7 +23,7 @@ sys.modules["utils.logger"] = Mock()
 sys.modules["utils.logger"].TTLogger = Mock(return_value=Mock())
 
 from config.constants import SHUTDOWN_SIGNAL
-from ipc.video_shm import FrameResult, FrameStatus, VideoRequest
+from ipc.video_shm import VideoRequest, VideoResponse, VideoStatus
 
 
 class MockVideoGenerateRequest:
@@ -70,12 +70,11 @@ class TestSPRunnerRequestConversion:
         instances = [mock_input, mock_output]
         MockVideoShm.side_effect = lambda *a, **kw: instances.pop(0)
 
-        h, w, c = 2, 3, 3
-        fb = h * w * c
-        mock_output.read_frame.side_effect = [
-            FrameResult("tid", FrameStatus.FRAME, 0, 1, h, w, c, bytes([0x01] * fb)),
-            FrameResult("tid", FrameStatus.DONE, 1, 1, 0, 0, 0, b""),
-        ]
+        h, w, c, n = 2, 3, 3, 1
+        blob = bytes([0x01] * (n * h * w * c))
+        mock_output.read_response.return_value = VideoResponse(
+            "tid", VideoStatus.SUCCESS, n, h, w, c, blob, ""
+        )
 
         runner = SPRunner("dev0")
         runner.set_device()
@@ -102,16 +101,14 @@ class TestSPRunnerRequestConversion:
         instances = [mock_input, mock_output]
         MockVideoShm.side_effect = lambda *a, **kw: instances.pop(0)
 
-        mock_output.read_frame.side_effect = [
-            FrameResult("tid", FrameStatus.DONE, 0, 0, 0, 0, 0, b""),
-        ]
+        mock_output.read_response.return_value = VideoResponse(
+            "tid", VideoStatus.SUCCESS, 1, 2, 2, 3, bytes(12), ""
+        )
 
         runner = SPRunner("dev0")
         runner.set_device()
         req = MockVideoGenerateRequest(task_id="tid", negative_prompt=None)
-
-        with pytest.raises(RuntimeError):
-            runner.run([req])
+        runner.run([req])
 
         written_req = mock_input.write_request.call_args[0][0]
         assert written_req.negative_prompt == ""
@@ -125,27 +122,25 @@ class TestSPRunnerRequestConversion:
         instances = [mock_input, mock_output]
         MockVideoShm.side_effect = lambda *a, **kw: instances.pop(0)
 
-        mock_output.read_frame.side_effect = [
-            FrameResult("tid", FrameStatus.DONE, 0, 0, 0, 0, 0, b""),
-        ]
+        mock_output.read_response.return_value = VideoResponse(
+            "tid", VideoStatus.SUCCESS, 1, 2, 2, 3, bytes(12), ""
+        )
 
         runner = SPRunner("dev0")
         runner.set_device()
         req = MockVideoGenerateRequest(task_id="tid", seed=None)
-
-        with pytest.raises(RuntimeError):
-            runner.run([req])
+        runner.run([req])
 
         written_req = mock_input.write_request.call_args[0][0]
         assert written_req.seed == 0
 
 
-class TestSPRunnerCollectFrames:
+class TestSPRunnerResponseHandling:
     H, W, C = 2, 3, 3
     FRAME_BYTES = H * W * C
 
     @patch("tt_model_runners.sp_runner.VideoShm")
-    def test_collects_until_done(self, MockVideoShm):
+    def test_success_response_returns_frames(self, MockVideoShm):
         from tt_model_runners.sp_runner import SPRunner
 
         mock_input = MagicMock()
@@ -153,39 +148,15 @@ class TestSPRunnerCollectFrames:
         instances = [mock_input, mock_output]
         MockVideoShm.side_effect = lambda *a, **kw: instances.pop(0)
 
-        mock_output.read_frame.side_effect = [
-            FrameResult(
-                "tid",
-                FrameStatus.FRAME,
-                0,
-                3,
-                self.H,
-                self.W,
-                self.C,
-                b"\x01" * self.FRAME_BYTES,
-            ),
-            FrameResult(
-                "tid",
-                FrameStatus.FRAME,
-                1,
-                3,
-                self.H,
-                self.W,
-                self.C,
-                b"\x02" * self.FRAME_BYTES,
-            ),
-            FrameResult(
-                "tid",
-                FrameStatus.FRAME,
-                2,
-                3,
-                self.H,
-                self.W,
-                self.C,
-                b"\x03" * self.FRAME_BYTES,
-            ),
-            FrameResult("tid", FrameStatus.DONE, 3, 3, 0, 0, 0, b""),
-        ]
+        num_frames = 3
+        blob = (
+            b"\x01" * self.FRAME_BYTES
+            + b"\x02" * self.FRAME_BYTES
+            + b"\x03" * self.FRAME_BYTES
+        )
+        mock_output.read_response.return_value = VideoResponse(
+            "tid", VideoStatus.SUCCESS, num_frames, self.H, self.W, self.C, blob, ""
+        )
 
         runner = SPRunner("dev0")
         runner.set_device()
@@ -197,7 +168,7 @@ class TestSPRunnerCollectFrames:
         assert frames[0, 2, 0, 0, 0] == 0x03
 
     @patch("tt_model_runners.sp_runner.VideoShm")
-    def test_error_frame_raises(self, MockVideoShm):
+    def test_error_response_raises(self, MockVideoShm):
         from tt_model_runners.sp_runner import SPRunner
 
         mock_input = MagicMock()
@@ -205,19 +176,9 @@ class TestSPRunnerCollectFrames:
         instances = [mock_input, mock_output]
         MockVideoShm.side_effect = lambda *a, **kw: instances.pop(0)
 
-        mock_output.read_frame.side_effect = [
-            FrameResult(
-                "tid",
-                FrameStatus.FRAME,
-                0,
-                3,
-                self.H,
-                self.W,
-                self.C,
-                b"\x01" * self.FRAME_BYTES,
-            ),
-            FrameResult("tid", FrameStatus.ERROR, 1, 3, 0, 0, 0, b""),
-        ]
+        mock_output.read_response.return_value = VideoResponse(
+            "tid", VideoStatus.ERROR, 0, 0, 0, 0, b"", "inference failed"
+        )
 
         runner = SPRunner("dev0")
         runner.set_device()
@@ -227,7 +188,7 @@ class TestSPRunnerCollectFrames:
             runner.run([req])
 
     @patch("tt_model_runners.sp_runner.VideoShm")
-    def test_shutdown_during_read_raises(self, MockVideoShm):
+    def test_timeout_returns_none_raises(self, MockVideoShm):
         from tt_model_runners.sp_runner import SPRunner
 
         mock_input = MagicMock()
@@ -235,46 +196,13 @@ class TestSPRunnerCollectFrames:
         instances = [mock_input, mock_output]
         MockVideoShm.side_effect = lambda *a, **kw: instances.pop(0)
 
-        mock_output.read_frame.return_value = None
+        mock_output.read_response.return_value = None
 
         runner = SPRunner("dev0")
         runner.set_device()
         req = MockVideoGenerateRequest(task_id="tid")
 
-        with pytest.raises(RuntimeError, match="shutdown"):
-            runner.run([req])
-
-    @patch("tt_model_runners.sp_runner.VideoShm")
-    def test_frame_size_mismatch_raises(self, MockVideoShm):
-        from tt_model_runners.sp_runner import SPRunner
-
-        mock_input = MagicMock()
-        mock_output = MagicMock()
-        instances = [mock_input, mock_output]
-        MockVideoShm.side_effect = lambda *a, **kw: instances.pop(0)
-
-        mock_output.read_frame.side_effect = [
-            FrameResult(
-                "tid",
-                FrameStatus.FRAME,
-                0,
-                2,
-                self.H,
-                self.W,
-                self.C,
-                b"\x01" * self.FRAME_BYTES,
-            ),
-            FrameResult(
-                "tid", FrameStatus.FRAME, 1, 2, self.H, self.W, self.C, b"\x02" * 5
-            ),
-            FrameResult("tid", FrameStatus.DONE, 2, 2, 0, 0, 0, b""),
-        ]
-
-        runner = SPRunner("dev0")
-        runner.set_device()
-        req = MockVideoGenerateRequest(task_id="tid")
-
-        with pytest.raises(RuntimeError, match="size mismatch"):
+        with pytest.raises(RuntimeError, match="timed out"):
             runner.run([req])
 
 
@@ -607,35 +535,22 @@ class TestSPRunnerLifecycle:
         assert result is True
 
     @patch("tt_model_runners.sp_runner.VideoShm")
-    def test_timeout_during_collect_frames(self, MockVideoShm):
-        from tt_model_runners.sp_runner import SPRunner, FRAME_TIMEOUT_S
+    def test_timeout_during_read_response(self, MockVideoShm):
+        from tt_model_runners.sp_runner import SPRunner
 
         mock_input = MagicMock()
         mock_output = MagicMock()
         instances = [mock_input, mock_output]
         MockVideoShm.side_effect = lambda *a, **kw: instances.pop(0)
 
-        mock_output.read_frame.return_value = None
+        mock_output.read_response.return_value = None
 
         runner = SPRunner("dev0")
         runner.set_device()
 
-        import time
-
-        original_monotonic = time.monotonic
-        call_count = [0]
-        base_time = [original_monotonic()]
-
-        def mock_monotonic():
-            call_count[0] += 1
-            if call_count[0] % 2 == 1:
-                return base_time[0]
-            return base_time[0] + FRAME_TIMEOUT_S + 1
-
         req = MockVideoGenerateRequest(task_id="tid")
-        with patch("time.monotonic", side_effect=mock_monotonic):
-            with pytest.raises(RuntimeError, match="timed out"):
-                runner.run([req])
+        with pytest.raises(RuntimeError, match="timed out"):
+            runner.run([req])
 
 
 if __name__ == "__main__":

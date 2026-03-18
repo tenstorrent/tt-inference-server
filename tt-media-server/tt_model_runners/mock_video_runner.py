@@ -129,7 +129,7 @@ def _handle_signal(signum, frame):
 def _run_shm_bridge() -> None:
     import os
 
-    from ipc.video_shm import FrameResult, FrameStatus, VideoShm
+    from ipc.video_shm import VideoResponse, VideoShm, VideoStatus
     from utils.logger import TTLogger
 
     logger = TTLogger()
@@ -179,50 +179,34 @@ def _run_shm_bridge() -> None:
                 if frames.dtype != np.uint8:
                     frames = (frames.clip(0.0, 1.0) * 255).astype(np.uint8)
 
-                for frame_idx in range(num_frames):
-                    output_shm.write_frame(
-                        FrameResult(
-                            task_id=req.task_id,
-                            status=FrameStatus.FRAME,
-                            frame_index=frame_idx,
-                            total_frames=num_frames,
-                            height=h,
-                            width=w,
-                            channels=c,
-                            frame_data=frames[frame_idx].tobytes(),
-                        )
+                output_shm.write_response(
+                    VideoResponse(
+                        task_id=req.task_id,
+                        status=VideoStatus.SUCCESS,
+                        num_frames=num_frames,
+                        height=h,
+                        width=w,
+                        channels=c,
+                        frame_data=frames.tobytes(),
+                        error_message="",
                     )
-                    logger.info(
-                        f"  Frame {frame_idx + 1}/{num_frames} written for {req.task_id}"
-                    )
+                )
             except Exception as e:
                 logger.error(f"Error generating frames for {req.task_id}: {e}")
-                output_shm.write_frame(
-                    FrameResult(
+                output_shm.write_response(
+                    VideoResponse(
                         task_id=req.task_id,
-                        status=FrameStatus.ERROR,
-                        frame_index=0,
-                        total_frames=0,
+                        status=VideoStatus.ERROR,
+                        num_frames=0,
                         height=0,
                         width=0,
                         channels=0,
                         frame_data=b"",
+                        error_message=str(e)[:256],
                     )
                 )
                 continue
 
-            output_shm.write_frame(
-                FrameResult(
-                    task_id=req.task_id,
-                    status=FrameStatus.DONE,
-                    frame_index=num_frames,
-                    total_frames=num_frames,
-                    height=0,
-                    width=0,
-                    channels=0,
-                    frame_data=b"",
-                )
-            )
             logger.info(f"Request {req.task_id} completed ({num_frames} frames)")
     finally:
         input_shm.close()
