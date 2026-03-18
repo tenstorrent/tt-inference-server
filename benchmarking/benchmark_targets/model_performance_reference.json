@@ -1,4 +1,42 @@
 {
+    "OLMo-3.1-32B-Think": {
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 267.0,
+                        "tput_user": 18.0,
+                        "tput": 576.0
+                    }
+                }
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1543.0,
+                        "tput_user": 17.0,
+                        "tput": 544.0
+                    }
+                }
+            }
+        ]
+    },
     "Qwen3-VL-32B-Instruct": {
         "t3k": [
             {

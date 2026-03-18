@@ -1613,6 +1613,83 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="allenai/OLMo-3.1-32B-Think",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=50.0,
+                    published_score_ref="https://allenai.org/blog/olmo3",
+                    gpu_reference_score=50.0,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "model": "allenai/OLMo-3.1-32B-Think",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 8192,
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 4096,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=52.1,
+                    published_score_ref="https://allenai.org/blog/olmo3",
+                    gpu_reference_score=52.1,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                max_concurrent=16,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "model": "allenai/OLMo-3.1-32B-Think",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 8192,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 4096,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="meta-llama/Llama-3.2-11B-Vision-Instruct",
         tasks=[
             EvalTask(
