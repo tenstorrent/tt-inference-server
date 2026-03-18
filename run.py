@@ -501,9 +501,9 @@ def main():
     # step 00: handle maintenance args
     args = parse_arguments()
     handle_maintenance_args(args)
-    # Export repo-root default_model_spec.json from pristine MODEL_SPECS
+    # Export repo-root model_spec.json from pristine MODEL_SPECS
     repo_root = Path(__file__).resolve().parent
-    export_model_specs_json(MODEL_SPECS, repo_root / "default_model_spec.json")
+    export_model_specs_json(MODEL_SPECS, repo_root / "model_spec.json")
 
     # step 0: bootstrap uv
     bootstrap_uv()

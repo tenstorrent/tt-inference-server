@@ -150,6 +150,13 @@ def device_to_mesh_str(device_type: str) -> str:
     return DEVICE_TO_MESH_STR[device_type]
 
 
+def unwrap_model_specs_catalog(model_specs: dict) -> dict:
+    """Return the nested model specs catalog from wrapped or legacy JSON."""
+    if "model_specs" in model_specs and isinstance(model_specs["model_specs"], dict):
+        return model_specs["model_specs"]
+    return model_specs
+
+
 def load_model_spec(
     model_arg: Optional[str],
     device_arg: Optional[str],
@@ -195,18 +202,18 @@ def load_model_spec(
             "Example: docker run <image> --model meta-llama/Llama-3.1-8B --tt-device n300"
         )
 
-    # Catalog mode (default_model_spec.json built into image)
+    # Catalog mode (model_spec.json built into image)
     specs_path = os.getenv(
         "MODEL_SPECS_JSON_PATH",
-        "/home/container_app_user/model_specs/default_model_spec.json",
+        "/home/container_app_user/model_specs/model_spec.json",
     )
     logger.info(f"Loading all model specs from MODEL_SPECS_JSON_PATH: {specs_path}")
     with open(specs_path, "r") as f:
-        all_specs = json.load(f)
+        model_specs = unwrap_model_specs_catalog(json.load(f))
 
     device_type = normalize_device_type(device_arg)
     model_spec = find_default_impl(
-        all_specs,
+        model_specs,
         model_arg,
         device_type,
         engine_arg=engine_arg,
@@ -219,14 +226,14 @@ def load_model_spec(
     return model_spec
 
 
-def _resolve_hf_repo(all_specs: dict, model_arg: str) -> str:
-    """Resolve model_arg to an hf_model_repo key in all_specs.
+def _resolve_hf_repo(model_specs: dict, model_arg: str) -> str:
+    """Resolve model_arg to an hf_model_repo key in model_specs.
 
     Tries exact match first, then falls back to matching the short model name
     (last path segment) against all hf_model_repo keys.
 
     Args:
-        all_specs: Nested model specs dict keyed by hf_model_repo at top level
+        model_specs: Nested model specs dict keyed by hf_model_repo at top level
         model_arg: The --model argument (HuggingFace repo or model name)
 
     Returns:
@@ -235,22 +242,22 @@ def _resolve_hf_repo(all_specs: dict, model_arg: str) -> str:
     Raises:
         ValueError: If no matching hf_model_repo is found
     """
-    if model_arg in all_specs:
+    if model_arg in model_specs:
         return model_arg
 
     short_name = model_arg.split("/")[-1]
-    for hf_repo in all_specs:
+    for hf_repo in model_specs:
         if hf_repo.split("/")[-1] == short_name:
             return hf_repo
 
     raise ValueError(
         f"No model spec found for model={model_arg}. "
-        f"Available models: {list(all_specs.keys())[:10]}..."
+        f"Available models: {list(model_specs.keys())[:10]}..."
     )
 
 
 def find_default_impl(
-    all_specs: dict,
+    model_specs: dict,
     model_arg: str,
     device_type: str,
     engine_arg: Optional[str] = None,
@@ -262,7 +269,7 @@ def find_default_impl(
     default_impl=True for the given hf_model_repo and device_type.
 
     Args:
-        all_specs: Nested dict: hf_model_repo > device_type > engine > impl_id > spec
+        model_specs: Nested dict: hf_model_repo > device_type > engine > impl_id > spec
         model_arg: The --model argument (HuggingFace repo or model name)
         device_type: Canonical device type name (e.g., "N300", "GALAXY")
 
@@ -272,10 +279,10 @@ def find_default_impl(
     Raises:
         ValueError: If no matching spec is found
     """
-    hf_repo = _resolve_hf_repo(all_specs, model_arg)
-    device_specs = all_specs[hf_repo].get(device_type)
+    hf_repo = _resolve_hf_repo(model_specs, model_arg)
+    device_specs = model_specs[hf_repo].get(device_type)
     if not device_specs:
-        available_devices = list(all_specs[hf_repo].keys())
+        available_devices = list(model_specs[hf_repo].keys())
         raise ValueError(
             f"No model spec found for model={model_arg}, device={device_type}. "
             f"Available devices for {hf_repo}: {available_devices}"
