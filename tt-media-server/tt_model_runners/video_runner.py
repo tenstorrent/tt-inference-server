@@ -7,8 +7,8 @@
 Reads VideoRequest from input VideoShm, processes with a DiT runner
 (Mochi, Wan, etc.), and streams generated frames back through output VideoShm.
 
-This is the external runner process that pairs with device_worker_video_shm.py
-on the server side (or SPRunner when used via the device_worker path).
+This is the external runner process that pairs with SPRunner on the server side.
+SPRunner runs inside the standard device_worker and communicates via VideoShm.
 
 Multi-rank mode:
 - Rank 0: Reads from SHM, runs DiT inference, streams frames, distributes to ranks 1-3

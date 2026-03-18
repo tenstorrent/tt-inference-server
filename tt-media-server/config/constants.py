@@ -97,9 +97,6 @@ class ModelRunners(Enum):
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
 
 
-SHM_BASED_RUNNERS = frozenset({ModelRunners.MOCK_VIDEO, ModelRunners.SP_RUNNER})
-
-
 class ModelServices(Enum):
     IMAGE = "image"
     LLM = "llm"
