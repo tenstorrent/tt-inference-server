@@ -158,6 +158,7 @@ class VideoShm:
             except FileExistsError:
                 temp_shm = _shm.SharedMemory(name=self._name, create=False)
                 temp_shm.unlink()
+                temp_shm.close()
                 self._shm = _shm.SharedMemory(
                     name=self._name, create=True, size=self._total_size
                 )
@@ -175,7 +176,10 @@ class VideoShm:
     def unlink(self) -> None:
         """Remove the SHM region from /dev/shm/. Only the creator should call this."""
         if self._shm:
-            self._shm.unlink()
+            try:
+                self._shm.unlink()
+            except FileNotFoundError:
+                pass
 
     def __enter__(self) -> VideoShm:
         self.open()
@@ -232,15 +236,18 @@ class VideoShm:
         struct.pack_into("<i", buf, state_off, self._TAKEN)
         self._pos = (self._pos + 1) % self.SLOTS
 
-    def read_request(self) -> VideoRequest | None:
+    def read_request(self, timeout_s: float | None = None) -> VideoRequest | None:
         """Blocking read of a VideoRequest from the next input slot."""
         buf = self._buf
         off = self._pos * self._slot_size
         state_off = off + self._IN_STATE
+        deadline = (time.monotonic() + timeout_s) if timeout_s is not None else None
 
         while not self._is_shutdown():
             if struct.unpack_from("<i", buf, state_off)[0] == self._TAKEN:
                 break
+            if deadline is not None and time.monotonic() >= deadline:
+                return None
             time.sleep(self._POLL_INTERVAL_S)
         else:
             return None
@@ -320,15 +327,18 @@ class VideoShm:
         struct.pack_into("<i", buf, state_off, self._TAKEN)
         self._pos = (self._pos + 1) % self.SLOTS
 
-    def read_frame(self) -> FrameResult | None:
+    def read_frame(self, timeout_s: float | None = None) -> FrameResult | None:
         """Blocking read of a FrameResult from the next output slot."""
         buf = self._buf
         off = self._pos * self._slot_size
         state_off = off + self._OUT_STATE
+        deadline = (time.monotonic() + timeout_s) if timeout_s is not None else None
 
         while not self._is_shutdown():
             if struct.unpack_from("<i", buf, state_off)[0] == self._TAKEN:
                 break
+            if deadline is not None and time.monotonic() >= deadline:
+                return None
             time.sleep(self._POLL_INTERVAL_S)
         else:
             return None
@@ -343,6 +353,7 @@ class VideoShm:
         channels = struct.unpack_from("<I", buf, off + self._OUT_CHANNELS)[0]
 
         data_len = struct.unpack_from("<I", buf, off + self._OUT_FRAME_DATA_LEN)[0]
+        data_len = min(data_len, self.MAX_FRAME_SIZE)
         data_off = off + self._OUT_FRAME_DATA
         frame_data = bytes(buf[data_off : data_off + data_len])
 
@@ -385,9 +396,13 @@ class VideoShm:
         text: str,
         max_len: int,
     ) -> None:
-        raw = text.encode("utf-8")[:max_len]
+        raw = text.encode("utf-8")
+        if len(raw) > max_len:
+            raw = raw[:max_len]
+            # Re-decode dropping any incomplete trailing multi-byte sequence
+            raw = raw.decode("utf-8", errors="ignore").encode("utf-8")
         struct.pack_into("<I", buf, len_offset, len(raw))
-        buf[data_offset : data_offset + len(raw)] = raw
+        buf[data_offset : data_offset + max_len] = raw.ljust(max_len, b"\x00")
 
     @staticmethod
     def _unpack_string(buf: memoryview, len_offset: int, data_offset: int) -> str:

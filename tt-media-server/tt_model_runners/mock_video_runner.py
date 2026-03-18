@@ -29,8 +29,8 @@ DEFAULT_HEIGHT = 480
 DEFAULT_WIDTH = 832
 DEFAULT_NUM_FRAMES = 81
 DEFAULT_CHANNELS = 3
-MOCK_FRAME_DELAY_MIN = 5.0
-MOCK_FRAME_DELAY_MAX = 10.0
+MOCK_FRAME_DELAY_MIN = 0.05
+MOCK_FRAME_DELAY_MAX = 0.15
 
 
 class MockVideoPipeline:
@@ -159,40 +159,71 @@ def _run_shm_bridge() -> None:
                 f"prompt={req.prompt!r} frames={req.num_frames}"
             )
 
-            for frame_idx, frame in enumerate(
-                pipeline.generate_frames(
-                    req.height, req.width, req.num_frames, req.seed
+            try:
+                frames = pipeline(
+                    prompt=req.prompt,
+                    negative_prompt=req.negative_prompt,
+                    height=req.height,
+                    width=req.width,
+                    num_frames=req.num_frames,
+                    num_inference_steps=req.num_inference_steps,
+                    guidance_scale=req.guidance_scale,
+                    guidance_scale_2=req.guidance_scale_2,
+                    seed=req.seed,
                 )
-            ):
+
+                if frames.ndim == 5:
+                    frames = frames[0]
+                num_frames, h, w, c = frames.shape
+
+                if frames.dtype != np.uint8:
+                    frames = (frames.clip(0.0, 1.0) * 255).astype(np.uint8)
+
+                for frame_idx in range(num_frames):
+                    output_shm.write_frame(
+                        FrameResult(
+                            task_id=req.task_id,
+                            status=FrameStatus.FRAME,
+                            frame_index=frame_idx,
+                            total_frames=num_frames,
+                            height=h,
+                            width=w,
+                            channels=c,
+                            frame_data=frames[frame_idx].tobytes(),
+                        )
+                    )
+                    logger.info(
+                        f"  Frame {frame_idx + 1}/{num_frames} written for {req.task_id}"
+                    )
+            except Exception as e:
+                logger.error(f"Error generating frames for {req.task_id}: {e}")
                 output_shm.write_frame(
                     FrameResult(
                         task_id=req.task_id,
-                        status=FrameStatus.FRAME,
-                        frame_index=frame_idx,
-                        total_frames=req.num_frames,
-                        height=req.height,
-                        width=req.width,
-                        channels=DEFAULT_CHANNELS,
-                        frame_data=frame.tobytes(),
+                        status=FrameStatus.ERROR,
+                        frame_index=0,
+                        total_frames=0,
+                        height=0,
+                        width=0,
+                        channels=0,
+                        frame_data=b"",
                     )
                 )
-                logger.info(
-                    f"  Frame {frame_idx + 1}/{req.num_frames} written for {req.task_id}"
-                )
+                continue
 
             output_shm.write_frame(
                 FrameResult(
                     task_id=req.task_id,
                     status=FrameStatus.DONE,
-                    frame_index=req.num_frames,
-                    total_frames=req.num_frames,
+                    frame_index=num_frames,
+                    total_frames=num_frames,
                     height=0,
                     width=0,
                     channels=0,
                     frame_data=b"",
                 )
             )
-            logger.info(f"Request {req.task_id} completed ({req.num_frames} frames)")
+            logger.info(f"Request {req.task_id} completed ({num_frames} frames)")
     finally:
         input_shm.close()
         output_shm.close()
