@@ -1563,8 +1563,8 @@ llm_templates = [
                 mode=VersionMode.SUGGESTED,
             ),
         ),
-        tt_metal_commit="bac8b34",
-        vllm_commit="7c6685a",
+        tt_metal_commit="750ca54",
+        vllm_commit="38dee8c",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1573,7 +1573,7 @@ llm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 49037312,
+                    "trace_region_size": 30000000,
                 },
                 env_vars={
                     "MAX_PREFILL_CHUNK_SIZE": "32",
