@@ -236,7 +236,7 @@ def generate_docker_run_command(
         or model_spec.inference_engine == InferenceEngine.MEDIA.value
     ):
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
-        
+
     elif model_spec.inference_engine == InferenceEngine.CPP_SERVER.value:
         docker_env_vars.update(get_cpp_server_docker_env_vars(model_spec))
 
