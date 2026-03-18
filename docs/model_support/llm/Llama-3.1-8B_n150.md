@@ -37,7 +37,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-3f72232-409b1cd \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.0-3f72232-409b1cd \
   --model Llama-3.1-8B \
   --tt-device n150
 ```
@@ -60,7 +60,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/3f72232/models/tt_transformers) |
 | tt-metal Commit | `3f72232` |
 | vLLM Commit | `409b1cd` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-3f72232-409b1cd` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.0-3f72232-409b1cd` |
 
 ---
 
@@ -78,7 +78,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-3f72232-409b1cd \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.0-3f72232-409b1cd \
   --model Llama-3.1-8B \
   --tt-device n300
 ```
@@ -100,4 +100,4 @@ python3 run.py --model Llama-3.1-8B --device n300 --workflow server --docker-ser
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/3f72232/models/tt_transformers) |
 | tt-metal Commit | `3f72232` |
 | vLLM Commit | `409b1cd` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-3f72232-409b1cd` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.0-3f72232-409b1cd` |
