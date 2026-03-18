@@ -2,32 +2,31 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-import sys
 from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
 
-sys.modules["ttnn"] = Mock()
-
-mock_settings = Mock()
-mock_settings.enable_telemetry = False
-mock_settings.max_batch_size = 1
-mock_settings.model_runner = "sp_runner"
-mock_settings.use_dynamic_batcher = False
-mock_settings.is_galaxy = False
-mock_settings.device_mesh_shape = (1, 1)
-mock_settings.default_throttle_level = ""
-mock_settings_module = Mock()
-mock_settings_module.settings = mock_settings
-mock_settings_module.get_settings = Mock(return_value=mock_settings)
-sys.modules["config.settings"] = mock_settings_module
-sys.modules["telemetry.telemetry_client"] = Mock()
-sys.modules["utils.logger"] = Mock()
-sys.modules["utils.logger"].TTLogger = Mock(return_value=Mock())
-
 from config.constants import SHUTDOWN_SIGNAL
 from ipc.video_shm import VideoRequest, VideoResponse, VideoStatus
+from tt_model_runners.sp_runner import SPRunner
+
+_mock_settings = MagicMock()
+_mock_settings.device_mesh_shape = (1, 1)
+_mock_settings.use_dynamic_batcher = False
+
+
+@pytest.fixture(autouse=True)
+def _patch_base_runner():
+    """Ensure BaseDeviceRunner.__init__ uses controlled mocks regardless of import order."""
+    with patch(
+        "tt_model_runners.base_device_runner.get_settings",
+        return_value=_mock_settings,
+    ), patch("tt_model_runners.base_device_runner.setup_runner_environment"), patch(
+        "tt_model_runners.base_device_runner.TTLogger",
+        return_value=MagicMock(),
+    ):
+        yield
 
 
 class MockVideoGenerateRequest:
@@ -67,8 +66,6 @@ class TestSPRunnerRequestConversion:
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_basic_conversion(self, MockVideoShm):
-        from tt_model_runners.sp_runner import SPRunner
-
         mock_input = MagicMock()
         mock_output = MagicMock()
 
@@ -103,8 +100,6 @@ class TestSPRunnerRequestConversion:
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_none_negative_prompt_becomes_empty(self, MockVideoShm):
-        from tt_model_runners.sp_runner import SPRunner
-
         mock_input = MagicMock()
         mock_output = MagicMock()
 
@@ -129,8 +124,6 @@ class TestSPRunnerRequestConversion:
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_none_seed_becomes_zero(self, MockVideoShm):
-        from tt_model_runners.sp_runner import SPRunner
-
         mock_input = MagicMock()
         mock_output = MagicMock()
 
@@ -160,8 +153,6 @@ class TestSPRunnerResponseHandling:
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_success_response_returns_frames(self, MockVideoShm):
-        from tt_model_runners.sp_runner import SPRunner
-
         mock_input = MagicMock()
         mock_output = MagicMock()
 
@@ -193,8 +184,6 @@ class TestSPRunnerResponseHandling:
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_error_response_raises(self, MockVideoShm):
-        from tt_model_runners.sp_runner import SPRunner
-
         mock_input = MagicMock()
         mock_output = MagicMock()
 
@@ -218,8 +207,6 @@ class TestSPRunnerResponseHandling:
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_timeout_returns_none_raises(self, MockVideoShm):
-        from tt_model_runners.sp_runner import SPRunner
-
         mock_input = MagicMock()
         mock_output = MagicMock()
 
@@ -535,8 +522,6 @@ class TestDeviceWorkerVideoShm:
 class TestSPRunnerLifecycle:
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_close_device_sets_shutdown(self, MockVideoShm):
-        from tt_model_runners.sp_runner import SPRunner
-
         mock_input = MagicMock()
         mock_output = MagicMock()
 
@@ -559,8 +544,6 @@ class TestSPRunnerLifecycle:
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_load_weights_is_noop(self, MockVideoShm):
-        from tt_model_runners.sp_runner import SPRunner
-
         runner = SPRunner("dev0")
         assert runner.load_weights() is True
 
@@ -568,16 +551,12 @@ class TestSPRunnerLifecycle:
     def test_warmup_returns_true(self, MockVideoShm):
         import asyncio
 
-        from tt_model_runners.sp_runner import SPRunner
-
         runner = SPRunner("dev0")
         result = asyncio.get_event_loop().run_until_complete(runner.warmup())
         assert result is True
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_timeout_during_read_response(self, MockVideoShm):
-        from tt_model_runners.sp_runner import SPRunner
-
         mock_input = MagicMock()
         mock_output = MagicMock()
 
