@@ -12,6 +12,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import List, Tuple
 
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
@@ -436,7 +437,7 @@ def _wait_for_container_id(container_name: str, timeout: int = 30) -> str:
     return ""
 
 
-def _check_controller_status(container_name: str) -> tuple[bool, str]:
+def _check_controller_status(container_name: str) -> Tuple[bool, str]:
     """Check if Controller container is still running.
 
     Args:
@@ -567,7 +568,7 @@ def _monitor_multihost_containers(
 
 def run_multihost_with_monitoring(
     orchestrator,
-    controller_cmd: list[str],
+    controller_cmd: List[str],
     controller_name: str,
     runtime_config,
     model_spec,

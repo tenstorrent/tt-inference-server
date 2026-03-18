@@ -24,6 +24,7 @@ import logging
 import socket
 import subprocess
 from pathlib import Path
+from typing import List, Tuple
 
 from workflows.utils import check_path_permissions_for_uid
 
@@ -36,8 +37,8 @@ logger = logging.getLogger("run_log")
 
 
 def _run_ssh_command(
-    host: str, command: list[str], timeout: int = 10
-) -> tuple[bool, str]:
+    host: str, command: List[str], timeout: int = 10
+) -> Tuple[bool, str]:
     """Run a command on a remote host via SSH.
 
     Args:
@@ -180,7 +181,7 @@ def validate_multihost_bind_mount_permissions(
 # =============================================================================
 
 
-def validate_controller_is_rank0_host(hosts: list[str]) -> list[str]:
+def validate_controller_is_rank0_host(hosts: List[str]) -> List[str]:
     """Validate that run.py is executed on the rank-0 host (first in MULTIHOST_HOSTS).
 
     Controller container runs locally, and MPI rank-0 must be on the same host
@@ -221,7 +222,7 @@ def validate_controller_is_rank0_host(hosts: list[str]) -> list[str]:
 # =============================================================================
 
 
-def validate_host_ssh_connectivity(hosts: list[str]) -> list[str]:
+def validate_host_ssh_connectivity(hosts: List[str]) -> List[str]:
     """Validate SSH connectivity to all hosts.
 
     Args:
@@ -241,7 +242,7 @@ def validate_host_ssh_connectivity(hosts: list[str]) -> list[str]:
     return errors
 
 
-def validate_host_docker_availability(hosts: list[str]) -> list[str]:
+def validate_host_docker_availability(hosts: List[str]) -> List[str]:
     """Validate Docker is available and running on all hosts.
 
     Args:
@@ -263,7 +264,7 @@ def validate_host_docker_availability(hosts: list[str]) -> list[str]:
     return errors
 
 
-def validate_host_network_interface(hosts: list[str], interface: str) -> list[str]:
+def validate_host_network_interface(hosts: List[str], interface: str) -> List[str]:
     """Validate MPI network interface exists on all hosts.
 
     Args:
@@ -285,8 +286,8 @@ def validate_host_network_interface(hosts: list[str], interface: str) -> list[st
 
 
 def validate_host_shared_directory(
-    hosts: list[str], shared_storage_root: str
-) -> list[str]:
+    hosts: List[str], shared_storage_root: str
+) -> List[str]:
     """Validate shared storage root is accessible on all hosts.
 
     Args:
@@ -325,7 +326,7 @@ def validate_host_shared_directory(
     return errors
 
 
-def validate_host_tt_device(hosts: list[str]) -> list[str]:
+def validate_host_tt_device(hosts: List[str]) -> List[str]:
     """Validate Tenstorrent device is available on all hosts.
 
     Args:
@@ -347,7 +348,7 @@ def validate_host_tt_device(hosts: list[str]) -> list[str]:
     return errors
 
 
-def validate_host_tt_smi(hosts: list[str], tt_smi_path: str = "tt-smi") -> list[str]:
+def validate_host_tt_smi(hosts: List[str], tt_smi_path: str = "tt-smi") -> List[str]:
     """Validate tt-smi command is available on all hosts.
 
     Args:
@@ -368,7 +369,7 @@ def validate_host_tt_smi(hosts: list[str], tt_smi_path: str = "tt-smi") -> list[
     return errors
 
 
-def validate_host_hugepages(hosts: list[str]) -> list[str]:
+def validate_host_hugepages(hosts: List[str]) -> List[str]:
     """Validate hugepages are available on all hosts.
 
     Args:
@@ -396,10 +397,10 @@ def validate_host_hugepages(hosts: list[str]) -> list[str]:
 
 
 def validate_host_system_software(
-    hosts: list[str],
+    hosts: List[str],
     model_spec,
     tt_smi_path: str = "tt-smi",
-) -> list[str]:
+) -> List[str]:
     """Validate FW/KMD versions on all hosts via SSH.
 
     Runs 'tt-smi -s' on each host and validates:
@@ -533,7 +534,7 @@ def validate_host_system_software(
 
 
 def validate_multihost_environment(
-    hosts: list[str],
+    hosts: List[str],
     mpi_interface: str,
     shared_storage_root: str,
     model_spec=None,
@@ -620,7 +621,7 @@ def validate_multihost_args(
     skip_environment_check: bool = False,
     tt_smi_path: str = "tt-smi",
     dry_run: bool = False,
-) -> list[str]:
+) -> List[str]:
     """Validate multi-host configuration.
 
     Args:

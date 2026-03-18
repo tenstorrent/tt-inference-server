@@ -1,18 +1,15 @@
 #pragma once
 
-#include <cstdint>
 #include <functional>
 #include <memory>
 #include <vector>
 
 #include "config/runner_config.hpp"
 #include "runners/llm_runner/sequence.hpp"
-#include "utils/concurrent_queue.hpp"
 
 namespace llm_engine {
 
 using DecodeCallback = std::function<void(const TokenResult&)>;
-using DecodeQueue = ConcurrentQueue<TokenResult>;
 
 class IModelRunner {
  public:

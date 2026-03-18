@@ -3,9 +3,6 @@
 
 #include "utils/runner_factory.hpp"
 
-#include <iostream>
-
-#include "config/settings.hpp"
 #include "runners/embedding_runner.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
@@ -24,17 +21,16 @@ std::unique_ptr<runners::IRunner> createRunner(
     }
     case config::ModelService::LLM:
     default: {
-      TT_LOG_INFO("[RunnerFactory] Creating LLM runner");
       auto& cfg = std::get<config::LLMConfig>(config);
 
-      // Choose runner based on config.runner_type
-      if (cfg.runner_type == config::ModelRunnerType::PIPELINE) {
+      if (cfg.runner_type == config::ModelRunnerType::PIPELINE ||
+          cfg.runner_type == config::ModelRunnerType::MOCK_PIPELINE) {
         TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner");
         return std::make_unique<runners::SpPipelineRunner>(cfg, resultQueue,
                                                            taskQueue);
       }
 
-      TT_LOG_INFO("[RunnerFactory] Creating LLM runner");
+      TT_LOG_INFO("[RunnerFactory] Creating LLM runner (mock)");
       return std::make_unique<tt::runners::LLMRunner>(cfg, resultQueue,
                                                       taskQueue);
     }
