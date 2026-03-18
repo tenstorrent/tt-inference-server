@@ -10,7 +10,7 @@
 │   ├── run_benchmarks.py
 │   ├── run_genai_benchmarks.py
 │   └── summary_report.py
-├── default_model_spec.json
+├── model_spec.json
 ├── docker-entrypoint.sh
 ├── docs
 │   ├── add_support_for_new_model.md

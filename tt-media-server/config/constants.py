@@ -92,6 +92,7 @@ class ModelRunners(Enum):
     MOCK = "mock"
     LLM_TEST = "llm_test"
     LLAMA_RUNNER = "llama_runner"
+    SP_RUNNER = "sp_runner"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
 
 
