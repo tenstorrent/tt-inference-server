@@ -91,76 +91,76 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
     try {
       py::list pySeqs;
       for (Sequence* seq : seqs) {
-        py::list token_ids;
+        py::list tokenIds;
         if (isPrefill) {
-          for (int64_t t : seq->token_ids_) token_ids.append(t);
+          for (int64_t t : seq->token_ids_) tokenIds.append(t);
         } else {
-          token_ids.append(seq->token_ids_.back());
+          tokenIds.append(seq->token_ids_.back());
         }
 
-        py::list block_table;
+        py::list blockTable;
         for (int bid : seq->block_table_) {
-          block_table.append(bid);
+          blockTable.append(bid);
         }
 
-        int current_pos =
+        int currentPos =
             isPrefill ? 0 : static_cast<int>(seq->token_ids_.size() - 1);
-        int prompt_len = static_cast<int>(seq->num_prompt_tokens_);
+        int promptLen = static_cast<int>(seq->num_prompt_tokens_);
 
         const SamplingParams* sp = seq->sampling_params.get();
         double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;
-        bool ignore_eos = sp ? sp->ignore_eos : false;
+        bool ignoreEos = sp ? sp->ignore_eos : false;
 
         py::object seed = py::none();
         if (sp && sp->seed.has_value()) {
           seed = py::int_(*sp->seed);
         }
 
-        py::object top_p = py::none();
+        py::object topP = py::none();
         if (sp && sp->top_p.has_value()) {
-          top_p = py::float_(*sp->top_p);
+          topP = py::float_(*sp->top_p);
         }
 
-        py::object top_k = py::none();
+        py::object topK = py::none();
         if (sp && sp->top_k.has_value()) {
-          top_k = py::int_(*sp->top_k);
+          topK = py::int_(*sp->top_k);
         }
 
-        py::object min_p = py::none();
+        py::object minP = py::none();
         if (sp && sp->min_p.has_value()) {
-          min_p = py::float_(*sp->min_p);
+          minP = py::float_(*sp->min_p);
         }
 
-        py::object repetition_penalty = py::none();
+        py::object repetitionPenalty = py::none();
         if (sp && sp->repetition_penalty.has_value()) {
-          repetition_penalty = py::float_(*sp->repetition_penalty);
+          repetitionPenalty = py::float_(*sp->repetition_penalty);
         }
 
-        double presence_penalty =
+        double presencePenalty =
             sp ? static_cast<double>(sp->presence_penalty) : 0.0;
-        double frequency_penalty =
+        double frequencyPenalty =
             sp ? static_cast<double>(sp->frequency_penalty) : 0.0;
 
         pySeqs.append(gStepSeqClass(
-            seq->task_id.id, token_ids, temperature, ignore_eos, block_table,
-            current_pos, prompt_len, seed, top_p, top_k, min_p,
-            repetition_penalty, presence_penalty, frequency_penalty));
+            seq->task_id.id, tokenIds, temperature, ignoreEos, blockTable,
+            currentPos, promptLen, seed, topP, topK, minP, repetitionPenalty,
+            presencePenalty, frequencyPenalty));
       }
 
       py::object results = gRunner.attr("run")(isPrefill, pySeqs);
 
       for (size_t i = 0; i < seqs.size(); ++i) {
         py::object item = results[py::int_(i)];
-        TaskID dr_task_id(item.attr("task_id").cast<std::string>());
-        uint64_t dr_token_id =
+        TaskID drTaskId(item.attr("task_id").cast<std::string>());
+        uint64_t drTokenId =
             static_cast<uint64_t>(item.attr("token_id").cast<int64_t>());
         std::string error = item.attr("error").cast<std::string>();
-        bool dr_is_error = !error.empty();
-        if (dr_is_error) {
-          TT_LOG_ERROR("[LlamaModelRunner] sequence {} error: {}",
-                       dr_task_id.id, error);
+        bool drIsError = !error.empty();
+        if (drIsError) {
+          TT_LOG_ERROR("[LlamaModelRunner] sequence {} error: {}", drTaskId.id,
+                       error);
         }
-        TokenResult dr(dr_task_id, dr_token_id, {}, dr_is_error);
+        TokenResult dr(drTaskId, drTokenId, {}, drIsError);
         decode_callback_(dr);
       }
     } catch (const py::error_already_set& e) {
