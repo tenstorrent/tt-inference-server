@@ -262,10 +262,6 @@
             "GALAXY",
             "N150"
           ]
-        },
-        "release": {
-          "devices": [
-          ]
         }
       }
     },
@@ -281,10 +277,6 @@
             "P300X2",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-          ]
         }
       }
     },
@@ -295,10 +287,6 @@
           "devices": [
             "GALAXY",
             "N150"
-          ]
-        },
-        "release": {
-          "devices": [
           ]
         }
       }
@@ -323,10 +311,6 @@
             "P300X2",
             "P150X4",
             "T3K"
-          ]
-        },
-        "release": {
-          "devices": [
           ]
         }
       }
@@ -401,10 +385,6 @@
             "GALAXY",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-          ]
         }
       }
     },
@@ -440,10 +420,6 @@
             "P150X8",
             "P300X2",
             "T3K"
-          ]
-        },
-        "release": {
-          "devices": [
           ]
         }
       }
