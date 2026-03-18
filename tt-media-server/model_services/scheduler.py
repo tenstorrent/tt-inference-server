@@ -8,12 +8,13 @@ import time
 from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
 
-from config.constants import SHUTDOWN_SIGNAL, QueueType
+from config.constants import SHM_BASED_RUNNERS, SHUTDOWN_SIGNAL, ModelRunners, QueueType
 from config.settings import get_settings
 from device_workers.device_worker import device_worker
 from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
+from device_workers.device_worker_video_shm import device_worker_video_shm
 from fastapi import HTTPException
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
@@ -159,10 +160,15 @@ class Scheduler:
         else:
             result_queue = self.result_queues_by_worker[0]
 
+        if ModelRunners(self.settings.model_runner) in SHM_BASED_RUNNERS:
+            worker_target = device_worker_video_shm
+        elif self.settings.use_dynamic_batcher:
+            worker_target = device_worker_dynamic_batch
+        else:
+            worker_target = device_worker
+
         p = Process(
-            target=device_worker_dynamic_batch
-            if self.settings.use_dynamic_batcher
-            else device_worker,
+            target=worker_target,
             args=(
                 worker_id,
                 self.task_queue,
