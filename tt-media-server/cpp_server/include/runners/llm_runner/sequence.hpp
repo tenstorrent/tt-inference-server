@@ -5,13 +5,13 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
-#include <memory>
-#include <optional>
-#include "runners/llm_runner/sampling_params.hpp"
+
 #include "domain/task_id.hpp"
+#include "runners/llm_runner/sampling_params.hpp"
 
 namespace llm_engine {
 
@@ -21,15 +21,23 @@ enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
 struct TokenResult {
   TaskID task_id;
-  uint64_t token_id;
+  uint64_t token_id = 0;
   std::optional<bool> finished;
   bool is_error = false;
+
+  TokenResult() = default;
+  TokenResult(TaskID taskId, uint64_t tokenId,
+              std::optional<bool> finished = {}, bool isError = false)
+      : task_id(std::move(taskId)),
+        token_id(tokenId),
+        finished(std::move(finished)),
+        is_error(isError) {}
 };
 
 class Sequence {
  public:
-  Sequence(const int block_size, std::vector<int64_t> token_ids,
-           const SamplingParams& sampling_params = SamplingParams());
+  Sequence(TaskID taskId, int blockSize, std::vector<int64_t> tokenIds,
+           const SamplingParams& samplingParams = SamplingParams());
 
   void serialize(std::ostream& os) const;
 
@@ -38,23 +46,23 @@ class Sequence {
   size_t size() const { return token_ids_.size(); }
   int64_t operator[](size_t i) const { return token_ids_[i]; }
 
-  bool is_finished() const { return status_ == SequenceStatus::FINISHED; }
-  size_t num_completion_tokens() const {
+  bool isFinished() const { return status_ == SequenceStatus::FINISHED; }
+  size_t numCompletionTokens() const {
     return token_ids_.size() - num_prompt_tokens_;
   }
-  size_t num_cached_blocks() const { return num_cached_tokens_ / block_size_; }
-  size_t num_blocks() const {
+  size_t numCachedBlocks() const { return num_cached_tokens_ / block_size_; }
+  size_t numBlocks() const {
     return (token_ids_.size() + block_size_ - 1) / block_size_;
   }
-  int last_block_num_tokens() const {
+  int lastBlockNumTokens() const {
     return static_cast<int>(token_ids_.size()) -
-           static_cast<int>(num_blocks() - 1) * block_size_;
+           static_cast<int>(numBlocks() - 1) * block_size_;
   }
 
   std::vector<int64_t> block(size_t i) const;
-  std::vector<int64_t> completion_token_ids() const;
+  std::vector<int64_t> completionTokenIds() const;
 
-  void append_token(int64_t token_id);
+  void appendToken(int64_t tokenId);
 
   TaskID task_id;
   SequenceStatus status_ = SequenceStatus::WAITING;
@@ -66,7 +74,7 @@ class Sequence {
   std::unique_ptr<SamplingParams> sampling_params;
 
  private:
-  size_t num_tokens() const { return token_ids_.size(); }
+  size_t numTokens() const { return token_ids_.size(); }
   int block_size_;
 };
 

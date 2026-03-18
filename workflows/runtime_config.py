@@ -43,6 +43,7 @@ class RuntimeConfig:
     local_server: bool = False
     interactive: bool = False
     service_port: str = "8000"
+    bind_host: str = "0.0.0.0"
 
     # Dev / override
     dev_mode: bool = False
@@ -79,6 +80,8 @@ class RuntimeConfig:
 
     # Misc
     tt_metal_python_venv_dir: Optional[str] = None
+    tt_metal_home: Optional[str] = None
+    vllm_dir: Optional[str] = None
 
     # Runtime state (set during execution, not from CLI)
     run_id: Optional[str] = None
@@ -108,6 +111,7 @@ class RuntimeConfig:
             local_server=args.local_server,
             interactive=args.interactive,
             service_port=args.service_port,
+            bind_host=args.bind_host,
             dev_mode=args.dev_mode,
             no_auth=args.no_auth,
             print_docker_cmd=args.print_docker_cmd,
@@ -132,6 +136,8 @@ class RuntimeConfig:
             image_user=args.image_user,
             skip_system_sw_validation=args.skip_system_sw_validation,
             tt_metal_python_venv_dir=args.tt_metal_python_venv_dir,
+            tt_metal_home=args.tt_metal_home,
+            vllm_dir=args.vllm_dir,
         )
 
     def to_dict(self) -> dict:

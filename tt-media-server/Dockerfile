@@ -93,6 +93,8 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && uv pip install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
+    && bash ./build_metal.sh --release -e --build-metal-tests -c --configure-only \
+    && cmake --build build_Release --target test_system_health -j$(nproc) \
     && uv pip install --upgrade cmake \
     && hash -r \
     && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true

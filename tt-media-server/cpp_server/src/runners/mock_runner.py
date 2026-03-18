@@ -16,7 +16,7 @@ import signal
 import sys
 import time
 
-from shared_memory import SharedMemory
+from shared_memory import DECODE_MAX_TOKEN_IDS, PREFILL_MAX_TOKEN_IDS, SharedMemory
 
 _shutdown = False
 
@@ -51,8 +51,10 @@ def _run_mock_bridge() -> None:
         return _shutdown
 
     try:
-        with SharedMemory(c2p_name, is_shutdown=is_shutdown) as c2p, SharedMemory(
-            p2c_name, is_shutdown=is_shutdown
+        with SharedMemory(
+            c2p_name, max_token_ids=PREFILL_MAX_TOKEN_IDS, is_shutdown=is_shutdown
+        ) as c2p, SharedMemory(
+            p2c_name, max_token_ids=DECODE_MAX_TOKEN_IDS, is_shutdown=is_shutdown
         ) as p2c:
             print("Mock runner: SHM bridge started successfully", file=sys.stderr)
 

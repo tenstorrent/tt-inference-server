@@ -5,7 +5,9 @@
 namespace tt::domain {
 
 struct BaseRequest {
-    TaskID task_id;
+  TaskID task_id;
+
+  explicit BaseRequest(TaskID taskId) : task_id(std::move(taskId)) {}
 };
 
-} // namespace tt::domain
+}  // namespace tt::domain

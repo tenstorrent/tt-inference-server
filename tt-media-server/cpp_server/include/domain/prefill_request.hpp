@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,10 +19,12 @@ namespace tt::domain {
  * Controllers (Socket) decide how to deliver this request.
  */
 struct PrefillRequest {
-    TaskID task_id;
-    std::string prompt;
-    std::vector<int64_t> token_ids;
-    int max_tokens = 0;
+  TaskID task_id;
+  std::string prompt;
+  std::vector<int64_t> token_ids;
+  std::optional<int> max_tokens;
+
+  explicit PrefillRequest(TaskID taskId) : task_id(std::move(taskId)) {}
 };
 
-} // namespace tt::domain
+}  // namespace tt::domain

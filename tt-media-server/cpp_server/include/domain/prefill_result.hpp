@@ -18,11 +18,13 @@ namespace tt::domain {
  * Controllers (HTTP or Socket) decide how to deliver this result.
  */
 struct PrefillResult {
-    TaskID task_id;
-    std::string generated_text;
-    std::vector<int64_t> token_ids;
-    int remaining_tokens = 0;
-    bool finished = false;
+  TaskID task_id;
+  std::string generated_text;
+  std::vector<int64_t> token_ids;
+  int remaining_tokens = 0;
+  bool finished = false;
+
+  explicit PrefillResult(TaskID taskId) : task_id(std::move(taskId)) {}
 };
 
-} // namespace tt::domain
+}  // namespace tt::domain
