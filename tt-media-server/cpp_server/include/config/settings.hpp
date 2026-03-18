@@ -73,6 +73,14 @@ std::string socketHost();
 /** Socket port from SOCKET_PORT. Default: defaults::SOCKET_PORT. */
 uint16_t socketPort();
 
+/** KV migration host from KV_MIGRATION_HOST. Default:
+ * defaults::KV_MIGRATION_HOST. */
+std::string kvMigrationHost();
+
+/** KV migration port from KV_MIGRATION_PORT. Default:
+ * defaults::KV_MIGRATION_PORT. */
+uint16_t kvMigrationPort();
+
 /** Enable accumulated streaming from ENABLE_ACCUMULATED_STREAMING. Default:
  * defaults::ENABLE_ACCUMULATED_STREAMING. */
 bool enableAccumulatedStreaming();

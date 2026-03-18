@@ -4,8 +4,10 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 
 #include "config/runner_config.hpp"
+#include "runners/kv_cache_migrator.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 
 namespace llm_engine {
@@ -18,7 +20,8 @@ namespace llm_engine {
 class LlamaModelRunner : public IModelRunner {
  public:
   LlamaModelRunner(const tt::config::LLMConfig& config,
-                   DecodeCallback callback);
+                   DecodeCallback callback,
+                   std::unique_ptr<IKVCacheMigrator> migrator = nullptr);
   ~LlamaModelRunner() override;
   void run(const std::vector<Sequence*>& seqs, bool isPrefill) override;
   void exit() override;
@@ -31,12 +34,14 @@ class LlamaModelRunner : public IModelRunner {
 
   tt::config::LLMConfig config_;
   DecodeCallback decode_callback_;
+  std::unique_ptr<IKVCacheMigrator> migrator_;
   std::atomic<bool> stop_{false};
   bool initialized_ = false;
   bool lastStepWasPrefill_ = true;
 };
 
 std::unique_ptr<IModelRunner> makeLlamaModelRunner(
-    const tt::config::LLMConfig& config, DecodeCallback callback);
+    const tt::config::LLMConfig& config, DecodeCallback callback,
+    std::unique_ptr<IKVCacheMigrator> migrator = nullptr);
 
 }  // namespace llm_engine

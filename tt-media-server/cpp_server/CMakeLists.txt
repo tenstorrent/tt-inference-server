@@ -235,6 +235,7 @@ set(LLM_ENGINE_SOURCES
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     list(APPEND LLM_ENGINE_SOURCES
         src/runners/llama_model_runner.cpp
+        src/runners/h2h_kv_cache_migrator.cpp
     )
     message(STATUS "LLM engine: building with tt-metal socket integration")
 else()

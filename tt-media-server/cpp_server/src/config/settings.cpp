@@ -242,4 +242,13 @@ size_t sessionEvictionCount() {
       envUlong("SESSION_EVICTION_COUNT", defaults::SESSION_EVICTION_COUNT));
 }
 
+std::string kvMigrationHost() {
+  return envString("KV_MIGRATION_HOST", defaults::KV_MIGRATION_HOST);
+}
+
+uint16_t kvMigrationPort() {
+  return static_cast<uint16_t>(
+      envUlong("KV_MIGRATION_PORT", defaults::KV_MIGRATION_PORT));
+}
+
 }  // namespace tt::config
