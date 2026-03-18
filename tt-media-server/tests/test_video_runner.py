@@ -24,7 +24,7 @@ sys.modules["telemetry.telemetry_client"] = Mock()
 sys.modules["utils.logger"] = Mock()
 sys.modules["utils.logger"].TTLogger = Mock(return_value=Mock())
 
-from ipc.video_shm import FrameStatus, VideoRequest
+from ipc.video_shm import VideoRequest, VideoStatus
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -33,7 +33,7 @@ from tt_model_runners.video_runner import (
     _rank,
     _send_via_socket,
     _recv_via_socket,
-    _write_frames_to_shm,
+    _write_response_to_shm,
     _write_error_to_shm,
     create_dit_runner,
     RANK_CONFIG,
@@ -148,70 +148,66 @@ class TestSocketHelpers:
         assert received == [None]
 
 
-class TestWriteFramesToShm:
-    def test_writes_frames_and_done(self):
+class TestWriteResponseToShm:
+    def test_writes_single_blob(self):
         mock_shm = MagicMock()
         frames = np.random.randint(0, 256, (1, 3, 4, 6, 3), dtype=np.uint8)
 
-        _write_frames_to_shm(mock_shm, "task-1", frames)
+        _write_response_to_shm(mock_shm, "task-1", frames)
 
-        assert mock_shm.write_frame.call_count == 4  # 3 FRAME + 1 DONE
-        calls = mock_shm.write_frame.call_args_list
-
-        for i in range(3):
-            fr = calls[i][0][0]
-            assert fr.status == FrameStatus.FRAME
-            assert fr.frame_index == i
-            assert fr.total_frames == 3
-            assert fr.task_id == "task-1"
-            assert fr.height == 4
-            assert fr.width == 6
-            assert fr.channels == 3
-
-        done = calls[3][0][0]
-        assert done.status == FrameStatus.DONE
-        assert done.frame_data == b""
+        mock_shm.write_response.assert_called_once()
+        resp = mock_shm.write_response.call_args[0][0]
+        assert resp.status == VideoStatus.SUCCESS
+        assert resp.task_id == "task-1"
+        assert resp.num_frames == 3
+        assert resp.height == 4
+        assert resp.width == 6
+        assert resp.channels == 3
+        assert len(resp.frame_data) == 3 * 4 * 6 * 3
 
     def test_handles_4d_input(self):
         mock_shm = MagicMock()
         frames = np.zeros((2, 4, 6, 3), dtype=np.uint8)
 
-        _write_frames_to_shm(mock_shm, "task-2", frames)
+        _write_response_to_shm(mock_shm, "task-2", frames)
 
-        assert mock_shm.write_frame.call_count == 3  # 2 FRAME + 1 DONE
+        mock_shm.write_response.assert_called_once()
+        resp = mock_shm.write_response.call_args[0][0]
+        assert resp.num_frames == 2
 
     def test_converts_float_to_uint8(self):
         mock_shm = MagicMock()
         frames = np.ones((1, 1, 2, 2, 3), dtype=np.float32) * 0.5
 
-        _write_frames_to_shm(mock_shm, "task-3", frames)
+        _write_response_to_shm(mock_shm, "task-3", frames)
 
-        fr = mock_shm.write_frame.call_args_list[0][0][0]
+        resp = mock_shm.write_response.call_args[0][0]
         expected_val = int(0.5 * 255)
-        assert fr.frame_data[0] == expected_val
+        assert resp.frame_data[0] == expected_val
 
     def test_clips_float_values(self):
         mock_shm = MagicMock()
         frames = np.array([[[[[2.0, -1.0, 0.5]]]]]).astype(np.float32)
 
-        _write_frames_to_shm(mock_shm, "task-4", frames)
+        _write_response_to_shm(mock_shm, "task-4", frames)
 
-        fr = mock_shm.write_frame.call_args_list[0][0][0]
-        assert fr.frame_data[0] == 255
-        assert fr.frame_data[1] == 0
-        assert fr.frame_data[2] == 127
+        resp = mock_shm.write_response.call_args[0][0]
+        assert resp.frame_data[0] == 255
+        assert resp.frame_data[1] == 0
+        assert resp.frame_data[2] == 127
 
 
 class TestWriteErrorToShm:
-    def test_writes_error_frame(self):
+    def test_writes_error_response(self):
         mock_shm = MagicMock()
-        _write_error_to_shm(mock_shm, "task-err")
+        _write_error_to_shm(mock_shm, "task-err", "boom")
 
-        mock_shm.write_frame.assert_called_once()
-        fr = mock_shm.write_frame.call_args[0][0]
-        assert fr.status == FrameStatus.ERROR
-        assert fr.task_id == "task-err"
-        assert fr.frame_data == b""
+        mock_shm.write_response.assert_called_once()
+        resp = mock_shm.write_response.call_args[0][0]
+        assert resp.status == VideoStatus.ERROR
+        assert resp.task_id == "task-err"
+        assert resp.frame_data == b""
+        assert resp.error_message == "boom"
 
 
 class TestCreateDitRunner:

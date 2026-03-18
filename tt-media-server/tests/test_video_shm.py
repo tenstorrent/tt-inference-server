@@ -322,7 +322,7 @@ class TestRequestRoundtrip:
         writer, reader = input_pair
         for i in range(5):
             req = _make_request(
-                task_id=f"task-{i:036d}",
+                task_id=f"task-{i:030d}",
                 prompt=f"prompt {i}",
                 seed=i * 10,
             )
