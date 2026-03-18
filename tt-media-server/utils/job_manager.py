@@ -224,7 +224,7 @@ class JobManager:
                     f"Cancel failed: Job {job_id} is already {job.status.value}."
                 )
                 return None
-            
+
             # if the job is queued, we can cancel it immediately
             if job.status == JobStatus.QUEUED:
                 self._cleanup_job(job, force=True)
@@ -451,7 +451,7 @@ class JobManager:
             running_task = job._task
 
         return running_task
-    
+
     def _sync_status_to_db(self, job: Job, **overrides):
         if not self.db:
             return
@@ -464,7 +464,9 @@ class JobManager:
                 error_message=overrides.get("error_message", job.error),
             )
         except Exception as e:
-            self._logger.error(f"DB sync failed for job {job.id} to '{job.status.value}': {e}")
+            self._logger.error(
+                f"DB sync failed for job {job.id} to '{job.status.value}': {e}"
+            )
 
     def _restore_jobs_from_db(self):
         """

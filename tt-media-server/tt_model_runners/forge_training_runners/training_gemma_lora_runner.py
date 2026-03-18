@@ -210,7 +210,9 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         self.logger.info("Model checkpoint saved.")
 
                     if do_validation:
-                        avg_val_loss = self.run_validation(cancel_event=request._cancel_event)
+                        avg_val_loss = self.run_validation(
+                            cancel_event=request._cancel_event
+                        )
                         if avg_val_loss is not None:
                             self.logger.info(
                                 f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}"
@@ -226,7 +228,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                                     }
                                 )
                         self.model.train()
-                    
+
                     # Check for cancellation at the end of each training step
                     if request._cancel_event and request._cancel_event.is_set():
                         self.logger.info(
