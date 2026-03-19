@@ -9,9 +9,6 @@ from collections import Counter
 import pytest
 import requests
 
-from utils.prompt_client import PromptClient
-from utils.prompt_configs import EnvironmentConfig
-
 
 # --- Helper Functions ---
 def get_output_text(response):
@@ -40,58 +37,57 @@ def get_function_calls(response):
     ]
 
 
-def tokenize(text):
-    """Tokenize by whitespace (simple, portable)."""
-    return text.lower().split()
-
-
-def repetition_stats(text):
-    """Compute repetition metrics."""
-    tokens = tokenize(text)
-    counts = Counter(tokens)
-
-    return {
-        "len": len(tokens),
-        "unique": len(set(tokens)),
-        "unique_ratio": len(set(tokens)) / len(tokens) if tokens else 0,
-        "most_common": counts.most_common(3),
-        "entropy": shannon_entropy(tokens),
-    }
-
-
-def shannon_entropy(tokens):
-    total = len(tokens)
-    if total == 0:
-        return 0
-    counts = Counter(tokens)
-    return -sum((c / total) * math.log2(c / total) for c in counts.values())
-
-
 # --- Reusable Inputs ---
 BASE_INPUT = "Tell me a short joke."
-BASE_INPUT_MESSAGES = [{"role": "user", "content": "Tell me a short joke."}]
+BASE_INPUT_MESSAGES = [{"role": "user", "content": f"{BASE_INPUT}"}]
 REPRO_INPUT = "What is the capital of France? Be concise."
-REPRO_INPUT_MESSAGES = [
-    {"role": "user", "content": "What is the capital of France? Be concise."}
-]
-
 WEATHER_TOOL = {
     "type": "function",
-    "name": "get_weather",
-    "description": "Get the current weather for a location.",
+    "name": "get_current_weather",
+    "description": "Get the current weather in a given location",
     "parameters": {
         "type": "object",
         "properties": {
-            "location": {
+            "city": {
                 "type": "string",
-                "description": "The city and state, e.g. San Francisco, CA",
-            }
+                "description": "The city to find the weather for, "
+                "e.g. 'San Francisco'",
+            },
+            "state": {
+                "type": "string",
+                "description": "the two-letter abbreviation for the state "
+                "that the city is in, e.g. 'CA' which would "
+                "mean 'California'",
+            },
+            "unit": {
+                "type": "string",
+                "description": "The unit to fetch the temperature in",
+                "enum": ["celsius", "fahrenheit"],
+            },
         },
-        "required": ["location"],
     },
 }
 
-
+SEARCH_TOOL = {
+    "type": "function",
+    "name": "web_search",
+    "description": "Search the internet and get a summary of the top "
+    "10 webpages. Should only be used if you don't know "
+    "the answer to a user query, and the results are likely"
+    "to be able to be found with a web search",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "search_term": {
+                "type": "string",
+                "description": "The term to use in the search. This should"
+                "ideally be keywords to search for, not a"
+                "natural-language question",
+            }
+        },
+        "required": ["search_term"],
+    },
+}
 # --- Test Functions ---
 
 
@@ -111,8 +107,7 @@ def test_include(report_test, api_client, request):
         msg = f"AssertionError: {str(e)}. Response: {response}"
         raise AssertionError(msg)
 
-
-def test_background(report_test, api_client, endpoint_url, request):
+def test_background(report_test, api_client, request):
     """Tests that the 'background' parameter kicks off an async task and can be polled to completion."""
     import time
 
@@ -130,21 +125,10 @@ def test_background(report_test, api_client, endpoint_url, request):
     response_id = response["id"]
 
     # Poll the GET /v1/responses/{response_id} endpoint until terminal state
-    env_config = EnvironmentConfig()
-    prompt_client = PromptClient(env_config)
-    authorization = prompt_client._get_authorization()
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {authorization}",
-    }
-    retrieve_url = f"{endpoint_url}/{response_id}"
-
     max_polls = 15
     poll_interval = 2
     for _ in range(max_polls):
-        poll_resp = requests.get(retrieve_url, headers=headers, timeout=30)
-        poll_resp.raise_for_status()
-        poll_data = poll_resp.json()
+        poll_data = api_client(url_suffix=response_id, method=requests.get)
 
         status = poll_data.get("status")
         if status not in ("queued", "in_progress"):
@@ -203,6 +187,47 @@ def test_instructions(report_test, api_client, request):
         raise AssertionError(msg)
 
 
+def test_instructions_not_carried_over(report_test, api_client, request):
+    """Tests that instructions from a previous response are not carried over when using previous_response_id.
+    from api: 'When using along with previous_response_id, the instructions from a previous response will not be carried over to the next response.'
+    """
+    tag = "XYZZY_ALPHA_7829"
+
+    # First request: instructions tell the model to include a unique tag
+    
+    payload1 = {
+        "input": "What is 2+2?",
+        "instructions": f"You must include the string {tag} in every response.",
+        "max_output_tokens": 4096,
+    }
+
+    response1 = api_client(payload1)
+    response_id = response1.get("id")
+    assert response_id, f"Expected response to have an 'id'. Response: {response1}"
+
+    output1 = get_output_text(response1) 
+    assert tag in output1, ( 
+        f"Expected '{tag}' in first response to confirm instructions work. Got: '{output1}'"
+    )
+
+    # Second request: use previous_response_id but provide NO instructions.
+    # If old instructions carried over, the tag would still appear.
+    tag2 = 'PLUGH_BETA_4391'
+    payload2 = {
+        "input": "What is 3+3?",
+        "instructions": f"Answer the question explicitly",
+        "previous_response_id": response_id,
+        "max_output_tokens": 4096,
+    }
+    response2 = api_client(payload2)
+
+    output2 = get_output_text(response2)
+    assert output2, f"Expected non-empty output text. Response: {response2}"
+    assert tag not in output2, (
+        f"'{tag}' from previous instructions should not appear without instructions. Got: '{output2}'"
+    )
+
+
 @pytest.mark.parametrize("max_val", [5, 10])
 def test_max_output_tokens(report_test, api_client, max_val, request):
     """Tests the 'max_output_tokens' parameter."""
@@ -225,14 +250,23 @@ def test_max_tool_calls(report_test, api_client, max_calls, request):
         "input": "What's the weather in San Francisco, New York, London, Tokyo, and Sydney?",
         "tools": [WEATHER_TOOL],
         "max_tool_calls": max_calls,
-        "max_output_tokens": 256,
+        "max_output_tokens": 1024,
     }
     response = api_client(payload)
+
+    assert response.get("status") == "completed", (
+        f"Expected response status 'completed', got '{response.get('status')}'. Response: {response}"
+    )
 
     tool_calls = get_function_calls(response)
     assert len(tool_calls) <= max_calls, (
         f"Expected at most {max_calls} tool calls, got {len(tool_calls)}."
     )
+    for call in tool_calls:
+        assert call.get("name") == WEATHER_TOOL["name"], (
+            f"Expected tool call name '{WEATHER_TOOL['name']}', got '{call.get('name')}'. Tool call: {call}"
+        )
+    
 
 
 def test_metadata(report_test, api_client, request):
@@ -272,20 +306,32 @@ def test_model(report_test, api_client, request):
 
 @pytest.mark.parametrize("parallel", [True, False])
 def test_parallel_tool_calls(report_test, api_client, parallel, request):
+    # lets try to use different function tool calls
     """Tests the 'parallel_tool_calls' parameter."""
     payload = {
-        "input": "What's the weather in both San Francisco and New York?",
-        "tools": [WEATHER_TOOL],
+        "input": "What is the weather in Dallas, Texas and Orlando, Florida in Fahrenheit?",
+        "tools": [WEATHER_TOOL, SEARCH_TOOL],
         "parallel_tool_calls": parallel,
-        "max_output_tokens": 256,
+        "temperature": 0,
+        "max_output_tokens": 200,
     }
+
     response = api_client(payload)
 
-    try:
-        assert "output" in response, "Expected 'output' in response."
-    except AssertionError as e:
-        msg = f"AssertionError: {str(e)}. Response: {response}"
-        raise AssertionError(msg)
+    # The model should respond with function_call items (tool use), not text output
+    function_calls = [
+        item for item in response.get("output", [])
+        if item.get("type") == "function_call"
+    ]
+    assert function_calls, (
+        f"Expected at least one function_call in output. Response: {response}"
+    )
+    # Verify the tool call targets one of the provided tools
+    valid_tool_names = {tool["name"] for tool in payload["tools"]}
+    for fc in function_calls:
+        assert fc["name"] in valid_tool_names, (
+            f"Unexpected tool call '{fc['name']}', expected one of {valid_tool_names}. Response: {response}"
+        )
 
 
 def test_previous_response_id(report_test, api_client, request):
@@ -315,7 +361,16 @@ def test_previous_response_id(report_test, api_client, request):
 
 
 def test_prompt(report_test, api_client, request):
-    """Tests that the 'prompt' parameter is accepted."""
+    """Tests that the 'prompt' parameter references a stored prompt template.
+
+    Per the API spec, the 'prompt' parameter is a ResponsePrompt object:
+    - id (string): The unique identifier of the prompt template to use
+    - variables (optional map): Values to substitute in the template
+    - version (optional string): Version of the prompt template
+
+    After creation, the response is retrieved via GET /responses/{response_id}
+    and validated against the Response object schema.
+    """
     payload = {
         "input": BASE_INPUT,
         "max_output_tokens": 256,
@@ -327,22 +382,43 @@ def test_prompt(report_test, api_client, request):
         api_client(payload)
 
 
-@pytest.mark.parametrize("effort", ["low", "medium", "high"])
-def test_reasoning(report_test, api_client, effort, request):
-    """Tests the 'reasoning' parameter with different effort levels."""
-    payload = {
-        "input": "What is 15 * 27?",
-        "max_output_tokens": 256,
-        "reasoning": {"effort": effort},
-    }
-    response = api_client(payload)
+def test_reasoning(report_test, api_client, request):
+    """Tests that the 'reasoning' parameter effort levels affect reasoning token usage.
 
-    try:
+    Sends the same prompt at low, medium, and high effort and verifies that
+    reasoning_tokens increases (or stays equal) as effort increases:
+    low <= medium <= high.
+    """
+    prompt = (
+        "A farmer has 3 fields. The first field is twice the size of the second. "
+        "The third field is 50 acres more than the first. Together they total 750 acres. "
+        "What is the size of each field?"
+    )
+    efforts = ["low", "medium", "high"]
+    reasoning_tokens = {}
+
+    for effort in efforts:
+        payload = {
+            "input": prompt,
+            "max_output_tokens": 4096,
+            "temperature": 0,
+            "reasoning": {"effort": effort},
+        }
+        response = api_client(payload)
+
         output_text = get_output_text(response)
-        assert output_text, "Expected non-empty output text."
-    except AssertionError as e:
-        msg = f"AssertionError: {str(e)}. Response: {response}"
-        raise AssertionError(msg)
+        assert output_text, (
+            f"Expected non-empty output text for effort={effort}. Response: {response}"
+        )
+        tokens = response.get("usage", {}).get("output_tokens_details", {}).get("reasoning_tokens", 0)
+        reasoning_tokens[effort] = tokens
+
+    assert reasoning_tokens["low"] <= reasoning_tokens["medium"], (
+        f"Expected low ({reasoning_tokens['low']}) <= medium ({reasoning_tokens['medium']}) reasoning tokens."
+    )
+    assert reasoning_tokens["medium"] <= reasoning_tokens["high"], (
+        f"Expected medium ({reasoning_tokens['medium']}) <= high ({reasoning_tokens['high']}) reasoning tokens."
+    )
 
 
 @pytest.mark.parametrize("tier", ["auto", "default"])
@@ -365,10 +441,12 @@ def test_service_tier(report_test, api_client, tier, request):
 
 @pytest.mark.parametrize("store_val", [True, False])
 def test_store(report_test, api_client, store_val, request):
-    """Tests that the 'store' parameter is accepted."""
+    """Tests that the 'store' parameter is accepted.
+    When store=True, also verifies the response can be retrieved and matches.
+    """
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 256,
+        "max_output_tokens": 1024,
         "store": store_val,
     }
     response = api_client(payload)
@@ -380,23 +458,27 @@ def test_store(report_test, api_client, store_val, request):
         msg = f"AssertionError: {str(e)}. Response: {response}"
         raise AssertionError(msg)
 
+    if store_val:
+        response_id = response.get("id")
+        assert response_id, f"Expected response to have an 'id'. Response: {response}"
 
-def test_stream_true(report_test, api_client, endpoint_url, request):
+        retrieved = api_client(
+            None,
+            url_suffix=response_id,
+            method=requests.get,
+        )
+        assert retrieved == response, (
+            f"Retrieved response does not match original.\n"
+            f"Original:  {response}\n"
+            f"Retrieved: {retrieved}"
+        )
+
+
+def test_stream_true(report_test, api_client, request):
     """Tests the 'stream' parameter set to true returns a streaming response."""
     payload = {"input": BASE_INPUT, "max_output_tokens": 256, "stream": True}
 
-    env_config = EnvironmentConfig()
-    prompt_client = PromptClient(env_config)
-    authorization = prompt_client._get_authorization()
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {authorization}",
-    }
-
-    response = requests.post(
-        endpoint_url, headers=headers, json=payload, stream=True, timeout=30
-    )
-    response.raise_for_status()
+    response = api_client(payload, stream=True)
 
     events = []
     for line in response.iter_lines(decode_unicode=True):
@@ -474,7 +556,7 @@ def test_text(report_test, api_client, text_config, request):
     """Tests the 'text' parameter for output format configuration."""
     fmt_type = text_config["format"]["type"]
     input_msg = "List 3 colors."
-    if fmt_type in ("json_object", "json_schema"):
+    if fmt_type == "json_schema":
         input_msg = "List 3 colors as a JSON object with a 'colors' key."
 
     payload = {
@@ -494,6 +576,9 @@ def test_text(report_test, api_client, text_config, request):
             assert "colors" in parsed, f"Expected 'colors' key in output. Got: {parsed}"
             assert isinstance(parsed["colors"], list), (
                 f"Expected 'colors' to be a list. Got: {type(parsed['colors'])}"
+            )
+            assert all(isinstance(c, str) for c in parsed["colors"]), (
+                f"Expected all items in 'colors' to be strings. Got: {parsed['colors']}"
             )
         except json.JSONDecodeError:
             pytest.fail(
@@ -525,20 +610,33 @@ def test_tool_choice(report_test, api_client, choice, request):
 
 
 def test_tools(report_test, api_client, request):
-    """Tests that the 'tools' parameter triggers tool calls."""
+    """Tests that the 'tools' parameter triggers tool calls with valid structure."""
     payload = {
         "input": "What's the weather like in San Francisco?",
         "tools": [WEATHER_TOOL],
+        "temperature": 0,
         "max_output_tokens": 256,
     }
     response = api_client(payload)
 
-    try:
-        assert "output" in response, "Expected 'output' in response."
-        assert len(response["output"]) > 0, "Expected non-empty output."
-    except AssertionError as e:
-        msg = f"AssertionError: {str(e)}. Response: {response}"
-        raise AssertionError(msg)
+    tool_calls = get_function_calls(response)
+    assert tool_calls, (
+        f"Expected at least one function_call in output. Response: {response}"
+    )
+
+    fc = tool_calls[0]
+    assert fc["name"] == WEATHER_TOOL["name"], (
+        f"Expected tool call name '{WEATHER_TOOL['name']}', got '{fc['name']}'."
+    )
+
+    args = json.loads(fc["arguments"])
+    assert "city" in args, f"Expected 'city' in tool call arguments. Got: {args}"
+    assert args["city"].lower() == "san francisco", (
+        f"Expected city 'san francisco', got '{args['city']}'."
+    )
+
+    # Verify the call has a call_id
+    assert fc.get("call_id"), f"Expected function_call to have a 'call_id'. Got: {fc}"
 
 
 @pytest.mark.parametrize("top_logprobs_val", [3, 5])
@@ -556,21 +654,50 @@ def test_top_logprobs(report_test, api_client, top_logprobs_val, request):
 
 
 @pytest.mark.parametrize("truncation", ["auto", "disabled"])
-def test_truncation(report_test, api_client, truncation, request):
-    """Tests the 'truncation' parameter."""
+def test_truncation(report_test, api_client, truncation, max_context, request):
+    """Tests the 'truncation' parameter.
+
+    Sends an input that exceeds the model's context window.
+    - auto: the server should truncate and return a response with input_tokens <= max_context.
+    - disabled: the server should not truncate; input_tokens should reflect the full input.
+    """
+    # Build an input large enough to exceed the context window.
+    filler_message = "This is filler text to consume tokens. " * 50
+    num_messages = (max_context // 40) + 1  # rough estimate: ~40 tokens per filler message
+    oversized_input = [
+        {"role": "user", "content": filler_message}
+        for _ in range(num_messages)
+    ]
+
     payload = {
-        "input": BASE_INPUT,
-        "max_output_tokens": 256,
+        "input": oversized_input,
+        "max_output_tokens": 1024,
         "truncation": truncation,
     }
-    response = api_client(payload)
 
-    try:
-        output_text = get_output_text(response)
-        assert output_text, "Expected non-empty output text."
-    except AssertionError as e:
-        msg = f"AssertionError: {str(e)}. Response: {response}"
-        raise AssertionError(msg)
+    response = api_client(payload, timeout=120)
+
+    assert response.get("status") in ("completed", "incomplete"), (
+        f"Expected status 'completed' or 'incomplete', got: {response}"
+    )
+
+    input_tokens = response.get("usage", {}).get("input_tokens", 0)
+    assert input_tokens > 0, (
+        f"Expected input_tokens > 0. Response: {response}"
+    )
+
+    if truncation == "auto":
+        # Truncation should cap input tokens to within the context window
+        assert input_tokens <= max_context, (
+            f"Expected input_tokens <= {max_context} with auto truncation, "
+            f"got {input_tokens}. Response: {response}"
+        )
+    else:
+        # disabled: no truncation, so input_tokens should exceed max_context
+        assert input_tokens > max_context, (
+            f"Expected input_tokens > {max_context} with disabled truncation, "
+            f"got {input_tokens}. Response: {response}"
+        )
 
 
 def test_user(report_test, api_client, request):

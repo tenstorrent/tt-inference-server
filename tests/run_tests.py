@@ -66,6 +66,8 @@ def build_test_command(
         model_spec.impl.impl_name,
         "--output-path",
         output_dir_path,
+        "--max-context",
+        str(model_spec.device_model_spec.max_context),
     ]
     cmd.extend(test_kwargs_list)
     # force all cmd parts to be strs
