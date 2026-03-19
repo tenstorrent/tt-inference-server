@@ -46,8 +46,8 @@ namespace {
 
 namespace tt::worker {
 
-WorkerManager::WorkerManager(size_t numWorkers) : num_workers_{numWorkers} {
-  if (num_workers_ < 1) {
+WorkerManager::WorkerManager(size_t numWorkers) : workerCount{numWorkers} {
+  if (workerCount < 1) {
     throw std::invalid_argument(
         "WorkerManager requires at least 1 worker. "
         "Set DEVICE_IDS with at least one bracket pair, "
@@ -69,36 +69,36 @@ void WorkerManager::stop() {
 }
 
 void WorkerManager::stopWarmupListener() {
-  if (warmup_queue_) {
-    warmup_queue_->remove();
-    warmup_queue_.reset();
+  if (warmupQueue) {
+    warmupQueue->remove();
+    warmupQueue.reset();
   }
-  if (warmup_listener_thread_.joinable()) {
-    warmup_listener_thread_.join();
+  if (warmupListenerThread.joinable()) {
+    warmupListenerThread.join();
   }
   {
-    std::lock_guard<std::mutex> lock(warmed_mutex_);
-    warmed_worker_ids_.clear();
+    std::lock_guard<std::mutex> lock(warmedMutex);
+    warmedWorkerIds.clear();
   }
-  is_ready_ = false;
+  ready = false;
 }
 
 void WorkerManager::stopProcesses() {
-  for (auto& w : workers_) {
+  for (auto& w : workers) {
     w->stop();
   }
-  workers_.clear();
+  workers.clear();
 }
 
 bool WorkerManager::isWorkerWarmed(int workerId) const {
-  std::lock_guard<std::mutex> lock(warmed_mutex_);
-  return warmed_worker_ids_.count(workerId) != 0;
+  std::lock_guard<std::mutex> lock(warmedMutex);
+  return warmedWorkerIds.count(workerId) != 0;
 }
 
 std::vector<WorkerInfo> WorkerManager::getWorkerInfo() const {
   std::vector<WorkerInfo> out;
-  out.reserve(workers_.size());
-  for (const auto& w : workers_) {
+  out.reserve(workers.size());
+  for (const auto& w : workers) {
     WorkerInfo info;
     info.worker_id = std::to_string(w->worker_id);
     info.is_ready = isWorkerWarmed(w->worker_id);
@@ -108,11 +108,11 @@ std::vector<WorkerInfo> WorkerManager::getWorkerInfo() const {
 }
 
 SingleProcessWorker* WorkerManager::worker(size_t idx) {
-  return workers_[idx].get();
+  return workers[idx].get();
 }
 
 bool WorkerManager::checkWorkerAlive(size_t workerIdx) {
-  auto* w = workers_[workerIdx].get();
+  auto* w = workers[workerIdx].get();
   if (w->pid <= 0) {
     return false;
   }
@@ -131,8 +131,8 @@ bool WorkerManager::checkWorkerAlive(size_t workerIdx) {
 void WorkerManager::restartWorker(size_t workerIdx) {
   TT_LOG_WARN("[WorkerManager] Restarting crashed worker {}", workerIdx);
   auto cfg = makeWorkerConfig(static_cast<int>(workerIdx));
-  workers_[workerIdx] = std::make_unique<SingleProcessWorker>(cfg);
-  auto& w = workers_[workerIdx];
+  workers[workerIdx] = std::make_unique<SingleProcessWorker>(cfg);
+  auto& w = workers[workerIdx];
   pid_t pid = startWorker(*w);
   TT_LOG_INFO("[WorkerManager] Restarted worker {} with PID {}", workerIdx,
               pid);
@@ -153,14 +153,14 @@ WorkerConfig WorkerManager::makeWorkerConfig(int workerId) {
 }
 
 pid_t WorkerManager::startWorker(SingleProcessWorker& worker) {
-  const size_t slot = static_cast<size_t>(worker.worker_id);
   pid_t pid = fork();
   if (pid < 0) {
     throw std::runtime_error("Failed to fork worker process");
   }
   if (pid == 0) {
     setpgid(0, 0);
-    execWorkerProcessHelper(slot, worker.cfg.env_vars);
+    execWorkerProcessHelper(static_cast<size_t>(worker.worker_id),
+                            worker.cfg.env_vars);
   }
   setpgid(pid, pid);
   worker.pid = pid;
@@ -168,33 +168,33 @@ pid_t WorkerManager::startWorker(SingleProcessWorker& worker) {
 }
 
 void WorkerManager::startWorkers() {
-  for (size_t i = 0; i < num_workers_; ++i) {
+  for (size_t i = 0; i < workerCount; ++i) {
     auto cfg = makeWorkerConfig(static_cast<int>(i));
-    workers_.push_back(std::make_unique<SingleProcessWorker>(cfg));
-    pid_t pid = startWorker(*workers_[i]);
+    workers.push_back(std::make_unique<SingleProcessWorker>(cfg));
+    pid_t pid = startWorker(*workers[i]);
     TT_LOG_INFO("[WorkerManager] Spawned worker {} with PID {}", i, pid);
   }
 }
 
 void WorkerManager::startWarmupListenerThread() {
-  const char* name = tt::ipc::WARMUP_SIGNALS_QUEUE_NAME;
-  tt::ipc::BoostIpcWarmupSignalQueue::remove(name);
-  warmup_queue_ =
-      std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(name, num_workers_);
-  warmup_received_ = false;
-  warmup_listener_thread_ = std::thread([this]() {
+  tt::ipc::BoostIpcWarmupSignalQueue::remove(
+      tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
+  warmupQueue = std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(
+      tt::ipc::WARMUP_SIGNALS_QUEUE_NAME, workerCount);
+  warmupReceived = false;
+  warmupListenerThread = std::thread([this]() {
     try {
-      for (size_t i = 0; i < num_workers_; ++i) {
-        int workerId = warmup_queue_->receive();
+      for (size_t i = 0; i < workerCount; ++i) {
+        int workerId = warmupQueue->receive();
         TT_LOG_INFO("[WorkerManager] Worker {} warmed up", workerId);
         {
-          std::lock_guard<std::mutex> lock(warmed_mutex_);
-          warmed_worker_ids_.insert(workerId);
+          std::lock_guard<std::mutex> lock(warmedMutex);
+          warmedWorkerIds.insert(workerId);
         }
         if (i == 0) {
-          is_ready_ = true;
-          warmup_received_ = true;
-          warmup_cv_.notify_all();
+          ready = true;
+          warmupReceived = true;
+          warmupCv.notify_all();
         }
       }
     } catch (const std::exception& e) {
@@ -207,9 +207,9 @@ void WorkerManager::startWarmupListenerThread() {
 }
 
 void WorkerManager::waitForFirstWarmup() {
-  if (!warmup_queue_) return;
-  std::unique_lock<std::mutex> lock(warmup_mutex_);
-  warmup_cv_.wait(lock, [this]() { return warmup_received_.load(); });
+  if (!warmupQueue) return;
+  std::unique_lock<std::mutex> lock(warmupMutex);
+  warmupCv.wait(lock, [this]() { return warmupReceived.load(); });
 }
 
 WorkerConfig makeWorkerConfigForProcess(int workerId) {
