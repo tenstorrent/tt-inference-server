@@ -9,41 +9,45 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "runners/runner_interface.hpp"
-#include "runners/llm_runner/config.hpp"
-#include "runners/sp_pipeline_runner/sp_pipeline_model_runner.hpp"
+#include "config/runner_config.hpp"
+#include "ipc/shared_memory.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
-#include "ipc/shared_memory.hpp"
+#include "runners/runner_interface.hpp"
+#include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 
 namespace tt::runners {
 
 class SpPipelineRunner : public IRunner {
  public:
-  SpPipelineRunner(const llm_engine::Config& config,
-                   ipc::TokenRingBuffer<65536>* result_queue,
-                   llm_engine::ITaskQueue* task_queue);
+  SpPipelineRunner(const tt::config::LLMConfig& config,
+                   ipc::TokenRingBuffer<65536>* resultQueue,
+                   llm_engine::ITaskQueue* taskQueue);
   ~SpPipelineRunner() override;
 
   void run() override;
   void stop() override;
   bool warmup();
-  const char* runner_type() const override { return "SpPipelineRunner"; }
+  const char* runnerType() const override { return "SpPipelineRunner"; }
 
  private:
   void step();
-  void drain_decode_results();
-  void push_token(const llm_engine::TaskID& task_id, uint64_t token_id, bool finished);
-  void push_error_token(const llm_engine::TaskID& task_id);
+  void drainDecodeResults();
+  void pushToken(const llm_engine::TaskID& taskId, uint64_t tokenId,
+                 bool finished);
+  void pushErrorToken(const llm_engine::TaskID& taskId);
 
-  llm_engine::Config config_;
-  std::unordered_set<int64_t> stop_token_ids_;
-  ipc::TokenRingBuffer<65536>* result_queue_;
-  llm_engine::ITaskQueue* task_queue_;
-  std::unique_ptr<sp_pipeline::SpPipelineModelRunner> model_runner_;
-  sp_pipeline::DecodeQueue decode_queue_;
-  std::unordered_map<llm_engine::TaskID, std::unique_ptr<llm_engine::Sequence>> active_sequences_;
-  std::atomic<bool> stopped_{false};
+  tt::config::LLMConfig config;
+  std::unordered_set<int64_t> stopTokenIds;
+  ipc::TokenRingBuffer<65536>* resultQueue;
+  llm_engine::ITaskQueue* taskQueue;
+  std::unique_ptr<sp_pipeline::ISpPipelineModelRunner> modelRunner;
+  sp_pipeline::DecodeQueue decodeQueue;
+  std::unordered_map<llm_engine::TaskID, std::unique_ptr<llm_engine::Sequence>>
+      activeSequences;
+  std::atomic<bool> stopped{false};
+  int maxInFlightCount;
+  int inFlightCount = 0;
 };
 
 }  // namespace tt::runners

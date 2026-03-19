@@ -206,7 +206,7 @@ class TestSetupHostCombinations:
         )
 
         assert config.host_model_volume_root is not None
-        assert str(config.persistent_volume_root) == host_volume
+        assert config.persistent_volume_root.resolve() == Path(host_volume).resolve()
         assert config.host_tt_metal_cache_dir is not None
         # Weights still default to cache_root path (downloaded into host volume)
         assert config.container_model_weights_path == (
@@ -223,7 +223,7 @@ class TestSetupHostCombinations:
             host_hf_cache=hf_cache,
         )
 
-        assert config.host_hf_cache == hf_cache
+        assert Path(config.host_hf_cache).resolve() == Path(hf_cache).resolve()
         assert config.container_readonly_model_weights_dir is not None
         assert config.container_model_weights_mount_dir is not None
         assert config.container_readonly_model_weights_dir == (
@@ -245,7 +245,7 @@ class TestSetupHostCombinations:
             host_weights_dir=str(weights_dir),
         )
 
-        assert config.host_model_weights_mount_dir == weights_dir
+        assert config.host_model_weights_mount_dir.resolve() == weights_dir.resolve()
         assert config.container_readonly_model_weights_dir == (
             Path("/home/container_app_user/readonly_weights_mount")
         )
@@ -256,6 +256,40 @@ class TestSetupHostCombinations:
         assert config.container_model_weights_path == expected_container_mount
         # No host volume set
         assert config.host_model_volume_root is None
+
+    def test_local_server_defaults_to_repo_persistent_volume(self, tiny_model_spec):
+        """Local server always gets a host-backed cache root."""
+        config = SetupConfig(model_spec=tiny_model_spec, local_server=True)
+
+        assert config.host_volume is not None
+        assert config.persistent_volume_root.name == "persistent_volume"
+        assert config.host_model_volume_root is not None
+        assert config.host_tt_metal_cache_dir is not None
+
+    def test_local_server_hf_cache_still_uses_host_volume_for_cache(
+        self, tiny_model_spec, temp_dir
+    ):
+        """Local server keeps host volume storage for cache/logs when using HF cache weights."""
+        hf_cache = temp_dir / "hf_home"
+        snapshot_dir = (
+            hf_cache
+            / "hub"
+            / f"models--{TINY_HF_REPO.replace('/', '--')}"
+            / "snapshots"
+            / "abc123"
+        )
+        snapshot_dir.mkdir(parents=True)
+        config = SetupConfig(
+            model_spec=tiny_model_spec,
+            host_hf_cache=str(hf_cache),
+            local_server=True,
+        )
+
+        assert config.host_model_volume_root is not None
+        assert config.host_hf_cache == str(hf_cache.resolve())
+        assert (
+            config.host_model_weights_snapshot_dir.resolve() == snapshot_dir.resolve()
+        )
 
     def test_local_model_source_mode(self, tiny_model_spec, temp_dir):
         """Mode 5: MODEL_SOURCE=local with MODEL_WEIGHTS_DIR env var.
@@ -276,7 +310,7 @@ class TestSetupHostCombinations:
 
         assert config.model_source == ModelSource.LOCAL.value
         assert config.container_readonly_model_weights_dir is not None
-        assert config.host_model_weights_mount_dir == weights_dir
+        assert config.host_model_weights_mount_dir.resolve() == weights_dir.resolve()
         assert config.container_model_weights_path == (
             config.container_readonly_model_weights_dir / weights_dir.name
         )
@@ -413,8 +447,10 @@ class TestSetupHostRunSetup:
             host_weights_dir=str(weights_dir),
         )
 
-        assert setup_config.host_weights_dir == str(weights_dir)
-        assert setup_config.host_model_weights_mount_dir == weights_dir
+        assert Path(setup_config.host_weights_dir).resolve() == weights_dir.resolve()
+        assert (
+            setup_config.host_model_weights_mount_dir.resolve() == weights_dir.resolve()
+        )
         assert setup_config.container_model_weights_path is not None
 
     def test_host_weights_dir_mode_runs_setup_when_incomplete(
@@ -440,7 +476,30 @@ class TestSetupHostRunSetup:
 
         # Should still complete without error; setup_weights_huggingface returns
         # early for host_weights_dir
-        assert setup_config.host_weights_dir == str(weights_dir)
+        assert Path(setup_config.host_weights_dir).resolve() == weights_dir.resolve()
+
+    def test_local_server_skips_image_user_permission_fixes(
+        self, tiny_model_spec, temp_dir
+    ):
+        """Local server uses the invoking host user, not Docker UID fixes."""
+        host_volume = str(temp_dir / "persistent_volume")
+
+        with patch(
+            "workflows.setup_host._try_fix_path_permissions_for_uid"
+        ) as fix_permissions_mock:
+            setup_config = setup_host(
+                model_spec=tiny_model_spec,
+                jwt_secret="test_jwt_secret_123",
+                hf_token="hf_test_token_123456",
+                automatic_setup=True,
+                host_volume=host_volume,
+                image_user="1000",
+                local_server=True,
+            )
+
+        assert setup_config.host_model_volume_root is not None
+        assert setup_config.host_model_volume_root.exists()
+        fix_permissions_mock.assert_not_called()
 
     def test_local_source_mode(
         self, tiny_model_spec, temp_dir, mock_system_calls, mock_ram_check
@@ -475,7 +534,10 @@ class TestSetupHostRunSetup:
             manager.run_setup()
 
         assert manager.setup_config.model_source == ModelSource.LOCAL.value
-        assert manager.setup_config.host_model_weights_mount_dir == weights_dir
+        assert (
+            manager.setup_config.host_model_weights_mount_dir.resolve()
+            == weights_dir.resolve()
+        )
 
 
 class TestSetupHostDockerCommand:
@@ -554,14 +616,10 @@ class TestSetupHostDockerCommand:
         snapshot_dir.mkdir(parents=True)
         (snapshot_dir / "config.json").write_text("{}")
 
-        with patch(
-            "workflows.setup_host.get_weights_hf_cache_dir",
-            return_value=snapshot_dir,
-        ):
-            config = SetupConfig(
-                model_spec=tiny_model_spec,
-                host_hf_cache=hf_cache,
-            )
+        config = SetupConfig(
+            model_spec=tiny_model_spec,
+            host_hf_cache=hf_cache,
+        )
 
         json_fpath = self._make_json_fpath(temp_dir)
 
@@ -596,7 +654,7 @@ class TestSetupHostDockerCommand:
 
         cmd_str = _join_docker_cmd(docker_command)
         # Readonly weights mount present
-        assert f"type=bind,src={weights_dir}" in cmd_str
+        assert f"type=bind,src={weights_dir.resolve()}" in cmd_str
         assert "readonly" in cmd_str
         # MODEL_WEIGHTS_DIR set to container mount path
         model_weights_dir = _find_env_var(docker_command, "MODEL_WEIGHTS_DIR")

@@ -8,7 +8,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import jwt
 
@@ -25,7 +25,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from evals.eval_config import EVAL_CONFIGS, EvalTask
+from evals.eval_config import EVAL_CONFIGS, EvalConfig, EvalTask
 from utils.prompt_client import PromptClient
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
@@ -44,6 +44,7 @@ from workflows.workflow_types import (
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
+SMOKE_TEST_EVAL_LIMIT = 3
 
 # fmt: off
 IMAGE_RESOLUTIONS = [
@@ -62,6 +63,38 @@ EVAL_TASK_TYPES = [
     ModelType.TEXT_TO_SPEECH,
     ModelType.VIDEO,
 ]
+
+
+def _get_limit_mode(runtime_config: Optional[RuntimeConfig]) -> Optional[EvalLimitMode]:
+    if runtime_config is None or not runtime_config.limit_samples_mode:
+        return None
+    return EvalLimitMode.from_string(runtime_config.limit_samples_mode)
+
+
+def _select_eval_config(
+    eval_config: EvalConfig, runtime_config: Optional[RuntimeConfig]
+) -> EvalConfig:
+    limit_mode = _get_limit_mode(runtime_config)
+    if limit_mode != EvalLimitMode.SMOKE_TEST or not eval_config.tasks:
+        return eval_config
+
+    selected_task = eval_config.tasks[0]
+    logger.info(
+        "Smoke-test mode enabled; running only first eval task: %s",
+        selected_task.task_name,
+    )
+    return EvalConfig(hf_model_repo=eval_config.hf_model_repo, tasks=[selected_task])
+
+
+def _resolve_eval_limit(
+    task: EvalTask, runtime_config: Optional[RuntimeConfig]
+) -> Optional[object]:
+    limit_mode = _get_limit_mode(runtime_config)
+    if limit_mode is None:
+        return None
+    if limit_mode == EvalLimitMode.SMOKE_TEST:
+        return SMOKE_TEST_EVAL_LIMIT
+    return task.limit_samples_map.get(limit_mode)
 
 
 def _check_media_server_health(model_spec, device, output_path, service_port):
@@ -299,14 +332,9 @@ def build_eval_command(
         cmd.append("--trust_remote_code")
         cmd.append("--confirm_run_unsafe_code")
 
-    limit_samples_mode_str = (
-        runtime_config.limit_samples_mode if runtime_config else None
-    )
-    if limit_samples_mode_str:
-        limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
-        limit_arg = task.limit_samples_map.get(limit_mode)
-        if limit_arg is not None:
-            cmd.extend(["--limit", str(limit_arg)])
+    limit_arg = _resolve_eval_limit(task, runtime_config)
+    if limit_arg is not None:
+        cmd.extend(["--limit", str(limit_arg)])
 
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
@@ -365,6 +393,7 @@ def main():
             f"No evaluation tasks defined for model: {model_spec.model_name}"
         )
     eval_config = EVAL_CONFIGS[model_spec.model_name]
+    eval_config = _select_eval_config(eval_config, runtime_config)
 
     # Set environment variable for code evaluation tasks
     # This must be set in os.environ because lm_eval modules check for it during import

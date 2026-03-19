@@ -12,6 +12,7 @@ BUILD_TYPE="Release"
 SANITIZE_THREAD="OFF"
 SANITIZE_ADDRESS="OFF"
 ENABLE_TRACY="OFF"
+CLANG_TIDY="OFF"
 TOOLCHAIN_PATH_ARG=""
 CXX_COMPILER_PATH=""
 while [[ $# -gt 0 ]]; do
@@ -34,6 +35,10 @@ while [[ $# -gt 0 ]]; do
             ENABLE_TRACY="ON"
             shift
             ;;
+        --clang-tidy)
+            CLANG_TIDY="ON"
+            shift
+            ;;
         --toolchain-path)
             TOOLCHAIN_PATH_ARG="$2"
             shift 2
@@ -50,6 +55,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --tsan               Build with ThreadSanitizer for data-race detection"
             echo "  --asan               Build with AddressSanitizer + LeakSanitizer for memory/leak detection"
             echo "  --tracy              Build with Tracy profiling instrumentation"
+            echo "  --clang-tidy          Run clang-tidy during build (lint = build, same as tt-metal)"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
             echo "  --cxx-compiler-path P  Set C++ compiler (overrides toolchain)"
             echo "  --help               Show this help message"
@@ -74,6 +80,7 @@ echo "  Build type: ${BUILD_TYPE}"
 echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
 echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
 echo "  Tracy profiling: ${ENABLE_TRACY}"
+echo "  Clang-tidy: ${CLANG_TIDY}"
 echo "=============================================="
 
 # Ensure cargo (Rust) is in PATH for tokenizers-cpp
@@ -268,6 +275,7 @@ CMAKE_ARGS=(
     -DSANITIZE_THREAD="${SANITIZE_THREAD}"
     -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
     -DENABLE_TRACY="${ENABLE_TRACY}"
+    -DCLANG_TIDY="${CLANG_TIDY}"
 )
 [ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
 
