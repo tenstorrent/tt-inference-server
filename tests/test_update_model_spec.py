@@ -7,7 +7,9 @@ import pytest
 from scripts.release.release_diff import build_template_key
 from scripts.release.update_model_spec import (
     apply_release_version_to_manual_updates_from_git,
+    build_template_snapshots,
     build_release_diff_records_from_git,
+    format_release_ref_for_display,
     generate_release_diff_outputs_from_git,
     load_model_spec_module_from_content,
     main,
@@ -69,6 +71,25 @@ def test_resolve_latest_release_branch_ref_selects_highest_semver_branch():
         assert resolve_latest_release_branch_ref(repo_root) == "v0.11.0"
 
 
+def test_resolve_latest_release_branch_ref_ignores_nested_names_and_uses_tags():
+    repo_root = Path("/tmp/repo")
+    git_output = "\n".join(
+        [
+            "refs/heads/main main",
+            "refs/heads/post-release/v0.10.0 post-release/v0.10.0",
+            "refs/remotes/origin/HEAD origin/HEAD",
+            "refs/remotes/origin/post-release/v0.10.0 origin/post-release/v0.10.0",
+            "refs/tags/v0.10.0 v0.10.0",
+        ]
+    )
+
+    with patch(
+        "scripts.release.update_model_spec.subprocess.run",
+        return_value=Mock(returncode=0, stdout=git_output, stderr=""),
+    ):
+        assert resolve_latest_release_branch_ref(repo_root) == "v0.10.0"
+
+
 def test_resolve_latest_release_branch_ref_errors_without_release_branches():
     repo_root = Path("/tmp/repo")
     git_output = "\n".join(
@@ -86,9 +107,15 @@ def test_resolve_latest_release_branch_ref_errors_without_release_branches():
     ):
         with pytest.raises(
             RuntimeError,
-            match="Could not find any release branches matching vMAJOR.MINOR.PATCH",
+            match="Could not find any release branches or tags matching vMAJOR.MINOR.PATCH",
         ):
             resolve_latest_release_branch_ref(repo_root)
+
+
+def test_format_release_ref_for_display_normalizes_release_ref_names():
+    assert format_release_ref_for_display("origin/v0.10.0") == "v0.10.0"
+    assert format_release_ref_for_display("refs/remotes/origin/v0.10.0") == "v0.10.0"
+    assert format_release_ref_for_display("refs/tags/v0.10.0") == "v0.10.0"
 
 
 def test_load_model_spec_module_from_content_supports_dataclasses_with_annotations(
@@ -119,6 +146,87 @@ spec_templates = []
 
     assert module.spec_templates == []
     assert module.DemoSpec(parent=None).parent is None
+
+
+def test_build_template_snapshots_uses_source_order_when_spec_templates_reordered(
+    tmp_path,
+):
+    model_spec_path = tmp_path / "workflows" / "model_spec.py"
+    model_spec_path.parent.mkdir(parents=True)
+    content = """
+from dataclasses import dataclass
+
+
+class ModelStatusTypes:
+    FUNCTIONAL = "FUNCTIONAL"
+
+
+@dataclass(frozen=True)
+class Device:
+    name: str
+
+
+@dataclass(frozen=True)
+class DeviceModelSpec:
+    device: Device
+
+
+@dataclass(frozen=True)
+class Impl:
+    impl_id: str
+    impl_name: str
+
+
+@dataclass(frozen=True)
+class ModelSpecTemplate:
+    weights: list
+    impl: Impl
+    device_model_specs: list
+    inference_engine: str
+    tt_metal_commit: str = ""
+    vllm_commit: str = ""
+    status: str = ""
+
+
+device = Device("N150")
+first_impl = Impl("first_impl", "first")
+second_impl = Impl("second_impl", "second")
+
+first_template = ModelSpecTemplate(
+    weights=["org/first"],
+    impl=first_impl,
+    device_model_specs=[DeviceModelSpec(device=device)],
+    inference_engine="vllm",
+    tt_metal_commit="aaaaaaa",
+    vllm_commit="1111111",
+    status=ModelStatusTypes.FUNCTIONAL,
+)
+second_template = ModelSpecTemplate(
+    weights=["org/second"],
+    impl=second_impl,
+    device_model_specs=[DeviceModelSpec(device=device)],
+    inference_engine="vllm",
+    tt_metal_commit="bbbbbbb",
+    vllm_commit="2222222",
+    status=ModelStatusTypes.FUNCTIONAL,
+)
+
+spec_templates = [second_template, first_template]
+""".lstrip()
+    model_spec_path.write_text(content)
+
+    snapshots = build_template_snapshots(
+        model_spec_path,
+        content,
+        "test_model_spec_snapshot_source_order",
+    )
+
+    assert [snapshot["impl_id"] for snapshot in snapshots] == [
+        "first_impl",
+        "second_impl",
+    ]
+    assert 'weights=["org/first"]' in snapshots[0]["template_text"]
+    assert 'weights=["org/second"]' in snapshots[1]["template_text"]
 
 
 def test_build_release_diff_records_from_git_includes_ci_and_manual_changes():
@@ -453,8 +561,8 @@ def test_update_template_fields_inserts_release_version_when_absent():
     assert 'tt_metal_commit="bbbbbbb"' in result
     assert 'release_version="0.10.0"' in result
     assert 'vllm_commit="2222222"' in result
-    assert result.index('tt_metal_commit="bbbbbbb"') < result.index(
-        'release_version="0.10.0"'
+    assert result.index('release_version="0.10.0"') < result.index(
+        'tt_metal_commit="bbbbbbb"'
     )
 
 
@@ -474,6 +582,29 @@ def test_update_template_fields_replaces_existing_release_version():
     )
     assert 'release_version="0.10.0"' in result
     assert 'release_version="0.9.0"' not in result
+    assert result.index('release_version="0.10.0"') < result.index(
+        'tt_metal_commit="bbbbbbb"'
+    )
+
+
+def test_update_template_fields_moves_existing_release_version_above_tt_metal_commit():
+    template_text = (
+        "ModelSpecTemplate(\n"
+        '        weights=["org/model"],\n'
+        "        impl=demo_impl,\n"
+        '        tt_metal_commit="aaaaaaa",\n'
+        '        release_version="0.9.0",\n'
+        '        vllm_commit="1111111",\n'
+        "        status=ModelStatusTypes.FUNCTIONAL,\n"
+        "    )"
+    )
+    result = update_template_fields(
+        template_text, "bbbbbbb", "2222222", None, release_version="0.10.0"
+    )
+    assert 'release_version="0.10.0"' in result
+    assert result.index('release_version="0.10.0"') < result.index(
+        'tt_metal_commit="bbbbbbb"'
+    )
 
 
 def test_update_template_fields_skips_release_version_when_none():
@@ -599,6 +730,123 @@ def test_apply_release_version_to_manual_updates_from_git_uses_provided_base_ref
         )
 
     read_base_mock.assert_called_once_with(model_spec_path, ref="origin/v0.10.0")
+
+
+def test_apply_release_version_to_manual_updates_from_git_sorts_mixed_match_indices(
+    tmp_path,
+):
+    model_spec_path = tmp_path / "workflows" / "model_spec.py"
+    model_spec_path.parent.mkdir(parents=True)
+    template_a = (
+        "ModelSpecTemplate(\n"
+        '        weights=["org/a"],\n'
+        "        impl=a_impl,\n"
+        '        tt_metal_commit="aaaaaaa",\n'
+        '        vllm_commit="1111111",\n'
+        "        status=ModelStatusTypes.FUNCTIONAL,\n"
+        "    ),"
+    )
+    template_b = (
+        "ModelSpecTemplate(\n"
+        '        weights=["org/b"],\n'
+        "        impl=b_impl,\n"
+        '        tt_metal_commit="bbbbbbb",\n'
+        '        vllm_commit="2222222",\n'
+        "        status=ModelStatusTypes.FUNCTIONAL,\n"
+        "    ),"
+    )
+    template_c = (
+        "ModelSpecTemplate(\n"
+        '        weights=["org/c"],\n'
+        "        impl=c_impl,\n"
+        '        tt_metal_commit="ccccccc",\n'
+        '        vllm_commit="3333333",\n'
+        "        status=ModelStatusTypes.FUNCTIONAL,\n"
+        "    ),"
+    )
+    current_content = (
+        f"spec_templates = [\n{template_a}\n{template_b}\n{template_c}\n]\n"
+    )
+    model_spec_path.write_text(current_content)
+
+    before_snapshots = [
+        make_snapshot(
+            "a_impl",
+            0,
+            template_a.replace("aaaaaaa", "oldaaaa"),
+            weights=["org/a"],
+            tt_metal_commit="oldaaaa",
+            vllm_commit="1111111",
+            status="FUNCTIONAL",
+        ),
+        make_snapshot(
+            "b_impl",
+            0,
+            template_b.replace("bbbbbbb", "oldbbbb"),
+            weights=["org/b-old"],
+            tt_metal_commit="oldbbbb",
+            vllm_commit="2222222",
+            status="FUNCTIONAL",
+        ),
+        make_snapshot(
+            "c_impl",
+            0,
+            template_c.replace("ccccccc", "oldcccc"),
+            weights=["org/c"],
+            tt_metal_commit="oldcccc",
+            vllm_commit="3333333",
+            status="FUNCTIONAL",
+        ),
+    ]
+    after_snapshots = [
+        make_snapshot(
+            "a_impl",
+            0,
+            template_a,
+            weights=["org/a"],
+            tt_metal_commit="aaaaaaa",
+            vllm_commit="1111111",
+            status="FUNCTIONAL",
+        ),
+        make_snapshot(
+            "b_impl",
+            0,
+            template_b,
+            weights=["org/b"],
+            tt_metal_commit="bbbbbbb",
+            vllm_commit="2222222",
+            status="FUNCTIONAL",
+        ),
+        make_snapshot(
+            "c_impl",
+            0,
+            template_c,
+            weights=["org/c"],
+            tt_metal_commit="ccccccc",
+            vllm_commit="3333333",
+            status="FUNCTIONAL",
+        ),
+    ]
+
+    with patch(
+        "scripts.release.update_model_spec.read_git_base_model_spec_content",
+        return_value="base-content",
+    ), patch(
+        "scripts.release.update_model_spec.build_template_snapshots",
+        side_effect=[before_snapshots, after_snapshots],
+    ):
+        updated_content, updates_made = (
+            apply_release_version_to_manual_updates_from_git(
+                model_spec_path,
+                current_content,
+                "0.10.0",
+            )
+        )
+
+    assert updates_made == 3
+    assert updated_content.count('release_version="0.10.0"') == 3
+    assert "ModelSModelSpecTemplate" not in updated_content
+    assert "),odelStatusTypes" not in updated_content
 
 
 def test_main_output_only_updates_release_version_before_generating_outputs(tmp_path):

@@ -367,18 +367,46 @@ def update_template_fields(
         updated = re.sub(r"status=ModelStatusTypes\.\w+", f"status={status}", updated)
 
     if release_version:
-        if re.search(r'release_version="[^"]*"', updated):
-            updated = re.sub(
-                r'release_version="[^"]*"',
-                f'release_version="{release_version}"',
-                updated,
+        lines = updated.splitlines(keepends=True)
+        tt_metal_index = None
+        release_version_index = None
+        tt_metal_indent = None
+        release_version_indent = None
+        release_version_newline = "\n"
+
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith('tt_metal_commit="') and stripped.endswith('",'):
+                tt_metal_index = index
+                tt_metal_indent = line[: len(line) - len(line.lstrip())]
+            elif stripped.startswith('release_version="') and stripped.endswith('",'):
+                release_version_index = index
+                release_version_indent = line[: len(line) - len(line.lstrip())]
+                release_version_newline = "\n" if line.endswith("\n") else ""
+
+        if release_version_index is not None or tt_metal_index is not None:
+            indent = release_version_indent or tt_metal_indent or ""
+            newline = (
+                release_version_newline
+                if release_version_index is not None
+                else ("\n" if lines[tt_metal_index].endswith("\n") else "")
             )
-        else:
-            updated = re.sub(
-                r'(tt_metal_commit="[^"]*",)',
-                rf'\1\n        release_version="{release_version}",',
-                updated,
+            release_version_line = (
+                f'{indent}release_version="{release_version}",{newline}'
             )
+
+            if release_version_index is not None:
+                lines[release_version_index] = release_version_line
+                if (
+                    tt_metal_index is not None
+                    and release_version_index > tt_metal_index
+                ):
+                    release_version_line = lines.pop(release_version_index)
+                    lines.insert(tt_metal_index, release_version_line)
+            else:
+                lines.insert(tt_metal_index, release_version_line)
+
+            updated = "".join(lines)
 
     return updated
 
@@ -574,27 +602,33 @@ def load_model_spec_module_from_content(
     return module
 
 
+def evaluate_template_block(model_spec_module, template_text: str):
+    """Evaluate one raw `ModelSpecTemplate(...)` block in module context."""
+    expression = template_text.rstrip()
+    if expression.endswith(","):
+        expression = expression[:-1]
+
+    try:
+        return eval(expression, model_spec_module.__dict__)
+    except Exception as exc:
+        raise ValueError(
+            "Failed to evaluate ModelSpecTemplate block while building snapshots"
+        ) from exc
+
+
 def build_template_snapshots(
     model_spec_path: Path, content: str, module_name: str
 ) -> List[TemplateSnapshot]:
-    """Build ordered template snapshots from model_spec content."""
+    """Build ordered template snapshots from raw template blocks in source order."""
     model_spec_module = load_model_spec_module_from_content(
         model_spec_path, content, module_name
     )
-    templates = getattr(model_spec_module, "spec_templates", None)
-    if templates is None:
-        raise ValueError(f"Could not load spec_templates from {model_spec_path}")
-
     template_blocks = extract_template_blocks(content)
-    if len(template_blocks) != len(templates):
-        raise ValueError(
-            "Template block count does not match loaded spec_templates count"
-        )
-
     occurrence_counts = {}
     snapshots = []
 
-    for template, template_text in zip(templates, template_blocks):
+    for template_text in template_blocks:
+        template = evaluate_template_block(model_spec_module, template_text)
         impl_id = template.impl.impl_id
         occurrence_index = occurrence_counts.get(impl_id, 0)
         occurrence_counts[impl_id] = occurrence_index + 1
@@ -628,18 +662,49 @@ def build_template_snapshots(
 
 
 def parse_release_branch_version(ref_name: str) -> Optional[Tuple[int, int, int]]:
-    """Return semantic version tuple for release refs like `v0.10.0`."""
-    branch_name = ref_name.rsplit("/", 1)[-1]
-    match = RELEASE_BRANCH_PATTERN.fullmatch(branch_name)
+    """Return semantic version tuple for exact release refs like `v0.10.0`."""
+    match = RELEASE_BRANCH_PATTERN.fullmatch(ref_name)
     if not match:
         return None
     return tuple(int(part) for part in match.groups())
 
 
+def extract_exact_release_ref_name(full_ref: str, short_ref: str) -> Optional[str]:
+    """Return the exact `vMAJOR.MINOR.PATCH` ref name for supported ref kinds."""
+    if full_ref.startswith("refs/remotes/"):
+        if short_ref.count("/") != 1:
+            return None
+        _, release_ref_name = short_ref.split("/", 1)
+    elif full_ref.startswith(("refs/heads/", "refs/tags/")):
+        if "/" in short_ref:
+            return None
+        release_ref_name = short_ref
+    else:
+        return None
+
+    if parse_release_branch_version(release_ref_name) is None:
+        return None
+
+    return release_ref_name
+
+
+def format_release_ref_for_display(ref_name: str) -> str:
+    """Render a git ref as its exact release name for user-facing logs."""
+    if ref_name.startswith("refs/heads/"):
+        return ref_name[len("refs/heads/") :]
+    if ref_name.startswith("refs/tags/"):
+        return ref_name[len("refs/tags/") :]
+    if ref_name.startswith("refs/remotes/"):
+        ref_name = ref_name[len("refs/remotes/") :]
+    if ref_name.count("/") == 1:
+        return ref_name.split("/", 1)[1]
+    return ref_name
+
+
 def list_release_branch_refs(
     repo_root: Path,
 ) -> List[Tuple[Tuple[int, int, int], str, str]]:
-    """List local/remote git branches that match `vMAJOR.MINOR.PATCH`."""
+    """List local branches, remote branches, and tags matching `vMAJOR.MINOR.PATCH`."""
     result = subprocess.run(
         [
             "git",
@@ -647,6 +712,7 @@ def list_release_branch_refs(
             "--format=%(refname) %(refname:short)",
             "refs/heads",
             "refs/remotes",
+            "refs/tags",
         ],
         cwd=repo_root,
         check=False,
@@ -668,7 +734,11 @@ def list_release_branch_refs(
         if short_ref.endswith("/HEAD"):
             continue
 
-        version = parse_release_branch_version(short_ref)
+        release_ref_name = extract_exact_release_ref_name(full_ref, short_ref)
+        if release_ref_name is None:
+            continue
+
+        version = parse_release_branch_version(release_ref_name)
         if version is None:
             continue
 
@@ -678,21 +748,26 @@ def list_release_branch_refs(
 
 
 def resolve_latest_release_branch_ref(repo_root: Path) -> str:
-    """Resolve the highest semantic version release branch ref."""
+    """Resolve the highest semantic version release branch or tag ref."""
     release_refs = list_release_branch_refs(repo_root)
     if not release_refs:
         raise RuntimeError(
-            "Could not find any release branches matching vMAJOR.MINOR.PATCH"
+            "Could not find any release branches or tags matching vMAJOR.MINOR.PATCH"
         )
 
     def sort_key(release_ref):
         version, full_ref, short_ref = release_ref
-        is_local_branch = full_ref.startswith("refs/heads/")
-        is_origin_branch = full_ref.startswith("refs/remotes/origin/")
+        if full_ref.startswith("refs/heads/"):
+            ref_priority = 3
+        elif full_ref.startswith("refs/remotes/origin/"):
+            ref_priority = 2
+        elif full_ref.startswith("refs/tags/"):
+            ref_priority = 1
+        else:
+            ref_priority = 0
         return (
             version,
-            1 if is_local_branch else 0,
-            1 if is_origin_branch else 0,
+            ref_priority,
             short_ref,
         )
 
@@ -913,7 +988,7 @@ def apply_release_version_to_manual_updates_from_git(
     updated_content = current_content
     release_version_updates = 0
 
-    for index in reversed(indices_to_update):
+    for index in sorted(set(indices_to_update), reverse=True):
         start_pos, end_pos, template_text = template_spans[index]
         updated_template = update_template_fields(
             template_text, None, None, None, release_version=release_version
@@ -1227,7 +1302,10 @@ def main():
         base_release_ref = resolve_latest_release_branch_ref(
             model_spec_path.parent.parent.resolve()
         )
-        print(f"Using latest release branch base ref: {base_release_ref}")
+        print(
+            "Using latest release branch base ref: "
+            f"{format_release_ref_for_display(base_release_ref)}"
+        )
 
         current_content = model_spec_path.read_text()
         updated_content, release_version_updates = (
@@ -1302,7 +1380,10 @@ def main():
     base_release_ref = resolve_latest_release_branch_ref(
         model_spec_path.parent.parent.resolve()
     )
-    print(f"Using latest release branch base ref: {base_release_ref}")
+    print(
+        "Using latest release branch base ref: "
+        f"{format_release_ref_for_display(base_release_ref)}"
+    )
 
     with open(model_spec_path, "r") as f:
         content = f.read()
