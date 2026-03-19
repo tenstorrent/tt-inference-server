@@ -297,8 +297,7 @@ def main():
         max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
         model_max_concurrency = model_spec.device_model_spec.max_concurrency
         candidate_concurrencies = powers_of_two_up_to(model_max_concurrency)
-        # TODO: get the number of perf targets from the model config instead of 1
-        for task in benchmark_config.tasks[1:]:
+        for task in benchmark_config.get_sweep_tasks():
             if device not in task.param_map:
                 continue
             task.param_map[device] = expand_concurrency_sweep_params(

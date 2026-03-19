@@ -36,13 +36,13 @@ from workflows.acceptance_criteria import (
 )
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
+from workflows.perf_targets import get_perf_target_rows, get_performance_targets
 from workflows.runtime_config import RuntimeConfig
 from workflows.utils import (
     get_default_workflow_root_log_dir,
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from workflows.utils_report import get_performance_targets
 from workflows.workflow_config import (
     WORKFLOW_REPORT_CONFIG,
 )
@@ -157,10 +157,7 @@ def get_embedding_benchmark_targets(model_spec, device_str, logger):
     Returns:
         Benchmark target data for embedding models
     """
-    from workflows.model_spec import model_performance_reference
-
-    model_data = model_performance_reference.get(model_spec.model_name, {})
-    device_json_list = model_data.get(device_str, [])
+    device_json_list = get_perf_target_rows(model_spec.model_name, device_str)
 
     if not device_json_list:
         logger.warning(
@@ -181,10 +178,7 @@ def get_audio_benchmark_targets(model_spec, device_str, logger):
     Returns:
         Benchmark target data for audio models
     """
-    from workflows.model_spec import model_performance_reference
-
-    model_data = model_performance_reference.get(model_spec.model_name, {})
-    device_json_list = model_data.get(device_str, [])
+    device_json_list = get_perf_target_rows(model_spec.model_name, device_str)
 
     if not device_json_list:
         logger.warning(
@@ -205,10 +199,7 @@ def get_cnn_benchmark_targets(model_spec, device_str, logger):
     Returns:
         Benchmark target data for CNN models
     """
-    from workflows.model_spec import model_performance_reference
-
-    model_data = model_performance_reference.get(model_spec.model_name, {})
-    device_json_list = model_data.get(device_str, [])
+    device_json_list = get_perf_target_rows(model_spec.model_name, device_str)
 
     if not device_json_list:
         logger.warning(

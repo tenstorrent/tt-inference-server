@@ -208,6 +208,12 @@ python3 scripts/release/generate_release_artifacts.py --models-ci-run-id 2933972
 - `release_logs/v{VERSION}/release_artifacts_summary.md`
 - `release_logs/v{VERSION}/models_ci_all_results_*.json`
 - `release_logs/v{VERSION}/release_notes_v{VERSION}.md`
+- `benchmarking/benchmark_targets/release_performance.json`
+
+The checked-in `benchmarking/benchmark_targets/release_performance.json` baseline
+stores the release benchmark summary rows plus the selected perf-target summary
+datapoint for each released model/device/impl. Model support docs use this file
+to show the overview performance summary values.
 
 The `release_notes_v{VERSION}.md` file generated has sections, left blank if undefined below:
 - Release title: tt-inference-server v{VERSION}

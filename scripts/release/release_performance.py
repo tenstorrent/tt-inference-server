@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from workflows.perf_targets import get_perf_target
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 RELEASE_PERFORMANCE_PATH = (
@@ -118,6 +120,55 @@ def _normalize_release_report_json(release_report_json: Any) -> Dict[str, Any]:
     return normalized_report
 
 
+def _extract_measured_metrics(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(row, dict):
+        return {
+            "ttft": None,
+            "tput_user": None,
+            "tput": None,
+            "ttft_streaming_ms": None,
+            "tput_prefill": None,
+            "e2el_ms": None,
+            "rtr": None,
+        }
+
+    return {
+        "ttft": row.get("ttft", row.get("mean_ttft_ms")),
+        "tput_user": row.get("tput_user", row.get("mean_tps")),
+        "tput": row.get("tput", row.get("tps_decode_throughput")),
+        "ttft_streaming_ms": row.get("ttft_streaming_ms"),
+        "tput_prefill": row.get("tput_prefill", row.get("tps_prefill_throughput")),
+        "e2el_ms": row.get("e2el_ms", row.get("mean_e2el_ms")),
+        "rtr": row.get("rtr"),
+    }
+
+
+def _build_perf_target_results(
+    model_name: str,
+    device: str,
+    benchmarks_summary: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    perf_target_set = get_perf_target(model_name, device)
+    if not perf_target_set:
+        return []
+
+    results: List[Dict[str, Any]] = []
+    for perf_target in perf_target_set.perf_targets:
+        matched_row = perf_target_set.find_matching_row(benchmarks_summary, perf_target)
+        results.append(
+            {
+                "is_summary_data_point": perf_target.is_summary,
+                "config": perf_target.benchmark_identity(),
+                "targets": perf_target.summary_targets(),
+                "measured_metrics": _extract_measured_metrics(matched_row),
+                "benchmark_summary": deepcopy(matched_row)
+                if isinstance(matched_row, dict)
+                else None,
+            }
+        )
+    return results
+
+
 def build_release_performance_entry(
     model_spec: Any, ci_data: Dict[str, Any]
 ) -> Optional[Dict[str, Any]]:
@@ -126,6 +177,19 @@ def build_release_performance_entry(
     if not report_data:
         return None
     benchmarks_summary = report_data.get("benchmarks_summary", [])
+    perf_target_results = _build_perf_target_results(
+        model_name=model_spec.model_name,
+        device=normalize_device_name(model_spec.device_type),
+        benchmarks_summary=benchmarks_summary,
+    )
+    perf_target_summary = next(
+        (
+            result
+            for result in perf_target_results
+            if result.get("is_summary_data_point", False)
+        ),
+        None,
+    )
 
     return {
         "model": model_spec.model_name,
@@ -140,6 +204,8 @@ def build_release_performance_entry(
         "ci_run_url": ci_data.get("ci_run_url"),
         "ci_job_url": ci_data.get("ci_job_url"),
         "benchmarks_summary": benchmarks_summary,
+        "perf_target_results": perf_target_results,
+        "perf_target_summary": perf_target_summary,
         "report_data": report_data,
     }
 
@@ -207,6 +273,27 @@ def get_release_performance_entry(
         .get(impl_id, {})
         .get(normalize_inference_engine_name(inference_engine))
     )
+
+
+def get_release_performance_summary(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    summary = entry.get("perf_target_summary")
+    if isinstance(summary, dict):
+        return summary
+    return None
+
+
+def get_release_performance_summary_metrics(
+    entry: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    summary = get_release_performance_summary(entry)
+    if not summary:
+        return None
+    metrics = summary.get("measured_metrics")
+    if isinstance(metrics, dict) and any(
+        value is not None for value in metrics.values()
+    ):
+        return metrics
+    return None
 
 
 def iter_release_performance_entries(

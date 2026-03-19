@@ -1075,7 +1075,9 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
     # via regenerate_model_support_docs_and_update_readme().
 
     # Generate models by hardware page
-    hardware_content = generate_models_by_hardware_page(templates)
+    hardware_content = generate_models_by_hardware_page(
+        templates, release_performance_data=release_performance_data
+    )
     write_file(output_path / "models_by_hardware.md", hardware_content)
 
     # Generate model type table pages (in subdirectory as README.md)
@@ -1085,7 +1087,11 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
             continue
 
         subdir = model_type.short_name.lower()
-        page_content = generate_model_type_page(templates, model_type)
+        page_content = generate_model_type_page(
+            templates,
+            model_type,
+            release_performance_data=release_performance_data,
+        )
         write_file(output_path / subdir / "README.md", page_content)
 
     # Group templates by model name and generate per-page-group pages in subdirectories
