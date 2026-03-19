@@ -44,10 +44,7 @@ import socket
 import struct
 import sys
 import time
-import pickle
 from typing import Optional
-
-import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -142,7 +139,7 @@ def _write_response_to_shm(
         print(f"Rank 0: ERROR pickling video: {e}")
         raise
 
-    print(f"Rank 0: About to write response to SHM")
+    print("Rank 0: About to write response to SHM")
     output_shm.write_response(
         VideoResponse(
             task_id=task_id,
@@ -155,7 +152,7 @@ def _write_response_to_shm(
             error_message="",
         )
     )
-    print(f"Rank 0: Response written to SHM successfully")
+    print("Rank 0: Response written to SHM successfully")
 
 
 def _write_error_to_shm(output_shm: VideoShm, task_id: str, error: str = "") -> None:
@@ -261,14 +258,19 @@ def run_rank0_coordinator() -> None:
 
                 print(f"Rank 0: Starting inference for task {req.task_id}")
                 video = runner.run([video_gen_req])
-                print(f"Rank 0: Inference done")
+                print("Rank 0: Inference done")
 
-                _write_response_to_shm(output_shm, req.task_id, video)  # Changed: pass video directly
+                _write_response_to_shm(
+                    output_shm, req.task_id, video
+                )  # Changed: pass video directly
                 print(f"Rank 0: Response written for task {req.task_id}")
 
             except Exception as e:
                 import traceback
-                print(f"Rank 0: ERROR - Inference/write failed for task {req.task_id}: {e}")
+
+                print(
+                    f"Rank 0: ERROR - Inference/write failed for task {req.task_id}: {e}"
+                )
                 traceback.print_exc()
                 _write_error_to_shm(output_shm, req.task_id, str(e))
 
@@ -341,10 +343,8 @@ def run_worker_rank(rank: int) -> None:
                 )
 
                 print(f"Rank {rank}: Starting inference for task {req.task_id}")
-                frames = runner.run([video_gen_req])
-                print(
-                    f"Rank {rank}: Inference done for task {req.task_id}, "
-                )
+                _frames = runner.run([video_gen_req])
+                print(f"Rank {rank}: Inference done for task {req.task_id}, ")
             except Exception as e:
                 print(f"Rank {rank}: Inference failed for task {req.task_id}: {e}")
 

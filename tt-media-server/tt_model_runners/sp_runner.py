@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import os
 import pickle
-import numpy as np
+
 from ipc.video_shm import VideoRequest, VideoShm, VideoStatus
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
