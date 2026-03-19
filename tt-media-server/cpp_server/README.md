@@ -1,4 +1,4 @@
-# TT Media Server - C++ Drogon Implementation
+# Zero-Overhead Inference Server
 
 Production-grade, zero-overhead C++ inference server for AI workloads on
 Tenstorrent hardware. Supports LLM serving today; image and video models
