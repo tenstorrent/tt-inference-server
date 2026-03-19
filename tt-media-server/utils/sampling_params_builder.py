@@ -90,7 +90,5 @@ def build_sampling_params(request: CompletionRequest) -> SamplingParams:
         skip_special_tokens=request.skip_special_tokens,
         spaces_between_special_tokens=request.spaces_between_special_tokens,
         truncate_prompt_tokens=request.truncate_prompt_tokens,
-        guided_decoding=defaults["guided_decoding"],
-        extra_args=defaults["extra_args"],
         output_kind=RequestOutputKind.DELTA,
     )
