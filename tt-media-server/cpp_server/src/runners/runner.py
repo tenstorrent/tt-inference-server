@@ -17,6 +17,8 @@ import os
 import signal
 import sys
 from pathlib import Path
+import traceback
+
 
 import ttnn
 from models.demos.deepseek_v3_b1.demo.model_pipeline import ModelPipeline
@@ -175,11 +177,13 @@ def main() -> None:
                 raise
         mesh_device = _open_mesh_device(
             fabric_max_payload_bytes=args.fabric_max_payload_bytes,
-            trace_region_size_bytes=args.trace_region_size_bytes,
+            worker_l1_size=1431568,
             fabric_router_sync_timeout_ms=args.fabric_router_sync_timeout_ms,
         )
     except Exception as e:
         print(f"Rank {rank}: failed to open mesh device: {e}", file=sys.stderr)
+        print(f"BLABLA BIEREME STAD {ttnn.__file__}")
+        traceback.print_exc(file=sys.stderr)
         sys.exit(1)
 
     try:
