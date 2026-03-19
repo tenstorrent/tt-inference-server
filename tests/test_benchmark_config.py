@@ -10,7 +10,7 @@ from typing import Iterable, List, Optional, Set, Tuple
 import pytest
 
 from workflows.model_spec import MODEL_SPECS
-from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
+from workflows.perf_targets import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import DeviceTypes
 
 

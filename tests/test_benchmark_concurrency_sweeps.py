@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from benchmarking.benchmark_config import expand_concurrency_sweep_params
-from workflows.utils_report import BenchmarkTaskParams
+from workflows.perf_targets import BenchmarkTaskParams
 
 
 def test_expand_concurrency_sweeps_text_includes_powers_of_two_and_allowed_max():
