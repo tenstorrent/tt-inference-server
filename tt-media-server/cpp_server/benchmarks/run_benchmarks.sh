@@ -5,17 +5,15 @@ MODEL="${MODEL:-deepseek-ai/DeepSeek-R1-0528}"
 BACKEND="openai-chat"
 ENDPOINT="/v1/chat/completions"
 DATASET="random"
-NUM_PROMPTS="${NUM_PROMPTS:-1000}"
+NUM_PROMPTS="${NUM_PROMPTS:-100}"
 RESULTS_DIR="${RESULTS_DIR:-bench_results}"
-# JOB_SUFFIX is appended to each filename. In CI this is the numeric GitHub job ID
-# so the infra collect_data pipeline can map results to jobs.
-JOB_SUFFIX="${JOB_SUFFIX:-$(date +%Y%m%d-%H%M%S)}"
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 
 mkdir -p "$RESULTS_DIR"
 
 run_bench() {
     local isl=$1 osl=$2 concurrency=$3
-    local filename="${RESULTS_DIR}/bench_isl${isl}_osl${osl}_conc${concurrency}_${JOB_SUFFIX}.json"
+    local filename="${RESULTS_DIR}/bench_isl${isl}_osl${osl}_conc${concurrency}_${TIMESTAMP}.json"
 
     echo "=== Running: ISL=${isl} OSL=${osl} max-concurrency=${concurrency} ==="
     vllm bench serve \
@@ -32,24 +30,24 @@ run_bench() {
     echo "  -> Saved to $filename"
 }
 
-# --- Phase 1: Increase ISL, fixed OSL=128, concurrency=1 ---
+# --- Phase 1: Increase ISL, fixed OSL=128, concurrency=64 ---
 echo ""
 echo "######################################"
-echo "# Phase 1: Varying ISL (OSL=128, concurrency=1)"
+echo "# Phase 1: Varying ISL (OSL=128, concurrency=64)"
 echo "######################################"
 FIXED_OSL=128
-for isl in 128 256 512 1024 2048 4096 8192 16384 32768; do
-    run_bench "$isl" "$FIXED_OSL" 1
+for isl in 128 256 512 1024 2048 4096 8192; do
+    run_bench "$isl" "$FIXED_OSL" 64
 done
 
-# --- Phase 2: Increase OSL, fixed ISL=128, concurrency=1 ---
+# --- Phase 2: Increase OSL, fixed ISL=128, concurrency=64 ---
 echo ""
 echo "######################################"
-echo "# Phase 2: Varying OSL (ISL=128, concurrency=1)"
+echo "# Phase 2: Varying OSL (ISL=128, concurrency=64)"
 echo "######################################"
 FIXED_ISL=128
-for osl in 128 256 512 1024 2048 4096 8192 16384; do
-    run_bench "$FIXED_ISL" "$osl" 1
+for osl in 128 256 512 1024 2048 4096 8192; do
+    run_bench "$FIXED_ISL" "$osl" 64
 done
 
 # --- Phase 3: Increase concurrency, fixed ISL=512, OSL=512 ---
@@ -65,3 +63,5 @@ done
 
 echo ""
 echo "All benchmarks complete. Results in ${RESULTS_DIR}/"
+echo "Run: python plot_benchmarks.py ${RESULTS_DIR}/ to generate plots."
+
