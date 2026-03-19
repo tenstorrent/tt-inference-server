@@ -386,7 +386,9 @@ def test_reasoning(report_test, api_client, request):
             .get("reasoning_tokens", 0)
         )
         reasoning_tokens[effort] = tokens
-    assert reasoning_tokens["low"] > 0, f"Expected non-negative reasoning tokens for low effort. Got: {reasoning_tokens['low']}"
+    assert reasoning_tokens["low"] > 0, (
+        f"Expected non-negative reasoning tokens for low effort. Got: {reasoning_tokens['low']}"
+    )
     assert reasoning_tokens["low"] <= reasoning_tokens["medium"], (
         f"Expected low ({reasoning_tokens['low']}) <= medium ({reasoning_tokens['medium']}) reasoning tokens."
     )
