@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <sys/types.h>
+
 #include <atomic>
 #include <condition_variable>
 #include <memory>
@@ -64,6 +66,10 @@ class WorkerManager {
   void stopWarmupListener();
   void stopProcesses();
   WorkerConfig makeWorkerConfig(int workerId);
+
+  /** Parent: fork/exec worker subprocess; sets worker.pid to child pid. Does not
+   *  return in the child process. */
+  pid_t startWorker(SingleProcessWorker& worker);
 
   size_t num_workers_;
 

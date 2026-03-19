@@ -133,17 +133,7 @@ void WorkerManager::restartWorker(size_t workerIdx) {
   auto cfg = makeWorkerConfig(static_cast<int>(workerIdx));
   workers_[workerIdx] = std::make_unique<SingleProcessWorker>(cfg);
   auto& w = workers_[workerIdx];
-
-  pid_t pid = fork();
-  if (pid < 0) {
-    throw std::runtime_error("Failed to fork replacement worker process");
-  }
-  if (pid == 0) {
-    setpgid(0, 0);
-    execWorkerProcessHelper(workerIdx, cfg.env_vars);
-  }
-  setpgid(pid, pid);
-  w->pid = pid;
+  pid_t pid = startWorker(*w);
   TT_LOG_INFO("[WorkerManager] Restarted worker {} with PID {}", workerIdx,
               pid);
 }
@@ -162,22 +152,26 @@ WorkerConfig WorkerManager::makeWorkerConfig(int workerId) {
   return cfg;
 }
 
+pid_t WorkerManager::startWorker(SingleProcessWorker& worker) {
+  const size_t slot = static_cast<size_t>(worker.worker_id);
+  pid_t pid = fork();
+  if (pid < 0) {
+    throw std::runtime_error("Failed to fork worker process");
+  }
+  if (pid == 0) {
+    setpgid(0, 0);
+    execWorkerProcessHelper(slot, worker.cfg.env_vars);
+  }
+  setpgid(pid, pid);
+  worker.pid = pid;
+  return pid;
+}
+
 void WorkerManager::startWorkers() {
   for (size_t i = 0; i < num_workers_; ++i) {
     auto cfg = makeWorkerConfig(static_cast<int>(i));
     workers_.push_back(std::make_unique<SingleProcessWorker>(cfg));
-    auto& w = workers_[i];
-
-    pid_t pid = fork();
-    if (pid < 0) {
-      throw std::runtime_error("Failed to fork worker process");
-    }
-    if (pid == 0) {
-      setpgid(0, 0);
-      execWorkerProcessHelper(i, cfg.env_vars);
-    }
-    setpgid(pid, pid);
-    w->pid = pid;
+    pid_t pid = startWorker(*workers_[i]);
     TT_LOG_INFO("[WorkerManager] Spawned worker {} with PID {}", i, pid);
   }
 }
