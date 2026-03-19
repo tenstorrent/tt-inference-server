@@ -8,8 +8,7 @@
 │   ├── README.md
 │   ├── run_aiperf_benchmarks.py
 │   ├── run_benchmarks.py
-│   ├── run_genai_benchmarks.py
-│   └── summary_report.py
+│   └── run_genai_benchmarks.py
 ├── model_spec.json
 ├── docker-entrypoint.sh
 ├── docs
@@ -575,4 +574,5 @@
     ├── workflow_types.py
     └── workflow_venvs.py
 
-163 directories, 1925 files
+163 directories, 1924 files
+
