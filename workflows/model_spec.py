@@ -1500,7 +1500,7 @@ llm_templates = [
             "allenai/OLMo-3.1-32B-Think",
         ],
         impl=olmo3_32b_galaxy_impl,
-        tt_metal_commit="e867533",
+        tt_metal_commit="341c670e3b",
         vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
