@@ -49,7 +49,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Implementation Code | [gpt-oss](https://github.com/tenstorrent/tt-metal/tree/e867533/models/demos/gpt_oss) |
 | tt-metal Commit | `e867533` |
 | vLLM Commit | `8f36910` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.0-e867533-8f36910` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e867533-8f36910` |
 
 ---
 
@@ -89,4 +89,4 @@ python3 run.py --model gpt-oss-20b --device galaxy_t3k --workflow server --docke
 | Implementation Code | [gpt-oss](https://github.com/tenstorrent/tt-metal/tree/e867533/models/demos/gpt_oss) |
 | tt-metal Commit | `e867533` |
 | vLLM Commit | `8f36910` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.0-e867533-8f36910` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e867533-8f36910` |
