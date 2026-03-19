@@ -25,7 +25,7 @@ class SDXLForgeRunner(BaseDeviceRunner):
     """
 
     LOAD_TIMEOUT_SECONDS = 300
-    WARMUP_TIMEOUT_SECONDS = 1000
+    WARMUP_TIMEOUT_SECONDS = 2000
     DEFAULT_NUM_INFERENCE_STEPS = 20
     DEFAULT_CFG_SCALE = 7.5
     DEFAULT_RESOLUTION = 1024  # 1024x1024
@@ -177,7 +177,7 @@ class SDXLForgeRunner(BaseDeviceRunner):
             prompt="a photo of a cat",
             negative_prompt="",
             cfg_scale=self.DEFAULT_CFG_SCALE,
-            num_inference_steps=5,  # minimal steps for warmup
+            num_inference_steps=self.DEFAULT_NUM_INFERENCE_STEPS,  # minimal steps for warmup
             seed=42,
         )
         self.logger.info(f"Device {self.device_id}: Warmup inference done")
