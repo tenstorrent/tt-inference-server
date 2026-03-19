@@ -624,17 +624,19 @@ def main():
         run_local_server(model_spec, runtime_config, json_fpath, setup_config)
 
     # step 5: run workflows
-    main_return_code = 0
-
     skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
-        return_codes = run_workflows(model_spec, runtime_config, json_fpath)
-        if all(return_code == 0 for return_code in return_codes):
-            logger.info("Completed run.py successfully.")
+        workflow_results = run_workflows(model_spec, runtime_config, json_fpath)
+        if all(result.return_code == 0 for result in workflow_results):
+            logger.info("Completed run.py.")
         else:
-            main_return_code = 1
+            failed_workflows = [
+                f"{result.workflow_name} ({result.return_code})"
+                for result in workflow_results
+                if result.return_code != 0
+            ]
             logger.error(
-                f"run.py failed with return codes: {return_codes}. "
+                f"run.py failed workflows: {failed_workflows}. "
                 "See logs above for details."
             )
     else:
@@ -651,8 +653,6 @@ def main():
         "issue and server log if available."
     )
     logger.info(f"This log file is saved on local machine at: {run_log_path}")
-
-    return main_return_code
 
 
 if __name__ == "__main__":
