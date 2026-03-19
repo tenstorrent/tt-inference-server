@@ -1507,15 +1507,16 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=1,
-                # NOTE: batch=1 only; TT model runs 32-slot decode internally but vLLM
-                # is limited to 1 concurrent user. Larger batch pending sampling refactor.
-                # ISLs up to 8k supported; larger ISL pending KV cache / memory validation.
+                # max_num_seqs=32 matches TT model's internal max_batch_size; the model runner
+                # pads inactive slots with token=0 / pos=-1 / block_table=0, which the
+                # paged SDPA kernel handles by skipping KV writes for pos=-1 slots.
+                # ISLs up to 8k supported.
                 max_context=8 * 1024,
                 default_impl=True,
                 vllm_args={
                     "data_parallel_size": 1,
                     "max_model_len": 8192,
-                    "max_num_seqs": 1,
+                    "max_num_seqs": 32,
                     "block_size": 64,
                 },
                 override_tt_config={

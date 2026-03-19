@@ -51,7 +51,11 @@ class TTWorker(WorkerBase):
 
         # Initialized by init_device
         self.mesh_device = None
-        self.model_config.override_tt_config = {}
+        # Read TT-specific config from vllm's additional_config (passed via --additional-config).
+        # additional_config lives on VllmConfig, not ModelConfig. Falls back to {} if not set.
+        additional_config = getattr(self.vllm_config, "additional_config", None) or {}
+        self.model_config.override_tt_config = additional_config
+        logger.info(f"override_tt_config from additional_config: {additional_config}")
 
         # Whether to use ttnn tracing for model execution
         override_tt_config = self.model_config.override_tt_config

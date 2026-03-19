@@ -403,6 +403,14 @@ def register_tt_models(impl_id=None):
     else:
         os.environ["TT_QWEN3_TEXT_VER"] = "tt_transformers"
 
+    # OLMo3 path selection based on impl_id
+    if impl_id == "olmo3_32b_galaxy":
+        os.environ["TT_OLMO3_TEXT_VER"] = "olmo3_32b_galaxy"
+        ModelRegistry.register_model(
+            "TTOlmo3ForCausalLM",
+            "models.demos.llama3_70b_galaxy.tt.generator_vllm:OLMo3ForCausalLM",
+        )
+
     # Arcee AFM-4.5B - Text
     ModelRegistry.register_model(
         "TTArceeForCausalLM",
@@ -691,10 +699,33 @@ def main():
     )
 
     # Step 5: Add vLLM CLI arguments
+    # Note: override_tt_config is a TT-specific field (not a vLLM CLI arg) stored in
+    # vllm_args for transport. Pass it to vLLM via --additional-config so the
+    # tt-vllm-plugin v1 worker can read model_config.additional_config.
+    # Filter out the raw override_tt_config key to avoid "unrecognized argument".
+    TT_ONLY_VLLM_ARGS = {"override_tt_config"}
     logger.info(
         f"vllm_args: {json.dumps(model_spec['device_model_spec']['vllm_args'], indent=4)}"
     )
+    override_tt_config_value = model_spec["device_model_spec"]["vllm_args"].get(
+        "override_tt_config"
+    )
+    if override_tt_config_value:
+        # vllm 0.10+ uses --additional-config to pass plugin-specific config dicts.
+        # Parse if string, pass as JSON to vLLM.
+        if isinstance(override_tt_config_value, str):
+            try:
+                override_tt_config_dict = json.loads(override_tt_config_value)
+            except (json.JSONDecodeError, ValueError):
+                override_tt_config_dict = {}
+        else:
+            override_tt_config_dict = override_tt_config_value
+        if override_tt_config_dict:
+            sys.argv.extend(["--additional-config", json.dumps(override_tt_config_dict)])
+            logger.info(f"Passing override_tt_config as --additional-config: {override_tt_config_dict}")
     for key, value in model_spec["device_model_spec"]["vllm_args"].items():
+        if key in TT_ONLY_VLLM_ARGS:
+            continue
         if value is not None:
             # Handle boolean flags
             if isinstance(value, bool):

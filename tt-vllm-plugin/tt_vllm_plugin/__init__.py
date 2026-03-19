@@ -64,5 +64,12 @@ def register_models():
             "Qwen3-Embedding model may not be available. Ensure tt-metal is in Python path."
         )
 
+    # Register OLMo-3.1-32B-Think Galaxy model (Olmo3ForCausalLM → TTOlmo3ForCausalLM)
+    ModelRegistry.register_model(
+        "TTOlmo3ForCausalLM",
+        "models.demos.llama3_70b_galaxy.tt.generator_vllm:OLMo3ForCausalLM",
+    )
+    print("Registered OLMo-3.1-32B-Think Galaxy model")
+
     # Add additional model registrations here as needed
     # ModelRegistry.register_model("AnotherModel", "path.to:ModelClass")
