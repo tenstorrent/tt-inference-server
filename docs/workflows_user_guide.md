@@ -139,6 +139,7 @@ See [Host Storage Options](../workflows/README.md#host-storage-options) in the w
 | `--override-tt-config`   | Override TT config as JSON string (e.g., `'{"data_parallel": 16}'`).                          |
 | `--vllm-override-args`   | Override vLLM arguments as JSON string (e.g., `'{"max_model_len": 4096}'`).                   |
 | `--disable-trace-capture`| Skip trace capture requests for faster execution if traces are already captured.                |
+| `--limit-samples-mode`   | Apply predefined reduced workload presets for `evals` and `benchmarks`: `ci-nightly`, `ci-long`, `ci-commit`, `smoke-test`. Use `smoke-test` for quick developer validation. |
 | `--workflow-args`        | Additional workflow arguments (e.g., `'param1=value1 param2=value2'`).                         |
 
 ---
@@ -289,6 +290,14 @@ The `benchmarks` workflow sends random data prompts to the inference server and 
 python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks
 ```
 
+For a quick development smoke test, add `--limit-samples-mode smoke-test`:
+
+```bash
+python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks --limit-samples-mode smoke-test
+```
+
+In smoke-test mode, `benchmarks` selects a reduced single benchmark target and ignores `--concurrency-sweeps`.
+
 ### Benchmarking Steps
 
 The benchmarks workflow follows this sequence (visible in the runtime logs streamed to `workflow_logs/run_logs/`):
@@ -322,6 +331,14 @@ The `evals` workflow follows the same pattern as the `benchmarks` workflow: it s
 ```bash
 python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow evals
 ```
+
+For a quick development smoke test, add `--limit-samples-mode smoke-test`:
+
+```bash
+python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow evals --limit-samples-mode smoke-test
+```
+
+In smoke-test mode, `evals` runs only the first configured eval task and limits it to 3 samples.
 
 Outputs are stored in: `workflow_logs/evals_output/eval_Llama-3.2-1B-Instruct_n300/meta-llama__Llama-3.2-1B-Instruct`
 
