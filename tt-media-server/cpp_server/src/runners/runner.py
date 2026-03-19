@@ -149,7 +149,7 @@ def _open_mesh_device(
     try:
         return ttnn.open_mesh_device(
             mesh_shape=ttnn.MeshShape(4, 2),
-            trace_region_size=trace_region_size_bytes,
+            worker_l1_size=1431568,
         )
     except TypeError:
         return ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(4, 2))
@@ -177,7 +177,7 @@ def main() -> None:
                 raise
         mesh_device = _open_mesh_device(
             fabric_max_payload_bytes=args.fabric_max_payload_bytes,
-            worker_l1_size=1431568,
+            trace_region_size_bytes=args.trace_region_size_bytes,
             fabric_router_sync_timeout_ms=args.fabric_router_sync_timeout_ms,
         )
     except Exception as e:
