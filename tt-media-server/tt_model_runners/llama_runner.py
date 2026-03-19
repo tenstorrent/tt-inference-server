@@ -225,9 +225,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         if self._kv_cache is None:
             raise RuntimeError("KV cache not allocated; warmup may have failed")
         if len(block_ids) != len(page_tables):
-            raise ValueError(
-                "block_ids and page_tables must have the same length"
-            )
+            raise ValueError("block_ids and page_tables must have the same length")
         for block_id in block_ids:
             if block_id < 0 or block_id >= MAX_NUM_BLOCKS:
                 raise ValueError(
@@ -243,9 +241,9 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         page_table_torch = torch.tensor(
             [block_ids], dtype=torch.int32, device=page_tables[0].device
         )
-        page_table_tt = ttnn.from_torch(
-            page_table_torch, dtype=ttnn.int32
-        ).to(mesh_device)
+        page_table_tt = ttnn.from_torch(page_table_torch, dtype=ttnn.int32).to(
+            mesh_device
+        )
 
         for layer in range(n_layers):
             keys_BKSD = layer_cache[layer][0]
@@ -338,13 +336,10 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             page_tables = self._read_page_tables_from_cache(sequences)
             return RunResult(results=results, page_tables=page_tables)
         if self.max_batch_size > 1 and len(sequences) > 0:
-            results = self._run_decode_batch(
-                sequences, torch, reset_batch=reset_batch
-            )
+            results = self._run_decode_batch(sequences, torch, reset_batch=reset_batch)
         else:
             results = [
-                self._run_decode(s, torch, reset_batch=reset_batch)
-                for s in sequences
+                self._run_decode(s, torch, reset_batch=reset_batch) for s in sequences
             ]
         return RunResult(results=results, page_tables=None)
 
@@ -386,17 +381,22 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
                     k_host = ttnn.from_device(k_slice)
                     v_host = ttnn.from_device(v_slice)
                     k_t = ttnn.to_torch(
-                        k_host, mesh_composer=ttnn.ConcatMeshToTensor(mesh_device, dim=-1)
+                        k_host,
+                        mesh_composer=ttnn.ConcatMeshToTensor(mesh_device, dim=-1),
                     ).squeeze(0)
                     v_t = ttnn.to_torch(
-                        v_host, mesh_composer=ttnn.ConcatMeshToTensor(mesh_device, dim=-1)
+                        v_host,
+                        mesh_composer=ttnn.ConcatMeshToTensor(mesh_device, dim=-1),
                     ).squeeze(0)
                     k_v_list.append(k_t)
                     k_v_list.append(v_t)
                     ttnn.deallocate(k_slice)
                     ttnn.deallocate(v_slice)
                 block_tensor = torch.stack(
-                    [torch.stack([k_v_list[i], k_v_list[i + 1]]) for i in range(0, len(k_v_list), 2)]
+                    [
+                        torch.stack([k_v_list[i], k_v_list[i + 1]])
+                        for i in range(0, len(k_v_list), 2)
+                    ]
                 )
                 block_tensors.append(block_tensor)
             out.append(block_tensors)
