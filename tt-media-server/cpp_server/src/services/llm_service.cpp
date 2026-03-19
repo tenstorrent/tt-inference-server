@@ -116,10 +116,6 @@ void LLMService::stop() {
 
   TT_LOG_INFO("[LLMService] Stopping...");
 
-  // Phase 1: stop warmup listener (consumers may still reference workers)
-  worker_manager_->stopWarmupListener();
-
-  // Signal shutdown on all ring buffers so blockingPop wakes up
   for (auto& q : queue_manager_->result_queues) {
     q->shutdown();
   }
@@ -131,8 +127,7 @@ void LLMService::stop() {
   }
   consumer_threads_.clear();
 
-  // Phase 2: now safe to kill worker processes (no more consumer threads)
-  worker_manager_->stopProcesses();
+  worker_manager_->stop();
 
   // Stop socket service
   if (socket_service_) {

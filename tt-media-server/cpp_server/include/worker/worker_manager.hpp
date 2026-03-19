@@ -36,17 +36,10 @@ class WorkerManager {
 
   void start();
 
-  /** Full stop: warmup listener + worker processes. */
+  /** Stops warmup IPC listener, then kills worker processes. Call only after any
+   *  threads that dereference worker() pointers (e.g. result consumers) have
+   *  finished. */
   void stop();
-
-  /** Stop only the warmup listener.
-   *  Call this before joining consumer threads that hold pointers to workers. */
-  void stopWarmupListener();
-
-  /** Kill worker processes and release their resources.
-   *  Call this only after all consumer threads using worker pointers have
-   * joined. */
-  void stopProcesses();
 
   bool isReady() const { return is_ready_.load(); }
   size_t numWorkers() const { return num_workers_; }
@@ -64,6 +57,8 @@ class WorkerManager {
   void startWorkers();
   void startWarmupListenerThread();
   void waitForFirstWarmup();
+  void stopWarmupListener();
+  void stopProcesses();
   WorkerConfig makeWorkerConfig(int workerId);
 
   size_t num_workers_;
