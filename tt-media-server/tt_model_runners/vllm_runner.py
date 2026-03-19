@@ -18,7 +18,7 @@ CHUNK_TYPE = "streaming_chunk"
 FINAL_TYPE = "final_result"
 
 
-class VLLMRunner(BaseDeviceRunner):
+class VLLMForgeRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
 
@@ -38,9 +38,15 @@ class VLLMRunner(BaseDeviceRunner):
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
             additional_config={
-                "enable_const_eval": False,
+                "enable_const_eval": True,
                 "min_context_len": self.settings.vllm.min_context_length,
+                "experimental_weight_dtype": "bfp_bf8",
+                "cpu_sampling": True,
+                "optimization_level": 1,
             },
+        )
+        self.logger.info(
+            f"Device {self.device_id}: additional_config={engine_args.additional_config}"
         )
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
 

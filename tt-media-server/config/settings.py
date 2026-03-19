@@ -7,6 +7,7 @@ from functools import lru_cache
 from typing import Optional
 
 from config.constants import (
+    MODEL_NAME_OVERRIDES,
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
     SDXL_VALID_IMAGE_RESOLUTIONS,
@@ -48,6 +49,7 @@ class Settings(BaseSettings):
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
     model_weights_path: str = ""
+    chat_template_kwargs: dict = {}  # extra kwargs passed to apply_chat_template
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
     download_weights_from_service: bool = True
@@ -185,6 +187,7 @@ class Settings(BaseSettings):
             logger.warning(
                 f"max_batch_size {self.max_batch_size} is less than max_num_seqs {self.vllm.max_num_seqs} in vllm settings, set max_batch_size to {self.vllm.max_num_seqs}"
             )
+            self.max_batch_size = self.vllm.max_num_seqs
 
     def _set_device_pairs_overrides(self) -> None:
         logger.info(
@@ -307,6 +310,12 @@ class Settings(BaseSettings):
                 if hasattr(self, key):
                     if key == "vllm" and isinstance(value, dict):
                         value = VLLMSettings(**value)
+                    setattr(self, key, value)
+
+            # Apply per-model overrides (e.g. chat_template_kwargs for Qwen3)
+            model_overrides = MODEL_NAME_OVERRIDES.get(model_name_enum, {})
+            for key, value in model_overrides.items():
+                if hasattr(self, key):
                     setattr(self, key, value)
         if any(
             self.model_runner == r.value
