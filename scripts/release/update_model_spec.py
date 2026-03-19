@@ -569,6 +569,7 @@ def load_model_spec_module_from_content(
 
     module = types.ModuleType(module_name)
     module.__file__ = str(model_spec_path)
+    sys.modules[module_name] = module
     exec(compile(content, str(model_spec_path), "exec"), module.__dict__)
     return module
 
