@@ -1,10 +1,112 @@
 # TT Media Server - C++ Drogon Implementation
 
-## LLM Engine
+Production-grade, zero-overhead C++ inference server for AI workloads on Tenstorrent hardware.
+Near-term focus: DeepSeek-R1-0528 in disaggregated prefill/decode across multi-node Tenstorrent Blackhole galaxies.
+Long-term vision: any AI workload including image and video models.
 
-The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runners/llm_engine/` (sources). The engine uses the server's logging (`[DEBUG] [llm_engine:...]`) instead of its own.
+## Architecture Characteristics
 
-### Main featuresrmance C++ implementation of the TT Media Server using the Drogon web framework. This implementation is designed to benchmark the overhead of the Python FastAPI server by providing an identical API with minimal overhead.
+The following quality attributes drive design decisions in this codebase.
+They are ordered by priority — when two characteristics conflict, the
+higher-ranked one wins.
+
+### 1. Performance (Zero-Overhead)
+
+**The defining characteristic.** The server is the envelope around the model;
+that envelope must be invisible. Every microsecond of framework overhead
+(serialization, scheduling, IPC, queue management) is a design failure.
+The goal is not "fast" — it is "never the bottleneck."
+
+*Implications:*
+- Prefer zero-copy and shared-memory IPC (`/dev/shm`) over serialization.
+- Busy-wait loops with `std::chrono::high_resolution_clock` where microsecond
+  precision matters.
+- Tracy profiling instrumentation to detect and eliminate overhead regressions.
+- Nightly performance benchmarks to catch regressions before they ship.
+
+### 2. Fault Tolerance
+
+Workers interact with Tenstorrent devices that can hang or crash. The server
+must detect failed workers, restart them (including device re-initialization),
+and continue serving. A single poisoned request must fail gracefully without
+affecting other in-flight requests or the main process.
+
+*Implications:*
+- Main process acts as supervisor; workers run as child processes (fork/exec).
+- Worker health monitoring (heartbeat/watchdog).
+- Request-level fault isolation — one failure does not cascade.
+- Graceful degradation when a worker is restarting.
+
+### 3. Observability
+
+This is a customer-facing product. Tenstorrent clients and field engineers
+must be able to diagnose production issues (slow tokens, hung devices,
+degraded throughput) without reading source code.
+
+*Implications:*
+- Structured logging with request-ID correlation across HTTP → worker → device.
+- Production metrics (tokens/sec, queue depth, latency histograms, device health).
+- Health/liveness endpoints that surface meaningful diagnostics, not just "alive."
+- Tracy profiling for deep performance analysis during development and support.
+
+### 4. Extensibility
+
+New model types (image, video) will be added with increasing frequency. The
+server must make this straightforward without modifying core infrastructure.
+
+*Implications:*
+- Stable core (HTTP layer, tokenization, worker lifecycle) that rarely changes.
+- Model-specific logic isolated in adapter layers (runner implementations).
+- Strategy patterns for tokenizer selection and model runner creation.
+- When hardware topology demands it (e.g., DeepSeek R1 multi-node MPI), changes
+  are confined to the worker level — the main server remains unchanged.
+
+### 5. Interoperability (API Compatibility)
+
+Strict OpenAI API compatibility is a hard requirement. The ecosystem
+(benchmarking tools, evaluation frameworks, coding agents, client SDKs)
+depends on it. Breaking the API contract breaks integrations.
+
+*Implications:*
+- `/v1/completions`, `/v1/chat/completions` must be drop-in compatible with
+  the OpenAI Python SDK and other OpenAI-compatible tooling.
+- SSE streaming format must match the OpenAI specification exactly.
+- New capabilities are added as extensions, never by breaking existing contracts.
+
+### 6. Testability
+
+Components must be testable without Tenstorrent hardware. Failure scenarios
+(device hangs, slow responses, memory pressure) must be simulatable to
+validate fault tolerance without physical devices.
+
+*Implications:*
+- Mock device backend enables full-stack testing without hardware.
+- Extend mock backend to support fault injection (hangs, errors, slow responses).
+- Unit tests for individual components (scheduler, block manager, IPC).
+- Integration tests against mock backend in CI.
+- Nightly end-to-end tests on real hardware with performance regression detection.
+
+### 7. Modularity
+
+Clean separation between model-agnostic infrastructure and model-specific
+adapters. This enables independent development, testing, and evolution of
+each layer.
+
+*Implications:*
+- `IDeviceBackend` abstraction decouples engine from hardware specifics.
+- `IModelRunner` / `ITokenizerStrategy` allow swapping model backends at runtime.
+- Runner factory selects the correct adapter based on environment configuration.
+- Core server code (HTTP, auth, worker management) has no model-specific knowledge.
+
+### Implicit Characteristics (table stakes, not primary drivers)
+
+| Characteristic | Notes |
+|----------------|-------|
+| **Deployability** | Docker containers with sensible defaults. Auto-tune over manual knobs. Multi-container for complex topologies (e.g., DeepSeek R1 multi-node). |
+| **Configurability** | Environment-variable-driven configuration through `config/settings.hpp`. Prefer auto-tuning; expose knobs only when customer need is demonstrated. |
+| **Security** | Bearer token authentication. Sufficient for current controlled deployment environments. May evolve as deployment contexts expand. |
+
+---
 
 ## Logging
 
