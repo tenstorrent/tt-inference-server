@@ -34,7 +34,6 @@ tt_build
 generated_modules
 *.ipynb
 *_params.pt
-*.json
 *.jsonl
 *.pt
 *.tti
@@ -42,7 +41,6 @@ generated_modules
 unzipped_tti/
 db.sqlite3
 **/generated/inspector/
-
 
 # secrets
 .env
