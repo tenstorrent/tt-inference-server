@@ -115,7 +115,7 @@ class MockVideoRunner(BaseDeviceRunner):
 # ---------------------------------------------------------------------------
 # Standalone SHM bridge: reads from input SHM, runs mock pipeline, writes
 # frames one-by-one to output SHM. This is the external process that pairs
-# with device_worker_video_shm.py on the server side.
+# with device_worker and sp_runner on the server side.
 # ---------------------------------------------------------------------------
 
 _shutdown = False
