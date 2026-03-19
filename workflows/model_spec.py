@@ -467,7 +467,7 @@ class ModelSpec:
             # Note: default to release image, use --dev-mode at runtime to use dev images
             # TODO: Use ubuntu version to interpolate this string
             _default_docker_link = generate_default_docker_link(
-                VERSION,
+                self.version,
                 self.tt_metal_commit,
                 self.vllm_commit,
                 multihost=self.device_type.is_multihost(),
@@ -926,6 +926,7 @@ llm_templates = [
         weights=["openai/gpt-oss-20b"],
         impl=gpt_oss_impl,
         tt_metal_commit="e867533",
+        version="0.10.0",
         vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -967,6 +968,7 @@ llm_templates = [
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
         tt_metal_commit="bac8b34",
+        version="0.10.0",
         vllm_commit="7c6685a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1005,6 +1007,7 @@ llm_templates = [
         weights=["arcee-ai/AFM-4.5B"],
         impl=tt_transformers_impl,
         tt_metal_commit="ae65ee5",
+        version="0.10.0",
         vllm_commit="35f023f",
         inference_engine=InferenceEngine.VLLM.value,
         # need to add default sampling params here because they're
@@ -1050,6 +1053,7 @@ llm_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="c254ee3",
+        version="0.10.0",
         vllm_commit="c4f2327",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1071,6 +1075,7 @@ llm_templates = [
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
         tt_metal_commit="e0e0500",
+        version="0.10.0",
         vllm_commit="409b1cd",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1134,6 +1139,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="e867533",
+        version="0.10.0",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1150,6 +1156,7 @@ llm_templates = [
         weights=["Qwen/Qwen3-32B"],
         impl=qwen3_32b_galaxy_impl,
         tt_metal_commit="bac8b34",
+        version="0.11.0",
         vllm_commit="7c6685a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1191,6 +1198,7 @@ llm_templates = [
         weights=["Qwen/Qwen3-32B"],
         impl=tt_transformers_impl,
         tt_metal_commit="e95ffa5",
+        version="0.10.0",
         vllm_commit="48eba14",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1249,6 +1257,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="555f240",
+        version="0.10.0",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1281,6 +1290,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="555f240",
+        version="0.10.0",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1300,6 +1310,7 @@ llm_templates = [
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
         impl=tt_transformers_impl,
         tt_metal_commit="9b67e09",
+        version="0.10.0",
         vllm_commit="a91b644",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1331,6 +1342,7 @@ llm_templates = [
         weights=["Qwen/QwQ-32B"],
         impl=tt_transformers_impl,
         tt_metal_commit="e95ffa5",
+        version="0.10.0",
         vllm_commit="48eba14",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1376,6 +1388,7 @@ llm_templates = [
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         impl=tt_transformers_impl,
         tt_metal_commit="13f44c5",
+        version="0.10.0",
         vllm_commit="0edd242",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1426,6 +1439,7 @@ llm_templates = [
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
         impl=tt_transformers_impl,
         tt_metal_commit="5b5db8a",
+        version="0.10.0",
         vllm_commit="e771fff",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1456,6 +1470,7 @@ llm_templates = [
         ],
         impl=llama3_70b_galaxy_impl,
         tt_metal_commit="e867533",
+        version="0.10.0",
         vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1495,6 +1510,7 @@ llm_templates = [
         ],
         impl=deepseek_r1_galaxy_impl,
         tt_metal_commit="bac8b34",
+        version="0.11.0",
         vllm_commit="7c6685a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1564,6 +1580,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="750ca54",
+        version="0.11.0",
         vllm_commit="38dee8c",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1592,6 +1609,7 @@ llm_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="555f240",
+        version="0.10.0",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1655,6 +1673,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="555f240",
+        version="0.10.0",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1689,6 +1708,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="v0.62.0-rc33",
+        version="0.10.0",
         vllm_commit="e7c329b",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1714,6 +1734,7 @@ llm_templates = [
         weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
         impl=tt_transformers_impl,
         tt_metal_commit="84b4c53",
+        version="0.10.0",
         vllm_commit="222ee06",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1744,6 +1765,7 @@ llm_templates = [
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
         impl=tt_transformers_impl,
         tt_metal_commit="20edc39",
+        version="0.10.0",
         vllm_commit="03cb300",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1773,6 +1795,7 @@ llm_templates = [
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
         tt_metal_commit="3f72232",
+        version="0.10.0",
         vllm_commit="409b1cd",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1813,6 +1836,7 @@ llm_templates = [
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
         tt_metal_commit="55fd115",
+        version="0.10.0",
         vllm_commit="aa4ae1e",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1838,6 +1862,7 @@ llm_templates = [
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
         tt_metal_commit="55fd115",
+        version="0.10.0",
         vllm_commit="aa4ae1e",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1869,6 +1894,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="555f240",
+        version="0.10.0",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1901,6 +1927,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="555f240",
+        version="0.10.0",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1931,6 +1958,7 @@ llm_templates = [
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
         tt_metal_commit="bac8b34",
+        version="0.11.0",
         vllm_commit="7c6685a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1982,6 +2010,7 @@ llm_templates = [
         weights=["Qwen/Qwen2.5-Coder-32B-Instruct"],
         impl=tt_transformers_impl,
         tt_metal_commit="17a5973",
+        version="0.10.0",
         vllm_commit="aa4ae1e",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -2023,6 +2052,7 @@ vlm_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="c254ee3",
+        version="0.10.0",
         vllm_commit="c4f2327",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -2067,6 +2097,7 @@ vlm_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="0b10c51",
+        version="0.10.0",
         vllm_commit="3499ffa",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -2137,6 +2168,7 @@ vlm_templates = [
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         tt_metal_commit="ba32283",
+        version="0.10.0",
         vllm_commit="4386a82",
         device_model_specs=[
             DeviceModelSpec(
@@ -2161,6 +2193,7 @@ vlm_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="c18569e",
+        version="0.10.0",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
@@ -2190,6 +2223,7 @@ vlm_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="c18569e",
+        version="0.10.0",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
@@ -2222,6 +2256,7 @@ vlm_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="c18569e",
+        version="0.10.0",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
@@ -2245,6 +2280,7 @@ vlm_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="c18569e",
+        version="0.10.0",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
@@ -2272,6 +2308,7 @@ vlm_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="v0.61.1-rc1",
+        version="0.10.0",
         vllm_commit="5cbc982",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -2299,6 +2336,7 @@ vlm_templates = [
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="v0.61.1-rc1",
+        version="0.10.0",
         vllm_commit="5cbc982",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -2325,6 +2363,7 @@ video_templates = [
     ModelSpecTemplate(
         weights=["genmo/mochi-1-preview"],
         tt_metal_commit="555f240",
+        version="0.10.0",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2376,6 +2415,7 @@ video_templates = [
     ModelSpecTemplate(
         weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
         tt_metal_commit="555f240",
+        version="0.10.0",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2437,6 +2477,7 @@ image_templates = [
             "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
         ],
         tt_metal_commit="bac8b34",
+        version="0.11.0",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2475,6 +2516,7 @@ image_templates = [
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-3.5-large"],
         tt_metal_commit="c180ef7",
+        version="0.10.0",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2536,6 +2578,7 @@ image_templates = [
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-dev", "black-forest-labs/FLUX.1-schnell"],
         tt_metal_commit="555f240",
+        version="0.10.0",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2584,6 +2627,7 @@ image_templates = [
     ModelSpecTemplate(
         weights=["Motif-Technologies/Motif-Image-6B-Preview"],
         tt_metal_commit="c180ef7",
+        version="0.10.0",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2620,6 +2664,7 @@ image_templates = [
     ModelSpecTemplate(
         weights=["Qwen/Qwen-Image", "Qwen/Qwen-Image-2512"],
         tt_metal_commit="be88351",
+        version="0.10.0",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2653,6 +2698,7 @@ audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
         tt_metal_commit="bac8b34",
+        version="0.11.0",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2689,6 +2735,7 @@ audio_tts_templates = [
     ModelSpecTemplate(
         weights=["microsoft/speecht5_tts"],
         tt_metal_commit="a9b09e0",
+        version="0.10.0",
         impl=speecht5_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -3162,6 +3209,7 @@ cnn_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-70B"],
         tt_metal_commit="2496be4",
+        version="0.10.0",
         impl=forge_vllm_plugin_impl,
         min_disk_gb=150,
         min_ram_gb=80,
