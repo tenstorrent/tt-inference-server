@@ -5,16 +5,17 @@
 
 #include <atomic>
 #include <condition_variable>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <set>
-#include <string>
 #include <thread>
 #include <vector>
 
-#include "ipc/warmup_signal_queue.hpp"
 #include "worker/single_process_worker.hpp"
+
+namespace tt::ipc {
+class IWarmupSignalQueue;
+}
 
 namespace tt::worker {
 
@@ -27,12 +28,7 @@ namespace tt::worker {
  */
 class WorkerManager {
  public:
-  using WarmupQueueFactory =
-      std::function<std::unique_ptr<tt::ipc::IWarmupSignalQueue>(
-          const std::string& name, size_t capacity)>;
-
-  WorkerManager(size_t numWorkers, std::string warmupQueueName,
-                WarmupQueueFactory warmupFactory);
+  explicit WorkerManager(size_t numWorkers);
   ~WorkerManager();
 
   WorkerManager(const WorkerManager&) = delete;
@@ -71,8 +67,6 @@ class WorkerManager {
   WorkerConfig makeWorkerConfig(int workerId);
 
   size_t num_workers_;
-  std::string warmup_queue_name_;
-  WarmupQueueFactory warmup_factory_;
 
   std::vector<std::unique_ptr<SingleProcessWorker>> workers_;
 

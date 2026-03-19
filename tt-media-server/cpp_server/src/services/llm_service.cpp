@@ -3,11 +3,8 @@
 
 #include "services/llm_service.hpp"
 
-#include <sys/wait.h>
-
 #include <cassert>
 #include <chrono>
-#include <climits>
 #include <condition_variable>
 #include <cstring>
 #include <memory>
@@ -15,7 +12,6 @@
 #include <unordered_set>
 
 #include "config/settings.hpp"
-#include "ipc/boost_ipc_warmup_signal_queue.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
@@ -29,13 +25,7 @@ LLMService::LLMService()
   size_t numWorkers = tt::config::numWorkers();
   max_queue_size_ = tt::config::maxQueueSize();
 
-  worker_manager_ = std::make_unique<tt::worker::WorkerManager>(
-      numWorkers, tt::ipc::WARMUP_SIGNALS_QUEUE_NAME,
-      [](const std::string& name, size_t capacity) {
-        tt::ipc::BoostIpcWarmupSignalQueue::remove(name);
-        return std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(name,
-                                                                    capacity);
-      });
+  worker_manager_ = std::make_unique<tt::worker::WorkerManager>(numWorkers);
 
   TT_LOG_INFO("[LLMService] Initialized (mode={}, workers={})",
               tt::config::toString(mode_), numWorkers);

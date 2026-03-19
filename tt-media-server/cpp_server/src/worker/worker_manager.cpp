@@ -13,6 +13,7 @@
 
 #include "config/settings.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
+#include "ipc/boost_ipc_warmup_signal_queue.hpp"
 #include "ipc/queue_manager.hpp"
 #include "ipc/shared_memory.hpp"
 #include "utils/logger.hpp"
@@ -44,11 +45,7 @@ namespace {
 
 namespace tt::worker {
 
-WorkerManager::WorkerManager(size_t numWorkers, std::string warmupQueueName,
-                             WarmupQueueFactory warmupFactory)
-    : num_workers_{numWorkers},
-      warmup_queue_name_{std::move(warmupQueueName)},
-      warmup_factory_{std::move(warmupFactory)} {
+WorkerManager::WorkerManager(size_t numWorkers) : num_workers_{numWorkers} {
   if (num_workers_ < 1) {
     throw std::invalid_argument(
         "WorkerManager requires at least 1 worker. "
@@ -173,8 +170,10 @@ void WorkerManager::startWorkers() {
 }
 
 void WorkerManager::startWarmupListenerThread() {
-  warmup_queue_ = warmup_factory_(warmup_queue_name_, num_workers_);
-  if (!warmup_queue_) return;
+  const char* name = tt::ipc::WARMUP_SIGNALS_QUEUE_NAME;
+  tt::ipc::BoostIpcWarmupSignalQueue::remove(name);
+  warmup_queue_ =
+      std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(name, num_workers_);
   warmup_received_ = false;
   warmup_listener_thread_ = std::thread([this]() {
     try {
