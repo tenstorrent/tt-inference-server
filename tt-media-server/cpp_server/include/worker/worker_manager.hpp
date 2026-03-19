@@ -44,7 +44,6 @@ class WorkerManager {
 
   bool isReady() const { return is_ready_.load(); }
   size_t numWorkers() const { return num_workers_; }
-  bool isWorkerWarmed(int workerId) const;
 
   std::vector<WorkerInfo> getWorkerInfo() const;
 
@@ -57,6 +56,8 @@ class WorkerManager {
   void restartWorker(size_t workerIdx);
 
  private:
+  bool isWorkerWarmed(int workerId) const;
+
   void startWorkers();
   void startWarmupListenerThread();
   void waitForFirstWarmup();
