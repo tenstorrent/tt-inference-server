@@ -7,7 +7,8 @@
 
 namespace tt::worker {
 
-/** Liveness / status entry for one worker process (see WorkerManager::getWorkerInfo). */
+/** Liveness / status entry for one worker process (see
+ * WorkerManager::getWorkerInfo). */
 struct WorkerInfo {
   std::string worker_id;
   bool is_ready;
