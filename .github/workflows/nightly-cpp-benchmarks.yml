@@ -92,7 +92,7 @@ jobs:
             echo "|-----|-----|------|-------|----------------|----------------|-----------|"
           } >> $GITHUB_STEP_SUMMARY
 
-          for f in bench_results/bench_isl*.json; do
+          for f in bench_results/*bench_isl*.json; do
             [ -f "$f" ] || continue
             BASENAME=$(basename "$f")
             REQ_THR=$(jq -r '.request_throughput // "N/A"' "$f")
@@ -100,7 +100,7 @@ jobs:
             MEAN_TPOT=$(jq -r '.mean_tpot_ms // "N/A"' "$f")
             OUT_THR=$(jq -r '.output_throughput // "N/A"' "$f")
 
-            ISL=$(echo "$BASENAME" | sed -nE 's/bench_isl([0-9]+)_.*/\1/p')
+            ISL=$(echo "$BASENAME" | sed -nE 's/.*bench_isl([0-9]+)_.*/\1/p')
             OSL=$(echo "$BASENAME" | sed -nE 's/.*_osl([0-9]+)_.*/\1/p')
             CONC=$(echo "$BASENAME" | sed -nE 's/.*_conc([0-9]+)_.*/\1/p')
 

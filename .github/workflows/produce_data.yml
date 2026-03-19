@@ -24,7 +24,6 @@ on:
 jobs:
   produce-cicd-data:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.run_id != '') }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -32,10 +31,11 @@ jobs:
         uses: knovokmetTT/tt-github-actions/.github/actions/collect_data@knovokmetTT/cpp-server-benchmark-visualization
         with:
           repository: ${{ github.repository }}
-          run_id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.run_id }}
-          run_attempt: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.run_attempt || inputs.run_attempt }}
+          run_id: "23310453436"
+          run_attempt: "1"
           sftp_host: ${{ secrets.SFTP_CICD_WRITER_HOSTNAME }}
           sftp_user: ${{ secrets.SFTP_CICD_WRITER_USERNAME }}
           sftp_perf_host: ${{ secrets.SFTP_PERF_WRITER_HOSTNAME }}
           sftp_perf_user: ${{ secrets.SFTP_PERF_WRITER_USERNAME }}
           ssh-private-key: ${{ secrets.SFTP_CICD_WRITER_KEY }}
+
