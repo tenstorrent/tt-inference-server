@@ -25,12 +25,12 @@ project_root = Path(__file__).resolve().parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from workflows.perf_targets import get_performance_targets
 from workflows.utils import (
     get_num_calls,
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,
 )
-from workflows.utils_report import get_performance_targets
 
 logger = logging.getLogger(__name__)
 
