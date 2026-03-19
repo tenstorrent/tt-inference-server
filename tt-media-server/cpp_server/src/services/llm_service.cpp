@@ -63,18 +63,8 @@ size_t LLMService::currentQueueSize() const { return pending_tasks_.load(); }
 
 bool LLMService::isModelReady() const { return worker_manager_->isReady(); }
 
-std::vector<WorkerInfo> LLMService::getWorkerInfo() const {
-  std::vector<WorkerInfo> out;
-  size_t n = worker_manager_->numWorkers();
-  out.reserve(n);
-  for (size_t i = 0; i < n; ++i) {
-    auto* w = worker_manager_->worker(i);
-    WorkerInfo info;
-    info.worker_id = std::to_string(w->worker_id);
-    info.is_ready = worker_manager_->isWorkerWarmed(w->worker_id);
-    out.push_back(info);
-  }
-  return out;
+std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
+  return worker_manager_->getWorkerInfo();
 }
 
 void LLMService::preProcess(domain::CompletionRequest& request) const {

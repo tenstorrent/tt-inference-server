@@ -63,7 +63,7 @@ class LLMService
   domain::CompletionResponse processRequest(
       domain::CompletionRequest request) override;
 
-  std::vector<WorkerInfo> getWorkerInfo() const override;
+  std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
   void streamingPostProcess(domain::StreamingChunkResponse&) const override {}
   void processStreamingRequest(

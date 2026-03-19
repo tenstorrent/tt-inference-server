@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <stdexcept>
+#include <string>
 
 #include "config/settings.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
@@ -92,6 +93,18 @@ void WorkerManager::stopProcesses() {
 bool WorkerManager::isWorkerWarmed(int workerId) const {
   std::lock_guard<std::mutex> lock(warmed_mutex_);
   return warmed_worker_ids_.count(workerId) != 0;
+}
+
+std::vector<WorkerInfo> WorkerManager::getWorkerInfo() const {
+  std::vector<WorkerInfo> out;
+  out.reserve(workers_.size());
+  for (const auto& w : workers_) {
+    WorkerInfo info;
+    info.worker_id = std::to_string(w->worker_id);
+    info.is_ready = isWorkerWarmed(w->worker_id);
+    out.push_back(std::move(info));
+  }
+  return out;
 }
 
 SingleProcessWorker* WorkerManager::worker(size_t idx) {

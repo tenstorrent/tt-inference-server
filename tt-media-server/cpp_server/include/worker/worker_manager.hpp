@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "worker/single_process_worker.hpp"
+#include "worker/worker_info.hpp"
 
 namespace tt::ipc {
 class IWarmupSignalQueue;
@@ -44,6 +45,8 @@ class WorkerManager {
   bool isReady() const { return is_ready_.load(); }
   size_t numWorkers() const { return num_workers_; }
   bool isWorkerWarmed(int workerId) const;
+
+  std::vector<WorkerInfo> getWorkerInfo() const;
 
   SingleProcessWorker* worker(size_t idx);
 

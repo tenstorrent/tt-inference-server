@@ -6,12 +6,12 @@
 #include <limits>
 #include <memory>
 #include <stdexcept>
-#include <string>
 #include <vector>
 
 #include "domain/base_request.hpp"
 #include "domain/base_response.hpp"
 #include "utils/logger.hpp"
+#include "worker/worker_info.hpp"
 
 namespace tt::services {
 
@@ -21,16 +21,11 @@ class QueueFullException : public std::runtime_error {
       : std::runtime_error("Request queue is full, please retry later") {}
 };
 
-struct WorkerInfo {
-  std::string worker_id;
-  bool is_ready;
-};
-
 struct SystemStatus {
   bool model_ready;
   size_t queue_size;
   size_t max_queue_size;
-  std::vector<WorkerInfo> worker_info;
+  std::vector<tt::worker::WorkerInfo> worker_info;
 };
 
 class IService {
@@ -74,7 +69,9 @@ class BaseService : public IService {
   virtual void postProcess(ResponseType& response) const = 0;
   virtual size_t currentQueueSize() const = 0;
 
-  virtual std::vector<WorkerInfo> getWorkerInfo() const { return {}; }
+  virtual std::vector<tt::worker::WorkerInfo> getWorkerInfo() const {
+    return {};
+  }
 
   size_t max_queue_size_ = std::numeric_limits<size_t>::max();
 };
