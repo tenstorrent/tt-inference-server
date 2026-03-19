@@ -561,8 +561,9 @@ tt-inference-server/
 │   ├── run_benchmarks_aiperf.py       # AIPerf runner
 │   ├── run_genai_benchmarks.py        # GenAI-Perf Docker orchestration
 │   ├── genai_benchmark.py             # GenAI-Perf in-container script
-│   ├── summary_report.py              # Report generation (all tools)
 │   └── benchmark_config.py            # Benchmark configurations
+├── workflows/
+│   └── run_reports.py                 # Benchmark summary parsing and report generation
 ├── workflow_logs/
 │   ├── benchmarks_output/             # All benchmark results (unified)
 │   └── reports_output/
