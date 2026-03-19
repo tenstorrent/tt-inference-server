@@ -135,6 +135,7 @@ async function generateImage() {
 
     isGenerating = true;
     $('generate-btn').disabled = true;
+    $('generate-btn').closest('.btn-3d').classList.add('is-disabled');
 
     // Show loading overlay
     $('image-placeholder').style.display = 'none';
@@ -206,6 +207,7 @@ async function generateImage() {
     } finally {
         isGenerating = false;
         $('generate-btn').disabled = false;
+        $('generate-btn').closest('.btn-3d').classList.remove('is-disabled');
     }
 }
 
@@ -214,7 +216,7 @@ function showGenerationError(msg) {
     $('image-placeholder').style.display = 'flex';
     const placeholderText = $('image-placeholder').querySelector('p');
     placeholderText.textContent = msg;
-    placeholderText.style.color = '#e53e3e';
+    placeholderText.style.color = '#F54E00';
 }
 
 function displayMetadata(gen) {
@@ -255,7 +257,9 @@ $('fullscreen-btn').addEventListener('click', () => {
 $('save-gallery-btn').addEventListener('click', async () => {
     if (!currentGeneration) return;
     const btn = $('save-gallery-btn');
+    const btnWrap = btn.closest('.btn-3d');
     btn.disabled = true;
+    if (btnWrap) btnWrap.classList.add('is-disabled');
     btn.textContent = 'Saving...';
     try {
         await saveToGallery(currentGeneration);
@@ -263,12 +267,14 @@ $('save-gallery-btn').addEventListener('click', async () => {
         setTimeout(() => {
             btn.textContent = 'Save to Gallery';
             btn.disabled = false;
+            if (btnWrap) btnWrap.classList.remove('is-disabled');
         }, 2000);
     } catch (e) {
         btn.textContent = 'Save Failed';
         setTimeout(() => {
             btn.textContent = 'Save to Gallery';
             btn.disabled = false;
+            if (btnWrap) btnWrap.classList.remove('is-disabled');
         }, 2000);
     }
 });
@@ -378,7 +384,7 @@ async function renderGallery() {
     try {
         items = await getAllGalleryItems();
     } catch (e) {
-        grid.innerHTML = '<p style="color:#e53e3e">Failed to load gallery.</p>';
+        grid.innerHTML = '<p style="color:#F54E00">Failed to load gallery.</p>';
         return;
     }
 
