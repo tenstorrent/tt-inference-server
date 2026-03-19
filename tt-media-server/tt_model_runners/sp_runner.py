@@ -20,9 +20,8 @@ Environment variables:
 from __future__ import annotations
 
 import os
-
+import pickle
 import numpy as np
-
 from ipc.video_shm import VideoRequest, VideoShm, VideoStatus
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
@@ -56,8 +55,8 @@ class SPRunner(BaseDeviceRunner):
         self._output_shm = VideoShm(
             output_name, mode="output", is_shutdown=self._is_shutdown
         )
-        self._input_shm.open()
-        self._output_shm.open()
+        self._input_shm.open(create=False)
+        self._output_shm.open(create=False)
         self.logger.info(
             f"SPRunner {self.device_id}: SHM opened (in={input_name}, out={output_name})"
         )
@@ -65,12 +64,6 @@ class SPRunner(BaseDeviceRunner):
 
     def close_device(self):
         self._shutdown = True
-        if self._input_shm:
-            self._input_shm.unlink()
-            self._input_shm.close()
-        if self._output_shm:
-            self._output_shm.unlink()
-            self._output_shm.close()
         self.logger.info(f"SPRunner {self.device_id}: SHM cleaned up")
         return True
 
@@ -113,7 +106,7 @@ class SPRunner(BaseDeviceRunner):
         if resp.status == VideoStatus.ERROR:
             raise RuntimeError(f"Runner error for task {task_id}: {resp.error_message}")
 
-        frames = np.frombuffer(resp.frame_data, dtype=np.uint8).reshape(
-            resp.num_frames, resp.height, resp.width, resp.channels
-        )
-        return frames[np.newaxis]
+        # Deserialize the whole video object
+        video = pickle.loads(resp.frame_data)
+
+        return video

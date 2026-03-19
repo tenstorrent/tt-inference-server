@@ -44,6 +44,7 @@ import socket
 import struct
 import sys
 import time
+import pickle
 from typing import Optional
 
 import numpy as np
@@ -129,32 +130,32 @@ def create_dit_runner(model_runner: str, device_id: str):
 def _write_response_to_shm(
     output_shm: VideoShm,
     task_id: str,
-    frames: np.ndarray,
+    video,  # WanPipelineOutput or similar
 ) -> None:
-    """Write the full video blob into output VideoShm.
+    """Write the whole video object into output VideoShm."""
+    print(f"Rank 0: About to pickle video object of type {type(video)}")
+    try:
+        # Serialize the entire video object using pickle
+        video_data = pickle.dumps(video)
+        print(f"Rank 0: Pickled video successfully, size={len(video_data)} bytes")
+    except Exception as e:
+        print(f"Rank 0: ERROR pickling video: {e}")
+        raise
 
-    Expects *frames* with shape ``(1, num_frames, H, W, C)`` or
-    ``(num_frames, H, W, C)`` — uint8 or float [0,1].
-    """
-    if frames.ndim == 5:
-        frames = frames[0]
-    num_frames, h, w, c = frames.shape
-
-    if frames.dtype != np.uint8:
-        frames = (frames.clip(0.0, 1.0) * 255).astype(np.uint8)
-
+    print(f"Rank 0: About to write response to SHM")
     output_shm.write_response(
         VideoResponse(
             task_id=task_id,
             status=VideoStatus.SUCCESS,
-            num_frames=num_frames,
-            height=h,
-            width=w,
-            channels=c,
-            frame_data=frames.tobytes(),
+            num_frames=0,  # Not used when sending whole object
+            height=0,  # Not used when sending whole object
+            width=0,  # Not used when sending whole object
+            channels=0,  # Not used when sending whole object
+            frame_data=video_data,
             error_message="",
         )
     )
+    print(f"Rank 0: Response written to SHM successfully")
 
 
 def _write_error_to_shm(output_shm: VideoShm, task_id: str, error: str = "") -> None:
@@ -197,7 +198,7 @@ def _connect_to_workers() -> dict[int, socket.socket]:
 def run_rank0_coordinator() -> None:
     """Rank 0: Read from input SHM, run DiT inference, stream frames to output SHM."""
     model_runner = os.environ.get("MODEL_RUNNER", "")
-    device_id = os.environ.get("TT_VISIBLE_DEVICES", "0")
+    device_id = os.environ.get("TT_VISIBLE_DEVICES", "")
     input_name = os.environ.get("TT_VIDEO_SHM_INPUT", "tt_video_in")
     output_name = os.environ.get("TT_VIDEO_SHM_OUTPUT", "tt_video_out")
 
@@ -208,7 +209,7 @@ def run_rank0_coordinator() -> None:
     print(f"Rank 0: model={model_runner}, device={device_id}")
     print(f"Rank 0: SHM in={input_name}, out={output_name}")
 
-    runner = create_dit_runner(model_runner, device_id)
+    runner = create_dit_runner(model_runner, "")
     print("Rank 0: Setting up device...")
     runner.set_device()
     print("Rank 0: Loading weights...")
@@ -221,8 +222,8 @@ def run_rank0_coordinator() -> None:
 
     input_shm = VideoShm(input_name, mode="input", is_shutdown=_is_shutdown)
     output_shm = VideoShm(output_name, mode="output", is_shutdown=_is_shutdown)
-    input_shm.open(create=False)
-    output_shm.open(create=False)
+    input_shm.open(create=True)
+    output_shm.open(create=True)
 
     print("Rank 0: Waiting 5s for workers to start...")
     time.sleep(5)
@@ -259,14 +260,16 @@ def run_rank0_coordinator() -> None:
                 )
 
                 print(f"Rank 0: Starting inference for task {req.task_id}")
-                frames = runner.run([video_gen_req])
-                print(f"Rank 0: Inference done, shape={frames.shape}")
+                video = runner.run([video_gen_req])
+                print(f"Rank 0: Inference done")
 
-                _write_response_to_shm(output_shm, req.task_id, frames)
+                _write_response_to_shm(output_shm, req.task_id, video)  # Changed: pass video directly
                 print(f"Rank 0: Response written for task {req.task_id}")
 
             except Exception as e:
-                print(f"Rank 0: Inference failed for task {req.task_id}: {e}")
+                import traceback
+                print(f"Rank 0: ERROR - Inference/write failed for task {req.task_id}: {e}")
+                traceback.print_exc()
                 _write_error_to_shm(output_shm, req.task_id, str(e))
 
     except KeyboardInterrupt:
@@ -284,7 +287,7 @@ def run_rank0_coordinator() -> None:
 def run_worker_rank(rank: int) -> None:
     """Ranks 1-3: Listen on socket, receive requests from rank 0, and run DiT inference."""
     model_runner = os.environ.get("MODEL_RUNNER", "")
-    device_id = os.environ.get("TT_VISIBLE_DEVICES", "0")
+    device_id = os.environ.get("TT_VISIBLE_DEVICES", "")
     config = RANK_CONFIG[rank]
 
     if not model_runner:
@@ -341,7 +344,6 @@ def run_worker_rank(rank: int) -> None:
                 frames = runner.run([video_gen_req])
                 print(
                     f"Rank {rank}: Inference done for task {req.task_id}, "
-                    f"shape={frames.shape}"
                 )
             except Exception as e:
                 print(f"Rank {rank}: Inference failed for task {req.task_id}: {e}")
