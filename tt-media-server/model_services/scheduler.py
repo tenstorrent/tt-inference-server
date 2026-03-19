@@ -309,7 +309,6 @@ class Scheduler:
         self.logger.info("Error listener stopped")
 
     async def device_warmup_listener(self):
-        consecutive_errors = 0
         while self.device_warmup_listener_running:
             try:
                 device_id = await asyncio.to_thread(self.warmup_signals_queue.get)
@@ -344,7 +343,6 @@ class Scheduler:
                 self.logger.error(
                     f"Error in device_warmup_listener (#{consecutive_errors}): {e}\n"
                 )
-                consecutive_errors += 1
 
         self.logger.info("Device warmup listener is done")
 
@@ -541,7 +539,7 @@ class Scheduler:
         self.logger.info("Starting new workers after reset")
 
         # Start new workers
-        await self.start_workers()
+        self.start_workers()
 
         self.logger.info("All workers restarted successfully")
 
