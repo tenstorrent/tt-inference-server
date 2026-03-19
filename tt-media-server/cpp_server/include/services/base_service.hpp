@@ -3,25 +3,15 @@
 
 #pragma once
 
-#include <atomic>
-#include <concepts>
-#include <condition_variable>
-#include <functional>
 #include <limits>
 #include <memory>
-#include <mutex>
-#include <set>
 #include <stdexcept>
 #include <string>
-#include <thread>
-#include <unordered_map>
 #include <vector>
 
 #include "domain/base_request.hpp"
 #include "domain/base_response.hpp"
-#include "ipc/warmup_signal_queue.hpp"
 #include "utils/logger.hpp"
-#include "worker/single_process_worker.hpp"
 
 namespace tt::services {
 
@@ -74,7 +64,7 @@ class BaseService : public IService {
     return status;
   }
 
-  bool isModelReady() const override { return is_ready_.load(); }
+  bool isModelReady() const override { return false; }
 
  protected:
   virtual ResponseType processRequest(RequestType request) = 0;
@@ -84,196 +74,9 @@ class BaseService : public IService {
   virtual void postProcess(ResponseType& response) const = 0;
   virtual size_t currentQueueSize() const = 0;
 
-  /** Build worker list for liveness/status from workers_ and
-   * warmed_worker_ids_. */
-  std::vector<WorkerInfo> getWorkerInfo() const {
-    std::vector<WorkerInfo> out;
-    std::lock_guard<std::mutex> lock(warmed_mutex_);
-    for (const auto& w : workers_) {
-      WorkerInfo info;
-      info.worker_id = std::to_string(w->worker_id);
-      info.is_ready = (warmed_worker_ids_.count(w->worker_id) != 0);
-      out.push_back(info);
-    }
-    return out;
-  }
-
-  /** Override to provide warmup queue (e.g. Boost IPC). Default: no warmup
-   * signaling. */
-  virtual std::unique_ptr<tt::ipc::IWarmupSignalQueue> createWarmupQueue(
-      const std::string& name, size_t capacity) {
-    (void)name;
-    (void)capacity;
-    return nullptr;
-  }
-
-  void startWarmupListener(const std::string& name, size_t capacity) {
-    warmup_queue_ = createWarmupQueue(name, capacity);
-    if (!warmup_queue_) return;
-    warmup_received_ = false;
-    warmup_listener_thread_ = std::thread([this, capacity]() {
-      try {
-        for (size_t i = 0; i < capacity; ++i) {
-          int workerId = warmup_queue_->receive();
-          TT_LOG_INFO("[BaseService] Worker {} warmed up", workerId);
-          {
-            std::lock_guard<std::mutex> lock(warmed_mutex_);
-            warmed_worker_ids_.insert(workerId);
-          }
-          if (i == 0) {
-            is_ready_ = true;
-            warmup_received_ = true;
-            warmup_cv_.notify_all();
-          }
-        }
-      } catch (const std::exception& e) {
-        TT_LOG_WARN("[BaseService] Warmup listener failed: {} (shutdown?)",
-                    e.what());
-      } catch (...) {
-        TT_LOG_WARN("[BaseService] Warmup listener failed: unknown exception");
-      }
-    });
-  }
-
-  void waitForFirstWarmup() {
-    if (!warmup_queue_) return;
-    std::unique_lock<std::mutex> lock(warmup_mutex_);
-    warmup_cv_.wait(lock, [this]() { return warmup_received_.load(); });
-  }
-
-  void stopWarmupListener() {
-    if (warmup_queue_) {
-      warmup_queue_->remove();
-      warmup_queue_.reset();
-    }
-    if (warmup_listener_thread_.joinable()) {
-      warmup_listener_thread_.join();
-    }
-    {
-      std::lock_guard<std::mutex> lock(warmed_mutex_);
-      warmed_worker_ids_.clear();
-    }
-    is_ready_ = false;
-  }
-
-  virtual worker::WorkerConfig makeWorkerConfig(int workerId);
-  virtual void startWorkers();
+  virtual std::vector<WorkerInfo> getWorkerInfo() const { return {}; }
 
   size_t max_queue_size_ = std::numeric_limits<size_t>::max();
-
-  std::unique_ptr<tt::ipc::IWarmupSignalQueue> warmup_queue_;
-  std::thread warmup_listener_thread_;
-  std::mutex warmup_mutex_;
-  std::condition_variable warmup_cv_;
-  std::atomic<bool> warmup_received_{false};
-  std::atomic<bool> is_ready_{false};
-  mutable std::mutex warmed_mutex_;
-  mutable std::set<int> warmed_worker_ids_;
-  std::vector<std::unique_ptr<worker::SingleProcessWorker>> workers_;
-  size_t num_workers_ = 0;
 };
-
-}  // namespace tt::services
-
-// Template implementation - outside the namespace to avoid pollution
-#include <sys/wait.h>
-#include <unistd.h>
-
-#include <climits>
-#include <cstdio>
-#include <cstdlib>
-
-#include "config/settings.hpp"
-#include "ipc/boost_ipc_task_queue.hpp"
-#include "ipc/queue_manager.hpp"
-#include "ipc/shared_memory.hpp"
-#include "utils/logger.hpp"
-
-namespace {
-
-[[noreturn]] inline void execWorkerProcessHelper(
-    size_t workerId,
-    const std::unordered_map<std::string, std::string>& envVars) {
-  for (const auto& [key, value] : envVars) {
-    setenv(key.c_str(), value.c_str(), 1);
-  }
-  char exePath[PATH_MAX];
-  ssize_t n = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
-  if (n <= 0) {
-    perror("readlink /proc/self/exe");
-    _exit(1);
-  }
-  exePath[n] = '\0';
-  char idBuf[16];
-  std::snprintf(idBuf, sizeof(idBuf), "%zu", workerId);
-  char* execArgv[] = {exePath, const_cast<char*>("--worker"), idBuf, nullptr};
-  execv(exePath, execArgv);
-  perror("execv");
-  _exit(1);
-}
-
-}  // namespace
-
-namespace tt::services {
-
-template <std::derived_from<domain::BaseRequest> RequestType,
-          std::derived_from<domain::BaseResponse> ResponseType>
-worker::WorkerConfig BaseService<RequestType, ResponseType>::makeWorkerConfig(
-    int workerId) {
-  worker::WorkerConfig cfg;
-  cfg.env_vars["TT_VISIBLE_DEVICES"] =
-      tt::config::visibleDevicesForWorker(workerId);
-  cfg.task_queue =
-      std::make_shared<tt::ipc::BoostIpcTaskQueue>(tt::ipc::TASK_QUEUE_NAME);
-  cfg.result_queue =
-      std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
-          "/tt_tokens_" + std::to_string(workerId), false);
-  cfg.worker_id = workerId;
-  cfg.runner_config = tt::config::llmEngineConfig();
-  return cfg;
-}
-
-template <std::derived_from<domain::BaseRequest> RequestType,
-          std::derived_from<domain::BaseResponse> ResponseType>
-void BaseService<RequestType, ResponseType>::startWorkers() {
-  for (size_t i = 0; i < num_workers_; i++) {
-    auto cfg = makeWorkerConfig(static_cast<int>(i));
-    workers_.push_back(std::make_unique<worker::SingleProcessWorker>(cfg));
-    auto& worker = workers_[i];
-
-    pid_t pid = fork();
-
-    if (pid < 0) {
-      throw std::runtime_error("Failed to fork worker process");
-    }
-    if (pid == 0) {
-      setpgid(0, 0);
-      try {
-        execWorkerProcessHelper(i, cfg.env_vars);
-      } catch (const std::exception& e) {
-        TT_LOG_ERROR("[BaseService] Worker {} failed: {}", i, e.what());
-        _exit(1);
-      }
-    }
-    setpgid(pid, pid);
-    worker->pid = pid;
-    TT_LOG_INFO("[BaseService] Spawned worker {} with PID {}", i, pid);
-  }
-}
-
-// Free function for use by main.cpp worker spawning
-inline worker::WorkerConfig makeWorkerConfigForProcess(int workerId) {
-  worker::WorkerConfig cfg;
-  cfg.env_vars["TT_VISIBLE_DEVICES"] =
-      tt::config::visibleDevicesForWorker(workerId);
-  cfg.task_queue =
-      std::make_shared<tt::ipc::BoostIpcTaskQueue>(tt::ipc::TASK_QUEUE_NAME);
-  cfg.result_queue =
-      std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
-          "/tt_tokens_" + std::to_string(workerId), false);
-  cfg.worker_id = workerId;
-  cfg.runner_config = tt::config::llmEngineConfig();
-  return cfg;
-}
 
 }  // namespace tt::services

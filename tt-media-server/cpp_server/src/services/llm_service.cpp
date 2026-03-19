@@ -20,23 +20,27 @@
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
 #include "utils/tokenizer.hpp"
-#include "worker/single_process_worker.hpp"
+#include "worker/worker_manager.hpp"
 
 namespace tt::services {
 
-std::unique_ptr<tt::ipc::IWarmupSignalQueue> LLMService::createWarmupQueue(
-    const std::string& name, size_t capacity) {
-  tt::ipc::BoostIpcWarmupSignalQueue::remove(name);
-  return std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(name, capacity);
-}
-
 LLMService::LLMService()
     : mode_(tt::config::llmMode()), tokenizer_(&tt::utils::activeTokenizer()) {
-  num_workers_ = tt::config::numWorkers();
+  size_t numWorkers = tt::config::numWorkers();
   max_queue_size_ = tt::config::maxQueueSize();
+
+  worker_manager_ = std::make_unique<tt::worker::WorkerManager>(
+      numWorkers, tt::ipc::WARMUP_SIGNALS_QUEUE_NAME,
+      [](const std::string& name, size_t capacity) {
+        tt::ipc::BoostIpcWarmupSignalQueue::remove(name);
+        return std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(name,
+                                                                    capacity);
+      });
+
   TT_LOG_INFO("[LLMService] Initialized (mode={}, workers={})",
-              tt::config::toString(mode_), num_workers_);
-  queue_manager_ = std::make_unique<tt::ipc::QueueManager>(num_workers_);
+              tt::config::toString(mode_), numWorkers);
+  queue_manager_ =
+      std::make_unique<tt::ipc::QueueManager>(static_cast<int>(numWorkers));
 
   socket_service_ = std::make_shared<tt::sockets::InterServerService>();
   socket_service_->initializeFromConfig();
@@ -47,21 +51,14 @@ LLMService::~LLMService() { stop(); }
 void LLMService::start() {
   ZoneScopedN("LLMService::start");
   if (running_.exchange(true)) {
-    return;  // Already running
-  }
-  if (num_workers_ == 0) {
-    running_ = false;
-    throw std::invalid_argument(
-        "LLMService requires at least one worker (num_workers > 0)");
+    return;
   }
 
   TT_LOG_INFO("[LLMService] Starting (mode={}, workers={})",
-              tt::config::toString(mode_), num_workers_);
+              tt::config::toString(mode_), worker_manager_->numWorkers());
 
-  startWarmupListener(tt::ipc::WARMUP_SIGNALS_QUEUE_NAME, num_workers_);
-  startWorkers();
+  worker_manager_->start();
   tracy_config::tracyStartupSchedulerParent();
-  waitForFirstWarmup();
   startConsumers();
 
   if (socket_service_ && socket_service_->isEnabled()) {
@@ -73,6 +70,22 @@ void LLMService::start() {
 }
 
 size_t LLMService::currentQueueSize() const { return pending_tasks_.load(); }
+
+bool LLMService::isModelReady() const { return worker_manager_->isReady(); }
+
+std::vector<WorkerInfo> LLMService::getWorkerInfo() const {
+  std::vector<WorkerInfo> out;
+  size_t n = worker_manager_->numWorkers();
+  out.reserve(n);
+  for (size_t i = 0; i < n; ++i) {
+    auto* w = worker_manager_->worker(i);
+    WorkerInfo info;
+    info.worker_id = std::to_string(w->worker_id);
+    info.is_ready = worker_manager_->isWorkerWarmed(w->worker_id);
+    out.push_back(info);
+  }
+  return out;
+}
 
 void LLMService::preProcess(domain::CompletionRequest& request) const {
   BaseService::preProcess(request);
@@ -93,16 +106,16 @@ void LLMService::preProcess(domain::CompletionRequest& request) const {
         " tokens exceeds maximum of " +
         std::to_string(tt::config::LLMConfig::MAX_INPUT_TOKENS));
   }
-  // Set prompt token count after tokenization
   request.prompt_tokens_count = static_cast<int>(tokens.size());
 }
 
 void LLMService::startConsumers() {
-  consumer_threads_.reserve(num_workers_);
-  for (size_t i = 0; i < num_workers_; i++) {
+  size_t n = worker_manager_->numWorkers();
+  consumer_threads_.reserve(n);
+  for (size_t i = 0; i < n; ++i) {
     consumer_threads_.emplace_back(&LLMService::consumerLoopForWorker, this, i);
   }
-  TT_LOG_INFO("[LLMService] Started {} consumer threads", num_workers_);
+  TT_LOG_INFO("[LLMService] Started {} consumer threads", n);
 }
 
 void LLMService::stop() {
@@ -113,7 +126,8 @@ void LLMService::stop() {
 
   TT_LOG_INFO("[LLMService] Stopping...");
 
-  stopWarmupListener();
+  // Phase 1: stop warmup listener (consumers may still reference workers)
+  worker_manager_->stopWarmupListener();
 
   // Signal shutdown on all ring buffers so blockingPop wakes up
   for (auto& q : queue_manager_->result_queues) {
@@ -127,12 +141,8 @@ void LLMService::stop() {
   }
   consumer_threads_.clear();
 
-  // Signal shutdown to all workers
-  for (auto& w : workers_) {
-    w->stop();
-  }
-
-  workers_.clear();
+  // Phase 2: now safe to kill worker processes (no more consumer threads)
+  worker_manager_->stopProcesses();
 
   // Stop socket service
   if (socket_service_) {
@@ -143,24 +153,6 @@ void LLMService::stop() {
   queue_manager_->clear();
 }
 
-bool LLMService::checkWorkerAlive(size_t workerIdx) {
-  auto* worker = workers_[workerIdx].get();
-  if (worker->pid <= 0) {
-    return false;
-  }
-
-  int status;
-  pid_t result = waitpid(worker->pid, &status, WNOHANG);
-  if (result == 0) {
-    return true;  // Still running
-  }
-  if (result == worker->pid) {
-    worker->is_alive = false;
-    return false;
-  }
-  return true;  // Error in waitpid, assume alive
-}
-
 void LLMService::consumerLoopForWorker(size_t workerIdx) {
   ZoneScopedN("LLMService::consumer_loop");
   tracy_config::tracySetThreadName(
@@ -168,7 +160,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
   TT_LOG_INFO("[Consumer-{}] Started", workerIdx);
 
-  auto* worker = workers_[workerIdx].get();
+  auto* worker = worker_manager_->worker(workerIdx);
   if (!worker->cfg.result_queue) {
     TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", workerIdx);
     return;
@@ -179,7 +171,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
                                                    STOP_IDS.end());
 
   while (running_) {
-    if (!checkWorkerAlive(workerIdx)) {
+    if (!worker_manager_->checkWorkerAlive(workerIdx)) {
       TT_LOG_ERROR("[Consumer-{}] Worker process died, exiting consumer",
                    workerIdx);
       break;

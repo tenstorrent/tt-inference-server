@@ -19,7 +19,7 @@
 #include "services/llm_service.hpp"
 #include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
-#include "worker/single_process_worker.hpp"
+#include "worker/worker_manager.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) {
     int workerId = std::atoi(argv[2]);
     tracy_config::tracyStartupWorker(workerId);
     tt::worker::WorkerConfig cfg =
-        tt::services::makeWorkerConfigForProcess(workerId);
+        tt::worker::makeWorkerConfigForProcess(workerId);
     tt::worker::SingleProcessWorker worker(cfg);
 
     static std::atomic<bool> workerShutdown{false};
