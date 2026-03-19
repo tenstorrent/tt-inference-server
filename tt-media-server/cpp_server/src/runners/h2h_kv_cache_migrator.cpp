@@ -18,7 +18,7 @@ constexpr int RECV_TIMEOUT_S = 1;
 }  // namespace
 
 H2HKVCacheMigrator::H2HKVCacheMigrator(Mode mode, const std::string& host,
-                                         uint16_t port)
+                                       uint16_t port)
     : mode_(mode), host_(host), port_(port) {}
 
 H2HKVCacheMigrator::~H2HKVCacheMigrator() { stop(); }
@@ -129,8 +129,7 @@ void H2HKVCacheMigrator::clientLoop() {
     int fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
       TT_LOG_ERROR("[H2HKVCacheMigrator] socket(): {}", strerror(errno));
-      std::this_thread::sleep_for(
-          std::chrono::seconds(RECONNECT_INTERVAL_S));
+      std::this_thread::sleep_for(std::chrono::seconds(RECONNECT_INTERVAL_S));
       continue;
     }
 
@@ -140,8 +139,7 @@ void H2HKVCacheMigrator::clientLoop() {
     if (inet_pton(AF_INET, host_.c_str(), &addr.sin_addr) <= 0) {
       TT_LOG_ERROR("[H2HKVCacheMigrator] Invalid address: {}", host_);
       ::close(fd);
-      std::this_thread::sleep_for(
-          std::chrono::seconds(RECONNECT_INTERVAL_S));
+      std::this_thread::sleep_for(std::chrono::seconds(RECONNECT_INTERVAL_S));
       continue;
     }
 
@@ -150,8 +148,7 @@ void H2HKVCacheMigrator::clientLoop() {
     if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
       TT_LOG_ERROR("[H2HKVCacheMigrator] connect(): {}", strerror(errno));
       ::close(fd);
-      std::this_thread::sleep_for(
-          std::chrono::seconds(RECONNECT_INTERVAL_S));
+      std::this_thread::sleep_for(std::chrono::seconds(RECONNECT_INTERVAL_S));
       continue;
     }
 
@@ -169,8 +166,7 @@ void H2HKVCacheMigrator::clientLoop() {
     TT_LOG_INFO("[H2HKVCacheMigrator] Disconnected from decode server");
 
     if (running_) {
-      std::this_thread::sleep_for(
-          std::chrono::seconds(RECONNECT_INTERVAL_S));
+      std::this_thread::sleep_for(std::chrono::seconds(RECONNECT_INTERVAL_S));
     }
   }
 }
@@ -257,8 +253,7 @@ void H2HKVCacheMigrator::send(KVCacheMigrationData data) {
 
   if (!sendAll(peer_fd_, &net_len, sizeof(net_len)) ||
       !sendAll(peer_fd_, buf.data(), buf.size())) {
-    TT_LOG_ERROR("[H2HKVCacheMigrator] Send failed for task {}",
-                 data.task_id);
+    TT_LOG_ERROR("[H2HKVCacheMigrator] Send failed for task {}", data.task_id);
     connected_ = false;
     return;
   }

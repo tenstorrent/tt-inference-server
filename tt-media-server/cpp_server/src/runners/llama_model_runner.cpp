@@ -41,8 +41,7 @@ py::object gStepSeqClass;
 
 constexpr size_t SHAPE_HEADER_SIZE = 6 * sizeof(uint32_t);
 
-std::vector<uint8_t> serializePageTables(py::object pageTables,
-                                         size_t seqIdx) {
+std::vector<uint8_t> serializePageTables(py::object pageTables, size_t seqIdx) {
   py::list seqBlocks = pageTables[py::int_(seqIdx)];
   auto numBlocks = static_cast<uint32_t>(py::len(seqBlocks));
 
@@ -56,9 +55,8 @@ std::vector<uint8_t> serializePageTables(py::object pageTables,
   uint32_t headDim = shape[py::int_(4)].cast<uint32_t>();
   uint32_t elemSize = firstTensor.attr("element_size")().cast<uint32_t>();
 
-  size_t tensorBytes =
-      static_cast<size_t>(nLayers) * 2 * nKvHeads * blockSize * headDim *
-      elemSize;
+  size_t tensorBytes = static_cast<size_t>(nLayers) * 2 * nKvHeads * blockSize *
+                       headDim * elemSize;
   size_t total = SHAPE_HEADER_SIZE + numBlocks * tensorBytes;
 
   std::vector<uint8_t> buf(total);
@@ -106,9 +104,8 @@ py::list deserializePageTables(const std::vector<uint8_t>& payload) {
   uint32_t elemSize = read32();
   uint32_t numBlocks = read32();
 
-  size_t tensorBytes =
-      static_cast<size_t>(nLayers) * 2 * nKvHeads * blockSize * headDim *
-      elemSize;
+  size_t tensorBytes = static_cast<size_t>(nLayers) * 2 * nKvHeads * blockSize *
+                       headDim * elemSize;
 
   py::module_ torch = py::module_::import("torch");
 
@@ -122,8 +119,7 @@ py::list deserializePageTables(const std::vector<uint8_t>& payload) {
     dtype = torch.attr("float16");
   }
 
-  py::tuple shape =
-      py::make_tuple(nLayers, 2, nKvHeads, blockSize, headDim);
+  py::tuple shape = py::make_tuple(nLayers, 2, nKvHeads, blockSize, headDim);
 
   py::list blockTensors;
   for (uint32_t i = 0; i < numBlocks; ++i) {
@@ -210,9 +206,8 @@ LlamaModelRunner::LlamaModelRunner(const Config& config,
         py::module_ asyncio = py::module_::import("asyncio");
         asyncio.attr("run")(
             gRunner.attr("write_page_table")(blockIds, pageTensors));
-        TT_LOG_INFO(
-            "[LlamaModelRunner] write_page_table completed for task {}",
-            data.task_id);
+        TT_LOG_INFO("[LlamaModelRunner] write_page_table completed for task {}",
+                    data.task_id);
       } catch (const py::error_already_set& e) {
         TT_LOG_ERROR(
             "[LlamaModelRunner] write_page_table failed for task {}: {}",

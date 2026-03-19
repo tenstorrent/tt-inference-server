@@ -19,8 +19,7 @@ namespace llm_engine {
  */
 class LlamaModelRunner : public IModelRunner {
  public:
-  LlamaModelRunner(const tt::config::LLMConfig& config,
-                   DecodeCallback callback,
+  LlamaModelRunner(const tt::config::LLMConfig& config, DecodeCallback callback,
                    std::unique_ptr<IKVCacheMigrator> migrator = nullptr);
   ~LlamaModelRunner() override;
   void run(const std::vector<Sequence*>& seqs, bool isPrefill) override;
