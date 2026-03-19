@@ -9,6 +9,7 @@ from scripts.release.update_model_spec import (
     apply_release_version_to_manual_updates_from_git,
     build_release_diff_records_from_git,
     generate_release_diff_outputs_from_git,
+    load_model_spec_module_from_content,
     main,
     resolve_latest_release_branch_ref,
     update_template_fields,
@@ -88,6 +89,36 @@ def test_resolve_latest_release_branch_ref_errors_without_release_branches():
             match="Could not find any release branches matching vMAJOR.MINOR.PATCH",
         ):
             resolve_latest_release_branch_ref(repo_root)
+
+
+def test_load_model_spec_module_from_content_supports_dataclasses_with_annotations(
+    tmp_path,
+):
+    model_spec_path = tmp_path / "workflows" / "model_spec.py"
+    model_spec_path.parent.mkdir(parents=True)
+    content = """
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass(frozen=True)
+class DemoSpec:
+    parent: Optional[DemoSpec] = None
+
+
+spec_templates = []
+""".lstrip()
+
+    module = load_model_spec_module_from_content(
+        model_spec_path,
+        content,
+        "test_model_spec_dynamic_module",
+    )
+
+    assert module.spec_templates == []
+    assert module.DemoSpec(parent=None).parent is None
 
 
 def test_build_release_diff_records_from_git_includes_ci_and_manual_changes():
