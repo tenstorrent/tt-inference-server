@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 import os
+import pickle
 import socket
 import sys
 import threading
@@ -153,7 +154,7 @@ class TestSocketHelpers:
 
 
 class TestWriteResponseToShm:
-    def test_writes_single_blob(self):
+    def test_writes_pickled_video(self):
         mock_shm = MagicMock()
         frames = np.random.randint(0, 256, (1, 3, 4, 6, 3), dtype=np.uint8)
 
@@ -163,11 +164,8 @@ class TestWriteResponseToShm:
         resp = mock_shm.write_response.call_args[0][0]
         assert resp.status == VideoStatus.SUCCESS
         assert resp.task_id == "task-1"
-        assert resp.num_frames == 3
-        assert resp.height == 4
-        assert resp.width == 6
-        assert resp.channels == 3
-        assert len(resp.frame_data) == 3 * 4 * 6 * 3
+        recovered = pickle.loads(resp.frame_data)
+        np.testing.assert_array_equal(recovered, frames)
 
     def test_handles_4d_input(self):
         mock_shm = MagicMock()
@@ -177,28 +175,28 @@ class TestWriteResponseToShm:
 
         mock_shm.write_response.assert_called_once()
         resp = mock_shm.write_response.call_args[0][0]
-        assert resp.num_frames == 2
+        recovered = pickle.loads(resp.frame_data)
+        np.testing.assert_array_equal(recovered, frames)
 
-    def test_converts_float_to_uint8(self):
+    def test_preserves_float_data(self):
         mock_shm = MagicMock()
         frames = np.ones((1, 1, 2, 2, 3), dtype=np.float32) * 0.5
 
         _write_response_to_shm(mock_shm, "task-3", frames)
 
         resp = mock_shm.write_response.call_args[0][0]
-        expected_val = int(0.5 * 255)
-        assert resp.frame_data[0] == expected_val
+        recovered = pickle.loads(resp.frame_data)
+        np.testing.assert_array_almost_equal(recovered, frames)
 
-    def test_clips_float_values(self):
+    def test_preserves_extreme_float_values(self):
         mock_shm = MagicMock()
         frames = np.array([[[[[2.0, -1.0, 0.5]]]]]).astype(np.float32)
 
         _write_response_to_shm(mock_shm, "task-4", frames)
 
         resp = mock_shm.write_response.call_args[0][0]
-        assert resp.frame_data[0] == 255
-        assert resp.frame_data[1] == 0
-        assert resp.frame_data[2] == 127
+        recovered = pickle.loads(resp.frame_data)
+        np.testing.assert_array_almost_equal(recovered, frames)
 
 
 class TestWriteErrorToShm:

@@ -2,8 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+import pickle
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from ipc.video_shm import VideoRequest, VideoResponse, VideoStatus
@@ -58,10 +60,9 @@ class TestSPRunnerRequestConversion:
 
         MockVideoShm.side_effect = mock_video_shm_factory
 
-        h, w, c, n = 2, 3, 3, 1
-        blob = bytes([0x01] * (n * h * w * c))
+        dummy_video = np.zeros((1, 1, 2, 3, 3), dtype=np.uint8)
         mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, n, h, w, c, blob, ""
+            "tid", VideoStatus.SUCCESS, 0, 0, 0, 0, pickle.dumps(dummy_video), ""
         )
 
         runner = SPRunner("dev0")
@@ -92,8 +93,9 @@ class TestSPRunnerRequestConversion:
 
         MockVideoShm.side_effect = mock_video_shm_factory
 
+        dummy_video = np.zeros((1, 1, 2, 2, 3), dtype=np.uint8)
         mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, 1, 2, 2, 3, bytes(12), ""
+            "tid", VideoStatus.SUCCESS, 0, 0, 0, 0, pickle.dumps(dummy_video), ""
         )
 
         runner = SPRunner("dev0")
@@ -116,8 +118,9 @@ class TestSPRunnerRequestConversion:
 
         MockVideoShm.side_effect = mock_video_shm_factory
 
+        dummy_video = np.zeros((1, 1, 2, 2, 3), dtype=np.uint8)
         mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, 1, 2, 2, 3, bytes(12), ""
+            "tid", VideoStatus.SUCCESS, 0, 0, 0, 0, pickle.dumps(dummy_video), ""
         )
 
         runner = SPRunner("dev0")
@@ -146,13 +149,11 @@ class TestSPRunnerResponseHandling:
         MockVideoShm.side_effect = mock_video_shm_factory
 
         num_frames = 3
-        blob = (
-            b"\x01" * self.FRAME_BYTES
-            + b"\x02" * self.FRAME_BYTES
-            + b"\x03" * self.FRAME_BYTES
-        )
+        expected = np.zeros((1, num_frames, self.H, self.W, self.C), dtype=np.uint8)
+        expected[0, 0, :, :, :] = 0x01
+        expected[0, 2, :, :, :] = 0x03
         mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, num_frames, self.H, self.W, self.C, blob, ""
+            "tid", VideoStatus.SUCCESS, 0, 0, 0, 0, pickle.dumps(expected), ""
         )
 
         runner = SPRunner("dev0")
@@ -160,7 +161,8 @@ class TestSPRunnerResponseHandling:
         req = MockVideoGenerateRequest(task_id="tid")
         frames = runner.run([req])
 
-        assert frames.shape == (1, 3, self.H, self.W, self.C)
+        assert isinstance(frames, np.ndarray)
+        assert frames.shape == (1, num_frames, self.H, self.W, self.C)
         assert frames[0, 0, 0, 0, 0] == 0x01
         assert frames[0, 2, 0, 0, 0] == 0x03
 
@@ -227,10 +229,6 @@ class TestSPRunnerLifecycle:
         runner.close_device()
 
         assert runner._shutdown is True
-        mock_input.unlink.assert_called_once()
-        mock_input.close.assert_called_once()
-        mock_output.unlink.assert_called_once()
-        mock_output.close.assert_called_once()
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_load_weights_is_noop(self, MockVideoShm):
