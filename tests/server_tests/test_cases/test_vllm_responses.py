@@ -172,8 +172,6 @@ def test_instructions(report_test, api_client, request):
     """Tests that the 'instructions' parameter affects model behavior."""
     tag = "XYZZY_ALPHA_7829"
 
-    # First request: instructions tell the model to include a unique tag
-
     payload1 = {
         "input": "What is 2+2?",
         "instructions": f"You must include the string {tag} in every response.",
@@ -231,20 +229,30 @@ def test_max_tool_calls(report_test, api_client, max_calls, request):
 
 
 def test_metadata(report_test, api_client, request):
-    """Tests that the 'metadata' parameter is accepted."""
+    """Tests that the 'metadata' parameter is stored and returned in the response."""
+    metadata = {"test_key": "test_value", "run_id": "12345"}
     payload = {
         "input": BASE_INPUT,
         "max_output_tokens": 256,
-        "metadata": {"test_key": "test_value", "run_id": "12345"},
+        "metadata": metadata,
     }
     response = api_client(payload)
 
-    try:
-        output_text = get_output_text(response)
-        assert output_text, "Expected non-empty output text."
-    except AssertionError as e:
-        msg = f"AssertionError: {str(e)}. Response: {response}"
-        raise AssertionError(msg)
+    output_text = get_output_text(response)
+    assert output_text, f"Expected non-empty output text. Response: {response}"
+
+    # Verify metadata is returned in the response
+    assert response.get("metadata") == metadata, (
+        f"Expected metadata {metadata} in response, got {response.get('metadata')}."
+    )
+
+    # Verify metadata persists when retrieving the response by ID
+    response_id = response.get("id")
+    assert response_id, f"Expected response to have an 'id'. Response: {response}"
+    retrieved = api_client(None, url_suffix=response_id, method=requests.get)
+    assert retrieved.get("metadata") == metadata, (
+        f"Expected metadata {metadata} in retrieved response, got {retrieved.get('metadata')}."
+    )
 
 
 def test_model(report_test, api_client, request):
