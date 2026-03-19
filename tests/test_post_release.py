@@ -313,7 +313,7 @@ def test_main_reads_release_diff_from_pre_bump_version_directory(tmp_path):
     diff_json_path.write_text(json.dumps(expected_records))
 
     pr_output_path = tmp_path / "release_logs" / "post_release_pr.md"
-    default_model_spec_path = tmp_path / "default_model_spec.json"
+    release_model_spec_path = tmp_path / "release_model_spec.json"
     captured = {}
 
     def fake_build_updated_model_spec_content(
@@ -338,7 +338,7 @@ def test_main_reads_release_diff_from_pre_bump_version_directory(tmp_path):
         version_file=str(version_file),
         model_spec_path=str(model_spec_path),
         diff_json=str(diff_json_path),
-        default_model_spec_path=str(default_model_spec_path),
+        release_model_spec_path=str(release_model_spec_path),
         pr_output=str(pr_output_path),
         dry_run=False,
     )
@@ -358,7 +358,7 @@ def test_main_reads_release_diff_from_pre_bump_version_directory(tmp_path):
     assert captured["diff_records"] == expected_records
     assert captured["model_spec_path"] == model_spec_path
     assert pr_output_path.exists()
-    export_mock.assert_called_once_with(model_spec_path, default_model_spec_path)
+    export_mock.assert_called_once_with(model_spec_path, release_model_spec_path)
     readme_mock.assert_called_once_with(model_spec_path)
 
 
@@ -377,7 +377,7 @@ def test_main_keeps_version_unmodified_until_late_steps_succeed(tmp_path):
     )
 
     pr_output_path = tmp_path / "release_logs" / "post_release_pr.md"
-    default_model_spec_path = tmp_path / "default_model_spec.json"
+    release_model_spec_path = tmp_path / "release_model_spec.json"
     loaded_paths = []
 
     def fake_release_logs_dir(version):
@@ -405,7 +405,7 @@ def test_main_keeps_version_unmodified_until_late_steps_succeed(tmp_path):
         version_file=str(version_file),
         model_spec_path=str(model_spec_path),
         diff_json=None,
-        default_model_spec_path=str(default_model_spec_path),
+        release_model_spec_path=str(release_model_spec_path),
         pr_output=str(pr_output_path),
         dry_run=False,
     )
