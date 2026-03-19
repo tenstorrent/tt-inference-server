@@ -1,6 +1,8 @@
 name: Nightly C++ Server Benchmarks
 
 on:
+  push:
+    branches: ['dmadicTT/benchmark-plot']  # TEMP: remove before merge
   schedule:
     - cron: '0 2 * * *'  # 2:00 AM UTC every day
   workflow_dispatch:
@@ -8,7 +10,7 @@ on:
       num_prompts:
         description: 'Number of prompts per benchmark run'
         required: false
-        default: '1000'
+        default: '10'
 
 jobs:
   cpp-server-full-benchmarks:
@@ -72,7 +74,7 @@ jobs:
       - name: Run full benchmark suite
         env:
           OPENAI_API_KEY: 'your-secret-key'
-          NUM_PROMPTS: ${{ github.event.inputs.num_prompts || '1000' }}
+          NUM_PROMPTS: ${{ github.event.inputs.num_prompts || '10' }}
           RESULTS_DIR: bench_results
           JOB_SUFFIX: ${{ steps.job-id.outputs.job_id }}
         working-directory: tt-media-server/cpp_server

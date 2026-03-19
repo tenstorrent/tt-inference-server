@@ -13,7 +13,8 @@ mkdir -p "$RESULTS_DIR"
 
 run_bench() {
     local isl=$1 osl=$2 concurrency=$3
-    local filename="${RESULTS_DIR}/bench_isl${isl}_osl${osl}_conc${concurrency}_${TIMESTAMP}.json"
+    local suffix="${JOB_SUFFIX:-$TIMESTAMP}"
+    local filename="${RESULTS_DIR}/bench_isl${isl}_osl${osl}_conc${concurrency}_${suffix}.json"
 
     echo "=== Running: ISL=${isl} OSL=${osl} max-concurrency=${concurrency} ==="
     vllm bench serve \
