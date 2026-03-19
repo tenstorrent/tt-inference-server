@@ -6,8 +6,6 @@ import os
 
 os.environ["TT_RUNTIME_ENABLE_PROGRAM_CACHE"] = "1"
 
-import asyncio
-
 import torch
 from PIL import Image
 
@@ -80,17 +78,17 @@ class SDXLForgeRunner(BaseDeviceRunner):
                 {"optimization_level": optimization_level}
             )
 
+        # Run load and warmup synchronously on the current thread.
+        # This is critical: torch_xla/torch._dynamo compilation state is
+        # thread-local. If warmup runs on a different thread (e.g. via
+        # asyncio.to_thread) than inference (run()), the compiled XLA graph
+        # cache won't be found and the model will fully recompile on the
+        # first real request. The worker process has nothing else to do
+        # during warmup, so blocking the event loop is safe.
+
         # Phase 1: Load pipeline (download weights, compile UNet)
         try:
-            await asyncio.wait_for(
-                asyncio.to_thread(self._load_pipeline),
-                timeout=self.LOAD_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            self.logger.error(
-                f"Device {self.device_id}: Pipeline load timed out after {self.LOAD_TIMEOUT_SECONDS}s"
-            )
-            raise
+            self._load_pipeline()
         except Exception as e:
             log_exception_chain(self.logger, self.device_id, "Pipeline load failed", e)
             raise
@@ -99,15 +97,7 @@ class SDXLForgeRunner(BaseDeviceRunner):
 
         # Phase 2: Warmup inference (trigger JIT compilation)
         try:
-            await asyncio.wait_for(
-                asyncio.to_thread(self._warmup_inference_pass),
-                timeout=self.WARMUP_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            self.logger.error(
-                f"Device {self.device_id}: Warmup timed out after {self.WARMUP_TIMEOUT_SECONDS}s"
-            )
-            raise
+            self._warmup_inference_pass()
         except Exception as e:
             log_exception_chain(
                 self.logger, self.device_id, "Warmup inference failed", e
