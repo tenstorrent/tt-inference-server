@@ -100,7 +100,9 @@ def api_client(endpoint_url):
         "Authorization": f"Bearer {authorization}",
     }
 
-    def _make_request(json_payload=None, timeout=30, url_suffix=None, method=None, stream=False):
+    def _make_request(
+        json_payload=None, timeout=30, url_suffix=None, method=None, stream=False
+    ):
         url = f"{endpoint_url}/{url_suffix}" if url_suffix else endpoint_url
         request_method = method or requests.post
         try:
@@ -108,7 +110,7 @@ def api_client(endpoint_url):
             if json_payload is not None:
                 kwargs["json"] = json_payload
             response = request_method(url, **kwargs)
-            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
             if stream:
                 return response
             return response.json()

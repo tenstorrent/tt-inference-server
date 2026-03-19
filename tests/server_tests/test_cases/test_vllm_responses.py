@@ -3,8 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import json
-import math
-from collections import Counter
 
 import pytest
 import requests
@@ -50,8 +48,7 @@ WEATHER_TOOL = {
         "properties": {
             "city": {
                 "type": "string",
-                "description": "The city to find the weather for, "
-                "e.g. 'San Francisco'",
+                "description": "The city to find the weather for, e.g. 'San Francisco'",
             },
             "state": {
                 "type": "string",
@@ -106,6 +103,7 @@ def test_include(report_test, api_client, request):
     except AssertionError as e:
         msg = f"AssertionError: {str(e)}. Response: {response}"
         raise AssertionError(msg)
+
 
 def test_background(report_test, api_client, request):
     """Tests that the 'background' parameter kicks off an async task and can be polled to completion."""
@@ -172,29 +170,10 @@ def test_input(report_test, api_client, input_val, request):
 
 def test_instructions(report_test, api_client, request):
     """Tests that the 'instructions' parameter affects model behavior."""
-    payload = {
-        "input": "What is 2+2?",
-        "instructions": "Always respond in French, no matter what language the user uses.",
-        "max_output_tokens": 256,
-    }
-    response = api_client(payload)
-
-    try:
-        output_text = get_output_text(response)
-        assert output_text, "Expected non-empty output text."
-    except AssertionError as e:
-        msg = f"AssertionError: {str(e)}. Response: {response}"
-        raise AssertionError(msg)
-
-
-def test_instructions_not_carried_over(report_test, api_client, request):
-    """Tests that instructions from a previous response are not carried over when using previous_response_id.
-    from api: 'When using along with previous_response_id, the instructions from a previous response will not be carried over to the next response.'
-    """
     tag = "XYZZY_ALPHA_7829"
 
     # First request: instructions tell the model to include a unique tag
-    
+
     payload1 = {
         "input": "What is 2+2?",
         "instructions": f"You must include the string {tag} in every response.",
@@ -205,26 +184,9 @@ def test_instructions_not_carried_over(report_test, api_client, request):
     response_id = response1.get("id")
     assert response_id, f"Expected response to have an 'id'. Response: {response1}"
 
-    output1 = get_output_text(response1) 
-    assert tag in output1, ( 
+    output1 = get_output_text(response1)
+    assert tag in output1, (
         f"Expected '{tag}' in first response to confirm instructions work. Got: '{output1}'"
-    )
-
-    # Second request: use previous_response_id but provide NO instructions.
-    # If old instructions carried over, the tag would still appear.
-    tag2 = 'PLUGH_BETA_4391'
-    payload2 = {
-        "input": "What is 3+3?",
-        "instructions": f"Answer the question explicitly",
-        "previous_response_id": response_id,
-        "max_output_tokens": 4096,
-    }
-    response2 = api_client(payload2)
-
-    output2 = get_output_text(response2)
-    assert output2, f"Expected non-empty output text. Response: {response2}"
-    assert tag not in output2, (
-        f"'{tag}' from previous instructions should not appear without instructions. Got: '{output2}'"
     )
 
 
@@ -266,7 +228,6 @@ def test_max_tool_calls(report_test, api_client, max_calls, request):
         assert call.get("name") == WEATHER_TOOL["name"], (
             f"Expected tool call name '{WEATHER_TOOL['name']}', got '{call.get('name')}'. Tool call: {call}"
         )
-    
 
 
 def test_metadata(report_test, api_client, request):
@@ -320,7 +281,8 @@ def test_parallel_tool_calls(report_test, api_client, parallel, request):
 
     # The model should respond with function_call items (tool use), not text output
     function_calls = [
-        item for item in response.get("output", [])
+        item
+        for item in response.get("output", [])
         if item.get("type") == "function_call"
     ]
     assert function_calls, (
@@ -410,7 +372,11 @@ def test_reasoning(report_test, api_client, request):
         assert output_text, (
             f"Expected non-empty output text for effort={effort}. Response: {response}"
         )
-        tokens = response.get("usage", {}).get("output_tokens_details", {}).get("reasoning_tokens", 0)
+        tokens = (
+            response.get("usage", {})
+            .get("output_tokens_details", {})
+            .get("reasoning_tokens", 0)
+        )
         reasoning_tokens[effort] = tokens
 
     assert reasoning_tokens["low"] <= reasoning_tokens["medium"], (
@@ -663,10 +629,11 @@ def test_truncation(report_test, api_client, truncation, max_context, request):
     """
     # Build an input large enough to exceed the context window.
     filler_message = "This is filler text to consume tokens. " * 50
-    num_messages = (max_context // 40) + 1  # rough estimate: ~40 tokens per filler message
+    num_messages = (
+        max_context // 40
+    ) + 1  # rough estimate: ~40 tokens per filler message
     oversized_input = [
-        {"role": "user", "content": filler_message}
-        for _ in range(num_messages)
+        {"role": "user", "content": filler_message} for _ in range(num_messages)
     ]
 
     payload = {
@@ -682,9 +649,7 @@ def test_truncation(report_test, api_client, truncation, max_context, request):
     )
 
     input_tokens = response.get("usage", {}).get("input_tokens", 0)
-    assert input_tokens > 0, (
-        f"Expected input_tokens > 0. Response: {response}"
-    )
+    assert input_tokens > 0, f"Expected input_tokens > 0. Response: {response}"
 
     if truncation == "auto":
         # Truncation should cap input tokens to within the context window

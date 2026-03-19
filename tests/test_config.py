@@ -75,7 +75,7 @@ _test_config_list = [
     TestConfig(
         hf_model_repo="openai/gpt-oss-20b",
         tasks=[
-            #TODO: re-enable multiple test tasks once we have figure out how to create multiple output jsons
+            # TODO: re-enable multiple test tasks once we have figure out how to create multiple output jsons
             # TestTask(
             #     task_name="vllm_chat_completions",
             #     test_path=Path(
@@ -85,9 +85,7 @@ _test_config_list = [
             # ),
             TestTask(
                 task_name="vllm_responses",
-                test_path=Path(
-                    "tests/server_tests/test_cases/test_vllm_responses.py"
-                ),
+                test_path=Path("tests/server_tests/test_cases/test_vllm_responses.py"),
                 test_args=("s", "v"),
             )
         ],
