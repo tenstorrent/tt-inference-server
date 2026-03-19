@@ -1252,10 +1252,10 @@ def main():
     )
     parser.add_argument(
         "--output-json",
-        default="default_model_spec.json",
+        default="release_model_spec.json",
         help=(
             "Path to output JSON file with all model specs "
-            "(default: default_model_spec.json)"
+            "(default: release_model_spec.json)"
         ),
     )
     parser.add_argument(

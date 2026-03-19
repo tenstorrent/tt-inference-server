@@ -865,7 +865,7 @@ def test_main_output_only_updates_release_version_before_generating_outputs(tmp_
 
     readme_path = tmp_path / "README.md"
     readme_path.write_text("# README\n")
-    output_json_path = tmp_path / "default_model_spec.json"
+    output_json_path = tmp_path / "release_model_spec.json"
     release_output_dir = tmp_path / "release_logs" / "v0.10.0"
 
     args = type(
@@ -923,7 +923,7 @@ def test_main_uses_resolved_release_output_dir_for_diff_outputs(tmp_path):
     last_good_json_path = input_dir / "models_ci_last_good.json"
     last_good_json_path.write_text("{}\n")
 
-    output_json_path = tmp_path / "default_model_spec.json"
+    output_json_path = tmp_path / "release_model_spec.json"
     release_output_dir = tmp_path / "release_logs" / "v0.10.0"
 
     args = type(

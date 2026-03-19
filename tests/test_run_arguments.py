@@ -964,7 +964,7 @@ class TestOverrideArgsIntegration:
                     mount_spec = docker_command[i + 1]
                     assert (
                         "model_specs" not in mount_spec
-                        or "default_model_spec" in mount_spec
+                        or "release_model_spec" in mount_spec
                     ), "No runtime spec mount should be present without json_fpath"
                 if arg == "-e" and i + 1 < len(docker_command):
                     env_setting = docker_command[i + 1]

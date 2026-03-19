@@ -12,7 +12,7 @@ This helper:
 - applies released template updates back onto `main` when `main` still matches
   the released starting values
 - always stamps matching templates with `release_version=released_version`
-- regenerates `default_model_spec.json` and model support docs
+- regenerates `release_model_spec.json` and model support docs
 - writes `release_logs/post_release_pr.md`
 """
 
@@ -326,7 +326,7 @@ def build_post_release_pr_markdown(
             f"- Processed `{summary['matched_records']}` matching release-diff records and "
             f"changed `{summary['updated_templates']}` templates in `workflows/model_spec.py`."
         ),
-        "- Regenerated `default_model_spec.json`, `docs/model_support/`, and `README.md`.",
+        "- Regenerated `release_model_spec.json`, `docs/model_support/`, and `README.md`.",
         "",
         "## Applied template updates",
         "",
@@ -386,7 +386,7 @@ def build_post_release_pr_markdown(
             "## Regenerated artifacts",
             "",
             "- `workflows/model_spec.py`",
-            "- `default_model_spec.json`",
+            "- `release_model_spec.json`",
             "- `docs/model_support/`",
             "- `README.md`",
             "- `release_logs/post_release_pr.md`",
@@ -441,14 +441,14 @@ def apply_post_release_updates(
     prepared_updates: PreparedPostReleaseUpdates,
     version_file: Path,
     model_spec_path: Path,
-    default_model_spec_path: Path,
+    release_model_spec_path: Path,
     pr_output_path: Path,
 ) -> None:
     """Write prepared post-release updates with VERSION committed last."""
     if prepared_updates.updated_content != prepared_updates.current_content:
         write_text_atomically(model_spec_path, prepared_updates.updated_content)
 
-    reload_and_export_model_specs_json(model_spec_path, default_model_spec_path)
+    reload_and_export_model_specs_json(model_spec_path, release_model_spec_path)
     regenerate_model_support_docs_and_update_readme(model_spec_path)
     write_text_atomically(pr_output_path, prepared_updates.pr_markdown)
     write_version(version_file, prepared_updates.next_version)
@@ -484,8 +484,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--default-model-spec-path",
-        default="default_model_spec.json",
-        help="Path to regenerated default_model_spec.json (default: default_model_spec.json).",
+        default="release_model_spec.json",
+        help="Path to regenerated release_model_spec.json (default: release_model_spec.json).",
     )
     parser.add_argument(
         "--pr-output",
@@ -506,7 +506,7 @@ def main() -> int:
 
     version_file = Path(args.version_file)
     model_spec_path = Path(args.model_spec_path)
-    default_model_spec_path = Path(args.default_model_spec_path)
+    release_model_spec_path = Path(args.release_model_spec_path)
     pr_output_path = Path(args.pr_output)
 
     prepared_updates = prepare_post_release_updates(
@@ -528,7 +528,7 @@ def main() -> int:
         print(f"[DRY RUN] Would update VERSION file: {version_file}")
         print(f"[DRY RUN] Would update model spec: {model_spec_path}")
         print(
-            f"[DRY RUN] Would regenerate default model spec: {default_model_spec_path}"
+            f"[DRY RUN] Would regenerate default model spec: {release_model_spec_path}"
         )
         print("[DRY RUN] Would regenerate docs/model_support/ and update README.md")
         print(f"[DRY RUN] Would write PR markdown: {pr_output_path}")
@@ -538,7 +538,7 @@ def main() -> int:
         prepared_updates,
         version_file,
         model_spec_path,
-        default_model_spec_path,
+        release_model_spec_path,
         pr_output_path,
     )
     print(f"Wrote post-release PR draft to {pr_output_path}")
