@@ -5,18 +5,21 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
 from workflows.utils import (
-    get_repo_root_path,
     get_version,
     parse_commits_from_docker_image,
 )
-from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
+from workflows.perf_targets import (
+    BenchmarkTaskParams,
+    PerfTarget,
+    get_perf_reference_for_device,
+    get_perf_reference_map as build_perf_reference_map,
+)
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
@@ -58,119 +61,18 @@ def generate_default_docker_link(
     return f"{_default_docker_repo}:{_default_docker_tag}"
 
 
-def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
-    default_filepath = (
-        get_repo_root_path()
-        / "benchmarking"
-        / "benchmark_targets"
-        / "model_performance_reference.json"
-    )
-    filepath = Path(os.getenv("OVERRIDE_BENCHMARK_TARGETS", default_filepath))
-    assert filepath.exists(), f"Override benchmark file not found: {filepath}"
-    with open(filepath, "r") as f:
-        data = json.load(f)
-    return data
-
-
-model_performance_reference = read_performance_reference_json()
-
-
 def get_perf_reference_map(
     model_name: str, perf_targets_map: Dict[str, float]
 ) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
-    perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
-    model_data = model_performance_reference.get(model_name, {})
-
-    for device_str, benchmarks in model_data.items():
-        device_type = DeviceTypes.from_string(device_str)
-
-        params_list: List[BenchmarkTaskParams] = []
-
-        for bench in benchmarks:
-            # Parse performance targets under the "reference" key.
-            target_dict = {}
-            targets = bench.get("targets", {})
-            for target_name, target_data in targets.items():
-                # Create the PerformanceTarget instance.
-                if target_name == "theoretical":
-                    # add customer definitions: functional, complete, sellable
-                    for target_key, percentage in perf_targets_map.items():
-                        target_dict[target_key] = PerformanceTarget(
-                            ttft_ms=target_data.get("ttft_ms") / percentage
-                            if target_data.get("ttft_ms")
-                            else None,
-                            tput_user=target_data.get("tput_user") * percentage
-                            if target_data.get("tput_user")
-                            else None,
-                            tput=target_data.get("tput") * percentage
-                            if target_data.get("tput")
-                            else None,
-                        )
-
-            # Create the BenchmarkTaskParams instance.
-            benchmark_task = BenchmarkTaskParams(
-                isl=bench.get("isl"),
-                osl=bench.get("osl"),
-                max_concurrency=bench.get("max_concurrency"),
-                num_prompts=bench.get("num_prompts"),
-                task_type=bench.get("task_type", "text"),
-                image_height=bench.get("image_height", None),
-                image_width=bench.get("image_width", None),
-                images_per_prompt=bench.get("images_per_prompt", None),
-                targets=target_dict,
-            )
-            params_list.append(benchmark_task)
-
-        perf_reference_map[device_type] = params_list
-    return perf_reference_map
-
-
-def scale_llm_perf_targets(
-    task: BenchmarkTaskParams, data_parallel: int
-) -> BenchmarkTaskParams:
-    """Scale throughput metrics in performance targets by data_parallel factor."""
-    scaled_targets = {}
-    for target_name, target in task.targets.items():
-        scaled_targets[target_name] = PerformanceTarget(
-            ttft_ms=target.ttft_ms,
-            tput_user=target.tput_user,
-            tput=target.tput * data_parallel if target.tput else None,
-            tolerance=target.tolerance,
-        )
-    return BenchmarkTaskParams(
-        isl=task.isl,
-        osl=task.osl,
-        max_concurrency=task.max_concurrency
-        if task.max_concurrency == 1
-        else task.max_concurrency * data_parallel,
-        num_prompts=task.num_prompts,
-        image_height=task.image_height,
-        image_width=task.image_width,
-        images_per_prompt=task.images_per_prompt,
-        task_type=task.task_type,
-        theoretical_ttft_ms=task.theoretical_ttft_ms,
-        theoretical_tput_user=task.theoretical_tput_user,
-        targets=scaled_targets,
-        target_peak_perf=task.target_peak_perf,
-        num_inference_steps=task.num_inference_steps,
-    )
+    return build_perf_reference_map(model_name, perf_targets_map)
 
 
 def get_perf_reference(device_model_spec, perf_reference_map):
-    # TODO: support other DP signaling conventions (i.e., for vLLM V1 it will be configured through vllm_args.data_parallel_size)
-    data_parallel = device_model_spec.override_tt_config.get("data_parallel")
-
-    if data_parallel:
-        # need to adjust perf target device for data_parallel factor
-        dp_device = device_model_spec.device.get_data_parallel_subdevice(data_parallel)
-        perf_reference = perf_reference_map.get(dp_device, [])
-        if perf_reference:
-            perf_reference = [
-                scale_llm_perf_targets(task, data_parallel) for task in perf_reference
-            ]
-    else:
-        perf_reference = perf_reference_map.get(device_model_spec.device, [])
-    return perf_reference
+    return get_perf_reference_for_device(
+        device=device_model_spec.device,
+        override_tt_config=device_model_spec.override_tt_config,
+        perf_reference_map=perf_reference_map,
+    )
 
 
 def model_weights_to_model_name(model_weights: str) -> str:
@@ -642,13 +544,13 @@ class ModelSpec:
                     deserialized_perf_ref = []
                     for task_data in perf_reference:
                         if isinstance(task_data, dict):
-                            # Handle PerformanceTarget objects in targets
+                            # Handle PerfTarget objects in targets
                             targets = task_data.get("targets", {})
                             deserialized_targets = {}
                             for target_name, target_data in targets.items():
                                 if isinstance(target_data, dict):
-                                    deserialized_targets[target_name] = (
-                                        PerformanceTarget(**target_data)
+                                    deserialized_targets[target_name] = PerfTarget(
+                                        **target_data
                                     )
                                 else:
                                     deserialized_targets[target_name] = target_data

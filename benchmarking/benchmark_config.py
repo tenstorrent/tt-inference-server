@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Tuple
 
 from workflows.model_spec import MODEL_SPECS
-from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
+from workflows.perf_targets import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import (
     BenchmarkTaskType,
     DeviceTypes,
@@ -59,6 +59,13 @@ class BenchmarkTaskTTS(BenchmarkTask):
 class BenchmarkConfig:
     model_id: str
     tasks: List[BenchmarkTask]
+    perf_reference_task_count: int = 1
+
+    def get_perf_reference_tasks(self) -> List[BenchmarkTask]:
+        return self.tasks[: self.perf_reference_task_count]
+
+    def get_sweep_tasks(self) -> List[BenchmarkTask]:
+        return self.tasks[self.perf_reference_task_count :]
 
 
 BENCHMARK_ISL_OSL_PAIRS = [
@@ -296,8 +303,9 @@ def _benchmark_param_dedupe_key(params: BenchmarkTaskParams) -> Tuple:
 def select_smoke_test_benchmark_config(
     benchmark_config: BenchmarkConfig, device: DeviceTypes
 ) -> BenchmarkConfig:
-    if benchmark_config.tasks:
-        benchmark_target_task = benchmark_config.tasks[0]
+    perf_reference_tasks = benchmark_config.get_perf_reference_tasks()
+    if perf_reference_tasks:
+        benchmark_target_task = perf_reference_tasks[0]
         benchmark_targets = benchmark_target_task.param_map.get(device)
         if benchmark_targets:
             benchmark_target_param_map = dict(benchmark_target_task.param_map)
@@ -307,11 +315,12 @@ def select_smoke_test_benchmark_config(
                 tasks=[
                     replace(benchmark_target_task, param_map=benchmark_target_param_map)
                 ],
+                perf_reference_task_count=1,
             )
 
     smoke_isl, smoke_osl = SMOKE_TEST_BENCHMARK_PAIR
     smoke_num_prompts = get_num_prompts(smoke_isl, smoke_osl, 1)
-    for task in benchmark_config.tasks[1:]:
+    for task in benchmark_config.get_sweep_tasks():
         for params in task.param_map.get(device, []):
             if params.isl is None or params.osl is None:
                 continue
@@ -331,9 +340,14 @@ def select_smoke_test_benchmark_config(
             return BenchmarkConfig(
                 model_id=benchmark_config.model_id,
                 tasks=[replace(task, param_map=smoke_param_map)],
+                perf_reference_task_count=0,
             )
 
-    return BenchmarkConfig(model_id=benchmark_config.model_id, tasks=[])
+    return BenchmarkConfig(
+        model_id=benchmark_config.model_id,
+        tasks=[],
+        perf_reference_task_count=0,
+    )
 
 
 def expand_concurrency_sweep_params(
@@ -576,4 +590,8 @@ for model_id, model_spec in MODEL_SPECS.items():
 
         tasks.append(benchmark_task_runs)
 
-    BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(model_id=model_id, tasks=tasks)
+    BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(
+        model_id=model_id,
+        tasks=tasks,
+        perf_reference_task_count=1,
+    )

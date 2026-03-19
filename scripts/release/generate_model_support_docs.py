@@ -38,6 +38,7 @@ from workflows.model_spec import (
     model_weights_to_model_name,
     spec_templates,
 )
+from workflows.perf_targets import get_perf_target
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
@@ -46,6 +47,7 @@ from workflows.workflow_types import (
 )
 from scripts.release.release_performance import (
     get_release_performance_entry,
+    get_release_performance_summary_metrics,
     load_release_performance_data,
     render_release_report_section,
 )
@@ -297,6 +299,150 @@ def get_page_group_status_link(
         return "-"
     filename = get_model_page_group_filename(model_name, group)
     return f"[{best_status.display_string}]({filename})"
+
+
+def _template_supports_device(template: ModelSpecTemplate, device: DeviceTypes) -> bool:
+    return any(dev_spec.device == device for dev_spec in template.device_model_specs)
+
+
+def get_device_template_for_model(
+    model_templates: List[ModelSpecTemplate], device: DeviceTypes
+) -> Optional[ModelSpecTemplate]:
+    for template in model_templates:
+        if _template_supports_device(template, device):
+            return template
+    return None
+
+
+def get_page_group_template_for_model(
+    model_templates: List[ModelSpecTemplate], group: HardwarePageGroup
+) -> Optional[ModelSpecTemplate]:
+    best_template = None
+    best_status = None
+    best_device_index = len(group.device_ordering)
+
+    for device_index, device in enumerate(group.device_ordering):
+        for template in model_templates:
+            if not _template_supports_device(template, device):
+                continue
+            if (
+                best_template is None
+                or template.status > best_status
+                or (template.status == best_status and device_index < best_device_index)
+            ):
+                best_template = template
+                best_status = template.status
+                best_device_index = device_index
+
+    return best_template
+
+
+def _format_perf_value(value: Optional[float]) -> Optional[str]:
+    if value is None:
+        return None
+    rounded = round(float(value), 1)
+    if rounded.is_integer():
+        return str(int(rounded))
+    return f"{rounded:.1f}"
+
+
+def _format_perf_summary(
+    metrics: Optional[Dict[str, object]],
+    *,
+    throughput_key: str,
+    throughput_label: Optional[str],
+    throughput_units: str,
+) -> str:
+    if not metrics:
+        return "-"
+
+    throughput_value = metrics.get(throughput_key)
+    ttft_value = metrics.get("ttft")
+    if throughput_value is None and throughput_key != "tput_user":
+        throughput_value = metrics.get("tput_user")
+    if throughput_value is None and ttft_value is None:
+        return "-"
+
+    parts = []
+    throughput_display = _format_perf_value(throughput_value)
+    if throughput_display is not None:
+        if throughput_label:
+            parts.append(
+                f"{throughput_label}: {throughput_display} ({throughput_units})"
+            )
+        else:
+            parts.append(f"{throughput_display} ({throughput_units})")
+
+    ttft_display = _format_perf_value(ttft_value)
+    if ttft_display is not None:
+        parts.append(f"TTFT: {ttft_display} (ms)")
+
+    return ", ".join(parts) if parts else "-"
+
+
+def get_release_summary_metrics_for_template(
+    model_name: str,
+    template: Optional[ModelSpecTemplate],
+    device: Optional[DeviceTypes],
+    release_performance_data: Optional[Dict[str, object]],
+) -> Optional[Dict[str, object]]:
+    if not release_performance_data or template is None or device is None:
+        return None
+
+    entry = get_release_performance_entry(
+        release_performance_data,
+        model_name,
+        device,
+        template.impl.impl_id,
+        template.inference_engine,
+    )
+    if not entry:
+        return None
+    return get_release_performance_summary_metrics(entry)
+
+
+def get_summary_device_for_group_template(
+    template: Optional[ModelSpecTemplate], group: HardwarePageGroup
+) -> Optional[DeviceTypes]:
+    if template is None:
+        return None
+    for device in group.device_ordering:
+        if _template_supports_device(template, device):
+            return device
+    return None
+
+
+def get_model_type_summary_note(
+    templates: List[ModelSpecTemplate], model_type: ModelType
+) -> str:
+    if model_type != ModelType.LLM:
+        return ""
+
+    for template in templates:
+        if template.model_type != model_type:
+            continue
+        model_name = get_model_display_name(template)
+        for dev_spec in template.device_model_specs:
+            perf_target_set = get_perf_target(model_name, dev_spec.device)
+            if perf_target_set and perf_target_set.summary_perf_target:
+                summary = perf_target_set.summary_perf_target
+                return "\n".join(
+                    [
+                        "> Note: metrics show the selected perf-target summary datapoint when available.",
+                        f"> Input Sequence Length: {summary.isl} tokens",
+                        f"> Output Sequence Length: {summary.osl} tokens",
+                        f"> Concurrency: {summary.max_concurrency}",
+                    ]
+                )
+
+    return "\n".join(
+        [
+            "> Note: metrics show the selected perf-target summary datapoint when available.",
+            "> Input Sequence Length: 128 tokens",
+            "> Output Sequence Length: 128 tokens",
+            "> Concurrency: 1",
+        ]
+    )
 
 
 def group_templates_by_model(
@@ -668,6 +814,7 @@ def generate_model_type_table(
     model_type: ModelType,
     page_groups: List[HardwarePageGroup],
     is_experimental: bool = False,
+    release_performance_data: Optional[Dict[str, object]] = None,
 ) -> str:
     """
     Generate a markdown table for models of a given type.
@@ -750,6 +897,27 @@ def generate_model_type_table(
         # Page group status columns - link to combined page group page
         for group in page_groups:
             status_link = get_page_group_status_link(model_name, model_templates, group)
+            if model_type == ModelType.LLM and status_link != "-":
+                summary_template = get_page_group_template_for_model(
+                    model_templates, group
+                )
+                summary_device = get_summary_device_for_group_template(
+                    summary_template, group
+                )
+                summary_metrics = get_release_summary_metrics_for_template(
+                    model_name,
+                    summary_template,
+                    summary_device,
+                    release_performance_data,
+                )
+                summary_text = _format_perf_summary(
+                    summary_metrics,
+                    throughput_key="tput",
+                    throughput_label="Output Tput",
+                    throughput_units="tok/s",
+                )
+                if summary_text != "-":
+                    status_link = f"{status_link} {summary_text}"
             row.append(status_link)
 
         lines.append("| " + " | ".join(row) + " |")
@@ -758,7 +926,9 @@ def generate_model_type_table(
 
 
 def generate_model_type_page(
-    templates: List[ModelSpecTemplate], model_type: ModelType
+    templates: List[ModelSpecTemplate],
+    model_type: ModelType,
+    release_performance_data: Optional[Dict[str, object]] = None,
 ) -> str:
     """Generate markdown content for a model type table page."""
     short_name = model_type.short_name
@@ -787,7 +957,11 @@ def generate_model_type_page(
 
     # Supported models table
     supported_table = generate_model_type_table(
-        templates, model_type, page_groups, is_experimental=False
+        templates,
+        model_type,
+        page_groups,
+        is_experimental=False,
+        release_performance_data=release_performance_data,
     )
     if supported_table:
         lines.append("## Supported Models")
@@ -796,10 +970,18 @@ def generate_model_type_page(
         lines.append("")
         lines.append(supported_table)
         lines.append("")
+        summary_note = get_model_type_summary_note(templates, model_type)
+        if summary_note:
+            lines.append(summary_note)
+            lines.append("")
 
     # Experimental models table
     experimental_table = generate_model_type_table(
-        templates, model_type, page_groups, is_experimental=True
+        templates,
+        model_type,
+        page_groups,
+        is_experimental=True,
+        release_performance_data=release_performance_data,
     )
     if experimental_table:
         lines.append("## Experimental Models")
@@ -852,7 +1034,10 @@ def get_device_hardware_page_display_name(device: DeviceTypes) -> str:
     return product_name
 
 
-def generate_models_by_hardware_page(templates: List[ModelSpecTemplate]) -> str:
+def generate_models_by_hardware_page(
+    templates: List[ModelSpecTemplate],
+    release_performance_data: Optional[Dict[str, object]] = None,
+) -> str:
     """Generate the docs/model_support/models_by_hardware.md page."""
     lines = []
 
@@ -860,6 +1045,9 @@ def generate_models_by_hardware_page(templates: List[ModelSpecTemplate]) -> str:
     lines.append("")
     lines.append("This page lists all supported models organized by hardware type.")
     lines.append("")
+    if any(template.model_type == ModelType.LLM for template in templates):
+        lines.append(get_model_type_summary_note(templates, ModelType.LLM))
+        lines.append("")
 
     # Back link to model types index in root README
     lines.append("[Search model by model type](../../README.md#models-by-model-type)")
@@ -911,18 +1099,41 @@ def generate_models_by_hardware_page(templates: List[ModelSpecTemplate]) -> str:
         )
 
         # Table header
-        lines.append("| Status | Type | Model |")
-        lines.append("|--------|------|-------|")
+        lines.append("| Status | Type | Model | Performance Summary |")
+        lines.append("|--------|------|-------|---------------------|")
 
         for model_name, status_enum, model_type, model_templates in device_models:
             subdir = get_model_subdir(model_type)
             filename = get_model_device_filename(model_name, device)
+            summary_template = get_device_template_for_model(model_templates, device)
+            summary_metrics = (
+                get_release_summary_metrics_for_template(
+                    model_name,
+                    summary_template,
+                    device,
+                    release_performance_data,
+                )
+                if model_type == ModelType.LLM
+                else None
+            )
+            performance_summary = (
+                _format_perf_summary(
+                    summary_metrics,
+                    throughput_key="tput_user",
+                    throughput_label=None,
+                    throughput_units="tok/s/user",
+                )
+                if model_type == ModelType.LLM
+                else "-"
+            )
 
             model_link = f"[{model_name}]({subdir}/{filename})"
             type_short = model_type.short_name
             status_display = status_enum.display_string
 
-            lines.append(f"| {status_display} | {type_short} | {model_link} |")
+            lines.append(
+                f"| {status_display} | {type_short} | {model_link} | {performance_summary} |"
+            )
 
         lines.append("")
 
@@ -1034,7 +1245,9 @@ def main():
     release_performance_data = load_release_performance_data()
 
     # Generate models by hardware page
-    hardware_content = generate_models_by_hardware_page(templates)
+    hardware_content = generate_models_by_hardware_page(
+        templates, release_performance_data=release_performance_data
+    )
     write_file(output_dir / "models_by_hardware.md", hardware_content, args.dry_run)
 
     # Generate model type table pages (in subdirectory as README.md)
@@ -1045,7 +1258,11 @@ def main():
             continue
 
         subdir = model_type.short_name.lower()
-        page_content = generate_model_type_page(templates, model_type)
+        page_content = generate_model_type_page(
+            templates,
+            model_type,
+            release_performance_data=release_performance_data,
+        )
         write_file(output_dir / subdir / "README.md", page_content, args.dry_run)
 
     # Group templates by model name and generate per-page-group pages in subdirectories

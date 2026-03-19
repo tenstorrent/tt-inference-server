@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import scripts.release.generate_release_artifacts as gra
+from workflows.perf_targets import PerfTarget, PerfTargetSet
 
 
 TT_METAL_COMMIT = "a" * 40
@@ -304,7 +305,28 @@ def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
         tmp_path / "benchmarking" / "benchmark_targets" / "release_performance.json"
     )
 
-    with patch.object(gra, "get_release_performance_path", return_value=baseline_path):
+    perf_target = PerfTargetSet(
+        model_name="DemoModel",
+        device=SimpleNamespace(name="N150"),
+        perf_targets=[
+            PerfTarget(
+                isl=128,
+                osl=128,
+                max_concurrency=1,
+                task_type="text",
+                ttft_ms=50.0,
+                tput_user=10.0,
+                tput=12.0,
+                is_summary=True,
+            )
+        ],
+    )
+
+    with patch.object(
+        gra, "get_release_performance_path", return_value=baseline_path
+    ), patch(
+        "scripts.release.release_performance.get_perf_target", return_value=perf_target
+    ):
         release_performance_data = gra.write_release_performance_outputs(
             merged_spec, output_dir, dry_run=False
         )
@@ -316,6 +338,11 @@ def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
     baseline_entry = baseline["models"]["DemoModel"]["n150"]["demo_impl"]["vLLM"]
     assert baseline_entry["benchmarks_summary"][0]["ttft"] == 45.0
     assert baseline_entry["benchmarks_summary"][0]["isl"] == 128
+    assert baseline_entry["perf_target_results"][0]["config"]["isl"] == 128
+    assert baseline_entry["perf_target_summary"]["measured_metrics"]["ttft"] == 45.0
+    assert (
+        baseline_entry["perf_target_summary"]["measured_metrics"]["tput_user"] == 12.0
+    )
     assert baseline_entry["report_data"]["benchmarks_summary"][0]["ttft"] == 45.0
     assert (
         "test_smoke"
