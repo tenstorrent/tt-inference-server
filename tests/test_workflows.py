@@ -17,7 +17,7 @@ from workflows.model_spec import (
     MODEL_SPECS,
     get_model_id,
 )
-from workflows.run_workflows import run_workflows
+from workflows.run_workflows import WorkflowResult, run_workflows
 from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import HostSetupManager
 from workflows.utils import (
@@ -182,23 +182,31 @@ class TestWorkflowExecution:
         workflow_calls = []
 
         def mock_run_single(model_spec_arg, runtime_config_arg, json_fpath):
-            workflow_calls.append(runtime_config_arg.workflow)
-            return 0
+            workflow_type = WorkflowType.from_string(runtime_config_arg.workflow)
+            workflow_calls.append(workflow_type.name)
+            return WorkflowResult(
+                workflow_name=workflow_type.name.lower(),
+                return_code=len(workflow_calls) - 1,
+            )
 
-        # Mock run_single_workflow to return success codes
+        # Mock run_single_workflow to return ordered named results
         with patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
         ) as mock_run_single:
-            return_codes = run_workflows(
+            workflow_results = run_workflows(
                 model_spec, runtime_config, "test_json_path.json"
             )
 
-            # Verify all expected workflows were called
-            assert len(return_codes) == 4  # benchmarks, evals, reports, spec_tests
-            assert all(code == 0 for code in return_codes)
+            expected_results = [
+                WorkflowResult(workflow_name="evals", return_code=0),
+                WorkflowResult(workflow_name="benchmarks", return_code=1),
+                WorkflowResult(workflow_name="spec_tests", return_code=2),
+                WorkflowResult(workflow_name="reports", return_code=3),
+            ]
+
+            assert workflow_results == expected_results
             assert mock_run_single.call_count == 4
 
-            # The order should be BENCHMARKS, EVALS, REPORTS
             expected_order = ["EVALS", "BENCHMARKS", "SPEC_TESTS", "REPORTS"]
             assert workflow_calls == expected_order, (
                 f"Expected {expected_order}, got {workflow_calls}"
@@ -208,6 +216,41 @@ class TestWorkflowExecution:
             # Note: The args object is modified in place, so we rely on the implementation details
             # First workflow should start without trace capture disabled
             # Subsequent workflows should have trace capture disabled
+
+    def test_non_release_workflow_includes_reports_result(self):
+        """Test non-release workflows preserve result order and append reports."""
+        model_spec = Namespace(
+            model_name="meta-llama/Llama-3.1-8B-Instruct",
+        )
+        runtime_config = RuntimeConfig(
+            model="Llama-3.1-8B-Instruct",
+            workflow="benchmarks",
+            device="n150",
+            impl="tt-transformers",
+            disable_trace_capture=False,
+        )
+        workflow_calls = []
+
+        def mock_run_single(model_spec_arg, runtime_config_arg, json_fpath):
+            workflow_type = WorkflowType.from_string(runtime_config_arg.workflow)
+            workflow_calls.append(workflow_type.name)
+            return WorkflowResult(
+                workflow_name=workflow_type.name.lower(),
+                return_code=len(workflow_calls),
+            )
+
+        with patch(
+            "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
+        ):
+            workflow_results = run_workflows(
+                model_spec, runtime_config, "test_json_path.json"
+            )
+
+        assert workflow_calls == ["BENCHMARKS", "REPORTS"]
+        assert workflow_results == [
+            WorkflowResult(workflow_name="benchmarks", return_code=1),
+            WorkflowResult(workflow_name="reports", return_code=2),
+        ]
 
 
 class TestHostSetupIntegration:
@@ -480,21 +523,17 @@ class TestMainWorkflowIntegration:
         ]
 
         with patch("sys.argv", test_args), patch(
-            "run.run_workflows", return_value=[0]
+            "run.run_workflows",
+            return_value=[WorkflowResult(workflow_name="benchmarks", return_code=0)],
         ) as mock_run_workflows, patch(
-            "workflows.run_workflows.run_single_workflow"
-        ) as mock_run_single, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
-            mock_run_workflows.return_value = [0]
-            mock_run_single.return_value = 0
-
             # Run main
             result = main()
 
             # Verify workflow ran without setup_host
             assert mock_run_workflows.called
-            assert result == 0
+            assert result is None
 
     def test_error_handling_invalid_model(self, mock_env_vars):
         """Test error handling for invalid model configuration."""
