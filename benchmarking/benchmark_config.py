@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Tuple
 
 from workflows.model_spec import MODEL_SPECS
@@ -72,6 +72,7 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (32768, 128),
     (65536, 128),
 ]
+SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
 
 # Image resolution pairs for multimodal benchmarks
@@ -290,6 +291,49 @@ def _benchmark_param_dedupe_key(params: BenchmarkTaskParams) -> Tuple:
         int(getattr(params, "num_inference_steps", 0) or 0),
         int(getattr(params, "num_eval_runs", 0) or 0),
     )
+
+
+def select_smoke_test_benchmark_config(
+    benchmark_config: BenchmarkConfig, device: DeviceTypes
+) -> BenchmarkConfig:
+    if benchmark_config.tasks:
+        benchmark_target_task = benchmark_config.tasks[0]
+        benchmark_targets = benchmark_target_task.param_map.get(device)
+        if benchmark_targets:
+            benchmark_target_param_map = dict(benchmark_target_task.param_map)
+            benchmark_target_param_map[device] = list(benchmark_targets)
+            return BenchmarkConfig(
+                model_id=benchmark_config.model_id,
+                tasks=[
+                    replace(benchmark_target_task, param_map=benchmark_target_param_map)
+                ],
+            )
+
+    smoke_isl, smoke_osl = SMOKE_TEST_BENCHMARK_PAIR
+    smoke_num_prompts = get_num_prompts(smoke_isl, smoke_osl, 1)
+    for task in benchmark_config.tasks[1:]:
+        for params in task.param_map.get(device, []):
+            if params.isl is None or params.osl is None:
+                continue
+            if getattr(params, "task_type", "text") != "text":
+                continue
+
+            smoke_param_map = dict(task.param_map)
+            smoke_param_map[device] = [
+                replace(
+                    params,
+                    isl=smoke_isl,
+                    osl=smoke_osl,
+                    max_concurrency=1,
+                    num_prompts=smoke_num_prompts,
+                )
+            ]
+            return BenchmarkConfig(
+                model_id=benchmark_config.model_id,
+                tasks=[replace(task, param_map=smoke_param_map)],
+            )
+
+    return BenchmarkConfig(model_id=benchmark_config.model_id, tasks=[])
 
 
 def expand_concurrency_sweep_params(

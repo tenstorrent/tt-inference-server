@@ -138,6 +138,19 @@ pre-commit run --all-files
 pre-commit run --files path/to/file
 ```
 
+### Workflow smoke tests
+
+Use `--limit-samples-mode smoke-test` for fast end-to-end workflow validation while iterating on `benchmarks` or `evals`.
+
+```bash
+python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks --limit-samples-mode smoke-test
+python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow evals --limit-samples-mode smoke-test
+```
+
+If you also want `run.py` to launch the inference server for the run, add `--docker-server`.
+
+Smoke-test mode keeps the run short by reducing `benchmarks` to a single lightweight target and `evals` to the first configured eval task with 3 samples.
+
 ### How to build Docker images for a specific model (tt-metal, vLLM commits)
 
 For building containers for development it is generally faster to use 
