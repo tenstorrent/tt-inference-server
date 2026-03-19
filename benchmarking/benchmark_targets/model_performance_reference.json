@@ -14,7 +14,58 @@
                     "theoretical": {
                         "ttft_ms": 267.0,
                         "tput_user": 18.0,
-                        "tput": 576.0
+                        "tput": 18.0
+                    }
+                }
+            },
+            {
+                "isl": 1024,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 270.0,
+                        "tput_user": 17.7,
+                        "tput": 17.7
+                    }
+                }
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 400.0,
+                        "tput_user": 17.5,
+                        "tput": 17.5
+                    }
+                }
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 757.0,
+                        "tput_user": 17.2,
+                        "tput": 17.2
                     }
                 }
             },
@@ -31,7 +82,7 @@
                     "theoretical": {
                         "ttft_ms": 1543.0,
                         "tput_user": 17.0,
-                        "tput": 544.0
+                        "tput": 17.0
                     }
                 }
             }

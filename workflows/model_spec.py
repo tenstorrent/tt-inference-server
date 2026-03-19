@@ -1500,22 +1500,26 @@ llm_templates = [
             "allenai/OLMo-3.1-32B-Think",
         ],
         impl=olmo3_32b_galaxy_impl,
-        tt_metal_commit="20b1b21",
+        tt_metal_commit="e867533",
         vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=8 * 4,
-                # NOTE: enabled up to 8k ISL; larger ISL pending KV cache / memory validation
+                max_concurrency=1,
+                # NOTE: batch=1 only; TT model runs 32-slot decode internally but vLLM
+                # is limited to 1 concurrent user. Larger batch pending sampling refactor.
+                # ISLs up to 8k supported; larger ISL pending KV cache / memory validation.
                 max_context=8 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "data_parallel_size": 4,
+                    "data_parallel_size": 1,
+                    "max_model_len": 8192,
+                    "max_num_seqs": 1,
+                    "block_size": 64,
                 },
                 override_tt_config={
                     "dispatch_core_axis": "col",
-                    "sample_on_device_mode": "all",
                     "fabric_config": "FABRIC_1D_RING",
                     "worker_l1_size": 1344544,
                     "trace_region_size": 184915840,
