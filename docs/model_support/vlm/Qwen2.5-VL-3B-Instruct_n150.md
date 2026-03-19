@@ -45,7 +45,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/c18569e/models/tt_transformers) |
 | tt-metal Commit | `c18569e` |
 | vLLM Commit | `b2894d3` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.0-c18569e-b2894d3` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-c18569e-b2894d3` |
 
 ---
 
@@ -85,4 +85,4 @@ python3 run.py --model Qwen2.5-VL-3B-Instruct --device n300 --workflow server --
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/c18569e/models/tt_transformers) |
 | tt-metal Commit | `c18569e` |
 | vLLM Commit | `b2894d3` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.0-c18569e-b2894d3` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-c18569e-b2894d3` |

@@ -32,7 +32,6 @@ from typing import Dict, List, Optional, Set, Tuple
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workflows.model_spec import (
-    VERSION,
     ModelSpecTemplate,
     generate_default_docker_link,
     model_weights_to_model_name,
@@ -595,7 +594,7 @@ def generate_model_page_group_page(
             docker_image = target_template.docker_image
         else:
             docker_image = generate_default_docker_link(
-                VERSION, target_template.tt_metal_commit, target_template.vllm_commit
+                target_template.version, target_template.tt_metal_commit, target_template.vllm_commit
             )
 
         # Model Parameters table
