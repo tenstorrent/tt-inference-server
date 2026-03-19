@@ -175,6 +175,7 @@ python3 scripts/release/update_model_spec.py --output-only
 ### Step 3: force update `stable` branch
 
 ```bash
+git commit -m 'pre-release-vx.y.z'
 git push --force-with-lease origin stable
 ```
 
@@ -184,7 +185,7 @@ git push --force-with-lease origin stable
 
 https://github.com/tenstorrent/tt-shield/actions/workflows/release.yml
 
-On failure, use Hot-Fix workflow or repeat Pre-release steps.
+On failure, repeat Pre-release steps or use Hot-Fix workflow.
 On success, continue Release steps.
 
 ### step 5: generate release artifacts
