@@ -32,6 +32,6 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [genmo/mochi-1-preview](https://huggingface.co/genmo/mochi-1-preview) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 1 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/65718bb/models/tt_transformers) |
-| tt-metal Commit | `65718bb` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-65718bb` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers) |
+| tt-metal Commit | `555f240` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.0-555f240` |
