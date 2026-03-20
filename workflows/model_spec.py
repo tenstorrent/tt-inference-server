@@ -1713,7 +1713,7 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="84b4c53",
+        tt_metal_commit="080ab85",
         vllm_commit="222ee06",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1772,7 +1772,7 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="3f72232",
+        tt_metal_commit="080ab85",
         vllm_commit="409b1cd",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1812,7 +1812,7 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="55fd115",
+        tt_metal_commit="080ab85",
         vllm_commit="aa4ae1e",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1837,7 +1837,7 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="55fd115",
+        tt_metal_commit="080ab85",
         vllm_commit="aa4ae1e",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1868,7 +1868,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="555f240",
+        tt_metal_commit="080ab85",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1900,7 +1900,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="555f240",
+        tt_metal_commit="080ab85",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1930,7 +1930,7 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="bac8b34",
+        tt_metal_commit="080ab85",
         vllm_commit="7c6685a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
