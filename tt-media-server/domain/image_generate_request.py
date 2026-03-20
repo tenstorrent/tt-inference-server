@@ -28,6 +28,10 @@ class ImageGenerateRequest(BaseRequest):
     timesteps: Optional[List[Union[int, float]]] = None
     sigmas: Optional[List[Union[int, float]]] = None
 
+    # LoRA adapter settings
+    lora_path: Optional[str] = Field(default=None)
+    lora_scale: Optional[float] = Field(default=0.5, ge=0.0, le=2.0)
+
     # Image output settings
     image_return_format: Optional[str] = Field(default="JPEG")
     image_quality: Optional[int] = Field(default=85, ge=50, le=100)
