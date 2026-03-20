@@ -51,11 +51,11 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             self.hf_model = AutoModelForCausalLM.from_pretrained(
                 self.model_name, use_cache=False
             )
-            self.hf_model.save_pretrained(self.base_model_path)
+            self.hf_model.save_pretrained(self.base_model_path, safe_serialization=False)
             self.logger.info(f"Base model saved to {self.base_model_path}")
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.tokenizer.save_pretrained(self.base_model_path)
+        self.tokenizer.save_pretrained(self.base_model_path, safe_serialization=False)
 
         self.logger.info(
             f"Model parameters: {sum(p.numel() for p in self.hf_model.parameters())}"
@@ -230,7 +230,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                             )
                         running_loss = 0.0
 
-                        self._peft_model.save_pretrained(request._output_model_path)
+                        self._peft_model.save_pretrained(request._output_model_path, safe_serialization=False)
                         self.logger.info("Model checkpoint saved.")
 
                     if do_validation:
@@ -332,7 +332,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             if hasattr(self.hf_model, "peft_config"):
                 delattr(self.hf_model, "peft_config")
 
-        peft_model = PeftModel.from_pretrained(self.hf_model, request.model_path)
+        peft_model = PeftModel.from_pretrained(self.hf_model, request._adapter_path)
         peft_model.to(eval(request.dtype))
         peft_model.to(self.device)
         peft_model.eval()

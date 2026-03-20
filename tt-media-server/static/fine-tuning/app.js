@@ -172,6 +172,13 @@ async function refreshJobDetail(jobId) {
         const cancellable = ['queued', 'in_progress'].includes(job.status);
         cancelBtn.hidden = !cancellable;
         cancelBtn.onclick = () => cancelJob(jobId);
+
+        const inferenceSection = $('inference-section');
+        const showInference = ['completed', 'cancelled'].includes(job.status);
+        inferenceSection.hidden = !showInference;
+        if (showInference) {
+            $('inference-btn').onclick = () => runInference(jobId);
+        }
     } catch (e) {
         $('detail-meta').innerHTML = `<dt>Error</dt><dd>${e.message}</dd>`;
     }
@@ -179,14 +186,20 @@ async function refreshJobDetail(jobId) {
 
 async function selectJob(jobId) {
     selectedJobId = jobId;
-    refreshJobs();
-    await refreshJobDetail(jobId);
+
+    $('inference-section').hidden = true;
+    $('inference-output').hidden = true;
+    $('inference-status').textContent = '';
+    $('inference-prompt').value = '';
 
     metricsSeries = {};
     $('metrics-heading').textContent = 'No metrics to show';
     $('metrics-chart').style.display = 'none';
     nextAfter = 0;
     if (metricsInterval) clearInterval(metricsInterval);
+
+    refreshJobs();
+    await refreshJobDetail(jobId);
     pollMetrics(jobId);
     metricsInterval = setInterval(() => pollMetrics(jobId), 2000);
 }
@@ -225,6 +238,39 @@ async function cancelJob(jobId) {
         refreshJobs();
     } catch (e) {
         console.error('Failed to cancel job:', e);
+    }
+}
+
+async function runInference(jobId) {
+    const statusEl = $('inference-status');
+    const outputEl = $('inference-output');
+    statusEl.textContent = 'Running inference...';
+    statusEl.className = '';
+    outputEl.hidden = true;
+
+    const body = {
+        prompt: $('inference-prompt').value,
+        max_new_tokens: parseInt($('inference-max-tokens').value),
+        temperature: parseFloat($('inference-temperature').value),
+        top_k: parseInt($('inference-top-k').value),
+        dtype: 'torch.bfloat16',
+    };
+
+    try {
+        const res = await fetch(`${BASE}/jobs/${jobId}/inference`, {
+            method: 'POST', headers: HEADERS, body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        outputEl.textContent = data.output;
+        outputEl.hidden = false;
+        statusEl.textContent = '';
+    } catch (err) {
+        statusEl.textContent = `Error: ${err.message}`;
+        statusEl.className = 'error-msg';
     }
 }
 
