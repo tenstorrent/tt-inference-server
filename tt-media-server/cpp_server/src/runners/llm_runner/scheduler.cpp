@@ -47,7 +47,7 @@ Sequence& Scheduler::addRequest(TaskID taskId, std::vector<int64_t> prompt,
                                 const SamplingParams& params) {
   auto seq = std::make_unique<Sequence>(std::move(taskId), block_size_,
                                         std::move(prompt), params);
-  auto id = seq->task_id;
+  auto id = seq->taskId;
   add(*seq);
   sequences_[id] = std::move(seq);
   return *sequences_[id].get();
@@ -77,8 +77,8 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
 
     numSeqs += 1;
     block_manager_.allocate(*seq);
-    numBatchedTokens += static_cast<int>(seq->size() - seq->num_cached_tokens_);
-    auto id = seq->task_id;
+    numBatchedTokens += static_cast<int>(seq->size() - seq->numCachedTokens);
+    auto id = seq->taskId;
     sequences_[id] = std::make_unique<Sequence>(std::move(*seq));
     scheduledSeqs.push_back(sequences_[id].get());
     delete seq;
@@ -141,10 +141,10 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
 
 void Scheduler::preempt(Sequence& seq) {
   ZoneScopedN("Scheduler::preempt");
-  seq.status_ = SequenceStatus::WAITING;
+  seq.status = SequenceStatus::WAITING;
   block_manager_.deallocate(seq);
   prefill_queue_->push(seq);
-  sequences_.erase(seq.task_id);
+  sequences_.erase(seq.taskId);
 }
 
 void Scheduler::postprocess(std::vector<Sequence*>& seqs,
@@ -157,17 +157,17 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
 
     bool isStopToken = stop_token_ids_.count(tokenId) > 0;
     bool reachedMaxTokens =
-        seq->sampling_params->max_tokens.has_value() &&
+        seq->samplingParams->max_tokens.has_value() &&
         seq->numCompletionTokens() >=
-            static_cast<size_t>(seq->sampling_params->max_tokens.value());
+            static_cast<size_t>(seq->samplingParams->max_tokens.value());
     bool finished =
-        (!seq->sampling_params->ignore_eos && isStopToken) || reachedMaxTokens;
+        (!seq->samplingParams->ignore_eos && isStopToken) || reachedMaxTokens;
 
     if (finished) {
-      seq->status_ = SequenceStatus::FINISHED;
+      seq->status = SequenceStatus::FINISHED;
       block_manager_.deallocate(*seq);
     } else {
-      seq->status_ = SequenceStatus::RUNNING;
+      seq->status = SequenceStatus::RUNNING;
       decode_queue_.push_back(seq);
     }
   }
