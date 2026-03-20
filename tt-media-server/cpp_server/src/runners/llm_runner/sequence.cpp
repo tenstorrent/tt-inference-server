@@ -16,12 +16,12 @@ Sequence::Sequence(TaskID taskId, int blockSize, std::vector<int64_t> tokenIds,
     : taskId(std::move(taskId)),
       status(SequenceStatus::WAITING),
       tokenIds(std::move(tokenIds)),
-      numPromptTokens(tokenIds.size()),
+      numPromptTokens(this->tokenIds.size()),
       samplingParams(std::make_unique<SamplingParams>(samplingParams)),
       blockSize(blockSize) {
   assert(!this->taskId.id.empty() && "Sequence requires a non-empty task_id");
-  if (!tokenIds.empty()) {
-    lastToken = tokenIds.back();
+  if (!this->tokenIds.empty()) {
+    lastToken = this->tokenIds.back();
   }
 }
 
@@ -32,8 +32,7 @@ std::vector<int64_t> Sequence::block(size_t i) const {
   }
   size_t start = i * blockSize;
   size_t end = std::min(start + blockSize, tokenIds.size());
-  return std::vector<int64_t>(tokenIds.begin() + start,
-                              tokenIds.begin() + end);
+  return std::vector<int64_t>(tokenIds.begin() + start, tokenIds.begin() + end);
 }
 
 std::vector<int64_t> Sequence::completionTokenIds() const {

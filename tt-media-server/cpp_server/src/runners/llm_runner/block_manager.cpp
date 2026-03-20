@@ -122,8 +122,7 @@ void BlockManager::deallocate(Sequence& seq) {
   LLM_ENGINE_LOG("block_manager")
       << "deallocate task_id=" << seq.taskId
       << " num_blocks=" << seq.blockTable.size() << std::endl;
-  for (auto it = seq.blockTable.rbegin(); it != seq.blockTable.rend();
-       ++it) {
+  for (auto it = seq.blockTable.rbegin(); it != seq.blockTable.rend(); ++it) {
     int blockId = *it;
     Block& block = blocks_[static_cast<size_t>(blockId)];
     block.ref_count -= 1;
@@ -155,8 +154,8 @@ void BlockManager::mayAppend(Sequence& seq) {
   } else if (len % static_cast<size_t>(block_size_) == 0) {
     assert(last_block.hash == -1);
     LLM_ENGINE_LOG("block_manager")
-        << "may_append task_id=" << seq.taskId
-        << " fill_last_block len=" << len << std::endl;
+        << "may_append task_id=" << seq.taskId << " fill_last_block len=" << len
+        << std::endl;
     std::vector<int64_t> tokenIds = seq.block(seq.numBlocks() - 1);
     int64_t prefix =
         (blockTable.size() > 1)
