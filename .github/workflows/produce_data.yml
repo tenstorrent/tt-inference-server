@@ -19,6 +19,8 @@ on:
       - "Nightly C++ Server Benchmarks"
     types:
       - completed
+  push:
+    branches: ['dmadicTT/benchmark-plot']
 
 jobs:
   produce-cicd-data:
