@@ -58,12 +58,6 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Fabric router max packet payload bytes (must match DeepSeek V3 B1 pipeline config)",
     )
     parser.add_argument(
-        "--trace-region-size-bytes",
-        type=int,
-        default=573440,
-        help="TTNN trace region size bytes (must match DeepSeek V3 B1 pipeline config)",
-    )
-    parser.add_argument(
         "--fabric-router-sync-timeout-ms",
         type=int,
         default=30000,
@@ -127,7 +121,6 @@ def _fabric_config_for_num_procs(num_procs: int):
 
 def _open_mesh_device(
     fabric_max_payload_bytes: int,
-    trace_region_size_bytes: int,
     fabric_router_sync_timeout_ms: int,
 ):
     os.environ["TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS"] = str(
@@ -175,7 +168,6 @@ def main() -> None:
                 raise
         mesh_device = _open_mesh_device(
             fabric_max_payload_bytes=args.fabric_max_payload_bytes,
-            trace_region_size_bytes=args.trace_region_size_bytes,
             fabric_router_sync_timeout_ms=args.fabric_router_sync_timeout_ms,
         )
     except Exception as e:
