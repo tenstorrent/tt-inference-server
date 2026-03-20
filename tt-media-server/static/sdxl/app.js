@@ -52,6 +52,14 @@ $('random-seed').addEventListener('change', () => {
 // Initialize disabled state
 $('seed').disabled = $('random-seed').checked;
 
+// ─── Resolution Toggle ───────────────────────────────────────────────────────
+document.querySelectorAll('.resolution-option').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.resolution-option').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    });
+});
+
 // ─── Guidance Rescale Slider ──────────────────────────────────────────────────
 $('guidance-rescale').addEventListener('input', () => {
     $('guidance-rescale-label').textContent = parseFloat($('guidance-rescale').value).toFixed(2);
@@ -153,7 +161,9 @@ async function generateImage() {
     }, 1000);
 
     try {
-        const res = await fetch(API_URL, {
+        const resolution = document.querySelector('.resolution-option.active').dataset.resolution;
+        const url = resolution === '512' ? `${API_URL}?resolution=512` : API_URL;
+        const res = await fetch(url, {
             method: 'POST',
             headers: HEADERS,
             body: JSON.stringify(params),
@@ -194,6 +204,7 @@ async function generateImage() {
             steps: params.num_inference_steps,
             guidance: params.guidance_scale,
             seed: params.seed != null ? params.seed : 'random',
+            resolution: `${resolution}×${resolution}`,
             elapsed: `${elapsed}s`,
         };
 
@@ -224,6 +235,7 @@ function displayMetadata(gen) {
     $('meta-steps').textContent = gen.steps;
     $('meta-guidance').textContent = gen.guidance;
     $('meta-seed').textContent = gen.seed;
+    $('meta-resolution').textContent = gen.resolution;
     $('meta-time').textContent = gen.elapsed;
 }
 
