@@ -1,21 +1,26 @@
 #include "runners/llm_runner.hpp"
-#include "profiling/tracy.hpp"
-#include "config/settings.hpp"
 
 #include <cassert>
 #include <thread>
 
+#include "config/settings.hpp"
+#include "profiling/tracy.hpp"
+
 namespace tt::runners {
-  using namespace llm_engine;
+using namespace llm_engine;
+using Config = tt::config::LLMConfig;
 
-LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue)
-    : config_(config), result_queue_(result_queue) {
+LLMRunner::LLMRunner(const Config& config,
+                     ipc::TokenRingBuffer<65536>* resultQueue,
+                     ITaskQueue* taskQueue)
+    : config_(config), result_queue_(resultQueue) {
+  scheduler_ =
+      makeScheduler(config_, taskQueue, tt::config::maxInFlightCount());
 
-  scheduler_ = make_scheduler(config_, task_queue, tt::config::batch_size());
-
-  auto decode_cb = [this](const TokenResult& result) {
+  auto decodeCb = [this](const TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");
-    Sequence* seq = scheduler_->find_sequence(result.task_id);
+    Sequence* seq = scheduler_->findSequence(result.task_id);
+
     assert(seq);
 
     if (result.is_error) {
@@ -28,7 +33,8 @@ LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_q
           .task_id = {},
           .padding = {},
       };
-      strncpy(shared.task_id, result.task_id.id.c_str(), sizeof(shared.task_id) - 1);
+      strncpy(shared.task_id, result.task_id.id.c_str(),
+              sizeof(shared.task_id) - 1);
       shared.task_id[sizeof(shared.task_id) - 1] = '\0';
       while (!result_queue_->push(shared)) {
         std::this_thread::yield();
@@ -37,21 +43,23 @@ LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_q
     }
 
     std::vector<Sequence*> seqs = {seq};
-    std::vector<int64_t> token_ids = {static_cast<int64_t>(result.token_id)};
-    scheduler_->postprocess(seqs, token_ids);
+    std::vector<int64_t> tokenIds = {static_cast<int64_t>(result.token_id)};
+    scheduler_->postprocess(seqs, tokenIds);
 
-    bool finished = seq->is_finished();
+    bool finished = seq->isFinished();
 
     {
       ZoneScopedN("ResultQueue::push");
       auto shared = ipc::SharedToken{
           .token_index = 0,
-          .flags = static_cast<uint32_t>(finished ? ipc::SharedToken::FLAG_FINAL : 0),
+          .flags = static_cast<uint32_t>(finished ? ipc::SharedToken::FLAG_FINAL
+                                                  : 0),
           .token_id = result.token_id,
           .task_id = {},
           .padding = {},
       };
-      strncpy(shared.task_id, result.task_id.id.c_str(), sizeof(shared.task_id) - 1);
+      strncpy(shared.task_id, result.task_id.id.c_str(),
+              sizeof(shared.task_id) - 1);
       shared.task_id[sizeof(shared.task_id) - 1] = '\0';
       while (!result_queue_->push(shared)) {
         std::this_thread::yield();
@@ -63,12 +71,10 @@ LLMRunner::LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_q
     }
   };
 
-  model_runner_ = make_model_runner(config_, std::move(decode_cb));
+  model_runner_ = makeModelRunner(config_, std::move(decodeCb));
 }
 
-LLMRunner::~LLMRunner() {
-  exit();
-}
+LLMRunner::~LLMRunner() { exit(); }
 
 void LLMRunner::exit() {
   if (model_runner_) {
@@ -82,9 +88,7 @@ void LLMRunner::run() {
   }
 }
 
-void LLMRunner::stop() {
-  stopped_.store(true, std::memory_order_relaxed);
-}
+void LLMRunner::stop() { stopped_.store(true, std::memory_order_relaxed); }
 
 void LLMRunner::step() {
   auto [seqs, is_prefill] = scheduler_->schedule();

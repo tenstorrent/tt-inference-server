@@ -1,8 +1,8 @@
 #pragma once
 
+#include <iostream>
 #include <optional>
 #include <vector>
-#include <iostream>
 
 namespace llm_engine {
 
@@ -11,7 +11,7 @@ namespace llm_engine {
  * Mirrors sampling-related fields from tt::domain::CompletionRequest.
  */
 struct SamplingParams {
-  float temperature = 1.0f;
+  float temperature = 0.0f;
   std::optional<int> max_tokens;
   bool ignore_eos = false;
 

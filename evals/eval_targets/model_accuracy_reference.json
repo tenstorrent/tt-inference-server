@@ -221,6 +221,20 @@
             }
         }
     },
+    "stable-diffusion-xl-base-1.0-lora": {
+        "accuracy": {
+            "100": {
+                "fid_valid_range": [
+                    180.0,
+                    230.0
+                ],
+                "clip_valid_range": [
+                    27.0,
+                    33.0
+                ]
+            }
+        }
+    },
     "mochi-1-preview": {
         "hf_id": "genmo/mochi-1-preview",
         "num_inference_steps": 50,

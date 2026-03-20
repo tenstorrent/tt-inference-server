@@ -28,6 +28,10 @@ from stress_tests.stress_tests_summary_report import (
     generate_report as stress_test_generate_report_helper,
 )
 from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
+from workflows.acceptance_criteria import (
+    acceptance_criteria_check,
+    format_acceptance_summary_markdown,
+)
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
@@ -3419,9 +3423,9 @@ def main():
 
     # only show the impl run command if non-default impl is used
     if model_spec.device_model_spec.default_impl:
-        run_cmd = f"python run.py --model {model} --device {device_str} --workflow release {command_flag}"
+        run_cmd = f"python run.py --model {model} --tt-device {device_str} --workflow release {command_flag}"
     else:
-        run_cmd = f"python run.py --model {model} --device {device_str} --impl {model_spec.impl.impl_name} --workflow release {command_flag}"
+        run_cmd = f"python run.py --model {model} --tt-device {device_str} --impl {model_spec.impl.impl_name} --workflow release {command_flag}"
 
     metadata = {
         "report_id": report_id,
@@ -3554,18 +3558,13 @@ def main():
     if genai_perf_release_str:
         all_benchmarks_str += genai_perf_release_str + "\n\n"
 
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{all_benchmarks_str}{evals_release_str}\n\n{tests_release_str}\n\n{stress_tests_release_str}\n\n{server_tests_release_str}"
-    print(release_str)
-    # save to file
     release_output_dir = Path(args.output_path) / "release"
     release_output_dir.mkdir(parents=True, exist_ok=True)
     release_data_dir = release_output_dir / "data"
     release_data_dir.mkdir(parents=True, exist_ok=True)
     release_file = release_output_dir / f"report_{report_id}.md"
     raw_file = release_data_dir / f"report_data_{report_id}.json"
-    with release_file.open("w", encoding="utf-8") as f:
-        f.write(release_str)
-
+    release_str = ""
     with raw_file.open("w", encoding="utf-8") as f:
         # Read detailed benchmark statistics from CSV if available
         benchmarks_detailed_data = None
@@ -3816,7 +3815,28 @@ def main():
         if parameter_support_tests_data:
             output_data["parameter_support_tests"] = parameter_support_tests_data
 
+        acceptance_criteria, acceptance_blockers = acceptance_criteria_check(
+            output_data
+        )
+        acceptance_summary_markdown = format_acceptance_summary_markdown(
+            acceptance_criteria, acceptance_blockers
+        )
+        output_data["acceptance_criteria"] = acceptance_criteria
+        output_data["acceptance_blockers"] = acceptance_blockers
+        output_data["acceptance_summary_markdown"] = acceptance_summary_markdown
+
+        release_str = (
+            f"{release_header}\n\n{metadata_str}\n\n"
+            f"{acceptance_summary_markdown}\n\n{all_benchmarks_str}"
+            f"{evals_release_str}\n\n{tests_release_str}\n\n"
+            f"{stress_tests_release_str}\n\n{server_tests_release_str}"
+        )
+        print(release_str)
+
         json.dump(output_data, f, indent=4)
+
+    with release_file.open("w", encoding="utf-8") as f:
+        f.write(release_str)
 
     main_return_code = 0
     return main_return_code
