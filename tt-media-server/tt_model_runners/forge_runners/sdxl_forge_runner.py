@@ -127,13 +127,28 @@ class SDXLForgeRunner(BaseDeviceRunner):
         from diffusers import AutoencoderKL, EulerDiscreteScheduler, UNet2DConditionModel
         from transformers import CLIPTextModel, CLIPTextModelWithProjection, CLIPTokenizer
 
-        model_id = (
-            self.settings.model_weights_path
-            or SupportedModels.STABLE_DIFFUSION_XL_BASE.value
-        )
-        variant = "fp16" if "xl-base-1.0" in model_id else None
+        # Select model based on resolution.
+        # 512px uses hotshotco/SDXL-512, 1024px uses stabilityai/stable-diffusion-xl-base-1.0.
+        if self.resolution == 512:
+            model_id = SupportedModels.STABLE_DIFFUSION_XL_512.value
+            if self.settings.model_weights_path and self.settings.model_weights_path != SupportedModels.STABLE_DIFFUSION_XL_BASE.value:
+                self.logger.warning(
+                    f"Device {self.device_id}: model_weights_path={self.settings.model_weights_path!r} "
+                    f"is set but resolution is 512 — using {model_id} instead"
+                )
+        else:
+            model_id = (
+                self.settings.model_weights_path
+                or SupportedModels.STABLE_DIFFUSION_XL_BASE.value
+            )
 
-        self.logger.info(f"Device {self.device_id}: Loading models from {model_id}")
+        # hotshotco/SDXL-512 doesn't ship native fp16 weights; load full precision and cast
+        variant = "fp16" if model_id == SupportedModels.STABLE_DIFFUSION_XL_BASE.value else None
+
+        self.logger.info(
+            f"Device {self.device_id}: Loading models from {model_id} "
+            f"(resolution={self.resolution}, variant={variant})"
+        )
 
         # VAE — float32, stays on CPU
         self.vae = AutoencoderKL.from_pretrained(

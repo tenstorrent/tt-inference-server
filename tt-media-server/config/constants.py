@@ -7,6 +7,7 @@ from enum import Enum
 
 class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
+    STABLE_DIFFUSION_XL_512 = "hotshotco/SDXL-512"
     STABLE_DIFFUSION_XL_IMG2IMG = "stabilityai/stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_XL_INPAINTING = "diffusers/stable-diffusion-xl-1.0-inpainting-0.1"
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
