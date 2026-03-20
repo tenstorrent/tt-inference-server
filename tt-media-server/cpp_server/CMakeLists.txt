@@ -205,7 +205,10 @@ set(LLM_ENGINE_SOURCES
     src/utils/llama_tokenizer.cpp
     src/utils/tokenizer_config_loader.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
+    src/runners/sp_pipeline_runner/i_sp_pipeline_model_runner.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
+    src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
+    src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
 )
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
@@ -296,6 +299,12 @@ target_include_directories(sequence_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(lockfree_queue_test tests/lockfree_queue_test.cpp)
+target_link_libraries(lockfree_queue_test PRIVATE GTest::gtest_main)
+target_include_directories(lockfree_queue_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Tokenizer test
 add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/deepseek_tokenizer.cpp src/utils/llama_tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp src/utils/logger.cpp)
 if(USE_EXTERNAL_FMT)
@@ -311,6 +320,7 @@ include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
+gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
@@ -342,6 +352,7 @@ set(SOURCES
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
+    src/ipc/boost_ipc_warmup_signal_queue.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
     src/utils/tokenizer.cpp
@@ -349,6 +360,7 @@ set(SOURCES
     src/utils/deepseek_tokenizer.cpp
     src/utils/llama_tokenizer.cpp
     src/worker/single_process_worker.cpp
+    src/worker/worker_manager.cpp
     src/utils/service_factory.cpp
     src/utils/runner_factory.cpp
     src/utils/tokenizer_config_loader.cpp
@@ -414,4 +426,6 @@ if(SANITIZE_ADDRESS)
     target_link_options(sequence_test PRIVATE -fsanitize=address)
     target_compile_options(ipc_scheduler_smoke_test PRIVATE ${ASAN_FLAGS})
     target_link_options(ipc_scheduler_smoke_test PRIVATE -fsanitize=address)
+    target_compile_options(lockfree_queue_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(lockfree_queue_test PRIVATE -fsanitize=address)
 endif()

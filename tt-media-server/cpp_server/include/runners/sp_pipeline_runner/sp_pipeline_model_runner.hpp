@@ -6,31 +6,28 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
-#include <functional>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include "runners/llm_runner/sequence.hpp"
+#include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 #include "runners/sp_pipeline_runner/shared_memory.hpp"
-#include "utils/concurrent_queue.hpp"
 
 namespace sp_pipeline {
 
 using DecodeCallback = std::function<void(const llm_engine::TokenResult&)>;
-using DecodeQueue = LockFreeConcurrentQueue<llm_engine::TokenResult>;
 
-class SpPipelineModelRunner {
+class SpPipelineModelRunner : public ISpPipelineModelRunner {
  public:
   explicit SpPipelineModelRunner(DecodeCallback callback);
-  ~SpPipelineModelRunner();
+  ~SpPipelineModelRunner() override;
 
   SpPipelineModelRunner(const SpPipelineModelRunner&) = delete;
   SpPipelineModelRunner& operator=(const SpPipelineModelRunner&) = delete;
 
   void write(const std::string& taskId, const std::vector<int64_t>& tokenIds,
-             uint32_t maxTokens);
-  void exit();
+             uint32_t maxTokens, RequestPhase phase) override;
+  void exit() override;
 
  private:
   struct ShmNames {
@@ -48,12 +45,12 @@ class SpPipelineModelRunner {
 
   void readerLoop();
 
-  DecodeCallback decode_callback_;
-  ShmNames shm_names_;
-  PrefillSharedMemory device_input_;
-  DecodeSharedMemory device_output_;
-  std::atomic<bool> stop_{false};
-  std::thread reader_thread_;
+  DecodeCallback decodeCallback;
+  ShmNames shmNames;
+  PrefillSharedMemory deviceInput;
+  DecodeSharedMemory deviceOutput;
+  std::atomic<bool> stop{false};
+  std::thread readerThread;
 };
 
 }  // namespace sp_pipeline

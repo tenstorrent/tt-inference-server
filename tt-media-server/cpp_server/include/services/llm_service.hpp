@@ -21,7 +21,7 @@
 #include "sockets/inter_server_service.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/tokenizer.hpp"
-#include "worker/single_process_worker.hpp"
+#include "worker/worker_manager.hpp"
 
 namespace tt::services {
 
@@ -63,6 +63,8 @@ class LLMService
   domain::CompletionResponse processRequest(
       domain::CompletionRequest request) override;
 
+  std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
+
   void streamingPostProcess(domain::StreamingChunkResponse&) const override {}
   void processStreamingRequest(
       domain::CompletionRequest request,
@@ -73,8 +75,6 @@ class LLMService
   void startConsumers();
 
   void consumerLoopForWorker(size_t workerIdx);
-
-  bool checkWorkerAlive(size_t workerIdx);
 
   tt::config::LLMMode mode_;
 
@@ -88,10 +88,10 @@ class LLMService
 
   std::atomic<size_t> pending_tasks_{0};
 
-  std::atomic<bool> is_ready_{false};
   std::atomic<bool> running_{false};
 
   std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
+  std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
   const tt::utils::Tokenizer* tokenizer_;
   std::shared_ptr<tt::sockets::InterServerService> socket_service_;
 

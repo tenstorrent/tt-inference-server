@@ -2,6 +2,9 @@
 .vscode
 .DS_Store
 
+# Cursor rules
+.cursorrules
+
 # Python
 *.pyc
 __pycache__
