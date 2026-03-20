@@ -1506,7 +1506,7 @@ llm_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
-                max_concurrency=1,
+                max_concurrency=32,
                 # max_num_seqs=32 matches TT model's internal max_batch_size; the model runner
                 # pads inactive slots with token=0 / pos=-1 / block_table=0, which the
                 # paged SDPA kernel handles by skipping KV writes for pos=-1 slots.
