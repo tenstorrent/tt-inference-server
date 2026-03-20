@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import os
+import time
 
 os.environ["TT_RUNTIME_ENABLE_PROGRAM_CACHE"] = "1"
 
@@ -43,8 +44,21 @@ class SDXLForgeRunner(BaseDeviceRunner):
         self.scheduler = None
 
         # Config
-        self.resolution = self.DEFAULT_RESOLUTION
-        self.latent_size = self.resolution // 8  # 128 for 1024
+        env_resolution = os.getenv("TTXLA_SDXL_RESOLUTION")
+        if env_resolution is not None:
+            assert env_resolution in ("1024", "512"), (
+                f"TTXLA_SDXL_RESOLUTION must be 1024 or 512, got '{env_resolution}'"
+            )
+            self.resolution = int(env_resolution)
+            self.logger.info(
+                f"Device {self.device_id}: Resolution overridden by TTXLA_SDXL_RESOLUTION={self.resolution}"
+            )
+        else:
+            self.resolution = self.DEFAULT_RESOLUTION
+            self.logger.info(
+                f"Device {self.device_id}: TTXLA_SDXL_RESOLUTION not set, using default {self.resolution} resolution"
+            )
+        self.latent_size = self.resolution // 8
 
     def _init_device(self):
         """Initialize TT XLA device or fall back to CPU."""
@@ -234,8 +248,12 @@ class SDXLForgeRunner(BaseDeviceRunner):
 
         with torch.no_grad():
             # --- Text Encoding (CPU) ---
+            t0 = time.time()
             encoder_hidden_states, pooled_text_embeds = self._encode_prompts(
                 prompt, negative_prompt, cpu_cast
+            )
+            self.logger.info(
+                f"Device {self.device_id}: Text encoding took {time.time() - t0:.4f}s"
             )
 
             # --- Latent Initialization ---
@@ -266,6 +284,7 @@ class SDXLForgeRunner(BaseDeviceRunner):
             ).repeat(2, 1)  # (2, 6)
 
             # --- Diffusion Loop ---
+            t0 = time.time()
             for i, timestep in enumerate(self.scheduler.timesteps):
                 model_input = latents.repeat(2, 1, 1, 1)  # (2, 4, H, W) for CFG
                 model_input = self.scheduler.scale_model_input(model_input, timestep)
@@ -295,10 +314,18 @@ class SDXLForgeRunner(BaseDeviceRunner):
                     model_output, timestep, latents
                 ).prev_sample
 
+            self.logger.info(
+                f"Device {self.device_id}: UNet diffusion ({num_inference_steps} steps) took {time.time() - t0:.4f}s"
+            )
+
             # --- VAE Decode (CPU) ---
+            t0 = time.time()
             latents = latents / self.vae.config.scaling_factor
             latents = latents.to(dtype=torch.float32)
             images = self.vae.decode(latents).sample  # (1, 3, H, W)
+            self.logger.info(
+                f"Device {self.device_id}: VAE decode took {time.time() - t0:.4f}s"
+            )
 
             return images
 
