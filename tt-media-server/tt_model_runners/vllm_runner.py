@@ -40,6 +40,7 @@ class VLLMRunner(BaseDeviceRunner):
             additional_config={
                 "enable_const_eval": False,
                 "min_context_len": self.settings.vllm.min_context_length,
+                "experimental_weight_dtype": self.settings.vllm.experimental_weight_dtype,
             },
         )
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
