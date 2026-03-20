@@ -75,6 +75,8 @@ class ImageGenerationEvalsTestRequest:
     num_inference_steps: int = CONFIG.DEFAULT_INFERENCE_STEPS
     server_url: Optional[str] = None
     request_timeout: Optional[int] = None
+    lora_path: Optional[str] = None
+    lora_scale: Optional[float] = None
 
 
 @dataclass
@@ -85,6 +87,8 @@ class ImageGenContext:
     headers: dict
     num_inference_steps: int
     request_timeout_sec: int
+    lora_path: Optional[str] = None
+    lora_scale: Optional[float] = None
 
 
 class ImageGenerationEvalsTest(BaseTest):
@@ -103,13 +107,16 @@ class ImageGenerationEvalsTest(BaseTest):
         timeout_sec = self._request_timeout_from_config()
         logger.info(
             "Running eval - request parameters: model_name=%s, num_prompts=%s, "
-            "start_from=%s, num_inference_steps=%s, server_url=%s, timeout=%s (from config)",
+            "start_from=%s, num_inference_steps=%s, server_url=%s, timeout=%s (from config), "
+            "lora_path=%s, lora_scale=%s",
             request.model_name,
             request.num_prompts,
             request.start_from,
             request.num_inference_steps,
             request.server_url,
             timeout_sec,
+            request.lora_path,
+            request.lora_scale,
         )
 
         prompts = self._load_prompts(request)
@@ -242,6 +249,8 @@ class ImageGenerationEvalsTest(BaseTest):
             headers=self._build_headers(),
             num_inference_steps=request.num_inference_steps,
             request_timeout_sec=timeout_sec,
+            lora_path=request.lora_path,
+            lora_scale=request.lora_scale,
         )
 
         completion_counter = {"count": 0, "last_time": 0.0}
@@ -283,13 +292,8 @@ class ImageGenerationEvalsTest(BaseTest):
 
         try:
             start = time.perf_counter()
-            payload = self._build_payload(prompt, ctx.num_inference_steps)
-            logger.debug(
-                "Request for image %s/%s: url=%s, payload_keys=%s",
-                idx,
-                total,
-                f"{ctx.base_url}/{CONFIG.ENDPOINT}",
-                list(payload.keys()),
+            payload = self._build_payload(
+                prompt, ctx.num_inference_steps, ctx.lora_path, ctx.lora_scale
             )
             async with session.post(
                 f"{ctx.base_url}/{CONFIG.ENDPOINT}",
@@ -390,9 +394,14 @@ class ImageGenerationEvalsTest(BaseTest):
         }
 
     @staticmethod
-    def _build_payload(prompt: str, num_inference_steps: int) -> dict:
+    def _build_payload(
+        prompt: str,
+        num_inference_steps: int,
+        lora_path: Optional[str] = None,
+        lora_scale: Optional[float] = None,
+    ) -> dict:
         """Build image generation payload."""
-        return {
+        payload = {
             "prompt": prompt,
             "negative_prompt": CONFIG.NEGATIVE_PROMPT,
             "num_inference_steps": num_inference_steps,
@@ -402,6 +411,11 @@ class ImageGenerationEvalsTest(BaseTest):
             "image_quality": CONFIG.IMAGE_QUALITY,
             "number_of_images": 1,
         }
+        if lora_path is not None:
+            payload["lora_path"] = lora_path
+        if lora_scale is not None:
+            payload["lora_scale"] = lora_scale
+        return payload
 
     @staticmethod
     def _error(message: str) -> dict:
