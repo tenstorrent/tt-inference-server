@@ -23,8 +23,8 @@ env = "development"
 async def lifespan(app: FastAPI):
     service_resolver().start_workers()
     yield
-    service_resolver().stop_workers()
     await get_job_manager().shutdown()
+    service_resolver().stop_workers()
 
 
 app = FastAPI(

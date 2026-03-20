@@ -58,7 +58,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
     Sequence& seq = engine.scheduler().addRequest(
         std::move(TaskID(TaskID::generate())), req.prompt,
         {.max_tokens = req.max_tokens});
-    taskIds.push_back(seq.task_id);
+    taskIds.push_back(seq.taskId);
   }
 
   std::unordered_map<TaskID, std::vector<int64_t>> receivedTokens;

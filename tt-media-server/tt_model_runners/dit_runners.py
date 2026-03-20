@@ -35,6 +35,7 @@ dit_runner_log_map = {
     ModelRunners.TT_WAN_2_2.value: "Wan22",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
+    ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 
 

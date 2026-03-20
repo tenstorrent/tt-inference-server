@@ -79,12 +79,12 @@ TEST(PrefillFirstSchedulerTest, Schedule_WithOneWaiting_ReturnsPrefillBatch) {
   auto queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID expectedId = seq.task_id;
+  TaskID expectedId = seq.taskId;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
   ASSERT_EQ(batch.size(), 1u);
-  EXPECT_EQ(batch[0]->task_id, expectedId);
+  EXPECT_EQ(batch[0]->taskId, expectedId);
 }
 
 TEST(PrefillFirstSchedulerTest,
@@ -108,7 +108,7 @@ TEST(PrefillFirstSchedulerTest,
   auto queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID expectedId = seq.task_id;
+  TaskID expectedId = seq.taskId;
   sched.add(seq);
   auto [prefill_batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
@@ -119,7 +119,7 @@ TEST(PrefillFirstSchedulerTest,
   auto [decode_batch, is_decode] = sched.schedule();
   ASSERT_FALSE(is_decode);
   ASSERT_EQ(decode_batch.size(), 1u);
-  EXPECT_EQ(decode_batch[0]->task_id, expectedId);
+  EXPECT_EQ(decode_batch[0]->taskId, expectedId);
 }
 
 TEST(PrefillFirstSchedulerTest, OneRequest_PrefillThenDecodeThenEos) {
@@ -206,17 +206,17 @@ TEST(PrefillFirstSchedulerTest, Preempt_MovesSequenceBackToWaiting) {
   auto queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID expectedId = seq.task_id;
+  TaskID expectedId = seq.taskId;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
   ASSERT_EQ(batch.size(), 1u);
   sched.preempt(*batch[0]);
-  EXPECT_EQ(batch[0]->status_, SequenceStatus::WAITING);
+  EXPECT_EQ(batch[0]->status, SequenceStatus::WAITING);
   auto [batch2, is_prefill2] = sched.schedule();
   EXPECT_TRUE(is_prefill2);
   EXPECT_EQ(batch2.size(), 1u);
-  EXPECT_EQ(batch2[0]->task_id, expectedId);
+  EXPECT_EQ(batch2[0]->taskId, expectedId);
 }
 
 TEST(PrefillFirstSchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
@@ -225,7 +225,7 @@ TEST(PrefillFirstSchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq1{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
   Sequence seq2{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID seq2TaskId = seq2.task_id;
+  TaskID seq2TaskId = seq2.taskId;
   sched.add(seq1);
   auto [batch1, prefill1] = sched.schedule();
   ASSERT_TRUE(prefill1);
@@ -234,7 +234,7 @@ TEST(PrefillFirstSchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
   auto [batch2, prefill2] = sched.schedule();
   EXPECT_TRUE(prefill2) << "Prefill (seq2) should be chosen over decode (seq1)";
   ASSERT_EQ(batch2.size(), 1u);
-  EXPECT_EQ(batch2[0]->task_id, seq2TaskId);
+  EXPECT_EQ(batch2[0]->taskId, seq2TaskId);
 }
 
 TEST(PrefillFirstSchedulerTest, Schedule_RespectsMaxNumBatchedTokens) {
@@ -344,7 +344,7 @@ TEST(PrefillFirstSchedulerTest, PrefillsAllBeforeDecode) {
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq1{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
   Sequence seq2{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID seq2Id = seq2.task_id;
+  TaskID seq2Id = seq2.taskId;
   sched.add(seq1);
   sched.add(seq2);
 
@@ -356,7 +356,7 @@ TEST(PrefillFirstSchedulerTest, PrefillsAllBeforeDecode) {
   ASSERT_TRUE(pf2)
       << "PrefillFirst: seq2 should be prefilled even with seq1 running";
   ASSERT_EQ(b2.size(), 1u);
-  EXPECT_EQ(b2[0]->task_id, seq2Id);
+  EXPECT_EQ(b2[0]->taskId, seq2Id);
 }
 
 // --- make_scheduler factory test for MAX_OCCUPANCY ---

@@ -135,17 +135,16 @@ async function refreshJobs() {
             tr.addEventListener('click', () => selectJob(job.id));
             tbody.appendChild(tr);
         }
+
+        if (selectedJobId) {
+            refreshJobDetail(selectedJobId);
+        }
     } catch (e) {
         console.error('Failed to refresh jobs:', e);
     }
 }
 
-async function selectJob(jobId) {
-    selectedJobId = jobId;
-
-    // Re-highlight after refresh
-    refreshJobs();
-
+async function refreshJobDetail(jobId) {
     const detailDiv = $('job-detail');
     detailDiv.hidden = false;
     $('detail-id').textContent = jobId;
@@ -176,8 +175,13 @@ async function selectJob(jobId) {
     } catch (e) {
         $('detail-meta').innerHTML = `<dt>Error</dt><dd>${e.message}</dd>`;
     }
+}
 
-    // Reset and start metrics polling
+async function selectJob(jobId) {
+    selectedJobId = jobId;
+    refreshJobs();
+    await refreshJobDetail(jobId);
+
     metricsSeries = {};
     $('metrics-heading').textContent = 'No metrics to show';
     $('metrics-chart').style.display = 'none';
