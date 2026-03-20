@@ -28,7 +28,7 @@ class SDXLForgeRunner(BaseDeviceRunner):
     DEFAULT_CFG_SCALE = 7.5
     DEFAULT_RESOLUTION = 1024  # 1024x1024
 
-    def __init__(self, device_id: str):
+    def __init__(self, device_id: str, cpu_threads="8", num_torch_threads=8):
         super().__init__(device_id)
         self._setup_done = False
         self.device = None  # XLA or CPU device
