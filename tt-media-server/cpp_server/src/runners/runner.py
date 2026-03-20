@@ -147,8 +147,7 @@ def _open_mesh_device(
     )
     try:
         return ttnn.open_mesh_device(
-            mesh_shape=ttnn.MeshShape(4, 2),
-            trace_region_size=trace_region_size_bytes,
+            mesh_shape=ttnn.MeshShape(4, 2), worker_l1_size=1431568
         )
     except TypeError:
         return ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(4, 2))
