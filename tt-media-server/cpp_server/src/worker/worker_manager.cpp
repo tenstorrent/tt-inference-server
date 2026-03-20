@@ -58,7 +58,7 @@ WorkerManager::WorkerManager(size_t numWorkers) : workerCount{numWorkers} {
 WorkerManager::~WorkerManager() { stop(); }
 
 void WorkerManager::start() {
-  startWarmupListenerThread();
+  startWarmupListener();
   startWorkers();
   waitForFirstWarmup();
 }
@@ -176,7 +176,7 @@ void WorkerManager::startWorkers() {
   }
 }
 
-void WorkerManager::startWarmupListenerThread() {
+void WorkerManager::startWarmupListener() {
   tt::ipc::BoostIpcWarmupSignalQueue::remove(
       tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
   warmupQueue = std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(

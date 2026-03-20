@@ -61,7 +61,7 @@ class WorkerManager {
   bool isWorkerWarmed(int workerId) const;
 
   void startWorkers();
-  void startWarmupListenerThread();
+  void startWarmupListener();
   void waitForFirstWarmup();
   void stopWarmupListener();
   void stopProcesses();
