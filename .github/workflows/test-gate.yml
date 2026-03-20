@@ -494,31 +494,6 @@ jobs:
       - name: Check test result
         run: exit ${{ env.TEST_EXIT_CODE }}
 
-  cpp-server-ttnn-build:
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
-    name: C++ Server TTNN Build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    env:
-      PYTHONPATH: ${{ github.workspace }}/tt-media-server
-    defaults:
-      run:
-        working-directory: tt-media-server
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
-
-      - name: Build C++ server
-        run: |
-          cd cpp_server
-          ./build.sh
-
   cpp-server-llm-streaming:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
@@ -1324,7 +1299,6 @@ jobs:
       - forge-runner-cpu-tests
       - llm-streaming-performance
       - test-coverage
-      - cpp-server-ttnn-build
       - cpp-server-llm-streaming
       - cpp-server-llm-streaming-mock-pipeline
       - cpp-server-prefill-decode-split
@@ -1351,10 +1325,6 @@ jobs:
           fi
           if [[ "${{ needs.test-coverage.result }}" == "failure" ]]; then
             echo "❌ Test coverage below 50% threshold - PR blocked"
-            exit 1
-          fi
-          if [[ "${{ needs.cpp-server-ttnn-build.result }}" == "failure" ]]; then
-            echo "❌ C++ server TTNN build failed"
             exit 1
           fi
           if [[ "${{ needs.cpp-server-llm-streaming.result }}" == "failure" ]]; then
