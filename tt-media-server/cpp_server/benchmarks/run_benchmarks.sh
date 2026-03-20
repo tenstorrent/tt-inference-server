@@ -5,7 +5,7 @@ MODEL="${MODEL:-deepseek-ai/DeepSeek-R1-0528}"
 BACKEND="openai-chat"
 ENDPOINT="/v1/chat/completions"
 DATASET="random"
-NUM_PROMPTS="${NUM_PROMPTS:-100}"
+NUM_PROMPTS="${NUM_PROMPTS:-1}"
 RESULTS_DIR="${RESULTS_DIR:-bench_results}"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 
@@ -28,6 +28,9 @@ run_bench() {
         --max-concurrency "$concurrency" \
         --save-result \
         --result-filename "$filename"
+    jq --argjson isl "$isl" --argjson osl "$osl" \
+        '. + {input_seq_len: $isl, output_seq_len: $osl}' \
+        "$filename" > "${filename}.tmp" && mv "${filename}.tmp" "$filename"
     echo "  -> Saved to $filename"
 }
 
