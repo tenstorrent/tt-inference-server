@@ -23,13 +23,13 @@ class MockModelRunner : public IModelRunner {
     if (isPrefill) {
       ZoneScopedN("MockModelRunner::prefill");
       for (Sequence* seq : seqs) {
-        decodeCallback(TokenResult(seq->task_id, K_WHITESPACE_TOKEN_ID));
+        decodeCallback(TokenResult(seq->taskId, K_WHITESPACE_TOKEN_ID));
       }
     } else {
       ZoneScopedN("MockModelRunner::decode");
       for (Sequence* seq : seqs) {
-        decodeCallback(TokenResult(seq->task_id,
-                                   static_cast<uint64_t>(seq->last_token + 1)));
+        decodeCallback(TokenResult(seq->taskId,
+                                   static_cast<uint64_t>(seq->lastToken + 1)));
       }
     }
   }
