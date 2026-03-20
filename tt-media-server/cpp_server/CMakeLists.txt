@@ -360,6 +360,7 @@ set(SOURCES
     src/utils/deepseek_tokenizer.cpp
     src/utils/llama_tokenizer.cpp
     src/worker/single_process_worker.cpp
+    src/worker/worker_manager.cpp
     src/utils/service_factory.cpp
     src/utils/runner_factory.cpp
     src/utils/tokenizer_config_loader.cpp

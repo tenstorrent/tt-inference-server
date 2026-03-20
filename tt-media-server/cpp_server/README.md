@@ -1,10 +1,55 @@
-# TT Media Server - C++ Drogon Implementation
+# Zero-Overhead Inference Server
 
-## LLM Engine
+Production-grade, zero-overhead C++ inference server for AI workloads on
+Tenstorrent hardware. Supports LLM serving today; image, video, audio,
+and text-to-speech models are on the roadmap.
 
-The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runners/llm_engine/` (sources). The engine uses the server's logging (`[DEBUG] [llm_engine:...]`) instead of its own.
+## Non-Functional Requirements
 
-### Main featuresrmance C++ implementation of the TT Media Server using the Drogon web framework. This implementation is designed to benchmark the overhead of the Python FastAPI server by providing an identical API with minimal overhead.
+These requirements drive design decisions in this codebase. They are ordered
+by priority — when two requirements conflict, the higher-ranked one wins.
+
+### 1. Performance (Zero-Overhead)
+
+The server is the envelope around the model; that envelope must be invisible.
+Every microsecond of framework overhead (serialization, scheduling, IPC,
+queue management) is a design failure. The goal is not "fast" — it is
+"never the bottleneck."
+
+- Prefer zero-copy and shared-memory IPC (`/dev/shm`) over serialization.
+- Tracy profiling instrumentation to detect and eliminate overhead regressions.
+- Nightly performance benchmarks to catch regressions before they ship.
+
+### 2. Fault Tolerance
+
+Workers interact with Tenstorrent devices that can hang or crash. The server
+must detect failed workers, restart them (including device re-initialization),
+and continue serving. A single bad request must fail gracefully without
+affecting other in-flight requests or the main process.
+
+- Main process acts as supervisor; workers run as child processes (fork/exec).
+- Worker health monitoring (heartbeat/watchdog).
+- Request-level fault isolation — one failure does not cascade.
+
+### 3. Observability
+
+This is a customer-facing product. Clients and field engineers must be able
+to diagnose production issues (slow tokens, hung devices, degraded throughput)
+without reading source code.
+
+- Structured logging with request-ID correlation across HTTP → worker → device.
+- Production metrics (tokens/sec, queue depth, latency histograms, device health).
+- Health/liveness endpoints that surface meaningful diagnostics, not just "alive."
+
+### 4. Extensibility
+
+New model types (image, video, audio, text-to-speech) will be added with increasing frequency. The
+server must make this straightforward without modifying core infrastructure.
+
+- Stable core (HTTP layer, tokenization, worker lifecycle) that rarely changes.
+- Model-specific logic isolated in adapter layers (runner implementations).
+- When hardware topology requires custom communication or scheduling, changes
+  are confined to the worker level — the main server remains unchanged.
 
 ## Logging
 
