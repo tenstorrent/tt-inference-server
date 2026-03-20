@@ -818,7 +818,7 @@ Labels are part of the metrics. Example:
 tt_media_server_device_warmup_duration_seconds_sum{device_id="2",model_type="tt-sdxl-trace"} 505.4703781604767
 
 - **`model_type`**: The type of model being used (e.g., `SDXL`, `TT_SDXL_IMAGE_TO_IMAGE`)
-- **`device_id`**: Identifier for the Tenstorrent device being used
+- **`device_id`**: Logical index of the Tenstorrent device for that worker (devices are ordered by PCI bus address; on Galaxy this stays the same across reset). Not the same as the number in `/dev/tenstorrent/N`.
 - **`status`**: Operation status (`success` or `failure`)
 - **`preprocessing_enabled`**: Whether preprocessing is enabled (`true` or `false`)
 - **`post_processing_enabled`**: Whether post-processing is enabled (`true` or `false`)

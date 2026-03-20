@@ -787,6 +787,82 @@ class TestJobManager:
         assert job_manager.get_job_metadata("job-123")["status"] == JobStatus.CANCELLED
 
     @pytest.mark.asyncio
+    async def test_cancel_queued_job(self, job_manager, mock_request):
+        """QUEUED job can be cancelled immediately."""
+        start_event_1 = Event()
+
+        async def long_task(req):
+            start_event_1.set()
+            await asyncio.sleep(10)
+            return "result.pt"
+
+        await job_manager.create_job(
+            job_id="job-running",
+            job_type=JobTypes.TRAINING,
+            model="m",
+            request=mock_request,
+            task_function=long_task,
+            result_path="result.pt",
+            start_event=start_event_1,
+        )
+        await job_manager.create_job(
+            job_id="job-queued",
+            job_type=JobTypes.TRAINING,
+            model="m",
+            request=mock_request,
+            task_function=long_task,
+            result_path="result.pt",
+            start_event=Event(),
+        )
+
+        await asyncio.sleep(0.3)
+        assert job_manager.get_job_metadata("job-running")["status"] == "in_progress"
+        assert job_manager.get_job_metadata("job-queued")["status"] == "queued"
+
+        result = job_manager.cancel_job("job-queued")
+        assert result["status"] == "cancelled"
+
+        if job_manager.db:
+            assert (
+                job_manager.db.get_job_by_id("job-running")["status"] == "in_progress"
+            )
+            assert job_manager.db.get_job_by_id("job-queued")["status"] == "cancelled"
+
+    @pytest.mark.asyncio
+    async def test_cancel_task_sets_cancel_event(self, job_manager, mock_request):
+        """When a training job's task receives CancelledError, _cleanup_job in the handler sets cancel_event."""
+        start_event = Event()
+        cancel_event = Event()
+
+        async def training_task(req):
+            start_event.set()
+            await asyncio.sleep(10)
+            return "result.pt"
+
+        await job_manager.create_job(
+            job_id="job-ce",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=training_task,
+            result_path="result.pt",
+            start_event=start_event,
+            cancel_event=cancel_event,
+        )
+
+        await asyncio.sleep(0.3)
+        assert job_manager.get_job_metadata("job-ce")["status"] == "in_progress"
+        assert not cancel_event.is_set()
+
+        with job_manager._jobs_lock:
+            job = job_manager._jobs["job-ce"]
+        job._task.cancel()
+
+        await asyncio.sleep(0.2)
+
+        assert cancel_event.is_set()
+
+    @pytest.mark.asyncio
     async def test_cleanup_old_completed_jobs(self, job_manager, mock_request):
         """Test cleanup removes old completed jobs"""
 
@@ -1085,37 +1161,6 @@ class TestJobManager:
             db_job3 = job_manager.db.get_job_by_id("job-coop")
             assert db_job3["status"] == "cancelled"
             assert db_job3["completed_at"] is not None
-
-    @pytest.mark.asyncio
-    async def test_shutdown_force_cancels_cooperative_job(
-        self, job_manager, mock_request
-    ):
-        """Test that when shutting down the server, cooperative jobs are force-cancelled without waiting for the runner to handle it."""
-        start_event = Event()
-        cancel_event = Event()
-
-        async def cooperative_task(req):
-            start_event.set()
-            while not cancel_event.is_set():
-                await asyncio.sleep(0.05)
-            return "models_save/result.pt"
-
-        await job_manager.create_job(
-            job_id="job-shutdown",
-            job_type=JobTypes.TRAINING,
-            model="test-model",
-            request=mock_request,
-            task_function=cooperative_task,
-            result_path="models_save/result.pt",
-            start_event=start_event,
-            cancel_event=cancel_event,
-        )
-
-        await asyncio.sleep(0.3)
-        await job_manager.shutdown()
-
-        # Task should have been force-cancelled, not waiting for cooperative exit
-        assert not cancel_event.is_set()  # force=True skips the event
 
     @pytest.mark.asyncio
     async def test_queued_job_starts_after_in_progress_job_cancelled(
