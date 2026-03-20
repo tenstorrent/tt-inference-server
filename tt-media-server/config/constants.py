@@ -849,6 +849,13 @@ ModelConfigs[(ModelRunners.TT_XLA_SDXL, DeviceTypes.P150X4)] = {
     "max_batch_size": 1,
 }
 
+ModelConfigs[(ModelRunners.TT_XLA_SDXL, DeviceTypes.P300X2)] = {
+    "device_mesh_shape": (1, 1),
+    "is_galaxy": False,
+    "device_ids": DeviceIds.DEVICE_IDS_4.value,
+    "max_batch_size": 1,
+}
+
 for runner in [
     ModelRunners.TT_XLA_RESNET,
     ModelRunners.TT_XLA_VOVNET,
