@@ -15,10 +15,12 @@ import os
 import signal
 import sys
 import time
+from pathlib import Path
 
 from shared_memory import DECODE_MAX_TOKEN_IDS, PREFILL_MAX_TOKEN_IDS, SharedMemory
 
 _shutdown = False
+_READY_SENTINEL = Path("/dev/shm/tt_pipeline_ready")
 
 
 def _handle_sigterm(signum, frame):
@@ -26,20 +28,23 @@ def _handle_sigterm(signum, frame):
     _shutdown = True
 
 
-def _run_mock_bridge() -> None:
-    """Open shared-memory buffers and run the mock echo bridge."""
+def _write_ready_sentinel() -> None:
+    _READY_SENTINEL.write_text(str(os.getpid()))
+
+
+def _remove_ready_sentinel() -> None:
+    _READY_SENTINEL.unlink(missing_ok=True)
+
+
+def _open_shm() -> tuple[SharedMemory, SharedMemory]:
     c2p_name = os.environ.get("TT_IPC_SHM_C2P")
     p2c_name = os.environ.get("TT_IPC_SHM_P2C")
 
     if not (c2p_name and p2c_name):
-        print(
-            "Error: TT_IPC_SHM_C2P or TT_IPC_SHM_P2C not set",
-            file=sys.stderr,
-        )
+        print("Error: TT_IPC_SHM_C2P or TT_IPC_SHM_P2C not set", file=sys.stderr)
         print("Example usage:", file=sys.stderr)
         print("  export TT_IPC_SHM_C2P=tt_ipc_c2p_12345", file=sys.stderr)
         print("  export TT_IPC_SHM_P2C=tt_ipc_p2c_12345", file=sys.stderr)
-        print("  python mock_runner.py", file=sys.stderr)
         sys.exit(1)
 
     print(
@@ -50,59 +55,55 @@ def _run_mock_bridge() -> None:
     def is_shutdown() -> bool:
         return _shutdown
 
-    try:
-        with SharedMemory(
-            c2p_name, max_token_ids=PREFILL_MAX_TOKEN_IDS, is_shutdown=is_shutdown
-        ) as c2p, SharedMemory(
-            p2c_name, max_token_ids=DECODE_MAX_TOKEN_IDS, is_shutdown=is_shutdown
-        ) as p2c:
-            print("Mock runner: SHM bridge started successfully", file=sys.stderr)
+    c2p = SharedMemory(c2p_name, max_token_ids=PREFILL_MAX_TOKEN_IDS, is_shutdown=is_shutdown)
+    p2c = SharedMemory(p2c_name, max_token_ids=DECODE_MAX_TOKEN_IDS, is_shutdown=is_shutdown)
+    c2p.open()
+    p2c.open()
+    return c2p, p2c
 
-            while not _shutdown:
-                msg = c2p.read()
-                if msg is None:
-                    break
 
-                task_id_str = msg.task_id.decode("utf-8", errors="ignore").rstrip(
-                    "\x00"
-                )
-                tokens_to_generate = (
-                    msg.max_tokens if msg.max_tokens > 0 else len(msg.token_ids)
-                )
+def _run_inference_loop(c2p: SharedMemory, p2c: SharedMemory) -> None:
+    print("Mock runner: SHM bridge started successfully", file=sys.stderr)
 
-                print(
-                    f"Mock runner: Received task_id={task_id_str}, "
-                    f"max_tokens={msg.max_tokens}, "
-                    f"num_tokens={len(msg.token_ids)}, "
-                    f"tokens={msg.token_ids[:5]}{'...' if len(msg.token_ids) > 5 else ''}",
-                    file=sys.stderr,
-                )
+    while not _shutdown:
+        msg = c2p.read()
+        if msg is None:
+            break
 
-                for i in range(tokens_to_generate):
-                    start_time = time.perf_counter()
+        task_id_str = msg.task_id.decode("utf-8", errors="ignore").rstrip("\x00")
+        tokens_to_generate = (
+            msg.max_tokens if msg.max_tokens > 0 else len(msg.token_ids)
+        )
 
-                    token_id = msg.token_ids[i] if i < len(msg.token_ids) else 12345
-                    p2c.write_token(msg.task_id, token_id)
+        print(
+            f"Mock runner: Received task_id={task_id_str}, "
+            f"max_tokens={msg.max_tokens}, "
+            f"num_tokens={len(msg.token_ids)}, "
+            f"tokens={msg.token_ids[:5]}{'...' if len(msg.token_ids) > 5 else ''}",
+            file=sys.stderr,
+        )
 
-                    print(
-                        f"Mock runner: Sent token {i + 1}/{tokens_to_generate}: {token_id}",
-                        file=sys.stderr,
-                    )
+        for i in range(tokens_to_generate):
+            start_time = time.perf_counter()
 
-                    # Sleep for remaining time to reach 50 microseconds total
-                    elapsed = time.perf_counter() - start_time
-                    remaining = 0.00002 - elapsed  # 20 microseconds total
-                    if remaining > 0:
-                        time.sleep(remaining)
+            token_id = msg.token_ids[i] if i < len(msg.token_ids) else 12345
+            p2c.write_token(msg.task_id, token_id)
 
-                print(
-                    f"Mock runner: Finished generating {tokens_to_generate} tokens for task {task_id_str}",
-                    file=sys.stderr,
-                )
-    except KeyboardInterrupt:
-        print("\nMock runner: Interrupted by user", file=sys.stderr)
+            print(
+                f"Mock runner: Sent token {i + 1}/{tokens_to_generate}: {token_id}",
+                file=sys.stderr,
+            )
 
-    print("Mock runner: Shutdown complete", file=sys.stderr)
+            # Sleep for remaining time to reach 20 microseconds total
+            elapsed = time.perf_counter() - start_time
+            remaining = 0.00002 - elapsed
+            if remaining > 0:
+                time.sleep(remaining)
+
+        print(
+            f"Mock runner: Finished generating {tokens_to_generate} tokens for task {task_id_str}",
+            file=sys.stderr,
+        )
 
 
 def main() -> None:
@@ -110,7 +111,19 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_sigterm)
 
     print("Mock runner: Starting (no ttnn dependencies)", file=sys.stderr)
-    _run_mock_bridge()
+
+    c2p, p2c = _open_shm()
+    _write_ready_sentinel()
+    print("Mock runner: shared memory ready, PID sentinel written", file=sys.stderr)
+
+    try:
+        _run_inference_loop(c2p, p2c)
+    finally:
+        c2p.close()
+        p2c.close()
+        _remove_ready_sentinel()
+
+    print("Mock runner: Shutdown complete", file=sys.stderr)
 
 
 if __name__ == "__main__":
