@@ -478,7 +478,7 @@ class Scheduler:
                             f"Worker {worker_id} has too many errors ({info['error_count']}), restarting"
                         )
 
-                self.logger.info(
+                self.logger.debug(
                     f"Worker health check: {len(dead_workers)} dead workers found"
                 )
 
