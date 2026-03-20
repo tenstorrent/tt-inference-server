@@ -65,15 +65,19 @@ class SharedMemory {
   explicit SharedMemory(const std::string& name)
       : name(name[0] == '/' ? name : "/" + name) {}
 
-  ~SharedMemory() {
-    if (memPointer && memPointer != MAP_FAILED) {
-      munmap(memPointer, Msg::K_TOTAL_SIZE);
-    }
-    shm_unlink(name.c_str());
-  }
+  ~SharedMemory() { close(); }
 
   SharedMemory(const SharedMemory&) = delete;
   SharedMemory& operator=(const SharedMemory&) = delete;
+
+  void close() {
+    if (memPointer && memPointer != MAP_FAILED) {
+      munmap(memPointer, Msg::K_TOTAL_SIZE);
+      memPointer = nullptr;
+    }
+    messages = std::span<Msg>{};
+    current = 0;
+  }
 
   void open() {
     int fd = shm_open(name.c_str(), O_RDWR, 0);

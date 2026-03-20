@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <thread>
 
@@ -39,59 +40,89 @@ SpPipelineRunner::~SpPipelineRunner() {
 
 void SpPipelineRunner::run() {
   while (!stopped.load(std::memory_order_relaxed)) {
+    if (!modelRunner->isConnected()) {
+      TT_LOG_WARN("SpPipelineRunner: pipeline disconnected, stopping runner");
+      break;
+    }
     step();
   }
 }
 
 bool SpPipelineRunner::warmup() {
-  // Create a warmup sequence with a single token
-  llm_engine::SamplingParams warmupParams;
-  warmupParams.max_tokens = 1;
-  warmupParams.ignore_eos = true;
+  // Phase 1: Connect to pipeline shared memory.
+  // Python creates shm before model loading, so this typically resolves in
+  // seconds -- it only races on startup order.
+  TT_LOG_INFO("SpPipelineRunner: connecting to model pipeline shared memory...");
+  modelRunner->connect();
+  if (stopped.load(std::memory_order_relaxed)) return false;
+  TT_LOG_INFO("SpPipelineRunner: connected to model pipeline");
 
-  std::vector<int64_t> warmupTokens = {1};  // Single token
-  llm_engine::TaskID warmupTaskId("warmup_task");
+  // Phase 2: Send one warmup token and wait for the pipeline response.
+  // The pipeline may still be loading its model (10+ min), so the token sits
+  // in the ring buffer until the pipeline enters its inference loop.
+  const int TIMEOUT_SECONDS = [&]() {
+    const char* s = std::getenv("TT_WARMUP_TIMEOUT_S");
+    if (s) {
+      try {
+        return std::stoi(s);
+      } catch (...) {
+      }
+    }
+    return 1200;  // default 20 min
+  }();
 
-  auto warmupSeq = std::make_unique<llm_engine::Sequence>(
-      warmupTaskId,
-      1,  // block_size (doesn't matter for warmup)
-      warmupTokens, warmupParams);
+  const llm_engine::TaskID WARMUP_TASK_ID("warmup_task");
+  const std::vector<int64_t> WARMUP_TOKENS = {1};
 
-  modelRunner->write(warmupSeq->taskId.id, warmupSeq->tokenIds, 1,
+  modelRunner->write(WARMUP_TASK_ID.id, WARMUP_TOKENS, 1,
                      sp_pipeline::RequestPhase::PREFILL);
+  TT_LOG_INFO(
+      "SpPipelineRunner: warmup token sent, waiting for model pipeline "
+      "response (timeout={}s)...",
+      TIMEOUT_SECONDS);
 
-  // Wait for the response token (with timeout)
-  const int MAX_ATTEMPTS = 1000;  // ~10 seconds with 10ms sleep
-  int attempts = 0;
-  bool receivedToken = false;
+  const auto DEADLINE =
+      std::chrono::steady_clock::now() + std::chrono::seconds(TIMEOUT_SECONDS);
+  auto lastLogTime = std::chrono::steady_clock::now();
+  static constexpr auto LOG_INTERVAL = std::chrono::seconds(30);
+  const auto WARMUP_START = std::chrono::steady_clock::now();
 
-  while (attempts < MAX_ATTEMPTS && !receivedToken) {
+  while (!stopped.load(std::memory_order_relaxed)) {
     std::vector<llm_engine::TokenResult> results;
     decodeQueue.popMany(results, maxInFlightCount);
     for (const auto& dr : results) {
-      if (dr.taskId == warmupTaskId) {
+      if (dr.taskId == WARMUP_TASK_ID) {
         if (dr.isError) {
-          TT_LOG_ERROR("SpPipelineRunner: Warmup failed with error");
+          TT_LOG_ERROR("SpPipelineRunner: warmup failed with error");
           return false;
         }
-        receivedToken = true;
-        break;
+        TT_LOG_INFO("SpPipelineRunner: warmup successful");
+        return true;
       }
     }
 
-    if (!receivedToken) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      attempts++;
+    const auto NOW = std::chrono::steady_clock::now();
+    if (NOW > DEADLINE) {
+      TT_LOG_ERROR("SpPipelineRunner: warmup timed out after {}s",
+                   TIMEOUT_SECONDS);
+      return false;
     }
+
+    if (NOW - lastLogTime >= LOG_INTERVAL) {
+      lastLogTime = NOW;
+      const auto ELAPSED_S = std::chrono::duration_cast<std::chrono::seconds>(
+                                 NOW - WARMUP_START)
+                                 .count();
+      TT_LOG_INFO(
+          "SpPipelineRunner: waiting for model pipeline warmup response... "
+          "(elapsed {}s)",
+          ELAPSED_S);
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
-  if (!receivedToken) {
-    TT_LOG_ERROR("SpPipelineRunner: Warmup timed out waiting for token");
-    return false;
-  }
-
-  TT_LOG_INFO("SpPipelineRunner: Warmup successful");
-  return true;
+  return false;
 }
 
 void SpPipelineRunner::stop() {

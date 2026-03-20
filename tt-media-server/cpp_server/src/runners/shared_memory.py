@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import struct
 from dataclasses import dataclass
+from multiprocessing import resource_tracker
 from multiprocessing import shared_memory as _shm
 from typing import Callable
 
@@ -74,11 +75,13 @@ class SharedMemory:
                 name=self._name, create=True, size=self._total_size
             )
         except FileExistsError:
-            temp_shm = _shm.SharedMemory(name=self._name, create=False)
-            temp_shm.unlink()  # delete the existing shared memory block
-            self._shm = _shm.SharedMemory(
-                name=self._name, create=True, size=self._total_size
-            )
+            # Segment already exists (e.g. previous run crashed before cleanup).
+            # Reuse it in-place and zero all slots so both sides start in sync.
+            self._shm = _shm.SharedMemory(name=self._name, create=False)
+            self._shm.buf[: self._total_size] = b"\x00" * self._total_size
+        # Unregister from the resource tracker so the OS segment is NOT unlinked
+        # when this process exits. Python owns creation; lifecycle is explicit.
+        resource_tracker.unregister(f"/{self._name}", "shared_memory")
         os.chmod(f"/dev/shm/{self._name}", 0o666)
         self._buf = self._shm.buf
 

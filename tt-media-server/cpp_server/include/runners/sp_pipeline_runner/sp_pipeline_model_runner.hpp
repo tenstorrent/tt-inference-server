@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <string>
@@ -25,6 +26,8 @@ class SpPipelineModelRunner : public ISpPipelineModelRunner {
   SpPipelineModelRunner(const SpPipelineModelRunner&) = delete;
   SpPipelineModelRunner& operator=(const SpPipelineModelRunner&) = delete;
 
+  void connect() override;
+  bool isConnected() const override;
   void write(const std::string& taskId, const std::vector<int64_t>& tokenIds,
              uint32_t maxTokens, RequestPhase phase) override;
   void exit() override;
@@ -43,6 +46,7 @@ class SpPipelineModelRunner : public ISpPipelineModelRunner {
     std::string read;
   };
 
+  static bool isPipelineAlive();
   void readerLoop();
 
   DecodeCallback decodeCallback;
@@ -50,6 +54,7 @@ class SpPipelineModelRunner : public ISpPipelineModelRunner {
   PrefillSharedMemory deviceInput;
   DecodeSharedMemory deviceOutput;
   std::atomic<bool> stop{false};
+  std::atomic<bool> connected_{false};
   std::thread readerThread;
 };
 

@@ -65,7 +65,11 @@ void HealthController::ready(
     }
     response["workers"] = workers;
 
-    callback(drogon::HttpResponse::newHttpJsonResponse(response));
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    if (!status.model_ready) {
+      resp->setStatusCode(drogon::k503ServiceUnavailable);
+    }
+    callback(resp);
   } catch (const std::exception& e) {
     Json::Value response;
     response["status"] = "alive";

@@ -26,6 +26,8 @@ class MockSpPipelineModelRunner : public ISpPipelineModelRunner {
   MockSpPipelineModelRunner& operator=(const MockSpPipelineModelRunner&) =
       delete;
 
+  void connect() override {}
+  bool isConnected() const override { return true; }
   void write(const std::string& task_id, const std::vector<int64_t>& token_ids,
              uint32_t max_tokens, RequestPhase phase) override;
   void exit() override;

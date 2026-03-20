@@ -24,11 +24,20 @@ from models.demos.deepseek_v3_b1.demo.pipeline import create_fabric_router_confi
 from shared_memory import DECODE_MAX_TOKEN_IDS, PREFILL_MAX_TOKEN_IDS, SharedMemory
 
 _shutdown = False
+_READY_SENTINEL = Path("/dev/shm/tt_pipeline_ready")
 
 
 def _handle_sigterm(signum, frame):
     global _shutdown
     _shutdown = True
+
+
+def _write_ready_sentinel() -> None:
+    _READY_SENTINEL.write_text(str(os.getpid()))
+
+
+def _remove_ready_sentinel() -> None:
+    _READY_SENTINEL.unlink(missing_ok=True)
 
 
 def _rank() -> int:
@@ -73,8 +82,12 @@ def _shm_is_configured() -> bool:
     return bool(c2p_name and p2c_name)
 
 
-def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
-    """Open shared-memory buffers and run the inference loop."""
+def _open_shm_early() -> tuple[SharedMemory, SharedMemory]:
+    """Open shared-memory segments before model loading.
+
+    Creating shm early lets the C++ inference server connect in seconds
+    rather than waiting the full model load time (~10+ min).
+    """
     c2p_name = os.environ.get("TT_IPC_SHM_C2P")
     p2c_name = os.environ.get("TT_IPC_SHM_P2C")
     if not (c2p_name and p2c_name):
@@ -85,28 +98,33 @@ def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
     def is_shutdown() -> bool:
         return _shutdown
 
-    with SharedMemory(
-        c2p_name, max_token_ids=PREFILL_MAX_TOKEN_IDS, is_shutdown=is_shutdown
-    ) as c2p, SharedMemory(
-        p2c_name, max_token_ids=DECODE_MAX_TOKEN_IDS, is_shutdown=is_shutdown
-    ) as p2c:
-        print("Starting inference loop")
-        while not _shutdown:
-            msg = c2p.read()
-            if msg is None:
-                break
-            print(f"Received message: {msg}")
-            print(
-                f"Running inference for task {msg.task_id} with "
-                f"{len(msg.token_ids)} token_ids and max_tokens {msg.max_tokens}"
-            )
-            model_pipeline.run_inference(
-                prompt_token_ids=msg.token_ids,
-                max_new_tokens=msg.max_tokens,
-                on_token=lambda tid: p2c.write_token(msg.task_id, tid),
-                eos_token_id=1,
-            )
-            print("Inference completed")
+    c2p = SharedMemory(c2p_name, max_token_ids=PREFILL_MAX_TOKEN_IDS, is_shutdown=is_shutdown)
+    p2c = SharedMemory(p2c_name, max_token_ids=DECODE_MAX_TOKEN_IDS, is_shutdown=is_shutdown)
+    c2p.open()
+    p2c.open()
+    return c2p, p2c
+
+
+def _run_inference_loop(
+    model_pipeline: ModelPipeline, c2p: SharedMemory, p2c: SharedMemory
+) -> None:
+    print("Starting inference loop")
+    while not _shutdown:
+        msg = c2p.read()
+        if msg is None:
+            break
+        print(f"Received message: {msg}")
+        print(
+            f"Running inference for task {msg.task_id} with "
+            f"{len(msg.token_ids)} token_ids and max_tokens {msg.max_tokens}"
+        )
+        model_pipeline.run_inference(
+            prompt_token_ids=msg.token_ids,
+            max_new_tokens=msg.max_tokens,
+            on_token=lambda tid: p2c.write_token(msg.task_id, tid),
+            eos_token_id=1,
+        )
+        print("Inference completed")
 
 
 def _fabric_config_for_num_procs(num_procs: int):
@@ -151,13 +169,19 @@ def main() -> None:
     rank = _rank()
     args = _parse_args(sys.argv[1:])
 
+    if rank == 0 and not _shm_is_configured():
+        raise RuntimeError(
+            "Shared memory bridge not configured. Set TT_IPC_SHM_C2P and TT_IPC_SHM_P2C "
+            "and ensure both exist under /dev/shm/."
+        )
+
+    # Rank 0 opens shared memory BEFORE model loading so the C++ inference
+    # server can connect in seconds rather than waiting 10+ min for the model.
+    c2p = p2c = None
     if rank == 0:
-        shm_enabled = _shm_is_configured()
-        if not shm_enabled:
-            raise RuntimeError(
-                "Shared memory bridge not configured. Set TT_IPC_SHM_C2P and TT_IPC_SHM_P2C "
-                "and ensure both exist under /dev/shm/."
-            )
+        c2p, p2c = _open_shm_early()
+        _write_ready_sentinel()
+        print(f"Rank {rank}: shared memory ready, PID sentinel written")
 
     try:
         try:
@@ -170,11 +194,7 @@ def main() -> None:
             fabric_max_payload_bytes=args.fabric_max_payload_bytes,
             fabric_router_sync_timeout_ms=args.fabric_router_sync_timeout_ms,
         )
-    except Exception as e:
-        print(f"Rank {rank}: failed to open mesh device: {e}", file=sys.stderr)
-        sys.exit(1)
 
-    try:
         print(f"Rank {rank}: Opening model pipeline")
         model_pipeline = ModelPipeline(
             cache_path=args.cache_path,
@@ -183,14 +203,23 @@ def main() -> None:
         )
 
         if rank == 0:
-            _run_shm_bridge(model_pipeline)
+            _run_inference_loop(model_pipeline, c2p, p2c)
         else:
             print(f"Rank {rank}: Waiting (non-host)")
             while not _shutdown:
                 signal.pause()
 
         model_pipeline.terminate()
+    except Exception as e:
+        print(f"Rank {rank}: fatal error: {e}", file=sys.stderr)
+        sys.exit(1)
     finally:
+        if rank == 0:
+            if c2p is not None:
+                c2p.close()
+            if p2c is not None:
+                p2c.close()
+            _remove_ready_sentinel()
         if ttnn is not None:
             ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
 

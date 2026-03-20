@@ -60,7 +60,8 @@ WorkerManager::~WorkerManager() { stop(); }
 void WorkerManager::start() {
   startWarmupListener();
   startWorkers();
-  waitForFirstWarmup();
+  // Warmup listener runs asynchronously. isReady() becomes true once the first
+  // worker signals warmup. Callers should check isReady() or /tt-liveness.
 }
 
 void WorkerManager::stop() {
