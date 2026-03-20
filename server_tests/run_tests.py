@@ -17,7 +17,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from tests.test_config import TEST_CONFIGS, TestTask
+from server_tests.test_config import TEST_CONFIGS, TestTask
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
