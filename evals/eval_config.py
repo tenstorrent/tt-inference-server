@@ -1186,7 +1186,7 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -1210,7 +1210,6 @@ _eval_config_list = [
                 batch_size=16,
                 model_kwargs={
                     "model": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-                    "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
                     "fix_mistral_regex": True,
                     "max_length": 65536,

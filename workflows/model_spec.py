@@ -1394,6 +1394,27 @@ llm_templates = [
         },
     ),
     ModelSpecTemplate(
+        weights=["mistralai/Mistral-Small-3.1-24B-Instruct-2503"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="1207449",
+        vllm_commit="a5e73cf",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=16,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        model_type=ModelType.VLM,
+        status=ModelStatusTypes.EXPERIMENTAL,
+        supported_modalities=["text", "image"],
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+    ),
+    ModelSpecTemplate(
         weights=["Qwen/QwQ-32B"],
         impl=tt_transformers_impl,
         tt_metal_commit="e95ffa5",
