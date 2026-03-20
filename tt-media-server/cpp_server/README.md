@@ -1,8 +1,8 @@
 # Zero-Overhead Inference Server
 
 Production-grade, zero-overhead C++ inference server for AI workloads on
-Tenstorrent hardware. Supports LLM serving today; image and video models
-are on the roadmap.
+Tenstorrent hardware. Supports LLM serving today; image, video, audio,
+and text-to-speech models are on the roadmap.
 
 ## Non-Functional Requirements
 
@@ -43,7 +43,7 @@ without reading source code.
 
 ### 4. Extensibility
 
-New model types (image, video) will be added with increasing frequency. The
+New model types (image, video, audio, text-to-speech) will be added with increasing frequency. The
 server must make this straightforward without modifying core infrastructure.
 
 - Stable core (HTTP layer, tokenization, worker lifecycle) that rarely changes.
