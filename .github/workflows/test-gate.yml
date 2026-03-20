@@ -402,7 +402,6 @@ jobs:
               });
             }
 
-
   llm-streaming-performance:
     needs: detect-changes
     name: LLM Streaming Performance Test
@@ -497,7 +496,7 @@ jobs:
   cpp-format-check:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
-    name: C++ Format Check
+    name: C++ Lint & Format Check
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -523,7 +522,7 @@ jobs:
             exit 1
           fi
 
-      - name: Build with clang-tidy
+      - name: C++ lint check (build with clang-tidy)
         run: |
           cd cpp_server
           ./build.sh --clang-tidy
