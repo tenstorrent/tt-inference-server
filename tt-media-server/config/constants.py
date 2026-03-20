@@ -346,6 +346,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 3000,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
