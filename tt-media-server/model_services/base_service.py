@@ -95,6 +95,7 @@ class BaseService(ABC):
             "device": settings.device or "Not defined",
             "worker_info": self.scheduler.get_worker_info(),
             "runner_in_use": settings.model_runner,
+            "model": settings.vllm.model if hasattr(settings, 'vllm') else settings.model_weights_path,
         }
 
     async def deep_reset(self) -> bool:
