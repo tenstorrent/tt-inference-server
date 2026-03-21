@@ -19,12 +19,12 @@ LLMRunner::LLMRunner(const Config& config,
 
   auto decodeCb = [this](const TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");
-    Sequence* seq = scheduler_->findSequence(result.task_id);
+    Sequence* seq = scheduler_->findSequence(result.taskId);
 
     assert(seq);
 
-    if (result.is_error) {
-      scheduler_->removeSequence(result.task_id);
+    if (result.isError) {
+      scheduler_->removeSequence(result.taskId);
       auto shared = ipc::SharedToken{
           .token_index = 0,
           .flags = static_cast<uint32_t>(ipc::SharedToken::FLAG_FINAL |
@@ -33,7 +33,7 @@ LLMRunner::LLMRunner(const Config& config,
           .task_id = {},
           .padding = {},
       };
-      strncpy(shared.task_id, result.task_id.id.c_str(),
+      strncpy(shared.task_id, result.taskId.id.c_str(),
               sizeof(shared.task_id) - 1);
       shared.task_id[sizeof(shared.task_id) - 1] = '\0';
       while (!result_queue_->push(shared)) {
@@ -43,7 +43,7 @@ LLMRunner::LLMRunner(const Config& config,
     }
 
     std::vector<Sequence*> seqs = {seq};
-    std::vector<int64_t> tokenIds = {static_cast<int64_t>(result.token_id)};
+    std::vector<int64_t> tokenIds = {static_cast<int64_t>(result.tokenId)};
     scheduler_->postprocess(seqs, tokenIds);
 
     bool finished = seq->isFinished();
@@ -54,11 +54,11 @@ LLMRunner::LLMRunner(const Config& config,
           .token_index = 0,
           .flags = static_cast<uint32_t>(finished ? ipc::SharedToken::FLAG_FINAL
                                                   : 0),
-          .token_id = result.token_id,
+          .token_id = result.tokenId,
           .task_id = {},
           .padding = {},
       };
-      strncpy(shared.task_id, result.task_id.id.c_str(),
+      strncpy(shared.task_id, result.taskId.id.c_str(),
               sizeof(shared.task_id) - 1);
       shared.task_id[sizeof(shared.task_id) - 1] = '\0';
       while (!result_queue_->push(shared)) {
@@ -67,7 +67,7 @@ LLMRunner::LLMRunner(const Config& config,
     }
 
     if (finished) {
-      scheduler_->removeSequence(result.task_id);
+      scheduler_->removeSequence(result.taskId);
     }
   };
 
