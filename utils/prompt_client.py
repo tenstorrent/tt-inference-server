@@ -3,10 +3,9 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 import logging
-import os
 import json
 import time
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple, Union
 from pathlib import Path
 
 import requests
@@ -15,7 +14,7 @@ from transformers import AutoTokenizer
 
 from utils.prompt_generation import generate_prompts
 from utils.prompt_configs import PromptConfig, EnvironmentConfig
-from utils.cache_monitor import CacheMonitor
+from utils.cache_monitor import CacheMonitor, get_environment_cache_dir
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -68,12 +67,26 @@ def get_trace_context_lens(
     ]
 
 
+def format_human_readable_bytes(total_bytes: int) -> str:
+    """Format a byte count using human-readable storage units."""
+    size = float(max(total_bytes, 0))
+    for unit in ["B", "KB", "MB", "GB", "TB", "PB"]:
+        if size < 1024.0 or unit == "PB":
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+
+    return "0 B"
+
+
 class PromptClient:
     def __init__(
         self,
         env_config: EnvironmentConfig,
         model_spec=None,
-        cache_dir: Optional[Path] = None,
+        cache_dir: Optional[Union[str, Path]] = None,
+        runtime_config=None,
     ):
         self.env_config = env_config
         authorization = self._get_authorization()
@@ -83,7 +96,11 @@ class PromptClient:
             self.headers = {}
         self.completions_url = self._get_api_completions_url()
         self.health_url = self._get_api_health_url()
-        self.cache_monitor = CacheMonitor(model_spec=model_spec, cache_dir=cache_dir)
+        self.cache_monitor = CacheMonitor(
+            model_spec=model_spec,
+            cache_dir=cache_dir,
+            runtime_config=runtime_config,
+        )
         self.server_ready = False
 
     def _get_authorization(self) -> Optional[str]:
@@ -165,6 +182,10 @@ class PromptClient:
             # Check cache generation status
             cache_status = self.cache_monitor.get_cache_generation_status()
             current_time = time.time()
+            has_existing_cache = getattr(cache_status, "has_existing_cache", False)
+            tensor_cache_wait_active = (
+                cache_status.is_first_run or cache_status.is_generating
+            )
             effective_timeout = self.cache_monitor.get_effective_timeout(
                 default_timeout=base_timeout, cache_status=cache_status
             )
@@ -180,24 +201,38 @@ class PromptClient:
 
             # Log cache status periodically
             if current_time - last_cache_status_log > cache_status_log_interval:
-                if cache_status.is_generating:
+                if tensor_cache_wait_active:
                     if not using_tensor_cache_timeout:
                         logger.info(
                             "⏰ Using tensor_cache_timeout:=%ss for first-run tensor cache generation",
                             effective_timeout,
                         )
                         using_tensor_cache_timeout = True
-                    logger.info(
-                        "🔄 Tensor cache generation in progress - tracking %s file(s), %s total bytes",
-                        cache_status.file_count,
-                        cache_status.total_size_bytes,
-                    )
+                    if cache_status.is_generating:
+                        logger.info(
+                            "🔄 Tensor cache generation in progress - tracking %s file(s), %s total bytes",
+                            cache_status.file_count,
+                            cache_status.total_size_bytes,
+                        )
+                    else:
+                        logger.info(
+                            "📁 First-run cache directory is still empty; waiting for tensor cache activity"
+                        )
                 else:
                     if using_tensor_cache_timeout:
                         using_tensor_cache_timeout = False
-                    logger.info(
-                        f"📁 No active tensor cache generation detected, using standard timeout:={effective_timeout}s"
-                    )
+                    if has_existing_cache:
+                        logger.info(
+                            "📁 Existing tensor cache detected - tracking %s file(s), %s; using standard timeout:=%ss",
+                            cache_status.file_count,
+                            format_human_readable_bytes(cache_status.total_size_bytes),
+                            effective_timeout,
+                        )
+                    else:
+                        logger.info(
+                            "📁 No active tensor cache generation detected, using standard timeout:=%ss",
+                            effective_timeout,
+                        )
                 last_cache_status_log = current_time
 
             # Try health check
@@ -236,6 +271,21 @@ class PromptClient:
                     f"next check in {sleep_interval:.1f}s (timeout: {effective_timeout}s, "
                     f"no progress: {cache_status.no_progress_duration:.1f}s)"
                 )
+            elif cache_status.is_first_run:
+                logger.info(
+                    f"⏳ First-run tensor cache warmup detected. Waited {total_time_waited:.1f}s, "
+                    f"waiting {sleep_interval:.1f}s before polling (timeout: {effective_timeout}s)"
+                )
+            elif has_existing_cache:
+                logger.info(
+                    "📁 Existing tensor cache detected (%s file(s), %s total bytes). "
+                    "Service not ready after %.1fs, waiting %.1fs before polling (timeout: %ss)",
+                    cache_status.file_count,
+                    cache_status.total_size_bytes,
+                    total_time_waited,
+                    sleep_interval,
+                    effective_timeout,
+                )
             else:
                 logger.info(
                     f"⏳ Service not ready after {total_time_waited:.1f}s, "
@@ -256,6 +306,18 @@ class PromptClient:
                 f"⛔ Service did not become healthy within {effective_timeout}s. "
                 f"Tensor cache generation appears to still be in progress. "
                 f"Consider increasing the timeout or checking the docker logs."
+            )
+        elif final_cache_status.is_first_run:
+            logger.error(
+                f"⛔ Service did not become healthy within {effective_timeout}s during first-run tensor cache startup"
+            )
+        elif getattr(final_cache_status, "has_existing_cache", False):
+            logger.error(
+                "⛔ Service did not become healthy within %ss even though tensor cache already appears present "
+                "(%s file(s), %s total bytes)",
+                effective_timeout,
+                final_cache_status.file_count,
+                final_cache_status.total_size_bytes,
             )
         else:
             logger.error(
@@ -798,15 +860,9 @@ def run_background_trace_capture(
         env_config.service_port = service_port
         env_config.vllm_model = hf_model_repo
 
-        # Create prompt client
-        # TODO: since this is only called inside the vLLM container this env var should be set.
-        # TODO: I know the whole purpose of the ModelSpec is to not parse env vars, but it was hard
-        # TODO: to infer the path without importing the SetupConfig (which is not copied to the container)
-        # TODO: Eventually this will not be necessary when we perform trace capture / warmup inside vLLM
-        # TODO: https://github.com/tenstorrent/vllm/issues/220
-        if "TT_CACHE_PATH" not in os.environ:
+        tt_cache_path = get_environment_cache_dir()
+        if tt_cache_path is None:
             raise RuntimeError("TT_CACHE_PATH environment variable is not set.")
-        tt_cache_path = Path(os.environ["TT_CACHE_PATH"])
         prompt_client = PromptClient(env_config, cache_dir=tt_cache_path)
 
         # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs

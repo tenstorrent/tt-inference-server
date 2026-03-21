@@ -465,7 +465,11 @@ def main():
 
     # For LLM models, use PromptClient for health checks and trace capture
     else:
-        prompt_client = PromptClient(env_config, model_spec=model_spec)
+        prompt_client = PromptClient(
+            env_config,
+            model_spec=model_spec,
+            runtime_config=runtime_config,
+        )
         logger.info(
             "Using tensor_cache_timeout:=%ss for first-run tensor cache generation when cache monitoring is active",
             prompt_client.cache_monitor.get_tensor_cache_timeout(),
