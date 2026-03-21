@@ -13,4 +13,4 @@ export IS_GALAXY=${IS_GALAXY:-False}
 echo "Starting server: MODEL=$MODEL DEVICE=$DEVICE DEVICE_IDS=${DEVICE_IDS:-auto}"
 cd "$(dirname "$0")"
 PORT=${PORT:-8000}
-uvicorn main:app --lifespan on --port $PORT --log-level warning
+uvicorn main:app --lifespan on --host 0.0.0.0 --port $PORT --log-level warning
