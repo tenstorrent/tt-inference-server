@@ -38,11 +38,12 @@ class VLLMRunner(BaseDeviceRunner):
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
             additional_config={
-                "enable_const_eval": False,
+                "enable_const_eval": True,
                 "min_context_len": self.settings.vllm.min_context_length,
                 "experimental_weight_dtype": self.settings.vllm.experimental_weight_dtype,
             },
         )
+        self.logger.info(f"Device {self.device_id}: additional_config={engine_args.additional_config}")
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
 
         self.logger.info(f"Device {self.device_id}: Starting model warmup")

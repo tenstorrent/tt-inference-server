@@ -13,4 +13,4 @@ class VLLMSettings(BaseModel):
     max_num_seqs: int = 1
     max_num_batched_tokens: int = max_model_length * max_num_seqs
     gpu_memory_utilization: float = 0.1
-    experimental_weight_dtype: str = ""
+    experimental_weight_dtype: str = "bfp8"
