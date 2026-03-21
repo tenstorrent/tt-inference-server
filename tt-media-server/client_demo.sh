@@ -28,8 +28,8 @@ while True:
     time.sleep(5)
 print(f' ready!')
 
-import os
-model = os.environ.get('MODEL', 'unknown')
+liveness = requests.get(f'{server}/tt-liveness', headers=headers).json()
+model = liveness.get('model', 'unknown')
 print(f'Model: {model} | Max tokens: {max_tokens}')
 print()
 
