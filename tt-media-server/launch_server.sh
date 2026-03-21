@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
 
-export MODEL=${MODEL:-Llama-3.1-8B-Instruct}
+export MODEL=${MODEL:-Llama-3.1-8B}
 export DEVICE=${DEVICE:-n150}
 export API_KEY=${API_KEY:-your-secret-key}
 export ENVIRONMENT=development
-export TT_METAL_HOME=/localdev/kmabee/tt-xla/third_party/tt-mlir/install
+export TT_METAL_HOME=${TT_METAL_HOME:-$(pwd)/tt-metal}
 export IS_GALAXY=${IS_GALAXY:-False}
 [ -n "$DEVICE_IDS" ] && export DEVICE_IDS
 
