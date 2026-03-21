@@ -635,7 +635,7 @@ ModelConfigs = {
     (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.P300): {
@@ -673,7 +673,7 @@ ModelConfigs = {
     (ModelRunners.TT_WHISPER, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.P300): {
