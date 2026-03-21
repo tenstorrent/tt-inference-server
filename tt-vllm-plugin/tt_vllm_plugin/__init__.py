@@ -64,12 +64,11 @@ def register_models():
             "Qwen3-Embedding model may not be available. Ensure tt-metal is in Python path."
         )
 
-    # Register OLMo-3.1-32B-Think Galaxy model (Olmo3ForCausalLM → TTOlmo3ForCausalLM)
-    ModelRegistry.register_model(
-        "TTOlmo3ForCausalLM",
-        "models.demos.llama3_70b_galaxy.tt.generator_vllm:OLMo3ForCausalLM",
-    )
-    print("Registered OLMo-3.1-32B-Think Galaxy model")
+    # OLMo Galaxy: vLLM resolves config to Olmo2ForCausalLM → TTOlmo2ForCausalLM; register both.
+    _olmo3_path = "models.demos.llama3_70b_galaxy.tt.generator_vllm:OLMo3ForCausalLM"
+    ModelRegistry.register_model("TTOlmo2ForCausalLM", _olmo3_path)
+    ModelRegistry.register_model("TTOlmo3ForCausalLM", _olmo3_path)
+    print("Registered OLMo-3.1-32B-Think Galaxy model (TTOlmo2 + TTOlmo3)")
 
     # Add additional model registrations here as needed
     # ModelRegistry.register_model("AnotherModel", "path.to:ModelClass")

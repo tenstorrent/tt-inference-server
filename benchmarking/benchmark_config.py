@@ -4,7 +4,7 @@
 
 import os
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
@@ -90,16 +90,25 @@ def _expand_text_sweep_params(
     max_context: int,
     max_tokens_all_users: int,
     model_max_concurrency: int,
+    model_name: Optional[str] = None,
 ) -> List[BenchmarkTaskParams]:
     if isl + osl > max_context:
         return []
 
-    allowed_max_concurrency = get_benchmark_max_concurrency(
-        isl, osl, max_context, max_tokens_all_users, model_max_concurrency
-    )
-    concurrencies = [1]
-    if allowed_max_concurrency > 1:
-        concurrencies.append(allowed_max_concurrency)
+    # OLMo Galaxy: vLLM uses padded max_num_seqs slots; naive context/token division
+    # yields intermediate concurrencies (e.g. 3, 7). Benchmark only 1 and 32.
+    if model_name and "olmo" in model_name.lower():
+        concurrencies = [1]
+        hi = min(32, model_max_concurrency)
+        if hi > 1:
+            concurrencies.append(hi)
+    else:
+        allowed_max_concurrency = get_benchmark_max_concurrency(
+            isl, osl, max_context, max_tokens_all_users, model_max_concurrency
+        )
+        concurrencies = [1]
+        if allowed_max_concurrency > 1:
+            concurrencies.append(allowed_max_concurrency)
 
     return [
         BenchmarkTaskParams(
@@ -340,9 +349,11 @@ def expand_concurrency_sweep_params(
         )
         allowed_max = int(capped_probe.max_concurrency)
 
-        concurrencies = [
-            int(c) for c in candidate_concurrencies if int(c) <= allowed_max
-        ]
+        sweep_candidates = candidate_concurrencies
+        if model_name and "olmo" in model_name.lower():
+            sweep_candidates = [1, min(32, model_max_concurrency)]
+
+        concurrencies = [int(c) for c in sweep_candidates if int(c) <= allowed_max]
         if ensure_allowed_max and allowed_max not in concurrencies:
             concurrencies.append(allowed_max)
         concurrencies = sorted(set(concurrencies))
@@ -396,14 +407,18 @@ def cap_benchmark_params(
         )
 
     # Calculate the allowed max_concurrency based on sequence length (including vision tokens)
-    calculated_max_concurrency = get_benchmark_max_concurrency(
-        params.isl,
-        params.osl,
-        max_context,
-        max_tokens_all_users,
-        model_max_concurrency,
-        vision_tokens,
-    )
+    if model_name and "olmo" in model_name.lower():
+        # Match sweep: perf reference rows use max_concurrency 1 or 32 only.
+        calculated_max_concurrency = model_max_concurrency
+    else:
+        calculated_max_concurrency = get_benchmark_max_concurrency(
+            params.isl,
+            params.osl,
+            max_context,
+            max_tokens_all_users,
+            model_max_concurrency,
+            vision_tokens,
+        )
 
     # Cap the max_concurrency if it exceeds the calculated limit
     capped_max_concurrency = min(params.max_concurrency, calculated_max_concurrency)
@@ -505,6 +520,7 @@ for model_id, model_spec in MODEL_SPECS.items():
                             max_context=max_context,
                             max_tokens_all_users=max_tokens_all_users,
                             model_max_concurrency=model_max_concurrency,
+                            model_name=model_spec.model_name,
                         )
                     ]
                     + (

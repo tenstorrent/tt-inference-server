@@ -107,8 +107,8 @@ DEVICE_TO_MESH_STR = {
     "T3K": "T3K",
     "GALAXY": "TG",
     "GALAXY_T3K": "T3K",
-    "DUAL_GALAXY": "(8,8)",
-    "QUAD_GALAXY": "(8,16)",
+    "DUAL_GALAXY": "DUAL",
+    "QUAD_GALAXY": "QUAD",
     "GPU": "GPU",
 }
 
@@ -148,13 +148,6 @@ def device_to_mesh_str(device_type: str) -> str:
     if device_type not in DEVICE_TO_MESH_STR:
         raise ValueError(f"Unknown device type: {device_type}")
     return DEVICE_TO_MESH_STR[device_type]
-
-
-def unwrap_model_specs_catalog(model_specs: dict) -> dict:
-    """Return the nested model specs catalog from wrapped or legacy JSON."""
-    if "model_specs" in model_specs and isinstance(model_specs["model_specs"], dict):
-        return model_specs["model_specs"]
-    return model_specs
 
 
 def load_model_spec(
@@ -202,18 +195,18 @@ def load_model_spec(
             "Example: docker run <image> --model meta-llama/Llama-3.1-8B --tt-device n300"
         )
 
-    # Catalog mode (model_spec.json built into image)
+    # Catalog mode (default_model_spec.json built into image)
     specs_path = os.getenv(
         "MODEL_SPECS_JSON_PATH",
-        "/home/container_app_user/model_specs/model_spec.json",
+        "/home/container_app_user/model_specs/default_model_spec.json",
     )
     logger.info(f"Loading all model specs from MODEL_SPECS_JSON_PATH: {specs_path}")
     with open(specs_path, "r") as f:
-        model_specs = unwrap_model_specs_catalog(json.load(f))
+        all_specs = json.load(f)
 
     device_type = normalize_device_type(device_arg)
     model_spec = find_default_impl(
-        model_specs,
+        all_specs,
         model_arg,
         device_type,
         engine_arg=engine_arg,
@@ -226,14 +219,14 @@ def load_model_spec(
     return model_spec
 
 
-def _resolve_hf_repo(model_specs: dict, model_arg: str) -> str:
-    """Resolve model_arg to an hf_model_repo key in model_specs.
+def _resolve_hf_repo(all_specs: dict, model_arg: str) -> str:
+    """Resolve model_arg to an hf_model_repo key in all_specs.
 
     Tries exact match first, then falls back to matching the short model name
     (last path segment) against all hf_model_repo keys.
 
     Args:
-        model_specs: Nested model specs dict keyed by hf_model_repo at top level
+        all_specs: Nested model specs dict keyed by hf_model_repo at top level
         model_arg: The --model argument (HuggingFace repo or model name)
 
     Returns:
@@ -242,22 +235,22 @@ def _resolve_hf_repo(model_specs: dict, model_arg: str) -> str:
     Raises:
         ValueError: If no matching hf_model_repo is found
     """
-    if model_arg in model_specs:
+    if model_arg in all_specs:
         return model_arg
 
     short_name = model_arg.split("/")[-1]
-    for hf_repo in model_specs:
+    for hf_repo in all_specs:
         if hf_repo.split("/")[-1] == short_name:
             return hf_repo
 
     raise ValueError(
         f"No model spec found for model={model_arg}. "
-        f"Available models: {list(model_specs.keys())[:10]}..."
+        f"Available models: {list(all_specs.keys())[:10]}..."
     )
 
 
 def find_default_impl(
-    model_specs: dict,
+    all_specs: dict,
     model_arg: str,
     device_type: str,
     engine_arg: Optional[str] = None,
@@ -269,7 +262,7 @@ def find_default_impl(
     default_impl=True for the given hf_model_repo and device_type.
 
     Args:
-        model_specs: Nested dict: hf_model_repo > device_type > engine > impl_id > spec
+        all_specs: Nested dict: hf_model_repo > device_type > engine > impl_id > spec
         model_arg: The --model argument (HuggingFace repo or model name)
         device_type: Canonical device type name (e.g., "N300", "GALAXY")
 
@@ -279,10 +272,10 @@ def find_default_impl(
     Raises:
         ValueError: If no matching spec is found
     """
-    hf_repo = _resolve_hf_repo(model_specs, model_arg)
-    device_specs = model_specs[hf_repo].get(device_type)
+    hf_repo = _resolve_hf_repo(all_specs, model_arg)
+    device_specs = all_specs[hf_repo].get(device_type)
     if not device_specs:
-        available_devices = list(model_specs[hf_repo].keys())
+        available_devices = list(all_specs[hf_repo].keys())
         raise ValueError(
             f"No model spec found for model={model_arg}, device={device_type}. "
             f"Available devices for {hf_repo}: {available_devices}"
@@ -406,13 +399,6 @@ def register_tt_models(impl_id=None):
     # OLMo3 path selection based on impl_id
     if impl_id == "olmo3_32b_galaxy":
         os.environ["TT_OLMO3_TEXT_VER"] = "olmo3_32b_galaxy"
-        # vLLM may map Olmo3ForCausalLM -> Olmo2ForCausalLM internally, so the resolved
-        # TT architecture can be TTOlmo2ForCausalLM; register both (see tt_platform_tt.py).
-        _olmo3_tt_path = (
-            "models.demos.llama3_70b_galaxy.tt.generator_vllm:OLMo3ForCausalLM"
-        )
-        ModelRegistry.register_model("TTOlmo2ForCausalLM", _olmo3_tt_path)
-        ModelRegistry.register_model("TTOlmo3ForCausalLM", _olmo3_tt_path)
 
     # Arcee AFM-4.5B - Text
     ModelRegistry.register_model(
@@ -510,52 +496,8 @@ def runtime_settings(model_spec_json, no_auth=False):
     logger.info(f"using model: {model_spec_json['model_id']}")
     handle_secrets(no_auth=no_auth)
 
-    # In multihost deployments, model weights are on shared storage and accessed
-    # via model-specific environment variables (e.g., DEEPSEEK_V3_HF_MODEL).
-    # Skip model_setup() which requires MODEL_WEIGHTS_DIR and creates symlinks.
-    # TODO(tt-metal): Update DeepSeek model impl to use standard HF_MODEL env var
-    # so we can reuse existing model setup and standard weight/cache mounting.
-    if os.getenv("MULTIHOST_ROLE"):
-        logger.info(
-            "Multihost mode detected, skipping model_setup() - "
-            "weights accessed via model-specific env vars on shared storage"
-        )
-        return
-
     # TODO: check HF repo access with HF_TOKEN supplied
     model_setup(model_spec_json)
-
-
-def set_metal_timeout_env_vars():
-    """Set tt-metal operation timeout env vars for automatic hang detection.
-
-    When enabled (default), configures TT_METAL_OPERATION_TIMEOUT_SECONDS and
-    TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE so that tt-triage runs
-    automatically when an op dispatch hangs.
-
-    Disabled when DISABLE_METAL_OP_TIMEOUT=1 is set (via run.py --disable-metal-timeout).
-    """
-    if os.getenv("DISABLE_METAL_OP_TIMEOUT") == "1":
-        logger.info("Metal op timeout disabled via DISABLE_METAL_OP_TIMEOUT=1")
-        return
-
-    tt_metal_home = os.getenv("TT_METAL_HOME", "/home/container_app_user/tt-metal")
-    python_env_dir = os.getenv("PYTHON_ENV_DIR", f"{tt_metal_home}/python_env")
-    log_dir = os.getenv("TT_METAL_LOGS_PATH", "/home/container_app_user/logs")
-
-    triage_new = Path(tt_metal_home) / "tools" / "triage" / "triage.py"
-    triage_old = Path(tt_metal_home) / "scripts" / "debugging_scripts" / "triage.py"
-    triage_script = str(triage_new if triage_new.exists() else triage_old)
-
-    timeout_cmd = (
-        f"{python_env_dir}/bin/python {triage_script} "
-        f"--disable-progress > {log_dir}/tt-triage-$(date +%Y%m%d-%H%M%S).log 2>&1"
-    )
-
-    os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = "5.0"
-    os.environ["TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE"] = timeout_cmd
-    logger.info("Set TT_METAL_OPERATION_TIMEOUT_SECONDS=5.0")
-    logger.info(f"Set TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE={timeout_cmd}")
 
 
 def set_runtime_env_vars(model_spec_json):
@@ -677,12 +619,7 @@ def main():
 
     if device_type and not os.getenv("TT_CACHE_PATH"):
         set_cache_paths(model_spec, device_type)
-    # NOTE: In multihost deployments, model weights are expected to reside on shared
-    # storage (e.g., NFS) and are read directly by each worker via model-specific
-    # environment variables (e.g., DEEPSEEK_V3_HF_MODEL). Users are responsible for
-    # downloading weights to a location on shared storage beforehand. Therefore,
-    # automatic weight download is skipped when MULTIHOST_ROLE is set.
-    if not os.getenv("MODEL_WEIGHTS_DIR") and not os.getenv("MULTIHOST_ROLE"):
+    if not os.getenv("MODEL_WEIGHTS_DIR"):
         ensure_weights_available(model_spec)
 
     logger.info(f"Using model spec: {model_spec['model_id']}")
@@ -692,7 +629,6 @@ def main():
     register_tt_models(impl_id)
 
     # Step 4: Set runtime environment variables and run setup
-    set_metal_timeout_env_vars()
     set_runtime_env_vars(model_spec)
     runtime_settings(model_spec, no_auth=args.no_auth)
     start_trace_capture(
@@ -702,31 +638,10 @@ def main():
     )
 
     # Step 5: Add vLLM CLI arguments
-    # Note: override_tt_config is a TT-specific field (not a standard vLLM CLI arg).
-    # Pass it via --override-tt-config so tt_worker.py reads it from
-    # model_config.override_tt_config (applies dispatch_core_axis, fabric_config, etc).
-    # Filter out the raw override_tt_config key to avoid "unrecognized argument".
-    TT_ONLY_VLLM_ARGS = {"override_tt_config"}
     logger.info(
         f"vllm_args: {json.dumps(model_spec['device_model_spec']['vllm_args'], indent=4)}"
     )
-    override_tt_config_value = model_spec["device_model_spec"]["vllm_args"].get(
-        "override_tt_config"
-    )
-    if override_tt_config_value:
-        if isinstance(override_tt_config_value, str):
-            try:
-                override_tt_config_dict = json.loads(override_tt_config_value)
-            except (json.JSONDecodeError, ValueError):
-                override_tt_config_dict = {}
-        else:
-            override_tt_config_dict = override_tt_config_value
-        if override_tt_config_dict:
-            sys.argv.extend(["--override-tt-config", json.dumps(override_tt_config_dict)])
-            logger.info(f"Passing override_tt_config as --override-tt-config: {override_tt_config_dict}")
     for key, value in model_spec["device_model_spec"]["vllm_args"].items():
-        if key in TT_ONLY_VLLM_ARGS:
-            continue
         if value is not None:
             # Handle boolean flags
             if isinstance(value, bool):

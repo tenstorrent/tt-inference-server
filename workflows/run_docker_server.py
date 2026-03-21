@@ -257,6 +257,50 @@ def generate_docker_run_command(
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal/src,dst={user_home_path}/app/src",
             ]
+            # EngineCore workers are spawn()ed; ModelRegistry from run_vllm_api_server does not
+            # carry over. In-tree vllm/platforms/tt.py must call register_tt_models() with OLMo;
+            # overlay matches docker image bake and fixes "No TT model architecture" in workers.
+            tt_py_overlay = Path(repo_root_path) / "docker_overlays" / "tt_platform_tt.py"
+            if tt_py_overlay.is_file():
+                docker_command += [
+                    "--mount",
+                    "type=bind,"
+                    f"src={tt_py_overlay},"
+                    f"dst={user_home_path}/vllm/vllm/platforms/tt.py",
+                ]
+                logger.info(
+                    "dev_mode: bind-mount docker_overlays/tt_platform_tt.py -> "
+                    "%s/vllm/vllm/platforms/tt.py (worker TT model registry)",
+                    user_home_path,
+                )
+            else:
+                logger.warning(
+                    "docker_overlays/tt_platform_tt.py not found at %s; "
+                    "EngineCore may miss TTOlmo* if image tt.py is older",
+                    tt_py_overlay,
+                )
+            # Mount TT_METAL_HOME/models so the container uses the host's latest Python
+            # model source while leaving python_env and compiled .so files untouched.
+            tt_metal_home = runtime_config.tt_metal_home or os.environ.get("TT_METAL_HOME")
+            if tt_metal_home:
+                tt_metal_models = Path(tt_metal_home).resolve() / "models"
+                if tt_metal_models.is_dir():
+                    docker_command += [
+                        "--mount",
+                        "type=bind,"
+                        f"src={tt_metal_models},"
+                        f"dst={user_home_path}/tt-metal/models",
+                    ]
+                    logger.info(
+                        "dev_mode: bind-mount TT_METAL_HOME/models -> %s/tt-metal/models",
+                        user_home_path,
+                    )
+                else:
+                    logger.warning(
+                        "TT_METAL_HOME set but models path missing (%s); "
+                        "OLMo Galaxy may fail if image tt-metal lacks OLMo3ForCausalLM",
+                        tt_metal_models,
+                    )
         # fmt: on
 
     for key, value in docker_env_vars.items():
@@ -310,7 +354,8 @@ def run_docker_command(
         docker_command, stdout=docker_log_file, stderr=docker_log_file, text=True
     )
 
-    TIMEOUT = 30  # seconds
+    # Galaxy / large models can take minutes before the container stays up (pull, init).
+    TIMEOUT = float(os.environ.get("TT_DOCKER_START_TIMEOUT_SECONDS", "900"))
     POLL_INTERVAL = 0.5  # seconds
     start_time = time.time()
     container_id = ""

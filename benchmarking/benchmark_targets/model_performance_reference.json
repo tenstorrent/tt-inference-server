@@ -55,8 +55,8 @@
             {
                 "isl": 1024,
                 "osl": 128,
-                "max_concurrency": 7,
-                "num_prompts": 28,
+                "max_concurrency": 32,
+                "num_prompts": 256,
                 "task_type": "text",
                 "image_height": null,
                 "image_width": null,
@@ -65,7 +65,7 @@
                     "theoretical": {
                         "ttft_ms": 3440.0,
                         "tput_user": 13.3,
-                        "tput": 93.0
+                        "tput": 425.0
                     }
                 }
             },
@@ -89,8 +89,8 @@
             {
                 "isl": 2048,
                 "osl": 128,
-                "max_concurrency": 3,
-                "num_prompts": 12,
+                "max_concurrency": 32,
+                "num_prompts": 128,
                 "task_type": "text",
                 "image_height": null,
                 "image_width": null,
@@ -99,7 +99,7 @@
                     "theoretical": {
                         "ttft_ms": 1660.0,
                         "tput_user": 13.7,
-                        "tput": 41.0
+                        "tput": 438.0
                     }
                 }
             },
@@ -121,6 +121,23 @@
                 }
             },
             {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12000.0,
+                        "tput_user": 13.5,
+                        "tput": 432.0
+                    }
+                }
+            },
+            {
                 "isl": 8192,
                 "osl": 128,
                 "max_concurrency": 1,
@@ -134,6 +151,23 @@
                         "ttft_ms": 1800.0,
                         "tput_user": 14.0,
                         "tput": 14.0
+                    }
+                }
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 48000.0,
+                        "tput_user": 13.0,
+                        "tput": 416.0
                     }
                 }
             }
