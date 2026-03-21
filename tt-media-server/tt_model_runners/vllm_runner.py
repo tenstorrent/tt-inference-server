@@ -39,7 +39,7 @@ class VLLMRunner(BaseDeviceRunner):
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
             additional_config={
                 "enable_const_eval": True,
-                "min_context_len": self.settings.vllm.min_context_length,
+                "min_context_len": self.settings.vllm.max_model_length if os.environ.get("SINGLE_GRAPH") else self.settings.vllm.min_context_length,
                 "experimental_weight_dtype": self.settings.vllm.experimental_weight_dtype,
             },
         )
