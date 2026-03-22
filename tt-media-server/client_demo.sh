@@ -15,6 +15,13 @@ api_key = '$API_KEY'
 max_tokens = $MAX_TOKENS
 headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
 
+# Optional sampling overrides from env vars
+sampling_overrides = {}
+if '$TEMPERATURE' != '':
+    sampling_overrides['temperature'] = float('$TEMPERATURE')
+if '$REPETITION_PENALTY' != '':
+    sampling_overrides['repetition_penalty'] = float('$REPETITION_PENALTY')
+
 # Wait for server to be ready
 print('Waiting for server...', end='', flush=True)
 while True:
@@ -53,7 +60,7 @@ while True:
     resp = requests.post(
         f'{server}/v1/completions',
         headers=headers,
-        json={'model': model, 'prompt': prompt, 'max_tokens': max_tokens, 'stream': True},
+        json={**{'model': model, 'prompt': prompt, 'max_tokens': max_tokens, 'stream': True}, **sampling_overrides},
         stream=True,
     )
     resp.raise_for_status()
