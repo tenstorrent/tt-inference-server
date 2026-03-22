@@ -44,6 +44,7 @@ class VLLMRunner(BaseDeviceRunner):
                 "experimental_weight_dtype": self.settings.vllm.experimental_weight_dtype,
                 "cpu_sampling": bool(os.environ.get("CPU_SAMPLING")),
                 "num_hidden_layers": int(os.environ.get("NUM_HIDDEN_LAYERS", 0)),
+                "optimization_level": int(os.environ.get("OPTIMIZATION_LEVEL", 0)),
             },
         )
         self.logger.info(f"Device {self.device_id}: additional_config={engine_args.additional_config}")
