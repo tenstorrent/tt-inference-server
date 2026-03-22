@@ -40,6 +40,10 @@ model = liveness.get('model', 'unknown')
 print(f'Model: {model} | Max tokens: {max_tokens}')
 print()
 
+conversation = []
+print('(conversation history is maintained across turns, type \"new\" to reset)')
+print()
+
 while True:
     try:
         prompt = input('Prompt (q to quit): ')
@@ -48,19 +52,28 @@ while True:
         break
     if prompt.strip().lower() == 'q':
         break
+    if prompt.strip().lower() == 'new':
+        conversation.clear()
+        print('-- conversation reset --')
+        print()
+        continue
     if not prompt.strip():
         continue
+
+    conversation.append({'role': 'user', 'content': prompt})
 
     print('Response: ', end='', flush=True)
 
     start = time.perf_counter()
     ttft = None
     token_count = 0
+    assistant_text = ''
+    usage = {}
 
     resp = requests.post(
-        f'{server}/v1/completions',
+        f'{server}/v1/chat/completions',
         headers=headers,
-        json={**{'model': model, 'prompt': prompt, 'max_tokens': max_tokens, 'stream': True}, **sampling_overrides},
+        json={**{'model': model, 'messages': conversation, 'max_tokens': max_tokens, 'stream': True}, **sampling_overrides},
         stream=True,
     )
     resp.raise_for_status()
@@ -72,19 +85,26 @@ while True:
         if data.strip() == '[DONE]':
             break
         chunk = json.loads(data)
-        text = chunk['choices'][0].get('text', '')
+        delta = chunk['choices'][0].get('delta', {})
+        text = delta.get('content', '')
         finish = chunk['choices'][0].get('finish_reason')
-        if finish:
-            break
         if text and ttft is None:
             ttft = time.perf_counter() - start
-        if text and text != 'final_text':
+        if text:
             print(text, end='', flush=True)
+            assistant_text += text
             token_count += 1
+        if finish:
+            usage = chunk.get('usage', {})
+            break
+
+    conversation.append({'role': 'assistant', 'content': assistant_text})
 
     elapsed = time.perf_counter() - start
     ttft_str = f'TTFT: {ttft*1000:.0f}ms' if ttft else 'TTFT: n/a'
+    prompt_tokens = usage.get('prompt_tokens', 0)
+    completion_tokens = usage.get('completion_tokens', 0)
     print()
-    print(f'[{token_count} tokens | {ttft_str} | {elapsed:.2f}s | {token_count/elapsed:.1f} tok/s]')
+    print(f'[{token_count} tokens | {ttft_str} | {elapsed:.2f}s | {token_count/elapsed:.1f} tok/s | in:{prompt_tokens} out:{completion_tokens}]')
     print()
 "
