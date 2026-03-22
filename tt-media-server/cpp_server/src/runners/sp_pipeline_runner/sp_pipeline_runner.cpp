@@ -41,26 +41,32 @@ SpPipelineRunner::~SpPipelineRunner() {
 void SpPipelineRunner::run() {
   while (!stopped.load(std::memory_order_relaxed)) {
     if (!modelRunner->isConnected()) {
-      TT_LOG_WARN("SpPipelineRunner: pipeline disconnected, stopping runner");
-      break;
+      TT_LOG_WARN(
+          "SpPipelineRunner: pipeline disconnected, failing in-flight "
+          "requests and reconnecting...");
+      failActiveSequences();
+      if (!warmup()) {
+        TT_LOG_ERROR(
+            "SpPipelineRunner: reconnect/warmup failed, stopping runner");
+        break;
+      }
+      TT_LOG_INFO(
+          "SpPipelineRunner: reconnected to pipeline, resuming inference");
+      continue;
     }
     step();
   }
 }
 
-bool SpPipelineRunner::warmup() {
-  // Phase 1: Connect to pipeline shared memory.
-  // Python creates shm before model loading, so this typically resolves in
-  // seconds -- it only races on startup order.
-  TT_LOG_INFO(
-      "SpPipelineRunner: connecting to model pipeline shared memory...");
-  modelRunner->connect();
-  if (stopped.load(std::memory_order_relaxed)) return false;
-  TT_LOG_INFO("SpPipelineRunner: connected to model pipeline");
+void SpPipelineRunner::failActiveSequences() {
+  for (auto& [taskId, seq] : activeSequences) {
+    pushErrorToken(taskId);
+  }
+  activeSequences.clear();
+  inFlightCount = 0;
+}
 
-  // Phase 2: Send one warmup token and wait for the pipeline response.
-  // The pipeline may still be loading its model (10+ min), so the token sits
-  // in the ring buffer until the pipeline enters its inference loop.
+bool SpPipelineRunner::warmup() {
   const int TIMEOUT_SECONDS = [&]() {
     const char* s = std::getenv("TT_WARMUP_TIMEOUT_S");
     if (s) {
@@ -74,62 +80,74 @@ bool SpPipelineRunner::warmup() {
 
   const llm_engine::TaskID WARMUP_TASK_ID("warmup_task");
   const std::vector<int64_t> WARMUP_TOKENS = {1};
-
-  modelRunner->write(WARMUP_TASK_ID.id, WARMUP_TOKENS, 1,
-                     sp_pipeline::RequestPhase::PREFILL);
-  TT_LOG_INFO(
-      "SpPipelineRunner: warmup token sent, waiting for model pipeline "
-      "response (timeout={}s)...",
-      TIMEOUT_SECONDS);
-
-  const auto DEADLINE =
+  const auto ABSOLUTE_DEADLINE =
       std::chrono::steady_clock::now() + std::chrono::seconds(TIMEOUT_SECONDS);
-  auto lastLogTime = std::chrono::steady_clock::now();
   static constexpr auto LOG_INTERVAL = std::chrono::seconds(30);
-  const auto WARMUP_START = std::chrono::steady_clock::now();
 
   while (!stopped.load(std::memory_order_relaxed)) {
-    std::vector<llm_engine::TokenResult> results;
-    decodeQueue.popMany(results, maxInFlightCount);
-    for (const auto& dr : results) {
-      if (dr.taskId == WARMUP_TASK_ID) {
-        if (dr.isError) {
-          TT_LOG_ERROR("SpPipelineRunner: warmup failed with error");
-          return false;
-        }
-        TT_LOG_INFO("SpPipelineRunner: warmup successful");
-        return true;
+    // Phase 1: connect to pipeline shared memory (retries internally).
+    TT_LOG_INFO(
+        "SpPipelineRunner: connecting to model pipeline shared memory...");
+    modelRunner->connect();
+    if (stopped.load(std::memory_order_relaxed)) return false;
+    TT_LOG_INFO("SpPipelineRunner: connected to model pipeline");
+
+    // Phase 2: send one warmup token and wait for the response.
+    modelRunner->write(WARMUP_TASK_ID.id, WARMUP_TOKENS, 1,
+                       sp_pipeline::RequestPhase::PREFILL);
+    TT_LOG_INFO(
+        "SpPipelineRunner: warmup token sent, waiting for model pipeline "
+        "response (timeout={}s)...",
+        TIMEOUT_SECONDS);
+
+    const auto WARMUP_START = std::chrono::steady_clock::now();
+    auto lastLogTime = WARMUP_START;
+
+    while (!stopped.load(std::memory_order_relaxed)) {
+      if (!modelRunner->isConnected()) {
+        TT_LOG_WARN(
+            "SpPipelineRunner: lost connection during warmup, "
+            "reconnecting...");
+        break;  // back to outer loop → reconnect + resend warmup
       }
-      // Stale response from a prior server incarnation: if the inference server
-      // is restarted while the pipeline is running (or restarting), a previous
-      // warmup token may still be sitting in the p2c ring buffer. The pipeline
-      // will process it and write the response, but this server run never
-      // registered that task ID, so the response is orphaned. Discard it.
-      TT_LOG_WARN(
-          "SpPipelineRunner: discarding unrecognized task_id during warmup: "
-          "{} (likely a stale response from a previous server incarnation)",
-          dr.taskId.id);
-    }
 
-    const auto NOW = std::chrono::steady_clock::now();
-    if (NOW > DEADLINE) {
-      TT_LOG_ERROR("SpPipelineRunner: warmup timed out after {}s",
-                   TIMEOUT_SECONDS);
-      return false;
-    }
+      std::vector<llm_engine::TokenResult> results;
+      decodeQueue.popMany(results, maxInFlightCount);
+      for (const auto& dr : results) {
+        if (dr.taskId == WARMUP_TASK_ID) {
+          if (dr.isError) {
+            TT_LOG_ERROR("SpPipelineRunner: warmup failed with error");
+            return false;
+          }
+          TT_LOG_INFO("SpPipelineRunner: warmup successful");
+          return true;
+        }
+        TT_LOG_WARN(
+            "SpPipelineRunner: discarding unrecognized task_id during warmup: "
+            "{} (likely a stale response from a previous server incarnation)",
+            dr.taskId.id);
+      }
 
-    if (NOW - lastLogTime >= LOG_INTERVAL) {
-      lastLogTime = NOW;
-      const auto ELAPSED_S =
-          std::chrono::duration_cast<std::chrono::seconds>(NOW - WARMUP_START)
-              .count();
-      TT_LOG_INFO(
-          "SpPipelineRunner: waiting for model pipeline warmup response... "
-          "(elapsed {}s)",
-          ELAPSED_S);
-    }
+      const auto NOW = std::chrono::steady_clock::now();
+      if (NOW > ABSOLUTE_DEADLINE) {
+        TT_LOG_ERROR("SpPipelineRunner: warmup timed out after {}s",
+                     TIMEOUT_SECONDS);
+        return false;
+      }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      if (NOW - lastLogTime >= LOG_INTERVAL) {
+        lastLogTime = NOW;
+        const auto ELAPSED_S =
+            std::chrono::duration_cast<std::chrono::seconds>(NOW - WARMUP_START)
+                .count();
+        TT_LOG_INFO(
+            "SpPipelineRunner: waiting for model pipeline warmup response... "
+            "(elapsed {}s)",
+            ELAPSED_S);
+      }
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
   }
 
   return false;

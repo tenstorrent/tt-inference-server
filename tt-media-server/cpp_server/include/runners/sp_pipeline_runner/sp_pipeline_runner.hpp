@@ -33,6 +33,7 @@ class SpPipelineRunner : public IRunner {
  private:
   void step();
   void drainDecodeResults();
+  void failActiveSequences();
   void pushToken(const llm_engine::TaskID& taskId, uint64_t tokenId,
                  bool finished);
   void pushErrorToken(const llm_engine::TaskID& taskId);

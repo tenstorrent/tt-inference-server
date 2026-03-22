@@ -84,7 +84,14 @@ bool SpPipelineModelRunner::isPipelineAlive() {
   pid_t pid = 0;
   f >> pid;
   if (!f || pid <= 0) return false;
-  return kill(pid, 0) == 0 || errno == EPERM;
+  // Requires shared PID namespace (bare metal, or docker --pid=host).
+  if (kill(pid, 0) == 0 || errno == EPERM) return true;
+  TT_LOG_WARN(
+      "SpPipelineModelRunner: sentinel PID {} not reachable (errno={}). "
+      "If the pipeline is alive in a different PID namespace, add --pid=host "
+      "to the server container.",
+      pid, errno);
+  return false;
 }
 
 void SpPipelineModelRunner::readerLoop() {
