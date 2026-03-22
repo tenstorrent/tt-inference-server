@@ -13,6 +13,7 @@ from utils.cache_monitor import (
     CacheGenerationStatus,
     CacheMonitor,
     DockerVolumeInfo,
+    inspect_docker_volume,
 )
 
 
@@ -210,6 +211,37 @@ def test_detect_cache_directory_uses_docker_volume_mountpoint(tmp_path, monkeypa
     )
 
 
+def test_inspect_docker_volume_treats_permission_error_as_unreadable(
+    tmp_path, monkeypatch
+):
+    volume_name = "volume_id_tt-transformers-TestModel"
+    original_exists = Path.exists
+
+    def fake_run(command, capture_output, text, check, timeout):
+        assert command[:4] == ["docker", "volume", "inspect", volume_name]
+        return SimpleNamespace(
+            returncode=0,
+            stdout=f"{tmp_path}\n",
+            stderr="",
+        )
+
+    def deny_exists(self):
+        if self == tmp_path:
+            raise PermissionError("permission denied")
+        return original_exists(self)
+
+    monkeypatch.setattr("utils.cache_monitor.subprocess.run", fake_run)
+    monkeypatch.setattr(Path, "exists", deny_exists)
+
+    volume_info = inspect_docker_volume(volume_name)
+
+    assert volume_info == DockerVolumeInfo(
+        volume_name=volume_name,
+        mountpoint=tmp_path,
+        is_readable=False,
+    )
+
+
 def test_unreadable_docker_volume_uses_cli_fallback(tmp_path, monkeypatch):
     model_spec = _make_tensor_cache_model_spec()
 
@@ -229,6 +261,37 @@ def test_unreadable_docker_volume_uses_cli_fallback(tmp_path, monkeypatch):
     assert (
         monitor.cache_target.docker_volume_name == "volume_id_tt-transformers-TestModel"
     )
+    assert monitor.cache_dir == Path("/cache/tt_metal_cache/cache_TestModel/N150")
+
+
+def test_cache_monitor_uses_cli_fallback_when_docker_mountpoint_probe_is_denied(
+    tmp_path, monkeypatch
+):
+    model_spec = _make_tensor_cache_model_spec()
+    volume_name = "volume_id_tt-transformers-TestModel"
+    original_exists = Path.exists
+
+    def fake_run(command, capture_output, text, check, timeout):
+        assert command[:4] == ["docker", "volume", "inspect", volume_name]
+        return SimpleNamespace(
+            returncode=0,
+            stdout=f"{tmp_path}\n",
+            stderr="",
+        )
+
+    def deny_exists(self):
+        if self == tmp_path:
+            raise PermissionError("permission denied")
+        return original_exists(self)
+
+    monkeypatch.setattr("utils.cache_monitor.subprocess.run", fake_run)
+    monkeypatch.setattr(Path, "exists", deny_exists)
+
+    monitor = CacheMonitor(model_spec=model_spec)
+
+    assert monitor.cache_target.uses_docker_cli() is True
+    assert monitor.cache_target.cache_dir is None
+    assert monitor.cache_target.docker_volume_name == volume_name
     assert monitor.cache_dir == Path("/cache/tt_metal_cache/cache_TestModel/N150")
 
 

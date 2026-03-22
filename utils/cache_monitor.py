@@ -37,6 +37,7 @@ Permissions:
   marker state for the lifetime of the host-side process.
 """
 
+import errno
 import logging
 import os
 import json
@@ -83,6 +84,9 @@ print(
     )
 )
 """.strip()
+
+
+_PERMISSION_DENIED_ERRNOS = {errno.EACCES, errno.EPERM}
 
 
 def _get_value(obj, key: str, default=None):
@@ -165,6 +169,29 @@ class CacheMonitorTarget:
         return self.cache_dir or self.docker_cache_dir
 
 
+def _is_permission_denied(error: OSError) -> bool:
+    return (
+        isinstance(error, PermissionError)
+        or getattr(error, "errno", None) in _PERMISSION_DENIED_ERRNOS
+    )
+
+
+def _get_unreadable_docker_volume_info(
+    volume_name: str, mountpoint: Path, error: OSError
+) -> DockerVolumeInfo:
+    logger.info(
+        "Docker volume %s mountpoint could not be inspected by the current user: %s (%s)",
+        volume_name,
+        mountpoint,
+        error,
+    )
+    return DockerVolumeInfo(
+        volume_name=volume_name,
+        mountpoint=mountpoint,
+        is_readable=False,
+    )
+
+
 def get_cache_relative_dir(
     model_spec, runtime_config=None, device: Optional[str] = None
 ) -> Optional[Path]:
@@ -235,14 +262,41 @@ def inspect_docker_volume(volume_name: str) -> Optional[DockerVolumeInfo]:
         return None
 
     mountpoint = Path(mountpoint_str)
-    if not mountpoint.exists():
+    try:
+        mountpoint_exists = mountpoint.exists()
+    except OSError as error:
+        if _is_permission_denied(error):
+            return _get_unreadable_docker_volume_info(volume_name, mountpoint, error)
+        logger.info(
+            "Could not inspect Docker volume %s mountpoint %s: %s",
+            volume_name,
+            mountpoint,
+            error,
+        )
+        return None
+
+    if not mountpoint_exists:
         logger.info(
             "Docker volume %s mountpoint is not accessible on this host: %s",
             volume_name,
             mountpoint,
         )
         return None
-    if not mountpoint.is_dir():
+
+    try:
+        mountpoint_is_dir = mountpoint.is_dir()
+    except OSError as error:
+        if _is_permission_denied(error):
+            return _get_unreadable_docker_volume_info(volume_name, mountpoint, error)
+        logger.info(
+            "Could not inspect Docker volume %s mountpoint type %s: %s",
+            volume_name,
+            mountpoint,
+            error,
+        )
+        return None
+
+    if not mountpoint_is_dir:
         logger.info(
             "Docker volume %s mountpoint is not a directory: %s",
             volume_name,
@@ -250,8 +304,34 @@ def inspect_docker_volume(volume_name: str) -> Optional[DockerVolumeInfo]:
         )
         return None
 
-    resolved_mountpoint = mountpoint.resolve()
-    is_readable = os.access(resolved_mountpoint, os.R_OK | os.X_OK)
+    try:
+        resolved_mountpoint = mountpoint.resolve()
+    except OSError as error:
+        if _is_permission_denied(error):
+            return _get_unreadable_docker_volume_info(volume_name, mountpoint, error)
+        logger.info(
+            "Could not resolve Docker volume %s mountpoint %s: %s",
+            volume_name,
+            mountpoint,
+            error,
+        )
+        return None
+
+    try:
+        is_readable = os.access(resolved_mountpoint, os.R_OK | os.X_OK)
+    except OSError as error:
+        if _is_permission_denied(error):
+            return _get_unreadable_docker_volume_info(
+                volume_name, resolved_mountpoint, error
+            )
+        logger.info(
+            "Could not inspect Docker volume %s mountpoint permissions %s: %s",
+            volume_name,
+            resolved_mountpoint,
+            error,
+        )
+        return None
+
     if not is_readable:
         logger.info(
             "Docker volume %s mountpoint is not readable by the current user: %s",
