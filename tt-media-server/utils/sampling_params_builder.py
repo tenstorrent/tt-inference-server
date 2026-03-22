@@ -2,10 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import logging
+
 from config.constants import _DEFAULT_SAMPLING_PARAMS
 from domain.completion_request import CompletionRequest
 from vllm import SamplingParams
 from vllm.sampling_params import RequestOutputKind
+
+_logger = logging.getLogger("TTLogger")
+_logged_defaults = False
 
 
 def build_sampling_params(request: CompletionRequest) -> SamplingParams:
@@ -16,7 +21,11 @@ def build_sampling_params(request: CompletionRequest) -> SamplingParams:
     when parameters are not specified, validates parameter combinations,
     and constructs SamplingParams with the appropriate values.
     """
+    global _logged_defaults
     defaults = _DEFAULT_SAMPLING_PARAMS
+    if not _logged_defaults:
+        _logger.warning(f"Sampling defaults: temperature={defaults['temperature']}, repetition_penalty={defaults['repetition_penalty']}, top_p={defaults['top_p']}, top_k={defaults['top_k']}")
+        _logged_defaults = True
 
     # Extract and resolve parameters from request, falling back to defaults
     temperature = (

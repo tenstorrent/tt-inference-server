@@ -5,6 +5,7 @@ import asyncio
 import os
 import traceback
 
+from config.constants import _DEFAULT_SAMPLING_PARAMS
 from domain.completion_request import CompletionRequest
 from domain.completion_response import CompletionOutput, CompletionResult
 from telemetry.telemetry_client import TelemetryEvent
@@ -41,13 +42,18 @@ class VLLMRunner(BaseDeviceRunner):
                 "enable_const_eval": True,
                 "min_context_len": self.settings.vllm.max_model_length if os.environ.get("SINGLE_GRAPH") else self.settings.vllm.min_context_length,
                 "experimental_weight_dtype": self.settings.vllm.experimental_weight_dtype,
+                "cpu_sampling": bool(os.environ.get("CPU_SAMPLING")),
             },
         )
         self.logger.info(f"Device {self.device_id}: additional_config={engine_args.additional_config}")
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
 
         self.logger.info(f"Device {self.device_id}: Starting model warmup")
-        warmup_sampling_params = SamplingParams(temperature=0.0, max_tokens=10)
+        warmup_sampling_params = SamplingParams(
+            temperature=_DEFAULT_SAMPLING_PARAMS["temperature"],
+            repetition_penalty=_DEFAULT_SAMPLING_PARAMS["repetition_penalty"],
+            max_tokens=10,
+        )
         warmup_generator = self.llm_engine.generate(
             prompt, warmup_sampling_params, "warmup_task_id"
         )
