@@ -44,9 +44,13 @@ prometheus_metrics.setup_metrics()
 _request_logger = TTLogger("TTRequestLogger")
 
 
+_QUIET_PATHS = {"/health", "/tt-liveness", "/v1/models"}
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    _request_logger.warning(f"{request.method} {request.url.path} from {request.client.host}")
+    if request.url.path not in _QUIET_PATHS:
+        _request_logger.warning(f"{request.method} {request.url.path} from {request.client.host}")
     return await call_next(request)
 
 
