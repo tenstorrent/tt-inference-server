@@ -172,6 +172,17 @@
 
                 <div id="inference-section" hidden>
                     <h4>Run Inference</h4>
+                    <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.5rem;">
+                        <span style="font-size:0.85rem; font-weight:600;">Model:</span>
+                        <label style="display:inline-flex; align-items:center; gap:0.3rem; margin:0; cursor:pointer;">
+                            <input type="radio" name="inference-model-type" value="fine_tuned" checked>
+                            <span style="font-size:0.85rem;">Fine-tuned</span>
+                        </label>
+                        <label style="display:inline-flex; align-items:center; gap:0.3rem; margin:0; cursor:pointer;">
+                            <input type="radio" name="inference-model-type" value="base">
+                            <span style="font-size:0.85rem;">Base</span>
+                        </label>
+                    </div>
                     <label>Prompt
                         <textarea id="inference-prompt" rows="2" placeholder="Enter your prompt..."></textarea>
                     </label>

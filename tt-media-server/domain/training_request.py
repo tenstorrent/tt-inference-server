@@ -39,5 +39,6 @@ class InferenceOnFineTunedGemmaRequest(BaseRequest):
     # temperature: float = 0.0
     # top_k: int = 50
     dtype: str = "torch.bfloat16"
+    use_base_model: bool = False
 
     _adapter_path: str = PrivateAttr(default=None)

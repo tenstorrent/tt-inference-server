@@ -178,8 +178,8 @@ async def run_inference_on_fine_tuned_model(
     if job_data.job_type != JobTypes.TRAINING:
         raise HTTPException(400, "Job is not a training job")
 
-    request._adapter_path = service.get_job_result_path(job_id)
+    if not request.use_base_model:
+        request._adapter_path = service.get_job_result_path(job_id)
 
-    # Process through the normal scheduler pipeline
     result = await service.process_request(request)
     return JSONResponse(content={"output": result})

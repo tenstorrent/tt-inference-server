@@ -248,12 +248,14 @@ async function runInference(jobId) {
     statusEl.className = '';
     outputEl.hidden = true;
 
+    const useBaseModel = document.querySelector('input[name="inference-model-type"]:checked').value === 'base';
     const body = {
         prompt: $('inference-prompt').value,
         max_new_tokens: parseInt($('inference-max-tokens').value),
         temperature: parseFloat($('inference-temperature').value),
         top_k: parseInt($('inference-top-k').value),
         dtype: 'torch.bfloat16',
+        use_base_model: useBaseModel,
     };
 
     try {
