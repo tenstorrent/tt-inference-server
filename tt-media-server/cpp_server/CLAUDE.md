@@ -110,7 +110,6 @@ Configuration follows the same pattern as the Python server - defaults in `confi
 - `MODEL_SERVICE`: `llm` or `embedding` (default: `llm`)
 - `LLM_DEVICE_BACKEND`: `mock` or `pipeline` (DeepSeek V3), `llama` (Llama 3.1 8B Instruct) — selects runner + tokenizer strategy (default: `mock`)
 - `DEVICE_IDS`: Bracket-pair device list like `(0,1,2,3),(4,5,6,7)` defining workers
-- `MAX_BATCH_SIZE`: Max requests per batch for both LLM inference and embedding service
 - `MAX_BATCH_DELAY_TIME_MS`: Max wait time to fill batches
 - `OPENAI_API_KEY`: Bearer token for API authentication (default: `your-secret-key`)
 

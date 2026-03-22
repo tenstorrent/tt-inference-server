@@ -29,6 +29,7 @@ from benchmarking.benchmark_config import (
     BENCHMARK_CONFIGS,
     expand_concurrency_sweep_params,
     powers_of_two_up_to,
+    select_smoke_test_benchmark_config,
 )
 from benchmarking.run_genai_benchmarks import run_genai_benchmarks
 from utils.prompt_client import PromptClient
@@ -40,7 +41,12 @@ from workflows.utils import run_command
 from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
-from workflows.workflow_types import DeviceTypes, InferenceEngine, ModelType
+from workflows.workflow_types import (
+    DeviceTypes,
+    EvalLimitMode,
+    InferenceEngine,
+    ModelType,
+)
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
@@ -62,6 +68,15 @@ BENCHMARKS_TASK_TYPES = [
     ModelType.TEXT_TO_SPEECH,
     ModelType.VIDEO,
 ]
+
+
+def _is_smoke_test_mode(runtime_config: RuntimeConfig) -> bool:
+    if not runtime_config.limit_samples_mode:
+        return False
+    return (
+        EvalLimitMode.from_string(runtime_config.limit_samples_mode)
+        == EvalLimitMode.SMOKE_TEST
+    )
 
 
 def parse_args():
@@ -224,8 +239,6 @@ def main():
         limit_samples_mode_str = runtime_config.limit_samples_mode
         debug_mode = False
         if limit_samples_mode_str:
-            from workflows.workflow_types import EvalLimitMode
-
             limit_mode = EvalLimitMode.from_string(limit_samples_mode_str)
             # Enable debug mode for quick test modes
             if limit_mode in (EvalLimitMode.SMOKE_TEST, EvalLimitMode.CI_COMMIT):
@@ -269,8 +282,15 @@ def main():
             f"No benchmark tasks defined for model: {model_spec.model_name}"
         )
     benchmark_config = BENCHMARK_CONFIGS[model_spec.model_id]
+    smoke_test_mode = _is_smoke_test_mode(runtime_config)
+    if smoke_test_mode:
+        benchmark_config = select_smoke_test_benchmark_config(benchmark_config, device)
+        logger.info("Smoke-test mode enabled; selected smoke-test benchmark config.")
 
     concurrency_sweeps = args.concurrency_sweeps or runtime_config.concurrency_sweeps
+    if smoke_test_mode and concurrency_sweeps:
+        logger.info("Ignoring concurrency sweeps in smoke-test mode.")
+        concurrency_sweeps = False
     if concurrency_sweeps:
         max_context = model_spec.device_model_spec.max_context
         max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users

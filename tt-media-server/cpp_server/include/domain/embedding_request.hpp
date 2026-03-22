@@ -3,9 +3,11 @@
 
 #pragma once
 
-#include <string>
-#include <optional>
 #include <json/json.h>
+
+#include <optional>
+#include <string>
+
 #include "domain/base_request.hpp"
 
 namespace tt::domain {
@@ -15,47 +17,47 @@ namespace tt::domain {
  * Based on: https://platform.openai.com/docs/api-reference/embeddings/create
  */
 struct EmbeddingRequest : BaseRequest {
-    using BaseRequest::BaseRequest;
+  using BaseRequest::BaseRequest;
 
-    // Required: Model to use for embedding
-    std::string model;
+  // Required: Model to use for embedding
+  std::string model;
 
-    // Required: Text to embed
-    std::string input;
+  // Required: Text to embed
+  std::string input;
 
-    // Optional: User identifier
-    std::optional<std::string> user;
+  // Optional: User identifier
+  std::optional<std::string> user;
 
-    /**
-     * Parse from JSON. task_id must be provided (e.g. from controller).
-     */
-    static EmbeddingRequest from_json(const Json::Value& json, TaskID task_id) {
-        EmbeddingRequest req(std::move(task_id));
-        if (json.isMember("model")) {
-            req.model = json["model"].asString();
-        }
-        if (json.isMember("input")) {
-            req.input = json["input"].asString();
-        }
-        if (json.isMember("user")) {
-            req.user = json["user"].asString();
-        }
-        return req;
+  /**
+   * Parse from JSON. task_id must be provided (e.g. from controller).
+   */
+  static EmbeddingRequest fromJson(const Json::Value& json, TaskID taskId) {
+    EmbeddingRequest req(std::move(taskId));
+    if (json.isMember("model")) {
+      req.model = json["model"].asString();
     }
-
-    /**
-     * Convert to JSON for IPC.
-     */
-    Json::Value to_json() const {
-        Json::Value json;
-        json["model"] = model;
-        json["input"] = input;
-        json["task_id"] = task_id.id;
-        if (user) {
-            json["user"] = *user;
-        }
-        return json;
+    if (json.isMember("input")) {
+      req.input = json["input"].asString();
     }
+    if (json.isMember("user")) {
+      req.user = json["user"].asString();
+    }
+    return req;
+  }
+
+  /**
+   * Convert to JSON for IPC.
+   */
+  Json::Value toJson() const {
+    Json::Value json;
+    json["model"] = model;
+    json["input"] = input;
+    json["task_id"] = task_id.id;
+    if (user) {
+      json["user"] = *user;
+    }
+    return json;
+  }
 };
 
-} // namespace tt::domain
+}  // namespace tt::domain
