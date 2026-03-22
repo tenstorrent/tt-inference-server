@@ -24,7 +24,7 @@ logger = TTLogger()
 
 @lru_cache(maxsize=1)
 def _get_tokenizer():
-    model_name = settings.vllm.model
+    model_name = settings.model_weights_path
     logger.info(f"Loading tokenizer for chat template: {model_name}")
     return AutoTokenizer.from_pretrained(model_name)
 
@@ -78,7 +78,11 @@ async def chat_completions(
     """
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
     created = int(time.time())
-    model = chat_request.model or settings.vllm.model
+    model = chat_request.model or (
+        settings.vllm.model
+        if hasattr(settings, "vllm")
+        else settings.model_weights_path
+    )
 
     # Convert chat messages to a prompt using the model's chat template
     messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
