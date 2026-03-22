@@ -201,8 +201,8 @@ def main() -> None:
 
         print(f"Rank {rank}: Opening model pipeline")
         model_pipeline = ModelPipeline(
-            cache_path=args.cache_path,
-            use_real_weights=args.weights == "real",
+            weights_mode=args.weights,
+            cache_path=args.cache_path if args.weights == "real" else None,
             mesh_device=mesh_device,
         )
 
