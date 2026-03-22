@@ -173,6 +173,7 @@ class Settings(BaseSettings):
             logger.warning(
                 f"max_batch_size {self.max_batch_size} is less than max_num_seqs {self.vllm.max_num_seqs} in vllm settings, set max_batch_size to {self.vllm.max_num_seqs}"
             )
+            self.max_batch_size = self.vllm.max_num_seqs
 
     def _set_device_pairs_overrides(self) -> None:
         logger.info(
