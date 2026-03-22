@@ -36,8 +36,8 @@ class TrainingRequest(BaseRequest):
 class InferenceOnFineTunedGemmaRequest(BaseRequest):
     prompt: str
     max_new_tokens: int = 64
-    temperature: float = 0.0
-    top_k: int = 50
+    # temperature: float = 0.0
+    # top_k: int = 50
     dtype: str = "torch.bfloat16"
 
     _adapter_path: str = PrivateAttr(default=None)

@@ -22,7 +22,7 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
-from config.constants import SupportedModels, FINE_TUNING_STORE_BASE_MODELS_DIR
+from config.constants import SupportedModels
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
@@ -33,35 +33,24 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Setting up Gemma Lora training...")
 
-        self.hf_model = AutoModelForCausalLM.from_pretrained(
+        self.hf_base_model = AutoModelForCausalLM.from_pretrained(
             self.model_name, use_cache=False
         )
 
         self.logger.info(f"Device {self.device_id}: Setting up Gemma Lora base model...")
 
-        self.base_model_path = os.path.join(FINE_TUNING_STORE_BASE_MODELS_DIR, self.model_name.replace("/", "--"))
-
-        if os.path.exists(self.base_model_path):
-            self.logger.info(f"Loading base model from local cache: {self.base_model_path}")
-            self.hf_model = AutoModelForCausalLM.from_pretrained(
-                self.base_model_path, use_cache=False
-            )
-        else:
-            self.logger.info(f"Downloading base model: {self.model_name}")
-            self.hf_model = AutoModelForCausalLM.from_pretrained(
-                self.model_name, use_cache=False
-            )
-            self.hf_model.save_pretrained(self.base_model_path, safe_serialization=False)
-            self.logger.info(f"Base model saved to {self.base_model_path}")
+        self.hf_base_model = AutoModelForCausalLM.from_pretrained(
+            self.model_name, use_cache=False
+        )
+        self.logger.info(f"Base model saved to {self.base_model_path}")
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.tokenizer.save_pretrained(self.base_model_path, safe_serialization=False)
 
         self.logger.info(
-            f"Model parameters: {sum(p.numel() for p in self.hf_model.parameters())}"
+            f"Model parameters: {sum(p.numel() for p in self.hf_base_model.parameters())}"
         )
         self.logger.info(
-            f"Trainable parameters: {sum(p.numel() for p in self.hf_model.parameters() if p.requires_grad)}"
+            f"Trainable parameters: {sum(p.numel() for p in self.hf_base_model.parameters() if p.requires_grad)}"
         )
 
         # single chip setup
@@ -126,14 +115,16 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             self.logger.info(
                 f"Device {self.device_id}: Unloading previous lora adapter"
             )
-            self.hf_model = self._peft_model.unload()
-            if hasattr(self.hf_model, "peft_config"):
-                delattr(self.hf_model, "peft_config")
+            self.hf_base_model = self._peft_model.unload()
+            if hasattr(self.hf_base_model, "peft_config"):
+                delattr(self.hf_base_model, "peft_config")
 
-        self._peft_model = get_peft_model(self.hf_model, lora_config)
+        self._peft_model = get_peft_model(self.hf_base_model, lora_config)
 
         self._peft_model.to(eval(request.dtype))
         self._peft_model.to(self.device)
+
+        model_path = request._output_model_path
 
         # use torch compile
         self.model = torch.compile(
@@ -329,26 +320,100 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         avg_val_loss = total_val_loss / num_val_batches if num_val_batches > 0 else 0.0
         return avg_val_loss
     
+    @log_execution_time("Gemma Lora inference")
     def _run_inference(self, request: InferenceOnFineTunedGemmaRequest) -> list:
-        if hasattr(self, "_peft_model") and isinstance(self._peft_model, PeftModel):
-            self.hf_model = self._peft_model.unload()
-            if hasattr(self.hf_model, "peft_config"):
-                delattr(self.hf_model, "peft_config")
+        from transformers.cache_utils import StaticCache
 
-        peft_model = PeftModel.from_pretrained(self.hf_model, request._adapter_path)
-        peft_model.to(eval(request.dtype))
-        peft_model.to(self.device)
-        peft_model.eval()
+        dtype = eval(request.dtype)
+        prompts = [request.prompt]
+        batch_size = 1
+        max_prompt_len = 32
+        max_cache_len = max_prompt_len + request.max_new_tokens
 
-        inputs = self.tokenizer(request.prompt, return_tensors="pt").to(self.device)
+        model = AutoModelForCausalLM.from_pretrained(
+            self.model_name, torch_dtype=dtype, use_cache=True
+        )
+
+        if request._adapter_path:
+            model = PeftModel.from_pretrained(model, request._adapter_path)
+            model = model.merge_and_unload()
+            self.logger.info(f"Loaded and merged PEFT adapter from: {request._adapter_path}")
+
+        model = model.eval()
+
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        inputs = self.tokenizer(
+            prompts,
+            return_tensors="pt",
+            max_length=max_prompt_len,
+            truncation=True,
+            padding="max_length",
+            padding_side="left",
+            return_attention_mask=True,
+        )
+        prompt_len = inputs.input_ids.shape[1]
+
+        static_cache = StaticCache(
+            config=model.config,
+            max_batch_size=batch_size,
+            max_cache_len=max_cache_len,
+            device="cpu",
+            dtype=dtype,
+        )
+        num_key_value_heads = model.config.num_key_value_heads
+        head_dim = model.config.hidden_size // model.config.num_attention_heads
+        static_cache.early_initialization(
+            batch_size=batch_size,
+            num_heads=num_key_value_heads,
+            head_dim=head_dim,
+            dtype=dtype,
+            device="cpu",
+        )
+
+        cache_position = torch.arange(0, prompt_len)
+        full_attention_mask = torch.ones(
+            (batch_size, max_cache_len), dtype=inputs.attention_mask.dtype
+        )
+        full_attention_mask[:, :prompt_len] = inputs.attention_mask
+
+        input_args = {
+            "input_ids": inputs.input_ids,
+            "past_key_values": static_cache,
+            "cache_position": cache_position,
+            "use_cache": True,
+            "attention_mask": full_attention_mask,
+        }
+
+        for layer in input_args["past_key_values"].layers:
+            layer.keys = layer.keys.to(self.device)
+            layer.values = layer.values.to(self.device)
+        input_args["input_ids"] = input_args["input_ids"].to(self.device)
+        input_args["cache_position"] = input_args["cache_position"].to(self.device)
+        input_args["attention_mask"] = input_args["attention_mask"].to(self.device)
+        model = model.to(self.device)
+
+        compiled_model = torch.compile(model, backend="tt")
+
+        max_tokens_to_generate = max_cache_len - prompt_len
+        output_tokens = []
 
         with torch.no_grad():
-            outputs = peft_model.generate(
-                **inputs,
-                max_new_tokens=request.max_new_tokens,
-                temperature=request.temperature,
-                top_k=request.top_k,
-            )
+            for step in range(max_tokens_to_generate):
+                output = compiled_model(**input_args)
+                output_logits = output.logits.to("cpu")
+                next_token_id = output_logits[:, -1].argmax(dim=-1)
 
-        generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+                token_text = self.tokenizer.decode(next_token_id[0])
+                output_tokens.append(token_text)
+
+                if next_token_id[0] == self.tokenizer.eos_token_id:
+                    break
+
+                input_args["input_ids"] = next_token_id.unsqueeze(-1).to(self.device)
+                host_cache_pos = input_args["cache_position"].to("cpu")
+                host_cache_pos = torch.tensor([host_cache_pos[-1:] + 1])
+                input_args["cache_position"] = host_cache_pos.to(self.device)
+
+        generated_text = request.prompt + "".join(output_tokens)
+        self.logger.info(f"Generated text: {generated_text}")
         return [generated_text]
