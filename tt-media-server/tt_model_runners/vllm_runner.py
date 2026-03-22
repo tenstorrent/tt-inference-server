@@ -43,6 +43,7 @@ class VLLMRunner(BaseDeviceRunner):
                 "min_context_len": self.settings.vllm.max_model_length if os.environ.get("SINGLE_GRAPH") else self.settings.vllm.min_context_length,
                 "experimental_weight_dtype": self.settings.vllm.experimental_weight_dtype,
                 "cpu_sampling": bool(os.environ.get("CPU_SAMPLING")),
+                "num_hidden_layers": int(os.environ.get("NUM_HIDDEN_LAYERS", 0)),
             },
         )
         self.logger.info(f"Device {self.device_id}: additional_config={engine_args.additional_config}")
