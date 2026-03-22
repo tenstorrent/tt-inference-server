@@ -134,7 +134,7 @@ class VLLMRunner(BaseDeviceRunner):
 
         yield CompletionOutput(
             type=FINAL_TYPE,
-            data=CompletionResult(text="final_text"),
+            data=CompletionResult(text=""),
         )
 
     async def process_request_non_streaming(

@@ -11,11 +11,13 @@ from config.constants import ModelServices
 from config.settings import settings
 from open_ai_api import (
     audio,
+    chat,
     cnn,
     embedding,
     fine_tuning,
     image,
     llm,
+    models,
     tokenizer,
     text_to_speech,
     tt_maintenance_api,
@@ -45,6 +47,8 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
     ModelServices.LLM.value: [
         ServiceRoute(tokenizer.router, "/v1", "", ["Tokenizer"]),
         ServiceRoute(llm.router, "/v1", None, ["Text processing"]),
+        ServiceRoute(chat.router, "/v1", None, ["Chat completions"]),
+        ServiceRoute(models.router, "/v1", None, ["Models"]),
     ],
     ModelServices.CNN.value: [
         ServiceRoute(cnn.router, "/v1/cnn", "/cnn", ["CNN processing"]),

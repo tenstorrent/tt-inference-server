@@ -133,5 +133,5 @@ async def test_run_async_streaming_yields_each_token(mock_get_settings):
     # Verify final chunk contains concatenated text
     final_chunk = received_chunks[-1]
     assert final_chunk["type"] == "final_result"
-    expected_full_text = "final_text"
+    expected_full_text = ""
     assert final_chunk["data"].text == expected_full_text
