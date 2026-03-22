@@ -114,6 +114,7 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         self.max_seq_len = int(os.environ.get("MAX_MODEL_LEN", "8192"))
         self._kv_cache = None
         self._max_num_blocks_per_seq = 0
+        self._migrated_blocks: dict[int, bool] = {}
 
     def get_pipeline_device_params(self):
         return {"num_command_queues": 2, "trace_region_size": 50000000}
@@ -277,6 +278,26 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             ttnn.deallocate(v_fill_tt)
 
         ttnn.deallocate(page_table_tt)
+
+        for block_id in block_ids:
+            self._migrated_blocks[block_id] = True
+
+    def is_migrated(self, block_ids: list[int]) -> bool:
+        """Return True if ALL given block_ids have been migrated."""
+        return all(self._migrated_blocks.get(bid, False) for bid in block_ids)
+
+    def get_migration_status(self, block_ids: list[int]) -> dict[int, bool]:
+        """Return per-block migration status for the given block_ids."""
+        return {bid: self._migrated_blocks.get(bid, False) for bid in block_ids}
+
+    def clear_migration_status(self, block_ids: list[int]) -> None:
+        """Remove migration tracking for the given block_ids.
+
+        Must be called when blocks are freed/deallocated to prevent stale
+        entries from falsely indicating readiness after block reuse.
+        """
+        for bid in block_ids:
+            self._migrated_blocks.pop(bid, None)
 
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Model warmup...")
