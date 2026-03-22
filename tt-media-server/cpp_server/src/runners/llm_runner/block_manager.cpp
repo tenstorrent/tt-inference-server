@@ -61,7 +61,7 @@ Block& BlockManager::allocateBlock(int blockId) {
 
 void BlockManager::deallocateBlock(int blockId) {
   ZoneScopedN("BlockManager::deallocate_block");
-  assert(blocks_[static_cast<size_t>(block_id)].ref_count == 0);
+  assert(blocks_[static_cast<size_t>(blockId)].ref_count == 0);
   used_block_ids_.erase(blockId);
   free_block_ids_.push_back(blockId);
   LLM_ENGINE_LOG("block_manager")
@@ -76,7 +76,7 @@ bool BlockManager::canAllocate(const Sequence& seq) const {
 
 void BlockManager::allocate(Sequence& seq) {
   ZoneScopedN("BlockManager::allocate");
-  assert(seq.block_table_.empty());
+  assert(seq.blockTable.empty());
   LLM_ENGINE_LOG("block_manager")
       << "allocate task_id=" << seq.taskId << " num_blocks=" << seq.numBlocks()
       << " free=" << free_block_ids_.size() << std::endl;
@@ -147,12 +147,12 @@ void BlockManager::mayAppend(Sequence& seq) {
   if (len % static_cast<size_t>(block_size_) == 1) {
     LLM_ENGINE_LOG("block_manager") << "may_append task_id=" << seq.taskId
                                     << " new_block len=" << len << std::endl;
-    assert(last_block.hash != -1);
+    assert(lastBlock.hash != -1);
     int blockId = free_block_ids_.front();
     allocateBlock(blockId);
     blockTable.push_back(blockId);
   } else if (len % static_cast<size_t>(block_size_) == 0) {
-    assert(last_block.hash == -1);
+    assert(lastBlock.hash == -1);
     LLM_ENGINE_LOG("block_manager")
         << "may_append task_id=" << seq.taskId << " fill_last_block len=" << len
         << std::endl;
@@ -166,7 +166,7 @@ void BlockManager::mayAppend(Sequence& seq) {
     lastBlock.update(h, tokenIds);
     hash_to_block_id_[h] = lastBlock.block_id;
   } else {
-    assert(last_block.hash == -1);
+    assert(lastBlock.hash == -1);
   }
 }
 

@@ -47,6 +47,7 @@ struct CompletionChoice {
   std::optional<Json::Value> logprobs;
   std::optional<std::string> finish_reason;
   std::optional<int64_t> token_id;
+  std::optional<std::string> reasoning;  // Reasoning content for DeepSeek R1
 
   Json::Value toJson() const {
     Json::Value json;
@@ -57,6 +58,9 @@ struct CompletionChoice {
       json["finish_reason"] = finish_reason.value();
     } else {
       json["finish_reason"] = Json::nullValue;
+    }
+    if (reasoning.has_value()) {
+      json["reasoning"] = reasoning.value();
     }
     return json;
   }
@@ -164,7 +168,16 @@ struct StreamingChunkResponse : BaseResponse {
       result.append(tt::utils::jsonEscape(choices[i].text));
       result.append("\",\"index\":");
       result.append(std::to_string(choices[i].index));
-      result.append(",\"logprobs\":null,\"finish_reason\":");
+      result.append(",\"logprobs\":null");
+      
+      // Add reasoning field if present
+      if (choices[i].reasoning.has_value()) {
+        result.append(",\"reasoning\":\"");
+        result.append(tt::utils::jsonEscape(choices[i].reasoning.value()));
+        result.append("\"");
+      }
+      
+      result.append(",\"finish_reason\":");
       if (choices[i].finish_reason.has_value()) {
         result.append("\"");
         result.append(choices[i].finish_reason.value());
