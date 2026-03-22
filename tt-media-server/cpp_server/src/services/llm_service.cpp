@@ -170,8 +170,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       }
       auto callback = val.value();
 
-      const std::string taskId = std::string(token.task_id);
-      const bool isFinal = token.isFinal();
+      std::string taskId = std::string(token.task_id);
+      bool isFinal = token.isFinal();
 
       if (isFinal) {
         stream_callbacks_.erase(token.task_id);

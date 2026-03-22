@@ -40,10 +40,10 @@ struct TaskState {
 
 /**
  * Reasoning Parser for DeepSeek R1 style <think>...</think> tags.
- * 
+ *
  * This parser tags tokens as REASONING or ANSWER content but sends ALL tokens
  * to the client (matching vLLM behavior). The client decides how to display them.
- * 
+ *
  * Token-based parsing for streaming (O(1) lookups, no string operations).
  * Text-based parsing for complete responses.
  */
@@ -80,14 +80,14 @@ class ReasoningParser {
   /**
    * Process single token for streaming.
    * Returns content type and whether to emit.
-   * 
+   *
    * @param task_id Unique task identifier
    * @param token_id Token ID to process
    * @param decoded_text Decoded text for this token
    * @return TokenParseResult with content type and emit flag
    */
-  TokenParseResult processToken(const std::string& task_id, 
-                                 int64_t token_id, 
+  TokenParseResult processToken(const std::string& task_id,
+                                 int64_t token_id,
                                  const std::string& decoded_text);
 
   /**

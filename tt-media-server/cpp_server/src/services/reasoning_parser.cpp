@@ -16,11 +16,11 @@ ReasoningParseResult ReasoningParser::parseComplete(
   ReasoningParseResult result;
 
   // Check if text starts with <think>
-  const size_t start_len = std::strlen(THINK_START_TAG);
-  const size_t end_len = std::strlen(THINK_END_TAG);
+  size_t startLen = std::strlen(THINK_START_TAG);
+  size_t endLen = std::strlen(THINK_END_TAG);
 
-  if (text.size() < start_len ||
-      text.compare(0, start_len, THINK_START_TAG) != 0) {
+  if (text.size() < startLen ||
+      text.compare(0, startLen, THINK_START_TAG) != 0) {
     // No <think> tag at start - treat entire text as answer
     result.reasoning = std::nullopt;
     result.answer = text;
@@ -33,21 +33,21 @@ ReasoningParseResult ReasoningParser::parseComplete(
   result.has_reasoning = true;
 
   // Find </think> delimiter
-  size_t end_pos = text.find(THINK_END_TAG, start_len);
+  size_t endPos = text.find(THINK_END_TAG, startLen);
 
-  if (end_pos == std::string::npos) {
+  if (endPos == std::string::npos) {
     // Malformed: has <think> but no </think>
     // Treat everything after <think> as reasoning, no answer
-    std::string reasoning_content = text.substr(start_len);
+    std::string reasoningContent = text.substr(startLen);
 
     // Trim leading/trailing whitespace from reasoning
-    size_t first = reasoning_content.find_first_not_of("\n\r\t ");
-    size_t last = reasoning_content.find_last_not_of("\n\r\t ");
+    size_t first = reasoningContent.find_first_not_of("\n\r\t ");
+    size_t last = reasoningContent.find_last_not_of("\n\r\t ");
 
     if (first != std::string::npos && last != std::string::npos) {
-      result.reasoning = reasoning_content.substr(first, last - first + 1);
+      result.reasoning = reasoningContent.substr(first, last - first + 1);
     } else {
-      result.reasoning = reasoning_content;
+      result.reasoning = reasoningContent;
     }
 
     result.answer = "";
@@ -59,28 +59,28 @@ ReasoningParseResult ReasoningParser::parseComplete(
   }
 
   // Extract reasoning (between <think> and </think>)
-  std::string reasoning_content = text.substr(start_len, end_pos - start_len);
+  std::string reasoningContent = text.substr(startLen, endPos - startLen);
 
   // Trim leading/trailing whitespace from reasoning
-  size_t first = reasoning_content.find_first_not_of("\n\r\t ");
-  size_t last = reasoning_content.find_last_not_of("\n\r\t ");
+  size_t first = reasoningContent.find_first_not_of("\n\r\t ");
+  size_t last = reasoningContent.find_last_not_of("\n\r\t ");
 
   if (first != std::string::npos && last != std::string::npos) {
-    result.reasoning = reasoning_content.substr(first, last - first + 1);
+    result.reasoning = reasoningContent.substr(first, last - first + 1);
   } else {
-    result.reasoning = reasoning_content;
+    result.reasoning = reasoningContent;
   }
 
   // Extract answer (after </think>)
-  size_t answer_start = end_pos + end_len;
-  std::string answer_content = text.substr(answer_start);
+  size_t answerStart = endPos + endLen;
+  std::string answerContent = text.substr(answerStart);
 
   // Trim leading whitespace from answer
-  first = answer_content.find_first_not_of("\n\r\t ");
+  first = answerContent.find_first_not_of("\n\r\t ");
   if (first != std::string::npos) {
-    result.answer = answer_content.substr(first);
+    result.answer = answerContent.substr(first);
   } else {
-    result.answer = answer_content;
+    result.answer = answerContent;
   }
 
   result.is_malformed = false;
