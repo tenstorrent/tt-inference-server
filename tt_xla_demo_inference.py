@@ -55,12 +55,9 @@ PEFT_MODEL_PATH = "/localdev/mcupac/tt-xla/my_model/b571680f-b3af-4c7c-a7ce-285e
 
 
 # --------------------------------
-# Llama Generation Loop Example
+# run_inference Generation Loop Example
 # --------------------------------
-def llama(interactive: bool = False):
-
-    # Check transformers version
-    check_transformers_version()
+def run_inference(interactive: bool = False):
 
     # Set up config variables.
     max_cache_len: int = 128
@@ -302,31 +299,8 @@ def run_generate(
             print(f"Result for user {i}: {input_prompt[i]}{''.join(output_tokens[i])}")
             print()
 
-
-def check_transformers_version():
-    """
-    Check that transformers version is <= 4.52.4.
-    Raises RuntimeError if version is incompatible.
-
-    This is because transformers SDPA implementation changed in later versions,
-    which causes dynamo trace to fail.
-
-    See https://github.com/tenstorrent/tt-xla/issues/1020
-    """
-    import packaging.version
-
-    current_version = packaging.version.parse(transformers.__version__)
-    max_version = packaging.version.parse("4.57.1")
-
-    if current_version > max_version:
-        raise RuntimeError(
-            f"Transformers version {transformers.__version__} is not supported. "
-            f"Please use version <= 4.57.1"
-        )
-
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Llama generation example")
+    parser = argparse.ArgumentParser(description="run_inference generation example")
     parser.add_argument(
         "--interactive",
         action="store_true",
@@ -338,4 +312,4 @@ if __name__ == "__main__":
     # By default torch_xla uses the CPU device so we have to set it to TT device.
     xr.set_device_type("TT")
 
-    llama(interactive=args.interactive)
+    run_inference(interactive=args.interactive)
