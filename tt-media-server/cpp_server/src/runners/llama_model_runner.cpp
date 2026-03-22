@@ -152,7 +152,13 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
       bool resetBatch = !isPrefill && lastStepWasPrefill_;
       lastStepWasPrefill_ = isPrefill;
 
-      py::object results = gRunner.attr("run")(isPrefill, pySeqs, resetBatch);
+      py::object runResult = gRunner.attr("run")(isPrefill, pySeqs, resetBatch);
+      py::list results = runResult.attr("results");
+
+      py::object lastPrefillPageTables = py::none();
+      if (isPrefill) {
+        lastPrefillPageTables = runResult.attr("page_tables");
+      }
 
       for (size_t i = 0; i < seqs.size(); ++i) {
         py::object item = results[py::int_(i)];
