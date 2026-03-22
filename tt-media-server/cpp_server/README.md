@@ -231,6 +231,58 @@ The runtime selection uses an OOP strategy pattern — see
 `include/utils/tokenizer_strategy.hpp` for the `ITokenizerStrategy` interface
 and `create_tokenizer_strategy()` factory.
 
+## Deploying with DeepSeek V3 (`LLM_DEVICE_BACKEND=pipeline`)
+
+The inference server and the DeepSeek V3 model pipeline are **fully decoupled** processes
+communicating via shared memory (`/dev/shm`). They can start in any order and restart
+independently — no coordination required.
+
+Two problems are handled explicitly:
+
+- **Startup order**: The pipeline creates shared memory *before* model loading (~10+ min).
+  The server retries `shm_open` until the segments appear (seconds), then sends a single
+  warmup token that sits in the ring buffer until the pipeline is ready to process it.
+- **Independent restarts**: The pipeline zero-fills shared memory on restart (preserving
+  the server's `mmap`) and updates the PID sentinel at `/dev/shm/tt_pipeline_ready`. The
+  server monitors the sentinel, detects a stale PID, and triggers re-warmup automatically.
+  On server restart, stale warmup responses left in the ring buffer by prior runs are
+  discarded with a warning log.
+
+```mermaid
+sequenceDiagram
+    participant Srv as Inference Server
+    participant SHM as /dev/shm
+    participant Pip as Model Pipeline
+
+    par start in any order
+        Srv->>Srv: Drogon starts immediately
+        Pip->>Pip: starting up...
+    end
+
+    Note over Srv: /health → 200
+    Note over Srv: /tt-liveness → 503 (not ready)
+    Note over Srv: completions → 503
+
+    Pip->>SHM: create shm segments + write PID sentinel
+    Pip->>Pip: ModelPipeline() — loading weights (~10+ min)
+
+    Srv->>SHM: shm_open succeeds (seconds after Pip starts)
+    Srv->>SHM: write warmup token → sits in ring buffer
+
+    Pip->>Pip: weights loaded, enter inference loop
+    Pip->>SHM: process warmup token, write response
+    SHM->>Srv: warmup response received → model_ready = true
+
+    Note over Srv: /tt-liveness → 200 (ready)
+    Note over Srv: completions → 200
+```
+
+| Variable | Description |
+|----------|-------------|
+| `TT_IPC_SHM_C2P` | C++→Python shared memory segment name (must match pipeline config) |
+| `TT_IPC_SHM_P2C` | Python→C++ shared memory segment name (must match pipeline config) |
+| `TT_WARMUP_TIMEOUT_S` | Max seconds to wait for warmup response (default: 1200 = 20 min) |
+
 ## Starting the Server
 
 ### Basic Usage
@@ -401,7 +453,7 @@ pkill -9 -f tt_media_server_cpp
 | `/v1/completions` | POST | ✅ Yes | OpenAI-compatible text completion |
 | `/v1/chat/completions` | POST | ✅ Yes | OpenAI-compatible chat completion |
 | `/health` | GET | ❌ No | Health check (unchanged: always 200 with status + timestamp) |
-| `/tt-liveness` | GET | ❌ No | Liveness (like Python: 200 with status alive + model info; model_ready = any worker warmed up; 500 only on failure) |
+| `/tt-liveness` | GET | ❌ No | Readiness probe: 200 + `model_ready: true` once warmed up, 503 + `model_ready: false` while loading, 500 on unrecoverable failure |
 | `/docs` | GET | ❌ No | Swagger UI documentation |
 | `/openapi.json` | GET | ❌ No | OpenAPI specification |
 
@@ -486,7 +538,7 @@ curl http://localhost:8001/health
 curl http://localhost:8001/tt-liveness
 ```
 
-Liveness probe (same as Python tt-liveness). Always returns 200 when the process can respond; 500 only on unrecoverable failure. The `model_ready` field reflects whether any worker has warmed up.
+Readiness probe. Returns 503 while the model is loading (`model_ready: false`), 200 once warmed up, 500 on unrecoverable failure. Use `/health` as the liveness probe (always 200) and `/tt-liveness` as the readiness probe.
 
 **Response (200):**
 ```json
