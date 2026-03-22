@@ -181,7 +181,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         f"Device {self.device_id}: Optimizer step finished"
                     )
 
-                    do_validation = global_step % request.val_steps_freq == 0
+                    do_validation = global_step % request.val_steps_freq == 0 and global_step > 0
 
                     if global_step % request.steps_freq == 0:
                         avg_loss = (
@@ -203,8 +203,11 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                                 }
                             )
                         running_loss = 0.0
-
-                        torch.save(self.model.state_dict(), model_path)
+                        
+                        self._peft_model.save_pretrained(
+                            model_path,
+                            state_dict={k: v.cpu() for k, v in self._peft_model.state_dict().items()},
+                        )
                         self.logger.info("Model checkpoint saved.")
 
                     # Check for cancellation at the end of each training step
