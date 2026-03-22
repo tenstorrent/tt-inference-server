@@ -6,15 +6,11 @@ import argparse
 import os
 from typing import List
 
-import numpy as np
 import torch
 import torch_xla
-import torch_xla.core.xla_model as xm
-import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
 import transformers
 from loguru import logger
-from torch_xla.distributed.spmd import Mesh
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
 from transformers.cache_utils import StaticCache
 from transformers.modeling_outputs import CausalLMOutputWithPast
@@ -70,16 +66,8 @@ def llama(interactive: bool = False):
     max_cache_len: int = 128
     model_name: str = "google/gemma-1.1-2b-it"
 
-    # Determine if SPMD mode should be enabled, if more than 1 device is available.
-    # SPMD must be turned off for llama generate on 1x1 mesh - See https://github.com/tenstorrent/tt-xla/issues/1639
-    num_devices = xr.global_runtime_device_count()
-    is_spmd: bool = num_devices > 1
-    if is_spmd:
-        setup_spmd()
-
-    # Connect the device and create an xla mesh.
+    # Connect the device
     device: torch.device = torch_xla.device()
-    mesh: Mesh = create_device_mesh()
 
     # Instantiate model and tokenizer
     model, tokenizer = setup_model_and_tokenizer(model_name)
@@ -106,10 +94,6 @@ def llama(interactive: bool = False):
         # Transfer model and inputs to device
         model, input_args = transfer_to_device(model, input_args, device)
 
-        # Mark sharding on inputs and model internals if SPMD is enabled
-        if is_spmd:
-            mark_sharding_on_inputs_and_model(model, input_args, mesh)
-
         # Compile model
         compiled_model = torch.compile(model, backend="tt")
 
@@ -119,8 +103,6 @@ def llama(interactive: bool = False):
             input_args,
             tokenizer,
             device,
-            mesh,
-            is_spmd,
             max_tokens_to_generate,
             user_prompt,
             interactive,
@@ -128,36 +110,6 @@ def llama(interactive: bool = False):
 
         if not interactive:
             break
-
-
-def setup_spmd():
-    """
-    Initializes SPMD mode in torch_xla.
-    """
-
-    print("Setting up XLA environment...")
-
-    # Converts the StableHLO emitted by torch-xla to the Shardy dialect
-    os.environ["CONVERT_SHLO_TO_SHARDY"] = "1"
-
-    # Initialize SPMD
-    xr.use_spmd()
-    print("XLA environment configured.")
-
-
-def create_device_mesh() -> Mesh:
-    """
-    Create device mesh for tensor parallelism.
-
-    Returns:
-        Mesh object for SPMD operations
-    """
-    num_devices = xr.global_runtime_device_count()
-    mesh_shape = (1, num_devices)
-    device_ids = np.array(range(num_devices))
-    mesh = Mesh(device_ids, mesh_shape, ("batch", "model"))
-    print(f"Created device mesh: {mesh_shape} with {num_devices} devices")
-    return mesh
 
 
 def setup_model_and_tokenizer(
@@ -294,44 +246,11 @@ def transfer_to_device(
 
     return model, input_args
 
-
-def mark_sharding_on_inputs_and_model(
-    model: torch.nn.Module, input_args: dict, mesh: Mesh
-):
-    """
-    Mark sharding on inputs and model internals.
-    If mark_sharding is not called on a tensor, it is fully replicated across all devices.
-        i.e. on cache_positions, input_ids
-
-    Args:
-        model: Model instance
-        input_args: Input arguments dictionary
-        mesh: Device mesh for SPMD operations
-    """
-
-    for layer in input_args["past_key_values"].layers:
-        xs.mark_sharding(layer.keys, mesh, (None, "model", None, None))
-        xs.mark_sharding(layer.values, mesh, (None, "model", None, None))
-
-    # Shard model internals
-    for layer in model.model.layers:
-        xs.mark_sharding(layer.mlp.up_proj.weight, mesh, ("model", None))
-        xs.mark_sharding(layer.mlp.gate_proj.weight, mesh, ("model", None))
-        xs.mark_sharding(layer.mlp.down_proj.weight, mesh, (None, "model"))
-
-        xs.mark_sharding(layer.self_attn.q_proj.weight, mesh, ("model", None))
-        xs.mark_sharding(layer.self_attn.k_proj.weight, mesh, ("model", None))
-        xs.mark_sharding(layer.self_attn.v_proj.weight, mesh, ("model", None))
-        xs.mark_sharding(layer.self_attn.o_proj.weight, mesh, (None, "model"))
-
-
 def run_generate(
     compiled_model: torch.nn.Module,
     input_args: dict,
     tokenizer: PreTrainedTokenizer,
     device: torch.device,
-    mesh: Mesh = None,
-    is_spmd: bool = True,
     max_tokens_to_generate: int = 128,
     input_prompt: List[str] = [""],
     is_interactive: bool = False,
@@ -344,8 +263,6 @@ def run_generate(
         input_args: Input arguments dictionary
         tokenizer: Tokenizer instance
         device: Device
-        mesh: Device mesh for SPMD operations (optional)
-        is_spmd: Whether SPMD mode is enabled
         max_tokens_to_generate: Maximum number of tokens to generate
     """
     num_users = input_args["input_ids"].shape[0]
