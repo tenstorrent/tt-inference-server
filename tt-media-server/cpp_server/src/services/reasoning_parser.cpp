@@ -99,8 +99,8 @@ void ReasoningParser::initializeTask(const std::string& taskId) {
 }
 
 TokenParseResult ReasoningParser::processToken(const std::string& taskId,
-                                                int64_t tokenId,
-                                                const std::string& decodedText) {
+                                               int64_t tokenId,
+                                               const std::string& decodedText) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   auto it = task_states_.find(taskId);
@@ -149,8 +149,8 @@ void ReasoningParser::finalizeTask(const std::string& taskId) {
 
   auto it = task_states_.find(taskId);
   if (it == task_states_.end()) {
-    TT_LOG_WARN(
-        "[ReasoningParser] finalizeTask called for unknown task: {}", taskId);
+    TT_LOG_WARN("[ReasoningParser] finalizeTask called for unknown task: {}",
+                taskId);
     return;
   }
 

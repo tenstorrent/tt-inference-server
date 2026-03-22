@@ -181,7 +181,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       // Process token through reasoning parser to determine content type
       TokenParseResult parseResult{ContentType::ANSWER, "", true};
       if (reasoning_parser_) {
-        std::string decodedText = tokenizer_->decode({static_cast<int>(token.token_id)});
+        std::string decodedText =
+            tokenizer_->decode({static_cast<int>(token.token_id)});
         parseResult = reasoning_parser_->processToken(
             taskId, static_cast<int64_t>(token.token_id), decodedText);
       }

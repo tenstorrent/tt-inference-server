@@ -20,16 +20,17 @@ enum class ContentType {
 // Result of parsing complete text for reasoning blocks
 struct ReasoningParseResult {
   std::optional<std::string> reasoning;  // Reasoning content (inside <think>)
-  std::string answer;                     // Answer content (outside <think>)
-  bool has_reasoning;                     // Whether reasoning was found
-  bool is_malformed;  // Whether reasoning block is incomplete (missing </think>)
+  std::string answer;                    // Answer content (outside <think>)
+  bool has_reasoning;                    // Whether reasoning was found
+  bool
+      is_malformed;  // Whether reasoning block is incomplete (missing </think>)
 };
 
 // Result of processing a single token
 struct TokenParseResult {
-  ContentType type;       // Type of content (reasoning or answer)
-  std::string text;       // Decoded text for this token
-  bool should_emit;       // Whether to send to client (always true)
+  ContentType type;  // Type of content (reasoning or answer)
+  std::string text;  // Decoded text for this token
+  bool should_emit;  // Whether to send to client (always true)
 };
 
 // Per-task state for token-by-token parsing
@@ -42,7 +43,8 @@ struct TaskState {
  * Reasoning Parser for DeepSeek R1 style <think>...</think> tags.
  *
  * This parser tags tokens as REASONING or ANSWER content but sends ALL tokens
- * to the client (matching vLLM behavior). The client decides how to display them.
+ * to the client (matching vLLM behavior). The client decides how to display
+ * them.
  *
  * Token-based parsing for streaming (O(1) lookups, no string operations).
  * Text-based parsing for complete responses.
@@ -86,9 +88,8 @@ class ReasoningParser {
    * @param decoded_text Decoded text for this token
    * @return TokenParseResult with content type and emit flag
    */
-  TokenParseResult processToken(const std::string& task_id,
-                                 int64_t token_id,
-                                 const std::string& decoded_text);
+  TokenParseResult processToken(const std::string& task_id, int64_t token_id,
+                                const std::string& decoded_text);
 
   /**
    * Finalize task state and cleanup.

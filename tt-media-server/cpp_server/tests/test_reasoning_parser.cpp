@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "services/reasoning_parser.hpp"
-
 #include <cassert>
 #include <iostream>
 #include <string>
+
+#include "services/reasoning_parser.hpp"
 
 using namespace tt::services;
 
@@ -24,8 +24,7 @@ void testParseComplete() {
     assert(result.has_reasoning);
     assert(!result.is_malformed);
     assert(result.reasoning.has_value());
-    assert(result.reasoning.value() ==
-           "Okay, the user is asking about math.");
+    assert(result.reasoning.value() == "Okay, the user is asking about math.");
     assert(result.answer == "The answer is 42.");
     std::cout << "✓ Test 1 passed: Complete reasoning block\n";
   }
@@ -50,8 +49,7 @@ void testParseComplete() {
     assert(result.has_reasoning);
     assert(result.is_malformed);
     assert(result.reasoning.has_value());
-    assert(result.reasoning.value() ==
-           "Okay, the user is asking about math.");
+    assert(result.reasoning.value() == "Okay, the user is asking about math.");
     assert(result.answer == "");
     std::cout << "✓ Test 3 passed: Malformed (missing </think>)\n";
   }
@@ -102,14 +100,14 @@ void testStreamingTokens() {
   // Simulate token sequence: <think> reasoning </think> answer
   std::vector<int64_t> tokens = {
       ReasoningParser::THINK_START_TOKEN,  // <think>
-      201,                                  // \n
-      12345,                                // "reasoning"
-      67890,                                // "text"
+      201,                                 // \n
+      12345,                               // "reasoning"
+      67890,                               // "text"
       ReasoningParser::THINK_END_TOKEN,    // </think>
-      201,                                  // \n
-      11111,                                // "answer"
-      22222,                                // "text"
-      1                                     // EOS
+      201,                                 // \n
+      11111,                               // "answer"
+      22222,                               // "text"
+      1                                    // EOS
   };
 
   std::vector<bool> expected = {
@@ -160,9 +158,10 @@ void testMultipleTasks() {
   // Process tokens for different tasks in interleaved manner
   for (int i = 0; i < 512; i += 2) {
     std::string taskId = "task-" + std::to_string(i);
-    
+
     // Task enters reasoning
-    bool shouldEmit = parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN);
+    bool shouldEmit =
+        parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN);
     assert(!shouldEmit);
     assert(parser.isInReasoning(taskId));
   }
@@ -180,7 +179,8 @@ void testMultipleTasks() {
   // Exit reasoning for even tasks
   for (int i = 0; i < 512; i += 2) {
     std::string taskId = "task-" + std::to_string(i);
-    bool shouldEmit = parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN);
+    bool shouldEmit =
+        parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN);
     assert(!shouldEmit);  // </think> itself is filtered
     assert(!parser.isInReasoning(taskId));
   }
@@ -215,12 +215,13 @@ void testEdgeCases() {
   {
     std::string taskId = "malformed-task";
     parser.initializeTask(taskId);
-    
+
     // Process </think> without <think>
-    bool shouldEmit = parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN);
+    bool shouldEmit =
+        parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN);
     assert(!shouldEmit);  // Tag itself is filtered
     assert(!parser.isInReasoning(taskId));
-    
+
     parser.finalizeTask(taskId);
     std::cout << "✓ Test 2 passed: </think> without <think> handled\n";
   }
@@ -229,18 +230,19 @@ void testEdgeCases() {
   {
     std::string taskId = "multi-think";
     parser.initializeTask(taskId);
-    
+
     parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN);
     assert(parser.isInReasoning(taskId));
-    
+
     // Another <think> while already in reasoning
-    bool shouldEmit = parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN);
+    bool shouldEmit =
+        parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN);
     assert(!shouldEmit);  // Still filtered
     assert(parser.isInReasoning(taskId));
-    
+
     parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN);
     assert(!parser.isInReasoning(taskId));
-    
+
     parser.finalizeTask(taskId);
     std::cout << "✓ Test 3 passed: Multiple <think> tags handled\n";
   }
@@ -249,14 +251,14 @@ void testEdgeCases() {
   {
     std::string taskId = "incomplete";
     parser.initializeTask(taskId);
-    
+
     parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN);
     assert(parser.isInReasoning(taskId));
-    
+
     // Finalize without closing tag (logs warning but doesn't crash)
     parser.finalizeTask(taskId);
     assert(parser.activeTaskCount() == 0);
-    
+
     std::cout << "✓ Test 4 passed: Finalize while in reasoning handled\n";
   }
 
@@ -276,9 +278,12 @@ int main() {
     testEdgeCases();
 
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║              🎉 ALL TESTS PASSED! 🎉                    ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout
+        << "╔══════════════════════════════════════════════════════════╗\n";
+    std::cout
+        << "║              🎉 ALL TESTS PASSED! 🎉                    ║\n";
+    std::cout
+        << "╚══════════════════════════════════════════════════════════╝\n";
     std::cout << "\n";
 
     return 0;

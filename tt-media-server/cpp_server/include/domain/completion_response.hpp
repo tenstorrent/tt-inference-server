@@ -169,14 +169,14 @@ struct StreamingChunkResponse : BaseResponse {
       result.append("\",\"index\":");
       result.append(std::to_string(choices[i].index));
       result.append(",\"logprobs\":null");
-      
+
       // Add reasoning field if present
       if (choices[i].reasoning.has_value()) {
         result.append(",\"reasoning\":\"");
         result.append(tt::utils::jsonEscape(choices[i].reasoning.value()));
         result.append("\"");
       }
-      
+
       result.append(",\"finish_reason\":");
       if (choices[i].finish_reason.has_value()) {
         result.append("\"");

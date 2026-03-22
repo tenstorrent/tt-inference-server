@@ -231,7 +231,7 @@ struct ChatCompletionStreamChunk {
     ChatCompletionStreamChoice choice;
     choice.index = completionChoice.index;
     choice.delta.content = completionChoice.text;
-    
+
     // Include reasoning content if present (DeepSeek R1 style)
     if (completionChoice.reasoning.has_value()) {
       choice.delta.reasoning = completionChoice.reasoning;
