@@ -52,7 +52,8 @@ bool SpPipelineRunner::warmup() {
   // Phase 1: Connect to pipeline shared memory.
   // Python creates shm before model loading, so this typically resolves in
   // seconds -- it only races on startup order.
-  TT_LOG_INFO("SpPipelineRunner: connecting to model pipeline shared memory...");
+  TT_LOG_INFO(
+      "SpPipelineRunner: connecting to model pipeline shared memory...");
   modelRunner->connect();
   if (stopped.load(std::memory_order_relaxed)) return false;
   TT_LOG_INFO("SpPipelineRunner: connected to model pipeline");
@@ -110,9 +111,9 @@ bool SpPipelineRunner::warmup() {
 
     if (NOW - lastLogTime >= LOG_INTERVAL) {
       lastLogTime = NOW;
-      const auto ELAPSED_S = std::chrono::duration_cast<std::chrono::seconds>(
-                                 NOW - WARMUP_START)
-                                 .count();
+      const auto ELAPSED_S =
+          std::chrono::duration_cast<std::chrono::seconds>(NOW - WARMUP_START)
+              .count();
       TT_LOG_INFO(
           "SpPipelineRunner: waiting for model pipeline warmup response... "
           "(elapsed {}s)",

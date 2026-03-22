@@ -55,8 +55,12 @@ def _open_shm() -> tuple[SharedMemory, SharedMemory]:
     def is_shutdown() -> bool:
         return _shutdown
 
-    c2p = SharedMemory(c2p_name, max_token_ids=PREFILL_MAX_TOKEN_IDS, is_shutdown=is_shutdown)
-    p2c = SharedMemory(p2c_name, max_token_ids=DECODE_MAX_TOKEN_IDS, is_shutdown=is_shutdown)
+    c2p = SharedMemory(
+        c2p_name, max_token_ids=PREFILL_MAX_TOKEN_IDS, is_shutdown=is_shutdown
+    )
+    p2c = SharedMemory(
+        p2c_name, max_token_ids=DECODE_MAX_TOKEN_IDS, is_shutdown=is_shutdown
+    )
     c2p.open()
     p2c.open()
     return c2p, p2c

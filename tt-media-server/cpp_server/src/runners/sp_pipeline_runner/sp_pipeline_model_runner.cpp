@@ -12,7 +12,8 @@
 
 namespace sp_pipeline {
 
-static constexpr const char* PIPELINE_READY_SENTINEL = "/dev/shm/tt_pipeline_ready";
+static constexpr const char* PIPELINE_READY_SENTINEL =
+    "/dev/shm/tt_pipeline_ready";
 static constexpr int INITIAL_CONNECT_WAIT_MS = 1000;
 static constexpr int MAX_CONNECT_WAIT_MS = 30000;
 static constexpr auto SENTINEL_CHECK_INTERVAL = std::chrono::seconds(5);
@@ -40,7 +41,8 @@ void SpPipelineModelRunner::connect() {
         readerThread.join();
       }
       readerThread = std::thread([this] { readerLoop(); });
-      LLM_ENGINE_LOG("sp_pipeline") << "connected to model pipeline shm" << std::endl;
+      LLM_ENGINE_LOG("sp_pipeline")
+          << "connected to model pipeline shm" << std::endl;
       return;
     } catch (const std::runtime_error& e) {
       ++attempt;
