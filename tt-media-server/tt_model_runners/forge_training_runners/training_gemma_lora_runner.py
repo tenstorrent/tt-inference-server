@@ -42,7 +42,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         self.hf_base_model = AutoModelForCausalLM.from_pretrained(
             self.model_name, use_cache=False
         )
-        self.logger.info(f"Base model saved to {self.base_model_path}")
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
