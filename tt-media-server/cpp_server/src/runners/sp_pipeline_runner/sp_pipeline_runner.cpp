@@ -100,6 +100,15 @@ bool SpPipelineRunner::warmup() {
         TT_LOG_INFO("SpPipelineRunner: warmup successful");
         return true;
       }
+      // Stale response from a prior server incarnation: if the inference server
+      // is restarted while the pipeline is running (or restarting), a previous
+      // warmup token may still be sitting in the p2c ring buffer. The pipeline
+      // will process it and write the response, but this server run never
+      // registered that task ID, so the response is orphaned. Discard it.
+      TT_LOG_WARN(
+          "SpPipelineRunner: discarding unrecognized task_id during warmup: "
+          "{} (likely a stale response from a previous server incarnation)",
+          dr.taskId.id);
     }
 
     const auto NOW = std::chrono::steady_clock::now();
@@ -159,9 +168,14 @@ void SpPipelineRunner::drainDecodeResults() {
   decodeQueue.popMany(results, maxInFlightCount);
   for (const auto& dr : results) {
     auto it = activeSequences.find(dr.taskId);
-    if (it == activeSequences.end()) {  // safeguard for too many decode results
+    if (it == activeSequences.end()) {
+      // Stale response from a prior server incarnation: if the server was
+      // restarted while the pipeline kept running, warmup tokens written by
+      // earlier server runs may still be processed by the pipeline after the
+      // new server is fully warmed up. Discard silently with a warning.
       TT_LOG_WARN(
-          "SpPipelineRunner: task_id not found in active_sequences_: {}",
+          "SpPipelineRunner: discarding unrecognized task_id: {} (likely a "
+          "stale response from a previous server incarnation)",
           dr.taskId.id);
       continue;
     }
