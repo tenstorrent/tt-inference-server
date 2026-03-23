@@ -42,17 +42,17 @@ class Settings(BaseSettings):
     use_greedy_based_allocation: bool = True
 
     # Model settings
-    model_runner: str = ModelRunners.MOCK_VIDEO.value
+    model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
     model_weights_path: str = ""
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
-    download_weights_from_service: bool = False
+    download_weights_from_service: bool = True
 
     # SDXL resolution (applies to text-to-image only, not img2img/inpainting)
-    sdxl_image_resolution: tuple = (1024, 1024)
+    sdxl_image_resolution: tuple = (512, 512)
 
     # Queue and batch settings
     max_queue_size: int = 5000
