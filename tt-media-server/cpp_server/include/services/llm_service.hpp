@@ -17,6 +17,7 @@
 #include "domain/prefill_request.hpp"
 #include "ipc/queue_manager.hpp"
 #include "services/base_service.hpp"
+#include "services/reasoning_parser.hpp"
 #include "services/streamable.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/concurrent_map.hpp"
@@ -94,6 +95,7 @@ class LLMService
   std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
   const tt::utils::Tokenizer* tokenizer_;
   std::shared_ptr<tt::sockets::InterServerService> socket_service_;
+  std::unique_ptr<ReasoningParser> reasoning_parser_;
 
   PrefillRequestCallback prefill_request_callback_;
 };

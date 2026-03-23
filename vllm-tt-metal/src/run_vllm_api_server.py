@@ -15,6 +15,8 @@ from typing import Optional
 from huggingface_hub import snapshot_download
 from vllm import ModelRegistry
 
+from utils.cache_monitor import get_container_cache_dir
+from utils.device_utils import get_mesh_device_name
 from utils.logging_utils import set_vllm_logging_config
 from utils.prompt_client import run_background_trace_capture
 from utils.vllm_run_utils import (
@@ -89,30 +91,6 @@ def parse_args():
     return args
 
 
-# Device type name to mesh device string mapping
-# This maps the canonical device type names (used in model specs JSON) to
-# the mesh device strings used for cache paths
-DEVICE_TO_MESH_STR = {
-    "CPU": "CPU",
-    "E150": "E150",
-    "N150": "N150",
-    "P100": "P100",
-    "P150": "P150",
-    "P150X4": "P150x4",
-    "P150X8": "P150x8",
-    "N150X4": "N150x4",
-    "N300": "N300",
-    "P300": "P300",
-    "P300X2": "P300x2",
-    "T3K": "T3K",
-    "GALAXY": "TG",
-    "GALAXY_T3K": "T3K",
-    "DUAL_GALAXY": "(8,8)",
-    "QUAD_GALAXY": "(8,16)",
-    "GPU": "GPU",
-}
-
-
 def normalize_device_type(device_arg: str) -> str:
     """Convert user-provided device string to canonical device type name.
 
@@ -134,20 +112,6 @@ def normalize_engine_type(engine_arg: Optional[str]) -> Optional[str]:
         "forge": "forge",
     }
     return engine_map[engine_arg.lower()]
-
-
-def device_to_mesh_str(device_type: str) -> str:
-    """Convert device type name to mesh device string for cache paths.
-
-    Args:
-        device_type: Canonical device type name (e.g., "N300", "GALAXY")
-
-    Returns:
-        Mesh device string (e.g., "N300", "TG")
-    """
-    if device_type not in DEVICE_TO_MESH_STR:
-        raise ValueError(f"Unknown device type: {device_type}")
-    return DEVICE_TO_MESH_STR[device_type]
 
 
 def unwrap_model_specs_catalog(model_specs: dict) -> dict:
@@ -366,16 +330,15 @@ def set_cache_paths(model_spec: dict, device_type: str):
         model_spec: The model specification dictionary
         device_type: Canonical device type name (e.g., "N300", "GALAXY")
     """
-    cache_root = Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root"))
-    model_name = model_spec["model_name"]
-    mesh_device = device_to_mesh_str(device_type)
+    mesh_device = get_mesh_device_name(device=device_type)
+    tt_cache_path = get_container_cache_dir(model_spec, device=device_type)
+    if tt_cache_path is None:
+        raise RuntimeError("Could not resolve TT cache path from model spec.")
 
     # Set MESH_DEVICE env var for other components that need it
     os.environ["MESH_DEVICE"] = mesh_device
     logger.info(f"Set MESH_DEVICE to {mesh_device}")
 
-    # Preserve model/device-specific cache structure
-    tt_cache_path = cache_root / "tt_metal_cache" / f"cache_{model_name}" / mesh_device
     tt_cache_path.mkdir(parents=True, exist_ok=True)
     os.environ["TT_CACHE_PATH"] = str(tt_cache_path)
     logger.info(f"Set TT_CACHE_PATH to {tt_cache_path}")

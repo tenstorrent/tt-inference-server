@@ -89,12 +89,12 @@ int main() {
               << " sequences, is_prefill=" << is_prefill << "\n";
 
     for (auto* s : batch) {
-      std::cout << "[child]    task_id=" << s->task_id << " size=" << s->size()
+      std::cout << "[child]    task_id=" << s->taskId << " size=" << s->size()
                 << " max_tokens="
-                << (s->sampling_params->max_tokens.has_value()
-                        ? std::to_string(s->sampling_params->max_tokens.value())
+                << (s->samplingParams->max_tokens.has_value()
+                        ? std::to_string(s->samplingParams->max_tokens.value())
                         : "none")
-                << " temperature=" << s->sampling_params->temperature
+                << " temperature=" << s->samplingParams->temperature
                 << " tokens=[";
       for (size_t i = 0; i < s->size(); ++i) {
         if (i > 0) std::cout << ",";
@@ -114,9 +114,9 @@ int main() {
     if (!is_prefill) fail("expected prefill batch");
 
     if (ok) {
-      if (batch[0]->task_id.id != seq1Id) fail("seq1 task_id mismatch");
+      if (batch[0]->taskId.id != seq1Id) fail("seq1 task_id mismatch");
       if (batch[0]->size() != 4) fail("seq1 size mismatch");
-      if (batch[0]->sampling_params->max_tokens != 10)
+      if (batch[0]->samplingParams->max_tokens != 10)
         fail("seq1 max_tokens mismatch");
       if ((*batch[0])[0] != 1 || (*batch[0])[1] != 2 || (*batch[0])[2] != 3 ||
           (*batch[0])[3] != 4)

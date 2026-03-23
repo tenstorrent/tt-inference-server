@@ -57,7 +57,7 @@ bool SpPipelineRunner::warmup() {
       1,  // block_size (doesn't matter for warmup)
       warmupTokens, warmupParams);
 
-  modelRunner->write(warmupSeq->task_id.id, warmupSeq->token_ids_, 1,
+  modelRunner->write(warmupSeq->taskId.id, warmupSeq->tokenIds, 1,
                      sp_pipeline::RequestPhase::PREFILL);
 
   // Wait for the response token (with timeout)
@@ -69,8 +69,8 @@ bool SpPipelineRunner::warmup() {
     std::vector<llm_engine::TokenResult> results;
     decodeQueue.popMany(results, maxInFlightCount);
     for (const auto& dr : results) {
-      if (dr.task_id == warmupTaskId) {
-        if (dr.is_error) {
+      if (dr.taskId == warmupTaskId) {
+        if (dr.isError) {
           TT_LOG_ERROR("SpPipelineRunner: Warmup failed with error");
           return false;
         }
@@ -111,10 +111,15 @@ void SpPipelineRunner::step() {
   {
     ZoneScopedN("SpPipelineRunner::write_to_device");
     std::unique_ptr<llm_engine::Sequence> owned(seq);
-    llm_engine::TaskID taskId = seq->task_id;
+    llm_engine::TaskID taskId = seq->taskId;
 
-    modelRunner->write(taskId.id, seq->token_ids_,
-                       seq->sampling_params->max_tokens.value(),
+    if (!seq->samplingParams->max_tokens.has_value()) {
+      seq->samplingParams->max_tokens =
+          static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
+    }
+
+    modelRunner->write(taskId.id, seq->tokenIds,
+                       seq->samplingParams->max_tokens.value(),
                        sp_pipeline::RequestPhase::PREFILL);
 
     activeSequences.emplace(taskId, std::move(owned));
@@ -126,34 +131,34 @@ void SpPipelineRunner::drainDecodeResults() {
   std::vector<llm_engine::TokenResult> results;
   decodeQueue.popMany(results, maxInFlightCount);
   for (const auto& dr : results) {
-    auto it = activeSequences.find(dr.task_id);
+    auto it = activeSequences.find(dr.taskId);
     if (it == activeSequences.end()) {  // safeguard for too many decode results
       TT_LOG_WARN(
           "SpPipelineRunner: task_id not found in active_sequences_: {}",
-          dr.task_id.id);
+          dr.taskId.id);
       continue;
     }
     llm_engine::Sequence* seq = it->second.get();
 
-    if (dr.is_error) {
-      pushErrorToken(dr.task_id);
+    if (dr.isError) {
+      pushErrorToken(dr.taskId);
       activeSequences.erase(it);
       --inFlightCount;
       continue;
     }
 
-    seq->appendToken(static_cast<int64_t>(dr.token_id));
+    seq->appendToken(static_cast<int64_t>(dr.tokenId));
 
-    bool isStop = stopTokenIds.count(static_cast<int64_t>(dr.token_id)) > 0;
+    bool isStop = stopTokenIds.count(static_cast<int64_t>(dr.tokenId)) > 0;
     bool reachedMaxTokens =
-        seq->sampling_params->max_tokens.has_value() &&
+        seq->samplingParams->max_tokens.has_value() &&
         seq->numCompletionTokens() >=
-            static_cast<size_t>(seq->sampling_params->max_tokens.value());
+            static_cast<size_t>(seq->samplingParams->max_tokens.value());
     bool finished =
-        (!seq->sampling_params->ignore_eos && isStop) || reachedMaxTokens;
+        (!seq->samplingParams->ignore_eos && isStop) || reachedMaxTokens;
 
     {
-      pushToken(dr.task_id, dr.token_id, finished);
+      pushToken(dr.taskId, dr.tokenId, finished);
     }
 
     if (finished) {

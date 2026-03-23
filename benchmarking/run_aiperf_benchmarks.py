@@ -588,9 +588,8 @@ def main():
 
     # Look up the benchmark configuration for the model
     if model_spec.model_id not in BENCHMARK_CONFIGS:
-        raise ValueError(
-            f"No benchmark tasks defined for model: {model_spec.model_name}"
-        )
+        message = f"No benchmark tasks defined for model: {model_spec.model_name}"
+        raise ValueError(message)
     benchmark_config = BENCHMARK_CONFIGS[model_spec.model_id]
 
     # Get all benchmark params for this device
@@ -602,9 +601,8 @@ def main():
     ]
 
     if not all_params:
-        raise ValueError(
-            f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
-        )
+        message = f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
+        raise ValueError(message)
 
     # Check for limit_samples_mode (smoke-test, ci-commit) to enable debug mode
     limit_samples_mode_str = runtime_config.limit_samples_mode
@@ -643,7 +641,11 @@ def main():
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
-    prompt_client = PromptClient(env_config, model_spec=model_spec)
+    prompt_client = PromptClient(
+        env_config,
+        model_spec=model_spec,
+        runtime_config=runtime_config,
+    )
     if not prompt_client.wait_for_healthy():
         logger.error("vLLM server is not healthy. Aborting benchmarks.")
         return 1
@@ -670,7 +672,11 @@ def main():
 
     for i, params in enumerate(all_params, 1):
         # Health check
-        health_check = prompt_client.get_health()
+        try:
+            health_check = prompt_client.get_health()
+        except requests.exceptions.RequestException as error:
+            logger.error("Health check request failed: %s", error)
+            return 1
         if health_check.status_code != 200:
             logger.error("vLLM server is not healthy. Aborting benchmarks.")
             return 1

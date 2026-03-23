@@ -69,7 +69,7 @@ bool LlamaModelRunner::initialize() {
 
 void LlamaModelRunner::failSequences(const std::vector<Sequence*>& seqs) {
   for (Sequence* seq : seqs) {
-    TokenResult dr(seq->task_id, 0, {}, true);
+    TokenResult dr(seq->taskId, 0, {}, true);
     decode_callback_(dr);
   }
 }
@@ -93,21 +93,21 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
       for (Sequence* seq : seqs) {
         py::list tokenIds;
         if (isPrefill) {
-          for (int64_t t : seq->token_ids_) tokenIds.append(t);
+          for (int64_t t : seq->tokenIds) tokenIds.append(t);
         } else {
-          tokenIds.append(seq->token_ids_.back());
+          tokenIds.append(seq->tokenIds.back());
         }
 
         py::list blockTable;
-        for (int bid : seq->block_table_) {
+        for (int bid : seq->blockTable) {
           blockTable.append(bid);
         }
 
         int currentPos =
-            isPrefill ? 0 : static_cast<int>(seq->token_ids_.size() - 1);
-        int promptLen = static_cast<int>(seq->num_prompt_tokens_);
+            isPrefill ? 0 : static_cast<int>(seq->tokenIds.size() - 1);
+        int promptLen = static_cast<int>(seq->numPromptTokens);
 
-        const SamplingParams* sp = seq->sampling_params.get();
+        const SamplingParams* sp = seq->samplingParams.get();
         double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;
         bool ignoreEos = sp ? sp->ignore_eos : false;
 
@@ -142,7 +142,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
             sp ? static_cast<double>(sp->frequency_penalty) : 0.0;
 
         pySeqs.append(gStepSeqClass(
-            seq->task_id.id, tokenIds, temperature, ignoreEos, blockTable,
+            seq->taskId.id, tokenIds, temperature, ignoreEos, blockTable,
             currentPos, promptLen, seed, topP, topK, minP, repetitionPenalty,
             presencePenalty, frequencyPenalty));
       }
