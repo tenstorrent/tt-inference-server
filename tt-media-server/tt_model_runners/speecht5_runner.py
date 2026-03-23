@@ -78,34 +78,24 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
     def _load_huggingface_models(self):
         """Load HuggingFace models - used by both load_weights() and _initialize_models()"""
-        model_weights_path = (
-            self.settings.model_weights_path or SupportedModels.SPEECHT5_TTS.value
-        )
-        # Set a download timeout so network hangs fail fast rather than blocking forever.
-        # Uses setdefault so the caller/environment can override if needed.
-        os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "300")
-
         try:
-            self.logger.info(
-                f"Device {self.device_id}: Loading SpeechT5Processor from {model_weights_path}"
+            model_weights_path = (
+                self.settings.model_weights_path or SupportedModels.SPEECHT5_TTS.value
             )
+            self.logger.info(
+                f"Device {self.device_id}: Loading HuggingFace model: {model_weights_path}"
+            )
+
+            # Load all required components for inference
             self.processor = SpeechT5Processor.from_pretrained(model_weights_path)
-
-            self.logger.info(
-                f"Device {self.device_id}: Loading SpeechT5ForTextToSpeech from {model_weights_path}"
-            )
             self.model = SpeechT5ForTextToSpeech.from_pretrained(model_weights_path)
-
             # Vocoder is always the same for all SpeechT5 models (standard HiFi-GAN vocoder)
-            self.logger.info(
-                f"Device {self.device_id}: Loading SpeechT5HifiGan vocoder from {SpeechT5Constants.HIFIGAN_VOCODER_REPO}"
-            )
             self.vocoder = SpeechT5HifiGan.from_pretrained(
                 SpeechT5Constants.HIFIGAN_VOCODER_REPO
             )
 
             self.logger.info(
-                f"Device {self.device_id}: Successfully loaded all HuggingFace model components"
+                f"Device {self.device_id}: Successfully loaded HuggingFace model components"
             )
         except Exception as e:
             self.logger.error(

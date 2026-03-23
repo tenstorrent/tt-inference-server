@@ -2784,7 +2784,7 @@ audio_tts_templates = [
                 default_impl=True,
             ),
         ],
-        status=ModelStatusTypes.COMPLETE,
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
 ]
 
