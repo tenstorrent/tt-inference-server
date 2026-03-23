@@ -47,23 +47,22 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         self.hf_base_model_train = AutoModelForCausalLM.from_pretrained(
             self.model_name, use_cache=False
         )
+        self.hf_fine_tuned_model_inference = AutoModelForCausalLM.from_pretrained(
+            self.model_name, torch_dtype=torch.bfloat16, use_cache=True
+        )
+
+        if PEFT_MODEL_PATH is not None:
+            peft_model = PeftModel.from_pretrained(
+                self.hf_fine_tuned_model_inference, PEFT_MODEL_PATH
+            )
+            self.hf_fine_tuned_model_inference = peft_model.merge_and_unload()
+
         self.hf_base_model_inference = AutoModelForCausalLM.from_pretrained(
             self.model_name, torch_dtype=torch.bfloat16, use_cache=True
         )
-        self.hf_base_model_inference = self.hf_base_model_inference.to(self.device)
-        self.compiled_base_model_inference = torch.compile(self.hf_base_model_inference, backend="tt")
-        self.compiled_base_model_inference.eval()
 
-        if PEFT_MODEL_PATH is not None:
-            # Load a separate base model for the fine-tuned variant
-            hf_model_for_fine_tune = AutoModelForCausalLM.from_pretrained(
-                self.model_name, torch_dtype=torch.bfloat16, use_cache=True
-            )
-            peft_model = PeftModel.from_pretrained(hf_model_for_fine_tune, PEFT_MODEL_PATH)
-            self.fine_tuned_model = peft_model.merge_and_unload()
-            self.fine_tuned_model = self.fine_tuned_model.to(self.device)
-            self.compiled_fine_tuned_model = torch.compile(self.fine_tuned_model, backend="tt")
-            self.compiled_fine_tuned_model.eval()
+        self.compiled_inference_model = None
+        self._compiled_mode = None
 
         self.logger.info(f"Device {self.device_id}: Setting up Gemma Lora base model...")
 
@@ -344,36 +343,42 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
     @log_execution_time("Gemma Lora inference")
     def _run_inference(self, request: InferenceOnFineTunedGemmaRequest):
-        # Set up config variables.
         max_cache_len: int = 128
         batch_size: int = 1
 
-        # Connect the device
-        device: torch.device = torch_xla.device()
+        requested_mode = "base" if request.use_base_model else "fine_tuned"
 
-        if not request.use_base_model:
-            self.logger.info(f"Loaded and merged PEFT adapter from: {PEFT_MODEL_PATH}")
-            model = self.compiled_fine_tuned_model
-        else:
-            self.logger.info("Using base model")
-            model = self.compiled_base_model_inference
+        if requested_mode != self._compiled_mode:
+            if self.compiled_inference_model is not None:
+                del self.compiled_inference_model
+                self._active_model.to("cpu")
+                torch._dynamo.reset()
+
+            if request.use_base_model:
+                self._active_model = self.hf_base_model_inference
+            else:
+                self._active_model = self.hf_fine_tuned_model_inference
+
+            self._active_model.to(self.device)
+            self.compiled_inference_model = torch.compile(
+                self._active_model, backend="tt"
+            )
+            self.compiled_inference_model.eval()
+            self._compiled_mode = requested_mode
 
         user_prompt = [request.prompt]
 
-        # Construct inputs, including static cache
         input_args = self.construct_inputs(
-            user_prompt, self.tokenizer, model.config, batch_size, max_cache_len
+            user_prompt, self.tokenizer,
+            self._active_model.config, batch_size, max_cache_len,
         )
 
-        # Limit maximum generation count to fit within preallocated static cache
         max_tokens_to_generate: int = max_cache_len - input_args["input_ids"].shape[1]
 
-        # Transfer model and inputs to device
         input_args = self.transfer_inputs_to_device(input_args, self.device)
 
-        # Run generation loop until EOS token generated or max tokens reached
         self.run_generate(
-            model,
+            self.compiled_inference_model,
             input_args,
             self.tokenizer,
             self.device,
