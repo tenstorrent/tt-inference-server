@@ -142,9 +142,11 @@ for name in wheels:
         raise SystemExit(
             f"{name}: {size} bytes — likely Git LFS pointer, not the wheel. Run: git lfs pull"
         )
-    bad = zipfile.ZipFile(path).testzip()
-    if bad:
-        raise SystemExit(f"{name}: corrupt zip entry {bad}")
+    # Skip testzip() on pjrt wheel (very large); vllm wheel is small enough to verify quickly.
+    if not name.startswith("pjrt_plugin"):
+        bad = zipfile.ZipFile(path).testzip()
+        if bad:
+            raise SystemExit(f"{name}: corrupt zip entry {bad}")
 PY
 RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh"
 RUN /bin/bash -c "\
