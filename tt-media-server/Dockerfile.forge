@@ -69,8 +69,16 @@ RUN apt-get update && apt-get install -y \
     iputils-ping \
     rsync \
     ninja-build \
+    clang \
+    ccache \
+    libnuma-dev \
+    libhwloc-dev \
+    libboost-all-dev \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
+
+# tt-xla venv/activate defaults here for link_directories; directory may stay empty until a separate toolchain install.
+RUN mkdir -p /opt/ttmlir-toolchain/lib
 
 # Install Python 3.12 (pjrt-plugin-tt / tt-xla python_package requires >=3.12,<3.13 at pinned SHA)
 RUN add-apt-repository ppa:deadsnakes/ppa && \
@@ -122,8 +130,13 @@ RUN /bin/bash -c "\
     git submodule update --init --recursive \
     "
 RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh"
+# tt-xla CMakeLists.txt requires TTXLA_ENV_ACTIVATED (normally set by source tt-xla/venv/activate).
+# tt-mlir ExternalProject uses clang/clang++ and ccache; install_ttmlir_requirements.sh uses the active venv when TTXLA_ENV_ACTIVATED=1.
 RUN /bin/bash -c "\
     source ${APP_DIR}/server/venv-worker/bin/activate && \
+    export TTXLA_ENV_ACTIVATED=1 && \
+    export TTMLIR_ENV_ACTIVATED=1 && \
+    export TTMLIR_TOOLCHAIN_DIR=/opt/ttmlir-toolchain && \
     pip install --no-cache-dir \"${HOME_DIR}/tt-xla/python_package\" \
     "
 ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal"
