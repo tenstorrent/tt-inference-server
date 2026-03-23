@@ -462,9 +462,7 @@ class VideoClientStrategy(BaseMediaStrategy):
 
         reference_videos_path = str(Path(FVD_DATASET_DIR) / "videos")
         # Generated videos: same dir as video_generation_eval_test, or /tmp/videos
-        generated_videos_path = str(
-            Path("server_tests/datasets/videos").resolve()
-        )
+        generated_videos_path = str(Path("server_tests/datasets/videos").resolve())
         if not Path(generated_videos_path).exists():
             generated_videos_path = "/tmp/videos"
         logger.info(
