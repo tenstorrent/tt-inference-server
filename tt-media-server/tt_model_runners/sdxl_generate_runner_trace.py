@@ -40,7 +40,6 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
                 guidance_scale=5.0,
                 use_cfg_parallel=self.is_tensor_parallel,
                 image_resolution=self.settings.sdxl_image_resolution,
-                vae_on_device=self.settings.sdxl_image_resolution != (512, 512),
             ),
         )
 

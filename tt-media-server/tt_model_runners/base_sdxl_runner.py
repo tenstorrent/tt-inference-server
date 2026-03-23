@@ -253,9 +253,6 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
 
         imgs = self.tt_sdxl.generate_images()
 
-        if imgs is None:
-            return images
-
         for idx, img in enumerate(imgs):
             if idx >= self.batch_size - needed_padding:
                 break
