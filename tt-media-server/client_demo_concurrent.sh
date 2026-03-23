@@ -4,6 +4,7 @@
 
 N=${1:-2}
 MAX_TOKENS=${2:-128}
+STAGGER=${3:-0}
 PORT=${PORT:-8000}
 SERVER=${SERVER:-http://localhost:$PORT}
 API_KEY=${API_KEY:-your-secret-key}
@@ -15,6 +16,7 @@ server = '$SERVER'
 api_key = '$API_KEY'
 max_tokens = $MAX_TOKENS
 n = $N
+stagger = $STAGGER
 headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
 
 # Wait for server to be ready
@@ -31,7 +33,8 @@ while True:
 print(f' ready!')
 
 model = os.environ.get('MODEL', 'unknown')
-print(f'Model: {model} | Max tokens: {max_tokens} | Concurrent: {n}')
+stagger_str = f' | Stagger: {stagger}s' if stagger > 0 else ''
+print(f'Model: {model} | Max tokens: {max_tokens} | Concurrent: {n}{stagger_str}')
 print()
 
 lock = threading.Lock()
@@ -124,7 +127,12 @@ while True:
     for i in range(n):
         print(f'[{i+1}/{n}] ')
 
-    threads = [threading.Thread(target=stream_request, args=(i, prompt)) for i in range(n)]
+    def staggered_start(idx, prompt):
+        if stagger > 0 and idx > 0:
+            time.sleep(stagger * idx)
+        stream_request(idx, prompt)
+
+    threads = [threading.Thread(target=staggered_start, args=(i, prompt)) for i in range(n)]
     wall_start = time.perf_counter()
     for t in threads:
         t.start()
