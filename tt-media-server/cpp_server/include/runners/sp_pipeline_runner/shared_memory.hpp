@@ -69,7 +69,8 @@ class SharedMemory {
     if (memPointer && memPointer != MAP_FAILED) {
       munmap(memPointer, Msg::K_TOTAL_SIZE);
     }
-    shm_unlink(name.c_str());
+    // Do not shm_unlink here — runner.py is the owner and is responsible for
+    // creating and removing the shared memory segments.
   }
 
   SharedMemory(const SharedMemory&) = delete;
@@ -90,7 +91,7 @@ class SharedMemory {
     }
     ::close(fd);
 
-    std::memset(memPointer, 0, Msg::K_TOTAL_SIZE);
+    // Do not memset — runner.py initializes the shared memory; we just attach.
     messages = std::span<Msg>(static_cast<Msg*>(memPointer), SHM_SLOTS);
   }
 
