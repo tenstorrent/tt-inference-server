@@ -126,7 +126,51 @@ def test_process_benchmark_file_formats_audio_metrics(tmp_path, monkeypatch):
     assert result["backend"] == "audio"
     assert result["mean_ttft_ms"] == 250.0
     assert result["accuracy_check"] == 0.98
+    assert result["num_eval_runs"] == 2
+    assert result["tput_user"] == 1.5
     assert result["rtr"] == 0.9
+
+
+def test_process_benchmark_file_formats_image_metrics_with_perf_aliases(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        run_reports,
+        "MODEL_SPECS",
+        {
+            "demo": SimpleNamespace(
+                model_name="sdxl-demo",
+                model_type=run_reports.ModelType.IMAGE,
+            )
+        },
+    )
+    json_path = write_json(
+        tmp_path / "benchmark_id_tt-metal_sdxl-demo_N150_12345.0.json",
+        {
+            "model": "sdxl-demo",
+            "benchmarks: ": {
+                "benchmarks": {
+                    "num_requests": 2,
+                    "concurrency": 1,
+                    "num_inference_steps": 20,
+                    "ttft": 12.5,
+                    "inference_steps_per_second": 0.08,
+                    "end_to_end_latency_ms": 13000,
+                }
+            },
+        },
+    )
+
+    result = run_reports.process_benchmark_file(str(json_path))
+
+    assert result["task_type"] == "image"
+    assert result["backend"] == "image"
+    assert result["max_con"] == 1
+    assert result["max_concurrency"] == 1
+    assert result["num_inference_steps"] == 20
+    assert result["tput_user"] == 0.08
+    assert result["tput"] == 0.08
+    assert result["e2el_ms"] == 13000
 
 
 def test_process_benchmark_file_formats_embedding_metrics(tmp_path, monkeypatch):
@@ -163,9 +207,54 @@ def test_process_benchmark_file_formats_embedding_metrics(tmp_path, monkeypatch)
 
     assert result["task_type"] == "embedding"
     assert result["backend"] == "embedding"
+    assert result["isl"] == 256
+    assert result["max_concurrency"] == 2
     assert result["embedding_dimension"] == 768
     assert result["mean_ttft_ms"] == run_reports.NOT_MEASURED_STR
     assert result["mean_tps"] == 123.45
+    assert result["tput_user"] == 123.45
+    assert result["tput_prefill"] == 456.7
+    assert result["e2el_ms"] == 12.34
+
+
+def test_process_benchmark_file_formats_video_metrics_with_perf_aliases(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        run_reports,
+        "MODEL_SPECS",
+        {
+            "demo": SimpleNamespace(
+                model_name="video-demo",
+                model_type=run_reports.ModelType.VIDEO,
+            )
+        },
+    )
+    json_path = write_json(
+        tmp_path / "benchmark_id_tt-metal_video-demo_N150_12345.0.json",
+        {
+            "model": "video-demo",
+            "benchmarks: ": {
+                "benchmarks": {
+                    "num_requests": 1,
+                    "num_inference_steps": 40,
+                    "ttft": 330.0,
+                    "inference_steps_per_second": 0.12,
+                    "end_to_end_latency_ms": 321490,
+                }
+            },
+        },
+    )
+
+    result = run_reports.process_benchmark_file(str(json_path))
+
+    assert result["task_type"] == "video"
+    assert result["backend"] == "video"
+    assert result["max_con"] == 1
+    assert result["max_concurrency"] == 1
+    assert result["tput_user"] == 0.12
+    assert result["tput"] == 0.12
+    assert result["e2el_ms"] == 321490
 
 
 def test_get_markdown_table_escapes_pipes():
@@ -228,7 +317,7 @@ def test_benchmark_generate_report_writes_combined_artifacts_in_backend_order(
     )
     model_spec = make_minimal_model_spec()
 
-    _, release_raw, disp_md_path, stats_file_path = (
+    release_str, release_raw, disp_md_path, stats_file_path = (
         run_reports.benchmark_generate_report(
             args,
             server_mode=None,
@@ -241,6 +330,7 @@ def test_benchmark_generate_report_writes_combined_artifacts_in_backend_order(
     markdown = disp_md_path.read_text(encoding="utf-8")
 
     assert len(release_raw) == 3
+    assert release_str == ""
     assert stats_file_path.name == "benchmark_stats_demo-report.csv"
     assert disp_md_path.name == "benchmark_display_demo-report.md"
     assert stats_file_path.exists()

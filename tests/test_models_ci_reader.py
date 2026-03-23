@@ -18,7 +18,13 @@ def test_write_summary_output_preserves_release_report_payload(tmp_path):
                         "vllm_commit": "1" * 7,
                         "docker_image": "ghcr.io/tenstorrent/demo:tag",
                         "perf_status": "target",
+                        "benchmarks_completed": True,
                         "accuracy_status": True,
+                        "evals_completed": True,
+                        "regression_checked": True,
+                        "regression_passed": False,
+                        "regression_ok": False,
+                        "is_passing": False,
                     },
                     "reports_output": {
                         "benchmarks_summary": [
@@ -88,3 +94,7 @@ def test_write_summary_output_preserves_release_report_payload(tmp_path):
         ]["test_smoke"][0]["status"]
         == "passed"
     )
+    assert output_data["demo_model"]["regression_checked"] is True
+    assert output_data["demo_model"]["regression_passed"] is False
+    assert output_data["demo_model"]["regression_ok"] is False
+    assert output_data["demo_model"]["is_passing"] is False
