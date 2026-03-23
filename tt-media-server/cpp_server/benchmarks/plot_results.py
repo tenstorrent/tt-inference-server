@@ -10,12 +10,15 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 
-MIN_LATENCY_MS = 0.001  # 1µs minimum granularity: values are rounded to this before plotting
+MIN_LATENCY_MS = (
+    0.001  # 1µs minimum granularity: values are rounded to this before plotting
+)
 
 
 def round_latency_ms(value_ms: float) -> float:
     """Round latency to minimum granularity (1µs) so the chart is flat when values are effectively equal."""
     return round(value_ms / MIN_LATENCY_MS) * MIN_LATENCY_MS
+
 
 FILENAME_PATTERN = re.compile(
     r"bench_isl(?P<isl>\d+)_osl(?P<osl>\d+)_conc(?P<conc>\d+)_(?P<ts>[\d-]+)\.json"
@@ -78,7 +81,10 @@ def plot_phase1_isl(records, fixed_osl: int, fixed_conc: int, output_dir: Path):
     tpots = [round_latency_ms(r["mean_tpot_ms"]) for r in data]
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle(f"Impact of Input Sequence Length (OSL={fixed_osl}, concurrency={fixed_conc})", fontsize=14)
+    fig.suptitle(
+        f"Impact of Input Sequence Length (OSL={fixed_osl}, concurrency={fixed_conc})",
+        fontsize=14,
+    )
 
     ax1.plot(isls, ttfts, "o-", color="tab:blue", linewidth=2, markersize=7)
     ax1.set_xlabel("Input Sequence Length (ISL)")
@@ -90,7 +96,14 @@ def plot_phase1_isl(records, fixed_osl: int, fixed_conc: int, output_dir: Path):
     setup_latency_axis(ax1)
     ax1.grid(True, alpha=0.3)
     for x, y in zip(isls, ttfts):
-        ax1.annotate(format_latency_ms(y), (x, y), textcoords="offset points", xytext=(0, 10), ha="center", fontsize=8)
+        ax1.annotate(
+            format_latency_ms(y),
+            (x, y),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=8,
+        )
 
     ax2.plot(isls, tpots, "s-", color="tab:orange", linewidth=2, markersize=7)
     ax2.set_xlabel("Input Sequence Length (ISL)")
@@ -102,7 +115,14 @@ def plot_phase1_isl(records, fixed_osl: int, fixed_conc: int, output_dir: Path):
     setup_latency_axis(ax2)
     ax2.grid(True, alpha=0.3)
     for x, y in zip(isls, tpots):
-        ax2.annotate(format_latency_ms(y), (x, y), textcoords="offset points", xytext=(0, 10), ha="center", fontsize=8)
+        ax2.annotate(
+            format_latency_ms(y),
+            (x, y),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=8,
+        )
 
     finalize_axes([ax1, ax2])
     plt.tight_layout()
@@ -123,7 +143,10 @@ def plot_phase2_osl(records, fixed_isl: int, fixed_conc: int, output_dir: Path):
     tpots = [round_latency_ms(r["mean_tpot_ms"]) for r in data]
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle(f"Impact of Output Sequence Length (ISL={fixed_isl}, concurrency={fixed_conc})", fontsize=14)
+    fig.suptitle(
+        f"Impact of Output Sequence Length (ISL={fixed_isl}, concurrency={fixed_conc})",
+        fontsize=14,
+    )
 
     ax1.plot(osls, ttfts, "o-", color="tab:blue", linewidth=2, markersize=7)
     ax1.set_xlabel("Output Sequence Length (OSL)")
@@ -135,7 +158,14 @@ def plot_phase2_osl(records, fixed_isl: int, fixed_conc: int, output_dir: Path):
     setup_latency_axis(ax1)
     ax1.grid(True, alpha=0.3)
     for x, y in zip(osls, ttfts):
-        ax1.annotate(format_latency_ms(y), (x, y), textcoords="offset points", xytext=(0, 10), ha="center", fontsize=8)
+        ax1.annotate(
+            format_latency_ms(y),
+            (x, y),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=8,
+        )
 
     ax2.plot(osls, tpots, "s-", color="tab:orange", linewidth=2, markersize=7)
     ax2.set_xlabel("Output Sequence Length (OSL)")
@@ -147,7 +177,14 @@ def plot_phase2_osl(records, fixed_isl: int, fixed_conc: int, output_dir: Path):
     setup_latency_axis(ax2)
     ax2.grid(True, alpha=0.3)
     for x, y in zip(osls, tpots):
-        ax2.annotate(format_latency_ms(y), (x, y), textcoords="offset points", xytext=(0, 10), ha="center", fontsize=8)
+        ax2.annotate(
+            format_latency_ms(y),
+            (x, y),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=8,
+        )
 
     finalize_axes([ax1, ax2])
     plt.tight_layout()
@@ -169,7 +206,9 @@ def plot_phase3_concurrency(records, fixed_isl: int, fixed_osl: int, output_dir:
     req_thr = [r["request_throughput"] for r in data]
 
     fig, axes = plt.subplots(1, 3, figsize=(14, 5))
-    fig.suptitle(f"Impact of Concurrency (ISL={fixed_isl}, OSL={fixed_osl})", fontsize=14)
+    fig.suptitle(
+        f"Impact of Concurrency (ISL={fixed_isl}, OSL={fixed_osl})", fontsize=14
+    )
 
     ax = axes[0]
     ax.plot(concs, ttfts, "o-", color="tab:blue", linewidth=2, markersize=7)
@@ -182,7 +221,14 @@ def plot_phase3_concurrency(records, fixed_isl: int, fixed_osl: int, output_dir:
     setup_latency_axis(ax)
     ax.grid(True, alpha=0.3)
     for x, y in zip(concs, ttfts):
-        ax.annotate(format_latency_ms(y), (x, y), textcoords="offset points", xytext=(0, 10), ha="center", fontsize=8)
+        ax.annotate(
+            format_latency_ms(y),
+            (x, y),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=8,
+        )
 
     ax = axes[1]
     ax.plot(concs, tpots, "s-", color="tab:orange", linewidth=2, markersize=7)
@@ -195,7 +241,14 @@ def plot_phase3_concurrency(records, fixed_isl: int, fixed_osl: int, output_dir:
     setup_latency_axis(ax)
     ax.grid(True, alpha=0.3)
     for x, y in zip(concs, tpots):
-        ax.annotate(format_latency_ms(y), (x, y), textcoords="offset points", xytext=(0, 10), ha="center", fontsize=8)
+        ax.annotate(
+            format_latency_ms(y),
+            (x, y),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=8,
+        )
 
     ax = axes[2]
     ax.plot(concs, req_thr, "D-", color="tab:green", linewidth=2, markersize=7)
@@ -207,7 +260,14 @@ def plot_phase3_concurrency(records, fixed_isl: int, fixed_osl: int, output_dir:
     ax.set_xticklabels([str(x) for x in concs])
     ax.grid(True, alpha=0.3)
     for x, y in zip(concs, req_thr):
-        ax.annotate(f"{y:.1f}", (x, y), textcoords="offset points", xytext=(0, 10), ha="center", fontsize=8)
+        ax.annotate(
+            f"{y:.1f}",
+            (x, y),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=8,
+        )
 
     finalize_axes(axes)
     plt.tight_layout()
@@ -219,14 +279,51 @@ def plot_phase3_concurrency(records, fixed_isl: int, fixed_osl: int, output_dir:
 
 def main():
     parser = argparse.ArgumentParser(description="Plot vLLM benchmark results")
-    parser.add_argument("results_dir", type=Path, help="Directory containing benchmark JSON files")
-    parser.add_argument("--output-dir", type=Path, default=None, help="Directory for plots (default: results_dir)")
-    parser.add_argument("--phase1-osl", type=int, default=128, help="Fixed OSL used in Phase 1 (default: 128)")
-    parser.add_argument("--phase1-conc", type=int, default=64, help="Fixed concurrency used in Phase 1 (default: 64)")
-    parser.add_argument("--phase2-isl", type=int, default=128, help="Fixed ISL used in Phase 2 (default: 128)")
-    parser.add_argument("--phase2-conc", type=int, default=64, help="Fixed concurrency used in Phase 2 (default: 64)")
-    parser.add_argument("--phase3-isl", type=int, default=512, help="Fixed ISL used in Phase 3 (default: 512)")
-    parser.add_argument("--phase3-osl", type=int, default=512, help="Fixed OSL used in Phase 3 (default: 512)")
+    parser.add_argument(
+        "results_dir", type=Path, help="Directory containing benchmark JSON files"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Directory for plots (default: results_dir)",
+    )
+    parser.add_argument(
+        "--phase1-osl",
+        type=int,
+        default=128,
+        help="Fixed OSL used in Phase 1 (default: 128)",
+    )
+    parser.add_argument(
+        "--phase1-conc",
+        type=int,
+        default=64,
+        help="Fixed concurrency used in Phase 1 (default: 64)",
+    )
+    parser.add_argument(
+        "--phase2-isl",
+        type=int,
+        default=128,
+        help="Fixed ISL used in Phase 2 (default: 128)",
+    )
+    parser.add_argument(
+        "--phase2-conc",
+        type=int,
+        default=64,
+        help="Fixed concurrency used in Phase 2 (default: 64)",
+    )
+    parser.add_argument(
+        "--phase3-isl",
+        type=int,
+        default=512,
+        help="Fixed ISL used in Phase 3 (default: 512)",
+    )
+    parser.add_argument(
+        "--phase3-osl",
+        type=int,
+        default=512,
+        help="Fixed OSL used in Phase 3 (default: 512)",
+    )
     args = parser.parse_args()
 
     output_dir = args.output_dir or args.results_dir
