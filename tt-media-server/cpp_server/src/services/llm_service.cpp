@@ -20,12 +20,17 @@
 
 namespace tt::services {
 
+// Bring ContentType and TokenParseResult into scope
+using tt::services::ContentType;
+using tt::services::TokenParseResult;
+
 LLMService::LLMService()
     : mode_(tt::config::llmMode()), tokenizer_(&tt::utils::activeTokenizer()) {
   size_t numWorkers = tt::config::numWorkers();
   max_queue_size_ = tt::config::maxQueueSize();
 
   worker_manager_ = std::make_unique<tt::worker::WorkerManager>(numWorkers);
+  reasoning_parser_ = std::make_unique<ReasoningParser>();
 
   TT_LOG_INFO("[LLMService] Initialized (mode={}, workers={})",
               tt::config::toString(mode_), numWorkers);
@@ -164,27 +169,51 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
                                  std::string(token.task_id));
       }
       auto callback = val.value();
-      if (token.isFinal()) {
+
+      std::string taskId = std::string(token.task_id);
+      bool isFinal = token.isFinal();
+
+      if (isFinal) {
         stream_callbacks_.erase(token.task_id);
         pending_tasks_.fetch_sub(1);
       }
 
-      domain::StreamingChunkResponse response(
-          domain::TaskID(std::string(token.task_id)));
-      response.id = std::string(token.task_id);
+      // Process token through reasoning parser to determine content type
+      TokenParseResult parseResult{ContentType::ANSWER, "", true};
+      if (reasoning_parser_) {
+        std::string decodedText =
+            tokenizer_->decode({static_cast<int>(token.token_id)});
+        parseResult = reasoning_parser_->processToken(
+            taskId, static_cast<int64_t>(token.token_id), decodedText);
+      }
+
+      // Always emit response (send all tokens to client)
+      domain::StreamingChunkResponse response{domain::TaskID(taskId)};
+      response.id = taskId;
       response.created =
           std::chrono::duration_cast<std::chrono::seconds>(
               std::chrono::system_clock::now().time_since_epoch())
               .count();
 
       domain::CompletionChoice choice;
-      choice.text = tokenizer_->decode({static_cast<int>(token.token_id)});
       choice.index = token.token_index;
+
+      // Set text based on content type
+      if (parseResult.type == ContentType::REASONING) {
+        // This is reasoning content - put in reasoning field
+        choice.text = "";  // Empty normal text
+        choice.reasoning = parseResult.text;
+      } else {
+        // This is answer content - put in text field
+        choice.text = parseResult.text;
+        choice.reasoning = std::nullopt;
+      }
+
       if (token.isError()) {
         choice.finish_reason = "error";
       } else {
         choice.token_id = static_cast<int64_t>(token.token_id);
-        if (token.isFinal()) {
+        if (isFinal) {
           bool isStop =
               STOP_TOKEN_SET.count(static_cast<int64_t>(token.token_id)) > 0;
           choice.finish_reason = isStop ? "stop" : "length";
@@ -192,8 +221,13 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       }
       response.choices.push_back(std::move(choice));
 
-      callback(response, token.isFinal());
-      if (token.isFinal()) {
+      callback(response, isFinal);
+
+      if (isFinal) {
+        // Clean up reasoning parser state for this task
+        if (reasoning_parser_) {
+          reasoning_parser_->finalizeTask(taskId);
+        }
         TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
       }
     }
@@ -229,6 +263,10 @@ domain::CompletionResponse LLMService::processRequest(
       std::move(request),
       [&](domain::StreamingChunkResponse& chunk, bool isFinal) {
         if (!chunk.choices.empty()) {
+          // Accumulate both reasoning and text content
+          if (chunk.choices[0].reasoning.has_value()) {
+            accumulatedText.append(chunk.choices[0].reasoning.value());
+          }
           accumulatedText.append(chunk.choices[0].text);
           completionTokens++;
           if (chunk.choices[0].finish_reason.has_value()) {
@@ -282,6 +320,11 @@ void LLMService::processStreamingRequest(
 
   stream_callbacks_.insert(taskId, std::move(callback));
 
+  // Initialize reasoning parser state for this task
+  if (reasoning_parser_) {
+    reasoning_parser_->initializeTask(taskId);
+  }
+
   auto prompt = std::get<std::vector<int>>(request.prompt);
   std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
 
@@ -318,8 +361,16 @@ void LLMService::processStreamingRequest(
   queue_manager_->task_queue->push(*std::move(sequence));
 }
 
-void LLMService::postProcess(domain::CompletionResponse&) const {
-  // no-op
+void LLMService::postProcess(domain::CompletionResponse& response) const {
+  // Parse and strip reasoning blocks from all choices
+  if (reasoning_parser_) {
+    for (auto& choice : response.choices) {
+      auto result = reasoning_parser_->parseComplete(choice.text);
+
+      // Replace text with answer only (reasoning stripped)
+      choice.text = std::move(result.answer);
+    }
+  }
 }
 
 std::shared_ptr<tt::sockets::InterServerService> LLMService::getSocketService()

@@ -78,10 +78,49 @@ def _run_mock_bridge() -> None:
                     file=sys.stderr,
                 )
 
+                # DeepSeek R1 reasoning token IDs
+                THINK_START_TOKEN = 128798  # <think>
+                THINK_END_TOKEN = 128799  # </think>
+
+                # First 21 tokens: reasoning sequence <think> ... </think> + start of answer
+                reasoning_and_start_sequence = [
+                    THINK_START_TOKEN,  # <think>
+                    # Reasoning tokens (12 tokens)
+                    2810,  # "Let"
+                    502,  # " me"
+                    1781,  # " think"
+                    922,  # " about"
+                    420,  # " this"
+                    281,  # "."
+                    720,  # " The"
+                    3575,  # " problem"
+                    7612,  # " requires"
+                    8954,  # " careful"
+                    6685,  # " analysis"
+                    281,  # "."
+                    THINK_END_TOKEN,  # </think>
+                    # Start of answer tokens (7 tokens)
+                    791,  # "The"
+                    4320,  # " answer"
+                    374,  # " is"
+                    551,  # ":"
+                    220,  # " "
+                    2983,  # "42"
+                    281,  # "."
+                ]
+
+                # After reasoning sequence, repeat answer tokens
+                continuation_token = 281  # "."
+
                 for i in range(tokens_to_generate):
                     start_time = time.perf_counter()
 
-                    token_id = msg.token_ids[i] if i < len(msg.token_ids) else 12345
+                    # Use reasoning sequence for first 21 tokens, then repeat continuation
+                    if i < len(reasoning_and_start_sequence):
+                        token_id = reasoning_and_start_sequence[i]
+                    else:
+                        token_id = continuation_token
+
                     p2c.write_token(msg.task_id, token_id)
 
                     print(
