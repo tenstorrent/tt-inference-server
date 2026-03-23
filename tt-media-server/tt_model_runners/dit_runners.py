@@ -55,8 +55,17 @@ class TTDiTRunner(BaseMetalDeviceRunner):
             reliability_mode = updated_device_params.pop(
                 "reliability_mode", ttnn.FabricReliabilityMode.STRICT_INIT
             )
+            fabric_router_config = updated_device_params.pop(
+                "fabric_router_config", ttnn.FabricRouterConfig()
+            )
             ttnn.set_fabric_config(
-                fabric_config, reliability_mode, None, fabric_tensix_config
+                fabric_config, 
+                reliability_mode, 
+                None, 
+                fabric_tensix_config,
+                ttnn.FabricUDMMode.DISABLED,
+                ttnn.FabricManagerMode.DEFAULT,
+                fabric_router_config,
             )
             return fabric_config
         except Exception as e:
@@ -350,5 +359,8 @@ class TTWan22Runner(TTDiTRunner):
 
         mesh_size = self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
         if mesh_size >= 32:  # i.e GLX: ((4, 8), (4, 32))
+            config = ttnn.FabricRouterConfig()
+            config.max_packet_payload_size_bytes = 8192
             device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
+            device_params["fabric_router_config"] = config
         return device_params
