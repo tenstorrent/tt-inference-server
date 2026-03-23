@@ -180,6 +180,9 @@ async def run_inference_on_fine_tuned_model(
 
     if not request.use_base_model:
         request._adapter_path = service.get_job_result_path(job_id)
-
-    result = await service.process_request(request)
-    return JSONResponse(content={"output": result})
+        
+    try:
+        result = await service.process_request(request)
+        return JSONResponse(content={"output": result})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
