@@ -186,6 +186,17 @@
                     <label>Prompt
                         <textarea id="inference-prompt" rows="2" placeholder="Enter your prompt..."></textarea>
                     </label>
+                    <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+                        <label>Max New Tokens
+                            <input type="number" id="inference-max-tokens" value="128" min="1">
+                        </label>
+                        <label>Temperature
+                            <input type="number" id="inference-temperature" value="1.0" step="0.1" min="0">
+                        </label>
+                        <label>Top K
+                            <input type="number" id="inference-top-k" value="50" min="1">
+                        </label>
+                    </div>
                     <span id="inference-status"></span>
                     <pre id="inference-output" hidden></pre>
                     <button type="submit" id="inference-btn">Run Inference</button>

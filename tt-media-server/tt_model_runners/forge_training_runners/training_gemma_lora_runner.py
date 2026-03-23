@@ -102,6 +102,8 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         self.train_dataloader = self.train_dataset.get_dataloader(request.batch_size)
         self.eval_dataloader = self.eval_dataset.get_dataloader(request.batch_size)
 
+        self.logger.info(f"Chosen max sequence length: {request.dataset_max_sequence_length}")
+
         lora_config = LoraConfig(
             r=request.lora_r,
             lora_alpha=request.lora_alpha,
@@ -337,6 +339,8 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             model = PeftModel.from_pretrained(model, request._adapter_path)
             model = model.merge_and_unload()
             self.logger.info(f"Loaded and merged PEFT adapter from: {request._adapter_path}")
+        else:
+            self.logger.warning("Using base model for inference as requested")
 
         model = model.eval()
 
@@ -391,6 +395,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         input_args["attention_mask"] = input_args["attention_mask"].to(self.device)
         model = model.to(self.device)
 
+        self.logger.info(f"Compiling model")
         compiled_model = torch.compile(model, backend="tt")
 
         max_tokens_to_generate = max_cache_len - prompt_len
@@ -398,6 +403,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         with torch.no_grad():
             for step in range(max_tokens_to_generate):
+                self.logger.info(f"Running inference step {step}")
                 output = compiled_model(**input_args)
                 output_logits = output.logits.to("cpu")
                 next_token_id = output_logits[:, -1].argmax(dim=-1)
@@ -413,6 +419,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 host_cache_pos = torch.tensor([host_cache_pos[-1:] + 1])
                 input_args["cache_position"] = host_cache_pos.to(self.device)
 
-        generated_text = request.prompt + "".join(output_tokens)
+        generated_text = "".join(output_tokens)
         self.logger.info(f"Generated text: {generated_text}")
         return [generated_text]

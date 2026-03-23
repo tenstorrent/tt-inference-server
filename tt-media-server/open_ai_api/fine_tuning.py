@@ -175,7 +175,7 @@ async def run_inference_on_fine_tuned_model(
         raise HTTPException(404, "Job not found")
     if job_data.get("status") not in ["completed", "cancelled"]:
         raise HTTPException(400, "Training job not yet completed or cancelled")
-    if job_data.get("job_type") != JobTypes.TRAINING:
+    if job_data.get("job_type") != JobTypes.TRAINING.value:
         raise HTTPException(400, "Job is not a training job")
 
     if not request.use_base_model:

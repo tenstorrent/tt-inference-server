@@ -51,7 +51,8 @@ DEFAULT_PROMPTS = [
     "My keyboard is in a language I don't understand! What",
 ]
 
-PEFT_MODEL_PATH = "/localdev/mcupac/tt-xla/my_model/b571680f-b3af-4c7c-a7ce-285e0a7ebd12"
+PEFT_MODEL_PATH = "/localdev/mcupac/tt-inference-server/tt-media-server/model_store/03cfa83c-e369-4ce8-aef1-0c306c006e82"
+# PEFT_MODEL_PATH = None
 
 
 # --------------------------------
@@ -128,6 +129,8 @@ def setup_model_and_tokenizer(
         model = PeftModel.from_pretrained(model, PEFT_MODEL_PATH)
         model = model.merge_and_unload()
         print(f"Loaded and merged PEFT adapter from: {PEFT_MODEL_PATH}")
+    else:
+        print("Using base model")
 
     model = model.eval()
 
