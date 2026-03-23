@@ -923,7 +923,7 @@ for runner in [
 # These values are used when request parameters are not specified
 _DEFAULT_SAMPLING_PARAMS = {
     "n": 1,
-    "temperature": 0.0,
+    "temperature": 0.6,
     "top_p": 1.0,
     "top_k": 0,
     "min_p": 0.0,
