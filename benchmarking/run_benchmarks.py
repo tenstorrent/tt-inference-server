@@ -350,8 +350,15 @@ def main():
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
-    # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
-    prompt_client = PromptClient(env_config, model_spec=model_spec)
+    prompt_client = PromptClient(
+        env_config,
+        model_spec=model_spec,
+        runtime_config=runtime_config,
+    )
+    logger.info(
+        "Using tensor_cache_timeout:=%ss for first-run tensor cache generation when cache monitoring is active",
+        prompt_client.cache_monitor.get_tensor_cache_timeout(),
+    )
     if not prompt_client.wait_for_healthy():
         logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks. ")
         return 1
