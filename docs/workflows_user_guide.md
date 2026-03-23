@@ -56,6 +56,7 @@ python3 run.py --model Llama-3.2-1B-Instruct --tt-device n150 --workflow benchma
       - [Weights Download](#weights-download)
       - [Release Docker Images](#release-docker-images)
 - [Release Workflow](#release-workflow)
+  - [Release Return Codes](#release-return-codes)
 - [Performance Benchmarks](#performance-benchmarks)
   - [Benchmarking Steps](#benchmarking-steps)
 - [Accuracy Evaluations](#accuracy-evaluations)
@@ -281,6 +282,27 @@ For the same model-device combination, the `release` workflow runs in sequence:
 5. `reports` workflow
 
 This is a convenience so that a single run on device executes all workflows required to certify a model implementation on Tenstorrent hardware is working correctly and ready for release.
+
+### Release Return Codes
+
+`release` does not use special soft-pass handling. Each workflow script fails the same way whether it is run directly or as part of `release`.
+
+There are two layers of status:
+
+1. Each workflow script returns its own exit code.
+2. `run.py` returns nonzero if any workflow in the release sequence returns nonzero.
+
+`run.py` also returns nonzero if it hits an uncaught exception during setup validation, host preparation, server startup, or workflow orchestration.
+
+There is no release-only Docker container post-check after the workflows finish. When `run.py` exits `0`, it means the release sequence completed without any workflow returning nonzero and without an uncaught top-level exception in `run.py`.
+
+#### Practical guidance
+
+When using `release` in automation:
+
+- Use the `run.py` exit code as the top-level pass/fail signal.
+- Inspect `workflow_logs/run_logs/` for workflow-specific failures and details.
+- Inspect `workflow_logs/reports_output/release/` for acceptance summaries and blockers.
 
 ## Performance Benchmarks
 

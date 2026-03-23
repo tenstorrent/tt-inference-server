@@ -102,6 +102,8 @@ class PromptClient:
             runtime_config=runtime_config,
         )
         self.server_ready = False
+        self.last_health_status_code: Optional[int] = None
+        self.last_health_exception: Optional[Exception] = None
 
     def _get_authorization(self) -> Optional[str]:
         if self.env_config.vllm_api_key:
@@ -144,8 +146,20 @@ class PromptClient:
     def _get_api_detokenize_url(self) -> str:
         return f"{self._get_api_base_url(include_v1=False)}/detokenize"
 
-    def get_health(self) -> requests.Response:
-        return requests.get(self.health_url, headers=self.headers)
+    def get_health(self, timeout: Optional[float] = None) -> requests.Response:
+        try:
+            response = requests.get(
+                self.health_url,
+                headers=self.headers,
+                timeout=timeout,
+            )
+        except requests.exceptions.RequestException as error:
+            self.last_health_status_code = None
+            self.last_health_exception = error
+            raise
+        self.last_health_status_code = response.status_code
+        self.last_health_exception = None
+        return response
 
     def wait_for_healthy(
         self,
@@ -237,9 +251,7 @@ class PromptClient:
 
             # Try health check
             try:
-                response = requests.get(
-                    self.health_url, headers=self.headers, timeout=interval
-                )
+                response = self.get_health(timeout=interval)
                 if response.status_code == 200:
                     startup_time = time.time() - start_time
                     logger.info(
@@ -502,9 +514,9 @@ class PromptClient:
             }
             completions_url = f"{self._get_api_base_url()}/chat/completions"
         else:
-            assert len(images) == 0, (
-                "legacy API does not support images, use --use_chat_api option."
-            )
+            assert (
+                len(images) == 0
+            ), "legacy API does not support images, use --use_chat_api option."
             json_data = {
                 "model": vllm_model,
                 "prompt": prompt,
