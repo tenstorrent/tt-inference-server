@@ -355,6 +355,7 @@ set(SOURCES
     src/ipc/boost_ipc_warmup_signal_queue.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
+    src/services/reasoning_parser.cpp
     src/utils/tokenizer.cpp
     src/utils/logger.cpp
     src/utils/deepseek_tokenizer.cpp
