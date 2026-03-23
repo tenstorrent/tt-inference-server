@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.4
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
@@ -119,8 +120,13 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-serve
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "pjrt_plugin_tt-0.1.260323+dev.93c753f-cp312-cp312-linux_x86_64.whl" "${APP_DIR}/"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "vllm_tt-0.1-cp312-cp312-linux_x86_64.whl" "${APP_DIR}/"
 # Pip reports "invalid wheel" if the build context has Git LFS pointer files instead of binaries.
-RUN cd "${APP_DIR}" && python3 <<'PY'
+# Dockerfile 1.4+ runs this as a real bash script (avoids /bin/sh -c breaking nested heredocs).
+RUN <<'BASH'
+#!/bin/bash
+set -euo pipefail
+python3 <<'PY'
 import os
+import sys
 import zipfile
 
 app_dir = os.environ["APP_DIR"]
@@ -131,23 +137,29 @@ wheels = (
 for name in wheels:
     path = os.path.join(app_dir, name)
     size = os.path.getsize(path)
-    with open(path, "rb") as f:
-        head = f.read(4)
+    with open(path, "rb") as handle:
+        head = handle.read(4)
     if head[:2] != b"PK":
-        raise SystemExit(
+        print(
             f"{name}: not a zip wheel (header {head!r}). "
-            "If wheels are tracked with Git LFS, run on the host: git lfs install && git lfs pull"
+            "If wheels are tracked with Git LFS, run on the host: "
+            "git lfs install && git lfs pull",
+            file=sys.stderr,
         )
+        raise SystemExit(1)
     if name.startswith("pjrt_plugin") and size < 1_000_000:
-        raise SystemExit(
-            f"{name}: {size} bytes — likely Git LFS pointer, not the wheel. Run: git lfs pull"
+        print(
+            f"{name}: {size} bytes - likely Git LFS pointer, not the wheel. Run: git lfs pull",
+            file=sys.stderr,
         )
-    # Skip testzip() on pjrt wheel (very large); vllm wheel is small enough to verify quickly.
+        raise SystemExit(1)
     if not name.startswith("pjrt_plugin"):
         bad = zipfile.ZipFile(path).testzip()
         if bad:
-            raise SystemExit(f"{name}: corrupt zip entry {bad}")
+            print(f"{name}: corrupt zip entry {bad}", file=sys.stderr)
+            raise SystemExit(1)
 PY
+BASH
 RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh"
 RUN /bin/bash -c "\
     source ${APP_DIR}/server/venv-worker/bin/activate && \
