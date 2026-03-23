@@ -14,11 +14,14 @@ unset ARCH_NAME
 
 virtual_env_name="venv-worker"
 # Create virtual environment with available Python version
-if command -v python3.11 >/dev/null 2>&1; then
+if command -v python3.12 >/dev/null 2>&1; then
+    echo "Using python3.12 for virtual environment..."
+    python3.12 -m venv ${virtual_env_name}
+elif command -v python3.11 >/dev/null 2>&1; then
     echo "Using python3.11 for virtual environment..."
     python3.11 -m venv ${virtual_env_name}
 else
-    echo "Error: No suitable Python version found!"
+    echo "Error: No suitable Python version found (need python3.12 for TT-XLA / pjrt-plugin-tt)!"
     exit 1
 fi
 

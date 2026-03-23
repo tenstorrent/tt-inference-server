@@ -1,12 +1,20 @@
 --extra-index-url https://pypi.eng.aws.tenstorrent.com
-tt-forge==0.9.0
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# pjrt-plugin-tt (Tenstorrent TT-XLA) cannot be installed from a bare git URL in this file:
+# pip does not initialize submodules, and the package runs a CMake build from the repo root.
+# Dockerfile.forge clones https://github.com/tenstorrent/tt-xla at the SHA below and pip-installs python_package.
+# Torch stack matches tt-xla python_package/requirements.txt at that commit (Python 3.12).
+# Ref: https://github.com/tenstorrent/tt-xla.git @ d9a0072a10725a7ebf496f67686a37ae4f44839e
+torch@https://download.pytorch.org/whl/cpu/torch-2.9.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl
+torch-xla@https://pypi.eng.aws.tenstorrent.com/torch-xla/torch_xla-2.9.0%2Bgit9f798e3-cp312-cp312-linux_x86_64.whl
+
 torchvision
 
 tabulate
 timm # input preprocessing
 flax # input preprocessing
 pytorchcv # for vovnet
-tabulate
 
 datasets # model training
 peft # model training

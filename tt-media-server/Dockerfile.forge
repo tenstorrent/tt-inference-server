@@ -15,6 +15,9 @@ ARG DEBIAN_FRONTEND=noninteractive
 # default model runner, override with --build-arg MODEL_RUNNER=<runner>
 ARG MODEL_RUNNER=tt-xla-resnet
 
+# Pinned TT-XLA source for building pjrt-plugin-tt (replaces PyPI tt-forge).
+ARG TT_XLA_GIT_SHA=d9a0072a10725a7ebf496f67686a37ae4f44839e
+
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
 ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
@@ -38,6 +41,7 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
 # extra system deps
 RUN apt-get update && apt-get install -y \
     # required
+    git \
     gosu \
     libgl1 \
     libsndfile1 \
@@ -64,13 +68,14 @@ RUN apt-get update && apt-get install -y \
     curl \
     iputils-ping \
     rsync \
+    ninja-build \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
-# Install Python 3.11 which is required for forge
+# Install Python 3.12 (pjrt-plugin-tt / tt-xla python_package requires >=3.12,<3.13 at pinned SHA)
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
-    apt-get install -y python3.11 python3.11-dev python3.11-venv python3.11-distutils
+    apt-get install -y python3.12 python3.12-dev python3.12-venv
 
 RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh && \
     chmod +x cmake.sh && \
@@ -109,8 +114,19 @@ ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${APP_DIR}/server"
+RUN /bin/bash -c "\
+    set -eo pipefail && \
+    git clone https://github.com/tenstorrent/tt-xla.git \"${HOME_DIR}/tt-xla\" && \
+    cd \"${HOME_DIR}/tt-xla\" && \
+    git checkout ${TT_XLA_GIT_SHA} && \
+    git submodule update --init --recursive \
+    "
 RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh"
-ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.11/site-packages/pjrt_plugin_tt/tt-metal"
+RUN /bin/bash -c "\
+    source ${APP_DIR}/server/venv-worker/bin/activate && \
+    pip install --no-cache-dir \"${HOME_DIR}/tt-xla/python_package\" \
+    "
+ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal"
 
 # spinup inference server
 WORKDIR "${APP_DIR}"

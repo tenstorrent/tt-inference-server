@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 
-# export TT_METAL_HOME=venv-worker/lib/python3.11/site-packages/pjrt_plugin_tt/tt-metal
+# export TT_METAL_HOME=venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal
 
 import os
 import sys
