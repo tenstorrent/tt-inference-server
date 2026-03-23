@@ -21,7 +21,7 @@ elif command -v python3.11 >/dev/null 2>&1; then
     echo "Using python3.11 for virtual environment..."
     python3.11 -m venv ${virtual_env_name}
 else
-    echo "Error: No suitable Python version found (need python3.12 for TT-XLA / pjrt-plugin-tt)!"
+    echo "Error: No suitable Python version found (need python3.12 for pjrt-plugin-tt)!"
     exit 1
 fi
 

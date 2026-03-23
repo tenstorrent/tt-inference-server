@@ -115,12 +115,16 @@ ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${APP_DIR}/server"
+# tt-xla wheels built from commit d9a0072a10725a7ebf496f67686a37ae4f44839e
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "pjrt_plugin_tt-0.1.260323+dev.93c753f-cp312-cp312-linux_x86_64.whl" "${APP_DIR}/"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "vllm_tt-0.1-cp312-cp312-linux_x86_64.whl" "${APP_DIR}/"
 RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh"
 RUN /bin/bash -c "\
     source ${APP_DIR}/server/venv-worker/bin/activate && \
     pip install --no-cache-dir \
-        pjrt-plugin-tt==${PJRT_PLUGIN_TT_VERSION} \
-        --extra-index-url https://pypi.eng.aws.tenstorrent.com/ \
+
+        ${APP_DIR}/pjrt_plugin_tt-0.1.260323+dev.93c753f-cp312-cp312-linux_x86_64.whl \
+        ${APP_DIR}/vllm_tt-0.1-cp312-cp312-linux_x86_64.whl \
     "
 ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal"
 

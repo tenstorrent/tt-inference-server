@@ -1,10 +1,11 @@
 --extra-index-url https://pypi.eng.aws.tenstorrent.com
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-# pjrt-plugin-tt is installed separately in Dockerfile.forge from the Tenstorrent PyPI.
-# It pulls torch and torch-xla as transitive dependencies.
 
-torchvision
+# pjrt-plugin-tt and vllm-tt are installed from local wheels in Dockerfile.forge
+# (built from tt-xla commit d9a0072a10725a7ebf496f67686a37ae4f44839e).
+
+torchvision==0.24.1
 
 tabulate
 timm # input preprocessing
