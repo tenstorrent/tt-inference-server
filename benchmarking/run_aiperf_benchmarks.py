@@ -643,7 +643,11 @@ def main():
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
-    prompt_client = PromptClient(env_config, model_spec=model_spec)
+    prompt_client = PromptClient(
+        env_config,
+        model_spec=model_spec,
+        runtime_config=runtime_config,
+    )
     if not prompt_client.wait_for_healthy():
         logger.error("vLLM server is not healthy. Aborting benchmarks.")
         return 1

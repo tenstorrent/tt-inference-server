@@ -60,7 +60,7 @@ def run_vllm_api_server_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "vllm", vllm)
 
     utils = types.ModuleType("utils")
-    utils.__path__ = []
+    utils.__path__ = [str(Path(__file__).resolve().parents[1] / "utils")]
     monkeypatch.setitem(sys.modules, "utils", utils)
 
     logging_utils = types.ModuleType("utils.logging_utils")
