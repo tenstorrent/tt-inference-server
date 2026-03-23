@@ -112,6 +112,10 @@ void SpPipelineRunner::step() {
     ZoneScopedN("SpPipelineRunner::write_to_device");
     std::unique_ptr<llm_engine::Sequence> owned(seq);
     llm_engine::TaskID taskId = seq->taskId;
+    
+    if (!seq->samplingParams->max_tokens.has_value()) {
+      seq->samplingParams->max_tokens = 1024;
+    }
 
     modelRunner->write(taskId.id, seq->tokenIds,
                        seq->samplingParams->max_tokens.value(),
