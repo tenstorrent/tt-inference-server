@@ -1,41 +1,28 @@
-# DeepSeek-R1-0528 Tenstorrent Support on WH Galaxy
+# DeepSeek-R1-0528 Tenstorrent Support on Quad WH Galaxy
 
 #### Useful links
 
-- [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
+- [Quad WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
 `DeepSeek-R1-0528` is also supported on hardware:
 
 - [Dual WH Galaxy](DeepSeek-R1-0528_dual_galaxy.md)
-- [Quad WH Galaxy](DeepSeek-R1-0528_quad_galaxy.md)
+- [WH Galaxy](DeepSeek-R1-0528_galaxy.md)
 
-## Quickstart - Deploy DeepSeek-R1-0528 Inference Server on WH Galaxy
+## Quickstart - Deploy DeepSeek-R1-0528 Inference Server on Quad WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
 This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-metal/README.md) inference engine.
 
-**docker run command**
-
-```bash
-docker run \
-  --env "HF_TOKEN=$HF_TOKEN" \
-  --ipc host \
-  --publish 8000:8000 \
-  --device /dev/tenstorrent \
-  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
-  --volume volume_id_DeepSeek-R1-0528:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.0-bac8b34-7c6685a \
-  --model DeepSeek-R1-0528 \
-  --tt-device galaxy
-```
+**Note:** Quad WH Galaxy requires multi-host deployment with Controller and Worker containers. See the [Multi-Host Deployment Guide](../../multihost_deployment.md) for detailed setup instructions.
 
 **via run.py command**
 
 ```bash
-python3 run.py --model DeepSeek-R1-0528 --device galaxy --workflow server --docker-server
+python3 run.py --model DeepSeek-R1-0528 --device quad_galaxy --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -45,9 +32,9 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 |-----------|-------|
 | Weights | [deepseek-ai/DeepSeek-R1-0528](https://huggingface.co/deepseek-ai/DeepSeek-R1-0528) |
 | Model Status | 🛠️ Experimental |
-| Max Batch Size | 256 |
+| Max Batch Size | 512 |
 | Max Context Length | 2048 |
 | Implementation Code | [deepseek-r1-galaxy](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/deepseek_v3) |
 | tt-metal Commit | `bac8b34` |
 | vLLM Commit | `7c6685a` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.0-bac8b34-7c6685a` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64:0.11.0-bac8b34-7c6685a` |
