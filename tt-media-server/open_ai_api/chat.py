@@ -123,10 +123,32 @@ async def chat_completions(
             raise HTTPException(status_code=405, detail="Model is not ready")
 
         async def result_stream():
-            accumulated_text = ""
-            async for partial in service.process_streaming_request(completion_request):
-                accumulated_text += partial.text
-                chunk = {
+            try:
+                accumulated_text = ""
+                async for partial in service.process_streaming_request(
+                    completion_request
+                ):
+                    accumulated_text += partial.text
+                    chunk = {
+                        "id": completion_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": model,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"content": partial.text},
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                    yield f"data: {json.dumps(chunk)}\n\n"
+
+                # Final chunk with finish_reason and usage stats
+                completion_tokens = (
+                    _count_tokens(accumulated_text) if accumulated_text else 0
+                )
+                final_chunk = {
                     "id": completion_id,
                     "object": "chat.completion.chunk",
                     "created": created,
@@ -134,37 +156,34 @@ async def chat_completions(
                     "choices": [
                         {
                             "index": 0,
-                            "delta": {"content": partial.text},
-                            "finish_reason": None,
+                            "delta": {},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "total_tokens": prompt_tokens + completion_tokens,
+                    },
+                }
+                yield f"data: {json.dumps(final_chunk)}\n\n"
+                yield "data: [DONE]\n\n"
+            except Exception as e:
+                error_chunk = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": f"\n\n[Error: {e}]"},
+                            "finish_reason": "error",
                         }
                     ],
                 }
-                yield f"data: {json.dumps(chunk)}\n\n"
-
-            # Final chunk with finish_reason and usage stats
-            completion_tokens = (
-                _count_tokens(accumulated_text) if accumulated_text else 0
-            )
-            final_chunk = {
-                "id": completion_id,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": model,
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {},
-                        "finish_reason": "stop",
-                    }
-                ],
-                "usage": {
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": completion_tokens,
-                    "total_tokens": prompt_tokens + completion_tokens,
-                },
-            }
-            yield f"data: {json.dumps(final_chunk)}\n\n"
-            yield "data: [DONE]\n\n"
+                yield f"data: {json.dumps(error_chunk)}\n\n"
+                yield "data: [DONE]\n\n"
 
         return StreamingResponse(
             result_stream(),
