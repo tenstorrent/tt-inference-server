@@ -68,9 +68,9 @@ LLMController::LLMController() {
     return;
   }
 
-  service_ =
+  service =
       tt::utils::service_factory::getServiceByType<services::LLMService>();
-  if (!service_) {
+  if (!service) {
     throw std::runtime_error(
         "[LLMController] LLM service not found in service fabric. "
         "Ensure register_services() is called before Drogon starts.");
@@ -134,7 +134,7 @@ void LLMController::completions(
     return;
   }
 
-  if (!service_->isModelReady()) {
+  if (!service->isModelReady()) {
     auto resp = drogon::HttpResponse::newHttpJsonResponse(
         errorJson("Model is not ready", "service_unavailable"));
     resp->setStatusCode(drogon::k503ServiceUnavailable);
@@ -147,7 +147,7 @@ void LLMController::completions(
   } else {
     try {
       auto startTime = std::chrono::high_resolution_clock::now();
-      auto response = service_->submitRequest(std::move(*request));
+      auto response = service->submitRequest(std::move(*request));
       auto endTime = std::chrono::high_resolution_clock::now();
 
       response.id = "cmpl-" + response.id;
@@ -213,7 +213,7 @@ void LLMController::chatCompletions(
     return;
   }
 
-  if (!service_->isModelReady()) {
+  if (!service->isModelReady()) {
     auto resp = drogon::HttpResponse::newHttpJsonResponse(
         errorJson("Model is not ready", "service_unavailable"));
     resp->setStatusCode(drogon::k503ServiceUnavailable);
@@ -229,7 +229,7 @@ void LLMController::chatCompletions(
   } else {
     try {
       auto startTime = std::chrono::high_resolution_clock::now();
-      auto completion = service_->submitRequest(std::move(*request));
+      auto completion = service->submitRequest(std::move(*request));
       auto endTime = std::chrono::high_resolution_clock::now();
 
       completion.id = "chatcmpl-" + completion.id;
@@ -310,9 +310,7 @@ void LLMController::handleStreaming(
   // Submit the streaming request before setting up the HTTP stream so that a
   // full queue throws QueueFullException here, allowing us to return a proper
   // 429.
-  try {
-    service_->submitStreamingRequest(
-        *reqPtr, [loop, streamPtr, done, COMPLETION_ID, MODEL, CREATED, isChat,
+  auto streamingCallback =  [loop, streamPtr, done, COMPLETION_ID, MODEL, CREATED, isChat,
                   INCLUDE_USAGE, CONTINUOUS_USAGE, completionTokens, startTime,
                   firstTokenTime, secondTokenTime, firstContentChunk, reqPtr,
                   accumulator](const domain::StreamingChunkResponse& chunk,
@@ -434,7 +432,14 @@ void LLMController::handleStreaming(
               }
             });
           }
-        });
+        };
+  try {
+    if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
+    service->submitStreamingRequest(
+        *reqPtr, streamingCallback);
+    } else {
+      disaggregationService->handleStreamingRequest(*reqPtr, streamingCallback);
+    }
   } catch (const services::QueueFullException& e) {
     auto resp = drogon::HttpResponse::newHttpJsonResponse(
         errorJson(e.what(), "rate_limit_exceeded"));

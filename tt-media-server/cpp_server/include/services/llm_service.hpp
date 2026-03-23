@@ -11,15 +11,12 @@
 #include <thread>
 #include <vector>
 
-#include "config/types.hpp"
 #include "domain/completion_request.hpp"
 #include "domain/completion_response.hpp"
-#include "domain/prefill_request.hpp"
 #include "ipc/queue_manager.hpp"
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/streamable.hpp"
-#include "sockets/inter_server_service.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/tokenizer.hpp"
 #include "worker/worker_manager.hpp"
@@ -31,8 +28,10 @@ class LLMService
       public Streamable<domain::CompletionRequest,
                         domain::StreamingChunkResponse> {
  public:
-  using PrefillRequestCallback =
-      std::function<bool(const domain::PrefillRequest&)>;
+  using StreamCallback =
+      std::function<void(domain::StreamingChunkResponse&, bool)>;
+  using RequestInterceptor =
+      std::function<bool(domain::CompletionRequest, StreamCallback)>;
 
   LLMService();
   ~LLMService() override;
@@ -45,17 +44,19 @@ class LLMService
 
   bool isModelReady() const override;
 
-  using StreamCallback =
-      std::function<void(domain::StreamingChunkResponse&, bool)>;
-  std::optional<StreamCallback> detachStreamCallback(const std::string& taskId);
+  /**
+   * Set by DisaggregationService in disaggregated mode. When set,
+   * processStreamingRequest delegates to the interceptor instead of
+   * queuing locally. Returns true if the request was handled.
+   */
+  void setRequestInterceptor(RequestInterceptor interceptor);
+
+  /**
+   * Queue a decode continuation directly to local workers.
+   * Used by DisaggregationService after remote prefill completes.
+   */
   void submitDecodeContinuation(domain::CompletionRequest request,
                                 StreamCallback callback);
-
-  void handleConnectionLost();
-
-  void setPrefillRequestCallback(PrefillRequestCallback callback);
-
-  std::shared_ptr<tt::sockets::InterServerService> getSocketService() const;
 
  protected:
   void preProcess(domain::CompletionRequest& request) const override;
@@ -77,8 +78,6 @@ class LLMService
 
   void consumerLoopForWorker(size_t workerIdx);
 
-  tt::config::LLMMode mode_;
-
   std::vector<std::thread> consumer_threads_;
 
   ConcurrentMap<std::string,
@@ -94,10 +93,10 @@ class LLMService
   std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
   std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
   const tt::utils::Tokenizer* tokenizer_;
-  std::shared_ptr<tt::sockets::InterServerService> socket_service_;
   std::unique_ptr<ReasoningParser> reasoning_parser_;
 
-  PrefillRequestCallback prefill_request_callback_;
+  RequestInterceptor request_interceptor_;
+
 };
 
 }  // namespace tt::services

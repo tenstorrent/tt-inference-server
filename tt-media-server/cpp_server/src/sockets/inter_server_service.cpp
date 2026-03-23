@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "sockets/inter_server_service.hpp"
+#include "config/settings.hpp"
 
 #include <string>
 

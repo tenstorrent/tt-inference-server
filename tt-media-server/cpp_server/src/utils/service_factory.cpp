@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "utils/service_factory.hpp"
+#include <memory>
 
 #include "api/socket_controller.hpp"
 #include "config/settings.hpp"
@@ -24,11 +25,16 @@ void registerServices() {
     llm->start();
 
     if (tt::config::llmMode() != tt::config::LLMMode::REGULAR) {
+      auto socketService = std::make_shared<tt::sockets::InterServerService>();
+      socketService->initializeFromConfig();
+      if (socketService->isEnabled()) {
+        socketService->start();
+      }
       socketController = std::make_unique<tt::api::SocketController>(
-          llm, llm->getSocketService());
+          llm, socketService);
     }
 
-    registerService(std::move(llm));
+    registerService(llm);
     TT_LOG_INFO("[ServiceFactory] LLM service registered and started");
   }
 
