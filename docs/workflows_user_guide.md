@@ -56,6 +56,7 @@ python3 run.py --model Llama-3.2-1B-Instruct --tt-device n150 --workflow benchma
       - [Weights Download](#weights-download)
       - [Release Docker Images](#release-docker-images)
 - [Release Workflow](#release-workflow)
+  - [Release Return Codes](#release-return-codes)
 - [Performance Benchmarks](#performance-benchmarks)
   - [Benchmarking Steps](#benchmarking-steps)
 - [Accuracy Evaluations](#accuracy-evaluations)
