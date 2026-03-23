@@ -1364,6 +1364,7 @@ jobs:
       - llm-streaming-performance
       - test-coverage
       - cpp-format-check
+      - cpp-build
       - cpp-server-llm-streaming
       - cpp-server-llm-streaming-mock-pipeline
       - cpp-server-prefill-decode-split
