@@ -234,6 +234,7 @@ class DeviceIds(Enum):
     )
     DEVICE_IDS_32 = "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20),(21),(22),(23),(24),(25),(26),(27),(28),(29),(30),(31)"
     DEVICE_IDS_32_GROUP = "(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31)"
+    DEVICE_IDS_ALL = ""  # HACK to use all devices. device id split will return and empty string to be passed to os.environ[TT_VISIBLE_DEVICES] in device_worker.py
 
 
 class AudioTasks(Enum):
@@ -304,13 +305,13 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.N300): {
         "device_mesh_shape": (2, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_EDIT, DeviceTypes.GALAXY): {
@@ -328,13 +329,13 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N300): {
         "device_mesh_shape": (2, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.GALAXY): {
@@ -352,13 +353,13 @@ ModelConfigs = {
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N300): {
         "device_mesh_shape": (2, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.GALAXY): {
@@ -626,25 +627,25 @@ ModelConfigs = {
     (ModelRunners.TT_WHISPER, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.GALAXY): {
@@ -664,7 +665,7 @@ ModelConfigs = {
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
         "vllm": {
             "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
@@ -678,7 +679,7 @@ ModelConfigs = {
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
         "vllm": {
             "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
@@ -733,7 +734,7 @@ ModelConfigs = {
     (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
         "use_queue_per_worker": True,
         "default_throttle_level": 0,
@@ -749,7 +750,7 @@ ModelConfigs = {
     (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.N300): {
         "device_mesh_shape": (2, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 2,
         "default_throttle_level": 0,
         "use_queue_per_worker": True,
@@ -796,7 +797,7 @@ ModelConfigs = {
     (ModelRunners.BGELargeEN_V1_5, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 8,
         "vllm": {
             "model": SupportedModels.BGE_LARGE_EN_V1_5.value,
@@ -812,7 +813,7 @@ ModelConfigs = {
     (ModelRunners.BGELargeEN_V1_5, DeviceTypes.N300): {
         "device_mesh_shape": (2, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 16,
         "vllm": {
             "model": SupportedModels.BGE_LARGE_EN_V1_5.value,
@@ -860,13 +861,13 @@ ModelConfigs = {
     (ModelRunners.VLLM, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.VLLM, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
         "max_batch_size": 1,
     },
     (ModelRunners.VLLM, DeviceTypes.T3K): {
@@ -895,12 +896,12 @@ for runner in [
     ModelConfigs[(runner, DeviceTypes.N150)] = {
         "is_galaxy": False,
         "device_mesh_shape": (1, 1),
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
     }
     ModelConfigs[(runner, DeviceTypes.N300)] = {
         "is_galaxy": False,
         "device_mesh_shape": (1, 1),
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
     }
 
 
