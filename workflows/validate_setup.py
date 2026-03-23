@@ -194,7 +194,9 @@ def validate_local_setup(model_spec, runtime_config, json_fpath):
     logger.info("✅ validating local setup completed")
 
 
-def run_multihost_validation_subprocess(multihost_config, model_spec, json_fpath, dry_run=False):
+def run_multihost_validation_subprocess(
+    multihost_config, model_spec, json_fpath, dry_run=False
+):
     """Run multihost validation via subprocess with dedicated venv.
 
     This aligns multihost validation with single-host validation pattern:
@@ -220,11 +222,16 @@ def run_multihost_validation_subprocess(multihost_config, model_spec, json_fpath
     cmd = [
         str(venv_config.venv_python),
         str(get_repo_root_path() / "workflows" / "run_multihost_validation.py"),
-        "--hosts", ",".join(multihost_config.hosts),
-        "--shared-storage-root", str(multihost_config.shared_storage_root),
-        "--config-pkl-dir", str(multihost_config.config_pkl_dir),
-        "--mpi-interface", multihost_config.mpi_interface,
-        "--tt-smi-path", multihost_config.tt_smi_path,
+        "--hosts",
+        ",".join(multihost_config.hosts),
+        "--shared-storage-root",
+        str(multihost_config.shared_storage_root),
+        "--config-pkl-dir",
+        str(multihost_config.config_pkl_dir),
+        "--mpi-interface",
+        multihost_config.mpi_interface,
+        "--tt-smi-path",
+        multihost_config.tt_smi_path,
     ]
 
     if json_fpath is not None:

@@ -720,9 +720,7 @@ def main():
 
     from workflows.log_setup import setup_workflow_script_logger
 
-    parser = argparse.ArgumentParser(
-        description="Validation for multi-host deployment"
-    )
+    parser = argparse.ArgumentParser(description="Validation for multi-host deployment")
     parser.add_argument(
         "--hosts",
         required=True,
