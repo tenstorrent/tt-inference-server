@@ -104,6 +104,7 @@ class ModelRunners(Enum):
     SP_RUNNER = "sp_runner"
     LLM_TEST = "llm_test"
     LLAMA_RUNNER = "llama_runner"
+    VLLMForge_LLAMA_SINGLE_DEVICE = "vllm_forge_llama_single_device"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
 
 
@@ -133,6 +134,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.LLM: {
         ModelRunners.VLLM,
         ModelRunners.VLLMForge_LLAMA_70B,
+        ModelRunners.VLLMForge_LLAMA_SINGLE_DEVICE,
         ModelRunners.LLM_TEST,
         ModelRunners.LLAMA_RUNNER,
     },
@@ -197,13 +199,15 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
-    ModelRunners.VLLM: {
+    ModelRunners.VLLMForge_LLAMA_SINGLE_DEVICE: {
         ModelNames.LLAMA_3_2_1B,
         ModelNames.LLAMA_3_2_1B_INSTRUCT,
         ModelNames.LLAMA_3_2_3B,
         ModelNames.LLAMA_3_2_3B_INSTRUCT,
         ModelNames.LLAMA_3_1_8B,
         ModelNames.LLAMA_3_1_8B_INSTRUCT,
+    },
+    ModelRunners.VLLM: {
         ModelNames.QWEN_3_4B,
     },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
@@ -891,6 +895,30 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.VLLM, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge_LLAMA_SINGLE_DEVICE, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge_LLAMA_SINGLE_DEVICE, DeviceTypes.N300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge_LLAMA_SINGLE_DEVICE, DeviceTypes.T3K): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge_LLAMA_SINGLE_DEVICE, DeviceTypes.P300X2): {
         "device_mesh_shape": (2, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
