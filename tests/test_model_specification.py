@@ -49,6 +49,7 @@ def sample_device_model_spec():
         max_concurrency=16,
         max_context=64 * 1024,
         default_impl=True,
+        tensor_cache_timeout=2400.0,
     )
 
 
@@ -68,12 +69,14 @@ class TestModelSpecTemplateSystem:
                     max_concurrency=16,
                     max_context=64 * 1024,
                     default_impl=True,
+                    tensor_cache_timeout=1800.0,
                 ),
                 DeviceModelSpec(
                     device=DeviceTypes.N300,
                     max_concurrency=32,
                     max_context=128 * 1024,
                     default_impl=False,
+                    tensor_cache_timeout=3600.0,
                 ),
             ],
             weights=["test/model-7B", "test/model-7B-Instruct"],
@@ -95,6 +98,10 @@ class TestModelSpecTemplateSystem:
             assert isinstance(spec, ModelSpec)
             assert spec.impl == template.impl
             assert spec.status == "testing"
+            expected_timeout = (
+                1800.0 if spec.device_type == DeviceTypes.N150 else 3600.0
+            )
+            assert spec.device_model_spec.tensor_cache_timeout == expected_timeout
 
     def test_template_defaults(self, sample_impl):
         """Test template creation with defaults."""
@@ -342,6 +349,10 @@ class TestModelSpecSystem:
         assert loaded_spec.model_id == original_spec.model_id
         assert loaded_spec.model_name == original_spec.model_name
         assert loaded_spec.status == original_spec.status
+        assert (
+            loaded_spec.device_model_spec.tensor_cache_timeout
+            == original_spec.device_model_spec.tensor_cache_timeout
+        )
 
     def test_apply_overrides_commits_from_docker_image(
         self, sample_impl, sample_device_model_spec
@@ -441,6 +452,12 @@ class TestSystemIntegration:
                 spec.inference_engine
             ][spec.impl.impl_id]["model_id"]
             == spec.model_id
+        )
+        assert (
+            data["model_specs"][spec.hf_model_repo][spec.device_type.to_string()][
+                spec.inference_engine
+            ][spec.impl.impl_id]["device_model_spec"]["tensor_cache_timeout"]
+            == spec.device_model_spec.tensor_cache_timeout
         )
 
     def test_real_spec_templates(self):
