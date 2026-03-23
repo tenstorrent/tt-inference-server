@@ -1285,7 +1285,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="555f240",
+        tt_metal_commit="e4a2dea",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1668,7 +1668,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="555f240",
+        tt_metal_commit="e4a2dea",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1916,7 +1916,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="555f240",
+        tt_metal_commit="e4a2dea",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
