@@ -27,7 +27,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Collect CI/CD data
-        uses: knovokmetTT/tt-github-actions/.github/actions/collect_data@knovokmetTT/cpp-server-benchmark-visualization
+        uses: tenstorrent/tt-github-actions/.github/actions/collect_data@main
         if: ${{ github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.run_id != '') }}
         with:
           repository: ${{ github.repository }}

@@ -1,8 +1,6 @@
 name: Nightly C++ Server Benchmarks
 
 on:
-  push:
-    branches: ['dmadicTT/benchmark-plot']  # TEMP: remove before merge
   schedule:
     - cron: '0 2 * * *'  # 2:00 AM UTC every day
   workflow_dispatch:
