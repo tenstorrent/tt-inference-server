@@ -15,21 +15,42 @@ from models.demos.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_sdxl_runner import BaseSDXLRunner
 from utils.decorators import log_execution_time
+from utils.logger import TTLogger
 
 
 class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
     def __init__(self, device_id: str):
+        self._init_logger = TTLogger()
+        self._init_logger.info(
+            f"TTSDXLGenerateRunnerTrace.__init__ START: device_id={device_id!r}"
+        )
         super().__init__(device_id)
+        self._init_logger.info(
+            f"TTSDXLGenerateRunnerTrace.__init__ COMPLETE: device_id={device_id!r}"
+        )
 
     def _load_pipeline(self):
-        self.pipeline = DiffusionPipeline.from_pretrained(
+        weights_path = (
             self.settings.model_weights_path
-            or SupportedModels.STABLE_DIFFUSION_XL_BASE.value,
+            or SupportedModels.STABLE_DIFFUSION_XL_BASE.value
+        )
+        self.logger.info(
+            f"Device {self.device_id}: _load_pipeline from {weights_path!r}"
+        )
+        self.pipeline = DiffusionPipeline.from_pretrained(
+            weights_path,
             torch_dtype=torch.float32,
             use_safetensors=True,
         )
+        self.logger.info(f"Device {self.device_id}: _load_pipeline complete")
 
     def _distribute_block(self):
+        self.logger.info(
+            f"Device {self.device_id}: _distribute_block START "
+            f"(is_galaxy={self.settings.is_galaxy}, "
+            f"is_tensor_parallel={self.is_tensor_parallel}, "
+            f"image_resolution={self.settings.sdxl_image_resolution})"
+        )
         self.tt_sdxl = TtSDXLPipeline(
             ttnn_device=self.ttnn_device,
             torch_pipeline=self.pipeline,
@@ -42,6 +63,7 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
                 image_resolution=self.settings.sdxl_image_resolution,
             ),
         )
+        self.logger.info(f"Device {self.device_id}: _distribute_block COMPLETE")
 
     def _warmup_inference_block(self):
         self.run(

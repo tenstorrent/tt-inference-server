@@ -108,6 +108,8 @@ AVAILABLE_RUNNERS = {
 
 
 def get_device_runner(worker_id: str) -> BaseDeviceRunner:
+    import traceback
+
     _logger = TTLogger()
     model_runner = settings.model_runner
     _logger.info(
@@ -115,18 +117,30 @@ def get_device_runner(worker_id: str) -> BaseDeviceRunner:
     )
     try:
         model_runner_enum = ModelRunners(model_runner)
+        _logger.info(
+            f"get_device_runner: resolved enum={model_runner_enum}, "
+            f"importing runner class..."
+        )
         runner = AVAILABLE_RUNNERS[model_runner_enum](worker_id)
         _logger.info(
             f"get_device_runner: created {type(runner).__name__} for worker {worker_id}"
         )
         return runner
-    except ValueError:
+    except ValueError as e:
+        _logger.error(f"get_device_runner ValueError: {e}\n{traceback.format_exc()}")
         raise ValueError(f"Unknown model runner: {model_runner}")
-    except KeyError:
+    except KeyError as e:
+        _logger.error(f"get_device_runner KeyError: {e}\n{traceback.format_exc()}")
         raise ValueError(
-            f"Unsupported model runner: {model_runner}. Available: {', '.join(AVAILABLE_RUNNERS.keys())}"
+            f"Unsupported model runner: {model_runner}. "
+            f"Available: {', '.join(str(k) for k in AVAILABLE_RUNNERS.keys())}"
         )
     except ImportError as e:
+        _logger.error(f"get_device_runner ImportError: {e}\n{traceback.format_exc()}")
         raise ImportError(f"Failed to load model runner {model_runner}: {e}")
     except Exception as e:
+        _logger.error(
+            f"get_device_runner UNEXPECTED {type(e).__name__}: {e}\n"
+            f"{traceback.format_exc()}"
+        )
         raise RuntimeError(f"Failed to create model runner {model_runner}: {e}")

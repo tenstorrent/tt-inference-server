@@ -85,6 +85,15 @@ class BaseService(ABC):
 
     def check_is_model_ready(self) -> dict:
         """Detailed system status for monitoring"""
+        worker_states = ", ".join(
+            "{}: ready={}".format(k, v.get("is_ready"))
+            for k, v in self.scheduler.worker_info.items()
+        )
+        self.logger.info(
+            f"check_is_model_ready: scheduler.is_ready={self.scheduler.is_ready}, "
+            f"worker_count={len(self.scheduler.worker_info)}, "
+            f"worker_states={{{worker_states}}}"
+        )
         return {
             "model_ready": self.scheduler.check_is_model_ready(),
             "queue_size": self.scheduler.task_queue.qsize()
