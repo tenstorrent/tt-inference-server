@@ -62,12 +62,18 @@ class SharedMemory {
  public:
   using Msg = Message<MaxTokenIds>;
 
+  // Extra 8 bytes after the ring buffer to persist the cursor position.
+  // This allows the C++ server to resume at the correct slot after a restart
+  // without losing sync with runner.py, which keeps running independently.
+  static constexpr size_t K_CURSOR_SIZE = sizeof(uint64_t);
+  static constexpr size_t K_MMAP_SIZE = Msg::K_TOTAL_SIZE + K_CURSOR_SIZE;
+
   explicit SharedMemory(const std::string& name)
       : name(name[0] == '/' ? name : "/" + name) {}
 
   ~SharedMemory() {
     if (memPointer && memPointer != MAP_FAILED) {
-      munmap(memPointer, Msg::K_TOTAL_SIZE);
+      munmap(memPointer, K_MMAP_SIZE);
     }
     // Do not shm_unlink here — runner.py is the owner and is responsible for
     // creating and removing the shared memory segments.
@@ -83,7 +89,7 @@ class SharedMemory {
                                name);
     }
 
-    memPointer = mmap(nullptr, Msg::K_TOTAL_SIZE, PROT_READ | PROT_WRITE,
+    memPointer = mmap(nullptr, K_MMAP_SIZE, PROT_READ | PROT_WRITE,
                       MAP_SHARED, fd, 0);
     if (memPointer == MAP_FAILED) {
       ::close(fd);
@@ -91,7 +97,12 @@ class SharedMemory {
     }
     ::close(fd);
 
-    // Do not memset — runner.py initializes the shared memory; we just attach.
+    // Restore the cursor so a restarted C++ server resumes at the same slot
+    // runner.py is currently waiting on, rather than jumping back to 0.
+    uint64_t storedPos = 0;
+    std::memcpy(&storedPos, cursorPtr(), sizeof(storedPos));
+    current = storedPos % SHM_SLOTS;
+
     messages = std::span<Msg>(static_cast<Msg*>(memPointer), SHM_SLOTS);
   }
 
@@ -140,7 +151,15 @@ class SharedMemory {
  private:
   Msg& acquireMsg() { return messages[current]; }
 
-  void advanceCurrent() { current = (current + 1) % SHM_SLOTS; }
+  void advanceCurrent() {
+    current = (current + 1) % SHM_SLOTS;
+    // Persist cursor so a future restart can recover the correct position.
+    std::memcpy(cursorPtr(), &current, sizeof(uint64_t));
+  }
+
+  char* cursorPtr() {
+    return static_cast<char*>(memPointer) + Msg::K_TOTAL_SIZE;
+  }
 
   void* memPointer = nullptr;
   uint64_t current = 0;

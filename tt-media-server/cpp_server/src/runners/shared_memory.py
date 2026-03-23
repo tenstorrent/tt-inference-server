@@ -58,7 +58,8 @@ class SharedMemory:
         self._name = name.lstrip("/")
         self._max_token_ids = max_token_ids
         self._message_size = self._HEADER_SIZE + max_token_ids * self.TOKEN_ID_SIZE
-        self._total_size = self.SLOTS * self._message_size
+        # Extra 8 bytes at the end for the cursor, matching K_CURSOR_SIZE in shared_memory.hpp.
+        self._total_size = self.SLOTS * self._message_size + 8
         self._shm: _shm.SharedMemory | None = None
         self._buf: memoryview | None = None
         self._pos = 0
@@ -142,6 +143,9 @@ class SharedMemory:
 
         struct.pack_into("<i", buf, state_off, self._TAKEN)
         self._pos = (self._pos + 1) % self.SLOTS
+        # Persist cursor so the C++ server can recover the correct read position
+        # after a restart without losing sync with this writer.
+        struct.pack_into("<Q", buf, self.SLOTS * self._message_size, self._pos)
 
     def __enter__(self) -> SharedMemory:
         self.open()
