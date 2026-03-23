@@ -27,7 +27,7 @@ class SDXLForgeRunner(BaseDeviceRunner):
     WARMUP_TIMEOUT_SECONDS = 2000
     DEFAULT_NUM_INFERENCE_STEPS = 20
     DEFAULT_CFG_SCALE = 7.5
-    DEFAULT_RESOLUTION = 1024  # 1024x1024
+    DEFAULT_RESOLUTION = 512
 
     def __init__(self, device_id: str):
         super().__init__(device_id, cpu_threads="8", num_torch_threads=8)
