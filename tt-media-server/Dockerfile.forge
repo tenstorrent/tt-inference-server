@@ -118,6 +118,34 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-serve
 # tt-xla wheels built from commit d9a0072a10725a7ebf496f67686a37ae4f44839e
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "pjrt_plugin_tt-0.1.260323+dev.93c753f-cp312-cp312-linux_x86_64.whl" "${APP_DIR}/"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "vllm_tt-0.1-cp312-cp312-linux_x86_64.whl" "${APP_DIR}/"
+# Pip reports "invalid wheel" if the build context has Git LFS pointer files instead of binaries.
+RUN cd "${APP_DIR}" && python3 <<'PY'
+import os
+import zipfile
+
+app_dir = os.environ["APP_DIR"]
+wheels = (
+    "pjrt_plugin_tt-0.1.260323+dev.93c753f-cp312-cp312-linux_x86_64.whl",
+    "vllm_tt-0.1-cp312-cp312-linux_x86_64.whl",
+)
+for name in wheels:
+    path = os.path.join(app_dir, name)
+    size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        head = f.read(4)
+    if head[:2] != b"PK":
+        raise SystemExit(
+            f"{name}: not a zip wheel (header {head!r}). "
+            "If wheels are tracked with Git LFS, run on the host: git lfs install && git lfs pull"
+        )
+    if name.startswith("pjrt_plugin") and size < 1_000_000:
+        raise SystemExit(
+            f"{name}: {size} bytes — likely Git LFS pointer, not the wheel. Run: git lfs pull"
+        )
+    bad = zipfile.ZipFile(path).testzip()
+    if bad:
+        raise SystemExit(f"{name}: corrupt zip entry {bad}")
+PY
 RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh"
 RUN /bin/bash -c "\
     source ${APP_DIR}/server/venv-worker/bin/activate && \
