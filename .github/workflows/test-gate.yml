@@ -1363,6 +1363,7 @@ jobs:
       - forge-runner-cpu-tests
       - llm-streaming-performance
       - test-coverage
+      - cpp-format-check
       - cpp-server-llm-streaming
       - cpp-server-llm-streaming-mock-pipeline
       - cpp-server-prefill-decode-split
