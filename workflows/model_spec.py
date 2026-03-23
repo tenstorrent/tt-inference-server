@@ -2332,6 +2332,29 @@ vlm_templates = [
         status=ModelStatusTypes.FUNCTIONAL,
         supported_modalities=["text", "image"],
     ),
+    ModelSpecTemplate(
+        weights=[
+            "allenai/Molmo-7B-O-0924",
+        ],
+        impl=tt_transformers_impl,
+        tt_metal_commit="1a4cd53",
+        vllm_commit="b2894d3",
+        inference_engine=InferenceEngine.VLLM.value,
+        model_type=ModelType.VLM,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=4 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        supported_modalities=["text", "image", "video"],
+    ),
 ]
 
 # =============================================================================

@@ -22,6 +22,7 @@ Models with EXPERIMENTAL status are under active development and may have stabil
 | --- | --- | --- | --- |
 | [gemma-3-27b-it](gemma-3-27b-it_galaxy.md) | [🛠️ Experimental](gemma-3-27b-it_galaxy.md) | [🛠️ Experimental](gemma-3-27b-it_t3k.md) | - |
 | [gemma-3-4b-it](gemma-3-4b-it_n150.md) | - | - | [🛠️ Experimental](gemma-3-4b-it_n150.md) |
+| [Molmo-7B-O-0924](Molmo-7B-O-0924_t3k.md) | - | [🛠️ Experimental](Molmo-7B-O-0924_t3k.md) | - |
 | [Qwen2.5-VL-32B-Instruct](Qwen2.5-VL-32B-Instruct_t3k.md) | - | [🛠️ Experimental](Qwen2.5-VL-32B-Instruct_t3k.md) | - |
 | [Qwen2.5-VL-3B-Instruct](Qwen2.5-VL-3B-Instruct_n150.md) | - | - | [🛠️ Experimental](Qwen2.5-VL-3B-Instruct_n150.md) |
 | [Qwen2.5-VL-7B-Instruct](Qwen2.5-VL-7B-Instruct_n150.md) | - | - | [🛠️ Experimental](Qwen2.5-VL-7B-Instruct_n150.md) |
