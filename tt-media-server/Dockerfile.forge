@@ -15,8 +15,10 @@ ARG DEBIAN_FRONTEND=noninteractive
 # default model runner, override with --build-arg MODEL_RUNNER=<runner>
 ARG MODEL_RUNNER=tt-xla-resnet
 
-# Pinned TT-XLA source for building pjrt-plugin-tt (replaces PyPI tt-forge).
-ARG TT_XLA_GIT_SHA=d9a0072a10725a7ebf496f67686a37ae4f44839e
+# Pre-built pjrt-plugin-tt wheel version from https://pypi.eng.aws.tenstorrent.com/
+# Nightly 0.10.0.dev20260323001402 corresponds to tt-xla main on 2026-03-23
+# (closest available build to commit d9a0072a10725a7ebf496f67686a37ae4f44839e).
+ARG PJRT_PLUGIN_TT_VERSION=0.10.0.dev20260323001402
 
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
 ARG CONTAINER_APP_UID=1000
@@ -68,19 +70,10 @@ RUN apt-get update && apt-get install -y \
     curl \
     iputils-ping \
     rsync \
-    ninja-build \
-    clang \
-    ccache \
-    libnuma-dev \
-    libhwloc-dev \
-    libboost-all-dev \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
-# tt-xla venv/activate defaults here for link_directories; directory may stay empty until a separate toolchain install.
-RUN mkdir -p /opt/ttmlir-toolchain/lib
-
-# Install Python 3.12 (pjrt-plugin-tt / tt-xla python_package requires >=3.12,<3.13 at pinned SHA)
+# Install Python 3.12 (pjrt-plugin-tt wheel is cp312)
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y python3.12 python3.12-dev python3.12-venv
@@ -122,22 +115,12 @@ ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-server" "${APP_DIR}/server"
-RUN /bin/bash -c "\
-    set -eo pipefail && \
-    git clone https://github.com/tenstorrent/tt-xla.git \"${HOME_DIR}/tt-xla\" && \
-    cd \"${HOME_DIR}/tt-xla\" && \
-    git checkout ${TT_XLA_GIT_SHA} && \
-    git submodule update --init --recursive \
-    "
 RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh"
-# tt-xla CMakeLists.txt requires TTXLA_ENV_ACTIVATED (normally set by source tt-xla/venv/activate).
-# tt-mlir ExternalProject uses clang/clang++ and ccache; install_ttmlir_requirements.sh uses the active venv when TTXLA_ENV_ACTIVATED=1.
 RUN /bin/bash -c "\
     source ${APP_DIR}/server/venv-worker/bin/activate && \
-    export TTXLA_ENV_ACTIVATED=1 && \
-    export TTMLIR_ENV_ACTIVATED=1 && \
-    export TTMLIR_TOOLCHAIN_DIR=/opt/ttmlir-toolchain && \
-    pip install --no-cache-dir \"${HOME_DIR}/tt-xla/python_package\" \
+    pip install --no-cache-dir \
+        pjrt-plugin-tt==${PJRT_PLUGIN_TT_VERSION} \
+        --extra-index-url https://pypi.eng.aws.tenstorrent.com/ \
     "
 ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal"
 
