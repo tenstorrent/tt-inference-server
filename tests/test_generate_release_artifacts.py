@@ -283,6 +283,31 @@ def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
                             },
                         }
                     ],
+                    "benchmark_target_evaluation": {
+                        "status": "target",
+                        "reference_available": True,
+                        "support_levels": {
+                            "functional": {
+                                "checked": True,
+                                "passed": True,
+                                "failures": [],
+                            },
+                            "complete": {
+                                "checked": True,
+                                "passed": True,
+                                "failures": [],
+                            },
+                            "target": {"checked": True, "passed": True, "failures": []},
+                        },
+                        "regression": {
+                            "checked": False,
+                            "passed": True,
+                            "failures": [],
+                        },
+                        "next_status": None,
+                        "next_status_failures": [],
+                        "errors": [],
+                    },
                     "parameter_support_tests": {
                         "endpoint_url": "http://localhost:8000",
                         "test_run_timestamp_utc": "2026-03-11T12:00:00",
@@ -347,6 +372,10 @@ def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
     assert (
         "test_smoke"
         in baseline_entry["report_data"]["parameter_support_tests"]["results"]
+    )
+    assert (
+        baseline_entry["report_data"]["benchmark_target_evaluation"]["status"]
+        == "target"
     )
 
 

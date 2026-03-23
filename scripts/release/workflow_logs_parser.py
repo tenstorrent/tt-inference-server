@@ -20,6 +20,7 @@ import sys
 
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
+from workflows.acceptance_criteria import evaluate_benchmark_targets
 from workflows.utils import parse_commits_from_docker_image
 
 logger = logging.getLogger(__name__)
@@ -104,8 +105,7 @@ def load_report_data_json(reports_root: Path, model_id: str) -> Optional[dict]:
 def parse_perf_status(report_data: dict) -> str:
     """Extract performance status from report_data.
 
-    Determines highest target achieved among target, complete, functional.
-    Pass condition for a level: all checks != 3
+    Returns the support-tier benchmark status from benchmark_target_evaluation.
 
     Args:
         report_data: Report data dictionary
@@ -114,31 +114,8 @@ def parse_perf_status(report_data: dict) -> str:
         Performance status: "target", "complete", "functional", or "experimental"
     """
     try:
-        summaries = report_data.get("benchmarks_summary", [])
-        if not summaries:
-            return "experimental"
-        target_checks = summaries[0].get("target_checks", {})
-
-        def passes(checks: dict) -> bool:
-            if not isinstance(checks, dict):
-                return False
-            ttft_check = checks.get("ttft_check")
-            tput_user_check = checks.get("tput_user_check")
-            tput_check = checks.get("tput_check")
-            # 1 is N/A, 2 is passed, 3 is failed check
-            return all(
-                x is not None and x != 3
-                for x in (ttft_check, tput_user_check, tput_check)
-            )
-
-        # Order of highest to lowest
-        if passes(target_checks.get("target", {})):
-            return "target"
-        if passes(target_checks.get("complete", {})):
-            return "complete"
-        if passes(target_checks.get("functional", {})):
-            return "functional"
-        return "experimental"
+        benchmark_target_evaluation = _get_benchmark_target_evaluation(report_data)
+        return benchmark_target_evaluation.get("status", "experimental")
     except Exception as e:
         logger.debug(f"Error parsing perf status: {e}")
         return "experimental"
@@ -192,27 +169,39 @@ def parse_evals_completed(report_data: dict) -> bool:
 
 
 def parse_benchmarks_completed(report_data: dict) -> bool:
-    """Check if benchmark data is complete (benchmarks_summary with target_checks exists).
+    """Check if benchmark data is complete enough for target evaluation.
 
     Args:
         report_data: Report data dictionary
 
     Returns:
-        True if benchmarks_summary exists with valid target_checks structure, False otherwise
+        True if benchmark references are available and benchmark evaluation has no errors.
     """
     try:
-        summaries = report_data.get("benchmarks_summary", [])
-        if not summaries:
-            return False
-        # Check that at least one summary has target_checks
-        for summary in summaries:
-            target_checks = summary.get("target_checks")
-            if target_checks and isinstance(target_checks, dict):
-                return True
-        return False
+        benchmark_target_evaluation = _get_benchmark_target_evaluation(report_data)
+        return benchmark_target_evaluation.get(
+            "reference_available", False
+        ) and not bool(benchmark_target_evaluation.get("errors"))
     except Exception as e:
         logger.debug(f"Error parsing benchmarks completed status: {e}")
         return False
+
+
+def _get_benchmark_target_evaluation(report_data: dict) -> dict:
+    benchmark_target_evaluation = report_data.get("benchmark_target_evaluation")
+    if isinstance(benchmark_target_evaluation, dict):
+        return benchmark_target_evaluation
+    return evaluate_benchmark_targets(report_data)
+
+
+def _get_regression_summary(
+    benchmark_target_evaluation: dict,
+) -> Tuple[bool, bool, bool]:
+    regression = benchmark_target_evaluation.get("regression", {})
+    regression_checked = bool(regression.get("checked"))
+    regression_passed = bool(regression.get("passed")) if regression_checked else True
+    regression_ok = regression_passed if regression_checked else True
+    return regression_checked, regression_passed, regression_ok
 
 
 def parse_workflow_logs_dir(
@@ -234,10 +223,13 @@ def parse_workflow_logs_dir(
             "summary": {
                 "model_id": str,
                 "perf_status": str,     # "target"|"complete"|"functional"|"experimental"
-                "benchmarks_completed": bool, # True if benchmarks_summary has valid target_checks
+                "benchmarks_completed": bool, # True if benchmark_target_evaluation can be computed
                 "accuracy_status": bool,
                 "evals_completed": bool, # True if eval entries have accuracy_check field
-                "is_passing": bool,     # True if perf_status != "experimental" and accuracy_status == True
+                "regression_checked": bool,
+                "regression_passed": bool,
+                "regression_ok": bool,
+                "is_passing": bool,     # True if benchmarks, accuracy, and regression checks all pass
                 "docker_image": str,    # Docker image from model_spec
                 "tt_metal_commit": str, # tt-metal commit parsed from docker image tag
                 "vllm_commit": str      # vllm commit parsed from docker image tag
@@ -285,11 +277,17 @@ def parse_workflow_logs_dir(
         return None
 
     # Parse status
-    perf_status = parse_perf_status(report_data_json)
-    benchmarks_completed = parse_benchmarks_completed(report_data_json)
+    benchmark_target_evaluation = _get_benchmark_target_evaluation(report_data_json)
+    perf_status = benchmark_target_evaluation.get("status", "experimental")
+    benchmarks_completed = benchmark_target_evaluation.get(
+        "reference_available", False
+    ) and not bool(benchmark_target_evaluation.get("errors"))
     accuracy_status = parse_accuracy_status(report_data_json)
     evals_completed = parse_evals_completed(report_data_json)
-    is_passing = benchmarks_completed and accuracy_status
+    regression_checked, regression_passed, regression_ok = _get_regression_summary(
+        benchmark_target_evaluation
+    )
+    is_passing = benchmarks_completed and accuracy_status and regression_ok
 
     # Extract docker image and parse commits
     spec_docker_image = model_spec_json.get("docker_image") if model_spec_json else None
@@ -308,7 +306,8 @@ def parse_workflow_logs_dir(
     logger.info(
         f"Successfully parsed {workflow_logs_dir.name}: model_id={model_id}, "
         f"perf={perf_status}, benchmarks_completed={benchmarks_completed}, "
-        f"accuracy={accuracy_status}, evals_completed={evals_completed}, passing={is_passing}"
+        f"accuracy={accuracy_status}, evals_completed={evals_completed}, "
+        f"regression_ok={regression_ok}, passing={is_passing}"
     )
 
     # TODO: add tt_smi_output parsing
@@ -322,6 +321,9 @@ def parse_workflow_logs_dir(
             "benchmarks_completed": benchmarks_completed,
             "accuracy_status": accuracy_status,
             "evals_completed": evals_completed,
+            "regression_checked": regression_checked,
+            "regression_passed": regression_passed,
+            "regression_ok": regression_ok,
             "is_passing": is_passing,
             "docker_image": docker_image,
             "tt_metal_commit": tt_metal_commit,

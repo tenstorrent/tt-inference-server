@@ -21,7 +21,6 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from benchmarking.benchmark_config import cap_benchmark_params
 from evals.eval_config import EVAL_CONFIGS
 from stress_tests.stress_tests_summary_report import (
     generate_report as stress_test_generate_report_helper,
@@ -29,11 +28,12 @@ from stress_tests.stress_tests_summary_report import (
 from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
 from workflows.acceptance_criteria import (
     acceptance_criteria_check,
+    evaluate_benchmark_targets,
     format_acceptance_summary_markdown,
 )
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import MODEL_SPECS, ModelSpec
-from workflows.perf_targets import get_perf_target_rows, get_performance_targets
+from workflows.perf_targets import get_perf_target_rows
 from workflows.runtime_config import RuntimeConfig
 from workflows.utils import (
     get_default_workflow_root_log_dir,
@@ -272,6 +272,27 @@ def format_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
     return formatted_metrics
 
 
+def _resolve_optional_benchmark_concurrency(
+    benchmark_values: Dict[str, Any], fallback: Any = None
+) -> Any:
+    if not isinstance(benchmark_values, dict):
+        return fallback
+
+    concurrency = benchmark_values.get(
+        "concurrency", benchmark_values.get("max_concurrency")
+    )
+    if concurrency not in (None, "", 0, NOT_MEASURED_STR):
+        return concurrency
+
+    if fallback not in (None, "", 0, NOT_MEASURED_STR):
+        return fallback
+
+    if benchmark_values.get("num_requests") == 1:
+        return 1
+
+    return None
+
+
 def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     """Process a single benchmark file and extract relevant metrics."""
     logger.info(f"Processing benchmark file: {filepath}")
@@ -339,8 +360,11 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     benchmarks_data = data.get("benchmarks: ", data)
     if benchmarks_data and benchmarks_data.get("benchmarks"):
         logger.info(f"Processing CNN/SDXL-style benchmark file: {filename}")
+        benchmark_values = benchmarks_data.get("benchmarks", {})
         if params.get("task_type") == "cnn":
             logger.info(f"Processing CNN benchmark file: {filename}")
+            num_requests = benchmark_values.get("num_requests", 0)
+            max_concurrency = _resolve_optional_benchmark_concurrency(benchmark_values)
             metrics = {
                 "timestamp": params["timestamp"],
                 "model": data.get("model", ""),
@@ -348,15 +372,19 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "model_id": data.get("model", ""),
                 "backend": "cnn",
                 "device": params["device"],
-                "num_requests": benchmarks_data.get("benchmarks").get(
-                    "num_requests", 0
-                ),
-                "num_inference_steps": benchmarks_data.get("benchmarks").get(
-                    "num_inference_steps", 0
-                ),
-                "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0) * 1000,
-                "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
+                "num_requests": num_requests,
+                "max_con": max_concurrency,
+                "max_concurrency": max_concurrency,
+                "num_inference_steps": benchmark_values.get("num_inference_steps", 0),
+                "mean_ttft_ms": benchmark_values.get("ttft", 0) * 1000,
+                "inference_steps_per_second": benchmark_values.get(
                     "inference_steps_per_second", 0
+                ),
+                "tput_user": benchmark_values.get("inference_steps_per_second", 0),
+                "tput": benchmark_values.get("inference_steps_per_second", 0),
+                "end_to_end_latency_ms": benchmark_values.get("end_to_end_latency_ms"),
+                "e2el_ms": benchmark_values.get(
+                    "e2el_ms", benchmark_values.get("end_to_end_latency_ms")
                 ),
                 "filename": filename,
                 "task_type": "cnn",
@@ -364,6 +392,13 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             return format_metrics(metrics)
         if params.get("task_type") == "image":
             logger.info(f"Processing IMAGE benchmark file: {filename}")
+            num_requests = benchmark_values.get("num_requests", 0)
+            max_concurrency = _resolve_optional_benchmark_concurrency(
+                benchmark_values,
+                fallback=min(params.get("max_con", 0), num_requests)
+                if params.get("max_con")
+                else None,
+            )
             metrics = {
                 "timestamp": params["timestamp"],
                 "model": data.get("model", ""),
@@ -371,15 +406,19 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
                 "model_id": data.get("model", ""),
                 "backend": "image",
                 "device": params["device"],
-                "num_requests": benchmarks_data.get("benchmarks").get(
-                    "num_requests", 0
-                ),
-                "num_inference_steps": benchmarks_data.get("benchmarks").get(
-                    "num_inference_steps", 0
-                ),
-                "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0) * 1000,
-                "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
+                "num_requests": num_requests,
+                "max_con": max_concurrency,
+                "max_concurrency": max_concurrency,
+                "num_inference_steps": benchmark_values.get("num_inference_steps", 0),
+                "mean_ttft_ms": benchmark_values.get("ttft", 0) * 1000,
+                "inference_steps_per_second": benchmark_values.get(
                     "inference_steps_per_second", 0
+                ),
+                "tput_user": benchmark_values.get("inference_steps_per_second", 0),
+                "tput": benchmark_values.get("inference_steps_per_second", 0),
+                "end_to_end_latency_ms": benchmark_values.get("end_to_end_latency_ms"),
+                "e2el_ms": benchmark_values.get(
+                    "e2el_ms", benchmark_values.get("end_to_end_latency_ms")
                 ),
                 "filename": filename,
                 "task_type": "image",
@@ -414,6 +453,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     if params.get("task_type") == "audio":
         logger.info(f"Processing AUDIO benchmark file: {filename}")
         benchmarks_data = data.get("benchmarks: ", data)
+        benchmark_values = benchmarks_data.get("benchmarks", {})
+        num_requests = benchmark_values.get("num_requests", 0)
+        max_concurrency = _resolve_optional_benchmark_concurrency(benchmark_values)
         metrics = {
             "timestamp": params["timestamp"],
             "model": data.get("model", ""),
@@ -421,15 +463,18 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "model_id": data.get("model", ""),
             "backend": "audio",
             "device": params["device"],
-            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0) * 1000,
+            "num_requests": num_requests,
+            "num_eval_runs": num_requests,
+            "max_con": max_concurrency,
+            "max_concurrency": max_concurrency,
+            "mean_ttft_ms": benchmark_values.get("ttft", 0) * 1000,
             "filename": filename,
             "task_type": "audio",
-            "accuracy_check": benchmarks_data.get("benchmarks").get(
-                "accuracy_check", 0
-            ),
-            "t/s/u": benchmarks_data.get("benchmarks").get("t/s/u", 0),
-            "rtr": benchmarks_data.get("benchmarks").get("rtr", 0),
+            "accuracy_check": benchmark_values.get("accuracy_check", 0),
+            "t/s/u": benchmark_values.get("t/s/u", 0),
+            "tput_user": benchmark_values.get("t/s/u", 0),
+            "ttft_streaming_ms": benchmark_values.get("ttft_streaming_ms"),
+            "rtr": benchmark_values.get("rtr", 0),
             "streaming_enabled": data.get("streaming_enabled", False),
             "preprocessing_enabled": data.get("preprocessing_enabled", False),
         }
@@ -437,6 +482,8 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
 
     if params.get("task_type") == "embedding":
         benchmarks_data = data.get("benchmarks: ", data)
+        benchmark_values = benchmarks_data.get("benchmarks", {})
+        max_concurrency = _resolve_optional_benchmark_concurrency(benchmark_values)
         metrics = {
             "timestamp": params["timestamp"],
             "model": data.get("model", ""),
@@ -446,30 +493,35 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "device": params["device"],
             "filename": filename,
             "task_type": "embedding",
-            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "input_sequence_length": benchmarks_data.get("benchmarks").get("isl", 0),
+            "num_requests": benchmark_values.get("num_requests", 0),
+            "isl": benchmark_values.get("isl", 0),
+            "input_sequence_length": benchmark_values.get("isl", 0),
+            "osl": NOT_MEASURED_STR,
             "output_sequence_length": NOT_MEASURED_STR,
-            "max_con": benchmarks_data.get("benchmarks").get("concurrency", 0),
-            "embedding_dimension": benchmarks_data.get("benchmarks").get(
+            "max_con": max_concurrency,
+            "max_concurrency": max_concurrency,
+            "embedding_dimension": benchmark_values.get(
                 "embedding_dimension", NOT_MEASURED_STR
             ),
             "mean_ttft_ms": NOT_MEASURED_STR,
             "mean_tpot_ms": NOT_MEASURED_STR,
-            "mean_tps": benchmarks_data.get("benchmarks").get("tput_user", 0.0),
+            "mean_tps": benchmark_values.get("tput_user", 0.0),
+            "tput_user": benchmark_values.get("tput_user", 0.0),
             "tps_decode_throughput": NOT_MEASURED_STR,
-            "tps_prefill_throughput": benchmarks_data.get("benchmarks").get(
-                "tput_prefill", 0.0
-            ),
-            "mean_e2el_ms": benchmarks_data.get("benchmarks").get("e2el", 0.0),
-            "request_throughput": benchmarks_data.get("benchmarks").get(
-                "req_tput", 0.0
-            ),
+            "tps_prefill_throughput": benchmark_values.get("tput_prefill", 0.0),
+            "tput_prefill": benchmark_values.get("tput_prefill", 0.0),
+            "mean_e2el_ms": benchmark_values.get("e2el", 0.0),
+            "e2el_ms": benchmark_values.get("e2el", 0.0),
+            "request_throughput": benchmark_values.get("req_tput", 0.0),
         }
         return format_metrics(metrics)
 
     if params.get("task_type") == "video":
         logger.info(f"Processing VIDEO benchmark file: {filename}")
         benchmarks_data = data.get("benchmarks: ", data)
+        benchmark_values = benchmarks_data.get("benchmarks", {})
+        num_requests = benchmark_values.get("num_requests", 0)
+        max_concurrency = _resolve_optional_benchmark_concurrency(benchmark_values)
         metrics = {
             "timestamp": params["timestamp"],
             "model": data.get("model", ""),
@@ -479,13 +531,19 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "device": params["device"],
             "filename": filename,
             "task_type": "video",
-            "num_requests": benchmarks_data.get("benchmarks").get("num_requests", 0),
-            "mean_ttft_ms": benchmarks_data.get("benchmarks").get("ttft", 0) * 1000,
-            "inference_steps_per_second": benchmarks_data.get("benchmarks").get(
+            "num_requests": num_requests,
+            "max_con": max_concurrency,
+            "max_concurrency": max_concurrency,
+            "mean_ttft_ms": benchmark_values.get("ttft", 0) * 1000,
+            "inference_steps_per_second": benchmark_values.get(
                 "inference_steps_per_second", 0
             ),
-            "num_inference_steps": benchmarks_data.get("benchmarks").get(
-                "num_inference_steps", 0
+            "tput_user": benchmark_values.get("inference_steps_per_second", 0),
+            "tput": benchmark_values.get("inference_steps_per_second", 0),
+            "num_inference_steps": benchmark_values.get("num_inference_steps", 0),
+            "end_to_end_latency_ms": benchmark_values.get("end_to_end_latency_ms"),
+            "e2el_ms": benchmark_values.get(
+                "e2el_ms", benchmark_values.get("end_to_end_latency_ms")
             ),
         }
         return format_metrics(metrics)
@@ -2770,366 +2828,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     save_markdown_table(release_str, disp_md_path)
 
     release_raw = all_tool_results
-    # release report for benchmarks
-    device_type = DeviceTypes.from_string(args.device)
-
-    # Apply capping to performance references (including vision tokens for VLM models)
-    # to match what benchmarks actually use
-    _model_max_concurrency = model_spec.device_model_spec.max_concurrency
-    _max_context = model_spec.device_model_spec.max_context
-    _max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
-    raw_perf_refs = (
-        model_spec.device_model_spec.perf_reference
-        if model_spec.device_model_spec.perf_reference
-        else []
-    )
-    perf_refs = [
-        cap_benchmark_params(
-            params,
-            _max_context,
-            _max_tokens_all_users,
-            _model_max_concurrency,
-            model_spec.model_name,
-        )
-        for params in raw_perf_refs
-    ]
-
-    # For performance targets, use only vLLM results (as per user requirement)
-    vllm_release_raw = [
-        r for r in release_raw if r.get("backend") in ("vllm", "openai-chat")
-    ]
-
-    # Separate text and vlm benchmarks from vLLM results (for targets)
-    text_release_raw = [
-        r for r in vllm_release_raw if r.get("task_type", "text") == "text"
-    ]
-    vlm_release_raw = [
-        r for r in vllm_release_raw if r.get("task_type", "text") == "vlm"
-    ]
-
-    # Separate text and vlm performance references
-    text_perf_refs = [
-        p_ref for p_ref in perf_refs if getattr(p_ref, "task_type", "text") == "text"
-    ]
-    vlm_perf_refs = [
-        p_ref for p_ref in perf_refs if getattr(p_ref, "task_type", "text") == "vlm"
-    ]
-
-    release_sections = []
-
-    # Process text benchmarks if they exist
-    if text_perf_refs and text_release_raw:
-        # make lookup dict so references can find the correct result row
-        # key: (isl, osl, max_concurrency)
-        text_res_dict = {
-            (r["input_sequence_length"], r["output_sequence_length"], r["max_con"]): r
-            for r in text_release_raw
-        }
-        text_perf_results = {}
-        for p_ref in text_perf_refs:
-            p_ref_key = (p_ref.isl, p_ref.osl, p_ref.max_concurrency)
-            res = text_res_dict.get(p_ref_key)
-            # add reference values to the result
-            text_perf_results[p_ref_key] = {
-                "isl": p_ref.isl,
-                "osl": p_ref.osl,
-                "max_concurrency": res["max_con"] if res else p_ref.max_concurrency,
-                "model": model_spec.model_name,
-                "device": args.device,
-            }
-            # add measurements to result and checks if defined
-            if res:
-                text_perf_results[p_ref_key].update(
-                    {
-                        "ttft": res["mean_ttft_ms"],
-                        "tput_user": res["mean_tps"],
-                        "tput": res["tps_decode_throughput"],
-                    }
-                )
-
-                # Prepare a dictionary to hold checks for all targets.
-                text_perf_results[p_ref_key]["target_checks"] = {}
-                # Iterate over each target defined in p_ref.targets.
-                for target_name, perf_target in p_ref.targets.items():
-                    target_check = {}
-
-                    # Check for ttft metric if defined.
-                    if perf_target.ttft_ms is not None:
-                        assert perf_target.ttft_ms > 0, (
-                            f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
-                        )
-                        ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
-                        check = ReportCheckTypes.from_result(
-                            ttft_ratio < (1 + perf_target.tolerance)
-                        )
-                        target_check["ttft"] = perf_target.ttft_ms
-                        target_check["ttft_ratio"] = ttft_ratio
-                        target_check["ttft_check"] = check
-                    else:
-                        target_check["ttft_check"] = ReportCheckTypes.NA
-
-                    # Check for tput_user metric if defined.
-                    if perf_target.tput_user is not None:
-                        assert perf_target.tput_user > 0, (
-                            f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
-                        )
-                        tput_user_ratio = res["mean_tps"] / perf_target.tput_user
-                        check = ReportCheckTypes.from_result(
-                            tput_user_ratio > (1 - perf_target.tolerance)
-                        )
-                        target_check["tput_user"] = perf_target.tput_user
-                        target_check["tput_user_ratio"] = tput_user_ratio
-                        target_check["tput_user_check"] = check
-                    else:
-                        target_check["tput_user_check"] = ReportCheckTypes.NA
-
-                    # Check for tput metric if defined.
-                    if perf_target.tput is not None:
-                        assert perf_target.tput > 0, (
-                            f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
-                        )
-                        tput_ratio = res["tps_decode_throughput"] / perf_target.tput
-                        check = ReportCheckTypes.from_result(
-                            tput_ratio > (1 - perf_target.tolerance)
-                        )
-                        target_check["tput"] = perf_target.tput
-                        target_check["tput_ratio"] = tput_ratio
-                        target_check["tput_check"] = check
-                    else:
-                        target_check["tput_check"] = ReportCheckTypes.NA
-
-                    # Save the computed checks under the target's name.
-                    text_perf_results[p_ref_key]["target_checks"][target_name] = (
-                        target_check
-                    )
-
-            else:
-                # No result available from benchmark measurements.
-                NA_STRING = "N/A"
-                # In this case, add N/A for performance measures and an empty check dict per target.
-                text_perf_results[p_ref_key].update(
-                    {
-                        "ttft": NA_STRING,
-                        "tput_user": NA_STRING,
-                        "tput": NA_STRING,
-                        "target_checks": {
-                            target_name: {
-                                "ttft_check": ReportCheckTypes.NA,
-                                "tput_user_check": ReportCheckTypes.NA,
-                                "tput_check": ReportCheckTypes.NA,
-                            }
-                            for target_name in p_ref.targets.keys()
-                        },
-                    }
-                )
-
-        # build release performance benchmarking report for text
-        sorted_text_perf_results = {
-            k: text_perf_results[k] for k in sorted(text_perf_results)
-        }
-
-        text_release_raw_targets = [v for k, v in sorted_text_perf_results.items()]
-
-        flat_text_release_raw = flatten_target_checks(text_release_raw_targets)
-        text_section = f"#### Text-to-Text Performance Benchmark Targets {model_spec.model_name} on {args.device}\n\n"
-        if text_release_raw_targets and text_release_raw_targets[0].get(
-            "target_checks"
-        ):
-            text_section += benchmark_release_markdown(
-                flat_text_release_raw,
-                target_checks=text_release_raw_targets[0]["target_checks"],
-            )
-        else:
-            text_section += benchmark_release_markdown(
-                flat_text_release_raw, target_checks=None
-            )
-        release_sections.append(text_section)
-    elif text_release_raw:
-        # Show text benchmarks even without performance targets
-        text_section = f"#### Text-to-Text Performance Benchmark Results {model_spec.model_name} on {args.device}\n\n"
-        text_section += "No performance targets defined for text benchmarks.\n\n"
-        release_sections.append(text_section)
-
-    # Process VLM benchmarks if they exist
-    print(f"vlm_release_raw: {vlm_release_raw}")
-    if vlm_perf_refs and vlm_release_raw:
-        # VLM models (ModelType.VLM) now distinguished from image generation models (ModelType.IMAGE)
-        # make lookup dict so references can find the correct result row
-        # key: (isl, osl, image_height, image_width, images_per_prompt, max_concurrency)
-        # Support both old (input_sequence_length) and new (isl) key names for backward compatibility
-        vlm_res_dict = {
-            (
-                r.get("isl", r.get("input_sequence_length", 0)),
-                r.get("osl", r.get("output_sequence_length", 0)),
-                r["image_height"],
-                r["image_width"],
-                r["images_per_prompt"],
-                r["max_con"],
-            ): r
-            for r in vlm_release_raw
-        }
-        vlm_perf_results = {}
-        for p_ref in vlm_perf_refs:
-            p_ref_key = (
-                p_ref.isl,
-                p_ref.osl,
-                p_ref.image_height,
-                p_ref.image_width,
-                p_ref.images_per_prompt,
-                p_ref.max_concurrency,
-            )
-            res = vlm_res_dict.get(p_ref_key)
-            # add reference values to the result
-            vlm_perf_results[p_ref_key] = {
-                "isl": p_ref.isl,
-                "osl": p_ref.osl,
-                "max_concurrency": res["max_con"] if res else p_ref.max_concurrency,
-                "image_height": p_ref.image_height,
-                "image_width": p_ref.image_width,
-                "images_per_prompt": p_ref.images_per_prompt,
-                "num_requests": res["num_requests"] if res else "N/A",
-                "model": model_spec.model_name,
-                "device": args.device,
-            }
-            # add measurements to result and checks if defined
-            if res:
-                vlm_perf_results[p_ref_key].update(
-                    {
-                        "ttft": res["mean_ttft_ms"],
-                        "tput_user": res["mean_tps"],
-                        "tput": res["tps_decode_throughput"],
-                    }
-                )
-
-                # Prepare a dictionary to hold checks for all targets.
-                vlm_perf_results[p_ref_key]["target_checks"] = {}
-                # Iterate over each target defined in p_ref.targets.
-                for target_name, perf_target in p_ref.targets.items():
-                    target_check = {}
-
-                    # Check for ttft metric if defined.
-                    if perf_target.ttft_ms is not None:
-                        assert perf_target.ttft_ms > 0, (
-                            f"ttft_ms for target '{target_name}' is not > 0: {perf_target.ttft_ms}"
-                        )
-                        ttft_ratio = res["mean_ttft_ms"] / perf_target.ttft_ms
-                        check = ReportCheckTypes.from_result(
-                            ttft_ratio < (1 + perf_target.tolerance)
-                        )
-                        target_check["ttft"] = perf_target.ttft_ms
-                        target_check["ttft_ratio"] = ttft_ratio
-                        target_check["ttft_check"] = check
-                    else:
-                        target_check["ttft_check"] = ReportCheckTypes.NA
-
-                    # Check for tput_user metric if defined.
-                    if perf_target.tput_user is not None:
-                        assert perf_target.tput_user > 0, (
-                            f"tput_user for target '{target_name}' is not > 0: {perf_target.tput_user}"
-                        )
-                        tput_user_ratio = res["mean_tps"] / perf_target.tput_user
-                        check = ReportCheckTypes.from_result(
-                            tput_user_ratio > (1 - perf_target.tolerance)
-                        )
-                        target_check["tput_user"] = perf_target.tput_user
-                        target_check["tput_user_ratio"] = tput_user_ratio
-                        target_check["tput_user_check"] = check
-                    else:
-                        target_check["tput_user_check"] = ReportCheckTypes.NA
-
-                    # Check for tput metric if defined.
-                    if perf_target.tput is not None:
-                        assert perf_target.tput > 0, (
-                            f"tput for target '{target_name}' is not > 0: {perf_target.tput}"
-                        )
-                        tput_ratio = res["tps_decode_throughput"] / perf_target.tput
-                        check = ReportCheckTypes.from_result(
-                            tput_ratio > (1 - perf_target.tolerance)
-                        )
-                        target_check["tput"] = perf_target.tput
-                        target_check["tput_ratio"] = tput_ratio
-                        target_check["tput_check"] = check
-                    else:
-                        target_check["tput_check"] = ReportCheckTypes.NA
-
-                    # Save the computed checks under the target's name.
-                    vlm_perf_results[p_ref_key]["target_checks"][target_name] = (
-                        target_check
-                    )
-
-            else:
-                # No result available from benchmark measurements.
-                NA_STRING = "N/A"
-                # In this case, add N/A for performance measures and an empty check dict per target.
-                vlm_perf_results[p_ref_key].update(
-                    {
-                        "ttft": NA_STRING,
-                        "tput_user": NA_STRING,
-                        "tput": NA_STRING,
-                        "target_checks": {
-                            target_name: {
-                                "ttft_check": ReportCheckTypes.NA,
-                                "tput_user_check": ReportCheckTypes.NA,
-                                "tput_check": ReportCheckTypes.NA,
-                            }
-                            for target_name in p_ref.targets.keys()
-                        },
-                    }
-                )
-
-        # build release performance benchmarking report for VLMs
-        sorted_vlm_perf_results = {
-            k: vlm_perf_results[k] for k in sorted(vlm_perf_results)
-        }
-        vlm_release_raw_targets = [v for k, v in sorted_vlm_perf_results.items()]
-
-        flat_vlm_release_raw = flatten_target_checks(vlm_release_raw_targets)
-        vlm_section = f"#### VLM Performance Benchmark Results {model_spec.model_name} on {args.device}\n\n"
-        if vlm_release_raw_targets and vlm_release_raw_targets[0].get("target_checks"):
-            vlm_section += benchmark_vlm_release_markdown(
-                flat_vlm_release_raw,
-                target_checks=vlm_release_raw_targets[0]["target_checks"],
-            )
-        else:
-            vlm_section += benchmark_vlm_release_markdown(
-                flat_vlm_release_raw, target_checks=None
-            )
-        release_sections.append(vlm_section)
-    elif vlm_release_raw:
-        # Show VLM benchmarks even without performance targets
-        vlm_section = (
-            f"#### VLM Benchmark Results {model_spec.model_name} on {args.device}\n\n"
-        )
-        vlm_section += "No performance targets defined for VLM benchmarks.\n\n"
-        release_sections.append(vlm_section)
-
-    # Combine sections or fallback to original behavior
-    if release_sections:
-        release_str = (
-            f"### Performance Benchmark Targets {model_spec.model_name} on {args.device}\n\n"
-            + "\n\n".join(release_sections)
-        )
-        # For backward compatibility, return the first section's data as release_raw
-        if text_perf_refs:
-            release_raw = (
-                text_release_raw_targets
-                if "text_release_raw_targets" in locals()
-                else release_raw
-            )
-        elif vlm_perf_refs:
-            release_raw = (
-                vlm_release_raw_targets
-                if "vlm_release_raw_targets" in locals()
-                else release_raw
-            )
-    else:
-        # Fallback to original behavior if no performance references exist
-        release_str = f"### Performance Benchmark Targets {model_spec.model_name} on {args.device}\n\n"
-        release_str += (
-            "No performance targets defined for this model and device combination.\n"
-        )
-
-    return release_str, release_raw, disp_md_path, stats_file_path
+    return "", release_raw, disp_md_path, stats_file_path
 
 
 def extract_eval_json_data(json_path: Path):
@@ -4579,182 +4278,6 @@ def main():
         # Use tests_release_data for parameter_support_tests
         parameter_support_tests_data = tests_release_data if tests_release_data else []
 
-        # Add target_checks for specific model if applicable
-        if (
-            model_spec.model_type.name == ModelType.CNN.name
-            or model_spec.model_type.name == ModelType.IMAGE.name
-            or model_spec.model_type.name == ModelType.AUDIO.name
-            or model_spec.model_type.name == ModelType.VIDEO.name
-            or model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
-        ):
-            # Get performance targets using the shared utility
-            device_str = runtime_config.device.lower()
-            targets = get_performance_targets(
-                model_spec.model_name,
-                device_str,
-                model_type=model_spec.model_type.name,
-            )
-            logger.info(f"Performance targets: {targets}")
-
-            # extract targets for functional, complete, target and calculate them
-            target_ttft = targets.ttft_ms
-            target_rtr = targets.rtr if hasattr(targets, "rtr") else None
-
-            # Initialize the benchmark summary data
-            benchmark_summary_data = {}
-
-            # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
-            total_ttft = 0.0
-            total_tput = 0.0
-            total_rtr = 0.0
-            for benchmark in benchmarks_release_data:
-                total_ttft += benchmark.get("mean_ttft_ms", 0)
-                total_tput += benchmark.get("inference_steps_per_second", 0)
-                # Aggregate RTR for TTS models
-                if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
-                    total_rtr += benchmark.get("rtr", 0)
-                benchmark_summary_data["num_requests"] = benchmark.get(
-                    "num_requests", 0
-                )
-                benchmark_summary_data["num_inference_steps"] = benchmark.get(
-                    "num_inference_steps", 0
-                )
-                benchmark_summary_data["inference_steps_per_second"] = benchmark.get(
-                    "inference_steps_per_second", 0
-                )
-                benchmark_summary_data["filename"] = benchmark.get("filename", "")
-                benchmark_summary_data["mean_ttft_ms"] = benchmark.get(
-                    "mean_ttft_ms", 0
-                )
-
-            avg_ttft = (
-                total_ttft / len(benchmarks_release_data)
-                if len(benchmarks_release_data) > 0
-                else 0
-            )
-
-            # For TTS, also calculate average RTR
-            avg_rtr = None
-            if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
-                avg_rtr = (
-                    total_rtr / len(benchmarks_release_data)
-                    if len(benchmarks_release_data) > 0
-                    else 0
-                )
-
-            # Calculate all target metrics using centralized function
-            # TTFT: lower is better, so is_ascending_metric=False
-            metrics_config = [
-                {
-                    "avg_metric": avg_ttft,
-                    "target_metric": target_ttft,
-                    "field_name": "ttft",
-                    "is_ascending_metric": False,
-                },
-            ]
-
-            # For TTS, also calculate RTR metrics if target is available
-            if (
-                model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
-                and target_rtr is not None
-                and avg_rtr is not None
-            ):
-                metrics_config.append(
-                    {
-                        "avg_metric": avg_rtr,
-                        "target_metric": target_rtr,
-                        "field_name": "rtr",
-                        "is_ascending_metric": True,  # RTR: higher is better
-                    }
-                )
-
-            metrics = calculate_target_metrics(metrics_config)
-
-            target_checks = {}
-            if (
-                model_spec.model_type.name == ModelType.CNN.name
-                or model_spec.model_type.name == ModelType.IMAGE.name
-                or model_spec.model_type.name == ModelType.VIDEO.name
-            ):
-                logger.info(
-                    "Adding target_checks for tput_user to CNN, IMAGE and VIDEO benchmark release data"
-                )
-                target_checks = add_target_checks_cnn_image_video(
-                    targets,
-                    evals_release_data,
-                    benchmark_summary_data,
-                    metrics,
-                )
-            elif model_spec.model_type.name == ModelType.AUDIO.name:
-                logger.info("Adding target_checks for Audio benchmark release data")
-                target_checks = add_target_checks_audio(metrics)
-            elif model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
-                logger.info("Adding target_checks for TTS benchmark release data")
-                target_checks = add_target_checks_tts(metrics)
-            else:
-                logger.warning(f"Unknown model type: {model_spec.model_type.name}")
-                target_checks = add_target_checks_audio(metrics)
-
-            # Make sure benchmarks_release_data is of proper format for CNN and IMAGE
-            benchmarks_release_data = benchmarks_release_data_format(
-                model_spec, device_str, benchmark_summary_data, runtime_config
-            )
-
-            # Add target_checks to the existing benchmark object
-            if benchmarks_release_data:
-                benchmarks_release_data[0]["target_checks"] = target_checks
-
-        elif model_spec.model_type.name == ModelType.EMBEDDING.name:
-            # Get performance targets using the shared utility
-            device_str = runtime_config.device.lower()
-            targets = get_performance_targets(
-                model_spec.model_name,
-                device_str,
-                model_type=model_spec.model_type.name,
-            )
-            logger.info(f"Performance targets: {targets}")
-
-            benchmark_summary_data = benchmarks_release_data[0]
-
-            avg_tput_user = benchmark_summary_data.get("mean_tps", 0)
-            avg_tput_prefill = benchmark_summary_data.get("tps_prefill_throughput", 0)
-            avg_e2el_ms = benchmark_summary_data.get("mean_e2el_ms", 0)
-
-            metrics = calculate_target_metrics(
-                [
-                    {
-                        "avg_metric": avg_tput_user,
-                        "target_metric": targets.tput_user,
-                        "field_name": "tput_user",
-                        "is_ascending_metric": True,
-                    },
-                    {
-                        "avg_metric": avg_tput_prefill,
-                        "target_metric": targets.tput_prefill,
-                        "field_name": "tput_prefill",
-                        "is_ascending_metric": True,
-                    },
-                    {
-                        "avg_metric": avg_e2el_ms,
-                        "target_metric": targets.e2el_ms,
-                        "field_name": "e2el_ms",
-                        "is_ascending_metric": False,
-                    },
-                ]
-            )
-
-            logger.info("Adding target_checks for Embedding benchmark release data")
-            target_checks = add_target_checks_embedding(
-                metrics,
-            )
-
-            benchmarks_release_data = benchmarks_release_data_format_embedding(
-                model_spec, device_str, benchmark_summary_data
-            )
-
-            if benchmarks_release_data:
-                benchmarks_release_data[0]["target_checks"] = target_checks
-
         # Read AIPerf benchmark data if available
         aiperf_detailed_data = None
         if aiperf_data_file_path:
@@ -4812,11 +4335,15 @@ def main():
         if parameter_support_tests_data:
             output_data["parameter_support_tests"] = parameter_support_tests_data
 
+        benchmark_target_evaluation = evaluate_benchmark_targets(output_data)
+        output_data["benchmark_target_evaluation"] = benchmark_target_evaluation
         acceptance_criteria, acceptance_blockers = acceptance_criteria_check(
-            output_data
+            output_data, benchmark_target_evaluation
         )
         acceptance_summary_markdown = format_acceptance_summary_markdown(
-            acceptance_criteria, acceptance_blockers
+            acceptance_criteria,
+            acceptance_blockers,
+            benchmark_target_evaluation,
         )
         output_data["acceptance_criteria"] = acceptance_criteria
         output_data["acceptance_blockers"] = acceptance_blockers
