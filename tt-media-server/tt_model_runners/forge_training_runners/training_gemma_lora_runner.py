@@ -28,7 +28,7 @@ from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
 from config.constants import SupportedModels
 
-PEFT_MODEL_PATH = "model_store/03cfa83c-e369-4ce8-aef1-0c306c006e82"
+PEFT_MODEL_PATH = "model_store/729a85ec-4b11-4783-8942-352452d0775f"
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
@@ -347,8 +347,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         # Set up config variables.
         max_cache_len: int = 128
         batch_size: int = 1
-
-        self.logger.info(f"Adapter path: {request._adapter_path}")
 
         # Connect the device
         device: torch.device = torch_xla.device()
