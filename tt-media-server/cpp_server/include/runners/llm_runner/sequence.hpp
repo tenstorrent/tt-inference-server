@@ -57,6 +57,10 @@ class Sequence {
            static_cast<int>(numBlocks() - 1) * blockSize;
   }
 
+  void setKVCacheAddress(uint64_t address) { this->address = address; }
+
+  uint64_t getKVCacheAddress() const { return this->address; }
+
   std::vector<int64_t> block(size_t i) const;
   std::vector<int64_t> completionTokenIds() const;
 
@@ -74,6 +78,7 @@ class Sequence {
  private:
   size_t numTokens() const { return tokenIds.size(); }
   int blockSize;
+  uint64_t address = 0x0;
 };
 
 }  // namespace llm_engine
