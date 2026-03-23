@@ -88,6 +88,10 @@ while True:
         delta = chunk['choices'][0].get('delta', {})
         text = delta.get('content', '')
         finish = chunk['choices'][0].get('finish_reason')
+        if finish and finish == 'error':
+            err_msg = text.strip() if text else 'Unknown error'
+            print(f'\n\033[91m[SERVER ERROR: {err_msg}]\033[0m', flush=True)
+            break
         if text and ttft is None:
             ttft = time.perf_counter() - start
         if text:
