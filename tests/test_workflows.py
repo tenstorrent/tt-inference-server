@@ -139,9 +139,9 @@ class TestWorkflowVenvValidation:
 
         for workflow_type in workflows_requiring_venv:
             config = WORKFLOW_CONFIGS[workflow_type]
-            assert (
-                config.workflow_run_script_venv_type is not None
-            ), f"{workflow_type.name} workflow must have a venv configuration"
+            assert config.workflow_run_script_venv_type is not None, (
+                f"{workflow_type.name} workflow must have a venv configuration"
+            )
 
     def test_server_workflow_is_special_case(self):
         """Document that server workflow intentionally has no venv config."""
@@ -212,9 +212,9 @@ class TestWorkflowExecution:
             assert mock_run_single.call_count == 5
 
             expected_order = ["EVALS", "BENCHMARKS", "SPEC_TESTS", "TESTS", "REPORTS"]
-            assert (
-                workflow_calls == expected_order
-            ), f"Expected {expected_order}, got {workflow_calls}"
+            assert workflow_calls == expected_order, (
+                f"Expected {expected_order}, got {workflow_calls}"
+            )
 
             # Check trace capture logic by examining args modifications
             # Note: The args object is modified in place, so we rely on the implementation details

@@ -378,9 +378,9 @@ def handle_secrets(runtime_config):
     else:
         logger.info("Using secrets from .env file.")
         for key in required_env_vars:
-            assert os.getenv(
-                key
-            ), f"Required environment variable {key} is not set in .env file."
+            assert os.getenv(key), (
+                f"Required environment variable {key} is not set in .env file."
+            )
 
 
 def get_current_commit_sha() -> str:
