@@ -357,6 +357,21 @@ def get_environment_cache_dir() -> Optional[Path]:
     return _normalize_optional_path(os.getenv("TT_CACHE_PATH"))
 
 
+def get_deepseek_cache_dir() -> Optional[Path]:
+    """Get DeepSeek cache directory from DEEPSEEK_V3_CACHE environment variable."""
+    return _normalize_optional_path(os.getenv("DEEPSEEK_V3_CACHE"))
+
+
+def _is_deepseek_model(model_spec) -> bool:
+    """Check if model_spec is for a DeepSeek model."""
+    if model_spec is None:
+        return False
+    model_name = _get_value(model_spec, "model_name")
+    if not model_name:
+        return False
+    return "deepseek" in model_name.lower()
+
+
 def get_container_cache_dir(
     model_spec,
     device: Optional[str] = None,
@@ -464,6 +479,14 @@ def detect_cache_monitor_target(
     environment_cache_dir = get_environment_cache_dir()
     if environment_cache_dir is not None:
         return CacheMonitorTarget(cache_dir=environment_cache_dir)
+
+    # Check DEEPSEEK_V3_CACHE for DeepSeek models
+    # TODO: Remove once https://github.com/tenstorrent/tt-inference-server/issues/2415
+    # is resolved and DEEPSEEK_V3_CACHE is unified under TT_CACHE_PATH.
+    if _is_deepseek_model(model_spec):
+        deepseek_cache_dir = get_deepseek_cache_dir()
+        if deepseek_cache_dir is not None:
+            return CacheMonitorTarget(cache_dir=deepseek_cache_dir)
 
     if model_spec is None:
         return CacheMonitorTarget()
