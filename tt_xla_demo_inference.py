@@ -51,7 +51,7 @@ DEFAULT_PROMPTS = [
     "My keyboard is in a language I don't understand! What",
 ]
 
-PEFT_MODEL_PATH = "/localdev/mcupac/tt-inference-server/tt-media-server/model_store/03cfa83c-e369-4ce8-aef1-0c306c006e82"
+PEFT_MODEL_PATH = "/localdev/mcupac/tt-inference-server/tt-media-server/model_store/729a85ec-4b11-4783-8942-352452d0775f"
 # PEFT_MODEL_PATH = None
 
 
@@ -72,7 +72,7 @@ def run_inference(interactive: bool = False):
 
     while True:
         if interactive:
-            user_prompt = input("Enter your prompt or quit() to exit: ")
+            user_prompt = "Review: I absolutely love how smooth and intuitive this new app feels — it makes my day so much easier!\nOutput:"
             batch_size: int = 1
             if user_prompt.lower() == "quit()":
                 break
@@ -81,6 +81,7 @@ def run_inference(interactive: bool = False):
             batch_size: int = 32
             user_prompt = DEFAULT_PROMPTS[:batch_size]
 
+        print(f"going to construct inputs")
         # Construct inputs, including static cache
         input_args = construct_inputs(
             user_prompt, tokenizer, model.config, batch_size, max_cache_len
@@ -106,8 +107,7 @@ def run_inference(interactive: bool = False):
             interactive,
         )
 
-        if not interactive:
-            break
+        break
 
 
 def setup_model_and_tokenizer(
