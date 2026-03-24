@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "sockets/inter_server_service.hpp"
-#include "config/settings.hpp"
 
 #include <string>
 
+#include "config/settings.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {

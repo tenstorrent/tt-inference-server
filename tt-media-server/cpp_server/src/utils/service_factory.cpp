@@ -2,58 +2,62 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "utils/service_factory.hpp"
+
 #include <memory>
 
-#include "api/socket_controller.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
+#include "services/disaggregation_service.hpp"
 #include "services/embedding_service.hpp"
 #include "services/llm_service.hpp"
+#include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::utils::service_factory {
 
-namespace {
-std::unique_ptr<tt::api::SocketController> socketController;
-}
-
-void registerServices() {
-  tracy_config::tracyStartMainProcess();
+ServiceContainer buildServices() {
+  ServiceContainer c;
 
   if (tt::config::isLlmServiceEnabled()) {
-    auto llm = std::make_shared<services::LLMService>();
-    llm->start();
+    c.llm = std::make_shared<services::LLMService>();
 
-    if (tt::config::llmMode() != tt::config::LLMMode::REGULAR) {
-      auto socketService = std::make_shared<tt::sockets::InterServerService>();
-      socketService->initializeFromConfig();
-      if (socketService->isEnabled()) {
-        socketService->start();
-      }
-      socketController = std::make_unique<tt::api::SocketController>(
-          llm, socketService);
+    auto mode = tt::config::llmMode();
+    if (mode != tt::config::LLMMode::REGULAR) {
+      c.socket = std::make_shared<sockets::InterServerService>();
+      c.socket->initializeFromConfig();
+      c.disaggregation = std::make_shared<services::DisaggregationService>(
+          mode, c.llm, c.socket);
     }
-
-    registerService(llm);
-    TT_LOG_INFO("[ServiceFactory] LLM service registered and started");
   }
 
   if (tt::config::isEmbeddingService()) {
-    auto emb = std::make_shared<services::EmbeddingService>();
-    emb->start();
-    registerService(std::move(emb));
-    TT_LOG_INFO("[ServiceFactory] Embedding service registered and started");
+    c.embedding = std::make_shared<services::EmbeddingService>();
+  }
+
+  return c;
+}
+
+void startServices(ServiceContainer& c) {
+  tracy_config::tracyStartMainProcess();
+
+  if (c.llm) {
+    c.llm->start();
+    TT_LOG_INFO("[ServiceFactory] LLM service started");
+  }
+  if (c.disaggregation) {
+    c.disaggregation->start();
+    TT_LOG_INFO("[ServiceFactory] Disaggregation service started");
+  }
+  if (c.embedding) {
+    c.embedding->start();
+    TT_LOG_INFO("[ServiceFactory] Embedding service started");
   }
 }
 
-std::shared_ptr<services::IService> getConfiguredService() {
-  switch (tt::config::modelService()) {
-    case tt::config::ModelService::LLM:
-      return getServiceByType<services::LLMService>();
-    case tt::config::ModelService::EMBEDDING:
-      return getServiceByType<services::EmbeddingService>();
-  }
-  return nullptr;
+void initializeServices() {
+  auto container = buildServices();
+  startServices(container);
+  ServiceContainer::setGlobal(std::move(container));
 }
 
 }  // namespace tt::utils::service_factory

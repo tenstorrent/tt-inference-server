@@ -6,7 +6,6 @@
 #include <atomic>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -30,8 +29,6 @@ class LLMService
  public:
   using StreamCallback =
       std::function<void(domain::StreamingChunkResponse&, bool)>;
-  using RequestInterceptor =
-      std::function<bool(domain::CompletionRequest, StreamCallback)>;
 
   LLMService();
   ~LLMService() override;
@@ -44,20 +41,8 @@ class LLMService
 
   bool isModelReady() const override;
 
-  /**
-   * Set by DisaggregationService in disaggregated mode. When set,
-   * processStreamingRequest delegates to the interceptor instead of
-   * queuing locally. Returns true if the request was handled.
-   */
-  void setRequestInterceptor(RequestInterceptor interceptor);
-
-  /**
-   * Queue a decode continuation directly to local workers.
-   * Used by DisaggregationService after remote prefill completes.
-   */
-  void submitDecodeContinuation(domain::CompletionRequest request,
-                                StreamCallback callback);
   void preProcess(domain::CompletionRequest& request) const override;
+
  protected:
   void postProcess(domain::CompletionResponse& response) const override;
   size_t currentQueueSize() const override;
@@ -93,9 +78,6 @@ class LLMService
   std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
   const tt::utils::Tokenizer* tokenizer_;
   std::unique_ptr<ReasoningParser> reasoning_parser_;
-
-  RequestInterceptor request_interceptor_;
-
 };
 
 }  // namespace tt::services

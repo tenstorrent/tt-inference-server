@@ -301,13 +301,6 @@ void LLMService::processStreamingRequest(
   }
   std::string taskId = request.task_id.id;
 
-  // In disaggregated mode, the interceptor handles the request externally
-  // (e.g. forwarding to a remote prefill server) instead of queuing locally.
-  if (request_interceptor_ &&
-      request_interceptor_(std::move(request), std::move(callback))) {
-    return;
-  }
-
   pending_tasks_.fetch_add(1);
   TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
 
@@ -340,37 +333,4 @@ void LLMService::postProcess(domain::CompletionResponse& response) const {
     }
   }
 }
-
-void LLMService::setRequestInterceptor(RequestInterceptor interceptor) {
-  request_interceptor_ = std::move(interceptor);
-}
-
-void LLMService::submitDecodeContinuation(domain::CompletionRequest request,
-                                          StreamCallback callback) {
-  std::string taskId = request.task_id.id;
-
-  pending_tasks_.fetch_add(1);
-  TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
-  stream_callbacks_.insert(taskId, std::move(callback));
-
-  auto prompt = std::get<std::vector<int>>(request.prompt);
-  std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
-
-  auto sequence = std::make_unique<llm_engine::Sequence>(
-      llm_engine::TaskID(taskId),
-      tt::config::llmEngineConfig().kvcache_block_size, std::move(tokenIds));
-  sequence->numPromptTokens = prompt.size();
-  sequence->samplingParams = std::make_unique<llm_engine::SamplingParams>(
-      tt::utils::mapper::mapSamplingParams(request));
-  queue_manager_->task_queue->push(*std::move(sequence));
-
-  TT_LOG_DEBUG(
-      "[LLMService:DECODE] Queued decode continuation for task {} "
-      "(prompt_tokens={}, max_tokens={})",
-      taskId, prompt.size(),
-      request.max_tokens.has_value()
-          ? std::to_string(request.max_tokens.value())
-          : "none");
-}
-
 }  // namespace tt::services

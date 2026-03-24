@@ -1,36 +1,115 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
 #include "services/disaggregation_service.hpp"
 
+#include "domain/completion_request.hpp"
+#include "domain/task_id.hpp"
+#include "services/llm_service.hpp"
+#include "sockets/inter_server_service.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::services {
-  
-DisaggregationService::DisaggregationService(tt::config::LLMMode mode) : mode(mode) {
-    socketService = std::make_unique<tt::sockets::InterServerService>();
-    socketService->initializeFromConfig();
-    
-    socketService->onPrefillComplete([this](const tt::sockets::PrefillResultMessage& message) {
-        auto callback = streamCallbacks.get(message.task_id.id);
-        if(!callback.has_value()) {
-            TT_LOG_WARN("[DisaggregationService] No callback for task_id: {}", message.task_id.id);
-            return;
-        }
-        auto response = domain::StreamingChunkResponse(message.task_id);
-        response.choices.push_back(domain::CompletionChoice(message.generated_text));
-        callback.value()(response, false);
-        if(message.remaining_tokens.has_value() || message.remaining_tokens.value() > 0) {
-            auto request = domain::CompletionRequest(message.task_id);
-            request.prompt = std::vector<int>(message.token_ids.begin(), message.token_ids.end());
-            request.max_tokens = message.remaining_tokens;
-            llmService->submitDecodeContinuation(request, callback.value());
-        } else {
-          callback.value()(domain::StreamingChunkResponse(message.task_id), true);
-        }
-    });
-    
+
+DisaggregationService::DisaggregationService(
+    tt::config::LLMMode mode, std::shared_ptr<LLMService> llmService,
+    std::shared_ptr<sockets::InterServerService> socketService)
+    : mode(mode),
+      llmService(std::move(llmService)),
+      socketService(std::move(socketService)) {
+  setupSocketHandlers();
 }
 
-DisaggregationService::~DisaggregationService() {
-  socketService->stop();
+void DisaggregationService::setupSocketHandlers() {
+  socketService->setHealthCheckCallback([](const std::string& serverId,
+                                           double /*cpu*/, double /*memory*/,
+                                           int tasks) {
+    TT_LOG_INFO(
+        "[DisaggregationService] Health check from {} (active_tasks={})",
+        serverId, tasks);
+  });
+
+  if (mode == tt::config::LLMMode::DECODE_ONLY) {
+    socketService->onPrefillComplete(
+        [this](const tt::sockets::PrefillResultMessage& message) {
+          auto callback = streamCallbacks.get(message.task_id.id);
+          if (!callback.has_value()) {
+            TT_LOG_WARN("[DisaggregationService] No callback for task_id: {}",
+                        message.task_id.id);
+            return;
+          }
+          streamCallbacks.erase(message.task_id.id);
+
+          auto response = domain::StreamingChunkResponse(message.task_id);
+          response.choices.push_back(
+              domain::CompletionChoice(message.generated_text));
+
+          bool continueDecode = !message.remaining_tokens.has_value() ||
+                                message.remaining_tokens.value() > 0;
+          if (continueDecode) {
+            callback.value()(response, false);
+            auto request = domain::CompletionRequest(message.task_id);
+            request.prompt = std::vector<int>(message.token_ids.begin(),
+                                              message.token_ids.end());
+            request.max_tokens = message.remaining_tokens;
+            llmService->submitStreamingRequest(request, callback.value());
+          } else {
+            response.choices.back().finish_reason = "stop";
+            callback.value()(response, true);
+          }
+        });
+
+    socketService->setConnectionLostCallback([this]() {
+      streamCallbacks.forEach([](const std::string& taskId,
+                                 const StreamCallback& callback) {
+        auto response = domain::StreamingChunkResponse(domain::TaskID(taskId));
+        response.choices.push_back(domain::CompletionChoice(""));
+        response.choices.back().finish_reason = "error";
+        callback(response, true);
+      });
+      streamCallbacks.clear();
+    });
+  }
+
+  if (mode == tt::config::LLMMode::PREFILL_ONLY) {
+    socketService->onPrefillRequested(
+        [this](const tt::sockets::PrefillRequestMessage& message) {
+          auto request = domain::CompletionRequest(message.task_id);
+          request.max_tokens = 1;
+          auto maxTokens = message.max_tokens;
+          using PromptVariant = std::variant<std::string, std::vector<int>>;
+
+          request.prompt =
+              message.token_ids.empty()
+                  ? PromptVariant(message.prompt)
+                  : PromptVariant(std::vector<int>(message.token_ids.begin(),
+                                                   message.token_ids.end()));
+
+          llmService->submitStreamingRequest(
+              request, [this, message, maxTokens](
+                           const domain::StreamingChunkResponse& response,
+                           bool /*isFinal*/) {
+                auto remainingTokens =
+                    maxTokens.has_value()
+                        ? std::optional<int>(maxTokens.value() - 1)
+                        : std::nullopt;
+                auto newToken = response.choices.back().token_id.value_or(1);
+
+                auto prefillResult =
+                    tt::sockets::PrefillResultMessage(message.task_id);
+                prefillResult.remaining_tokens = remainingTokens;
+                prefillResult.token_ids.insert(prefillResult.token_ids.end(),
+                                               message.token_ids.begin(),
+                                               message.token_ids.end());
+                prefillResult.token_ids.push_back(newToken);
+                prefillResult.generated_text = response.choices.back().text;
+                socketService->sendPrefillResult(prefillResult);
+              });
+        });
+  }
 }
+
+DisaggregationService::~DisaggregationService() { stop(); }
 
 void DisaggregationService::start() {
   if (socketService->isEnabled()) {
@@ -38,24 +117,31 @@ void DisaggregationService::start() {
   }
 }
 
-void DisaggregationService::stop() {
-  socketService->stop();
-}
+void DisaggregationService::stop() { socketService->stop(); }
 
-void DisaggregationService::handleStreamingRequest(domain::CompletionRequest& request, const StreamCallback& callback) {
-  llmService->preProcess(request);
-  streamCallbacks.insert(request.task_id.id, callback);
-  auto maxTokens = request.max_tokens;
-  auto tokenIds = std::get<std::vector<int>>(request.prompt);
-  auto sent = socketService->sendPrefillRequest(request.task_id,
-     "",
-      std::vector<int64_t>(tokenIds.begin(),
-       tokenIds.end()), maxTokens
-  );
-  if (!sent) {
-    TT_LOG_ERROR("[DisaggregationService] Failed to send prefill request for task_id: {}", request.task_id.id);
-    streamCallbacks.erase(request.task_id.id);
-    throw std::runtime_error("[DisaggregationService] Failed to send prefill request for task_id: " + request.task_id.id);
+void DisaggregationService::handleStreamingRequest(
+    domain::CompletionRequest& request, const StreamCallback& callback) {
+  if (mode == tt::config::LLMMode::DECODE_ONLY) {
+    llmService->preProcess(request);
+    streamCallbacks.insert(request.task_id.id, callback);
+
+    auto maxTokens = request.max_tokens;
+    auto tokenIds = std::get<std::vector<int>>(request.prompt);
+    auto sent = socketService->sendPrefillRequest(
+        request.task_id, "",
+        std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens);
+
+    if (!sent) {
+      streamCallbacks.erase(request.task_id.id);
+      throw std::runtime_error(
+          "[DisaggregationService] Failed to send prefill request for "
+          "task_id: " +
+          request.task_id.id);
+    }
+  } else {
+    throw std::runtime_error(
+        "[DisaggregationService] Server must be in decode only mode to handle "
+        "streaming requests");
   }
 }
 

@@ -1,32 +1,47 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
 #pragma once
 
+#include <functional>
 #include <memory>
-#include "sockets/inter_server_service.hpp"
-#include "domain/prefill_request.hpp"
+#include <string>
+
 #include "config/types.hpp"
-#include "services/llm_service.hpp"
+#include "domain/completion_request.hpp"
+#include "domain/completion_response.hpp"
 #include "utils/concurrent_map.hpp"
 
-namespace tt::services {
-    
-using StreamCallback = std::function<void(domain::StreamingChunkResponse&, bool)>;
+namespace tt::sockets {
+class InterServerService;
+}
 
-class DisaggregationService: public IService {
+namespace tt::services {
+
+class LLMService;
+
+using StreamCallback =
+    std::function<void(const domain::StreamingChunkResponse&, bool)>;
+
+class DisaggregationService {
  public:
-  DisaggregationService(tt::config::LLMMode mode);
+  DisaggregationService(
+      tt::config::LLMMode mode, std::shared_ptr<LLMService> llmService,
+      std::shared_ptr<sockets::InterServerService> socketService);
   ~DisaggregationService();
 
   void start();
   void stop();
-  
-  bool sendPrefillRequest(const domain::PrefillRequest& request) const;
-  
-  void handleStreamingRequest(domain::CompletionRequest& request, const StreamCallback& callback);
-  
+
+  void handleStreamingRequest(domain::CompletionRequest& request,
+                              const StreamCallback& callback);
+
  private:
-  std::unique_ptr<tt::sockets::InterServerService> socketService;
-  std::unique_ptr<LLMService> llmService;
+  void setupSocketHandlers();
+
   tt::config::LLMMode mode;
+  std::shared_ptr<LLMService> llmService;
+  std::shared_ptr<sockets::InterServerService> socketService;
   ConcurrentMap<std::string, StreamCallback> streamCallbacks;
 };
 

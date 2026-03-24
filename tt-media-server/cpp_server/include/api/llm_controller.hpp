@@ -8,8 +8,8 @@
 
 #include <memory>
 
-#include "services/llm_service.hpp"
 #include "services/disaggregation_service.hpp"
+#include "services/llm_service.hpp"
 
 namespace tt::api {
 

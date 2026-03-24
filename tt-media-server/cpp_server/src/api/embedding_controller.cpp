@@ -17,7 +17,7 @@
 #include "profiling/tracy.hpp"
 #include "services/base_service.hpp"
 #include "utils/logger.hpp"
-#include "utils/service_factory.hpp"
+#include "utils/service_container.hpp"
 
 namespace tt::api {
 
@@ -97,12 +97,11 @@ EmbeddingController::EmbeddingController() {
     return;
   }
 
-  service_ = tt::utils::service_factory::getServiceByType<
-      services::EmbeddingService>();
+  service_ = tt::utils::ServiceContainer::global().embedding;
   if (!service_) {
     throw std::runtime_error(
-        "[EmbeddingController] Embedding service not found in service factory. "
-        "Ensure register_services() is called before Drogon starts.");
+        "[EmbeddingController] Embedding service not found in container. "
+        "Ensure initializeServices() is called before Drogon starts.");
   }
   TT_LOG_INFO("[EmbeddingController] Initialized (service already started)");
 }
