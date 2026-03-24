@@ -213,7 +213,8 @@ class SharedMemory {
     while (!msg.stateMatches(FREE)) {
       std::this_thread::yield();
     }
-    msg.success = result.success ? 1u : 0u;
+    msg.success =
+        (result.status == tt::domain::ManageMemoryStatus::SUCCESS) ? 1u : 0u;
     const size_t n =
         std::min(result.memory_locations.size(),
                  static_cast<size_t>(MEMORY_RESULT_MAX_KV_DESTINATIONS));
@@ -235,7 +236,8 @@ class SharedMemory {
   bool tryReadResult(tt::domain::ManageMemoryResult& out) {
     auto& msg = acquireSlot();
     if (!msg.stateMatches(TAKEN)) return false;
-    out.success = msg.success != 0;
+    out.status = (msg.success != 0) ? tt::domain::ManageMemoryStatus::SUCCESS
+                                    : tt::domain::ManageMemoryStatus::FAILURE;
     out.task_id =
         tt::domain::TaskID::ipcDeserialize(msg.taskId, sizeof(msg.taskId));
     out.memory_locations.resize(msg.num_destinations);

@@ -12,25 +12,22 @@ namespace {
 using tt::domain::KvDestination;
 using tt::domain::KvMemoryLayout;
 using tt::domain::ManageMemoryResult;
+using tt::domain::ManageMemoryStatus;
 using tt::domain::ManageMemoryTask;
 using tt::domain::MemoryManagementAction;
 
-ManageMemoryResult makeFailedResult(const ManageMemoryTask& task) {
-  return ManageMemoryResult{
-      .task_id = task.task_id, .success = false, .memory_locations = {}};
-}
-
-ManageMemoryResult makeSuccessResult(
-    const ManageMemoryTask& task, std::vector<KvDestination> memoryLocations) {
+ManageMemoryResult makeResult(const ManageMemoryTask& task,
+                              ManageMemoryStatus status,
+                              std::vector<KvDestination> locations = {}) {
   return ManageMemoryResult{.task_id = task.task_id,
-                            .success = true,
-                            .memory_locations = std::move(memoryLocations)};
+                            .status = status,
+                            .memory_locations = std::move(locations)};
 }
 
-bool allocateKv(const ManageMemoryTask& /*task*/,
-                std::vector<KvDestination>& /*out*/) {
-  // TODO(ttnn): Size and fill from device.
-  return true;
+ManageMemoryStatus allocateKv(const ManageMemoryTask& /*task*/,
+                              std::vector<KvDestination>& /*out*/) {
+  // TODO(ttnn): Size and fill from device. Return WAITING when full.
+  return ManageMemoryStatus::SUCCESS;
 }
 
 void deallocateKv(const std::vector<KvDestination>& /*locations*/) {
@@ -41,7 +38,7 @@ void deallocateKv(const std::vector<KvDestination>& /*locations*/) {
 
 ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
   if (task.action == MemoryManagementAction::MOVE) {
-    return makeFailedResult(task);
+    return makeResult(task, ManageMemoryStatus::FAILURE);
   }
 
   switch (task.action) {
@@ -49,13 +46,13 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
       {
         std::lock_guard<std::mutex> lock(reservation_mutex_);
         if (reservations_.contains(task.task_id.id)) {
-          return makeFailedResult(task);
+          return makeResult(task, ManageMemoryStatus::FAILURE);
         }
         if (task.memory_layout == KvMemoryLayout::PerLayer) {
-          return makeFailedResult(task);
+          return makeResult(task, ManageMemoryStatus::FAILURE);
         }
         if (task.input_seq_len < 0) {
-          return makeFailedResult(task);
+          return makeResult(task, ManageMemoryStatus::FAILURE);
         }
         reservations_.emplace(
             task.task_id.id,
@@ -63,17 +60,18 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
       }
 
       std::vector<KvDestination> locations;
-      if (!allocateKv(task, locations)) {
+      auto allocStatus = allocateKv(task, locations);
+      if (allocStatus != ManageMemoryStatus::SUCCESS) {
         std::lock_guard<std::mutex> lock(reservation_mutex_);
         reservations_.erase(task.task_id.id);
-        return makeFailedResult(task);
+        return makeResult(task, allocStatus);
       }
 
       {
         std::lock_guard<std::mutex> lock(reservation_mutex_);
         reservations_[task.task_id.id].locations = locations;
       }
-      return makeSuccessResult(task, std::move(locations));
+      return makeResult(task, ManageMemoryStatus::SUCCESS, std::move(locations));
     }
     case MemoryManagementAction::DEALLOCATE: {
       std::vector<KvDestination> locations;
@@ -81,20 +79,20 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
         std::lock_guard<std::mutex> lock(reservation_mutex_);
         auto it = reservations_.find(task.task_id.id);
         if (it == reservations_.end()) {
-          return makeFailedResult(task);
+          return makeResult(task, ManageMemoryStatus::FAILURE);
         }
         if (it->second.layout != task.memory_layout) {
-          return makeFailedResult(task);
+          return makeResult(task, ManageMemoryStatus::FAILURE);
         }
         locations = std::move(it->second.locations);
         reservations_.erase(it);
       }
 
       deallocateKv(locations);
-      return makeSuccessResult(task, {});
+      return makeResult(task, ManageMemoryStatus::SUCCESS);
     }
     default:
-      return makeFailedResult(task);
+      return makeResult(task, ManageMemoryStatus::FAILURE);
   }
 }
 

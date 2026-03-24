@@ -108,11 +108,24 @@ void SpPipelineRunner::stop() {
 
 void SpPipelineRunner::memoryLoop() {
   tt::domain::ManageMemoryTask task{};
+  std::vector<tt::domain::ManageMemoryTask> retryQueue;
+
   while (!stopped.load(std::memory_order_relaxed)) {
-    if (memoryRequests_.tryReadRequest(task)) {
+    if (!retryQueue.empty()) {
+      auto result = memoryManager_.handle_task(retryQueue.front());
+      if (result.status != domain::ManageMemoryStatus::WAITING) {
+        std::lock_guard<std::mutex> lock(resultWriteMutex_);
+        memoryResults_.writeResult(result);
+        retryQueue.erase(retryQueue.begin());
+      }
+    } else if (memoryRequests_.tryReadRequest(task)) {
       auto result = memoryManager_.handle_task(task);
-      std::lock_guard<std::mutex> lock(resultWriteMutex_);
-      memoryResults_.writeResult(result);
+      if (result.status == domain::ManageMemoryStatus::WAITING) {
+        retryQueue.push_back(task);
+      } else {
+        std::lock_guard<std::mutex> lock(resultWriteMutex_);
+        memoryResults_.writeResult(result);
+      }
     } else {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }

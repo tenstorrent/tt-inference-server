@@ -34,9 +34,15 @@ struct ManageMemoryTask {
   KvMemoryLayout memory_layout{KvMemoryLayout::Paged};
 };
 
+enum class ManageMemoryStatus : std::uint8_t {
+  SUCCESS = 0,
+  FAILURE = 1,
+  WAITING = 2,
+};
+
 struct ManageMemoryResult {
   TaskID task_id;
-  bool success{false};
+  ManageMemoryStatus status{ManageMemoryStatus::FAILURE};
   std::vector<KvDestination> memory_locations;
 };
 
