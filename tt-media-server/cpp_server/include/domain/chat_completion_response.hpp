@@ -19,11 +19,15 @@ namespace tt::domain {
 struct ChatCompletionMessage {
   std::string role = "assistant";
   std::string content;
+  std::optional<std::string> reasoning;
 
   Json::Value toJson() const {
     Json::Value json;
     json["role"] = role;
     json["content"] = content;
+    if (reasoning.has_value()) {
+      json["reasoning"] = reasoning.value();
+    }
     return json;
   }
 };
@@ -93,6 +97,7 @@ struct ChatCompletionResponse {
       ChatCompletionChoice chatChoice;
       chatChoice.index = choice.index;
       chatChoice.message.content = choice.text;
+      chatChoice.message.reasoning = choice.reasoning;
       chatChoice.finish_reason = choice.finish_reason.value_or("stop");
       response.choices.push_back(std::move(chatChoice));
     }
