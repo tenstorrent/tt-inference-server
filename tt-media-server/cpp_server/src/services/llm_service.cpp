@@ -187,7 +187,10 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
             taskId, static_cast<int64_t>(token.token_id), decodedText);
       }
 
-      // Always emit response (send all tokens to client)
+      if (!parseResult.should_emit && !isFinal) {
+        continue;
+      }
+
       domain::StreamingChunkResponse response{domain::TaskID(taskId)};
       response.id = taskId;
       response.created =
@@ -248,7 +251,8 @@ domain::CompletionResponse LLMService::processRequest(
   std::condition_variable cv;
   bool done = false;
 
-  std::string accumulatedText;
+  std::string accumulatedAnswer;
+  std::string accumulatedReasoning;
   int completionTokens = 0;
   std::string finishReason = "stop";
 
@@ -263,11 +267,10 @@ domain::CompletionResponse LLMService::processRequest(
       std::move(request),
       [&](domain::StreamingChunkResponse& chunk, bool isFinal) {
         if (!chunk.choices.empty()) {
-          // Accumulate both reasoning and text content
           if (chunk.choices[0].reasoning.has_value()) {
-            accumulatedText.append(chunk.choices[0].reasoning.value());
+            accumulatedReasoning.append(chunk.choices[0].reasoning.value());
           }
-          accumulatedText.append(chunk.choices[0].text);
+          accumulatedAnswer.append(chunk.choices[0].text);
           completionTokens++;
           if (chunk.choices[0].finish_reason.has_value()) {
             finishReason = chunk.choices[0].finish_reason.value();
@@ -291,7 +294,11 @@ domain::CompletionResponse LLMService::processRequest(
                          .count();
 
   domain::CompletionChoice choice;
-  choice.text = std::move(accumulatedText);
+  choice.text = std::move(accumulatedAnswer);
+  choice.reasoning =
+      accumulatedReasoning.empty()
+          ? std::nullopt
+          : std::optional<std::string>(std::move(accumulatedReasoning));
   choice.index = 0;
   choice.finish_reason = finishReason;
   response.choices.push_back(std::move(choice));
@@ -359,18 +366,6 @@ void LLMService::processStreamingRequest(
   sequence->samplingParams = std::make_unique<llm_engine::SamplingParams>(
       tt::utils::mapper::mapSamplingParams(request));
   queue_manager_->task_queue->push(*std::move(sequence));
-}
-
-void LLMService::postProcess(domain::CompletionResponse& response) const {
-  // Parse and strip reasoning blocks from all choices
-  if (reasoning_parser_) {
-    for (auto& choice : response.choices) {
-      auto result = reasoning_parser_->parseComplete(choice.text);
-
-      // Replace text with answer only (reasoning stripped)
-      choice.text = std::move(result.answer);
-    }
-  }
 }
 
 std::shared_ptr<tt::sockets::InterServerService> LLMService::getSocketService()

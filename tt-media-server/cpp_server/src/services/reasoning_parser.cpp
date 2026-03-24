@@ -119,8 +119,7 @@ TokenParseResult ReasoningParser::processToken(const std::string& taskId,
     state.in_reasoning = true;
     state.seen_think_start = true;
     TT_LOG_DEBUG("[ReasoningParser] Task {} entered reasoning block", taskId);
-    // Return as reasoning content (send to client with reasoning tag)
-    return {ContentType::REASONING, decodedText, true};
+    return {ContentType::REASONING, "", false};
 
   } else if (tokenId == THINK_END_TOKEN) {
     // Exiting reasoning block
@@ -131,8 +130,7 @@ TokenParseResult ReasoningParser::processToken(const std::string& taskId,
     }
     state.in_reasoning = false;
     TT_LOG_DEBUG("[ReasoningParser] Task {} exited reasoning block", taskId);
-    // Return as reasoning content (end marker, send to client)
-    return {ContentType::REASONING, decodedText, true};
+    return {ContentType::REASONING, "", false};
 
   } else if (state.in_reasoning) {
     // Inside reasoning block - tag as reasoning content

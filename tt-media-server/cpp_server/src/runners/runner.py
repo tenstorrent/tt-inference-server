@@ -41,7 +41,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--cache-path",
         type=Path,
-        default=Path("/mnt/models/deepseek-ai/cache-2026-03-09"),
+        default=Path("/mnt/models/deepseek-ai/cache-2026-03-22"),
         help="Path to the weight cache directory (required for --weights real)",
     )
     parser.add_argument(

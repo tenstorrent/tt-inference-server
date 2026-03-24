@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "config/types.hpp"
@@ -76,9 +77,8 @@ class Tokenizer {
   std::vector<int> encode(const std::string& text) const;
 
   /**
-   * Decode token IDs to text. When the model defines a special-token decode
-   * threshold (e.g. Llama 3 >= 128000), tokens at or above that ID are filtered
-   * out.
+   * Decode token IDs to text. Special tokens (parsed from the tokenizer JSON's
+   * added_tokens with "special": true) are filtered out before decoding.
    * @throws std::runtime_error if tokenizer not loaded.
    */
   std::string decode(const std::vector<int>& tokenIds) const;
@@ -87,7 +87,6 @@ class Tokenizer {
   bool isLoaded() const;
 
   virtual std::string modelName() const = 0;
-  virtual int specialTokenDecodeThreshold() const = 0;
   virtual std::vector<int64_t> stopTokenIds() const = 0;
 
   /**
@@ -100,8 +99,7 @@ class Tokenizer {
  protected:
   std::unique_ptr<tokenizers::Tokenizer> tok_;
   TokenizerConfig cfg_;
-  mutable int cached_special_token_threshold_ =
-      -2;  // -2 = unset, then special_token_decode_threshold()
+  std::unordered_set<int> special_token_ids_;
 };
 
 /**
