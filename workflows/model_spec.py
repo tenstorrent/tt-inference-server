@@ -1500,7 +1500,7 @@ llm_templates = [
             "allenai/OLMo-3.1-32B-Think",
         ],
         impl=olmo3_32b_galaxy_impl,
-        tt_metal_commit="b0c2f63",
+        tt_metal_commit="ebef510",
         vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1520,6 +1520,7 @@ llm_templates = [
                 },
                 override_tt_config={
                     "dispatch_core_axis": "col",
+                    "sample_on_device_mode": "all",
                     "fabric_config": "FABRIC_1D_RING",
                     "worker_l1_size": 1344544,
                     "trace_region_size": 184915840,

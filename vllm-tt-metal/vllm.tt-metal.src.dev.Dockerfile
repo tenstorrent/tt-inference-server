@@ -175,9 +175,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     ${TT_METAL_HOME} ${TT_METAL_HOME}
 
-# Copy complete vllm installation  
+# Copy complete vllm installation
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     ${vllm_dir} ${vllm_dir}
+
+# Overlay TT platform with additional model registrations (OLMo, etc.)
+# This replaces the upstream vllm/platforms/tt.py with our extended version
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    "docker_overlays/tt_platform_tt.py" "${vllm_dir}/vllm/platforms/tt.py"
 
 # Copy complete tt-smi installation  
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
