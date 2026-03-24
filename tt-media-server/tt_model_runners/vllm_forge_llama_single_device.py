@@ -47,10 +47,12 @@ class VLLMForgeLlamaSingleDeviceRunner(BaseDeviceRunner):
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
             additional_config={
                 "enable_const_eval": True,
-                "min_context_len": self.settings.vllm.min_context_length,
+                "min_context_len": self.settings.vllm.max_model_length if os.environ.get("SINGLE_GRAPH") else self.settings.vllm.min_context_length,
                 "experimental_weight_dtype": "bfp8",
-                "cpu_sampling": True,
-                "optimization_level": 1,
+                "cpu_sampling": os.environ.get("CPU_SAMPLING", "true").lower() in ("1", "true"),
+                "optimization_level": int(os.environ.get("OPTIMIZATION_LEVEL", 1)),
+                "num_hidden_layers": int(os.environ.get("NUM_HIDDEN_LAYERS", 0)),
+                "enable_trace": os.environ.get("ENABLE_TRACE", "").lower() in ("1", "true"),
             },
         )
         self.logger.info(
