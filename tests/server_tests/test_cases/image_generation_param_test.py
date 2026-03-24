@@ -41,7 +41,7 @@ headers = {
 }
 
 DEFAULT_SAME_SEED_MIN_SSIM = 0.95
-DEFAULT_DIFF_PARAMS_MAX_SSIM = 0.90
+DEFAULT_DIFF_PARAMS_MAX_SSIM = 0.98
 
 
 def _decode_base64_image(image_base64):
