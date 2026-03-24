@@ -919,9 +919,9 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.VLLMForge_LLAMA_SINGLE_DEVICE, DeviceTypes.P300X2): {
-        "device_mesh_shape": (2, 2),
+        "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
 }
