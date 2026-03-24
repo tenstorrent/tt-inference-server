@@ -291,6 +291,7 @@ class DeviceModelSpec:
     vllm_args: Dict[str, str] = field(default_factory=dict)
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     env_vars: Dict[str, str] = field(default_factory=dict)
+    tensor_cache_timeout: float = 3600.0
     system_requirements: Optional[SystemRequirements] = None
 
     def __post_init__(self):
@@ -870,6 +871,8 @@ class ModelSpecTemplate:
                     vllm_args=device_model_spec.vllm_args,
                     override_tt_config=device_model_spec.override_tt_config,
                     env_vars=device_model_spec.env_vars,
+                    tensor_cache_timeout=device_model_spec.tensor_cache_timeout,
+                    system_requirements=device_model_spec.system_requirements,
                 )
                 spec = ModelSpec(
                     # Core identity
@@ -975,6 +978,7 @@ llm_templates = [
                 max_concurrency=1,
                 max_context=16 * 1024,
                 default_impl=True,
+                tensor_cache_timeout=5400.0,
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -982,6 +986,7 @@ llm_templates = [
                 # complete else they will timeout due to hitting the vLLM RPC recv 30min timeout
                 max_context=128 * 1024,
                 default_impl=True,
+                tensor_cache_timeout=5400.0,
                 env_vars={
                     "MESH_DEVICE": "(4, 8)",  # Override default TG->(8,4) to use (4,8) mesh grid
                     "TT_MM_THROTTLE_PERF": 2,
@@ -1384,6 +1389,7 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                tensor_cache_timeout=5400.0,
                 override_tt_config={
                     "trace_region_size": 30712832,
                 },
@@ -1393,6 +1399,7 @@ llm_templates = [
                 max_concurrency=32 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
+                tensor_cache_timeout=5400.0,
                 override_tt_config={
                     "trace_region_size": 30712832,
                     "data_parallel": 4,
@@ -1406,6 +1413,7 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                tensor_cache_timeout=5400.0,
                 override_tt_config={
                     "trace_region_size": 30712832,
                     "fabric_config": "FABRIC_1D",
@@ -1464,6 +1472,7 @@ llm_templates = [
                 max_concurrency=8 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
+                tensor_cache_timeout=5400.0,
                 vllm_args={
                     "data_parallel_size": 4,
                 },
@@ -1503,6 +1512,7 @@ llm_templates = [
                 max_concurrency=32 * 8,
                 max_context=2048,
                 default_impl=True,
+                tensor_cache_timeout=6400.0,
                 vllm_args={
                     "max_model_len": "2048",
                 },
@@ -1512,6 +1522,7 @@ llm_templates = [
                 max_concurrency=32 * 8,  # 32 per DP rank * 8 ranks
                 max_context=2048,
                 default_impl=True,
+                tensor_cache_timeout=6400.0,
                 vllm_args={
                     "data_parallel_size": 8,
                     "block_size": "32",
@@ -1572,6 +1583,7 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                tensor_cache_timeout=5400.0,
                 override_tt_config={
                     "trace_region_size": 30000000,
                 },
@@ -1600,6 +1612,7 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                tensor_cache_timeout=5400.0,
                 override_tt_config={
                     "trace_region_size": 30000000,
                 },
@@ -1619,6 +1632,7 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                tensor_cache_timeout=5400.0,
                 override_tt_config={
                     "trace_region_size": 51453952,
                 },
@@ -1663,8 +1677,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 56000000,
+                    "trace_region_size": 58000000,
                 },
             ),
         ],
@@ -1697,6 +1712,7 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                tensor_cache_timeout=5400.0,
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
                     "MAX_PREFILL_CHUNK_SIZE": "32",
@@ -2687,8 +2703,38 @@ audio_tts_templates = [
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
+        weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
+        tt_metal_commit="e4a2dea",
+        impl=whisper_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        model_type=ModelType.AUDIO,
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300,
+                max_concurrency=2,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=4,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
         weights=["microsoft/speecht5_tts"],
-        tt_metal_commit="a9b09e0",
+        tt_metal_commit="e4a2dea",
         impl=speecht5_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2709,6 +2755,36 @@ audio_tts_templates = [
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
+    ),
+    ModelSpecTemplate(
+        weights=["microsoft/speecht5_tts"],
+        tt_metal_commit="e4a2dea",
+        impl=speecht5_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        model_type=ModelType.TEXT_TO_SPEECH,
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300,
+                max_concurrency=2,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=4,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
 ]
 

@@ -3,6 +3,8 @@
 
 #include "utils/tokenizer.hpp"
 
+#include <json/json.h>
+
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -17,6 +19,30 @@ namespace tt::utils {
 // ---------------------------------------------------------------------------
 // Tokenizer base class
 // ---------------------------------------------------------------------------
+
+namespace {
+
+std::unordered_set<int> parseSpecialTokenIds(const std::string& jsonBlob) {
+  std::unordered_set<int> ids;
+  Json::CharReaderBuilder builder;
+  Json::Value root;
+  std::string errs;
+  std::istringstream iss(jsonBlob);
+  if (!Json::parseFromStream(builder, iss, &root, &errs)) {
+    return ids;
+  }
+  const Json::Value& added = root["added_tokens"];
+  if (!added.isArray()) return ids;
+  for (const auto& tok : added) {
+    if (tok.isMember("special") && tok["special"].asBool() &&
+        tok.isMember("id")) {
+      ids.insert(tok["id"].asInt());
+    }
+  }
+  return ids;
+}
+
+}  // namespace
 
 Tokenizer::Tokenizer(const std::string& path) {
   if (path.empty()) {
@@ -35,6 +61,7 @@ Tokenizer::Tokenizer(const std::string& path) {
 
   if (path.size() >= 5 && path.compare(path.size() - 5, 5, ".json") == 0) {
     tok_ = tokenizers::Tokenizer::FromBlobJSON(blob);
+    special_token_ids_ = parseSpecialTokenIds(blob);
   } else if (path.size() >= 7 &&
              path.compare(path.size() - 7, 7, ".model") == 0) {
     tok_ = tokenizers::Tokenizer::FromBlobSentencePiece(blob);
@@ -54,7 +81,8 @@ Tokenizer::Tokenizer(const std::string& path) {
     cfg_ = getTokenizerConfig(configPath.string());
   }
 
-  TT_LOG_INFO("[TokenizerUtil] Loaded tokenizer from: {}", path);
+  TT_LOG_INFO("[TokenizerUtil] Loaded tokenizer from: {} ({} special tokens)",
+              path, special_token_ids_.size());
 }
 
 bool Tokenizer::isLoaded() const { return tok_ != nullptr; }
@@ -74,20 +102,19 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds) const {
   }
   if (tokenIds.empty()) return "";
 
-  if (cached_special_token_threshold_ == -2) {
-    cached_special_token_threshold_ = specialTokenDecodeThreshold();
+  if (special_token_ids_.empty()) {
+    return tok_->Decode(tokenIds);
   }
-  int threshold = cached_special_token_threshold_;
-  if (threshold > 0) {
-    std::vector<int> filtered;
-    filtered.reserve(tokenIds.size());
-    for (int id : tokenIds) {
-      if (id < threshold) filtered.push_back(id);
+
+  std::vector<int> filtered;
+  filtered.reserve(tokenIds.size());
+  for (int id : tokenIds) {
+    if (special_token_ids_.find(id) == special_token_ids_.end()) {
+      filtered.push_back(id);
     }
-    if (filtered.empty()) return "";
-    return tok_->Decode(filtered);
   }
-  return tok_->Decode(tokenIds);
+  if (filtered.empty()) return "";
+  return tok_->Decode(filtered);
 }
 
 // ---------------------------------------------------------------------------

@@ -356,6 +356,7 @@ set(SOURCES
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
     src/services/memory_manager.cpp
+    src/services/reasoning_parser.cpp
     src/utils/tokenizer.cpp
     src/utils/logger.cpp
     src/utils/deepseek_tokenizer.cpp
