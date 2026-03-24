@@ -356,9 +356,11 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
             if request.use_base_model:
                 self._active_model = self.hf_base_model_inference
+                self.logger.info("Using base model for inference")
             else:
                 self._active_model = self.hf_fine_tuned_model_inference
-
+                self.logger.info(f"Using fine-tuned model for inference from {PEFT_MODEL_PATH}")
+            
             self._active_model.to(self.device)
             self.compiled_inference_model = torch.compile(
                 self._active_model, backend="tt"
@@ -369,7 +371,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         user_prompt = [request.prompt]
 
         input_args = self.construct_inputs(
-            user_prompt, self.tokenizer,
+            user_prompt, 
             self._active_model.config, batch_size, max_cache_len,
         )
 
@@ -377,20 +379,19 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         input_args = self.transfer_inputs_to_device(input_args, self.device)
 
-        self.run_generate(
+        output_tokens = self.run_generate(
             self.compiled_inference_model,
             input_args,
-            self.tokenizer,
             self.device,
             max_tokens_to_generate,
             user_prompt,
         )
 
-        return ["DONE"]
+        return ["".join(output_tokens)]
 
     def construct_inputs(
-        self, input_prompt: str,
-        tokenizer: PreTrainedTokenizer,
+        self, 
+        input_prompt: str,
         model_config,
         batch_size: int,
         max_cache_len: int,
@@ -400,7 +401,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         Args:
             input_prompt: Input text prompt
-            tokenizer: Tokenizer instance
             model_config: Model configuration
             batch_size: Batch size
             max_cache_len: Maximum cache length
@@ -408,7 +408,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         Returns:
             Dictionary containing input_ids, past_key_values, cache_position, and use_cache
         """
-        inputs = tokenizer(
+        inputs = self.tokenizer(
             input_prompt,
             return_tensors="pt",
             max_length=32,
@@ -472,7 +472,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
     def run_generate(
         self, compiled_model: torch.nn.Module,
         input_args: dict,
-        tokenizer: PreTrainedTokenizer,
         device: torch.device,
         max_tokens_to_generate: int = 128,
         input_prompt: List[str] = [""],
@@ -483,7 +482,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         Args:
             compiled_model: Compiled model instance
             input_args: Input arguments dictionary
-            tokenizer: Tokenizer instance
             device: Device
             max_tokens_to_generate: Maximum number of tokens to generate
         """
@@ -493,21 +491,18 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             for step in range(max_tokens_to_generate):
                 if step == 0:
                     self.logger.info("RUNNING PREFILL")
-                    print(f"Result: {input_prompt[0]}", end="", flush=True)
 
                 # Run forward pass
                 output: CausalLMOutputWithPast = compiled_model(**input_args)
                 output_logits: torch.Tensor = output.logits.to("cpu")
                 next_token_id = output_logits[:, -1].argmax(dim=-1)
-                output_text = [tokenizer.decode(next_token_id[i]) for i in range(num_users)]
+                output_text = [self.tokenizer.decode(next_token_id[i]) for i in range(num_users)]
                 for i, output_tokens_list in enumerate(output_tokens):
                     output_tokens_list.append(output_text[i])
-                    print(output_text[i], end="", flush=True)
 
                 # Check for EOS token and early exit
-                if torch.all(next_token_id == tokenizer.eos_token_id):
-                    self.logger.info("")  # Add newline after generation completes
-                    break
+                if torch.all(next_token_id == self.tokenizer.eos_token_id):
+                    return output_tokens[0]
 
                 # Update inputs for next iteration
                 input_args["input_ids"] = next_token_id.unsqueeze(-1).to(device)
@@ -515,4 +510,5 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 host_cache_pos = input_args["cache_position"].to("cpu")
                 host_cache_pos = torch.tensor([host_cache_pos[-1:] + 1])
                 input_args["cache_position"] = host_cache_pos.to(device)
+        return output_tokens[0]
 
