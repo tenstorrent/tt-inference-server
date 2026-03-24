@@ -3,10 +3,14 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import asyncio
+import base64
+import io
 import logging
 import time
 
 import aiohttp
+import numpy as np
+from PIL import Image
 from server_tests.base_test import BaseTest
 
 # Set up logging
@@ -36,6 +40,53 @@ headers = {
     "Authorization": "Bearer your-secret-key",
 }
 
+DEFAULT_SAME_SEED_MIN_SSIM = 0.95
+DEFAULT_DIFF_PARAMS_MAX_SSIM = 0.90
+
+
+def _decode_base64_image(image_base64):
+    image_bytes = base64.b64decode(image_base64)
+    return Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+
+def _extract_first_image(response_data):
+    """Extract the first base64 image string from an API response dict."""
+    images = response_data.get("images", [])
+    if not images:
+        return None
+    return images[0]
+
+
+def compute_image_ssim(response_a, response_b):
+    """Compute structural similarity between two API response images.
+
+    Uses a simplified SSIM approximation based on local statistics
+    over 8x8 blocks, avoiding the need for scipy/skimage.
+    """
+    img_a_b64 = _extract_first_image(response_a)
+    img_b_b64 = _extract_first_image(response_b)
+    if img_a_b64 is None or img_b_b64 is None:
+        return 0.0
+
+    arr_a = np.array(_decode_base64_image(img_a_b64), dtype=np.float64)
+    arr_b = np.array(_decode_base64_image(img_b_b64), dtype=np.float64)
+
+    if arr_a.shape != arr_b.shape:
+        return 0.0
+
+    c1 = (0.01 * 255) ** 2
+    c2 = (0.03 * 255) ** 2
+
+    mu_a = arr_a.mean()
+    mu_b = arr_b.mean()
+    sigma_a_sq = arr_a.var()
+    sigma_b_sq = arr_b.var()
+    sigma_ab = ((arr_a - mu_a) * (arr_b - mu_b)).mean()
+
+    numerator = (2 * mu_a * mu_b + c1) * (2 * sigma_ab + c2)
+    denominator = (mu_a**2 + mu_b**2 + c1) * (sigma_a_sq + sigma_b_sq + c2)
+    return float(numerator / denominator)
+
 
 class ImageGenerationParamTest(BaseTest):
     async def _run_specific_test_async(self):
@@ -54,17 +105,36 @@ class ImageGenerationParamTest(BaseTest):
 
         logger.info("Received %s responses", len(response_data_list))
 
-        same_requests = response_data_list[0] == response_data_list[1]
-        guidance_scale_differs = response_data_list[0] != response_data_list[2]
+        same_seed_min_ssim = self.targets.get(
+            "same_seed_min_ssim", DEFAULT_SAME_SEED_MIN_SSIM
+        )
+        diff_params_max_ssim = self.targets.get(
+            "diff_params_max_ssim", DEFAULT_DIFF_PARAMS_MAX_SSIM
+        )
+
+        ssim_same = compute_image_ssim(response_data_list[0], response_data_list[1])
+        ssim_diff = compute_image_ssim(response_data_list[0], response_data_list[2])
+
+        same_requests = ssim_same >= same_seed_min_ssim
+        guidance_scale_differs = ssim_diff < diff_params_max_ssim
 
         logger.info(
-            "response[0]==response[1]: %s, response[0]!=response[2]: %s",
+            "SSIM(response[0], response[1])=%.4f (threshold >= %.2f): %s",
+            ssim_same,
+            same_seed_min_ssim,
             same_requests,
+        )
+        logger.info(
+            "SSIM(response[0], response[2])=%.4f (threshold < %.2f): %s",
+            ssim_diff,
+            diff_params_max_ssim,
             guidance_scale_differs,
         )
 
         return {
             "num_responses": len(response_data_list),
+            "same_seed_ssim": ssim_same,
+            "diff_params_ssim": ssim_diff,
             "same_requests_match": same_requests,
             "guidance_scale_differs": guidance_scale_differs,
             "success": same_requests and guidance_scale_differs,
