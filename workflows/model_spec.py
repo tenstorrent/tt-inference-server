@@ -1502,7 +1502,6 @@ llm_templates = [
         impl=olmo3_32b_galaxy_impl,
         tt_metal_commit="ebef510",
         vllm_commit="8f36910",
-        docker_image="ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.11.0-ebef510-8f36910-olmo",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
