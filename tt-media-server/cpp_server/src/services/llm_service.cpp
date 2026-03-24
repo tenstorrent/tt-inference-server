@@ -29,6 +29,10 @@ LLMService::LLMService()
   size_t numWorkers = tt::config::numWorkers();
   max_queue_size_ = tt::config::maxQueueSize();
 
+  const auto STOP_IDS = tokenizer_->stopTokenIds();
+  stop_token_set_ =
+      std::unordered_set<int64_t>(STOP_IDS.begin(), STOP_IDS.end());
+
   worker_manager_ = std::make_unique<tt::worker::WorkerManager>(numWorkers);
   reasoning_parser_ = std::make_unique<ReasoningParser>();
 
@@ -133,6 +137,49 @@ void LLMService::stop() {
   queue_manager_->clear();
 }
 
+domain::StreamingChunkResponse LLMService::createStreamingChunkResponse(
+    const std::string& taskId, const ipc::SharedToken& token, bool isFinal,
+    bool skipSpecialTokens) {
+  TokenParseResult parseResult{ContentType::ANSWER, "", true};
+  if (reasoning_parser_) {
+    std::string decodedText =
+        tokenizer_->decode({static_cast<int>(token.token_id)},
+                           skipSpecialTokens);
+    parseResult = reasoning_parser_->processToken(
+        taskId, static_cast<int64_t>(token.token_id), decodedText);
+  }
+
+  domain::StreamingChunkResponse response{domain::TaskID(taskId)};
+  response.id = taskId;
+  response.created = std::chrono::duration_cast<std::chrono::seconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
+
+  domain::CompletionChoice choice;
+  choice.index = token.token_index;
+
+  if (parseResult.type == ContentType::REASONING) {
+    choice.text = "";
+    choice.reasoning = parseResult.text;
+  } else {
+    choice.text = parseResult.text;
+    choice.reasoning = std::nullopt;
+  }
+
+  if (token.isError()) {
+    choice.finish_reason = "error";
+  } else {
+    choice.token_id = static_cast<int64_t>(token.token_id);
+    if (isFinal) {
+      bool isStop =
+          stop_token_set_.count(static_cast<int64_t>(token.token_id)) > 0;
+      choice.finish_reason = isStop ? "stop" : "length";
+    }
+  }
+  response.choices.push_back(std::move(choice));
+  return response;
+}
+
 void LLMService::consumerLoopForWorker(size_t workerIdx) {
   ZoneScopedN("LLMService::consumer_loop");
   tracy_config::tracySetThreadName(
@@ -145,10 +192,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", workerIdx);
     return;
   }
-
-  const auto STOP_IDS = tokenizer_->stopTokenIds();
-  const std::unordered_set<int64_t> STOP_TOKEN_SET(STOP_IDS.begin(),
-                                                   STOP_IDS.end());
 
   while (running_) {
     if (!worker_manager_->checkWorkerAlive(workerIdx)) {
@@ -163,71 +206,22 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     while (worker->cfg.result_queue->blockingPop(token)) {
       anyActivity = true;
 
-      auto val = stream_callbacks_.get(token.task_id);
-      if (!val.has_value()) {
-        throw std::runtime_error("callback not found for task_id: " +
-                                 std::string(token.task_id));
-      }
-      auto callback = val.value();
-
-      std::string taskId = std::string(token.task_id);
+      std::string taskId(token.task_id);
       bool isFinal = token.isFinal();
 
+      auto entry = stream_callbacks_.get(taskId);
+      if (!entry.has_value()) {
+        throw std::runtime_error("callback not found for task_id: " + taskId);
+      }
+
       if (isFinal) {
-        stream_callbacks_.erase(token.task_id);
+        stream_callbacks_.erase(taskId);
         pending_tasks_.fetch_sub(1);
       }
 
-      // Process token through reasoning parser to determine content type
-      TokenParseResult parseResult{ContentType::ANSWER, "", true};
-      if (reasoning_parser_) {
-        std::string decodedText =
-            tokenizer_->decode({static_cast<int>(token.token_id)});
-        parseResult = reasoning_parser_->processToken(
-            taskId, static_cast<int64_t>(token.token_id), decodedText);
-      }
-
-      // Always emit response (send all tokens to client)
-      domain::StreamingChunkResponse response{domain::TaskID(taskId)};
-      response.id = taskId;
-      response.created =
-          std::chrono::duration_cast<std::chrono::seconds>(
-              std::chrono::system_clock::now().time_since_epoch())
-              .count();
-
-      domain::CompletionChoice choice;
-      choice.index = token.token_index;
-
-      // Set text based on content type
-      if (parseResult.type == ContentType::REASONING) {
-        // This is reasoning content - put in reasoning field
-        choice.text = "";  // Empty normal text
-        choice.reasoning = parseResult.text;
-      } else {
-        // This is answer content - put in text field
-        choice.text = parseResult.text;
-        choice.reasoning = std::nullopt;
-      }
-
-      if (token.isError()) {
-        choice.finish_reason = "error";
-      } else {
-        choice.token_id = static_cast<int64_t>(token.token_id);
-        if (isFinal) {
-          bool isStop =
-              STOP_TOKEN_SET.count(static_cast<int64_t>(token.token_id)) > 0;
-          choice.finish_reason = isStop ? "stop" : "length";
-        }
-      }
-      response.choices.push_back(std::move(choice));
-
-      callback(response, isFinal);
+      entry->token_handler(token, isFinal);
 
       if (isFinal) {
-        // Clean up reasoning parser state for this task
-        if (reasoning_parser_) {
-          reasoning_parser_->finalizeTask(taskId);
-        }
         TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
       }
     }
@@ -322,9 +316,20 @@ void LLMService::processStreamingRequest(
   pending_tasks_.fetch_add(1);
   TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
 
-  stream_callbacks_.insert(taskId, std::move(callback));
+  bool skipSpecial = request.skip_special_tokens;
+  TaskCallbackEntry entry;
+  entry.stream_callback = callback;
+  entry.token_handler = [this, cb = std::move(callback), taskId, skipSpecial](
+                             const ipc::SharedToken& token, bool isFinal) {
+    auto response =
+        createStreamingChunkResponse(taskId, token, isFinal, skipSpecial);
+    cb(response, isFinal);
+    if (isFinal && reasoning_parser_) {
+      reasoning_parser_->finalizeTask(taskId);
+    }
+  };
+  stream_callbacks_.insert(taskId, std::move(entry));
 
-  // Initialize reasoning parser state for this task
   if (reasoning_parser_) {
     reasoning_parser_->initializeTask(taskId);
   }
@@ -376,11 +381,12 @@ void LLMService::setPrefillRequestCallback(PrefillRequestCallback callback) {
 
 std::optional<LLMService::StreamCallback> LLMService::detachStreamCallback(
     const std::string& taskId) {
-  auto val = stream_callbacks_.take(taskId);
-  if (val.has_value()) {
+  auto entry = stream_callbacks_.take(taskId);
+  if (entry.has_value()) {
     pending_tasks_.fetch_sub(1);
+    return std::move(entry->stream_callback);
   }
-  return val;
+  return std::nullopt;
 }
 
 void LLMService::submitDecodeContinuation(domain::CompletionRequest request,
@@ -389,7 +395,20 @@ void LLMService::submitDecodeContinuation(domain::CompletionRequest request,
 
   pending_tasks_.fetch_add(1);
   TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
-  stream_callbacks_.insert(taskId, std::move(callback));
+
+  bool skipSpecial = request.skip_special_tokens;
+  TaskCallbackEntry entry;
+  entry.stream_callback = callback;
+  entry.token_handler = [this, cb = std::move(callback), taskId, skipSpecial](
+                             const ipc::SharedToken& token, bool isFinal) {
+    auto response =
+        createStreamingChunkResponse(taskId, token, isFinal, skipSpecial);
+    cb(response, isFinal);
+    if (isFinal && reasoning_parser_) {
+      reasoning_parser_->finalizeTask(taskId);
+    }
+  };
+  stream_callbacks_.insert(taskId, std::move(entry));
 
   auto prompt = std::get<std::vector<int>>(request.prompt);
   std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
@@ -415,8 +434,7 @@ void LLMService::handleConnectionLost() {
   TT_LOG_ERROR("[LLMService] Failing pending tasks due to connection loss");
 
   stream_callbacks_.forEach(
-      [](const std::string& taskId,
-         std::function<void(domain::StreamingChunkResponse&, bool)>& callback) {
+      [](const std::string& taskId, TaskCallbackEntry& entry) {
         domain::StreamingChunkResponse errorResponse{domain::TaskID(taskId)};
         errorResponse.id = taskId;
         errorResponse.created =
@@ -431,7 +449,7 @@ void LLMService::handleConnectionLost() {
         errorResponse.choices.push_back(std::move(choice));
         errorResponse.error = "Connection to remote server lost";
 
-        callback(errorResponse, true);
+        entry.stream_callback(errorResponse, true);
       });
 
   stream_callbacks_.clear();

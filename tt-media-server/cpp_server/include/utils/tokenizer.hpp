@@ -77,11 +77,14 @@ class Tokenizer {
   std::vector<int> encode(const std::string& text) const;
 
   /**
-   * Decode token IDs to text. Special tokens (parsed from the tokenizer JSON's
-   * added_tokens with "special": true) are filtered out before decoding.
+   * Decode token IDs to text.
+   * @param skip_special_tokens If true (default), special tokens (parsed from
+   *   the tokenizer JSON's added_tokens with "special": true) are filtered out
+   *   before decoding. If false, all tokens are decoded as-is.
    * @throws std::runtime_error if tokenizer not loaded.
    */
-  std::string decode(const std::vector<int>& tokenIds) const;
+  std::string decode(const std::vector<int>& tokenIds,
+                     bool skip_special_tokens = true) const;
 
   /** Check if tokenizer is loaded and ready. */
   bool isLoaded() const;

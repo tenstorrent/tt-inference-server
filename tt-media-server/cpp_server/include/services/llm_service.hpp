@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include "config/types.hpp"
@@ -16,6 +17,7 @@
 #include "domain/completion_response.hpp"
 #include "domain/prefill_request.hpp"
 #include "ipc/queue_manager.hpp"
+#include "ipc/shared_memory.hpp"
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/streamable.hpp"
@@ -47,6 +49,14 @@ class LLMService
 
   using StreamCallback =
       std::function<void(domain::StreamingChunkResponse&, bool)>;
+  using TokenHandler =
+      std::function<void(const ipc::SharedToken&, bool)>;
+
+  struct TaskCallbackEntry {
+    StreamCallback stream_callback;
+    TokenHandler token_handler;
+  };
+
   std::optional<StreamCallback> detachStreamCallback(const std::string& taskId);
   void submitDecodeContinuation(domain::CompletionRequest request,
                                 StreamCallback callback);
@@ -74,26 +84,26 @@ class LLMService
 
  private:
   void startConsumers();
-
   void consumerLoopForWorker(size_t workerIdx);
+
+  domain::StreamingChunkResponse createStreamingChunkResponse(
+      const std::string& taskId, const ipc::SharedToken& token, bool isFinal,
+      bool skipSpecialTokens);
 
   tt::config::LLMMode mode_;
 
   std::vector<std::thread> consumer_threads_;
 
-  ConcurrentMap<std::string,
-                std::function<void(domain::StreamingChunkResponse&, bool)>>
-      stream_callbacks_;
+  ConcurrentMap<std::string, TaskCallbackEntry> stream_callbacks_;
 
   std::atomic<uint64_t> next_worker_{0};
-
   std::atomic<size_t> pending_tasks_{0};
-
   std::atomic<bool> running_{false};
 
   std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
   std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
   const tt::utils::Tokenizer* tokenizer_;
+  std::unordered_set<int64_t> stop_token_set_;
   std::shared_ptr<tt::sockets::InterServerService> socket_service_;
   std::unique_ptr<ReasoningParser> reasoning_parser_;
 

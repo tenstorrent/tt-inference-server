@@ -95,14 +95,15 @@ std::vector<int> Tokenizer::encode(const std::string& text) const {
   return tok_->Encode(text);
 }
 
-std::string Tokenizer::decode(const std::vector<int>& tokenIds) const {
+std::string Tokenizer::decode(const std::vector<int>& tokenIds,
+                              bool skip_special_tokens) const {
   if (!tok_) {
     throw std::runtime_error(
         "[TokenizerUtil] Tokenizer not loaded, cannot decode");
   }
   if (tokenIds.empty()) return "";
 
-  if (special_token_ids_.empty()) {
+  if (!skip_special_tokens || special_token_ids_.empty()) {
     return tok_->Decode(tokenIds);
   }
 
