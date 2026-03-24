@@ -1794,9 +1794,9 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="3f72232",
-        version="0.11.1",
-        vllm_commit="409b1cd",
+        tt_metal_commit="25305db",
+        version="0.9.0",
+        vllm_commit="6e67d2d",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(

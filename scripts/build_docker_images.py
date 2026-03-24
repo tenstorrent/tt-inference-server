@@ -63,7 +63,9 @@ def get_available_memory_gb():
     except (ValueError, OSError):
         pass
 
-    raise RuntimeError("Could not determine available memory")
+    # Fallback for macOS or other unsupported platforms
+    logger.warning("Could not determine available memory, defaulting to 64 GB")
+    return 64.0
 
 
 def get_docker_root_dir():
@@ -845,6 +847,27 @@ def validate_inputs(ubuntu_version, container_app_uid):
     logger.info(f"CONTAINER_APP_UID={container_app_uid} is within expected range.")
 
 
+def _get_version_from_model_specs(tt_metal_commit, vllm_commit):
+    """
+    Look up the version for a (tt_metal_commit, vllm_commit) pair from MODEL_SPECS.
+
+    Falls back to the VERSION file if no matching model spec is found.
+    """
+    for spec in MODEL_SPECS.values():
+        if spec.tt_metal_commit == tt_metal_commit and spec.vllm_commit == vllm_commit:
+            return spec.version
+
+    # Fallback to VERSION file
+    repo_root = get_repo_root_path()
+    version_file = repo_root / "VERSION"
+    fallback_version = version_file.read_text().strip()
+    logger.warning(
+        f"No model spec found for {tt_metal_commit}-{vllm_commit}, "
+        f"falling back to VERSION file: {fallback_version}"
+    )
+    return fallback_version
+
+
 def get_image_tags(
     tt_metal_commit,
     vllm_commit,
@@ -855,9 +878,7 @@ def get_image_tags(
     """
     Generate Docker image tags for all image types.
     """
-    repo_root = get_repo_root_path()
-    version_file = repo_root / "VERSION"
-    image_version = version_file.read_text().strip()
+    image_version = _get_version_from_model_specs(tt_metal_commit, vllm_commit)
 
     os_version = f"ubuntu-{ubuntu_version}-amd64"
     tt_metal_tag = tt_metal_commit
