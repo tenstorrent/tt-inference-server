@@ -59,7 +59,7 @@ class LLMService
 
  protected:
   void preProcess(domain::CompletionRequest& request) const override;
-  void postProcess(domain::CompletionResponse& response) const override;
+  void postProcess(domain::CompletionResponse&) const override {}
   size_t currentQueueSize() const override;
   domain::CompletionResponse processRequest(
       domain::CompletionRequest request) override;
