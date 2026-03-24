@@ -190,7 +190,7 @@ def test_instructions(report_test, api_client, request):
 
 
 @pytest.mark.xfail(
-    reason="vLLM does not strip prior instructions when using previous_response_id"
+    reason="vLLM does not strip prior instructions when using previous_response_id https://github.com/vllm-project/vllm/issues/37697"
 )
 def test_instructions_not_carried_over(report_test, api_client, request):
     """Tests that instructions from a previous response are not carried over when using previous_response_id.
