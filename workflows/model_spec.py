@@ -1300,6 +1300,7 @@ llm_templates = [
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["mistralai/Mistral-7B-Instruct-v0.3"],
@@ -1684,6 +1685,7 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=[
@@ -1942,6 +1944,7 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
