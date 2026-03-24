@@ -68,7 +68,7 @@ LLMController::LLMController() {
     return;
   }
 
-  const auto& c = tt::utils::ServiceContainer::global();
+  const auto& c = tt::utils::ServiceContainer::instance();
   service = c.llm;
   disaggregationService = c.disaggregation;
 
@@ -433,8 +433,10 @@ void LLMController::handleStreaming(
   try {
     if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
       service->submitStreamingRequest(*reqPtr, streamingCallback);
-    } else {
+    } else if (tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY) {
       disaggregationService->handleStreamingRequest(*reqPtr, streamingCallback);
+    } else {
+      throw std::runtime_error("[LLMController] LLM Mode must be regular or decode only to handle streaming requests via HTTP");
     }
   } catch (const services::QueueFullException& e) {
     auto resp = drogon::HttpResponse::newHttpJsonResponse(

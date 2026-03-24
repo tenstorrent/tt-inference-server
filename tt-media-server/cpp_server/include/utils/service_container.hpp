@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include <cassert>
 #include <memory>
+#include <stdexcept>
 
 namespace tt::services {
 class LLMService;
@@ -19,19 +19,30 @@ class InterServerService;
 
 namespace tt::utils {
 
-struct ServiceContainer {
+class ServiceContainer {
+ public:
+  ServiceContainer(const ServiceContainer&) = delete;
+  ServiceContainer& operator=(const ServiceContainer&) = delete;
+
+  static ServiceContainer& instance() {
+    static ServiceContainer container;
+    return container;
+  }
+
+  void initialize(std::shared_ptr<services::LLMService> llm,
+                  std::shared_ptr<services::EmbeddingService> embedding,
+                  std::shared_ptr<sockets::InterServerService> socket,
+                  std::shared_ptr<services::DisaggregationService> disaggregation);
+
+  std::shared_ptr<services::IService> configuredService() const;
+
   std::shared_ptr<services::LLMService> llm;
   std::shared_ptr<services::EmbeddingService> embedding;
   std::shared_ptr<sockets::InterServerService> socket;
   std::shared_ptr<services::DisaggregationService> disaggregation;
 
-  std::shared_ptr<services::IService> configuredService() const;
-
-  static void setGlobal(ServiceContainer container);
-  static const ServiceContainer& global();
-
  private:
-  static ServiceContainer* instance;
+  ServiceContainer() = default;
 };
 
 }  // namespace tt::utils

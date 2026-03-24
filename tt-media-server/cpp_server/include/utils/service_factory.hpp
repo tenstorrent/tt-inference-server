@@ -8,20 +8,9 @@
 namespace tt::utils::service_factory {
 
 /**
- * Build the full service dependency graph based on current configuration.
- * No side effects — just constructs and wires objects.
- */
-ServiceContainer buildServices();
-
-/**
- * Start all services in dependency order.
- * Must be called after buildServices(), before Drogon starts.
- */
-void startServices(ServiceContainer& container);
-
-/**
- * Convenience: build, start, and install as the global container.
- * Called once from main().
+ * Build, wire, and start all services based on current configuration.
+ * Populates the ServiceContainer singleton.
+ * Called once from main(), before Drogon starts.
  */
 void initializeServices();
 

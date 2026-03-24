@@ -15,30 +15,34 @@
 
 namespace tt::utils::service_factory {
 
-ServiceContainer buildServices() {
-  ServiceContainer c;
+void initializeServices() {
+  tracy_config::tracyStartMainProcess();
+
+  auto& c = ServiceContainer::instance();
+
+  std::shared_ptr<services::LLMService> llm;
+  std::shared_ptr<services::EmbeddingService> embedding;
+  std::shared_ptr<sockets::InterServerService> socket;
+  std::shared_ptr<services::DisaggregationService> disaggregation;
 
   if (tt::config::isLlmServiceEnabled()) {
-    c.llm = std::make_shared<services::LLMService>();
+    llm = std::make_shared<services::LLMService>();
 
     auto mode = tt::config::llmMode();
     if (mode != tt::config::LLMMode::REGULAR) {
-      c.socket = std::make_shared<sockets::InterServerService>();
-      c.socket->initializeFromConfig();
-      c.disaggregation = std::make_shared<services::DisaggregationService>(
-          mode, c.llm, c.socket);
+      socket = std::make_shared<sockets::InterServerService>();
+      socket->initializeFromConfig();
+      disaggregation = std::make_shared<services::DisaggregationService>(
+          mode, llm, socket);
     }
   }
 
   if (tt::config::isEmbeddingService()) {
-    c.embedding = std::make_shared<services::EmbeddingService>();
+    embedding = std::make_shared<services::EmbeddingService>();
   }
 
-  return c;
-}
-
-void startServices(ServiceContainer& c) {
-  tracy_config::tracyStartMainProcess();
+  c.initialize(std::move(llm), std::move(embedding), std::move(socket),
+               std::move(disaggregation));
 
   if (c.llm) {
     c.llm->start();
@@ -52,12 +56,6 @@ void startServices(ServiceContainer& c) {
     c.embedding->start();
     TT_LOG_INFO("[ServiceFactory] Embedding service started");
   }
-}
-
-void initializeServices() {
-  auto container = buildServices();
-  startServices(container);
-  ServiceContainer::setGlobal(std::move(container));
 }
 
 }  // namespace tt::utils::service_factory

@@ -44,18 +44,27 @@ void DisaggregationService::setupSocketHandlers() {
           response.choices.push_back(
               domain::CompletionChoice(message.generated_text));
 
-          bool continueDecode = !message.remaining_tokens.has_value() ||
-                                message.remaining_tokens.value() > 0;
+          callback.value()(response, false);
+
+          bool continueDecode =
+              !message.token_ids.empty() &&
+              (!message.remaining_tokens.has_value() ||
+               message.remaining_tokens.value() > 0);
           if (continueDecode) {
-            callback.value()(response, false);
             auto request = domain::CompletionRequest(message.task_id);
             request.prompt = std::vector<int>(message.token_ids.begin(),
                                               message.token_ids.end());
             request.max_tokens = message.remaining_tokens;
             llmService->submitStreamingRequest(request, callback.value());
           } else {
-            response.choices.back().finish_reason = "stop";
-            callback.value()(response, true);
+            auto finalResponse =
+                domain::StreamingChunkResponse(message.task_id);
+            domain::CompletionChoice finalChoice;
+            finalChoice.text = "";
+            finalChoice.index = 0;
+            finalChoice.finish_reason = "stop";
+            finalResponse.choices.push_back(std::move(finalChoice));
+            callback.value()(finalResponse, true);
           }
         });
 
@@ -91,9 +100,9 @@ void DisaggregationService::setupSocketHandlers() {
                            bool /*isFinal*/) {
                 auto remainingTokens =
                     maxTokens.has_value()
-                        ? std::optional<int>(maxTokens.value() - 1)
+                        ? std::optional<int>(
+                              std::max(0, maxTokens.value() - 1))
                         : std::nullopt;
-                auto newToken = response.choices.back().token_id.value_or(1);
 
                 auto prefillResult =
                     tt::sockets::PrefillResultMessage(message.task_id);
@@ -101,7 +110,10 @@ void DisaggregationService::setupSocketHandlers() {
                 prefillResult.token_ids.insert(prefillResult.token_ids.end(),
                                                message.token_ids.begin(),
                                                message.token_ids.end());
-                prefillResult.token_ids.push_back(newToken);
+                if (response.choices.back().token_id.has_value()) {
+                  prefillResult.token_ids.push_back(
+                      response.choices.back().token_id.value());
+                }
                 prefillResult.generated_text = response.choices.back().text;
                 socketService->sendPrefillResult(prefillResult);
               });

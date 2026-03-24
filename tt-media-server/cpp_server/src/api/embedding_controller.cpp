@@ -97,7 +97,7 @@ EmbeddingController::EmbeddingController() {
     return;
   }
 
-  service_ = tt::utils::ServiceContainer::global().embedding;
+  service_ = tt::utils::ServiceContainer::instance().embedding;
   if (!service_) {
     throw std::runtime_error(
         "[EmbeddingController] Embedding service not found in container. "

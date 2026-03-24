@@ -3,15 +3,22 @@
 
 #include "utils/service_container.hpp"
 
-#include <stdexcept>
-
 #include "config/settings.hpp"
 #include "services/embedding_service.hpp"
 #include "services/llm_service.hpp"
 
 namespace tt::utils {
 
-ServiceContainer* ServiceContainer::instance = nullptr;
+void ServiceContainer::initialize(
+    std::shared_ptr<services::LLMService> llm,
+    std::shared_ptr<services::EmbeddingService> embedding,
+    std::shared_ptr<sockets::InterServerService> socket,
+    std::shared_ptr<services::DisaggregationService> disaggregation) {
+  this->llm = std::move(llm);
+  this->embedding = std::move(embedding);
+  this->socket = std::move(socket);
+  this->disaggregation = std::move(disaggregation);
+}
 
 std::shared_ptr<services::IService> ServiceContainer::configuredService()
     const {
@@ -22,21 +29,6 @@ std::shared_ptr<services::IService> ServiceContainer::configuredService()
       return embedding;
   }
   return nullptr;
-}
-
-void ServiceContainer::setGlobal(ServiceContainer container) {
-  static ServiceContainer storage = std::move(container);
-  instance = &storage;
-}
-
-const ServiceContainer& ServiceContainer::global() {
-  if (!instance) {
-    throw std::runtime_error(
-        "[ServiceContainer] global() called before setGlobal(). "
-        "Ensure initializeServices() is called in main() before Drogon "
-        "starts.");
-  }
-  return *instance;
 }
 
 }  // namespace tt::utils

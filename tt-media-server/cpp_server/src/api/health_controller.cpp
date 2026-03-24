@@ -12,7 +12,7 @@
 namespace tt::api {
 
 HealthController::HealthController() {
-  service_ = tt::utils::ServiceContainer::global().configuredService();
+  service_ = tt::utils::ServiceContainer::instance().configuredService();
   TT_LOG_INFO("[HealthController] Initialized (service={})",
               (service_ ? "yes" : "no"));
 }
