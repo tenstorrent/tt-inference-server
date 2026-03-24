@@ -114,7 +114,7 @@ void SpPipelineRunner::memoryLoop() {
       std::lock_guard<std::mutex> lock(resultWriteMutex_);
       memoryResults_.writeResult(result);
     } else {
-      std::this_thread::yield();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }
 }

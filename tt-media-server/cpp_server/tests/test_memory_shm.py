@@ -31,9 +31,7 @@ def wait_for_ready(proc: subprocess.Popen, timeout: float = 5.0) -> None:
         if line.strip() == "READY":
             return
         if proc.poll() is not None:
-            raise RuntimeError(
-                f"Helper exited early with code {proc.returncode}"
-            )
+            raise RuntimeError(f"Helper exited early with code {proc.returncode}")
     raise TimeoutError("Helper did not print READY in time")
 
 
@@ -67,7 +65,9 @@ def test_burst_allocations():
 
         task_ids = [f"burst-{i:04d}" for i in range(NUM_REQUESTS)]
         for tid in task_ids:
-            req.write_request(tid, input_seq_len=16, action=ALLOCATE, memory_layout=PAGED)
+            req.write_request(
+                tid, input_seq_len=16, action=ALLOCATE, memory_layout=PAGED
+            )
 
         results = collect_results(res, NUM_REQUESTS)
 
@@ -109,7 +109,9 @@ def test_interleaved_allocate_deallocate():
         task_ids = [f"interleave-{i:04d}" for i in range(NUM_REQUESTS)]
 
         for tid in task_ids:
-            req.write_request(tid, input_seq_len=8, action=ALLOCATE, memory_layout=PAGED)
+            req.write_request(
+                tid, input_seq_len=8, action=ALLOCATE, memory_layout=PAGED
+            )
 
         alloc_results = collect_results(res, NUM_REQUESTS)
         assert len(alloc_results) == NUM_REQUESTS, (
@@ -122,7 +124,9 @@ def test_interleaved_allocate_deallocate():
             assert r.success
 
         for tid in task_ids:
-            req.write_request(tid, input_seq_len=0, action=DEALLOCATE, memory_layout=PAGED)
+            req.write_request(
+                tid, input_seq_len=0, action=DEALLOCATE, memory_layout=PAGED
+            )
 
         dealloc_results = collect_results(res, NUM_REQUESTS)
         assert len(dealloc_results) == NUM_REQUESTS, (
@@ -165,17 +169,19 @@ def test_rapid_mixed_success_failure():
         expected_success = []
 
         for tid in task_ids:
-            req.write_request(tid, input_seq_len=4, action=ALLOCATE, memory_layout=PAGED)
+            req.write_request(
+                tid, input_seq_len=4, action=ALLOCATE, memory_layout=PAGED
+            )
             expected_success.append(True)
 
         for tid in task_ids:
-            req.write_request(tid, input_seq_len=4, action=ALLOCATE, memory_layout=PAGED)
+            req.write_request(
+                tid, input_seq_len=4, action=ALLOCATE, memory_layout=PAGED
+            )
             expected_success.append(False)
 
         results = collect_results(res, total)
-        assert len(results) == total, (
-            f"Expected {total} results, got {len(results)}"
-        )
+        assert len(results) == total, f"Expected {total} results, got {len(results)}"
 
         for i in range(unique_count):
             assert results[i].success, f"First alloc {task_ids[i]} should succeed"

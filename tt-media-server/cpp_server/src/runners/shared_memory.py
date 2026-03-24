@@ -238,7 +238,9 @@ class MemoryRequestSharedMemory:
             if self._is_shutdown():
                 return
         tid = task_id.encode("utf-8")[:36].ljust(36, b"\x00")
-        struct.pack_into("<i", buf, msg_off + _MEM_REQ_INPUT_SEQ_LEN_OFF, int(input_seq_len))
+        struct.pack_into(
+            "<i", buf, msg_off + _MEM_REQ_INPUT_SEQ_LEN_OFF, int(input_seq_len)
+        )
         buf[msg_off + _MEM_REQ_ACTION_OFF] = action & 0xFF
         buf[msg_off + _MEM_REQ_LAYOUT_OFF] = memory_layout & 0xFF
         buf[msg_off + 10 : msg_off + 12] = b"\x00\x00"
