@@ -87,49 +87,34 @@ def device_worker(
             )
 
             if has_streaming_request:
-                async def handle_all_streaming():
-                    import asyncio as _asyncio
-
-                    async def stream_one(req):
+                # Handle streaming requests (one at a time for now)
+                for request in requests:
+                    if hasattr(request, "stream") and request.stream:
                         logger.info(
-                            f"Worker {worker_id} processing streaming request for task {req._task_id}"
-                        )
-                        result_generator = await device_runner._run_async([req])
-
-                        chunk_key = req._task_id
-                        async for chunk in result_generator:
-                            result_queue.put((worker_id, chunk_key, chunk))
-
-                        logger.info(
-                            f"Worker {worker_id} finished streaming chunks for task {req._task_id}"
+                            f"Worker {worker_id} processing streaming request for task {request._task_id}"
                         )
 
-                    streaming_reqs = [
-                        r for r in requests
-                        if hasattr(r, "stream") and r.stream
-                    ]
-                    non_streaming_reqs = [
-                        r for r in requests
-                        if not (hasattr(r, "stream") and r.stream)
-                    ]
+                        async def handle_streaming():
+                            result_generator = await device_runner._run_async([request])
 
-                    # Run all streaming requests concurrently
-                    await _asyncio.gather(
-                        *[stream_one(req) for req in streaming_reqs]
-                    )
+                            chunk_key = request._task_id
+                            async for chunk in result_generator:
+                                result_queue.put((worker_id, chunk_key, chunk))
 
-                    # Handle any non-streaming requests in the batch
-                    for req in non_streaming_reqs:
-                        response = device_runner.run([req])
+                            logger.info(
+                                f"Worker {worker_id} finished streaming chunks for task {request._task_id}"
+                            )
+
+                        loop.run_until_complete(handle_streaming())
+                    else:
+                        response = device_runner.run([request])
                         result_queue.put(
                             (
                                 worker_id,
-                                req._task_id,
+                                request._task_id,
                                 response[0] if response else None,
                             )
                         )
-
-                loop.run_until_complete(handle_all_streaming())
             else:
                 responses = device_runner.run(requests)
 
