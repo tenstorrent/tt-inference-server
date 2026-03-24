@@ -1630,6 +1630,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                use_chat_api=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 32768,
@@ -1659,6 +1660,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                use_chat_api=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 32768,

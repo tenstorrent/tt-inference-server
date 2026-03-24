@@ -454,10 +454,11 @@ def build_eval_command(
 
     # Audio models use tt-media-server which has endpoints at /audio (not /v1/audio)
     # Other models use vLLM which has endpoints at /v1
+    base_url = os.getenv("BASE_URL", f"http://127.0.0.1:{service_port}")
     if task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
-        base_url = f"http://127.0.0.1:{service_port}"
+        base_url = base_url
     else:
-        base_url = f"http://127.0.0.1:{service_port}/v1"
+        base_url = f"{base_url}/v1"
     eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     if task.use_chat_api:
@@ -589,9 +590,9 @@ def build_eval_command(
             "--model", eval_class,
             "--model_args", (
                 f"model={model_spec.hf_model_repo},"
-                f"base_url={_base_url},"
                 f"tokenizer_backend={task.tokenizer_backend},"
-                f"{model_kwargs_str}"
+                f"{model_kwargs_str},"
+                f"base_url={_base_url}"
             ),
             "--gen_kwargs", gen_kwargs_str,
             "--output_path", output_dir_path,
