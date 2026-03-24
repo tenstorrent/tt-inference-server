@@ -71,7 +71,8 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
         std::lock_guard<std::mutex> lock(reservation_mutex_);
         reservations_[task.task_id.id].locations = locations;
       }
-      return makeResult(task, ManageMemoryStatus::SUCCESS, std::move(locations));
+      return makeResult(task, ManageMemoryStatus::SUCCESS,
+                        std::move(locations));
     }
     case MemoryManagementAction::DEALLOCATE: {
       std::vector<KvDestination> locations;

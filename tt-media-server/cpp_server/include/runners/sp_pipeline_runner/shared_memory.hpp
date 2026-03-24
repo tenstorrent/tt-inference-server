@@ -149,12 +149,13 @@ class SharedMemory {
         std::span<SlotType>(static_cast<SlotType*>(memPointer), SHM_SLOTS);
   }
 
-  SlotType& acquireSlot() { return messages[current]; }
-
-  void advanceCurrent() { current = (current + 1) % SHM_SLOTS; }
-
   void write(const std::string& uuid, const std::vector<int64_t>& tokenIds,
              uint32_t maxTokens) {
+    if (tokenIds.size() * sizeof(int64_t) > sizeof(SlotType::tokenIds)) {
+      throw std::runtime_error("SharedMemory::write: token count " +
+                               std::to_string(tokenIds.size()) +
+                               " exceeds slot capacity");
+    }
     auto& msg = acquireSlot();
     while (!msg.stateMatches(FREE)) {
       std::this_thread::yield();
@@ -254,6 +255,9 @@ class SharedMemory {
   std::string name;
 
  private:
+  SlotType& acquireSlot() { return messages[current]; }
+  void advanceCurrent() { current = (current + 1) % SHM_SLOTS; }
+
   bool create_;
   bool owner_;
   void* memPointer = nullptr;
