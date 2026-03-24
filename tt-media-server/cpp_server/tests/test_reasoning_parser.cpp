@@ -127,8 +127,7 @@ void testStreamingTokens() {
 
   // </think> marker: state flips, not emitted
   {
-    auto r =
-        parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN, "");
+    auto r = parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN, "");
     assert(!r.should_emit);
     assert(r.type == ContentType::REASONING);
     assert(!parser.isInReasoning(taskId));
@@ -186,8 +185,8 @@ void testMultipleTasks() {
   for (int i = 0; i < 512; i += 2) {
     std::string taskId = "task-" + std::to_string(i);
 
-    auto r = parser.processToken(
-        taskId, ReasoningParser::THINK_START_TOKEN, "");
+    auto r =
+        parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN, "");
     assert(!r.should_emit);
     assert(parser.isInReasoning(taskId));
   }
@@ -205,8 +204,7 @@ void testMultipleTasks() {
   // Exit reasoning for even tasks
   for (int i = 0; i < 512; i += 2) {
     std::string taskId = "task-" + std::to_string(i);
-    auto r = parser.processToken(
-        taskId, ReasoningParser::THINK_END_TOKEN, "");
+    auto r = parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN, "");
     assert(!r.should_emit);
     assert(!parser.isInReasoning(taskId));
   }
@@ -243,8 +241,7 @@ void testEdgeCases() {
     std::string taskId = "malformed-task";
     parser.initializeTask(taskId);
 
-    auto r = parser.processToken(
-        taskId, ReasoningParser::THINK_END_TOKEN, "");
+    auto r = parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN, "");
     assert(!r.should_emit);
     assert(!parser.isInReasoning(taskId));
 
@@ -260,8 +257,8 @@ void testEdgeCases() {
     parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN, "");
     assert(parser.isInReasoning(taskId));
 
-    auto r = parser.processToken(
-        taskId, ReasoningParser::THINK_START_TOKEN, "");
+    auto r =
+        parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN, "");
     assert(!r.should_emit);
     assert(parser.isInReasoning(taskId));
 
