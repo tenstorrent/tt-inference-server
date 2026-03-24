@@ -15,25 +15,25 @@ using tt::domain::ManageMemoryResult;
 using tt::domain::ManageMemoryTask;
 using tt::domain::MemoryManagementAction;
 
-ManageMemoryResult make_failed_result(const ManageMemoryTask& task) {
+ManageMemoryResult makeFailedResult(const ManageMemoryTask& task) {
   return ManageMemoryResult{
       .task_id = task.task_id, .success = false, .memory_locations = {}};
 }
 
-ManageMemoryResult make_success_result(
-    const ManageMemoryTask& task, std::vector<KvDestination> memory_locations) {
+ManageMemoryResult makeSuccessResult(
+    const ManageMemoryTask& task, std::vector<KvDestination> memoryLocations) {
   return ManageMemoryResult{.task_id = task.task_id,
                             .success = true,
-                            .memory_locations = std::move(memory_locations)};
+                            .memory_locations = std::move(memoryLocations)};
 }
 
-bool allocate_kv(const ManageMemoryTask& /*task*/,
-                 std::vector<KvDestination>& /*out*/) {
+bool allocateKv(const ManageMemoryTask& /*task*/,
+                std::vector<KvDestination>& /*out*/) {
   // TODO(ttnn): Size and fill from device.
   return true;
 }
 
-void deallocate_kv(const std::vector<KvDestination>& /*locations*/) {
+void deallocateKv(const std::vector<KvDestination>& /*locations*/) {
   // TODO(ttnn): Release KV via ttnn / device.
 }
 
@@ -41,7 +41,7 @@ void deallocate_kv(const std::vector<KvDestination>& /*locations*/) {
 
 ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
   if (task.action == MemoryManagementAction::MOVE) {
-    return make_failed_result(task);
+    return makeFailedResult(task);
   }
 
   switch (task.action) {
@@ -49,13 +49,13 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
       {
         std::lock_guard<std::mutex> lock(reservation_mutex_);
         if (reservations_.contains(task.task_id.id)) {
-          return make_failed_result(task);
+          return makeFailedResult(task);
         }
         if (task.memory_layout == KvMemoryLayout::PerLayer) {
-          return make_failed_result(task);
+          return makeFailedResult(task);
         }
         if (task.input_seq_len < 0) {
-          return make_failed_result(task);
+          return makeFailedResult(task);
         }
         reservations_.emplace(
             task.task_id.id,
@@ -63,17 +63,17 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
       }
 
       std::vector<KvDestination> locations;
-      if (!allocate_kv(task, locations)) {
+      if (!allocateKv(task, locations)) {
         std::lock_guard<std::mutex> lock(reservation_mutex_);
         reservations_.erase(task.task_id.id);
-        return make_failed_result(task);
+        return makeFailedResult(task);
       }
 
       {
         std::lock_guard<std::mutex> lock(reservation_mutex_);
         reservations_[task.task_id.id].locations = locations;
       }
-      return make_success_result(task, std::move(locations));
+      return makeSuccessResult(task, std::move(locations));
     }
     case MemoryManagementAction::DEALLOCATE: {
       std::vector<KvDestination> locations;
@@ -81,20 +81,20 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
         std::lock_guard<std::mutex> lock(reservation_mutex_);
         auto it = reservations_.find(task.task_id.id);
         if (it == reservations_.end()) {
-          return make_failed_result(task);
+          return makeFailedResult(task);
         }
         if (it->second.layout != task.memory_layout) {
-          return make_failed_result(task);
+          return makeFailedResult(task);
         }
         locations = std::move(it->second.locations);
         reservations_.erase(it);
       }
 
-      deallocate_kv(locations);
-      return make_success_result(task, {});
+      deallocateKv(locations);
+      return makeSuccessResult(task, {});
     }
     default:
-      return make_failed_result(task);
+      return makeFailedResult(task);
   }
 }
 
