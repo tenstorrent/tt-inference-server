@@ -15,6 +15,7 @@
 
 using tt::domain::KvMemoryLayout;
 using tt::domain::ManageMemoryResult;
+using tt::domain::ManageMemoryStatus;
 using tt::domain::ManageMemoryTask;
 using tt::domain::MemoryManagementAction;
 using tt::domain::TaskID;
@@ -43,7 +44,7 @@ TEST_F(MemoryManagerTest, allocate_succeeds_stub_empty_locations) {
       .memory_layout = KvMemoryLayout::Paged,
   };
   auto r = mgr_.handle_task(task);
-  ASSERT_TRUE(r.success);
+  ASSERT_EQ(r.status, ManageMemoryStatus::SUCCESS);
   EXPECT_TRUE(r.memory_locations.empty());
 }
 
@@ -54,7 +55,7 @@ TEST_F(MemoryManagerTest, allocate_fails_negative_input_seq_len) {
       .input_seq_len = -1,
       .memory_layout = KvMemoryLayout::Paged,
   });
-  EXPECT_FALSE(r.success);
+  EXPECT_EQ(r.status, ManageMemoryStatus::FAILURE);
 }
 
 TEST_F(MemoryManagerTest, double_allocate_same_task_fails) {
@@ -64,26 +65,27 @@ TEST_F(MemoryManagerTest, double_allocate_same_task_fails) {
       .input_seq_len = 1,
       .memory_layout = KvMemoryLayout::Paged,
   };
-  ASSERT_TRUE(mgr_.handle_task(task).success);
-  EXPECT_FALSE(mgr_.handle_task(task).success);
+  ASSERT_EQ(mgr_.handle_task(task).status, ManageMemoryStatus::SUCCESS);
+  EXPECT_EQ(mgr_.handle_task(task).status, ManageMemoryStatus::FAILURE);
 }
 
 TEST_F(MemoryManagerTest, deallocate_after_allocate_succeeds) {
   TaskID tid = make_tid("req-c");
-  ASSERT_TRUE(mgr_.handle_task(ManageMemoryTask{
-                                   .task_id = tid,
-                                   .action = MemoryManagementAction::ALLOCATE,
-                                   .input_seq_len = 1,
-                                   .memory_layout = KvMemoryLayout::Paged,
-                               })
-                  .success);
+  ASSERT_EQ(mgr_.handle_task(ManageMemoryTask{
+                                 .task_id = tid,
+                                 .action = MemoryManagementAction::ALLOCATE,
+                                 .input_seq_len = 1,
+                                 .memory_layout = KvMemoryLayout::Paged,
+                             })
+                .status,
+            ManageMemoryStatus::SUCCESS);
   auto r = mgr_.handle_task(ManageMemoryTask{
       .task_id = tid,
       .action = MemoryManagementAction::DEALLOCATE,
       .input_seq_len = 0,
       .memory_layout = KvMemoryLayout::Paged,
   });
-  EXPECT_TRUE(r.success);
+  EXPECT_EQ(r.status, ManageMemoryStatus::SUCCESS);
   EXPECT_TRUE(r.memory_locations.empty());
 }
 
@@ -94,7 +96,7 @@ TEST_F(MemoryManagerTest, deallocate_unknown_fails) {
       .input_seq_len = 0,
       .memory_layout = KvMemoryLayout::Paged,
   });
-  EXPECT_FALSE(r.success);
+  EXPECT_EQ(r.status, ManageMemoryStatus::FAILURE);
 }
 
 TEST_F(MemoryManagerTest, move_not_implemented) {
@@ -104,7 +106,7 @@ TEST_F(MemoryManagerTest, move_not_implemented) {
       .input_seq_len = 0,
       .memory_layout = KvMemoryLayout::Paged,
   });
-  EXPECT_FALSE(r.success);
+  EXPECT_EQ(r.status, ManageMemoryStatus::FAILURE);
 }
 
 TEST_F(MemoryManagerTest, per_layer_allocate_not_implemented) {
@@ -114,25 +116,26 @@ TEST_F(MemoryManagerTest, per_layer_allocate_not_implemented) {
       .input_seq_len = 8,
       .memory_layout = KvMemoryLayout::PerLayer,
   });
-  EXPECT_FALSE(r.success);
+  EXPECT_EQ(r.status, ManageMemoryStatus::FAILURE);
 }
 
 TEST_F(MemoryManagerTest, deallocate_layout_mismatch_fails) {
   TaskID tid = make_tid("layout-mismatch");
-  ASSERT_TRUE(mgr_.handle_task(ManageMemoryTask{
-                                   .task_id = tid,
-                                   .action = MemoryManagementAction::ALLOCATE,
-                                   .input_seq_len = 1,
-                                   .memory_layout = KvMemoryLayout::Paged,
-                               })
-                  .success);
+  ASSERT_EQ(mgr_.handle_task(ManageMemoryTask{
+                                 .task_id = tid,
+                                 .action = MemoryManagementAction::ALLOCATE,
+                                 .input_seq_len = 1,
+                                 .memory_layout = KvMemoryLayout::Paged,
+                             })
+                .status,
+            ManageMemoryStatus::SUCCESS);
   auto r = mgr_.handle_task(ManageMemoryTask{
       .task_id = tid,
       .action = MemoryManagementAction::DEALLOCATE,
       .input_seq_len = 0,
       .memory_layout = KvMemoryLayout::PerLayer,
   });
-  EXPECT_FALSE(r.success);
+  EXPECT_EQ(r.status, ManageMemoryStatus::FAILURE);
 }
 
 // ---------------------------------------------------------------------------
@@ -182,13 +185,13 @@ TEST_F(MemoryManagerShmTest, roundtrip_allocate_via_shm) {
   EXPECT_EQ(readTask.input_seq_len, 8);
 
   auto result = mgr.handle_task(readTask);
-  ASSERT_TRUE(result.success);
+  ASSERT_EQ(result.status, ManageMemoryStatus::SUCCESS);
 
   resWriter->writeResult(result);
 
   ManageMemoryResult readResult{};
   ASSERT_TRUE(resReader->tryReadResult(readResult));
-  EXPECT_TRUE(readResult.success);
+  EXPECT_EQ(readResult.status, ManageMemoryStatus::SUCCESS);
   EXPECT_EQ(readResult.task_id.id, "shm-alloc-01");
 }
 
