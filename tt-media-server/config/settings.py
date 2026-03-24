@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     download_weights_from_service: bool = True
 
     # SDXL resolution (applies to text-to-image only, not img2img/inpainting)
-    sdxl_image_resolution: tuple = (1024, 1024)
+    sdxl_image_resolution: tuple = (512, 512)
 
     # Queue and batch settings
     max_queue_size: int = 5000
