@@ -5,6 +5,7 @@
 #include "domain/prefill_request.hpp"
 #include "config/types.hpp"
 #include "services/llm_service.hpp"
+#include "utils/concurrent_map.hpp"
 
 namespace tt::services {
     
@@ -20,12 +21,13 @@ class DisaggregationService: public IService {
   
   bool sendPrefillRequest(const domain::PrefillRequest& request) const;
   
-  void handleStreamingRequest(const domain::CompletionRequest& request, const StreamCallback& callback);
+  void handleStreamingRequest(domain::CompletionRequest& request, const StreamCallback& callback);
   
  private:
   std::unique_ptr<tt::sockets::InterServerService> socketService;
   std::unique_ptr<LLMService> llmService;
   tt::config::LLMMode mode;
+  ConcurrentMap<std::string, StreamCallback> streamCallbacks;
 };
 
 }  // namespace tt::services

@@ -57,9 +57,8 @@ class LLMService
    */
   void submitDecodeContinuation(domain::CompletionRequest request,
                                 StreamCallback callback);
-
- protected:
   void preProcess(domain::CompletionRequest& request) const override;
+ protected:
   void postProcess(domain::CompletionResponse& response) const override;
   size_t currentQueueSize() const override;
   domain::CompletionResponse processRequest(
