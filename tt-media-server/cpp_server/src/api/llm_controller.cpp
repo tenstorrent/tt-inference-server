@@ -134,6 +134,8 @@ void LLMController::completions(
     return;
   }
 
+  TT_LOG_INFO("[LLMController] /v1/completions {}", request->toString());
+
   if (!service_->isModelReady()) {
     auto resp = drogon::HttpResponse::newHttpJsonResponse(
         errorJson("Model is not ready", "service_unavailable"));
@@ -203,6 +205,8 @@ void LLMController::chatCompletions(
   }
 
   domain::ChatCompletionRequest& chatReq = *chatReqOpt;
+
+  TT_LOG_INFO("[LLMController] /v1/chat/completions {}", chatReq.toString());
 
   if (chatReq.messages.empty()) {
     auto resp = drogon::HttpResponse::newHttpJsonResponse(

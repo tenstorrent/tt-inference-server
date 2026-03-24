@@ -113,6 +113,11 @@ void SpPipelineRunner::step() {
     std::unique_ptr<llm_engine::Sequence> owned(seq);
     llm_engine::TaskID taskId = seq->taskId;
 
+    if (!seq->samplingParams->max_tokens.has_value()) {
+      seq->samplingParams->max_tokens =
+          static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
+    }
+
     modelRunner->write(taskId.id, seq->tokenIds,
                        seq->samplingParams->max_tokens.value(),
                        sp_pipeline::RequestPhase::PREFILL);

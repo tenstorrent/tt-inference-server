@@ -623,6 +623,8 @@ def main():
         logger.info("Running inference server on localhost ...")
         run_local_server(model_spec, runtime_config, json_fpath, setup_config)
 
+    main_return_code = 0
+
     # step 5: run workflows
     skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
@@ -639,6 +641,7 @@ def main():
                 f"run.py failed workflows: {failed_workflows}. "
                 "See logs above for details."
             )
+            main_return_code = 1
     else:
         logger.info(
             f"Completed {runtime_config.workflow} workflow, skipping run_workflows()."
@@ -653,6 +656,7 @@ def main():
         "issue and server log if available."
     )
     logger.info(f"This log file is saved on local machine at: {run_log_path}")
+    return main_return_code
 
 
 if __name__ == "__main__":
