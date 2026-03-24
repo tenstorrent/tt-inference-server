@@ -22,6 +22,10 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       taskQueue(taskQueue),
       decodeQueue(config.max_in_flight_count),
       maxInFlightCount(config.max_in_flight_count * 30) {
+  memoryRequests_.open();
+  memoryResults_.open();
+  memoryThread_ = std::thread([this] { memoryLoop(); });
+
   auto decodeCb = [this](const llm_engine::TokenResult& result) {
     while (!decodeQueue.push(result)) {
       std::this_thread::yield();
@@ -32,6 +36,10 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
 }
 
 SpPipelineRunner::~SpPipelineRunner() {
+  stop();
+  if (memoryThread_.joinable()) {
+    memoryThread_.join();
+  }
   if (modelRunner) {
     modelRunner->exit();
   }
@@ -96,6 +104,19 @@ bool SpPipelineRunner::warmup() {
 
 void SpPipelineRunner::stop() {
   stopped.store(true, std::memory_order_relaxed);
+}
+
+void SpPipelineRunner::memoryLoop() {
+  tt::domain::ManageMemoryTask task{};
+  while (!stopped.load(std::memory_order_relaxed)) {
+    if (memoryRequests_.tryReadRequest(task)) {
+      auto result = memoryManager_.handle_task(task);
+      std::lock_guard<std::mutex> lock(resultWriteMutex_);
+      memoryResults_.writeResult(result);
+    } else {
+      std::this_thread::yield();
+    }
+  }
 }
 
 void SpPipelineRunner::step() {

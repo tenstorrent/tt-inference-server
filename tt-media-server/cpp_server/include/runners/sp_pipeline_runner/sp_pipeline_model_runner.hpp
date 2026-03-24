@@ -47,8 +47,8 @@ class SpPipelineModelRunner : public ISpPipelineModelRunner {
 
   DecodeCallback decodeCallback;
   ShmNames shmNames;
-  PrefillSharedMemory deviceInput;
-  DecodeSharedMemory deviceOutput;
+  PrefillSharedMemory deviceInput{shmNames.write};
+  DecodeSharedMemory deviceOutput{shmNames.read};
   std::atomic<bool> stop{false};
   std::thread readerThread;
 };

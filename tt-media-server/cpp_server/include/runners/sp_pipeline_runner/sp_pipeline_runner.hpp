@@ -6,6 +6,8 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -15,6 +17,8 @@
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
+#include "runners/sp_pipeline_runner/shared_memory.hpp"
+#include "services/memory_manager.hpp"
 
 namespace tt::runners {
 
@@ -33,6 +37,7 @@ class SpPipelineRunner : public IRunner {
  private:
   void step();
   void drainDecodeResults();
+  void memoryLoop();
   void pushToken(const llm_engine::TaskID& taskId, uint64_t tokenId,
                  bool finished);
   void pushErrorToken(const llm_engine::TaskID& taskId);
@@ -48,6 +53,14 @@ class SpPipelineRunner : public IRunner {
   std::atomic<bool> stopped{false};
   int maxInFlightCount;
   int inFlightCount = 0;
+
+  tt::services::MemoryManager memoryManager_;
+  sp_pipeline::MemoryRequestQueue memoryRequests_{
+      sp_pipeline::k_memory_request_shm_name, true, true};
+  sp_pipeline::MemoryResultQueue memoryResults_{
+      sp_pipeline::k_memory_result_shm_name, true, true};
+  std::mutex resultWriteMutex_;
+  std::thread memoryThread_;
 };
 
 }  // namespace tt::runners

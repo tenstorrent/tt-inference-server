@@ -17,6 +17,8 @@
 #include <thread>
 #include <vector>
 
+#include "domain/manage_memory.hpp"
+
 namespace sp_pipeline {
 
 constexpr int SHM_SLOTS = 64;
@@ -34,22 +36,56 @@ struct Message {
   char taskId[36];
   uint64_t tokenIds[MaxTokenIds];
 
-  static constexpr int K_MESSAGE_SIZE = 48 + MaxTokenIds * sizeof(uint64_t);
-  static constexpr int K_TOTAL_SIZE = SHM_SLOTS * K_MESSAGE_SIZE;
-
-  bool stateMatches(SlotState state) {
-    return this->state.load(std::memory_order_acquire) == state;
+  bool stateMatches(SlotState s) const {
+    return state.load(std::memory_order_acquire) == static_cast<int32_t>(s);
   }
 
-  void switchState(SlotState state) {
-    this->state.store(state, std::memory_order_release);
+  void switchState(SlotState s) {
+    state.store(static_cast<int32_t>(s), std::memory_order_release);
   }
 };
 
 static_assert(sizeof(Message<PREFILL_MAX_TOKEN_IDS>) ==
-              Message<PREFILL_MAX_TOKEN_IDS>::K_MESSAGE_SIZE);
+              48 + PREFILL_MAX_TOKEN_IDS * sizeof(uint64_t));
 static_assert(sizeof(Message<DECODE_MAX_TOKEN_IDS>) ==
-              Message<DECODE_MAX_TOKEN_IDS>::K_MESSAGE_SIZE);
+              48 + DECODE_MAX_TOKEN_IDS * sizeof(uint64_t));
+
+constexpr uint32_t MEMORY_RESULT_MAX_KV_DESTINATIONS = 128;
+
+struct MemoryRequestSlot {
+  std::atomic<int32_t> state;
+  int32_t input_seq_len{};
+  uint8_t action{};
+  uint8_t memory_layout{};
+  uint8_t reserved[2]{};
+  char taskId[36]{};
+
+  bool stateMatches(SlotState s) const {
+    return state.load(std::memory_order_acquire) == static_cast<int32_t>(s);
+  }
+
+  void switchState(SlotState s) {
+    state.store(static_cast<int32_t>(s), std::memory_order_release);
+  }
+};
+
+static_assert(sizeof(MemoryRequestSlot) == 48);
+
+struct MemoryResultSlot {
+  std::atomic<int32_t> state;
+  uint32_t success{};
+  uint32_t num_destinations{};
+  char taskId[36]{};
+  tt::domain::KvDestination destinations[MEMORY_RESULT_MAX_KV_DESTINATIONS]{};
+
+  bool stateMatches(SlotState s) const {
+    return state.load(std::memory_order_acquire) == static_cast<int32_t>(s);
+  }
+
+  void switchState(SlotState s) {
+    state.store(static_cast<int32_t>(s), std::memory_order_release);
+  }
+};
 
 struct ReadResult {
   std::string taskId;
@@ -57,96 +93,171 @@ struct ReadResult {
   std::vector<int64_t> tokenIds;
 };
 
-template <int MaxTokenIds>
+template <typename SlotType>
 class SharedMemory {
  public:
-  using Msg = Message<MaxTokenIds>;
+  static constexpr size_t k_total_size = SHM_SLOTS * sizeof(SlotType);
 
-  explicit SharedMemory(const std::string& name)
-      : name(name[0] == '/' ? name : "/" + name) {}
+  explicit SharedMemory(const std::string& name, bool create = false,
+                        bool owner = true)
+      : name(name[0] == '/' ? name : "/" + name),
+        create_(create),
+        owner_(owner) {}
 
   ~SharedMemory() {
     if (memPointer && memPointer != MAP_FAILED) {
-      munmap(memPointer, Msg::K_TOTAL_SIZE);
+      munmap(memPointer, k_total_size);
     }
-    shm_unlink(name.c_str());
+    if (owner_) {
+      shm_unlink(name.c_str());
+    }
   }
 
   SharedMemory(const SharedMemory&) = delete;
   SharedMemory& operator=(const SharedMemory&) = delete;
 
   void open() {
-    int fd = shm_open(name.c_str(), O_RDWR, 0);
+    if (create_) {
+      shm_unlink(name.c_str());
+    }
+    int flags = create_ ? (O_RDWR | O_CREAT) : O_RDWR;
+    int fd = shm_open(name.c_str(), flags, 0666);
     if (fd < 0) {
       throw std::runtime_error("SharedMemory: unable to open shared memory: " +
                                name);
     }
-
-    memPointer = mmap(nullptr, Msg::K_TOTAL_SIZE, PROT_READ | PROT_WRITE,
+    if (create_) {
+      if (ftruncate(fd, static_cast<off_t>(k_total_size)) < 0) {
+        ::close(fd);
+        shm_unlink(name.c_str());
+        throw std::runtime_error("SharedMemory: ftruncate failed: " + name);
+      }
+    }
+    memPointer = mmap(nullptr, k_total_size, PROT_READ | PROT_WRITE,
                       MAP_SHARED, fd, 0);
     if (memPointer == MAP_FAILED) {
       ::close(fd);
+      if (create_) shm_unlink(name.c_str());
       throw std::runtime_error("SharedMemory: mmap failed: " + name);
     }
     ::close(fd);
 
-    std::memset(memPointer, 0, Msg::K_TOTAL_SIZE);
-    messages = std::span<Msg>(static_cast<Msg*>(memPointer), SHM_SLOTS);
+    if (create_) {
+      std::memset(memPointer, 0, k_total_size);
+    }
+    messages = std::span<SlotType>(static_cast<SlotType*>(memPointer), SHM_SLOTS);
   }
+
+  SlotType& acquireSlot() { return messages[current]; }
+
+  void advanceCurrent() { current = (current + 1) % SHM_SLOTS; }
 
   void write(const std::string& uuid, const std::vector<int64_t>& tokenIds,
              uint32_t maxTokens) {
-    if (static_cast<int>(tokenIds.size()) > MaxTokenIds) {
-      throw std::runtime_error("SharedMemory::write: token count " +
-                               std::to_string(tokenIds.size()) +
-                               " exceeds slot capacity " +
-                               std::to_string(MaxTokenIds));
-    }
-
-    auto& msg = acquireMsg();
-
+    auto& msg = acquireSlot();
     while (!msg.stateMatches(FREE)) {
       std::this_thread::yield();
     }
-
     msg.maxTokens = maxTokens;
     msg.numTokenIds = tokenIds.size();
     std::memcpy(msg.taskId, uuid.data(), 36);
     std::memcpy(msg.tokenIds, tokenIds.data(),
                 tokenIds.size() * sizeof(int64_t));
-
     msg.switchState(TAKEN);
     advanceCurrent();
   }
 
   bool tryRead(ReadResult& out) {
-    auto& msg = acquireMsg();
-
-    if (!msg.stateMatches(TAKEN)) {
-      return false;
-    }
-
+    auto& msg = acquireSlot();
+    if (!msg.stateMatches(TAKEN)) return false;
     out.taskId.assign(msg.taskId, 36);
     out.maxTokens = msg.maxTokens;
     out.tokenIds.assign(msg.tokenIds, msg.tokenIds + msg.numTokenIds);
-
     msg.switchState(FREE);
     advanceCurrent();
     return true;
   }
+
+  void writeRequest(const tt::domain::ManageMemoryTask& task) {
+    auto& msg = acquireSlot();
+    while (!msg.stateMatches(FREE)) {
+      std::this_thread::yield();
+    }
+    msg.input_seq_len = task.input_seq_len;
+    msg.action = static_cast<uint8_t>(task.action);
+    msg.memory_layout = static_cast<uint8_t>(task.memory_layout);
+    const size_t n = std::min(task.task_id.id.size(), static_cast<size_t>(36));
+    std::memcpy(msg.taskId, task.task_id.id.data(), n);
+    if (n < 36) std::memset(msg.taskId + n, 0, 36 - n);
+    msg.switchState(TAKEN);
+    advanceCurrent();
+  }
+
+  bool tryReadRequest(tt::domain::ManageMemoryTask& out) {
+    auto& msg = acquireSlot();
+    if (!msg.stateMatches(TAKEN)) return false;
+    out.task_id =
+        tt::domain::TaskID::ipcDeserialize(msg.taskId, sizeof(msg.taskId));
+    out.input_seq_len = msg.input_seq_len;
+    out.action = static_cast<tt::domain::MemoryManagementAction>(msg.action);
+    out.memory_layout = static_cast<tt::domain::KvMemoryLayout>(msg.memory_layout);
+    msg.switchState(FREE);
+    advanceCurrent();
+    return true;
+  }
+
+  void writeResult(const tt::domain::ManageMemoryResult& result) {
+    auto& msg = acquireSlot();
+    while (!msg.stateMatches(FREE)) {
+      std::this_thread::yield();
+    }
+    msg.success = result.success ? 1u : 0u;
+    const size_t n = std::min(result.memory_locations.size(),
+                              static_cast<size_t>(MEMORY_RESULT_MAX_KV_DESTINATIONS));
+    msg.num_destinations = static_cast<uint32_t>(n);
+    const size_t tid_n = std::min(result.task_id.id.size(), static_cast<size_t>(36));
+    std::memcpy(msg.taskId, result.task_id.id.data(), tid_n);
+    if (tid_n < 36) std::memset(msg.taskId + tid_n, 0, 36 - tid_n);
+    for (uint32_t i = 0; i < msg.num_destinations; ++i) {
+      msg.destinations[i].dram_address = result.memory_locations[i].dram_address;
+      msg.destinations[i].semaphore_address = result.memory_locations[i].semaphore_address;
+    }
+    msg.switchState(TAKEN);
+    advanceCurrent();
+  }
+
+  bool tryReadResult(tt::domain::ManageMemoryResult& out) {
+    auto& msg = acquireSlot();
+    if (!msg.stateMatches(TAKEN)) return false;
+    out.success = msg.success != 0;
+    out.task_id =
+        tt::domain::TaskID::ipcDeserialize(msg.taskId, sizeof(msg.taskId));
+    out.memory_locations.resize(msg.num_destinations);
+    for (uint32_t i = 0; i < msg.num_destinations; ++i) {
+      out.memory_locations[i].dram_address = msg.destinations[i].dram_address;
+      out.memory_locations[i].semaphore_address = msg.destinations[i].semaphore_address;
+    }
+    msg.switchState(FREE);
+    advanceCurrent();
+    return true;
+  }
+
   std::string name;
 
  private:
-  Msg& acquireMsg() { return messages[current]; }
-
-  void advanceCurrent() { current = (current + 1) % SHM_SLOTS; }
-
+  bool create_;
+  bool owner_;
   void* memPointer = nullptr;
   uint64_t current = 0;
-  std::span<Msg> messages;
+  std::span<SlotType> messages;
 };
 
-using PrefillSharedMemory = SharedMemory<PREFILL_MAX_TOKEN_IDS>;
-using DecodeSharedMemory = SharedMemory<DECODE_MAX_TOKEN_IDS>;
+using PrefillSharedMemory = SharedMemory<Message<PREFILL_MAX_TOKEN_IDS>>;
+using DecodeSharedMemory = SharedMemory<Message<DECODE_MAX_TOKEN_IDS>>;
+using MemoryRequestQueue = SharedMemory<MemoryRequestSlot>;
+using MemoryResultQueue = SharedMemory<MemoryResultSlot>;
+
+inline constexpr const char* k_memory_request_shm_name = "/tt_mem_requests";
+inline constexpr const char* k_memory_result_shm_name = "/tt_mem_results";
 
 }  // namespace sp_pipeline

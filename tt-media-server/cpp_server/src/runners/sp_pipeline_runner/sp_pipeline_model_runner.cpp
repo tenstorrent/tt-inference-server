@@ -8,10 +8,7 @@
 namespace sp_pipeline {
 
 SpPipelineModelRunner::SpPipelineModelRunner(DecodeCallback callback)
-    : decodeCallback(std::move(callback)),
-      shmNames(),
-      deviceInput(shmNames.write),
-      deviceOutput(shmNames.read) {
+    : decodeCallback(std::move(callback)), shmNames() {
   deviceInput.open();
   deviceOutput.open();
   readerThread = std::thread([this] { readerLoop(); });
