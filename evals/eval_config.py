@@ -1173,6 +1173,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                max_concurrent=8,
                 apply_chat_template=False,
                 score=EvalTaskScore(
                     published_score=66.76,
@@ -1186,12 +1187,13 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.CI_NIGHTLY: 0.02,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(
                 task_name="humaneval_instruct",
+                max_concurrent=8,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=88.41,
@@ -1227,6 +1229,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="chartqa",
+                max_concurrent=8,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=86.24,
