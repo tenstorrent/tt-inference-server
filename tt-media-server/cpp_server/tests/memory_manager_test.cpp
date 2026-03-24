@@ -5,9 +5,6 @@
 
 #include <gtest/gtest.h>
 
-#include <chrono>
-#include <cstdlib>
-#include <iostream>
 #include <thread>
 
 #include "domain/manage_memory.hpp"
@@ -211,53 +208,7 @@ TEST_F(MemoryManagerShmTest, slot_sizes_match_expected) {
   static_assert(sizeof(sp_pipeline::MemoryResultSlot) == expected_result_size);
 }
 
-// ---------------------------------------------------------------------------
-// Bridge helper mode: `memory_manager_test --bridge [max_requests]
-// [timeout_ms]` Used by test_memory_shm.py for cross-language SHM integration
-// tests.
-// ---------------------------------------------------------------------------
-
-static int run_bridge(int argc, char* argv[]) {
-  int maxRequests = argc > 2 ? std::atoi(argv[2]) : 5;
-  int timeoutMs = argc > 3 ? std::atoi(argv[3]) : 10000;
-
-  sp_pipeline::MemoryRequestQueue reqQueue(
-      sp_pipeline::k_memory_request_shm_name, true, true);
-  sp_pipeline::MemoryResultQueue resQueue(sp_pipeline::k_memory_result_shm_name,
-                                          true, true);
-  reqQueue.open();
-  resQueue.open();
-
-  std::cout << "READY" << std::endl;
-
-  tt::services::MemoryManager mgr;
-  int processed = 0;
-  auto start = std::chrono::steady_clock::now();
-
-  while (processed < maxRequests) {
-    auto elapsed = std::chrono::steady_clock::now() - start;
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() >
-        timeoutMs) {
-      std::cerr << "timeout after " << processed << " requests" << std::endl;
-      return 1;
-    }
-    tt::domain::ManageMemoryTask task{};
-    if (reqQueue.tryReadRequest(task)) {
-      resQueue.writeResult(mgr.handle_task(task));
-      ++processed;
-    } else {
-      std::this_thread::yield();
-    }
-  }
-
-  std::cout << "DONE " << processed << std::endl;
-  return 0;
-}
-
 int main(int argc, char* argv[]) {
-  if (argc >= 2 && std::string(argv[1]) == "--bridge") {
-    return run_bridge(argc, argv);
-  }
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
