@@ -1510,6 +1510,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                use_chat_api=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "deepseek-ai/DeepSeek-R1-0528",
@@ -1542,6 +1543,7 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                use_chat_api=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "model": "deepseek-ai/DeepSeek-R1-0528",
