@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+#include "services/memory_manager.hpp"
+
 #include <gtest/gtest.h>
 
 #include <chrono>
@@ -10,7 +12,6 @@
 
 #include "domain/manage_memory.hpp"
 #include "runners/sp_pipeline_runner/shared_memory.hpp"
-#include "services/memory_manager.hpp"
 
 using tt::domain::KvMemoryLayout;
 using tt::domain::ManageMemoryResult;
@@ -70,11 +71,11 @@ TEST_F(MemoryManagerTest, double_allocate_same_task_fails) {
 TEST_F(MemoryManagerTest, deallocate_after_allocate_succeeds) {
   TaskID tid = make_tid("req-c");
   ASSERT_TRUE(mgr_.handle_task(ManageMemoryTask{
-                                 .task_id = tid,
-                                 .action = MemoryManagementAction::ALLOCATE,
-                                 .input_seq_len = 1,
-                                 .memory_layout = KvMemoryLayout::Paged,
-                             })
+                                   .task_id = tid,
+                                   .action = MemoryManagementAction::ALLOCATE,
+                                   .input_seq_len = 1,
+                                   .memory_layout = KvMemoryLayout::Paged,
+                               })
                   .success);
   auto r = mgr_.handle_task(ManageMemoryTask{
       .task_id = tid,
@@ -119,11 +120,11 @@ TEST_F(MemoryManagerTest, per_layer_allocate_not_implemented) {
 TEST_F(MemoryManagerTest, deallocate_layout_mismatch_fails) {
   TaskID tid = make_tid("layout-mismatch");
   ASSERT_TRUE(mgr_.handle_task(ManageMemoryTask{
-                                 .task_id = tid,
-                                 .action = MemoryManagementAction::ALLOCATE,
-                                 .input_seq_len = 1,
-                                 .memory_layout = KvMemoryLayout::Paged,
-                             })
+                                   .task_id = tid,
+                                   .action = MemoryManagementAction::ALLOCATE,
+                                   .input_seq_len = 1,
+                                   .memory_layout = KvMemoryLayout::Paged,
+                               })
                   .success);
   auto r = mgr_.handle_task(ManageMemoryTask{
       .task_id = tid,
@@ -144,14 +145,14 @@ static constexpr const char* TEST_RES_SHM = "/test_mem_res";
 class MemoryManagerShmTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    reqWriter = std::make_unique<sp_pipeline::MemoryRequestQueue>(
-        TEST_REQ_SHM, true, true);
-    reqReader = std::make_unique<sp_pipeline::MemoryRequestQueue>(
-        TEST_REQ_SHM, false, false);
-    resWriter = std::make_unique<sp_pipeline::MemoryResultQueue>(
-        TEST_RES_SHM, true, true);
-    resReader = std::make_unique<sp_pipeline::MemoryResultQueue>(
-        TEST_RES_SHM, false, false);
+    reqWriter = std::make_unique<sp_pipeline::MemoryRequestQueue>(TEST_REQ_SHM,
+                                                                  true, true);
+    reqReader = std::make_unique<sp_pipeline::MemoryRequestQueue>(TEST_REQ_SHM,
+                                                                  false, false);
+    resWriter = std::make_unique<sp_pipeline::MemoryResultQueue>(TEST_RES_SHM,
+                                                                 true, true);
+    resReader = std::make_unique<sp_pipeline::MemoryResultQueue>(TEST_RES_SHM,
+                                                                 false, false);
     reqWriter->open();
     reqReader->open();
     resWriter->open();
@@ -208,8 +209,9 @@ TEST_F(MemoryManagerShmTest, slot_sizes_match_expected) {
 }
 
 // ---------------------------------------------------------------------------
-// Bridge helper mode: `memory_manager_test --bridge [max_requests] [timeout_ms]`
-// Used by test_memory_shm.py for cross-language SHM integration tests.
+// Bridge helper mode: `memory_manager_test --bridge [max_requests]
+// [timeout_ms]` Used by test_memory_shm.py for cross-language SHM integration
+// tests.
 // ---------------------------------------------------------------------------
 
 static int run_bridge(int argc, char* argv[]) {
@@ -218,8 +220,8 @@ static int run_bridge(int argc, char* argv[]) {
 
   sp_pipeline::MemoryRequestQueue reqQueue(
       sp_pipeline::k_memory_request_shm_name, true, true);
-  sp_pipeline::MemoryResultQueue resQueue(
-      sp_pipeline::k_memory_result_shm_name, true, true);
+  sp_pipeline::MemoryResultQueue resQueue(sp_pipeline::k_memory_result_shm_name,
+                                          true, true);
   reqQueue.open();
   resQueue.open();
 

@@ -21,8 +21,7 @@ ManageMemoryResult make_failed_result(const ManageMemoryTask& task) {
 }
 
 ManageMemoryResult make_success_result(
-    const ManageMemoryTask& task,
-    std::vector<KvDestination> memory_locations) {
+    const ManageMemoryTask& task, std::vector<KvDestination> memory_locations) {
   return ManageMemoryResult{.task_id = task.task_id,
                             .success = true,
                             .memory_locations = std::move(memory_locations)};

@@ -133,8 +133,8 @@ class SharedMemory {
         throw std::runtime_error("SharedMemory: ftruncate failed: " + name);
       }
     }
-    memPointer = mmap(nullptr, k_total_size, PROT_READ | PROT_WRITE,
-                      MAP_SHARED, fd, 0);
+    memPointer =
+        mmap(nullptr, k_total_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (memPointer == MAP_FAILED) {
       ::close(fd);
       if (create_) shm_unlink(name.c_str());
@@ -145,7 +145,8 @@ class SharedMemory {
     if (create_) {
       std::memset(memPointer, 0, k_total_size);
     }
-    messages = std::span<SlotType>(static_cast<SlotType*>(memPointer), SHM_SLOTS);
+    messages =
+        std::span<SlotType>(static_cast<SlotType*>(memPointer), SHM_SLOTS);
   }
 
   SlotType& acquireSlot() { return messages[current]; }
@@ -200,7 +201,8 @@ class SharedMemory {
         tt::domain::TaskID::ipcDeserialize(msg.taskId, sizeof(msg.taskId));
     out.input_seq_len = msg.input_seq_len;
     out.action = static_cast<tt::domain::MemoryManagementAction>(msg.action);
-    out.memory_layout = static_cast<tt::domain::KvMemoryLayout>(msg.memory_layout);
+    out.memory_layout =
+        static_cast<tt::domain::KvMemoryLayout>(msg.memory_layout);
     msg.switchState(FREE);
     advanceCurrent();
     return true;
@@ -212,15 +214,19 @@ class SharedMemory {
       std::this_thread::yield();
     }
     msg.success = result.success ? 1u : 0u;
-    const size_t n = std::min(result.memory_locations.size(),
-                              static_cast<size_t>(MEMORY_RESULT_MAX_KV_DESTINATIONS));
+    const size_t n =
+        std::min(result.memory_locations.size(),
+                 static_cast<size_t>(MEMORY_RESULT_MAX_KV_DESTINATIONS));
     msg.num_destinations = static_cast<uint32_t>(n);
-    const size_t tid_n = std::min(result.task_id.id.size(), static_cast<size_t>(36));
+    const size_t tid_n =
+        std::min(result.task_id.id.size(), static_cast<size_t>(36));
     std::memcpy(msg.taskId, result.task_id.id.data(), tid_n);
     if (tid_n < 36) std::memset(msg.taskId + tid_n, 0, 36 - tid_n);
     for (uint32_t i = 0; i < msg.num_destinations; ++i) {
-      msg.destinations[i].dram_address = result.memory_locations[i].dram_address;
-      msg.destinations[i].semaphore_address = result.memory_locations[i].semaphore_address;
+      msg.destinations[i].dram_address =
+          result.memory_locations[i].dram_address;
+      msg.destinations[i].semaphore_address =
+          result.memory_locations[i].semaphore_address;
     }
     msg.switchState(TAKEN);
     advanceCurrent();
@@ -235,7 +241,8 @@ class SharedMemory {
     out.memory_locations.resize(msg.num_destinations);
     for (uint32_t i = 0; i < msg.num_destinations; ++i) {
       out.memory_locations[i].dram_address = msg.destinations[i].dram_address;
-      out.memory_locations[i].semaphore_address = msg.destinations[i].semaphore_address;
+      out.memory_locations[i].semaphore_address =
+          msg.destinations[i].semaphore_address;
     }
     msg.switchState(FREE);
     advanceCurrent();
