@@ -166,7 +166,10 @@ void LLMController::completions(
         }
       }
 
-      callback(drogon::HttpResponse::newHttpJsonResponse(response.toJson()));
+      auto resp = drogon::HttpResponse::newHttpResponse();
+      resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+      resp->setBody(response.toJsonString());
+      callback(resp);
     } catch (const services::QueueFullException& e) {
       auto resp = drogon::HttpResponse::newHttpJsonResponse(
           errorJson(e.what(), "rate_limit_exceeded"));
@@ -252,8 +255,10 @@ void LLMController::chatCompletions(
 
       auto chatResponse =
           domain::ChatCompletionResponse::fromCompletionResponse(completion);
-      callback(
-          drogon::HttpResponse::newHttpJsonResponse(chatResponse.toJson()));
+      auto resp = drogon::HttpResponse::newHttpResponse();
+      resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+      resp->setBody(chatResponse.toJsonString());
+      callback(resp);
     } catch (const services::QueueFullException& e) {
       auto resp = drogon::HttpResponse::newHttpJsonResponse(
           errorJson(e.what(), "rate_limit_exceeded"));
