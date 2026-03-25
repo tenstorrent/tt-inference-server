@@ -340,6 +340,27 @@ def ensure_librispeech_yaml_tasks(site_packages_path: Path) -> None:
         )
 
 
+def ensure_whisper_tt_model(site_packages_path: Path) -> None:
+    """Ensure whisper_tt model module is in the lmms-eval simple models directory.
+
+    The TT fork of lmms-eval places whisper_tt.py at lmms_eval/models/whisper_tt.py,
+    but lmms-eval's get_model() expects simple models under lmms_eval/models/simple/.
+    This function copies the file to the correct location if absent.
+    """
+    src = Path(site_packages_path) / "lmms_eval" / "models" / "whisper_tt.py"
+    dst_dir = Path(site_packages_path) / "lmms_eval" / "models" / "simple"
+    dst = dst_dir / "whisper_tt.py"
+    if dst.exists():
+        logger.debug(f"whisper_tt.py already exists at {dst}, skipping")
+        return
+    if not src.exists():
+        logger.warning(f"whisper_tt.py source not found at {src}, cannot copy")
+        return
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    logger.info(f"Copied whisper_tt.py to {dst}")
+
+
 def setup_evals_audio(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -363,6 +384,7 @@ def setup_evals_audio(
     if setup_succeeded:
         site_packages = venv_config.venv_path / "lib" / "python3.10" / "site-packages"
         ensure_librispeech_yaml_tasks(site_packages)
+        ensure_whisper_tt_model(site_packages)
     return setup_succeeded
 
 

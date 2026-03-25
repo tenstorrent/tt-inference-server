@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 
-from workflows.workflow_venvs import ensure_librispeech_yaml_tasks
+from workflows.workflow_venvs import ensure_librispeech_yaml_tasks, ensure_whisper_tt_model
 
 
 class TestEnsureLibrispeechYamlTasks:
@@ -43,3 +43,34 @@ class TestEnsureLibrispeechYamlTasks:
             / "librispeech_test_other.yaml"
         )
         assert yaml_file.exists()
+
+
+class TestEnsureWhisperTtModel:
+    def test_copies_when_missing(self, tmp_path):
+        """whisper_tt.py is copied to models/simple/ when absent."""
+        src_dir = tmp_path / "lmms_eval" / "models"
+        src_dir.mkdir(parents=True)
+        src = src_dir / "whisper_tt.py"
+        src.write_text("# whisper_tt model")
+        ensure_whisper_tt_model(tmp_path)
+        dst = src_dir / "simple" / "whisper_tt.py"
+        assert dst.exists()
+        assert dst.read_text() == "# whisper_tt model"
+
+    def test_does_not_overwrite_existing(self, tmp_path):
+        """Existing file in simple/ is left unchanged (idempotent)."""
+        src_dir = tmp_path / "lmms_eval" / "models"
+        src_dir.mkdir(parents=True)
+        (src_dir / "whisper_tt.py").write_text("source content")
+        dst_dir = src_dir / "simple"
+        dst_dir.mkdir(parents=True)
+        dst = dst_dir / "whisper_tt.py"
+        dst.write_text("existing content")
+        ensure_whisper_tt_model(tmp_path)
+        assert dst.read_text() == "existing content"
+
+    def test_skips_when_source_missing(self, tmp_path):
+        """No error when source whisper_tt.py doesn't exist."""
+        ensure_whisper_tt_model(tmp_path)
+        dst = tmp_path / "lmms_eval" / "models" / "simple" / "whisper_tt.py"
+        assert not dst.exists()
