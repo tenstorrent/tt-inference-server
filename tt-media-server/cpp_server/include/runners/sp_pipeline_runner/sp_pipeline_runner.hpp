@@ -6,18 +6,17 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
 #include "config/runner_config.hpp"
+#include "ipc/boost_ipc_memory_queue.hpp"
 #include "ipc/shared_memory.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
-#include "runners/sp_pipeline_runner/shared_memory.hpp"
 #include "services/memory_manager.hpp"
 
 namespace tt::runners {
@@ -55,11 +54,10 @@ class SpPipelineRunner : public IRunner {
   int inFlightCount = 0;
 
   tt::services::MemoryManager memoryManager_;
-  sp_pipeline::MemoryRequestQueue memoryRequests_{
-      sp_pipeline::k_memory_request_shm_name, true, true};
-  sp_pipeline::MemoryResultQueue memoryResults_{
-      sp_pipeline::k_memory_result_shm_name, true, true};
-  std::mutex resultWriteMutex_;
+  ipc::MemoryRequestQueue memoryRequests_{ipc::k_memory_request_queue_name,
+                                          ipc::MEMORY_QUEUE_CAPACITY};
+  ipc::MemoryResultQueue memoryResults_{ipc::k_memory_result_queue_name,
+                                        ipc::MEMORY_QUEUE_CAPACITY};
   std::thread memoryThread_;
 };
 

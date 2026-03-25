@@ -22,8 +22,6 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       taskQueue(taskQueue),
       decodeQueue(config.max_in_flight_count),
       maxInFlightCount(config.max_in_flight_count * 30) {
-  memoryRequests_.open();
-  memoryResults_.open();
   memoryThread_ = std::thread([this] { memoryLoop(); });
 
   auto decodeCb = [this](const llm_engine::TokenResult& result) {
@@ -114,17 +112,15 @@ void SpPipelineRunner::memoryLoop() {
     if (!retryQueue.empty()) {
       auto result = memoryManager_.handle_task(retryQueue.front());
       if (result.status != domain::ManageMemoryStatus::WAITING) {
-        std::lock_guard<std::mutex> lock(resultWriteMutex_);
-        memoryResults_.writeResult(result);
+        memoryResults_.push(result);
         retryQueue.erase(retryQueue.begin());
       }
-    } else if (memoryRequests_.tryReadRequest(task)) {
+    } else if (memoryRequests_.tryPop(task)) {
       auto result = memoryManager_.handle_task(task);
       if (result.status == domain::ManageMemoryStatus::WAITING) {
         retryQueue.push_back(task);
       } else {
-        std::lock_guard<std::mutex> lock(resultWriteMutex_);
-        memoryResults_.writeResult(result);
+        memoryResults_.push(result);
       }
     } else {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
