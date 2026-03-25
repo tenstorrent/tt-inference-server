@@ -72,6 +72,7 @@ def mock_args():
         vllm_override_args=None,
         device_id=None,
         reset_venvs=False,
+        generate_report_schema=False,
         runtime_model_spec_json=None,
         tt_metal_python_venv_dir=None,
         tt_metal_home=None,
@@ -146,6 +147,14 @@ class TestArgumentParsing:
         assert args.workflow == "benchmarks"
         assert args.device == "n150"
         assert args.tt_device == "n150"
+
+    def test_generate_report_schema_parses_with_reports_run_args(self, base_args):
+        with patch("sys.argv", ["run.py"] + base_args + ["--generate-report-schema"]):
+            args = parse_arguments()
+
+        assert args.generate_report_schema is True
+        assert args.model == "Mistral-7B-Instruct-v0.3"
+        assert args.workflow == "benchmarks"
 
     @pytest.mark.parametrize(
         "missing_arg,remaining_args",
