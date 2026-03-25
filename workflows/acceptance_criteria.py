@@ -77,8 +77,6 @@ def format_acceptance_summary_markdown(
         next_failures = benchmark_target_evaluation.get("next_status_failures", [])
         if next_status and next_failures:
             lines.append(f"- Next benchmark status blocked at `{next_status}`.")
-            for failure in next_failures:
-                lines.append(f"- {failure['label']}: {failure['message']}")
 
     if accepted and not acceptance_blockers:
         lines.append("- All acceptance criteria passed.")
