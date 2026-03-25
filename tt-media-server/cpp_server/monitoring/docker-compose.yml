@@ -8,7 +8,7 @@
 #
 # Then start the monitoring stack, telling Prometheus which container to scrape:
 #
-#   SERVER_TARGET=<container-name>:8000 \
+#   SERVER_TARGET=$(hostname):8000 \
 #     docker compose -f monitoring/docker-compose.yml up -d
 #
 # SERVER_TARGET defaults to 'tt-inference-server:8000'.

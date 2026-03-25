@@ -12,10 +12,10 @@ docker network create tt_net
 docker network connect tt_net <your-inference-container-name>
 
 # Start Prometheus and Grafana, pointing at the inference container
-SERVER_TARGET=<container-name>:8000 docker compose -f monitoring/docker-compose.yml up -d
+SERVER_TARGET=$(hostname):8000 docker compose -f monitoring/docker-compose.yml up -d
 ```
 
-`SERVER_TARGET` defaults to `tt-inference-server:8000` if omitted.
+`SERVER_TARGET` defaults to `tt-inference-server:8000` if omitted. Using `$(hostname)` is convenient when the inference server container shares the host's name.
 
 Open Grafana at **http://localhost:3000** (admin / admin). The dashboard loads automatically.
 
