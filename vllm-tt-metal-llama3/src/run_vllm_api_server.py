@@ -84,6 +84,12 @@ def register_tt_models(impl_id=None):
     else:
         os.environ["TT_QWEN3_TEXT_VER"] = "tt_transformers"
 
+    # Llama - Text
+    ModelRegistry.register_model(
+        "TTLlamaForCausalLM",
+        "models.tt_transformers.tt.generator_vllm:LlamaForCausalLM",
+    )
+
     # Arcee AFM-4.5B - Text
     ModelRegistry.register_model(
         "TTArceeForCausalLM",
