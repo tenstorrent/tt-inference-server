@@ -335,7 +335,9 @@ def ensure_librispeech_yaml_tasks(site_packages_path: Path) -> None:
         yaml_file.write_text(LIBRISPEECH_TEST_OTHER_YAML)
         logger.info(f"Wrote librispeech_test_other.yaml to {yaml_file}")
     else:
-        logger.debug(f"librispeech_test_other.yaml already exists at {yaml_file}, skipping")
+        logger.debug(
+            f"librispeech_test_other.yaml already exists at {yaml_file}, skipping"
+        )
 
 
 def setup_evals_audio(

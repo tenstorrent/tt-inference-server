@@ -12,7 +12,11 @@ class TestEnsureLibrispeechYamlTasks:
         """YAML file is written to the correct location when absent."""
         ensure_librispeech_yaml_tasks(tmp_path)
         yaml_file = (
-            tmp_path / "lmms_eval" / "tasks" / "librispeech" / "librispeech_test_other.yaml"
+            tmp_path
+            / "lmms_eval"
+            / "tasks"
+            / "librispeech"
+            / "librispeech_test_other.yaml"
         )
         assert yaml_file.exists(), f"Expected YAML file at {yaml_file}"
         content = yaml_file.read_text()
@@ -33,6 +37,10 @@ class TestEnsureLibrispeechYamlTasks:
         site_packages = tmp_path / "lib" / "python3.10" / "site-packages"
         ensure_librispeech_yaml_tasks(site_packages)
         yaml_file = (
-            site_packages / "lmms_eval" / "tasks" / "librispeech" / "librispeech_test_other.yaml"
+            site_packages
+            / "lmms_eval"
+            / "tasks"
+            / "librispeech"
+            / "librispeech_test_other.yaml"
         )
         assert yaml_file.exists()
