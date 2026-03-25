@@ -93,8 +93,7 @@ struct ManageMemoryResult {
     ManageMemoryResult result;
     char tid_buf[TaskID::K_SERIALIZED_SIZE];
     is.read(tid_buf, TaskID::K_SERIALIZED_SIZE);
-    result.task_id =
-        TaskID::ipcDeserialize(tid_buf, TaskID::K_SERIALIZED_SIZE);
+    result.task_id = TaskID::ipcDeserialize(tid_buf, TaskID::K_SERIALIZED_SIZE);
     std::uint8_t s = 0;
     is.read(reinterpret_cast<char*>(&s), sizeof(s));
     result.status = static_cast<ManageMemoryStatus>(s);
@@ -102,9 +101,8 @@ struct ManageMemoryResult {
     is.read(reinterpret_cast<char*>(&n), sizeof(n));
     result.memory_locations.resize(n);
     for (std::uint32_t i = 0; i < n; ++i) {
-      is.read(
-          reinterpret_cast<char*>(&result.memory_locations[i].dram_address),
-          sizeof(std::uint64_t));
+      is.read(reinterpret_cast<char*>(&result.memory_locations[i].dram_address),
+              sizeof(std::uint64_t));
       is.read(reinterpret_cast<char*>(
                   &result.memory_locations[i].semaphore_address),
               sizeof(std::uint64_t));
