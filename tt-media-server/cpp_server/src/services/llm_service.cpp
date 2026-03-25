@@ -12,6 +12,7 @@
 #include <unordered_set>
 
 #include "config/settings.hpp"
+#include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
@@ -176,7 +177,13 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       if (isFinal) {
         stream_callbacks_.erase(token.task_id);
         pending_tasks_.fetch_sub(1);
+        tt::metrics::ServerMetrics::instance().setNumRequestsRunning(
+            static_cast<double>(pending_tasks_.load()));
       }
+
+      // Record token-level metrics before reasoning filtering so all
+      // generated tokens (including hidden reasoning tokens) are counted.
+      tt::metrics::ServerMetrics::instance().onToken(taskId);
 
       // Process token through reasoning parser to determine content type
       TokenParseResult parseResult{ContentType::ANSWER, "", true};
@@ -227,6 +234,15 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       callback(response, isFinal);
 
       if (isFinal) {
+        // Record request completion metrics
+        std::string finish_reason = "unknown";
+        if (!response.choices.empty() &&
+            response.choices[0].finish_reason.has_value()) {
+          finish_reason = response.choices[0].finish_reason.value();
+        }
+        tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId,
+                                                                  finish_reason);
+
         // Clean up reasoning parser state for this task
         if (reasoning_parser_) {
           reasoning_parser_->finalizeTask(taskId);
@@ -324,6 +340,8 @@ void LLMService::processStreamingRequest(
 
   pending_tasks_.fetch_add(1);
   TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
+  tt::metrics::ServerMetrics::instance().setNumRequestsRunning(
+      static_cast<double>(pending_tasks_.load()));
 
   stream_callbacks_.insert(taskId, std::move(callback));
 
@@ -334,6 +352,9 @@ void LLMService::processStreamingRequest(
 
   auto prompt = std::get<std::vector<int>>(request.prompt);
   std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
+
+  tt::metrics::ServerMetrics::instance().onRequestSubmitted(
+      taskId, static_cast<int>(prompt.size()));
 
   if (mode_ == tt::config::LLMMode::DECODE_ONLY) {
     if (!prefill_request_callback_) {

@@ -121,7 +121,7 @@ int main(int argc, char* argv[]) {
 
     // Skip authentication for health, tt-liveness, docs, and openapi endpoints
     if (path == "/health" || path == "/tt-liveness" || path == "/docs" ||
-        path == "/swagger" || path == "/openapi.json") {
+        path == "/swagger" || path == "/openapi.json" || path == "/metrics") {
       chainCallback();
       return;
     }
@@ -189,6 +189,7 @@ int main(int argc, char* argv[]) {
     TT_LOG_INFO("  GET  /tt-liveness          - Liveness check");
     TT_LOG_INFO("  GET  /docs                 - Swagger UI");
     TT_LOG_INFO("  GET  /openapi.json         - OpenAPI specification");
+    TT_LOG_INFO("  GET  /metrics              - Prometheus metrics scrape");
   }
 
   // Run the server
