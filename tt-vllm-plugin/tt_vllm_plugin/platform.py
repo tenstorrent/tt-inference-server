@@ -8,15 +8,16 @@ import vllm.envs as envs
 from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
 from vllm.platforms.interface import Platform, PlatformEnum
-from vllm.sampling_params import SamplingParams
 
 if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
     from vllm.pooling_params import PoolingParams
+    from vllm.sampling_params import SamplingParams
 else:
     ModelConfig = None
     VllmConfig = None
     PoolingParams = None
+    SamplingParams = None
 
 logger = init_logger("vllm.tt_vllm_plugin.platform")
 
@@ -198,6 +199,8 @@ class TTPlatform(Platform):
         processed_inputs: ProcessorInputs,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
+        # Lazy import to avoid circular dependency during platform registration
+        from vllm.sampling_params import SamplingParams
 
         if isinstance(params, SamplingParams):
             if params.n != 1:
