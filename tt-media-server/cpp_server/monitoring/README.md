@@ -11,13 +11,13 @@ The inference server must be on the shared `tt_net` Docker network so Prometheus
 docker network create tt_net
 docker network connect tt_net <your-inference-container-name>
 
-# Start Prometheus and Grafana
-docker compose -f monitoring/docker-compose.yml up -d
+# Start Prometheus and Grafana, pointing at the inference container
+SERVER_TARGET=<container-name>:8000 docker compose -f monitoring/docker-compose.yml up -d
 ```
 
-Open Grafana at **http://localhost:3000** (admin / admin). The dashboard loads automatically.
+`SERVER_TARGET` defaults to `tt-inference-server:8000` if omitted.
 
-The target is hardcoded in `prometheus.yml` — update the container name there if yours differs.
+Open Grafana at **http://localhost:3000** (admin / admin). The dashboard loads automatically.
 
 ## Directory layout
 

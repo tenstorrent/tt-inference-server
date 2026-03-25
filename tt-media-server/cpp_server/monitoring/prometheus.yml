@@ -8,7 +8,7 @@ scrape_configs:
     # Set SERVER_TARGET=<container-name>:<port> when running docker compose.
     static_configs:
       - targets:
-          - "bh-47-special-dmadic-for-reservation-20745:8000"
+          - "__SERVER_TARGET__"
         labels:
           instance: "tt_media_server"
     metrics_path: /metrics
