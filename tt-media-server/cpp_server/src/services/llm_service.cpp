@@ -187,7 +187,10 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
             taskId, static_cast<int64_t>(token.token_id), decodedText);
       }
 
-      // Always emit response (send all tokens to client)
+      if (!parseResult.should_emit && !isFinal) {
+        continue;
+      }
+
       domain::StreamingChunkResponse response{domain::TaskID(taskId)};
       response.id = taskId;
       response.created =

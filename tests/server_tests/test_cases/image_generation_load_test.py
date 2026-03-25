@@ -90,7 +90,6 @@ class ImageGenerationLoadTest(BaseTest):
                 logger.error("[%s] Exception after %.2fs: %s", index, duration, e)
                 raise
 
-        # NOTE: warmup never runs due to early return inside first iteration
         for iteration in range(2):
             session_timeout = aiohttp.ClientTimeout(total=2000)
             async with aiohttp.ClientSession(
@@ -98,9 +97,11 @@ class ImageGenerationLoadTest(BaseTest):
             ) as session:
                 tasks = [timed_request(session, i + 1) for i in range(batch_size)]
                 results = await asyncio.gather(*tasks)
-                requests_duration = max(results)
-                total_duration = sum(results)
-                avg_duration = total_duration / batch_size
-                return requests_duration, avg_duration
-            if iteration == 0:
-                logger.info("Warmup run done.")
+
+                if iteration == 0:
+                    logger.info("Warmup run done.")
+                else:
+                    requests_duration = max(results)
+                    total_duration = sum(results)
+                    avg_duration = total_duration / batch_size
+                    return requests_duration, avg_duration

@@ -28,6 +28,10 @@ constexpr int DECODE_MAX_TOKEN_IDS = 1;
 
 enum SlotState { FREE, TAKEN };
 
+struct SharedMemoryState {
+  uint64_t cursor;
+};
+
 template <int MaxTokenIds>
 struct Message {
   std::atomic<int32_t> state;
@@ -111,6 +115,9 @@ class SharedMemory {
     if (owner_) {
       shm_unlink(name.c_str());
     }
+    if (state && state != MAP_FAILED) {
+      munmap(state, sizeof(SharedMemoryState));
+    }
   }
 
   SharedMemory(const SharedMemory&) = delete;
@@ -142,11 +149,30 @@ class SharedMemory {
     }
     ::close(fd);
 
-    if (create_) {
-      std::memset(memPointer, 0, k_total_size);
+    messages = std::span<Msg>(static_cast<Msg*>(memPointer), SHM_SLOTS);
+    openState();
+    this->current = state->cursor;
+  }
+
+  void openState() {
+    auto name = this->name + "_state";
+    int fd;
+    fd = shm_open(name.c_str(), O_RDWR, 0);
+    if (fd < 0) {
+      fd = shm_open(name.c_str(), O_CREAT | O_RDWR, 0666);
+      ftruncate(fd, sizeof(SharedMemoryState));
+      auto memPointerState = mmap(nullptr, sizeof(SharedMemoryState),
+                                  PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+      memset(memPointerState, 0, sizeof(SharedMemoryState));
+      ::close(fd);
+      state = reinterpret_cast<SharedMemoryState*>(memPointerState);
+      return;
     }
-    messages =
-        std::span<SlotType>(static_cast<SlotType*>(memPointer), SHM_SLOTS);
+    auto memPointerState = mmap(nullptr, sizeof(SharedMemoryState),
+                                PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    ::close(fd);
+    state = reinterpret_cast<SharedMemoryState*>(memPointerState);
+    return;
   }
 
   void write(const std::string& uuid, const std::vector<int64_t>& tokenIds,
@@ -255,14 +281,21 @@ class SharedMemory {
   std::string name;
 
  private:
-  SlotType& acquireSlot() { return messages[current]; }
-  void advanceCurrent() { current = (current + 1) % SHM_SLOTS; }
+  Msg& acquireMsg() { return messages[current]; }
+
+  void advanceCurrent() {
+    current = (current + 1) % SHM_SLOTS;
+    updateState();
+  }
+
+  void updateState() { state->cursor = current; }
 
   bool create_;
   bool owner_;
   void* memPointer = nullptr;
   uint64_t current = 0;
-  std::span<SlotType> messages;
+  std::span<Msg> messages;
+  SharedMemoryState* state = nullptr;
 };
 
 using PrefillSharedMemory = SharedMemory<Message<PREFILL_MAX_TOKEN_IDS>>;
