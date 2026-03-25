@@ -3,8 +3,11 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 
+from unittest.mock import patch
+
 from workflows.workflow_venvs import (
     ensure_librispeech_yaml_tasks,
+    ensure_whisper_normalizer_json,
     ensure_whisper_tt_model,
 )
 
@@ -46,6 +49,46 @@ class TestEnsureLibrispeechYamlTasks:
             / "librispeech_test_other.yaml"
         )
         assert yaml_file.exists()
+
+
+class TestEnsureWhisperNormalizerJson:
+    def test_downloads_when_missing(self, tmp_path):
+        """english.json is downloaded when absent."""
+        fake_json = '{"colour": "color"}'
+
+        def fake_urlretrieve(url, dest):
+            dest.write_text(fake_json) if hasattr(dest, "write_text") else open(
+                dest, "w"
+            ).write(fake_json)
+
+        with patch(
+            "urllib.request.urlretrieve", side_effect=fake_urlretrieve
+        ):
+            ensure_whisper_normalizer_json(tmp_path)
+        json_file = (
+            tmp_path
+            / "lmms_eval"
+            / "tasks"
+            / "librispeech"
+            / "whisper_normalizer"
+            / "english.json"
+        )
+        assert json_file.exists()
+
+    def test_does_not_overwrite_existing(self, tmp_path):
+        """Existing english.json is left unchanged (idempotent)."""
+        json_dir = (
+            tmp_path
+            / "lmms_eval"
+            / "tasks"
+            / "librispeech"
+            / "whisper_normalizer"
+        )
+        json_dir.mkdir(parents=True)
+        json_file = json_dir / "english.json"
+        json_file.write_text("existing content")
+        ensure_whisper_normalizer_json(tmp_path)
+        assert json_file.read_text() == "existing content"
 
 
 class TestEnsureWhisperTtModel:

@@ -340,6 +340,39 @@ def ensure_librispeech_yaml_tasks(site_packages_path: Path) -> None:
         )
 
 
+def ensure_whisper_normalizer_json(site_packages_path: Path) -> None:
+    """Ensure english.json is present in the whisper_normalizer directory.
+
+    The TT fork of lmms-eval includes whisper_normalizer/english.json in its
+    source tree but pip does not install it as package data. This function
+    downloads the file from the fork if it is missing.
+    """
+    json_dir = (
+        Path(site_packages_path)
+        / "lmms_eval"
+        / "tasks"
+        / "librispeech"
+        / "whisper_normalizer"
+    )
+    json_file = json_dir / "english.json"
+    if json_file.exists():
+        logger.debug(f"english.json already exists at {json_file}, skipping")
+        return
+    json_dir.mkdir(parents=True, exist_ok=True)
+    url = (
+        "https://raw.githubusercontent.com/bgoelTT/lmms-eval"
+        "/ben/samt/whisper-tt"
+        "/lmms_eval/tasks/librispeech/whisper_normalizer/english.json"
+    )
+    import urllib.request
+
+    try:
+        urllib.request.urlretrieve(url, json_file)
+        logger.info(f"Downloaded english.json to {json_file}")
+    except Exception as e:
+        logger.warning(f"Failed to download english.json: {e}")
+
+
 def ensure_whisper_tt_model(site_packages_path: Path) -> None:
     """Ensure whisper_tt model module is in the lmms-eval simple models directory.
 
@@ -384,6 +417,7 @@ def setup_evals_audio(
     if setup_succeeded:
         site_packages = venv_config.venv_path / "lib" / "python3.10" / "site-packages"
         ensure_librispeech_yaml_tasks(site_packages)
+        ensure_whisper_normalizer_json(site_packages)
         ensure_whisper_tt_model(site_packages)
     return setup_succeeded
 
