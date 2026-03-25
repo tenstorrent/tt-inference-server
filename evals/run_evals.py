@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import jwt
+import requests
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent
@@ -27,7 +28,7 @@ if project_root not in sys.path:
 
 from evals.eval_config import EVAL_CONFIGS, EvalConfig, EvalTask
 from utils.prompt_client import PromptClient
-from utils.prompt_configs import EnvironmentConfig
+from utils.prompt_configs import EnvironmentConfig, resolve_api_base_url
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
@@ -149,6 +150,111 @@ def _setup_openai_api_key(args, logger):
     logger.info("OPENAI_API_KEY environment variable set.")
 
 
+def _configure_openai_api_key(args, model_type, logger) -> str:
+    if model_type in EVAL_TASK_TYPES:
+        _setup_openai_api_key(args, logger)
+    elif args.jwt_secret:
+        json_payload = json.loads(
+            '{"team_id": "tenstorrent", "token_id": "debug-test"}'
+        )
+        encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
+        os.environ["OPENAI_API_KEY"] = encoded_jwt
+        logger.info(
+            "OPENAI_API_KEY environment variable set using provided JWT secret."
+        )
+    else:
+        api_key = (
+            os.getenv("OPENAI_API_KEY")
+            or os.getenv("API_KEY")
+            or "your-secret-key"
+        )
+        os.environ["OPENAI_API_KEY"] = api_key
+
+    return os.environ["OPENAI_API_KEY"]
+
+
+def _validate_generation_response_shape(
+    response_json: dict, endpoint: str, use_chat_api: bool
+) -> None:
+    choices = response_json.get("choices")
+    if not isinstance(choices, list) or len(choices) == 0:
+        raise RuntimeError(
+            "External server returned an invalid OpenAI-compatible response from "
+            f"{endpoint}: expected a non-empty 'choices' array, got {response_json!r}. "
+            "The server is reachable, but it is not returning a valid completion for lm-eval."
+        )
+
+    first_choice = choices[0]
+    if not isinstance(first_choice, dict):
+        raise RuntimeError(
+            "External server returned an invalid OpenAI-compatible response from "
+            f"{endpoint}: expected each choice to be a JSON object, got {response_json!r}."
+        )
+
+    if use_chat_api:
+        message = first_choice.get("message")
+        if not isinstance(message, dict) or "content" not in message:
+            raise RuntimeError(
+                "External server returned an invalid chat completion response from "
+                f"{endpoint}: expected choices[0].message.content, got {response_json!r}."
+            )
+    elif "text" not in first_choice:
+        raise RuntimeError(
+            "External server returned an invalid completion response from "
+            f"{endpoint}: expected choices[0].text, got {response_json!r}."
+        )
+
+
+def _validate_generation_endpoint(
+    prompt_client: PromptClient,
+    model_name: str,
+    use_chat_api: bool,
+) -> None:
+    if use_chat_api:
+        endpoint = f"{prompt_client._get_api_base_url()}/chat/completions"
+        payload = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 1,
+            "temperature": 0.0,
+            "stream": False,
+        }
+    else:
+        endpoint = prompt_client.completions_url
+        payload = {
+            "model": model_name,
+            "prompt": "ping",
+            "max_tokens": 1,
+            "temperature": 0.0,
+            "stream": False,
+        }
+
+    try:
+        response = requests.post(
+            endpoint,
+            headers=prompt_client.headers,
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+        response_json = response.json()
+    except requests.exceptions.RequestException as exc:
+        raise RuntimeError(
+            f"External server request validation failed for {endpoint}: {exc}"
+        ) from exc
+    except ValueError as exc:
+        raise RuntimeError(
+            "External server returned a non-JSON response from "
+            f"{endpoint}: {response.text[:500]!r}"
+        ) from exc
+
+    _validate_generation_response_shape(
+        response_json=response_json,
+        endpoint=endpoint,
+        use_chat_api=use_chat_api,
+    )
+
+
 def parse_args():
     """
     Parse command line arguments.
@@ -208,11 +314,12 @@ def build_eval_command(
     """
     # Audio models use tt-media-server which has endpoints at /audio (not /v1/audio)
     # Other models use vLLM which has endpoints at /v1
-    base_url = os.getenv("BASE_URL", f"http://127.0.0.1:{service_port}")
-    if task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
-        base_url = base_url
-    else:
-        base_url = f"{base_url}/v1"
+    base_url = resolve_api_base_url(
+        service_port=service_port,
+        base_url=os.getenv("BASE_URL"),
+        deploy_url=os.getenv("DEPLOY_URL"),
+        include_v1=task.workflow_venv_type != WorkflowVenvType.EVALS_AUDIO,
+    )
     eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     if task.use_chat_api:
@@ -372,21 +479,8 @@ def main():
     logger.info(f"device=: {device_str}")
     assert device == model_spec.device_type
 
-    # Setup authentication based on model type
-    if model_spec.model_type in EVAL_TASK_TYPES:
-        _setup_openai_api_key(args, logger)
-    elif args.jwt_secret:
-        # For LLM models, generate JWT token from jwt_secret
-        json_payload = json.loads(
-            '{"team_id": "tenstorrent", "token_id": "debug-test"}'
-        )
-        encoded_jwt = jwt.encode(json_payload, args.jwt_secret, algorithm="HS256")
-        os.environ["OPENAI_API_KEY"] = encoded_jwt
-        logger.info(
-            "OPENAI_API_KEY environment variable set using provided JWT secret."
-        )
-    # copy env vars to pass to subprocesses
-    os.environ["OPENAI_API_KEY"] = "your-secret-key"
+    # Setup authentication based on model type.
+    _configure_openai_api_key(args, model_spec.model_type, logger)
     env_vars = os.environ.copy()
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
@@ -409,6 +503,9 @@ def main():
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
     env_config.jwt_secret = args.jwt_secret
+    env_config.vllm_api_key = os.getenv("VLLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    env_config.base_url = os.getenv("BASE_URL")
+    env_config.deploy_url = os.getenv("DEPLOY_URL", env_config.deploy_url)
     env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
@@ -478,6 +575,13 @@ def main():
         if not prompt_client.wait_for_healthy():
             logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
             return 1
+
+        for use_chat_api in {task.use_chat_api for task in eval_config.tasks}:
+            _validate_generation_endpoint(
+                prompt_client=prompt_client,
+                model_name=model_spec.hf_model_repo,
+                use_chat_api=use_chat_api,
+            )
 
         if not disable_trace_capture:
             if "image" in model_spec.supported_modalities:

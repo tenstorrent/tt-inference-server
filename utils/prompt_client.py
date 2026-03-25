@@ -13,7 +13,11 @@ import jwt
 from transformers import AutoTokenizer
 
 from utils.prompt_generation import generate_prompts
-from utils.prompt_configs import PromptConfig, EnvironmentConfig
+from utils.prompt_configs import (
+    PromptConfig,
+    EnvironmentConfig,
+    resolve_api_base_url,
+)
 from utils.cache_monitor import CacheMonitor, get_environment_cache_dir
 
 logging.basicConfig(
@@ -131,8 +135,12 @@ class PromptClient:
             include_v1: If True, append /v1 for OpenAI-compatible endpoints.
                        If False, return root URL for vLLM-specific endpoints.
         """
-        base = f"{self.env_config.deploy_url}:{self.env_config.service_port}"
-        return f"{base}/v1" if include_v1 else base
+        return resolve_api_base_url(
+            service_port=self.env_config.service_port,
+            base_url=self.env_config.base_url,
+            deploy_url=self.env_config.deploy_url,
+            include_v1=include_v1,
+        )
 
     def _get_api_completions_url(self) -> str:
         return f"{self._get_api_base_url()}/completions"
