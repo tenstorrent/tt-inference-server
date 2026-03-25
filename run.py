@@ -127,12 +127,6 @@ def parse_arguments():
 
     parser.add_argument("--dev-mode", action="store_true", help="Enable developer mode")
     parser.add_argument(
-        "--tt-metal-path",
-        type=str,
-        default=None,
-        help="Path to a local tt-metal checkout. When combined with --dev-mode, mounts the local model code into the Docker container, overriding the baked-in version.",
-    )
-    parser.add_argument(
         "--override-docker-image",
         type=str,
         help="Override the Docker image used by --docker-server, ignoring the model config",
@@ -333,7 +327,6 @@ def format_cli_args_summary(args, model_spec):
         "",
         "Optional args:",
         f"  dev_mode:                   {args.dev_mode}",
-        f"  tt_metal_path:              {args.tt_metal_path}",
         f"  docker_server:              {args.docker_server}",
         f"  local_server:               {args.local_server}",
         f"  no_auth:                    {args.no_auth}",
