@@ -10,6 +10,15 @@ from telemetry.telemetry_client import get_telemetry_client
 from utils.logger import TTLogger
 from utils.torch_utils import set_torch_thread_limits
 
+_BH_DEVICE_MESH_DESCRIPTORS = {
+    "p150": "p150_mesh_graph_descriptor.textproto",
+    "p150x4": "p150x4_mesh_graph_descriptor.textproto",
+    "p150x8": "p150x8_mesh_graph_descriptor.textproto",
+    "p300": "p300_mesh_graph_descriptor.textproto",
+    "p300x2": "p300_x2_mesh_graph_descriptor.textproto",
+    "p100": "p100_mesh_graph_descriptor.textproto",
+}
+
 
 def setup_runner_environment(
     device_id: str, cpu_threads: str = "2", num_torch_threads: int = 1
@@ -39,6 +48,11 @@ def setup_runner_environment(
     if settings.is_galaxy:
         _logger.info("setup_runner_environment: applying galaxy mesh config")
         _setup_galaxy_mesh_config(tt_metal_home)
+    elif (settings.device or "").lower() in _BH_DEVICE_MESH_DESCRIPTORS:
+        _logger.info(
+            f"setup_runner_environment: applying blackhole mesh config for device={settings.device!r}"
+        )
+        _setup_blackhole_mesh_config(tt_metal_home)
 
 
 def setup_cpu_threading_limits(cpu_threads: str, num_torch_threads: int = 1):
@@ -49,6 +63,16 @@ def setup_cpu_threading_limits(cpu_threads: str, num_torch_threads: int = 1):
     set_torch_thread_limits(num_threads=num_torch_threads)
     if settings.default_throttle_level:
         os.environ["TT_MM_THROTTLE_PERF"] = settings.default_throttle_level
+
+
+def _setup_blackhole_mesh_config(tt_metal_home: str):
+    """Configure mesh graph descriptors for Blackhole hardware"""
+    device = (settings.device or "").lower()
+    descriptor = _BH_DEVICE_MESH_DESCRIPTORS.get(device)
+    if descriptor:
+        os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
+            f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/{descriptor}"
+        )
 
 
 def _setup_galaxy_mesh_config(tt_metal_home: str):
