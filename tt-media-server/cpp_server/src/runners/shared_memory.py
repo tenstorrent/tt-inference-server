@@ -91,9 +91,7 @@ class SharedMemory:
         # (same lifecycle as the ring buffer), even if C++ created the segment first.
         state_name = f"{self._name}_state"
         try:
-            self._shm_state = _shm.SharedMemory(
-                name=state_name, create=False
-            )
+            self._shm_state = _shm.SharedMemory(name=state_name, create=False)
         except FileNotFoundError:
             self._shm_state = _shm.SharedMemory(
                 name=state_name, create=True, size=_STATE_SHM_SIZE
