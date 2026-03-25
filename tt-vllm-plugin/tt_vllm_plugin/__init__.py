@@ -66,6 +66,7 @@ def register_models():
 
     # Register Molmo2-8B VLM model
     # This allows vLLM to find the TT-specific Molmo2 implementation
+    # HF architecture is "Molmo2ForConditionalGeneration", so TT name must be "TTMolmo2ForConditionalGeneration"
     try:
         ModelRegistry.register_model(
             "TTMolmo2ForConditionalGeneration",

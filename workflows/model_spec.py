@@ -2334,7 +2334,7 @@ vlm_templates = [
     ),
     ModelSpecTemplate(
         weights=[
-            "allenai/Molmo-7B-O-0924",
+            "allenai/Molmo2-8B",
         ],
         impl=tt_transformers_impl,
         tt_metal_commit="1a4cd53",
@@ -2347,6 +2347,10 @@ vlm_templates = [
                 max_concurrency=1,
                 max_context=4 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "trust_remote_code": True,
+                    "allowed_local_media_path": "/",
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -2354,6 +2358,7 @@ vlm_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image", "video"],
+        has_builtin_warmup=True,
     ),
 ]
 

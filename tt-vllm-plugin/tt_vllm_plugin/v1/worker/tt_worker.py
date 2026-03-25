@@ -233,8 +233,56 @@ class TTWorker(WorkerBase):
         self.cache_config.num_cpu_blocks = num_cpu_blocks
 
     def compile_or_warm_up_model(self) -> None:
-        # Currently skip and compile/capture-trace during the first execution.
-        pass
+        """
+        Warmup model by capturing traces for prefill and decode phases.
+
+        This method is called after load_model() and initialize_from_config().
+        It calls the model's warmup methods if they exist to capture ttnn traces.
+        """
+        if not self.trace_mode:
+            logger.info("Trace mode disabled - skipping model warmup")
+            return
+
+        if isinstance(self.model_runner, TTModelRunnerPooling):
+            # Pooling models don't need warmup
+            logger.info("Pooling model - skipping warmup")
+            return
+
+        if self.model_runner is None or self.model_runner.model is None:
+            logger.warning("Model not loaded - skipping warmup")
+            return
+
+        model = self.model_runner.model
+        kv_caches = getattr(self.model_runner, "kv_caches", None)
+
+        # Call decode warmup if the model supports it
+        if hasattr(model, "warmup_model_decode"):
+            logger.info("Calling model warmup_model_decode...")
+            try:
+                model.warmup_model_decode(
+                    kv_cache=kv_caches,
+                    enable_trace=self.trace_mode,
+                    max_batch_size=self.scheduler_config.max_num_seqs,
+                )
+                logger.info("Model decode warmup completed")
+            except Exception as e:
+                logger.warning(f"Model decode warmup failed: {e}")
+                logger.warning("Falling back to non-traced decode execution")
+
+        # Call prefill warmup if the model supports it
+        if hasattr(model, "warmup_model_prefill"):
+            logger.info("Calling model warmup_model_prefill...")
+            try:
+                model.warmup_model_prefill(
+                    kv_cache=kv_caches,
+                    enable_trace=self.trace_mode,
+                    can_sample_on_device=False,
+                    non_greedy_decoding_on_device=False,
+                )
+                logger.info("Model prefill warmup completed")
+            except Exception as e:
+                logger.warning(f"Model prefill warmup failed: {e}")
+                logger.warning("Falling back to non-traced prefill execution")
 
     def execute_model(
         self,

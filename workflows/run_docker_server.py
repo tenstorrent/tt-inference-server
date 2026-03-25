@@ -257,6 +257,12 @@ def generate_docker_run_command(
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal/src,dst={user_home_path}/app/src",
             ]
+            # Mount molmo2 model directory for VLM development
+            molmo2_model_path = repo_root_path.parent / "models" / "demos" / "molmo2"
+            if molmo2_model_path.exists():
+                docker_command += [
+                    "--mount", f"type=bind,src={molmo2_model_path},dst={user_home_path}/tt-metal/models/demos/molmo2",
+                ]
         # fmt: on
 
     for key, value in docker_env_vars.items():

@@ -31,6 +31,30 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def register_extra_tt_models():
+    """Register additional TT models that aren't in the vLLM fork yet.
+
+    This function is called early to ensure models are registered
+    before vLLM tries to load them.
+    """
+    try:
+        # Molmo2-8B Vision-Language Model
+        # HF architecture is "Molmo2ForConditionalGeneration", so TT name is "TTMolmo2ForConditionalGeneration"
+        ModelRegistry.register_model(
+            "TTMolmo2ForConditionalGeneration",
+            "models.demos.molmo2.tt.generator_vllm:Molmo2ForConditionalGeneration",
+        )
+        logger.info("Registered TTMolmo2ForConditionalGeneration (Molmo2-8B VLM)")
+    except Exception as e:
+        # May already be registered - that's fine
+        if "already registered" not in str(e).lower():
+            logger.warning(f"Failed to register extra TT models: {e}")
+
+
+# Register extra models early in the import process
+register_extra_tt_models()
+
+
 def parse_args():
     """Parse CLI arguments before any model loading.
 
@@ -504,9 +528,9 @@ def set_metal_timeout_env_vars():
         f"--disable-progress > {log_dir}/tt-triage-$(date +%Y%m%d-%H%M%S).log 2>&1"
     )
 
-    os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = "5.0"
+    os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = "30.0"  # Increased from 5.0 for large multi-crop images
     os.environ["TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE"] = timeout_cmd
-    logger.info("Set TT_METAL_OPERATION_TIMEOUT_SECONDS=5.0")
+    logger.info("Set TT_METAL_OPERATION_TIMEOUT_SECONDS=30.0")
     logger.info(f"Set TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE={timeout_cmd}")
 
 
