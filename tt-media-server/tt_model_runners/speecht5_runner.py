@@ -59,7 +59,9 @@ MAX_KV_STEPS = 800
 WARMUP_ENCODER_SIZES = [32, 64, 128, 160, 192, 256]
 
 
-def chunk_text(text: str, max_chunk_size: int = DEFAULT_CHUNK_SIZE, processor=None) -> List[str]:
+def chunk_text(
+    text: str, max_chunk_size: int = DEFAULT_CHUNK_SIZE, processor=None
+) -> List[str]:
     """Split text into chunks that always end at sentence boundaries.
 
     Sentences are packed greedily into chunks until adding the next sentence
@@ -135,6 +137,7 @@ def normalize_text_for_tts(text: str) -> str:
     Handles: ordinals (1st, 2nd), decimals (133.9), number+unit (250cc),
     and plain integers (9, 122).
     """
+
     # Ordinals first (e.g. "1st", "23rd") — before plain integers
     def _ordinal(m):
         return num2words(int(m.group(1)), to="ordinal")
@@ -163,7 +166,7 @@ def normalize_text_for_tts(text: str) -> str:
 
 
 class SpeechT5Constants:
-    MAX_STEPS = 300         # Default per-chunk step cap (auto-scaled per chunk at runtime)
+    MAX_STEPS = 300  # Default per-chunk step cap (auto-scaled per chunk at runtime)
     SAMPLE_RATE = 16000
     REDUCTION_FACTOR = 2
     HIFIGAN_VOCODER_REPO = (
@@ -183,7 +186,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         self.generator = None  # For trace execution
         self.speaker_manager = None
         self.decoder_config = None
-        self._baked_speaker_id = None  # Tracks which speaker ID is baked into decoder params
+        self._baked_speaker_id = (
+            None  # Tracks which speaker ID is baked into decoder params
+        )
 
         # Explicitly disable fabric for non-galaxy devices
         if not settings.is_galaxy:
@@ -378,9 +383,13 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
             try:
                 await asyncio.to_thread(self._initialize_models)
-                self.logger.info(f"Device {device_id_int}: Model initialization completed")
+                self.logger.info(
+                    f"Device {device_id_int}: Model initialization completed"
+                )
             except RuntimeError as e:
-                self.logger.error(f"Device {device_id_int}: Model initialization failed: {e}")
+                self.logger.error(
+                    f"Device {device_id_int}: Model initialization failed: {e}"
+                )
                 raise
 
             # Whisper-style warm-up: call _generate_mel_for_chunk with synthetic texts for
@@ -394,8 +403,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         except Exception as e:
             device_id_int = int(self.device_id) if self.device_id else 0
             self.logger.error(f"Device {device_id_int}: Model loading failed: {e}")
-            raise RuntimeError(f"Device {device_id_int}: Model loading failed: {str(e)}") from e
-
+            raise RuntimeError(
+                f"Device {device_id_int}: Model loading failed: {str(e)}"
+            ) from e
 
     def _warmup_full_pipeline(self):
         """Warm up by calling _generate_mel_for_chunk with synthetic texts.
@@ -416,12 +426,12 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         # Synthetic texts: token counts that pad to 32, 64, 128, 160, 192, 256 respectively.
         # These are the same texts used in demo_ttnn.py's warm-up.
         warmup_texts_per_size = {
-            32:  "A " * 15,          # ~31 tokens -> pads to 32
-            64:  "A " * 31,          # ~63 tokens -> pads to 64
-            128: "A " * 63,          # ~127 tokens -> pads to 128
-            160: "A " * 79,          # ~159 tokens -> pads to 160
-            192: "A " * 95,          # ~191 tokens -> pads to 192
-            256: "A " * 127,         # ~255 tokens -> pads to 256
+            32: "A " * 15,  # ~31 tokens -> pads to 32
+            64: "A " * 31,  # ~63 tokens -> pads to 64
+            128: "A " * 63,  # ~127 tokens -> pads to 128
+            160: "A " * 79,  # ~159 tokens -> pads to 160
+            192: "A " * 95,  # ~191 tokens -> pads to 192
+            256: "A " * 127,  # ~255 tokens -> pads to 256
         }
 
         for enc_size in WARMUP_ENCODER_SIZES:
@@ -449,17 +459,19 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         """
         # Synthetic texts: produce token counts that pad to 32, 64, 128, 160, 192, 256 respectively
         warmup_texts_per_size = {
-            32:  "A " * 15,          # ~31 tokens -> pads to 32
-            64:  "A " * 31,          # ~63 tokens -> pads to 64
-            128: "A " * 63,          # ~127 tokens -> pads to 128
-            160: "A " * 79,          # ~159 tokens -> pads to 160
-            192: "A " * 95,          # ~191 tokens -> pads to 192
-            256: "A " * 127,         # ~255 tokens -> pads to 256
+            32: "A " * 15,  # ~31 tokens -> pads to 32
+            64: "A " * 31,  # ~63 tokens -> pads to 64
+            128: "A " * 63,  # ~127 tokens -> pads to 128
+            160: "A " * 79,  # ~159 tokens -> pads to 160
+            192: "A " * 95,  # ~191 tokens -> pads to 192
+            256: "A " * 127,  # ~255 tokens -> pads to 256
         }
 
         for enc_size in WARMUP_ENCODER_SIZES:
             warmup_text = warmup_texts_per_size[enc_size]
-            warmup_ids = self.processor(text=warmup_text, return_tensors="pt")["input_ids"]
+            warmup_ids = self.processor(text=warmup_text, return_tensors="pt")[
+                "input_ids"
+            ]
             real_seq_len = warmup_ids.shape[1]
             padded_seq_len = get_padded_encoder_seq_len(real_seq_len)
 
@@ -485,7 +497,10 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 m = torch.zeros(1, 1, padded_seq_len, dtype=torch.float32)
                 m[:, :, real_seq_len:] = -1e9
                 warmup_mask = ttnn.from_torch(
-                    m, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=self.ttnn_device
+                    m,
+                    dtype=ttnn.bfloat16,
+                    layout=ttnn.TILE_LAYOUT,
+                    device=self.ttnn_device,
                 )
             _ = self.ttnn_encoder(dummy_ttnn_ids, attention_mask=warmup_mask)
             ttnn.deallocate(dummy_ttnn_ids)
@@ -508,10 +523,14 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
     def _prepare_speaker_embedding(self, request):
         """Prepare speaker embedding for the request. Returns (embedding, speaker_id)."""
         DEFAULT_SPEAKER_ID = "speaker_7306"
-        if hasattr(request, 'speaker_embedding') and request.speaker_embedding:
-            return self.speaker_manager.process_user_embedding(request.speaker_embedding), None
-        elif hasattr(request, 'speaker_id') and request.speaker_id:
-            return self.speaker_manager.get_speaker_embedding(request.speaker_id), request.speaker_id
+        if hasattr(request, "speaker_embedding") and request.speaker_embedding:
+            return self.speaker_manager.process_user_embedding(
+                request.speaker_embedding
+            ), None
+        elif hasattr(request, "speaker_id") and request.speaker_id:
+            return self.speaker_manager.get_speaker_embedding(
+                request.speaker_id
+            ), request.speaker_id
         else:
             available_speakers = self.speaker_manager.list_available_speakers()
             if DEFAULT_SPEAKER_ID in available_speakers:
@@ -519,7 +538,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             elif available_speakers:
                 speaker_id = available_speakers[0]
             else:
-                self.logger.warning('No speaker embeddings available, using zero embedding')
+                self.logger.warning(
+                    "No speaker embeddings available, using zero embedding"
+                )
                 return torch.zeros(
                     self.speaker_manager.SPEECHT5_EMBEDDING_DIM, dtype=torch.float32
                 ).unsqueeze(0), None
@@ -565,10 +586,15 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             mask = torch.zeros(1, 1, padded_seq_len, dtype=torch.float32)
             mask[:, :, real_seq_len:] = -1e9
             encoder_self_attn_mask = ttnn.from_torch(
-                mask, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=self.ttnn_device
+                mask,
+                dtype=ttnn.bfloat16,
+                layout=ttnn.TILE_LAYOUT,
+                device=self.ttnn_device,
             )
 
-        encoder_hidden_states = self.ttnn_encoder(ttnn_input_ids, attention_mask=encoder_self_attn_mask)[0]
+        encoder_hidden_states = self.ttnn_encoder(
+            ttnn_input_ids, attention_mask=encoder_self_attn_mask
+        )[0]
 
         use_trace = self.generator is not None
 
@@ -579,14 +605,17 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
         chunk_max_steps = MAX_KV_STEPS
 
         import time as _time
+
         if use_trace:
             _t0 = _time.perf_counter()
             self.generator._reset_kv_caches()
-            self.logger.info(f"_reset_kv_caches: {_time.perf_counter()-_t0:.3f}s")
+            self.logger.info(f"_reset_kv_caches: {_time.perf_counter() - _t0:.3f}s")
             self.generator._reset_decode_pos(0, batch_size)
             # Pass real_seq_len so copy_encoder_output sets the cross-attention mask
             # correctly — masking out the <pad>-token positions.
-            self.generator.copy_encoder_output(encoder_hidden_states, real_seq_len=real_seq_len)
+            self.generator.copy_encoder_output(
+                encoder_hidden_states, real_seq_len=real_seq_len
+            )
         else:
             kv_cache, cross_attn_cache = init_kv_cache(
                 self.decoder_config,
@@ -621,7 +650,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     position_offset=step,
                 )
                 if step <= 3:
-                    self.logger.info("Step %d: prenet=%.3fs" % (step, _time.perf_counter()-_tpre))
+                    self.logger.info(
+                        "Step %d: prenet=%.3fs" % (step, _time.perf_counter() - _tpre)
+                    )
 
                 if step == 0:
                     # Non-traced first step: computes and populates cross-attn cache
@@ -638,7 +669,10 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     )
                     self.generator.cross_attn_cache_valid = True
                     if step <= 2:
-                        self.logger.info("Step %d: decoder=%.3fs" % (step, _time.perf_counter()-_ta))
+                        self.logger.info(
+                            "Step %d: decoder=%.3fs"
+                            % (step, _time.perf_counter() - _ta)
+                        )
                     # Capture trace after step 0 if not yet captured for this encoder size
                     # (mirrors demo_ttnn.py: capture happens on first run, reused on all subsequent)
                     if not self.generator.trace_compiled:
@@ -655,7 +689,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                         decoder_hidden_states, ttnn.L1_MEMORY_CONFIG
                     )
                     if step <= 2:
-                        self.logger.info("Step %d: trace=%.3fs" % (step, _time.perf_counter()-_ta))
+                        self.logger.info(
+                            "Step %d: trace=%.3fs" % (step, _time.perf_counter() - _ta)
+                        )
             else:
                 # Non-trace fallback path
                 current_pos = ttnn.from_torch(
@@ -681,7 +717,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 decoder_hidden_states
             )
             if step <= 2:
-                self.logger.info(f"Step {step}: postnet={_time.perf_counter()-_tp0:.3f}s")
+                self.logger.info(
+                    f"Step {step}: postnet={_time.perf_counter() - _tp0:.3f}s"
+                )
 
             # Transfer mel frame to CPU for spectrogram accumulation
             # mel_after shape: [batch, REDUCTION_FACTOR, num_mel_bins]
@@ -702,12 +740,18 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             if step <= 4 or step % 50 == 0:
                 self.logger.info(
                     f"Step {step}: {_time.perf_counter() - _t_loop_start:.3f}s elapsed, "
-                    f"{step+1} steps done"
+                    f"{step + 1} steps done"
                 )
             if step >= 10:
-                sigmoid_logits = ttnn.sigmoid(stop_logits, memory_config=ttnn.L1_MEMORY_CONFIG)
-                sum_prob = ttnn.sum(sigmoid_logits, dim=-1, memory_config=ttnn.L1_MEMORY_CONFIG)
-                should_stop = ttnn.ge(sum_prob, 0.5, memory_config=ttnn.L1_MEMORY_CONFIG)
+                sigmoid_logits = ttnn.sigmoid(
+                    stop_logits, memory_config=ttnn.L1_MEMORY_CONFIG
+                )
+                sum_prob = ttnn.sum(
+                    sigmoid_logits, dim=-1, memory_config=ttnn.L1_MEMORY_CONFIG
+                )
+                should_stop = ttnn.ge(
+                    sum_prob, 0.5, memory_config=ttnn.L1_MEMORY_CONFIG
+                )
                 any_stop_scalar = ttnn.sum(should_stop)
                 stop_val = ttnn.to_torch(any_stop_scalar).item()
                 if step % 50 == 0:
@@ -737,20 +781,26 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             text = normalize_text_for_tts(text)
             chunks = chunk_text(text, processor=self.processor)
             if len(chunks) > 1:
-                self.logger.info(f"Long text ({len(text)} chars) split into {len(chunks)} chunks")
+                self.logger.info(
+                    f"Long text ({len(text)} chars) split into {len(chunks)} chunks"
+                )
 
             mel_spectrograms = []
             for i, chunk in enumerate(chunks):
                 if len(chunks) > 1:
                     self.logger.info(
-                        f"Processing chunk {i+1}/{len(chunks)}: "
+                        f"Processing chunk {i + 1}/{len(chunks)}: "
                         f"'{chunk[:60]}{'...' if len(chunk) > 60 else ''}'"
                     )
                 mel = self._generate_mel_for_chunk(chunk)
                 mel_spectrograms.append(mel)
 
             # Concatenate mels from all chunks along time axis, then run vocoder once
-            combined_mel = torch.cat(mel_spectrograms, dim=1) if len(mel_spectrograms) > 1 else mel_spectrograms[0]
+            combined_mel = (
+                torch.cat(mel_spectrograms, dim=1)
+                if len(mel_spectrograms) > 1
+                else mel_spectrograms[0]
+            )
             final_audio = self.vocoder(combined_mel)
 
             audio_buffer = io.BytesIO()
@@ -807,9 +857,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             # Compare by ID when available (avoids float-equality mismatch for same speaker).
             # Fall back to True (always update) only for custom embeddings (speaker_id=None).
             speaker_changed = (
-                speaker_id != self._baked_speaker_id
-                if speaker_id is not None
-                else True
+                speaker_id != self._baked_speaker_id if speaker_id is not None else True
             )
             if speaker_changed:
                 self.logger.info(
