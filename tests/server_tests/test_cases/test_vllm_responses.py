@@ -92,7 +92,7 @@ def test_include(report_test, api_client, request):
     """Tests that the 'include' parameter is accepted."""
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
         "include": [],
     }
     response = api_client(payload)
@@ -111,7 +111,7 @@ def test_background(report_test, api_client, request):
 
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
         "background": True,
         "temperature": 0,
     }
@@ -158,7 +158,7 @@ def test_background(report_test, api_client, request):
 )
 def test_input(report_test, api_client, input_val, request):
     """Tests the 'input' parameter accepts both string and message array formats."""
-    payload = {"input": input_val, "max_output_tokens": 256}
+    payload = {"input": input_val, "max_output_tokens": 2048}
     response = api_client(payload)
 
     try:
@@ -278,7 +278,7 @@ def test_metadata(report_test, api_client, request):
     metadata = {"test_key": "test_value", "run_id": "12345"}
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
         "metadata": metadata,
     }
     response = api_client(payload)
@@ -306,7 +306,7 @@ def test_model(report_test, api_client, request):
     payload = {
         "input": BASE_INPUT,
         "model": model_name,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
     }
     response = api_client(payload)
 
@@ -354,7 +354,7 @@ def test_previous_response_id(report_test, api_client, request):
     # First request
     payload1 = {
         "input": "My name is Alice.",
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
     }
     response1 = api_client(payload1)
 
@@ -365,7 +365,7 @@ def test_previous_response_id(report_test, api_client, request):
     payload2 = {
         "input": "What is my name?",
         "previous_response_id": response_id,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
     }
     response2 = api_client(payload2)
 
@@ -419,7 +419,7 @@ def test_reasoning(report_test, api_client, request):
             "temperature": 0,
             "reasoning": {"effort": effort},
         }
-        response = api_client(payload)
+        response = api_client(payload, timeout=120)
 
         output_text = get_output_text(response)
         assert output_text, (
@@ -498,7 +498,7 @@ def test_store(report_test, api_client, store_val, request):
 
 def test_stream_true(report_test, api_client, request):
     """Tests the 'stream' parameter set to true returns a streaming response."""
-    payload = {"input": BASE_INPUT, "max_output_tokens": 256, "stream": True}
+    payload = {"input": BASE_INPUT, "max_output_tokens": 2048, "stream": True}
 
     response = api_client(payload, stream=True)
 
@@ -515,7 +515,7 @@ def test_stream_true(report_test, api_client, request):
 
 def test_stream_false(report_test, api_client, request):
     """Tests the 'stream' parameter set to false."""
-    payload = {"input": BASE_INPUT, "max_output_tokens": 256, "stream": False}
+    payload = {"input": BASE_INPUT, "max_output_tokens": 2048, "stream": False}
     response = api_client(payload)
 
     try:
@@ -583,7 +583,7 @@ def test_text(report_test, api_client, text_config, request):
 
     payload = {
         "input": input_msg,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
         "text": text_config,
     }
     response = api_client(payload)
@@ -706,7 +706,7 @@ def test_user(report_test, api_client, request):
     """Tests that the 'user' parameter is accepted."""
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
         "user": "test-user-123",
     }
     response = api_client(payload)

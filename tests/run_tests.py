@@ -59,7 +59,9 @@ def build_test_command(
 
     if task.task_name == "vllm_responses":
         # vLLM responses test needs the service port to connect to the server
-        test_kwargs_list.extend(["--endpoint-url", f"http://127.0.0.1:{service_port}/v1/responses"])
+        test_kwargs_list.extend(
+            ["--endpoint-url", f"http://127.0.0.1:{service_port}/v1/responses"]
+        )
     cmd = [
         str(test_exec),
         task.test_path,
