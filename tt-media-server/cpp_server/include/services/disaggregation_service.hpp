@@ -20,9 +20,10 @@ namespace tt::services {
 
 class LLMService;
 
-
 class DisaggregationService {
-  using StreamCallback = std::function<void(const domain::StreamingChunkResponse&, bool)>;
+  using StreamCallback =
+      std::function<void(const domain::StreamingChunkResponse&, bool)>;
+
  public:
   DisaggregationService(
       tt::config::LLMMode mode, std::shared_ptr<LLMService> llmService,

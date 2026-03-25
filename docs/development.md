@@ -159,6 +159,39 @@ python3 scripts/build_docker_images.py --build-metal-commit <my_metal_commit_SHA
 ```
 This filters the Docker images to be built for only the tt-metal version needed.
 
+### What to do if I can't find the Docker image I need for development?
+
+Ideally you can do development without Docker using `--local-server` and building tt-metal + vLLM locally.
+
+If you need to develop with a Docker image build the image locally:
+
+##### Step 1: edit workflows/model_spec.py
+
+Find and edit the ref `ModelSpecTemplate` your model-hardware combination, e.g. for `Llama-3.2-1B` on n150:
+Update the commits:
+```python
+    ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
+        impl=tt_transformers_impl,
+        tt_metal_commit=<my_metal_commit_SHA_or_tag>,
+        vllm_commit=<my_vllm_commit_SHA>,
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+```
+
+##### Step 2: build the Docker image locally
+```
+python3 scripts/build_docker_images.py --build-metal-commit <my_metal_commit_SHA_or_tag>
+
+```
+
+
 ## Release process
 
 See document on release process and scripts: [../scripts/release/README.md](../scripts/release/README.md)

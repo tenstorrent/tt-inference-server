@@ -29,10 +29,11 @@ class ServiceContainer {
     return container;
   }
 
-  void initialize(std::shared_ptr<services::LLMService> llm,
-                  std::shared_ptr<services::EmbeddingService> embedding,
-                  std::shared_ptr<sockets::InterServerService> socket,
-                  std::shared_ptr<services::DisaggregationService> disaggregation);
+  void initialize(
+      std::shared_ptr<services::LLMService> llm,
+      std::shared_ptr<services::EmbeddingService> embedding,
+      std::shared_ptr<sockets::InterServerService> socket,
+      std::shared_ptr<services::DisaggregationService> disaggregation);
 
   std::shared_ptr<services::IService> configuredService() const;
 

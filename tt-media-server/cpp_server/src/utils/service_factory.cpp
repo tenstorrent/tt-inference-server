@@ -32,8 +32,8 @@ void initializeServices() {
     if (mode != tt::config::LLMMode::REGULAR) {
       socket = std::make_shared<sockets::InterServerService>();
       socket->initializeFromConfig();
-      disaggregation = std::make_shared<services::DisaggregationService>(
-          mode, llm, socket);
+      disaggregation =
+          std::make_shared<services::DisaggregationService>(mode, llm, socket);
     }
   }
 

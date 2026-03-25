@@ -46,10 +46,9 @@ void DisaggregationService::setupSocketHandlers() {
 
           callback.value()(response, false);
 
-          bool continueDecode =
-              !message.token_ids.empty() &&
-              (!message.remaining_tokens.has_value() ||
-               message.remaining_tokens.value() > 0);
+          bool continueDecode = !message.token_ids.empty() &&
+                                (!message.remaining_tokens.has_value() ||
+                                 message.remaining_tokens.value() > 0);
           if (continueDecode) {
             auto request = domain::CompletionRequest(message.task_id);
             request.prompt = std::vector<int>(message.token_ids.begin(),
@@ -100,8 +99,7 @@ void DisaggregationService::setupSocketHandlers() {
                            bool /*isFinal*/) {
                 auto remainingTokens =
                     maxTokens.has_value()
-                        ? std::optional<int>(
-                              std::max(0, maxTokens.value() - 1))
+                        ? std::optional<int>(std::max(0, maxTokens.value() - 1))
                         : std::nullopt;
 
                 auto prefillResult =

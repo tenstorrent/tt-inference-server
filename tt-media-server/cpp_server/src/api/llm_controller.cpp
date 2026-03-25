@@ -137,6 +137,8 @@ void LLMController::completions(
   }
 
   if (!service->isModelReady()) {
+    TT_LOG_INFO("[LLMController] /v1/completions {}", request->toString());
+
     auto resp = drogon::HttpResponse::newHttpJsonResponse(
         errorJson("Model is not ready", "service_unavailable"));
     resp->setStatusCode(drogon::k503ServiceUnavailable);
@@ -205,6 +207,8 @@ void LLMController::chatCompletions(
   }
 
   domain::ChatCompletionRequest& chatReq = *chatReqOpt;
+
+  TT_LOG_INFO("[LLMController] /v1/chat/completions {}", chatReq.toString());
 
   if (chatReq.messages.empty()) {
     auto resp = drogon::HttpResponse::newHttpJsonResponse(
@@ -436,7 +440,9 @@ void LLMController::handleStreaming(
     } else if (tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY) {
       disaggregationService->handleStreamingRequest(*reqPtr, streamingCallback);
     } else {
-      throw std::runtime_error("[LLMController] LLM Mode must be regular or decode only to handle streaming requests via HTTP");
+      throw std::runtime_error(
+          "[LLMController] LLM Mode must be regular or decode only to handle "
+          "streaming requests via HTTP");
     }
   } catch (const services::QueueFullException& e) {
     auto resp = drogon::HttpResponse::newHttpJsonResponse(
