@@ -47,16 +47,16 @@ void initializeServices() {
   c.initialize(std::move(llm), std::move(embedding), std::move(socket),
                std::move(disaggregation));
 
-  if (c.llm) {
-    c.llm->start();
+  if (c.llm()) {
+    c.llm()->start();
     TT_LOG_INFO("[ServiceFactory] LLM service started");
   }
-  if (c.disaggregation) {
-    c.disaggregation->start();
+  if (c.disaggregation()) {
+    c.disaggregation()->start();
     TT_LOG_INFO("[ServiceFactory] Disaggregation service started");
   }
-  if (c.embedding) {
-    c.embedding->start();
+  if (c.embedding()) {
+    c.embedding()->start();
     TT_LOG_INFO("[ServiceFactory] Embedding service started");
   }
 }

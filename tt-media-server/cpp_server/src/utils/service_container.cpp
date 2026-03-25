@@ -14,19 +14,19 @@ void ServiceContainer::initialize(
     std::shared_ptr<services::EmbeddingService> embedding,
     std::shared_ptr<sockets::InterServerService> socket,
     std::shared_ptr<services::DisaggregationService> disaggregation) {
-  this->llm = std::move(llm);
-  this->embedding = std::move(embedding);
-  this->socket = std::move(socket);
-  this->disaggregation = std::move(disaggregation);
+  llm_ = std::move(llm);
+  embedding_ = std::move(embedding);
+  socket_ = std::move(socket);
+  disaggregation_ = std::move(disaggregation);
 }
 
 std::shared_ptr<services::IService> ServiceContainer::configuredService()
     const {
   switch (tt::config::modelService()) {
     case tt::config::ModelService::LLM:
-      return llm;
+      return llm_;
     case tt::config::ModelService::EMBEDDING:
-      return embedding;
+      return embedding_;
   }
   return nullptr;
 }

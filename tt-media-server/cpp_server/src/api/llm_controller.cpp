@@ -69,8 +69,8 @@ LLMController::LLMController() {
   }
 
   const auto& c = tt::utils::ServiceContainer::instance();
-  service = c.llm;
-  disaggregationService = c.disaggregation;
+  service = c.llm();
+  disaggregationService = c.disaggregation();
 
   if (!service) {
     throw std::runtime_error(

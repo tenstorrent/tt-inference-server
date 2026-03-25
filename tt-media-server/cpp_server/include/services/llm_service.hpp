@@ -28,7 +28,7 @@ class LLMService
                         domain::StreamingChunkResponse> {
  public:
   using StreamCallback =
-      std::function<void(domain::StreamingChunkResponse&, bool)>;
+      std::function<void(const domain::StreamingChunkResponse&, bool)>;
 
   LLMService();
   ~LLMService() override;

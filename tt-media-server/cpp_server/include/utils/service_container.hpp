@@ -39,13 +39,24 @@ class ServiceContainer {
 
   std::shared_ptr<services::IService> configuredService() const;
 
-  std::shared_ptr<services::LLMService> llm;
-  std::shared_ptr<services::EmbeddingService> embedding;
-  std::shared_ptr<sockets::InterServerService> socket;
-  std::shared_ptr<services::DisaggregationService> disaggregation;
+  std::shared_ptr<services::LLMService> llm() const { return llm_; }
+  std::shared_ptr<services::EmbeddingService> embedding() const {
+    return embedding_;
+  }
+  std::shared_ptr<sockets::InterServerService> socket() const {
+    return socket_;
+  }
+  std::shared_ptr<services::DisaggregationService> disaggregation() const {
+    return disaggregation_;
+  }
 
  private:
   ServiceContainer() = default;
+
+  std::shared_ptr<services::LLMService> llm_;
+  std::shared_ptr<services::EmbeddingService> embedding_;
+  std::shared_ptr<sockets::InterServerService> socket_;
+  std::shared_ptr<services::DisaggregationService> disaggregation_;
 };
 
 }  // namespace tt::utils
