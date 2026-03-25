@@ -3,7 +3,10 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 
-from workflows.workflow_venvs import ensure_librispeech_yaml_tasks, ensure_whisper_tt_model
+from workflows.workflow_venvs import (
+    ensure_librispeech_yaml_tasks,
+    ensure_whisper_tt_model,
+)
 
 
 class TestEnsureLibrispeechYamlTasks:
