@@ -177,7 +177,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       if (isFinal) {
         stream_callbacks_.erase(token.task_id);
         pending_tasks_.fetch_sub(1);
-        tt::metrics::ServerMetrics::instance().setNumRequestsRunning(
+        tt::metrics::ServerMetrics::instance().setNumRequestsInFlight(
             static_cast<double>(pending_tasks_.load()));
       }
 
@@ -340,7 +340,7 @@ void LLMService::processStreamingRequest(
 
   pending_tasks_.fetch_add(1);
   TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
-  tt::metrics::ServerMetrics::instance().setNumRequestsRunning(
+  tt::metrics::ServerMetrics::instance().setNumRequestsInFlight(
       static_cast<double>(pending_tasks_.load()));
 
   stream_callbacks_.insert(taskId, std::move(callback));

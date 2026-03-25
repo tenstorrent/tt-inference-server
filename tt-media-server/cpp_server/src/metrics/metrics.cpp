@@ -16,18 +16,13 @@ ServerMetrics& ServerMetrics::instance() {
   return inst;
 }
 
-// Bucket boundaries that match the vLLM dashboard expectations.
-static const prometheus::Histogram::BucketBoundaries kE2EBuckets{
-    0.01,  0.025, 0.05, 0.075, 0.1, 0.25, 0.5,
-    0.75,  1.0,   2.5,  5.0,   7.5, 10.0, 15.0, 20.0, 30.0};
-
-static const prometheus::Histogram::BucketBoundaries kTtftBuckets{
-    0.001, 0.005, 0.01, 0.025, 0.05, 0.1,  0.25,
-    0.5,   0.75,  1.0,  2.5,   5.0,  7.5,  10.0};
-
-static const prometheus::Histogram::BucketBoundaries kItlBuckets{
-    0.0001, 0.0005, 0.001, 0.005, 0.01, 0.025,
-    0.05,   0.1,    0.25,  0.5,   1.0};
+// Quantiles reported by the latency summaries (φ, ε) — exact values, 60 s window.
+static const prometheus::Summary::Quantiles kLatencyQuantiles{
+    {0.50, 0.01},
+    {0.90, 0.005},
+    {0.95, 0.005},
+    {0.99, 0.001},
+};
 
 static const prometheus::Histogram::BucketBoundaries kPromptTokenBuckets{
     1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 4096, 8192};
@@ -64,17 +59,10 @@ ServerMetrics::ServerMetrics() {
            .Register(*registry_);
 
   // ----- gauges ----------------------------------------------------------
-  num_requests_running_ =
+  num_requests_in_flight_ =
       &prometheus::BuildGauge()
-           .Name("tt_num_requests_running")
-           .Help("Number of requests currently being processed by the engine")
-           .Register(*registry_)
-           .Add({});
-
-  num_requests_waiting_ =
-      &prometheus::BuildGauge()
-           .Name("tt_num_requests_waiting")
-           .Help("Number of requests waiting in the scheduler prefill queue")
+           .Name("tt_num_requests_in_flight")
+           .Help("Number of requests in flight: from submission to final token delivery (includes queued, prefilling, and decoding)")
            .Register(*registry_)
            .Add({});
 
@@ -86,27 +74,27 @@ ServerMetrics::ServerMetrics() {
            .Add({});
   max_queue_size_->Set(static_cast<double>(tt::config::maxQueueSize()));
 
-  // ----- histograms ------------------------------------------------------
+  // ----- latency summaries (exact quantiles, 60 s sliding window) ----------
   e2e_latency_seconds_ =
-      &prometheus::BuildHistogram()
+      &prometheus::BuildSummary()
            .Name("tt_e2e_request_latency_seconds")
            .Help("End-to-end request latency from submission to final token")
            .Register(*registry_)
-           .Add(model_label, kE2EBuckets);
+           .Add(model_label, kLatencyQuantiles, std::chrono::seconds{60}, 5);
 
   ttft_seconds_ =
-      &prometheus::BuildHistogram()
+      &prometheus::BuildSummary()
            .Name("tt_time_to_first_token_seconds")
            .Help("Time from request submission to first generated token")
            .Register(*registry_)
-           .Add(model_label, kTtftBuckets);
+           .Add(model_label, kLatencyQuantiles, std::chrono::seconds{60}, 5);
 
   inter_token_latency_seconds_ =
-      &prometheus::BuildHistogram()
+      &prometheus::BuildSummary()
            .Name("tt_inter_token_latency_seconds")
            .Help("Latency between consecutive generated tokens (decode step)")
            .Register(*registry_)
-           .Add(model_label, kItlBuckets);
+           .Add(model_label, kLatencyQuantiles, std::chrono::seconds{60}, 5);
 
   request_prompt_tokens_ =
       &prometheus::BuildHistogram()
@@ -187,12 +175,8 @@ void ServerMetrics::onRequestCompleted(const std::string& task_id,
       .Increment();
 }
 
-void ServerMetrics::setNumRequestsRunning(double n) {
-  num_requests_running_->Set(n);
-}
-
-void ServerMetrics::setNumRequestsWaiting(double n) {
-  num_requests_waiting_->Set(n);
+void ServerMetrics::setNumRequestsInFlight(double n) {
+  num_requests_in_flight_->Set(n);
 }
 
 

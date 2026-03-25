@@ -16,6 +16,7 @@
 #include <prometheus/gauge.h>
 #include <prometheus/histogram.h>
 #include <prometheus/registry.h>
+#include <prometheus/summary.h>
 
 namespace tt::metrics {
 
@@ -55,11 +56,11 @@ class ServerMetrics {
   void onRequestCompleted(const std::string& task_id,
                           const std::string& finish_reason);
 
-  /** Update the in-flight request gauge (call after pending_tasks_ changes). */
-  void setNumRequestsRunning(double n);
-
-  /** Update the waiting-queue gauge (call when scheduler queue depth changes). */
-  void setNumRequestsWaiting(double n);
+  /**
+   * Update the in-flight request gauge (call after pending_tasks_ changes).
+   * Tracks all requests from submission through final token delivery.
+   */
+  void setNumRequestsInFlight(double n);
 
   /** Render the full registry in Prometheus text exposition format. */
   std::string renderText() const;
@@ -84,14 +85,15 @@ class ServerMetrics {
   prometheus::Family<prometheus::Counter>* request_success_family_{nullptr};
 
   // --- gauges ---
-  prometheus::Gauge* num_requests_running_{nullptr};
-  prometheus::Gauge* num_requests_waiting_{nullptr};
+  prometheus::Gauge* num_requests_in_flight_{nullptr};
   prometheus::Gauge* max_queue_size_{nullptr};
 
-  // --- histograms ---
-  prometheus::Histogram* e2e_latency_seconds_{nullptr};
-  prometheus::Histogram* ttft_seconds_{nullptr};
-  prometheus::Histogram* inter_token_latency_seconds_{nullptr};
+  // --- latency summaries (exact quantiles via CKMS, 60 s sliding window) ---
+  prometheus::Summary* e2e_latency_seconds_{nullptr};
+  prometheus::Summary* ttft_seconds_{nullptr};
+  prometheus::Summary* inter_token_latency_seconds_{nullptr};
+
+  // --- token-count histograms ---
   prometheus::Histogram* request_prompt_tokens_{nullptr};
   prometheus::Histogram* request_generation_tokens_{nullptr};
 
