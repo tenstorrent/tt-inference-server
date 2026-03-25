@@ -209,6 +209,7 @@ set(LLM_ENGINE_SOURCES
     src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
     src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
     src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
+    src/services/memory_manager.cpp
 )
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
@@ -355,6 +356,7 @@ set(SOURCES
     src/ipc/boost_ipc_warmup_signal_queue.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
+    src/services/memory_manager.cpp
     src/services/reasoning_parser.cpp
     src/utils/tokenizer.cpp
     src/utils/logger.cpp
