@@ -16,7 +16,8 @@ ServerMetrics& ServerMetrics::instance() {
   return inst;
 }
 
-// Quantiles reported by the latency summaries (φ, ε) — exact values, 60 s window.
+// Quantiles reported by the latency summaries (φ, ε) — exact values, 60 s
+// window.
 static const prometheus::Summary::Quantiles kLatencyQuantiles{
     {0.50, 0.01},
     {0.90, 0.005},
@@ -38,12 +39,11 @@ ServerMetrics::ServerMetrics() {
       {"model_name", model_name_}};
 
   // ----- counters --------------------------------------------------------
-  prompt_tokens_total_ =
-      &prometheus::BuildCounter()
-           .Name("tt_prompt_tokens_total")
-           .Help("Total number of prompt tokens processed")
-           .Register(*registry_)
-           .Add(model_label);
+  prompt_tokens_total_ = &prometheus::BuildCounter()
+                              .Name("tt_prompt_tokens_total")
+                              .Help("Total number of prompt tokens processed")
+                              .Register(*registry_)
+                              .Add(model_label);
 
   generation_tokens_total_ =
       &prometheus::BuildCounter()
@@ -62,16 +62,19 @@ ServerMetrics::ServerMetrics() {
   num_requests_in_flight_ =
       &prometheus::BuildGauge()
            .Name("tt_num_requests_in_flight")
-           .Help("Number of requests in flight: from submission to final token delivery (includes queued, prefilling, and decoding)")
+           .Help(
+               "Number of requests in flight: from submission to final token "
+               "delivery (includes queued, prefilling, and decoding)")
            .Register(*registry_)
            .Add({});
 
-  max_queue_size_ =
-      &prometheus::BuildGauge()
-           .Name("tt_max_queue_size")
-           .Help("Configured maximum number of requests that can be queued (MAX_QUEUE_SIZE)")
-           .Register(*registry_)
-           .Add({});
+  max_queue_size_ = &prometheus::BuildGauge()
+                         .Name("tt_max_queue_size")
+                         .Help(
+                             "Configured maximum number of requests that can "
+                             "be queued (MAX_QUEUE_SIZE)")
+                         .Register(*registry_)
+                         .Add({});
   max_queue_size_->Set(static_cast<double>(tt::config::maxQueueSize()));
 
   // ----- latency summaries (exact quantiles, 60 s sliding window) ----------
@@ -114,9 +117,9 @@ ServerMetrics::ServerMetrics() {
 void ServerMetrics::onRequestSubmitted(const std::string& task_id,
                                        int prompt_tokens) {
   std::lock_guard<std::mutex> lock(contexts_mutex_);
-  contexts_.emplace(task_id, RequestContext{
-                                 .start_time = std::chrono::steady_clock::now(),
-                                 .prompt_tokens = prompt_tokens});
+  contexts_.emplace(
+      task_id, RequestContext{.start_time = std::chrono::steady_clock::now(),
+                              .prompt_tokens = prompt_tokens});
 }
 
 void ServerMetrics::onToken(const std::string& task_id) {
@@ -131,13 +134,12 @@ void ServerMetrics::onToken(const std::string& task_id) {
 
   if (!ctx.first_token_time.has_value()) {
     ctx.first_token_time = now;
-    double ttft =
-        std::chrono::duration<double>(now - ctx.start_time).count();
+    double ttft = std::chrono::duration<double>(now - ctx.start_time).count();
     ttft_seconds_->Observe(ttft);
   } else if (ctx.prev_token_time.has_value()) {
-    double itl = std::chrono::duration<double>(
-                     now - ctx.prev_token_time.value())
-                     .count();
+    double itl =
+        std::chrono::duration<double>(now - ctx.prev_token_time.value())
+            .count();
     inter_token_latency_seconds_->Observe(itl);
   }
   ctx.prev_token_time = now;
@@ -178,7 +180,6 @@ void ServerMetrics::onRequestCompleted(const std::string& task_id,
 void ServerMetrics::setNumRequestsInFlight(double n) {
   num_requests_in_flight_->Set(n);
 }
-
 
 std::string ServerMetrics::renderText() const {
   prometheus::TextSerializer serializer;

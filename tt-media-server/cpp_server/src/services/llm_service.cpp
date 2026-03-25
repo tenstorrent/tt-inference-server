@@ -240,8 +240,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
             response.choices[0].finish_reason.has_value()) {
           finish_reason = response.choices[0].finish_reason.value();
         }
-        tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId,
-                                                                  finish_reason);
+        tt::metrics::ServerMetrics::instance().onRequestCompleted(
+            taskId, finish_reason);
 
         // Clean up reasoning parser state for this task
         if (reasoning_parser_) {

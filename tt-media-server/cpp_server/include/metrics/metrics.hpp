@@ -3,6 +3,13 @@
 
 #pragma once
 
+#include <prometheus/counter.h>
+#include <prometheus/family.h>
+#include <prometheus/gauge.h>
+#include <prometheus/histogram.h>
+#include <prometheus/registry.h>
+#include <prometheus/summary.h>
+
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -10,13 +17,6 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
-
-#include <prometheus/counter.h>
-#include <prometheus/family.h>
-#include <prometheus/gauge.h>
-#include <prometheus/histogram.h>
-#include <prometheus/registry.h>
-#include <prometheus/summary.h>
 
 namespace tt::metrics {
 

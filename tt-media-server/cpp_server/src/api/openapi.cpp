@@ -354,7 +354,8 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     Json::Value responses;
     Json::Value resp200;
     resp200["description"] = "Prometheus text format metrics";
-    resp200["content"]["text/plain; version=0.0.4"]["schema"]["type"] = "string";
+    resp200["content"]["text/plain; version=0.0.4"]["schema"]["type"] =
+        "string";
     resp200["content"]["text/plain; version=0.0.4"]["schema"]["example"] =
         "# HELP tt_generation_tokens_total Total number of generation tokens "
         "produced\n# TYPE tt_generation_tokens_total counter\n"
