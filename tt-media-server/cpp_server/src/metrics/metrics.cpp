@@ -59,7 +59,7 @@ ServerMetrics::ServerMetrics() {
            .Register(*registry_);
 
   // ----- gauges ----------------------------------------------------------
-  num_requests_in_flight_ =
+  queue_depth_ =
       &prometheus::BuildGauge()
            .Name("tt_num_requests_in_flight")
            .Help(
@@ -177,8 +177,8 @@ void ServerMetrics::onRequestCompleted(const std::string& task_id,
       .Increment();
 }
 
-void ServerMetrics::setNumRequestsInFlight(double n) {
-  num_requests_in_flight_->Set(n);
+void ServerMetrics::setQueueDepth(double n) {
+  queue_depth_->Set(n);
 }
 
 std::string ServerMetrics::renderText() const {

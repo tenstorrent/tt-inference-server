@@ -60,7 +60,7 @@ class ServerMetrics {
    * Update the in-flight request gauge (call after pending_tasks_ changes).
    * Tracks all requests from submission through final token delivery.
    */
-  void setNumRequestsInFlight(double n);
+  void setQueueDepth(double n);
 
   /** Render the full registry in Prometheus text exposition format. */
   std::string renderText() const;
@@ -85,7 +85,7 @@ class ServerMetrics {
   prometheus::Family<prometheus::Counter>* request_success_family_{nullptr};
 
   // --- gauges ---
-  prometheus::Gauge* num_requests_in_flight_{nullptr};
+  prometheus::Gauge* queue_depth_{nullptr};
   prometheus::Gauge* max_queue_size_{nullptr};
 
   // --- latency summaries (exact quantiles via CKMS, 60 s sliding window) ---
