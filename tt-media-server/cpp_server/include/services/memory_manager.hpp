@@ -3,12 +3,11 @@
 
 #pragma once
 
-#include <mutex>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "domain/manage_memory.hpp"
+#include "utils/concurrent_map.hpp"
 
 namespace tt::services {
 
@@ -29,8 +28,7 @@ class MemoryManager {
     std::vector<domain::KvDestination> locations;
   };
 
-  std::mutex reservationMutex;
-  std::unordered_map<std::string, Reservation> reservations;
+  ConcurrentMap<std::string, Reservation> reservations;
 };
 
 }  // namespace tt::services
