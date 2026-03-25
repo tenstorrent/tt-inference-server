@@ -2,7 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from pathlib import Path
 
 from workflows.workflow_venvs import ensure_librispeech_yaml_tasks
 
