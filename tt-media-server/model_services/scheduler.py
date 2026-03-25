@@ -98,28 +98,19 @@ class Scheduler:
 
     def check_is_model_ready(self) -> bool:
         if self.is_ready is not True:
-            ready_states = ", ".join(
-                "{}: {}".format(k, v.get("is_ready", "?"))
-                for k, v in self.worker_info.items()
-            )
-            self.logger.warning(
-                f"check_is_model_ready: NOT ready. is_ready={self.is_ready}, "
-                f"workers={list(self.worker_info.keys())}, "
-                f"worker_ready_states={{{ready_states}}}"
-            )
             raise HTTPException(405, "Model is not ready")
         return True
 
     @log_execution_time("Scheduler - starting workers")
     async def start_workers(self):
-        self.logger.info("start_workers: launching result_listener")
+        # keep result listener in the main event loop
         self.listener_task_ref = asyncio.create_task(self.result_listener())
 
-        self.logger.info("start_workers: launching device_warmup_listener")
+        # keep device warmup listener in the main event loop, it'll close soon
         self.device_warmup_listener_ref = asyncio.create_task(
             self.device_warmup_listener()
         )
-        self.logger.info("start_workers: launching error_listener")
+        # keep error listener in the main event loop
         self.error_queue_listener_ref = asyncio.create_task(self.error_listener())
 
         self.logger.info(f"Workers to start: {self.worker_count}")
@@ -289,32 +280,22 @@ class Scheduler:
                     self.error_queue.get
                 )
 
-                self.logger.error(
-                    f"error_listener received: worker_id={worker_id!r}, "
-                    f"result_key={result_key!r}, error={error!r}"
-                )
+                self.worker_info[worker_id]["error_count"] += 1
 
-                if worker_id in self.worker_info:
-                    self.worker_info[worker_id]["error_count"] += 1
-                    self.logger.warning(
-                        f"Worker {worker_id} error count is: "
-                        f"{self.worker_info[worker_id]['error_count']}"
-                    )
-                else:
-                    self.logger.error(
-                        f"Worker {worker_id} not found in worker_info "
-                        f"(keys: {list(self.worker_info.keys())})"
-                    )
+                self.logger.warning(
+                    f"Worker {worker_id} error count is : {self.worker_info[worker_id]['error_count']}"
+                )
 
                 if result_key is None:
                     self.listener_running = False
                     break
 
-                result_key_str = str(result_key)
+                self.logger.error(f"Error in worker {result_key}: {error}")
+
                 task_id = (
-                    result_key_str.split("_chunk_")[0]
-                    if "_chunk_" in result_key_str
-                    else result_key_str
+                    result_key.split("_chunk_")[0]
+                    if "_chunk_" in result_key
+                    else result_key
                 )
 
                 queue = self.result_queues.get(task_id)
@@ -328,15 +309,9 @@ class Scheduler:
         self.logger.info("Error listener stopped")
 
     async def device_warmup_listener(self):
-        self.logger.info(
-            "device_warmup_listener started, waiting for warmup signals..."
-        )
         while self.device_warmup_listener_running:
             try:
                 device_id = await asyncio.to_thread(self.warmup_signals_queue.get)
-                self.logger.info(
-                    f"device_warmup_listener received signal: device_id={device_id!r}"
-                )
                 if device_id is None:  # Shutdown signal
                     break
 

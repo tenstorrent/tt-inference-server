@@ -21,33 +21,21 @@ def device_worker(
 ):
     logger = TTLogger()
 
-    logger.info(
-        f"Worker {worker_id} subprocess started (PID={__import__('os').getpid()}), "
-        f"beginning initialization..."
-    )
     try:
         device_runner, loop = initialize_device_worker(worker_id, logger)
         if not device_runner:
-            logger.error(f"Worker {worker_id} init returned None device_runner")
-            error_queue.put((worker_id, -1, "device_runner is None after init"))
             return
     except Exception as e:
-        import traceback
-
-        logger.error(
-            f"Worker {worker_id} INIT FAILED: {type(e).__name__}: {e}\n"
-            f"{traceback.format_exc()}"
-        )
-        error_queue.put((worker_id, -1, f"{type(e).__name__}: {e}"))
+        error_queue.put((worker_id, -1, str(e)))
         return
 
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
+    # Signal that this worker is ready after warmup
     try:
         if warmup_signals_queue is not None and not getattr(
             warmup_signals_queue, "_closed", True
         ):
             warmup_signals_queue.put(worker_id, timeout=2.0)
-            logger.info(f"Worker {worker_id} sent warmup signal to parent")
         else:
             logger.warning(
                 f"Worker {worker_id} warmup_signals_queue is closed or invalid"
