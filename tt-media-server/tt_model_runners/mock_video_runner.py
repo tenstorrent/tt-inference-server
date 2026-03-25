@@ -128,8 +128,14 @@ def _handle_signal(signum, frame):
 
 def _run_shm_bridge() -> None:
     import os
+    import pickle
 
-    from ipc.video_shm import VideoResponse, VideoShm, VideoStatus
+    from ipc.video_shm import (
+        VideoResponse,
+        VideoShm,
+        VideoStatus,
+        video_result_path,
+    )
     from utils.logger import TTLogger
 
     logger = TTLogger()
@@ -142,8 +148,8 @@ def _run_shm_bridge() -> None:
 
     input_shm = VideoShm(input_name, mode="input", is_shutdown=is_shutdown)
     output_shm = VideoShm(output_name, mode="output", is_shutdown=is_shutdown)
-    input_shm.open(create=False)
-    output_shm.open(create=False)
+    input_shm.open(create=True)
+    output_shm.open(create=True)
 
     pipeline = MockVideoPipeline()
     logger.info("Mock video SHM runner ready, waiting for requests...")
@@ -172,22 +178,15 @@ def _run_shm_bridge() -> None:
                     seed=req.seed,
                 )
 
-                if frames.ndim == 5:
-                    frames = frames[0]
-                num_frames, h, w, c = frames.shape
-
-                if frames.dtype != np.uint8:
-                    frames = (frames.clip(0.0, 1.0) * 255).astype(np.uint8)
+                file_path = video_result_path(req.task_id)
+                with open(file_path, "wb") as fh:
+                    pickle.dump(frames, fh)
 
                 output_shm.write_response(
                     VideoResponse(
                         task_id=req.task_id,
                         status=VideoStatus.SUCCESS,
-                        num_frames=num_frames,
-                        height=h,
-                        width=w,
-                        channels=c,
-                        frame_data=frames.tobytes(),
+                        file_path=file_path,
                         error_message="",
                     )
                 )
@@ -197,19 +196,17 @@ def _run_shm_bridge() -> None:
                     VideoResponse(
                         task_id=req.task_id,
                         status=VideoStatus.ERROR,
-                        num_frames=0,
-                        height=0,
-                        width=0,
-                        channels=0,
-                        frame_data=b"",
+                        file_path="",
                         error_message=str(e)[:256],
                     )
                 )
                 continue
 
-            logger.info(f"Request {req.task_id} completed ({num_frames} frames)")
+            logger.info(f"Request {req.task_id} completed")
     finally:
+        input_shm.unlink()
         input_shm.close()
+        output_shm.unlink()
         output_shm.close()
         logger.info("Mock video SHM runner shut down")
 
