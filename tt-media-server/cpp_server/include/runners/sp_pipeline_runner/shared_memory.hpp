@@ -38,19 +38,22 @@ struct Message {
   char taskId[36];
   uint64_t tokenIds[MaxTokenIds];
 
-  bool stateMatches(SlotState s) const {
-    return state.load(std::memory_order_acquire) == static_cast<int32_t>(s);
+  static constexpr int K_MESSAGE_SIZE = 48 + MaxTokenIds * sizeof(uint64_t);
+  static constexpr int K_TOTAL_SIZE = SHM_SLOTS * K_MESSAGE_SIZE;
+
+  bool stateMatches(SlotState state) {
+    return this->state.load(std::memory_order_acquire) == state;
   }
 
-  void switchState(SlotState s) {
-    state.store(static_cast<int32_t>(s), std::memory_order_release);
+  void switchState(SlotState state) {
+    this->state.store(state, std::memory_order_release);
   }
 };
 
 static_assert(sizeof(Message<PREFILL_MAX_TOKEN_IDS>) ==
-              48 + PREFILL_MAX_TOKEN_IDS * sizeof(uint64_t));
+              Message<PREFILL_MAX_TOKEN_IDS>::K_MESSAGE_SIZE);
 static_assert(sizeof(Message<DECODE_MAX_TOKEN_IDS>) ==
-              48 + DECODE_MAX_TOKEN_IDS * sizeof(uint64_t));
+              Message<DECODE_MAX_TOKEN_IDS>::K_MESSAGE_SIZE);
 
 struct ReadResult {
   std::string taskId;
@@ -58,23 +61,17 @@ struct ReadResult {
   std::vector<int64_t> tokenIds;
 };
 
-template <typename SlotType>
+template <int MaxTokenIds>
 class SharedMemory {
  public:
-  static constexpr size_t k_total_size = SHM_SLOTS * sizeof(SlotType);
+  using Msg = Message<MaxTokenIds>;
 
-  explicit SharedMemory(const std::string& name, bool create = false,
-                        bool owner = true)
-      : name(name[0] == '/' ? name : "/" + name),
-        create_(create),
-        owner_(owner) {}
+  explicit SharedMemory(const std::string& name)
+      : name(name[0] == '/' ? name : "/" + name) {}
 
   ~SharedMemory() {
     if (memPointer && memPointer != MAP_FAILED) {
-      munmap(memPointer, k_total_size);
-    }
-    if (owner_) {
-      shm_unlink(name.c_str());
+      munmap(memPointer, Msg::K_TOTAL_SIZE);
     }
     if (state && state != MAP_FAILED) {
       munmap(state, sizeof(SharedMemoryState));
@@ -85,33 +82,21 @@ class SharedMemory {
   SharedMemory& operator=(const SharedMemory&) = delete;
 
   void open() {
-    if (create_) {
-      shm_unlink(name.c_str());
-    }
-    int flags = create_ ? (O_RDWR | O_CREAT) : O_RDWR;
-    int fd = shm_open(name.c_str(), flags, 0666);
+    int fd = shm_open(name.c_str(), O_RDWR, 0);
     if (fd < 0) {
       throw std::runtime_error("SharedMemory: unable to open shared memory: " +
                                name);
     }
-    if (create_) {
-      if (ftruncate(fd, static_cast<off_t>(k_total_size)) < 0) {
-        ::close(fd);
-        shm_unlink(name.c_str());
-        throw std::runtime_error("SharedMemory: ftruncate failed: " + name);
-      }
-    }
-    memPointer =
-        mmap(nullptr, k_total_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+
+    memPointer = mmap(nullptr, Msg::K_TOTAL_SIZE, PROT_READ | PROT_WRITE,
+                      MAP_SHARED, fd, 0);
     if (memPointer == MAP_FAILED) {
       ::close(fd);
-      if (create_) shm_unlink(name.c_str());
       throw std::runtime_error("SharedMemory: mmap failed: " + name);
     }
     ::close(fd);
 
-    messages =
-        std::span<SlotType>(static_cast<SlotType*>(memPointer), SHM_SLOTS);
+    messages = std::span<Msg>(static_cast<Msg*>(memPointer), SHM_SLOTS);
     openState();
     this->current = state->cursor;
   }
@@ -139,39 +124,48 @@ class SharedMemory {
 
   void write(const std::string& uuid, const std::vector<int64_t>& tokenIds,
              uint32_t maxTokens) {
-    if (tokenIds.size() * sizeof(int64_t) > sizeof(SlotType::tokenIds)) {
+    if (static_cast<int>(tokenIds.size()) > MaxTokenIds) {
       throw std::runtime_error("SharedMemory::write: token count " +
                                std::to_string(tokenIds.size()) +
-                               " exceeds slot capacity");
+                               " exceeds slot capacity " +
+                               std::to_string(MaxTokenIds));
     }
-    auto& msg = acquireSlot();
+
+    auto& msg = acquireMsg();
+
     while (!msg.stateMatches(FREE)) {
       std::this_thread::yield();
     }
+
     msg.maxTokens = maxTokens;
     msg.numTokenIds = tokenIds.size();
     std::memcpy(msg.taskId, uuid.data(), 36);
     std::memcpy(msg.tokenIds, tokenIds.data(),
                 tokenIds.size() * sizeof(int64_t));
+
     msg.switchState(TAKEN);
     advanceCurrent();
   }
 
   bool tryRead(ReadResult& out) {
-    auto& msg = acquireSlot();
-    if (!msg.stateMatches(TAKEN)) return false;
+    auto& msg = acquireMsg();
+
+    if (!msg.stateMatches(TAKEN)) {
+      return false;
+    }
+
     out.taskId.assign(msg.taskId, 36);
     out.maxTokens = msg.maxTokens;
     out.tokenIds.assign(msg.tokenIds, msg.tokenIds + msg.numTokenIds);
+
     msg.switchState(FREE);
     advanceCurrent();
     return true;
   }
-
   std::string name;
 
  private:
-  SlotType& acquireSlot() { return messages[current]; }
+  Msg& acquireMsg() { return messages[current]; }
 
   void advanceCurrent() {
     current = (current + 1) % SHM_SLOTS;
@@ -180,15 +174,13 @@ class SharedMemory {
 
   void updateState() { state->cursor = current; }
 
-  bool create_;
-  bool owner_;
   void* memPointer = nullptr;
   uint64_t current = 0;
-  std::span<SlotType> messages;
+  std::span<Msg> messages;
   SharedMemoryState* state = nullptr;
 };
 
-using PrefillSharedMemory = SharedMemory<Message<PREFILL_MAX_TOKEN_IDS>>;
-using DecodeSharedMemory = SharedMemory<Message<DECODE_MAX_TOKEN_IDS>>;
+using PrefillSharedMemory = SharedMemory<PREFILL_MAX_TOKEN_IDS>;
+using DecodeSharedMemory = SharedMemory<DECODE_MAX_TOKEN_IDS>;
 
 }  // namespace sp_pipeline
