@@ -172,7 +172,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   const std::unordered_set<int64_t> STOP_TOKEN_SET(STOP_IDS.begin(),
                                                    STOP_IDS.end());
 
-  std::unordered_map<std::string, StreamDecodeState> decode_states;
+  std::unordered_map<std::string, StreamDecodeState> decodeStates;
 
   while (running_) {
     if (!worker_manager_->checkWorkerAlive(workerIdx)) {
@@ -205,7 +205,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       // Cumulative decode: buffer token IDs and decode the full sequence each
       // step so multi-byte UTF-8 characters that span tokens are emitted
       // correctly instead of producing U+FFFD replacement characters.
-      auto& ds = decode_states[taskId];
+      auto& ds = decodeStates[taskId];
       ds.ids.push_back(static_cast<int>(token.token_id));
 
       std::string full = tokenizer_->decode(ds.ids);
@@ -272,7 +272,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       callback(response, isFinal);
 
       if (isFinal) {
-        decode_states.erase(taskId);
+        decodeStates.erase(taskId);
         if (reasoning_parser_) {
           reasoning_parser_->finalizeTask(taskId);
         }
