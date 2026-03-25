@@ -134,6 +134,7 @@ def _run_shm_bridge() -> None:
         VideoResponse,
         VideoShm,
         VideoStatus,
+        cleanup_orphaned_video_files,
         video_result_path,
     )
     from utils.logger import TTLogger
@@ -166,6 +167,7 @@ def _run_shm_bridge() -> None:
             )
 
             try:
+                logger.info(f"[MOCK] Running inference for task {req.task_id}")
                 frames = pipeline(
                     prompt=req.prompt,
                     negative_prompt=req.negative_prompt,
@@ -177,11 +179,25 @@ def _run_shm_bridge() -> None:
                     guidance_scale_2=req.guidance_scale_2,
                     seed=req.seed,
                 )
+                logger.info(
+                    f"[MOCK] Inference done for task {req.task_id}, "
+                    f"frames shape={frames.shape}, dtype={frames.dtype}"
+                )
 
                 file_path = video_result_path(req.task_id)
+                logger.info(f"[MOCK] SAVING video to filesystem: {file_path}")
                 with open(file_path, "wb") as fh:
                     pickle.dump(frames, fh)
+                file_size = os.path.getsize(file_path)
+                logger.info(
+                    f"[MOCK] SAVED {file_size:,} bytes to {file_path} "
+                    f"(exists={os.path.exists(file_path)})"
+                )
 
+                logger.info(
+                    f"[MOCK] Sending file_path through SHM output "
+                    f"(only ~{len(file_path)} bytes in SHM, not {file_size:,})"
+                )
                 output_shm.write_response(
                     VideoResponse(
                         task_id=req.task_id,
@@ -208,6 +224,9 @@ def _run_shm_bridge() -> None:
         input_shm.close()
         output_shm.unlink()
         output_shm.close()
+        removed = cleanup_orphaned_video_files()
+        if removed:
+            logger.info(f"Cleaned up {removed} orphaned video file(s)")
         logger.info("Mock video SHM runner shut down")
 
 

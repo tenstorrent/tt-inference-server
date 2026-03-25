@@ -154,6 +154,11 @@ class TestSocketHelpers:
 
 
 class TestWriteResponseToShm:
+    @pytest.fixture(autouse=True)
+    def _use_tmpdir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("ipc.video_shm.VIDEO_FILE_DIR", str(tmp_path))
+        self._tmp = tmp_path
+
     def test_writes_pickled_video(self):
         mock_shm = MagicMock()
         frames = np.random.randint(0, 256, (1, 3, 4, 6, 3), dtype=np.uint8)
@@ -164,7 +169,9 @@ class TestWriteResponseToShm:
         resp = mock_shm.write_response.call_args[0][0]
         assert resp.status == VideoStatus.SUCCESS
         assert resp.task_id == "task-1"
-        recovered = pickle.loads(resp.frame_data)
+        assert resp.file_path.endswith("tt_video_task-1.pkl")
+        with open(resp.file_path, "rb") as fh:
+            recovered = pickle.load(fh)
         np.testing.assert_array_equal(recovered, frames)
 
     def test_handles_4d_input(self):
@@ -175,7 +182,8 @@ class TestWriteResponseToShm:
 
         mock_shm.write_response.assert_called_once()
         resp = mock_shm.write_response.call_args[0][0]
-        recovered = pickle.loads(resp.frame_data)
+        with open(resp.file_path, "rb") as fh:
+            recovered = pickle.load(fh)
         np.testing.assert_array_equal(recovered, frames)
 
     def test_preserves_float_data(self):
@@ -185,7 +193,8 @@ class TestWriteResponseToShm:
         _write_response_to_shm(mock_shm, "task-3", frames)
 
         resp = mock_shm.write_response.call_args[0][0]
-        recovered = pickle.loads(resp.frame_data)
+        with open(resp.file_path, "rb") as fh:
+            recovered = pickle.load(fh)
         np.testing.assert_array_almost_equal(recovered, frames)
 
     def test_preserves_extreme_float_values(self):
@@ -195,7 +204,8 @@ class TestWriteResponseToShm:
         _write_response_to_shm(mock_shm, "task-4", frames)
 
         resp = mock_shm.write_response.call_args[0][0]
-        recovered = pickle.loads(resp.frame_data)
+        with open(resp.file_path, "rb") as fh:
+            recovered = pickle.load(fh)
         np.testing.assert_array_almost_equal(recovered, frames)
 
 
@@ -208,7 +218,7 @@ class TestWriteErrorToShm:
         resp = mock_shm.write_response.call_args[0][0]
         assert resp.status == VideoStatus.ERROR
         assert resp.task_id == "task-err"
-        assert resp.frame_data == b""
+        assert resp.file_path == ""
         assert resp.error_message == "boom"
 
 
