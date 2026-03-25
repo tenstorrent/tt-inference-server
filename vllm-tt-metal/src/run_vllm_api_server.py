@@ -555,7 +555,7 @@ def set_runtime_env_vars(model_spec_json):
 
 
 def start_trace_capture(
-    model_spec_json, disable_trace_capture=False, service_port=None
+    model_spec_json, service_port: int, disable_trace_capture: bool = False
 ):
     # Models with builtin warmup handle their own trace capture internally
     if not disable_trace_capture and model_spec_json.get("has_builtin_warmup", False):
@@ -569,8 +569,6 @@ def start_trace_capture(
         logger.info("Trace capture is disabled via --disable-trace-capture")
         return
 
-    if service_port is None:
-        service_port = int(os.getenv("SERVICE_PORT", DEFAULT_VLLM_SERVER_PORT))
     supported_modalities = model_spec_json.get("supported_modalities", ["text"])
 
     # Get max_context from device_model_spec for trace calculation
@@ -633,7 +631,7 @@ def resolve_service_port() -> int:
     port_value = _extract_cli_arg_value(sys.argv[1:], "--port")
     if port_value is not None:
         return int(port_value)
-    return int(os.getenv("SERVICE_PORT", DEFAULT_VLLM_SERVER_PORT))
+    return int(DEFAULT_VLLM_SERVER_PORT)
 
 
 def format_vllm_serve_command(argv) -> str:
@@ -764,8 +762,8 @@ def main():
     # Step 5: Start trace capture if needed
     start_trace_capture(
         model_spec,
-        disable_trace_capture=args.disable_trace_capture,
         service_port=resolve_service_port(),
+        disable_trace_capture=args.disable_trace_capture,
     )
 
     # Step 6: Launch vLLM server
