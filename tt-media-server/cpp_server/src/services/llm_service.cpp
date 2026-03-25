@@ -28,8 +28,7 @@ using tt::services::TokenParseResult;
 namespace {
 
 bool endsWithReplacementChar(const std::string& s) {
-  return s.size() >= 3 &&
-         static_cast<unsigned char>(s[s.size() - 3]) == 0xEF &&
+  return s.size() >= 3 && static_cast<unsigned char>(s[s.size() - 3]) == 0xEF &&
          static_cast<unsigned char>(s[s.size() - 2]) == 0xBF &&
          static_cast<unsigned char>(s[s.size() - 1]) == 0xBD;
 }
@@ -162,7 +161,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   const std::unordered_set<int64_t> STOP_TOKEN_SET(STOP_IDS.begin(),
                                                    STOP_IDS.end());
 
-  std::unordered_map<std::string, std::vector<int>> pending_decode;
+  std::unordered_map<std::string, std::vector<int>> pendingDecode;
 
   while (running_) {
     if (!worker_manager_->checkWorkerAlive(workerIdx)) {
@@ -194,7 +193,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
       // Buffer token IDs whose decode ends with U+FFFD (incomplete UTF-8).
       // Only the small pending buffer is decoded each step — O(1) amortized.
-      auto& pending = pending_decode[taskId];
+      auto& pending = pendingDecode[taskId];
       pending.push_back(static_cast<int>(token.token_id));
 
       std::string decoded = tokenizer_->decode(pending);
@@ -250,7 +249,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       callback(response, isFinal);
 
       if (isFinal) {
-        pending_decode.erase(taskId);
+        pendingDecode.erase(taskId);
         if (reasoning_parser_) {
           reasoning_parser_->finalizeTask(taskId);
         }
