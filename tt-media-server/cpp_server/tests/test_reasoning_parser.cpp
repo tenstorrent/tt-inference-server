@@ -92,48 +92,74 @@ void testStreamingTokens() {
   ReasoningParser parser;
   std::string taskId = "test-task-123";
 
-  // Initialize task
   parser.initializeTask(taskId);
   assert(parser.activeTaskCount() == 1);
   std::cout << "✓ Task initialized\n";
 
-  // Simulate token sequence: <think> reasoning </think> answer
-  std::vector<int64_t> tokens = {
-      ReasoningParser::THINK_START_TOKEN,  // <think>
-      201,                                 // \n
-      12345,                               // "reasoning"
-      67890,                               // "text"
-      ReasoningParser::THINK_END_TOKEN,    // </think>
-      201,                                 // \n
-      11111,                               // "answer"
-      22222,                               // "text"
-      1                                    // EOS
-  };
-
-  std::vector<bool> expected = {
-      false,  // <think> - filtered
-      false,  // \n - filtered (in reasoning)
-      false,  // reasoning - filtered
-      false,  // text - filtered
-      false,  // </think> - filtered
-      true,   // \n - emitted
-      true,   // answer - emitted
-      true,   // text - emitted
-      true    // EOS - emitted
-  };
-
-  for (size_t i = 0; i < tokens.size(); ++i) {
-    bool shouldEmit = parser.processToken(taskId, tokens[i]);
-    assert(shouldEmit == expected[i]);
+  // <think> marker: state flips, not emitted
+  {
+    auto r =
+        parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN, "");
+    assert(!r.should_emit);
+    assert(r.type == ContentType::REASONING);
+    assert(parser.isInReasoning(taskId));
   }
 
-  std::cout << "✓ Token filtering correct\n";
+  // Reasoning tokens: emitted as REASONING
+  {
+    auto r = parser.processToken(taskId, 201, "\n");
+    assert(r.should_emit);
+    assert(r.type == ContentType::REASONING);
+    assert(r.text == "\n");
+  }
+  {
+    auto r = parser.processToken(taskId, 12345, "reasoning");
+    assert(r.should_emit);
+    assert(r.type == ContentType::REASONING);
+    assert(r.text == "reasoning");
+  }
+  {
+    auto r = parser.processToken(taskId, 67890, " text");
+    assert(r.should_emit);
+    assert(r.type == ContentType::REASONING);
+    assert(r.text == " text");
+  }
 
-  // Check state
+  // </think> marker: state flips, not emitted
+  {
+    auto r = parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN, "");
+    assert(!r.should_emit);
+    assert(r.type == ContentType::REASONING);
+    assert(!parser.isInReasoning(taskId));
+  }
+
+  // Answer tokens: emitted as ANSWER
+  {
+    auto r = parser.processToken(taskId, 201, "\n");
+    assert(r.should_emit);
+    assert(r.type == ContentType::ANSWER);
+    assert(r.text == "\n");
+  }
+  {
+    auto r = parser.processToken(taskId, 11111, "answer");
+    assert(r.should_emit);
+    assert(r.type == ContentType::ANSWER);
+    assert(r.text == "answer");
+  }
+  {
+    auto r = parser.processToken(taskId, 22222, " text");
+    assert(r.should_emit);
+    assert(r.type == ContentType::ANSWER);
+  }
+  {
+    auto r = parser.processToken(taskId, 1, "");
+    assert(r.should_emit);
+    assert(r.type == ContentType::ANSWER);
+  }
+
   assert(!parser.isInReasoning(taskId));
-  std::cout << "✓ Final state: not in reasoning\n";
+  std::cout << "✓ Token classification correct\n";
 
-  // Finalize
   parser.finalizeTask(taskId);
   assert(parser.activeTaskCount() == 0);
   std::cout << "✓ Task finalized\n";
@@ -159,10 +185,9 @@ void testMultipleTasks() {
   for (int i = 0; i < 512; i += 2) {
     std::string taskId = "task-" + std::to_string(i);
 
-    // Task enters reasoning
-    bool shouldEmit =
-        parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN);
-    assert(!shouldEmit);
+    auto r =
+        parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN, "");
+    assert(!r.should_emit);
     assert(parser.isInReasoning(taskId));
   }
 
@@ -179,9 +204,8 @@ void testMultipleTasks() {
   // Exit reasoning for even tasks
   for (int i = 0; i < 512; i += 2) {
     std::string taskId = "task-" + std::to_string(i);
-    bool shouldEmit =
-        parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN);
-    assert(!shouldEmit);  // </think> itself is filtered
+    auto r = parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN, "");
+    assert(!r.should_emit);
     assert(!parser.isInReasoning(taskId));
   }
 
@@ -206,9 +230,10 @@ void testEdgeCases() {
 
   // Test 1: Uninitialized task
   {
-    bool shouldEmit = parser.processToken("uninitialized", 12345);
-    assert(shouldEmit);  // Should emit by default
-    std::cout << "✓ Test 1 passed: Uninitialized task emits by default\n";
+    auto r = parser.processToken("uninitialized", 12345, "text");
+    assert(r.should_emit);
+    assert(r.type == ContentType::ANSWER);
+    std::cout << "✓ Test 1 passed: Uninitialized task emits as answer\n";
   }
 
   // Test 2: </think> without <think>
@@ -216,10 +241,8 @@ void testEdgeCases() {
     std::string taskId = "malformed-task";
     parser.initializeTask(taskId);
 
-    // Process </think> without <think>
-    bool shouldEmit =
-        parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN);
-    assert(!shouldEmit);  // Tag itself is filtered
+    auto r = parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN, "");
+    assert(!r.should_emit);
     assert(!parser.isInReasoning(taskId));
 
     parser.finalizeTask(taskId);
@@ -231,16 +254,15 @@ void testEdgeCases() {
     std::string taskId = "multi-think";
     parser.initializeTask(taskId);
 
-    parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN);
+    parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN, "");
     assert(parser.isInReasoning(taskId));
 
-    // Another <think> while already in reasoning
-    bool shouldEmit =
-        parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN);
-    assert(!shouldEmit);  // Still filtered
+    auto r =
+        parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN, "");
+    assert(!r.should_emit);
     assert(parser.isInReasoning(taskId));
 
-    parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN);
+    parser.processToken(taskId, ReasoningParser::THINK_END_TOKEN, "");
     assert(!parser.isInReasoning(taskId));
 
     parser.finalizeTask(taskId);
@@ -252,10 +274,9 @@ void testEdgeCases() {
     std::string taskId = "incomplete";
     parser.initializeTask(taskId);
 
-    parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN);
+    parser.processToken(taskId, ReasoningParser::THINK_START_TOKEN, "");
     assert(parser.isInReasoning(taskId));
 
-    // Finalize without closing tag (logs warning but doesn't crash)
     parser.finalizeTask(taskId);
     assert(parser.activeTaskCount() == 0);
 

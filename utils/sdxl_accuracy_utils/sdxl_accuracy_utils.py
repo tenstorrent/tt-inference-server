@@ -68,7 +68,7 @@ def save_images_as_pil(status_list: list, output_folder: str):
         print(f"Image saved to {image_path}")
 
 
-def calculate_metrics(status_list: list):
+def calculate_metrics(status_list: list, image_resolution: tuple = (1024, 1024)):
     prompts = [status.prompt for status in status_list]
     images = []
     decode_errors = 0
@@ -79,7 +79,7 @@ def calculate_metrics(status_list: list):
         except Exception as e:
             decode_errors += 1
             logger.error(f"❌ Failed to decode image {idx}: {e}")
-            images.append(Image.new("RGB", (1024, 1024), color=(0, 0, 0)))
+            images.append(Image.new("RGB", image_resolution, color=(0, 0, 0)))
 
     # Log image diagnostics to detect corrupted/blank images
     image_sizes = set(img.size for img in images)
