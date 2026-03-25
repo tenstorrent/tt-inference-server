@@ -44,8 +44,8 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
   switch (task.action) {
     case MemoryManagementAction::ALLOCATE: {
       {
-        std::lock_guard<std::mutex> lock(reservation_mutex_);
-        if (reservations_.contains(task.task_id.id)) {
+        std::lock_guard<std::mutex> lock(reservationMutex);
+        if (reservations.contains(task.task_id.id)) {
           return makeResult(task, ManageMemoryStatus::FAILURE);
         }
         if (task.memory_layout == KvMemoryLayout::PerLayer) {
@@ -54,7 +54,7 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
         if (task.input_seq_len < 0) {
           return makeResult(task, ManageMemoryStatus::FAILURE);
         }
-        reservations_.emplace(
+        reservations.emplace(
             task.task_id.id,
             Reservation{.layout = KvMemoryLayout::Paged, .locations = {}});
       }
@@ -62,14 +62,14 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
       std::vector<KvDestination> locations;
       auto allocStatus = allocateKv(task, locations);
       if (allocStatus != ManageMemoryStatus::SUCCESS) {
-        std::lock_guard<std::mutex> lock(reservation_mutex_);
-        reservations_.erase(task.task_id.id);
+        std::lock_guard<std::mutex> lock(reservationMutex);
+        reservations.erase(task.task_id.id);
         return makeResult(task, allocStatus);
       }
 
       {
-        std::lock_guard<std::mutex> lock(reservation_mutex_);
-        reservations_[task.task_id.id].locations = locations;
+        std::lock_guard<std::mutex> lock(reservationMutex);
+        reservations[task.task_id.id].locations = locations;
       }
       return makeResult(task, ManageMemoryStatus::SUCCESS,
                         std::move(locations));
@@ -77,16 +77,16 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
     case MemoryManagementAction::DEALLOCATE: {
       std::vector<KvDestination> locations;
       {
-        std::lock_guard<std::mutex> lock(reservation_mutex_);
-        auto it = reservations_.find(task.task_id.id);
-        if (it == reservations_.end()) {
+        std::lock_guard<std::mutex> lock(reservationMutex);
+        auto it = reservations.find(task.task_id.id);
+        if (it == reservations.end()) {
           return makeResult(task, ManageMemoryStatus::FAILURE);
         }
         if (it->second.layout != task.memory_layout) {
           return makeResult(task, ManageMemoryStatus::FAILURE);
         }
         locations = std::move(it->second.locations);
-        reservations_.erase(it);
+        reservations.erase(it);
       }
 
       deallocateKv(locations);

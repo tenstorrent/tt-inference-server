@@ -29,8 +29,8 @@ class MemoryManager {
     std::vector<domain::KvDestination> locations;
   };
 
-  std::mutex reservation_mutex_;
-  std::unordered_map<std::string, Reservation> reservations_;
+  std::mutex reservationMutex;
+  std::unordered_map<std::string, Reservation> reservations;
 };
 
 }  // namespace tt::services

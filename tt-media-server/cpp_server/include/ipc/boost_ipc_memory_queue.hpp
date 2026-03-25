@@ -26,15 +26,15 @@ class BoostIpcMemoryQueue {
   static constexpr size_t MAX_MSG_SIZE = MaxMsgSize;
 
   BoostIpcMemoryQueue(const std::string& name, int capacity)
-      : send_buffer_(MAX_MSG_SIZE), recv_buffer_(MAX_MSG_SIZE) {
+      : sendBuffer(MAX_MSG_SIZE), recvBuffer(MAX_MSG_SIZE) {
     bi_ipc::message_queue::remove(name.c_str());
-    queue_ = std::make_unique<bi_ipc::message_queue>(
+    queue = std::make_unique<bi_ipc::message_queue>(
         bi_ipc::create_only, name.c_str(), capacity, MAX_MSG_SIZE);
   }
 
   ~BoostIpcMemoryQueue() {
     try {
-      queue_.reset();
+      queue.reset();
     } catch (const bi_ipc::interprocess_exception&) {
     }
   }
@@ -43,20 +43,20 @@ class BoostIpcMemoryQueue {
   BoostIpcMemoryQueue& operator=(const BoostIpcMemoryQueue&) = delete;
 
   void push(const MsgType& msg) {
-    std::lock_guard<std::mutex> lock(push_mutex_);
-    bi_ipc::obufferstream stream(send_buffer_.data(), send_buffer_.size());
+    std::lock_guard<std::mutex> lock(pushMutex);
+    bi_ipc::obufferstream stream(sendBuffer.data(), sendBuffer.size());
     msg.serialize(stream);
-    queue_->send(send_buffer_.data(), stream.tellp(), /*priority=*/0);
+    queue->send(sendBuffer.data(), stream.tellp(), /*priority=*/0);
   }
 
   bool tryPop(MsgType& out) {
     bi_ipc::message_queue::size_type recv_size = 0;
     unsigned int priority = 0;
-    if (!queue_->try_receive(recv_buffer_.data(), recv_buffer_.size(),
-                             recv_size, priority)) {
+    if (!queue->try_receive(recvBuffer.data(), recvBuffer.size(), recv_size,
+                            priority)) {
       return false;
     }
-    bi_ipc::ibufferstream stream(recv_buffer_.data(), recv_size);
+    bi_ipc::ibufferstream stream(recvBuffer.data(), recv_size);
     out = MsgType::deserialize(stream);
     return true;
   }
@@ -66,10 +66,10 @@ class BoostIpcMemoryQueue {
   }
 
  private:
-  std::unique_ptr<bi_ipc::message_queue> queue_;
-  std::mutex push_mutex_;
-  std::vector<char> send_buffer_;
-  std::vector<char> recv_buffer_;
+  std::unique_ptr<bi_ipc::message_queue> queue;
+  std::mutex pushMutex;
+  std::vector<char> sendBuffer;
+  std::vector<char> recvBuffer;
 };
 
 constexpr size_t MEMORY_REQUEST_MAX_MSG_SIZE = 256;

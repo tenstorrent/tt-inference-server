@@ -53,12 +53,12 @@ class SpPipelineRunner : public IRunner {
   int maxInFlightCount;
   int inFlightCount = 0;
 
-  tt::services::MemoryManager memoryManager_;
-  ipc::MemoryRequestQueue memoryRequests_{ipc::k_memory_request_queue_name,
-                                          ipc::MEMORY_QUEUE_CAPACITY};
-  ipc::MemoryResultQueue memoryResults_{ipc::k_memory_result_queue_name,
-                                        ipc::MEMORY_QUEUE_CAPACITY};
-  std::thread memoryThread_;
+  tt::services::MemoryManager memoryManager;
+  ipc::MemoryRequestQueue memoryRequests{ipc::k_memory_request_queue_name,
+                                         ipc::MEMORY_QUEUE_CAPACITY};
+  ipc::MemoryResultQueue memoryResults{ipc::k_memory_result_queue_name,
+                                       ipc::MEMORY_QUEUE_CAPACITY};
+  std::thread memoryThread;
 };
 
 }  // namespace tt::runners
