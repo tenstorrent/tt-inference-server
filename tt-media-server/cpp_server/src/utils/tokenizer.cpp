@@ -118,6 +118,46 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds) const {
 }
 
 // ---------------------------------------------------------------------------
+// StreamDecoder
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// U+FFFD in UTF-8 is the 3-byte sequence EF BF BD
+bool endsWithReplacementChar(const std::string& s) {
+  return s.size() >= 3 && static_cast<unsigned char>(s[s.size() - 3]) == 0xEF &&
+         static_cast<unsigned char>(s[s.size() - 2]) == 0xBF &&
+         static_cast<unsigned char>(s[s.size() - 1]) == 0xBD;
+}
+
+}  // namespace
+
+Tokenizer::StreamDecoder::StreamDecoder(const Tokenizer& tokenizer)
+    : tokenizer_(tokenizer) {}
+
+std::string Tokenizer::StreamDecoder::step(int tokenId) {
+  pending_.push_back(tokenId);
+  std::string decoded = tokenizer_.decode(pending_);
+  if (!endsWithReplacementChar(decoded)) {
+    pending_.clear();
+    return decoded;
+  }
+  return "";
+}
+
+std::string Tokenizer::StreamDecoder::flush() {
+  if (pending_.empty()) return "";
+  std::string decoded = tokenizer_.decode(pending_);
+  pending_.clear();
+  return decoded;
+}
+
+std::unique_ptr<Tokenizer::StreamDecoder> Tokenizer::createStreamDecoder()
+    const {
+  return std::make_unique<StreamDecoder>(*this);
+}
+
+// ---------------------------------------------------------------------------
 // Factory + standalone helpers
 // ---------------------------------------------------------------------------
 

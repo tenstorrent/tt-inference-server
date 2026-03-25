@@ -25,16 +25,6 @@ namespace tt::services {
 using tt::services::ContentType;
 using tt::services::TokenParseResult;
 
-namespace {
-
-bool endsWithReplacementChar(const std::string& s) {
-  return s.size() >= 3 && static_cast<unsigned char>(s[s.size() - 3]) == 0xEF &&
-         static_cast<unsigned char>(s[s.size() - 2]) == 0xBF &&
-         static_cast<unsigned char>(s[s.size() - 1]) == 0xBD;
-}
-
-}  // namespace
-
 LLMService::LLMService()
     : mode_(tt::config::llmMode()), tokenizer_(&tt::utils::activeTokenizer()) {
   size_t numWorkers = tt::config::numWorkers();
@@ -161,7 +151,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   const std::unordered_set<int64_t> STOP_TOKEN_SET(STOP_IDS.begin(),
                                                    STOP_IDS.end());
 
-  std::unordered_map<std::string, std::vector<int>> pendingDecode;
+  std::unordered_map<std::string,
+                     std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>
+      streamDecoders;
 
   while (running_) {
     if (!worker_manager_->checkWorkerAlive(workerIdx)) {
@@ -191,17 +183,11 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         pending_tasks_.fetch_sub(1);
       }
 
-      // Buffer token IDs whose decode ends with U+FFFD (incomplete UTF-8).
-      // Only the small pending buffer is decoded each step — O(1) amortized.
-      auto& pending = pendingDecode[taskId];
-      pending.push_back(static_cast<int>(token.token_id));
+      auto& decoder = streamDecoders[taskId];
+      if (!decoder) decoder = tokenizer_->createStreamDecoder();
 
-      std::string decoded = tokenizer_->decode(pending);
-      std::string delta;
-      if (isFinal || !endsWithReplacementChar(decoded)) {
-        delta = std::move(decoded);
-        pending.clear();
-      }
+      std::string delta = decoder->step(static_cast<int>(token.token_id));
+      if (isFinal) delta += decoder->flush();
 
       TokenParseResult parseResult{ContentType::ANSWER, delta, true};
       if (reasoning_parser_) {
@@ -249,7 +235,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       callback(response, isFinal);
 
       if (isFinal) {
-        pendingDecode.erase(taskId);
+        streamDecoders.erase(taskId);
         if (reasoning_parser_) {
           reasoning_parser_->finalizeTask(taskId);
         }
