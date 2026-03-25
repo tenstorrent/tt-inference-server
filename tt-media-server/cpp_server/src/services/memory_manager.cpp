@@ -65,8 +65,7 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
 
       reservations.insert(
           task.task_id.id,
-          Reservation{.layout = KvMemoryLayout::Paged,
-                      .locations = locations});
+          Reservation{.layout = KvMemoryLayout::Paged, .locations = locations});
       return makeResult(task, ManageMemoryStatus::SUCCESS,
                         std::move(locations));
     }
