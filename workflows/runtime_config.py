@@ -60,6 +60,7 @@ class RuntimeConfig:
     disable_metal_timeout: bool = False
     concurrency_sweeps: bool = False
     percentile_report: bool = False
+    generate_report_schema: bool = False
     streaming: Optional[str] = None
     preprocessing: Optional[str] = None
     workflow_args: Optional[str] = None
@@ -124,6 +125,7 @@ class RuntimeConfig:
             disable_metal_timeout=args.disable_metal_timeout,
             concurrency_sweeps=args.concurrency_sweeps,
             percentile_report=args.percentile_report,
+            generate_report_schema=args.generate_report_schema,
             streaming=args.streaming,
             preprocessing=args.preprocessing,
             workflow_args=args.workflow_args,

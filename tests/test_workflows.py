@@ -549,6 +549,33 @@ class TestMainWorkflowIntegration:
         with patch("pathlib.Path.read_text", return_value="1.0.0-test"):
             yield
 
+    def test_main_generate_report_schema_reaches_reports_workflow(
+        self, temp_dir, mock_env_vars, mock_version_file
+    ):
+        test_args = [
+            "run.py",
+            "--model",
+            "Llama-3.1-8B-Instruct",
+            "--device",
+            "n150",
+            "--workflow",
+            "reports",
+            "--generate-report-schema",
+        ]
+
+        with patch("sys.argv", test_args), patch(
+            "run.run_workflows",
+            return_value=[WorkflowResult(workflow_name="reports", return_code=0)],
+        ) as mock_run_workflows, patch(
+            "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
+        ), patch("workflows.log_setup.setup_run_logger"):
+            result = main()
+
+        assert result == 0
+        assert mock_run_workflows.called
+        runtime_config = mock_run_workflows.call_args.args[1]
+        assert runtime_config.generate_report_schema is True
+
     def test_main_workflow_benchmarks_no_docker(
         self, temp_dir, mock_env_vars, mock_version_file
     ):

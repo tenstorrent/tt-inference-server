@@ -34,6 +34,7 @@ from workflows.acceptance_criteria import (
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import MODEL_SPECS, ModelSpec
 from workflows.perf_targets import get_perf_target_rows
+from workflows.reports_schema import validate_report_file, write_reports_schema
 from workflows.runtime_config import RuntimeConfig
 from workflows.utils import (
     get_default_workflow_root_log_dir,
@@ -64,6 +65,25 @@ def format_backend_value(backend: str) -> str:
     if backend == "genai-perf":
         return "genai"
     return backend if backend else NOT_MEASURED_STR
+
+
+def _read_optional_csv_rows(
+    csv_path: Optional[Union[str, Path]], label: str
+) -> Optional[List[Dict[str, str]]]:
+    """Read optional CSV output when it exists."""
+    if not csv_path:
+        return None
+
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        if csv_path.parent.exists():
+            logger.info(
+                f"{label} CSV data is optional and was not found at {csv_path}. Continuing without it."
+            )
+        return None
+
+    with csv_path.open("r", encoding="utf-8") as csv_file:
+        return list(csv.DictReader(csv_file))
 
 
 def _map_model_type_to_task_type(model_type: ModelType) -> Optional[str]:
@@ -4113,15 +4133,43 @@ def main():
     if docker_server:
         server_mode = "docker"
         command_flag = "--docker-server"
+    generate_report_schema_flag = ""
+    if runtime_config.generate_report_schema:
+        generate_report_schema_flag = "--generate-report-schema"
 
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     report_id = f"{model_spec.model_id}_{run_timestamp}"
 
     # only show the impl run command if non-default impl is used
     if model_spec.device_model_spec.default_impl:
-        run_cmd = f"python run.py --model {model} --tt-device {device_str} --workflow release {command_flag}"
+        run_cmd_parts = [
+            "python",
+            "run.py",
+            "--model",
+            model,
+            "--tt-device",
+            device_str,
+            "--workflow",
+            "release",
+        ]
     else:
-        run_cmd = f"python run.py --model {model} --tt-device {device_str} --impl {model_spec.impl.impl_name} --workflow release {command_flag}"
+        run_cmd_parts = [
+            "python",
+            "run.py",
+            "--model",
+            model,
+            "--tt-device",
+            device_str,
+            "--impl",
+            model_spec.impl.impl_name,
+            "--workflow",
+            "release",
+        ]
+    if command_flag:
+        run_cmd_parts.append(command_flag)
+    if generate_report_schema_flag:
+        run_cmd_parts.append(generate_report_schema_flag)
+    run_cmd = " ".join(run_cmd_parts)
 
     metadata = {
         "report_id": report_id,
@@ -4282,9 +4330,9 @@ def main():
         aiperf_detailed_data = None
         if aiperf_data_file_path:
             try:
-                with open(aiperf_data_file_path, "r", encoding="utf-8") as csv_file:
-                    csv_reader = csv.DictReader(csv_file)
-                    aiperf_detailed_data = list(csv_reader)
+                aiperf_detailed_data = _read_optional_csv_rows(
+                    aiperf_data_file_path, "AIPerf"
+                )
             except Exception as e:
                 logger.warning(f"Could not read AIPerf CSV data: {e}")
 
@@ -4358,6 +4406,12 @@ def main():
         print(release_str)
 
         json.dump(output_data, f, indent=4)
+
+    if runtime_config.generate_report_schema:
+        schema_path = write_reports_schema(raw_file)
+        logger.info(f"Generated report schema at: {schema_path}")
+
+    validate_report_file(raw_file)
 
     with release_file.open("w", encoding="utf-8") as f:
         f.write(release_str)

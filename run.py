@@ -98,6 +98,11 @@ def parse_arguments():
         help=f"Workflow to run (choices: {', '.join(valid_workflows)})",
     )
     parser.add_argument(
+        "--generate-report-schema",
+        action="store_true",
+        help="For updating report schema only. When running reports workflow, regenerate `workflows/reports-schema.json` from the generated report JSON before validation.",
+    )
+    parser.add_argument(
         "--tt-device",
         required=False,
         choices=valid_devices,
@@ -422,6 +427,7 @@ def format_cli_args_summary(runtime_config):
         f"  docker_interactive:         {runtime_config.interactive}",
         f"  device_id:                  {runtime_config.device_id}",
         f"  disable_trace_capture:      {runtime_config.disable_trace_capture}",
+        f"  generate_report_schema:     {runtime_config.generate_report_schema}",
         f"  override_tt_config:         {runtime_config.override_tt_config}",
         f"  vllm_override_args:         {runtime_config.vllm_override_args}",
         f"  workflow_args:              {runtime_config.workflow_args}",

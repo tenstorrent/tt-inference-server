@@ -458,7 +458,7 @@ def setup_reports_run_script(
     logger.info("running setup_reports_run_script() ...")
     setup_succeeded = (
         run_command(
-            command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests numpy",
+            command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests numpy jsonschema",
             logger=logger,
         )
         == 0
