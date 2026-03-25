@@ -29,6 +29,8 @@ class ServiceContainer {
     return container;
   }
 
+  /** Wire services created for the active MODEL_SERVICE; pass nullptr for any
+   *  slot not used in the current mode. */
   void initialize(
       std::shared_ptr<services::LLMService> llm,
       std::shared_ptr<services::EmbeddingService> embedding,

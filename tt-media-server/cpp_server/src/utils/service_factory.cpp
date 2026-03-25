@@ -25,20 +25,23 @@ void initializeServices() {
   std::shared_ptr<sockets::InterServerService> socket;
   std::shared_ptr<services::DisaggregationService> disaggregation;
 
-  if (tt::config::isLlmServiceEnabled()) {
-    llm = std::make_shared<services::LLMService>();
-
-    auto mode = tt::config::llmMode();
-    if (mode != tt::config::LLMMode::REGULAR) {
-      socket = std::make_shared<sockets::InterServerService>();
-      socket->initializeFromConfig();
-      disaggregation =
-          std::make_shared<services::DisaggregationService>(mode, llm, socket);
+  // Only construct services for MODEL_SERVICE (see config::modelService()).
+  // Additional modes (e.g. videogen) extend config::ModelService and add cases.
+  switch (tt::config::modelService()) {
+    case tt::config::ModelService::LLM: {
+      llm = std::make_shared<services::LLMService>();
+      auto mode = tt::config::llmMode();
+      if (mode != tt::config::LLMMode::REGULAR) {
+        socket = std::make_shared<sockets::InterServerService>();
+        socket->initializeFromConfig();
+        disaggregation =
+            std::make_shared<services::DisaggregationService>(mode, llm, socket);
+      }
+      break;
     }
-  }
-
-  if (tt::config::isEmbeddingService()) {
-    embedding = std::make_shared<services::EmbeddingService>();
+    case tt::config::ModelService::EMBEDDING:
+      embedding = std::make_shared<services::EmbeddingService>();
+      break;
   }
 
   c.initialize(std::move(llm), std::move(embedding), std::move(socket),

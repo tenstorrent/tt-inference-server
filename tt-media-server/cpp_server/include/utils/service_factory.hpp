@@ -8,9 +8,10 @@
 namespace tt::utils::service_factory {
 
 /**
- * Build, wire, and start all services based on current configuration.
- * Populates the ServiceContainer singleton.
- * Called once from main(), before Drogon starts.
+ * Build, wire, and start only the services selected by MODEL_SERVICE
+ * (see config::modelService()). Unused container members stay null.
+ * Populates the ServiceContainer singleton. Called once from main(), before
+ * Drogon starts.
  */
 void initializeServices();
 
