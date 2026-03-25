@@ -13,6 +13,10 @@ if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
   set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "Min policy version for included configs")
 endif()
 
+# Optional clang-tidy during build (same approach as tt-metal: lint = build with clang-tidy)
+# Set only after FetchContent so _deps (tokenizers_cpp, sentencepiece, protobuf, etc.) are excluded.
+option(CLANG_TIDY "Run clang-tidy during build" OFF)
+
 # Find Drogon and JsonCpp (tokenizer_config parsing)
 find_package(Drogon REQUIRED)
 find_package(jsoncpp REQUIRED)
@@ -38,6 +42,14 @@ endif()
 
 # RapidJSON for fast streaming serialization (header-only; populate only to avoid RapidJSON's old cmake_minimum_required)
 include(FetchContent)
+
+# pybind11 for embedding Python interpreter (in-process model runner calls)
+FetchContent_Declare(
+    pybind11
+    GIT_REPOSITORY https://github.com/pybind/pybind11.git
+    GIT_TAG        v2.13.6
+)
+FetchContent_MakeAvailable(pybind11)
 FetchContent_Declare(
     rapidjson
     GIT_REPOSITORY https://github.com/Tencent/rapidjson.git
@@ -57,6 +69,34 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# Import fmt from tt-metal for spdlog
+if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
+    set(fmt_DIR "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
+    find_package(fmt QUIET)
+    if(fmt_FOUND)
+        message(STATUS "Found fmt from tt-metal: ${fmt_VERSION}")
+        set(USE_EXTERNAL_FMT ON)
+    else()
+        message(STATUS "fmt directory found but package not available, using spdlog's bundled fmt")
+        set(USE_EXTERNAL_FMT OFF)
+    endif()
+else()
+    set(USE_EXTERNAL_FMT OFF)
+    message(STATUS "Using spdlog's bundled fmt library")
+endif()
+
+# spdlog for logging - use tt-metal's fmt library when available
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG        v1.17.0
+)
+set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
+set(SPDLOG_FMT_EXTERNAL ${USE_EXTERNAL_FMT} CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(spdlog)
+
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost REQUIRED)
 
@@ -70,6 +110,14 @@ if(ENABLE_TRACY)
         GIT_TAG master
     )
     FetchContent_MakeAvailable(tracy)
+
+    add_library(tracy_client STATIC ${tracy_SOURCE_DIR}/public/TracyClient.cpp)
+    target_include_directories(tracy_client PUBLIC ${tracy_SOURCE_DIR}/public)
+    target_compile_definitions(tracy_client PUBLIC
+        TRACY_ENABLE
+        TRACY_DELAYED_INIT
+        TRACY_MANUAL_LIFETIME
+    )
 endif()
 
 # Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
@@ -81,6 +129,16 @@ FetchContent_Declare(
     GIT_SUBMODULES "msgpack" "sentencepiece"
 )
 FetchContent_MakeAvailable(tokenizers_cpp)
+
+# Enable clang-tidy only for our code (not _deps). Must be after FetchContent.
+if(CLANG_TIDY)
+  find_program(CLANG_TIDY_EXE NAMES clang-tidy-20 clang-tidy-19 clang-tidy)
+  if(CLANG_TIDY_EXE)
+    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};--warnings-as-errors=*" CACHE STRING "clang-tidy command" FORCE)
+  else()
+    message(FATAL_ERROR "CLANG_TIDY=ON but no clang-tidy found. Install clang-tidy-20 or run install_dependencies.sh")
+  endif()
+endif()
 
 # TT Metal C++ API: headers from TT_METAL_HOME (for referencing Metal API, intellisense)
 if(NOT DEFINED TT_METAL_HOME AND DEFINED ENV{TT_METAL_HOME})
@@ -102,6 +160,7 @@ if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/tt_metal/api")
         "${TT_METAL_HOME}/tt_metal/third_party/tracy/public"
         "${TT_METAL_HOME}/tt_stl"
     )
+    # Include build directories
     if(EXISTS "${TT_METAL_HOME}/build_Release/include")
         list(APPEND TT_METAL_INCLUDE_DIRS
             "${TT_METAL_HOME}/build_Release/include"
@@ -128,24 +187,38 @@ else()
     endif()
 endif()
 
-# LLM engine (include/runners/llm_engine/, src/runners/llm_engine/)
-# When tt-metal is not found, device_backend.cpp uses mock only (USE_METAL_CPP_LIB undefined).
+# LLM engine (include/runners/llm_runner/, src/runners/llm_runner/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/block_manager.cpp
     src/ipc/boost_ipc_task_queue.cpp
-    src/runners/llm_runner/device_backend.cpp
-    src/runners/llm_runner/mock_device_backend.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
+    src/runners/llm_runner/mock_model_runner.cpp
     src/runners/llm_runner/scheduler.cpp
     src/runners/llm_runner/sequence.cpp
     src/runners/llm_runner/sampling_params.cpp
+    src/utils/logger.cpp
+    src/config/settings.cpp
+    src/utils/tokenizer.cpp
+    src/utils/deepseek_tokenizer.cpp
+    src/utils/llama_tokenizer.cpp
+    src/utils/tokenizer_config_loader.cpp
+    src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
+    src/runners/sp_pipeline_runner/i_sp_pipeline_model_runner.cpp
+    src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
+    src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
+    src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
+    src/services/memory_manager.cpp
 )
-if(TT_METAL_API_FOUND)
-    list(APPEND LLM_ENGINE_SOURCES src/runners/llm_runner/sockets_device_backend.cpp)
+# Add socket backend when tt-metal is available
+if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
+    list(APPEND LLM_ENGINE_SOURCES
+        src/runners/llama_model_runner.cpp
+    )
+    message(STATUS "LLM engine: building with tt-metal socket integration")
 else()
-    message(STATUS "LLM engine: building without tt-metal (mock device backend only)")
+    message(STATUS "LLM engine: building without tt-metal (tt-metal not found)")
 endif()
 add_library(llm_engine ${LLM_ENGINE_SOURCES})
 target_include_directories(llm_engine PUBLIC
@@ -153,8 +226,10 @@ target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
+# Link tokenizers_cpp and JsonCpp since settings.cpp depends on tokenizer.hpp
+target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp)
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
-    target_compile_definitions(llm_engine PUBLIC SPDLOG_FMT_EXTERNAL USE_METAL_CPP_LIB)
+    target_compile_definitions(llm_engine PUBLIC USE_METAL_CPP_LIB)
     # Find tt_metal library directory
     set(_tt_metal_lib_dir "")
     if(EXISTS "${TT_METAL_HOME}/build_Release/lib/libtt_metal.so")
@@ -164,14 +239,23 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     endif()
     if(_tt_metal_lib_dir)
         target_link_directories(llm_engine PUBLIC "${_tt_metal_lib_dir}")
-        target_link_libraries(llm_engine PUBLIC tt_metal tt_stl)
+        target_link_libraries(llm_engine PUBLIC tt_metal tt_stl fmt)
     endif()
+    target_link_libraries(llm_engine PUBLIC pybind11::embed)
 endif()
-target_link_libraries(llm_engine PUBLIC Boost::boost)
+if(USE_EXTERNAL_FMT)
+    target_link_libraries(llm_engine PUBLIC Boost::boost spdlog::spdlog fmt::fmt)
+else()
+    target_link_libraries(llm_engine PUBLIC Boost::boost spdlog::spdlog)
+endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(llm_engine PUBLIC rt)
 endif()
 target_compile_features(llm_engine PUBLIC cxx_std_20)
+
+if(ENABLE_TRACY)
+    target_link_libraries(llm_engine PUBLIC tracy_client)
+endif()
 
 option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
 if(LLM_ENGINE_DEBUG_BUILD)
@@ -216,9 +300,19 @@ target_include_directories(sequence_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(lockfree_queue_test tests/lockfree_queue_test.cpp)
+target_link_libraries(lockfree_queue_test PRIVATE GTest::gtest_main)
+target_include_directories(lockfree_queue_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Tokenizer test
-add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
-target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp JsonCpp::JsonCpp)
+add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/deepseek_tokenizer.cpp src/utils/llama_tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp src/utils/logger.cpp)
+if(USE_EXTERNAL_FMT)
+    target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog fmt::fmt)
+else()
+    target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog)
+endif()
 target_include_directories(test_tokenizer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
@@ -227,6 +321,7 @@ include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
+gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
@@ -239,24 +334,36 @@ target_include_directories(ipc_scheduler_smoke_test PRIVATE
 add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
 # Tokenizer benchmark
-add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp)
+add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/deepseek_tokenizer.cpp src/utils/llama_tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp src/utils/logger.cpp)
 target_include_directories(tokenizer_benchmark PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
+if(USE_EXTERNAL_FMT)
+    target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog fmt::fmt)
+else()
+    target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog)
+endif()
 
 # Source files
 set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/socket_controller.cpp
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
+    src/ipc/boost_ipc_warmup_signal_queue.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
+    src/services/memory_manager.cpp
+    src/services/reasoning_parser.cpp
     src/utils/tokenizer.cpp
+    src/utils/logger.cpp
+    src/utils/deepseek_tokenizer.cpp
+    src/utils/llama_tokenizer.cpp
     src/worker/single_process_worker.cpp
+    src/worker/worker_manager.cpp
     src/utils/service_factory.cpp
     src/utils/runner_factory.cpp
     src/utils/tokenizer_config_loader.cpp
@@ -279,24 +386,20 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${TT_METAL_INCLUDE_DIRS}
 )
 
+# Compile definitions for performance optimization
+target_compile_definitions(${PROJECT_NAME} PRIVATE)
+
 # Link Drogon and llm_engine (used by LLMService)
-target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal)
-if(ENABLE_TRACY)
-    target_include_directories(${PROJECT_NAME} PRIVATE ${tracy_SOURCE_DIR}/public)
-    target_sources(${PROJECT_NAME} PRIVATE
-        ${tracy_SOURCE_DIR}/public/TracyClient.cpp
-        src/profiling/tracy_alloc.cpp
-    )
-    # TRACY_DELAYED_INIT + TRACY_MANUAL_LIFETIME: init profiler after fork so main/workers
-    # each call StartupProfiler() on their own port (see tracy_config::TracyStartupSchedulerParent etc.).
-    target_compile_definitions(${PROJECT_NAME} PRIVATE
-        TT_ENABLE_TRACY
-        TRACY_ENABLE
-        TRACY_DELAYED_INIT
-        TRACY_MANUAL_LIFETIME
-    )
+if(USE_EXTERNAL_FMT)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog fmt::fmt)
+else()
+    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog)
 endif()
-target_link_libraries(${PROJECT_NAME} PRIVATE Python3::Python)
+if(ENABLE_TRACY)
+    target_sources(${PROJECT_NAME} PRIVATE src/profiling/tracy_alloc.cpp)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE TT_ENABLE_TRACY)
+endif()
+target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
@@ -326,4 +429,6 @@ if(SANITIZE_ADDRESS)
     target_link_options(sequence_test PRIVATE -fsanitize=address)
     target_compile_options(ipc_scheduler_smoke_test PRIVATE ${ASAN_FLAGS})
     target_link_options(ipc_scheduler_smoke_test PRIVATE -fsanitize=address)
+    target_compile_options(lockfree_queue_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(lockfree_queue_test PRIVATE -fsanitize=address)
 endif()

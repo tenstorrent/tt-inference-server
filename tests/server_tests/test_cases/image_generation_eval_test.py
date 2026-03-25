@@ -65,6 +65,23 @@ CONFIG = ImageGenConfig()
 HEALTH_CONFIG = HealthCheckConfig()
 
 
+SDXL_RESOLUTION_MODEL_NAME_SUFFIX = {
+    (512, 512): "-512x512",
+}
+
+
+def resolve_model_name(base_model_name: str, image_resolution: Optional[tuple]) -> str:
+    """Append resolution suffix to model name for accuracy reference lookup.
+
+    Only appends a suffix for non-default resolutions (e.g. 512x512).
+    The default 1024x1024 uses the base model name unchanged.
+    """
+    if image_resolution is None:
+        return base_model_name
+    suffix = SDXL_RESOLUTION_MODEL_NAME_SUFFIX.get(tuple(image_resolution), "")
+    return f"{base_model_name}{suffix}"
+
+
 @dataclass
 class ImageGenerationEvalsTestRequest:
     """Request parameters for image generation eval."""
@@ -75,6 +92,9 @@ class ImageGenerationEvalsTestRequest:
     num_inference_steps: int = CONFIG.DEFAULT_INFERENCE_STEPS
     server_url: Optional[str] = None
     request_timeout: Optional[int] = None
+    image_resolution: Optional[tuple] = None
+    lora_path: Optional[str] = None
+    lora_scale: Optional[float] = None
 
 
 @dataclass
@@ -85,6 +105,8 @@ class ImageGenContext:
     headers: dict
     num_inference_steps: int
     request_timeout_sec: int
+    lora_path: Optional[str] = None
+    lora_scale: Optional[float] = None
 
 
 class ImageGenerationEvalsTest(BaseTest):
@@ -103,13 +125,16 @@ class ImageGenerationEvalsTest(BaseTest):
         timeout_sec = self._request_timeout_from_config()
         logger.info(
             "Running eval - request parameters: model_name=%s, num_prompts=%s, "
-            "start_from=%s, num_inference_steps=%s, server_url=%s, timeout=%s (from config)",
+            "start_from=%s, num_inference_steps=%s, server_url=%s, timeout=%s (from config), "
+            "lora_path=%s, lora_scale=%s",
             request.model_name,
             request.num_prompts,
             request.start_from,
             request.num_inference_steps,
             request.server_url,
             timeout_sec,
+            request.lora_path,
+            request.lora_scale,
         )
 
         prompts = self._load_prompts(request)
@@ -132,13 +157,22 @@ class ImageGenerationEvalsTest(BaseTest):
         status_list: list[ImageGenerationTestStatus],
     ) -> dict:
         """Compute metrics and check accuracy."""
-        logger.info("Step 3: Computing FID and CLIP scores")
-        fid_score, avg_clip, std_clip = calculate_metrics(status_list)
+        resolution = request.image_resolution or (1024, 1024)
+        logger.info("Step 3: Computing FID and CLIP scores (resolution=%s)", resolution)
+        fid_score, avg_clip, std_clip = calculate_metrics(
+            status_list, image_resolution=resolution
+        )
         logger.info("FID: %.2f, CLIP: %.4f ± %.4f", fid_score, avg_clip, std_clip)
 
-        logger.info("Step 4: Checking accuracy against reference")
+        reference_model_name = resolve_model_name(
+            request.model_name, request.image_resolution
+        )
+        logger.info(
+            "Step 4: Checking accuracy against reference (key=%s)",
+            reference_model_name,
+        )
         accuracy_check = calculate_accuracy_check(
-            fid_score, avg_clip, request.num_prompts, request.model_name
+            fid_score, avg_clip, request.num_prompts, reference_model_name
         )
 
         self.eval_results = {
@@ -157,12 +191,20 @@ class ImageGenerationEvalsTest(BaseTest):
             if accuracy_check in AccuracyResult._value2member_map_
             else f"UNKNOWN({accuracy_check})"
         )
-        logger.info(
-            f"Eval summary for {request.model_name}:\n"
-            f"  num_prompts={request.num_prompts}, num_inference_steps={request.num_inference_steps}\n"
-            f"  FID={fid_score:.4f}, CLIP={avg_clip:.4f} ± {std_clip:.4f}\n"
-            f"  accuracy_check={accuracy_check} ({result_name}), success={success}"
+        status_icon = "✅" if success else "❌"
+        clip_display = f"{avg_clip:.4f} ± {std_clip:.4f}"
+        header = (
+            f"{'Model':25} {'Prompts':>8} {'Steps':>6} "
+            f"{'FID':>10} {'CLIP (avg ± std)':>20} {'Result':>8} {'Status':>8}"
         )
+        row = (
+            f"{request.model_name:25} {request.num_prompts:>8} {request.num_inference_steps:>6} "
+            f"{fid_score:>10.4f} {clip_display:>20} {result_name:>8} {status_icon:>8}"
+        )
+        logger.info("Image Generation Eval Summary:")
+        logger.info(header)
+        logger.info("-" * len(header))
+        logger.info(row)
 
         return {
             "success": success,
@@ -234,6 +276,8 @@ class ImageGenerationEvalsTest(BaseTest):
             headers=self._build_headers(),
             num_inference_steps=request.num_inference_steps,
             request_timeout_sec=timeout_sec,
+            lora_path=request.lora_path,
+            lora_scale=request.lora_scale,
         )
 
         completion_counter = {"count": 0, "last_time": 0.0}
@@ -275,13 +319,8 @@ class ImageGenerationEvalsTest(BaseTest):
 
         try:
             start = time.perf_counter()
-            payload = self._build_payload(prompt, ctx.num_inference_steps)
-            logger.debug(
-                "Request for image %s/%s: url=%s, payload_keys=%s",
-                idx,
-                total,
-                f"{ctx.base_url}/{CONFIG.ENDPOINT}",
-                list(payload.keys()),
+            payload = self._build_payload(
+                prompt, ctx.num_inference_steps, ctx.lora_path, ctx.lora_scale
             )
             async with session.post(
                 f"{ctx.base_url}/{CONFIG.ENDPOINT}",
@@ -382,9 +421,14 @@ class ImageGenerationEvalsTest(BaseTest):
         }
 
     @staticmethod
-    def _build_payload(prompt: str, num_inference_steps: int) -> dict:
+    def _build_payload(
+        prompt: str,
+        num_inference_steps: int,
+        lora_path: Optional[str] = None,
+        lora_scale: Optional[float] = None,
+    ) -> dict:
         """Build image generation payload."""
-        return {
+        payload = {
             "prompt": prompt,
             "negative_prompt": CONFIG.NEGATIVE_PROMPT,
             "num_inference_steps": num_inference_steps,
@@ -394,6 +438,11 @@ class ImageGenerationEvalsTest(BaseTest):
             "image_quality": CONFIG.IMAGE_QUALITY,
             "number_of_images": 1,
         }
+        if lora_path is not None:
+            payload["lora_path"] = lora_path
+        if lora_scale is not None:
+            payload["lora_scale"] = lora_scale
+        return payload
 
     @staticmethod
     def _error(message: str) -> dict:

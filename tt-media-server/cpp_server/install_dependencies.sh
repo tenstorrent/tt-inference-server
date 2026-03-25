@@ -15,6 +15,14 @@ $SUDO apt-get update -qq
 $SUDO apt-get install -y --no-install-recommends \
     build-essential cmake g++ pkg-config curl git wget \
     libjsoncpp-dev uuid-dev zlib1g-dev libssl-dev libboost-all-dev
+if ! command -v clang-format-20 >/dev/null 2>&1; then
+    LLVM_SH="/tmp/llvm.sh"
+    curl -sSL -o "${LLVM_SH}" https://apt.llvm.org/llvm.sh
+    chmod +x "${LLVM_SH}"
+    $SUDO "${LLVM_SH}" 20
+    rm -f "${LLVM_SH}"
+    $SUDO apt-get install -y --no-install-recommends clang-format-20
+fi
 $SUDO rm -rf /var/lib/apt/lists/*
 
 if ! command -v cargo >/dev/null 2>&1; then

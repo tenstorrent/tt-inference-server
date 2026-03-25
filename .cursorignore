@@ -11,8 +11,10 @@ dist/
 .env
 .DS_Store
 .vscode/
-.workflow_venv/
 persistent_volume/
 workflow_logs/
-model_specs_output.json
+model_spec.json
+release_model_spec.json
 docs/model_support/**
+.pre-commit/
+.workflow_venvs/

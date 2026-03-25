@@ -1,10 +1,96 @@
-# TT Media Server - C++ Drogon Implementation
+# Zero-Overhead Inference Server
+
+Production-grade, zero-overhead C++ inference server for AI workloads on
+Tenstorrent hardware. Supports LLM serving today; image, video, audio,
+and text-to-speech models are on the roadmap.
+
+## Non-Functional Requirements
+
+These requirements drive design decisions in this codebase. They are ordered
+by priority — when two requirements conflict, the higher-ranked one wins.
+
+### 1. Performance (Zero-Overhead)
+
+The server is the envelope around the model; that envelope must be invisible.
+Every microsecond of framework overhead (serialization, scheduling, IPC,
+queue management) is a design failure. The goal is not "fast" — it is
+"never the bottleneck."
+
+- Prefer zero-copy and shared-memory IPC (`/dev/shm`) over serialization.
+- Tracy profiling instrumentation to detect and eliminate overhead regressions.
+- Nightly performance benchmarks to catch regressions before they ship.
+
+### 2. Fault Tolerance
+
+Workers interact with Tenstorrent devices that can hang or crash. The server
+must detect failed workers, restart them (including device re-initialization),
+and continue serving. A single bad request must fail gracefully without
+affecting other in-flight requests or the main process.
+
+- Main process acts as supervisor; workers run as child processes (fork/exec).
+- Worker health monitoring (heartbeat/watchdog).
+- Request-level fault isolation — one failure does not cascade.
+
+### 3. Observability
+
+This is a customer-facing product. Clients and field engineers must be able
+to diagnose production issues (slow tokens, hung devices, degraded throughput)
+without reading source code.
+
+- Structured logging with request-ID correlation across HTTP → worker → device.
+- Production metrics (tokens/sec, queue depth, latency histograms, device health).
+- Health/liveness endpoints that surface meaningful diagnostics, not just "alive."
+
+### 4. Extensibility
+
+New model types (image, video, audio, text-to-speech) will be added with increasing frequency. The
+server must make this straightforward without modifying core infrastructure.
+
+- Stable core (HTTP layer, tokenization, worker lifecycle) that rarely changes.
+- Model-specific logic isolated in adapter layers (runner implementations).
+- When hardware topology requires custom communication or scheduling, changes
+  are confined to the worker level — the main server remains unchanged.
+
+## Logging
+
+```cpp
+#include "utils/logger.hpp"
+
+// Initialize once at startup (optional - auto-initializes on first use)
+tt::utils::initialize_logger();
+
+// High-performance macros with zero overhead when disabled
+TT_LOG_DEBUG("Debug info: request_id={}, latency={}ms", id, latency);
+TT_LOG_INFO("Server starting on port {}", port);
+TT_LOG_ERROR("Connection failed: {}", error);
+```
+
+#### Configuration
+
+```bash
+# Environment variables
+export TT_LOG_LEVEL=debug             # Runtime log level (trace, debug, info, warn, error, critical, off)
+export TT_LOG_FILE=./logs/server.log  # Enable file logging (optional)
+```
+
+Available log levels (from most to least verbose):
+- `trace` - Most detailed logging
+- `debug` - Debug information
+- `info` - Informational messages (default)
+- `warn` - Warning messages
+- `error` - Error messages only
+- `critical` - Critical errors only
+- `off` - Disable all logging
+
+## LLM engine
+
+The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runners/llm_engine/` (sources). The engine uses the server's logging (`[DEBUG] [llm_engine:...]`) instead of its own.dia Server - C++ Drogon Implementation
 
 A high-performance C++ implementation of the TT Media Server using the Drogon web framework. This implementation is designed to benchmark the overhead of the Python FastAPI server by providing an identical API with minimal overhead.
 
 ## LLM engine
 
-The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runners/llm_engine/` (sources). The engine uses the server’s logging (`[DEBUG] [llm_engine:...]`) instead of its own.
+The LLM engine lives under `include/runners/llm_runner/` (headers) and `src/runners/llm_runner/` (sources). The engine uses the server’s logging (`[DEBUG] [llm_engine:...]`) instead of its own.
 
 ### Main features
 
@@ -15,22 +101,59 @@ The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runn
 
 The engine does **not** support chunked prefill: each request is prefilled in full when it is scheduled (subject to batch token limits).
 
-**Device backend** — Host–device communication is behind an `IDeviceBackend` abstraction (`init`, `write`, `read`, `terminate`). Two implementations: **mock** (no hardware; echoes written pages back as read data) and **sockets** (TT device, H2D/D2H sockets, loopback kernels). The backend is chosen from `llm_engine::Config::device`, set via `LLM_DEVICE_BACKEND` (see Environment Variables). Default is mock.
+**Device backend** — Host–device communication is behind an `IDeviceBackend` abstraction (`init`, `write`, `read`, `terminate`). Two implementations: **mock** (no hardware; echoes written pages back as read data) and **sockets** (TT device, H2D/D2H sockets, loopback kernels). The backend is selected via `LLM_DEVICE_BACKEND` environment variable (see Environment Variables). Default is mock.
+
+### Choosing a Scheduling Policy
+
+The LLM engine supports two scheduling policies that trade off individual request latency vs. overall throughput:
+
+#### Prefill First (Default)
+**When to use:** Low to moderate request rates, latency-sensitive applications
+
+**Behavior:** Always prefills new requests when the prefill_queue has waiting requests. Decode is only attempted when nothing can be prefilled.
+
+**Advantages:**
+- **Better Time-To-First-Token (TTFT)** for individual requests
+- New requests get processed immediately without waiting for decode batches
+- Optimal for scenarios where user-perceived latency is critical
+
+**Trade-offs:**
+- Decode sequences may be interrupted when new requests arrive
+- Lower overall device occupancy during mixed workloads
+
+#### Max Occupancy
+**When to use:** High request rates, throughput-oriented applications
+
+**Behavior:** Keeps the device at full occupancy (`max_in_flight_count` from MAX_IN_FLIGHT_COUNT env var) whenever possible. When decode sequences finish and free slots, immediately prefills enough new sequences to refill capacity, then resumes decode at full width.
+
+**Advantages:**
+- **Better average TTFT across all users** under high load
+- Maximizes device utilization and overall throughput
+- Decode batches run at full capacity for better efficiency
+
+**Trade-offs:**
+- Individual requests may wait longer for their first token
+- Decode sequences lose one decode step during each prefill batch
+
+**Configuration:** Set via the `SCHEDULING_POLICY` environment variable (see `config/types.hpp` for valid values, `config/defaults.hpp` for defaults). The policy is selected at runtime based on your workload characteristics.
 
 ### Run unit tests
 
-Run scheduler unit tests (Google Test):
+Run LLM engine unit tests (Google Test) from the `cpp_server` directory:
 
 ```bash
 cd build && ctest --output-on-failure
-# or run the test binary directly:
+# Or run test binaries directly:
 ./build/scheduler_test
+./build/llm_runner_test
+./build/sequence_test
+./build/ipc_scheduler_smoke_test
 ```
 
 ## Quick Start
 
 ```bash
-# Build
+# Build (defaults to DeepSeek V3)
 cd cpp_server
 ./build.sh
 
@@ -47,6 +170,66 @@ curl http://localhost:8001/health
 pkill -f tt_media_server_cpp
 # Or use Ctrl+C if running in foreground
 ```
+
+## Build Options
+
+```bash
+# Default build
+./build.sh
+
+# Debug build
+./build.sh --debug
+
+# AddressSanitizer
+./build.sh --asan
+```
+
+### Tokenizer files
+
+The build script automatically pre-fetches tokenizer files for all supported
+models from HuggingFace into `tokenizers/<model-name>/`:
+
+```
+tokenizers/
+  deepseek-ai/DeepSeek-R1-0528/tokenizer.json
+  deepseek-ai/DeepSeek-R1-0528/tokenizer_config.json
+  meta-llama/Llama-3.1-8B-Instruct/tokenizer.json
+  meta-llama/Llama-3.1-8B-Instruct/tokenizer_config.json
+```
+
+Llama models are gated on HuggingFace — set `HF_TOKEN` (or
+`HUGGING_FACE_HUB_TOKEN`, or run `huggingface-cli login`) before building to
+download them. If the Llama download fails, the build continues (DeepSeek is
+required; Llama is optional unless `LLM_DEVICE_BACKEND=llama`). If both
+`tokenizer.json` and `tokenizer_config.json` already exist for a model, the
+build skips the download (no `HF_TOKEN` needed for subsequent builds). To force
+re-download, remove the model directory under `tokenizers/<org>/<model>/`.
+
+To add a new model, manually download its tokenizer files into a subdirectory
+matching the HuggingFace model name:
+
+```bash
+mkdir -p tokenizers/<org>/<model>
+wget -O tokenizers/<org>/<model>/tokenizer.json \
+  https://huggingface.co/<org>/<model>/raw/main/tokenizer.json
+wget -O tokenizers/<org>/<model>/tokenizer_config.json \
+  https://huggingface.co/<org>/<model>/raw/main/tokenizer_config.json
+```
+
+### Runtime model selection
+
+Model-specific behavior (chat template, stop tokens, decode filtering) is
+selected at **runtime** via the `LLM_DEVICE_BACKEND` environment variable — no
+recompilation needed:
+
+| `LLM_DEVICE_BACKEND` | Model | Tokenizer |
+|----------------------|-------|-----------|
+| `mock` or `pipeline` (default when unset: `mock`) | DeepSeek V3 | `tokenizers/deepseek-ai/DeepSeek-R1-0528/` |
+| `llama` | Llama 3.1 8B Instruct | `tokenizers/meta-llama/Llama-3.1-8B-Instruct/` |
+
+The runtime selection uses an OOP strategy pattern — see
+`include/utils/tokenizer_strategy.hpp` for the `ITokenizerStrategy` interface
+and `create_tokenizer_strategy()` factory.
 
 ## Starting the Server
 
@@ -80,18 +263,85 @@ pkill -f tt_media_server_cpp
 
 ### Environment Variables
 
-Configuration is read via `config/settings.hpp` (defaults with env overrides, similar to `tt-media-server/config/settings.py`). No direct `getenv` elsewhere.
+Configuration follows a unified system with clear separation of concerns:
+- **Type definitions**: `config/types.hpp` - enums and type conversions (ModelService, ModelType, LLMMode, SchedulingPolicy, etc.)
+- **Default values**: `config/defaults.hpp` - default values for all environment variables
+- **Runner config**: `config/runner_config.hpp` - LLMConfig, EmbeddingConfig, RunnerConfig variant, and llm_engine_config()
+- **Runtime settings**: `config/settings.hpp` - reads environment variables and provides runtime accessors
+
+All environment variable reads go through `config/settings.hpp` (no direct `getenv` elsewhere).
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DEVICE_IDS` | Bracket-pair device list, one worker per pair (e.g. `(0,1,2,3),(4,5,6,7)`). num_workers = number of pairs; each worker's `TT_VISIBLE_DEVICES` = that pair's contents. | `(0),(1),(2),(3)` |
+| `DEVICE_IDS` | Bracket-pair device list, one worker per pair (e.g. `(0,1,2,3),(4,5,6,7)`). num_workers = number of pairs; each worker's `TT_VISIBLE_DEVICES` = that pair's contents. | `(0)` |
 | `MODEL_SERVICE` | Service mode: `embedding` or `llm`. Same as tt-media-server. | `llm` |
-| `MAX_BATCH_SIZE` | Max requests per batch (embedding). Same as tt-media-server. | `1` |
 | `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
-| `MODEL_RUNNER` | Runner: `llm_test` (C++ uses this; tt-media-server has more). Same as tt-media-server. | `llm_test` |
+| `MAX_QUEUE_SIZE` | Maximum number of requests that can be queued. | `1000` |
+| `MAX_IN_FLIGHT_COUNT` | Maximum number of requests being processed simultaneously. | `32` |
 | `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
-| `LLM_DEVICE_BACKEND` | LLM device backend: `sockets` (TT device H2D/D2H) or `mock` (no hardware). | `mock` |
+| `LLM_DEVICE_BACKEND` | LLM device backend and model: `mock` or `pipeline` (DeepSeek V3 tokenizer), `llama` (Llama 3.1 8B Instruct). | `mock` |
 | `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
+| `LLM_MODE` | LLM operating mode: `regular`, `prefill`, or `decode`. See Prefill/Decode Split Mode. | `regular` |
+| `SOCKET_HOST` | Socket host for prefill/decode communication. Decode server: bind address. Prefill server: decode server address. | `localhost` |
+| `SOCKET_PORT` | Socket port for prefill/decode communication. | `9000` |
+| `SCHEDULING_POLICY` | LLM scheduling policy: `prefill_first` (prioritize new requests) or `max_occupancy` (maximize throughput). See Choosing a Scheduling Policy. | `prefill_first` |
+| `ENABLE_ACCUMULATED_STREAMING` | Enable token accumulation before streaming (send multiple tokens per chunk). | `false` |
+| `MAX_ACCUMULATED_TOKENS` | Maximum tokens to accumulate before streaming when `ENABLE_ACCUMULATED_STREAMING` is true. | `5` |
+
+### Prefill/Decode Split Mode
+
+The server supports running in a split architecture where prefill and decode operations are handled by separate server instances on different machines. This enables distributing the workload across multiple nodes.
+
+**Modes:**
+- `regular` (default): Single server handles both prefill and decode
+- `prefill`: Server only performs prefill (processes prompt, generates first token)
+- `decode`: Server receives HTTP requests, forwards to prefill server, then generates remaining tokens locally
+
+**Architecture:**
+```
+Client HTTP Request
+        │
+        ▼
+┌───────────────────┐
+│   Decode Server   │ (LLM_MODE=decode, port 8001)
+│   Socket Server   │ (SOCKET_PORT=9000)
+└─────────┬─────────┘
+          │ TCP Socket
+          ▼
+┌───────────────────┐
+│  Prefill Server   │ (LLM_MODE=prefill, port 8002)
+│   Socket Client   │ (connects to decode server)
+└───────────────────┘
+```
+
+**Running the split architecture:**
+
+1. **Start Decode Server** (receives HTTP requests, listens for prefill connections):
+   ```bash
+   LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+     ./build/tt_media_server_cpp -p 8001
+   ```
+
+2. **Start Prefill Server** (connects to decode server):
+   ```bash
+   LLM_MODE=prefill SOCKET_HOST=<decode-server-ip> SOCKET_PORT=9000 \
+     ./build/tt_media_server_cpp -p 8002
+   ```
+
+3. **Send requests to the Decode Server**:
+   ```bash
+   curl -X POST http://<decode-server>:8001/v1/completions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer your-secret-key" \
+     -d '{"prompt": "Hello, how are you?", "max_tokens": 50}'
+   ```
+
+**Flow:**
+1. Client sends request to decode server (HTTP)
+2. Decode server sends prefill request to prefill server (socket)
+3. Prefill server processes prompt, generates first token, sends prefill result with token IDs
+4. Decode server continues generating remaining tokens locally
+5. Decode server streams response to client
 
 ### Tracy profiling (Tracy build only)
 
@@ -150,8 +400,8 @@ pkill -9 -f tt_media_server_cpp
 |----------|--------|---------------|-------------|
 | `/v1/completions` | POST | ✅ Yes | OpenAI-compatible text completion |
 | `/v1/chat/completions` | POST | ✅ Yes | OpenAI-compatible chat completion |
-| `/health` | GET | ❌ No | Health check |
-| `/tt-liveness` | GET | ❌ No | Liveness check with system status |
+| `/health` | GET | ❌ No | Health check (unchanged: always 200 with status + timestamp) |
+| `/tt-liveness` | GET | ❌ No | Liveness (like Python: 200 with status alive + model info; model_ready = any worker warmed up; 500 only on failure) |
 | `/docs` | GET | ❌ No | Swagger UI documentation |
 | `/openapi.json` | GET | ❌ No | OpenAPI specification |
 
@@ -209,7 +459,7 @@ curl -X POST http://localhost:8001/v1/completions \
 ```
 data: {"id":"cmpl-abc123","choices":[{"text":"token_0","index":0}],...}
 
-data: {"id":"cmpl-abc123","choices":[{"text":"token_1","index":1}],...}
+data: {"id":"cmpl-abc123","choices":[{"text":"token_1","index":0}],...}
 
 ...
 
@@ -236,18 +486,19 @@ curl http://localhost:8001/health
 curl http://localhost:8001/tt-liveness
 ```
 
-**Response:**
+Liveness probe (same as Python tt-liveness). Always returns 200 when the process can respond; 500 only on unrecoverable failure. The `model_ready` field reflects whether any worker has warmed up.
+
+**Response (200):**
 ```json
 {
+  "status": "alive",
   "model_ready": true,
   "queue_size": 0,
   "max_queue_size": 10000,
-  "device": "cpu",
   "workers": [
     {
-      "worker_id": "worker_0",
-      "is_ready": true,
-      "processed_requests": 42
+      "worker_id": "0",
+      "is_ready": true
     }
   ]
 }
@@ -265,24 +516,48 @@ The C++ server mirrors the Python implementation's architecture:
 cpp_server/
 ├── include/
 │   ├── api/
-│   │   └── llm_controller.hpp      # OpenAI-compatible API controller
+│   │   ├── llm_controller.hpp       # OpenAI-compatible LLM API
+│   │   ├── embedding_controller.hpp
+│   │   └── health_controller.hpp
+│   ├── config/
+│   │   ├── settings.hpp             # Runtime config accessors (reads env vars)
+│   │   ├── types.hpp                # Type definitions and enums
+│   │   ├── defaults.hpp             # Default values for all env vars
+│   │   └── runner_config.hpp        # LLMConfig, EmbeddingConfig, RunnerConfig variant
 │   ├── domain/
-│   │   ├── completion_request.hpp  # Request domain object
-│   │   └── completion_response.hpp # Response domain objects
+│   │   ├── completion_request.hpp
+│   │   ├── completion_response.hpp
+│   │   ├── chat_completion_*.hpp
+│   │   └── embedding_*.hpp
 │   ├── runners/
-│   │   └── runner_factory.hpp      # Runner factory (env-based selection)
-│   ├── scheduler/
-│   │   └── multiprocess_scheduler.hpp  # Multiprocess scheduler
-│   └── services/
-│       ├── base_service.hpp        # Base service class
-│       └── llm_service.hpp         # LLM service
+│   │   ├── llm_runner.hpp           # LLMRunner (scheduler + model runner)
+│   │   ├── llm_runner/              # LLM engine (config, scheduler, block manager, model_runner)
+│   │   │   ├── config.hpp           # Config, DeviceBackend, ModelRunnerType
+│   │   │   ├── model_runner.hpp     # IModelRunner, make_model_runner()
+│   │   │   ├── device_backend.hpp  # IDeviceBackend, make_device_backend()
+│   │   │   └── ...
+│   │   ├── llama_model_runner.hpp   # LlamaModelRunner (pybind11 in-process)
+│   │   ├── embedding_runner.hpp
+│   │   └── runner_interface.hpp
+│   ├── utils/
+│   │   ├── runner_factory.hpp       # create_runner() (env-based selection)
+│   │   └── tokenizer_strategy.hpp  # LLM_DEVICE_BACKEND → tokenizer
+│   ├── services/
+│   │   ├── llm_service.hpp
+│   │   └── embedding_service.hpp
+│   └── worker/
+│       └── single_process_worker.hpp
 ├── src/
 │   ├── api/
-│   │   └── llm_controller.cpp
-│   ├── scheduler/
-│   │   └── scheduler.cpp
+│   ├── config/
+│   ├── runners/
+│   │   ├── llm_runner.cpp
+│   │   ├── llm_runner/              # model_runner, device_backend, scheduler, ...
+│   │   ├── llama_model_runner.cpp
+│   │   └── embedding_runner.cpp
+│   ├── utils/
+│   │   └── runner_factory.cpp       # create_runner() → LLMRunner or EmbeddingRunner
 │   ├── services/
-│   │   └── base_service.cpp
 │   └── main.cpp
 └── CMakeLists.txt
 ```
@@ -304,39 +579,27 @@ cpp_server/
 - `LLMService`: LLM-specific service implementation
 
 ### Runners
-- `RunnerFactory`: Creates appropriate runner based on `TT_RUNNER_TYPE` environment variable
+- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`. For LLM, builds `tt::config::LLMConfig` (via `llm_engine_config()` from `config/runner_config.hpp`) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/model_runner.hpp` and `model_runner.cpp`).
 
 ### API
 - `LLMController`: Drogon HTTP controller with OpenAI-compatible endpoints
 
 ## Runner Types
 
-The server supports the following runner type, selected via the `TT_RUNNER_TYPE` environment variable:
+The server supports the following runner types, selected via the `LLM_DEVICE_BACKEND` environment variable:
 
 | Runner | Value | Description |
 |--------|-------|-------------|
-| LLMTestRunner | `llm_test` (default) | Pure CPU benchmark, generates 120k tokens/sec |
+| Mock / Pipeline | `mock` or `pipeline` (default when unset: `mock`) | Mock: no device. Pipeline: TT device. Both use DeepSeek V3 tokenizer. |
+| Llama runner | `llama` | In-process pybind11: embeds Python and calls `tt_model_runners.llama_runner.Llama31_8BRunner` (TT device). Requires `TT_METAL_HOME`, `HF_MODEL`, tokenizer under `tokenizers/meta-llama/Llama-3.1-8B-Instruct/`. |
 
-### LLMTestRunner (Default)
+### LLM mock runner (default)
 
-Generates tokens at 120,000 tokens/second using busy-wait loops for microsecond precision timing. This allows benchmarking the server infrastructure overhead independent of any device I/O.
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/completions` | POST | OpenAI-compatible text completion |
-| `/health` | GET | Health check |
-| `/tt-liveness` | GET | Liveness check with system status |
+When `LLM_DEVICE_BACKEND` is unset or `mock`, the engine uses a stub model runner (no real device). Useful for testing the server and API without hardware.
 
 ## Performance
 
-The `LLMTestRunner` is designed to generate tokens at **120,000 tokens/second** using busy-wait loops for microsecond precision timing. This allows benchmarking the server infrastructure overhead independent of actual model inference.
-
-Token generation timing:
-- Target: 120,000 tokens/second
-- Token interval: ~8.33 microseconds
-- Uses `std::chrono::high_resolution_clock` for precise timing
+With `LLM_DEVICE_BACKEND=mock`, the stub runner can be used to benchmark server overhead (no device I/O). Real throughput with `llama` depends on the TT device and model.
 
 ## Building
 
@@ -400,16 +663,20 @@ The server includes tokenizer support for encode/decode:
 
 1. Install [Rust](https://rustup.rs) (required by tokenizers-cpp).
 2. tokenizers-cpp is **fetched at configure time** via CMake FetchContent. CMake will download it into `build/_deps/`.
-3. Build the server:
+3. Build the server — tokenizer files are pre-fetched automatically by `build.sh`:
    ```bash
    ./build.sh
    ```
-4. Place a HuggingFace `tokenizer.json` (or SentencePiece `tokenizer.model`) at `cpp_server/tokenizers/tokenizer.json`, and `tokenizer_config.json` at `cpp_server/tokenizers/tokenizer_config.json`. The server loads them automatically from those paths relative to the executable.
-   To fetch DeepSeek V3 tokenizer and config from Hugging Face into `tokenizers/`:
+
+4. Tokenizer files are stored per-model under `tokenizers/<model-name>/`. The
+   active tokenizer is selected at runtime based on `LLM_DEVICE_BACKEND` (see
+   [Runtime model selection](#runtime-model-selection) above).
+
+   To fetch DeepSeek R1 0528 tokenizer and config from Hugging Face into `tokenizers/`:
    ```bash
    mkdir -p cpp_server/tokenizers
-   wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer.json
-   wget -q -O cpp_server/tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-V3/resolve/main/tokenizer_config.json
+   wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/resolve/main/tokenizer.json
+   wget -q -O cpp_server/tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/resolve/main/tokenizer_config.json
    ```
 
 ## Performance

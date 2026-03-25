@@ -4,6 +4,9 @@
 
 import os
 import traceback
+import time
+from multiprocessing import Event
+from typing import Optional
 
 from transformers import AutoModelForCausalLM
 import torch
@@ -18,12 +21,13 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
+from config.constants import SupportedModels
 
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
-        self.model_name = "google/gemma-1.1-2b-it"
+        super().__init__(device_id, num_torch_threads=num_torch_threads)
+        self.model_name = SupportedModels.GEMMA_1_1_2B_IT.value
 
     @log_execution_time("Setting up Gemma Lora training")
     async def warmup(self) -> bool:
@@ -111,7 +115,10 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         self.model = torch.compile(
             self._peft_model,
             backend="tt",
-            options={"tt_enable_torch_fx_fusion_pass": False},
+            options={
+                "tt_enable_torch_fx_fusion_pass": False,
+                "tt_legacy_compile": True,
+            },
         )
 
         self.optimizer = torch.optim.AdamW(
@@ -187,10 +194,40 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         self.logger.info(
                             f"Step {global_step} | train/loss: {avg_loss:.4f}"
                         )
+                        if request._training_metrics is not None:
+                            request._training_metrics.append(
+                                {
+                                    "global_step": global_step,
+                                    "epoch": epoch,
+                                    "metric_name": "train_loss",
+                                    "value": round(avg_loss, 4),
+                                    "timestamp": time.time(),
+                                }
+                            )
                         running_loss = 0.0
 
                         torch.save(self.model.state_dict(), model_path)
                         self.logger.info("Model checkpoint saved.")
+
+                    if do_validation:
+                        avg_val_loss = self.run_validation(
+                            cancel_event=request._cancel_event
+                        )
+                        if avg_val_loss is not None:
+                            self.logger.info(
+                                f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}"
+                            )
+                            if request._training_metrics is not None:
+                                request._training_metrics.append(
+                                    {
+                                        "global_step": global_step,
+                                        "epoch": epoch,
+                                        "metric_name": "val_loss",
+                                        "value": round(avg_val_loss, 4),
+                                        "timestamp": time.time(),
+                                    }
+                                )
+                        self.model.train()
 
                     # Check for cancellation at the end of each training step
                     if request._cancel_event and request._cancel_event.is_set():
@@ -199,13 +236,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                             f"Model checkpoint saved: {model_path}"
                         )
                         break
-
-                    if do_validation:
-                        avg_val_loss = self.run_validation()
-                        self.logger.info(
-                            f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}"
-                        )
-                        self.model.train()
 
                     global_step += 1
 
@@ -231,13 +261,16 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         return [model_path]
 
-    def run_validation(self):
+    def run_validation(self, cancel_event: Optional[Event]):
         self.logger.info("\n=== Starting Validation ===")
         self.model.eval()
         total_val_loss = 0.0
         num_val_batches = 0
 
         with torch.no_grad():
+            if cancel_event and cancel_event.is_set():
+                self.logger.info("Validation cancelled before starting.")
+                return None
             for batch in tqdm(self.eval_dataloader, desc="Validation"):
                 batch = {k: v.to(self.device) for k, v in batch.items()}
 
@@ -261,6 +294,10 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 torch_xla.sync(wait=True)
 
                 num_val_batches += 1
+
+                if cancel_event and cancel_event.is_set():
+                    self.logger.info("Validation cancelled early.")
+                    return None
 
         avg_val_loss = total_val_loss / num_val_batches if num_val_batches > 0 else 0.0
         return avg_val_loss

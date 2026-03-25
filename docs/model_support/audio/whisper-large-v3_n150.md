@@ -38,6 +38,29 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3), [distil-whisper/distil-large-v3](https://huggingface.co/distil-whisper/distil-large-v3) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 1 |
-| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/65718bb/models/demos/whisper) |
-| tt-metal Commit | `65718bb` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-65718bb` |
+| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper) |
+| tt-metal Commit | `bac8b34` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.0-bac8b34` |
+
+---
+
+## N300 Configuration
+
+### Quickstart - Deploy on n300
+
+**via run.py command**
+
+```bash
+python3 run.py --model whisper-large-v3 --device n300 --workflow server --docker-server
+```
+
+### Model Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| Weights | [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3), [distil-whisper/distil-large-v3](https://huggingface.co/distil-whisper/distil-large-v3) |
+| Model Status | 🟢 Complete |
+| Max Batch Size | 1 |
+| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper) |
+| tt-metal Commit | `bac8b34` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.0-bac8b34` |
