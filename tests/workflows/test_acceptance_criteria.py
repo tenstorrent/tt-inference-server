@@ -158,8 +158,38 @@ def test_acceptance_criteria_check_reports_next_status_failures(
     assert "- Acceptance status: `PASS`" in summary_markdown
     assert "- Benchmark perf status: `functional`" in summary_markdown
     assert "- Next benchmark status blocked at `complete`." in summary_markdown
-    assert "complete text isl=128 osl=128 max_concurrency=1" in summary_markdown
-    assert "complete text isl=2048 osl=128 max_concurrency=1" in summary_markdown
+    assert "complete text isl=128 osl=128 max_concurrency=1" not in summary_markdown
+    assert "complete text isl=2048 osl=128 max_concurrency=1" not in summary_markdown
+
+
+def test_acceptance_summary_omits_duplicate_next_status_failure_details(
+    report_data, monkeypatch
+):
+    monkeypatch.setattr(
+        "workflows.acceptance_criteria.get_named_perf_reference",
+        lambda *args, **kwargs: make_perf_reference(),
+    )
+    failed_report_data = copy.deepcopy(report_data)
+    failed_report_data["benchmarks_summary"][0]["mean_ttft_ms"] = 338.5
+
+    benchmark_target_evaluation = evaluate_benchmark_targets(failed_report_data)
+    accepted, blockers = acceptance_criteria_check(
+        failed_report_data, benchmark_target_evaluation
+    )
+    summary_markdown = format_acceptance_summary_markdown(
+        accepted, blockers, benchmark_target_evaluation
+    )
+
+    blocker_key = "benchmarks.functional.text_isl_128_osl_128_max_concurrency_1"
+
+    assert accepted is False
+    assert benchmark_target_evaluation["status"] == "experimental"
+    assert benchmark_target_evaluation["next_status"] == "functional"
+    assert len(benchmark_target_evaluation["next_status_failures"]) == 1
+    assert blocker_key in blockers
+    assert "- Next benchmark status blocked at `functional`." in summary_markdown
+    assert "functional text isl=128 osl=128 max_concurrency=1" not in summary_markdown
+    assert f"- `{blocker_key}`: {blockers[blocker_key]}" in summary_markdown
 
 
 def test_acceptance_criteria_check_regression_failure_blocks_acceptance(
