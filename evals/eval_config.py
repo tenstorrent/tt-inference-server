@@ -493,6 +493,114 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="Qwen/Qwen3-VL-8B-Instruct",
+        tasks=[
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="chartqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=89.6,
+                    published_score_ref="https://arxiv.org/pdf/2511.21631",
+                    gpu_reference_score=77.12,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/235#issuecomment-2902002942",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "relaxed_overall,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "<|eot_id|>",
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="docvqa_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=96.1,
+                    published_score_ref="https://arxiv.org/pdf/2511.21631",
+                    gpu_reference_score=81.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/235#issuecomment-2902002942",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "anls,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "<|eot_id|>",
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.001,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="mmmu_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=69.6,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct#model-performance",
+                    gpu_reference_score=59.56,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/235#issuecomment-2902002942",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "mmmu_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "<|eot_id|>",
+                    "stream": "False",
+                    "max_new_tokens": "512",
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/Qwen2.5-VL-3B-Instruct",
         tasks=[
             EvalTask(
