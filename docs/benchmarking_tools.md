@@ -301,7 +301,7 @@ python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks \
 | **TPOT** | Time Per Output Token - average inter-token latency | ms |
 | **ITL** | Inter-Token Latency - same as TPOT | ms |
 | **E2EL** | End-to-End Latency - total request duration | ms |
-| **User Output Tput** | User-level throughput (single request) | tokens/sec/user |
+| **Interactivity** | User-level throughput (single request) | tokens/sec/user |
 | **Output Tput** | Decode throughput (all concurrent requests) | tokens/sec |
 | **Input Tput** | Prefill/prompt processing throughput | tokens/sec |
 | **Req Tput** | Request throughput | requests/sec |

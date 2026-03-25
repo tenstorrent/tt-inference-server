@@ -654,7 +654,7 @@ def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("num_requests", "N Req"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("mean_tpot_ms", "TPOT (ms)"),
-        ("mean_tps", "User Output Tput (tok/s/user)"),
+        ("mean_tps", "Interactivity (tok/s/user)"),
         ("tps_decode_throughput", "Output Tput (tok/s)"),
         ("tps_prefill_throughput", "Input Tput (tok/s)"),
         ("total_token_throughput", "Total Tput (tok/s)"),
@@ -684,7 +684,7 @@ def create_vlm_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("num_requests", "Num Requests"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("mean_tpot_ms", "TPOT (ms)"),
-        ("mean_tps", "User Output Tput (tok/s/user)"),
+        ("mean_tps", "Interactivity (tok/s/user)"),
         ("tps_decode_throughput", "Output Tput (tok/s)"),
         ("tps_prefill_throughput", "Input Tput (tok/s)"),
         ("mean_e2el_ms", "E2EL (ms)"),
@@ -776,7 +776,7 @@ def create_embedding_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
         ("num_requests", "Num Requests"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("mean_tpot_ms", "TPOT (ms)"),
-        ("mean_tps", "User Output Tput (tok/s/user)"),
+        ("mean_tps", "Interactivity (tok/s/user)"),
         ("tps_decode_throughput", "Output Tput (tok/s)"),
         ("tps_prefill_throughput", "Input Tput (tok/s)"),
         ("mean_e2el_ms", "E2EL (ms)"),
@@ -958,7 +958,7 @@ def get_markdown_table(display_dicts: List[Dict[str, str]]) -> str:
             "N Req": "total number of requests (sample size, N)",
             "TTFT": "Time To First Token (ms)",
             "TPOT": "Time Per Output Token (ms)",
-            "User Output Tput": "Output token throughput per user (tok/s/user)",
+            "Interactivity": "Output token throughput per user (tok/s/user)",
             "Output Tput": "Output token (decode) throughput, across all users (tok/s)",
             "Input Tput": "Input token (prefill) throughput (tok/s)",
             "E2EL": "End-to-End Latency (ms)",
@@ -1342,7 +1342,7 @@ def benchmark_release_markdown(release_raw, target_checks=None):
         ("osl", "OSL"),
         ("max_concurrency", "Concurrency"),
         ("ttft", "TTFT (ms)"),
-        ("tput_user", "User Output Tput (tok/s/user)"),
+        ("tput_user", "Interactivity (tok/s/user)"),
         ("tput", "Output Tput (tok/s)"),
     ]
     check_cols = []
@@ -1414,7 +1414,7 @@ def benchmark_vlm_release_markdown(release_raw, target_checks=None):
         ("images_per_prompt", "Images per Prompt"),
         ("num_requests", "Num Requests"),
         ("ttft", "TTFT (ms)"),
-        ("tput_user", "User Output Tput (tok/s/user)"),
+        ("tput_user", "Interactivity (tok/s/user)"),
         ("tput", "Output Tput (tok/s)"),
     ]
     check_cols = []
@@ -1551,7 +1551,7 @@ def aiperf_release_markdown(release_raw, is_vlm_benchmark=False):
 def aiperf_throughput_markdown(release_raw):
     """Generate markdown table for benchmarks with derived throughput metrics.
 
-    This follows the genai-perf comparison style with User Output Tput, Output Tput, and Input Tput
+    This follows the genai-perf comparison style with Interactivity, Output Tput, and Input Tput
     columns for easy comparison between vLLM, AIPerf, and genai-perf benchmarks.
     """
     # Define display columns - genai-perf comparison style with Source column
@@ -1629,7 +1629,7 @@ def aiperf_throughput_markdown_with_images(release_raw):
         ("image_height", "Height"),
         ("mean_ttft_ms", "TTFT (ms)"),
         ("mean_tpot_ms", "TPOT (ms)"),
-        ("tput_user", "User Output Tput (tok/s/user)"),
+        ("tput_user", "Interactivity (tok/s/user)"),
         ("tput_decode", "Output Tput (tok/s)"),
         ("tput_prefill", "Input Tput (tok/s)"),
         ("mean_e2el_ms", "E2EL (ms)"),
@@ -3424,7 +3424,7 @@ def generate_stress_tests_markdown_table(release_raw, model_config):
         ("itl", "ITL (ms)"),
         ("e2el", "E2EL (ms)"),
         # Throughput metrics at the end
-        ("tput_user", "User Output Tput (tok/s/user)"),
+        ("tput_user", "Interactivity (tok/s/user)"),
         ("tput", "Output Tput (tok/s)"),
     ]
 
@@ -3440,7 +3440,7 @@ def generate_stress_tests_markdown_table(release_raw, model_config):
         "TPOT (ms)": 1,
         "ITL (ms)": 1,
         "E2EL (ms)": 1,
-        "User Output Tput (tok/s/user)": 2,
+        "Interactivity (tok/s/user)": 2,
         "Output Tput (tok/s)": 1,
     }
 
@@ -3550,7 +3550,7 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         ("p95_e2el", "P95 E2EL (ms)"),
         ("p99_e2el", "P99 E2EL (ms)"),
         # Throughput metrics at the end
-        ("tput_user", "User Output Tput (tok/s/user)"),
+        ("tput_user", "Interactivity (tok/s/user)"),
         ("tput", "Output Tput (tok/s)"),
     ]
 
@@ -3591,7 +3591,7 @@ def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
         "P95 E2EL (ms)": 1,
         "P99 E2EL (ms)": 1,
         # Throughput
-        "User Output Tput (tok/s/user)": 2,
+        "Interactivity (tok/s/user)": 2,
         "Output Tput (tok/s)": 1,
     }
 
