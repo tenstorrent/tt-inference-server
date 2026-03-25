@@ -49,7 +49,14 @@ from typing import Optional
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from config.constants import ModelRunners
-from ipc.video_shm import VideoRequest, VideoResponse, VideoShm, VideoStatus
+from ipc.video_shm import (
+    VideoRequest,
+    VideoResponse,
+    VideoShm,
+    VideoStatus,
+    cleanup_orphaned_video_files,
+    video_result_path,
+)
 
 _shutdown = False
 
@@ -129,26 +136,22 @@ def _write_response_to_shm(
     task_id: str,
     video,  # WanPipelineOutput or similar
 ) -> None:
-    """Write the whole video object into output VideoShm."""
-    print(f"Rank 0: About to pickle video object of type {type(video)}")
+    """Pickle *video* to a file on /dev/shm and send the path through SHM."""
+    file_path = video_result_path(task_id)
+    print(f"Rank 0: Pickling video ({type(video)}) to {file_path}")
     try:
-        # Serialize the entire video object using pickle
-        video_data = pickle.dumps(video)
-        print(f"Rank 0: Pickled video successfully, size={len(video_data)} bytes")
+        with open(file_path, "wb") as fh:
+            pickle.dump(video, fh)
+        print(f"Rank 0: Wrote {os.path.getsize(file_path)} bytes to {file_path}")
     except Exception as e:
-        print(f"Rank 0: ERROR pickling video: {e}")
+        print(f"Rank 0: ERROR writing video file: {e}")
         raise
 
-    print("Rank 0: About to write response to SHM")
     output_shm.write_response(
         VideoResponse(
             task_id=task_id,
             status=VideoStatus.SUCCESS,
-            num_frames=0,  # Not used when sending whole object
-            height=0,  # Not used when sending whole object
-            width=0,  # Not used when sending whole object
-            channels=0,  # Not used when sending whole object
-            frame_data=video_data,
+            file_path=file_path,
             error_message="",
         )
     )
@@ -160,11 +163,7 @@ def _write_error_to_shm(output_shm: VideoShm, task_id: str, error: str = "") -> 
         VideoResponse(
             task_id=task_id,
             status=VideoStatus.ERROR,
-            num_frames=0,
-            height=0,
-            width=0,
-            channels=0,
-            frame_data=b"",
+            file_path="",
             error_message=error[:256],
         )
     )
@@ -282,6 +281,9 @@ def run_rank0_coordinator() -> None:
         input_shm.close()
         output_shm.close()
         runner.close_device()
+        removed = cleanup_orphaned_video_files()
+        if removed:
+            print(f"Rank 0: Cleaned up {removed} orphaned video file(s)")
 
     print("Rank 0: Shutdown complete")
 

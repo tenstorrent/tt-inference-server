@@ -22,7 +22,12 @@ from __future__ import annotations
 import os
 import pickle
 
-from ipc.video_shm import VideoRequest, VideoShm, VideoStatus
+from ipc.video_shm import (
+    VideoRequest,
+    VideoShm,
+    VideoStatus,
+    cleanup_orphaned_video_files,
+)
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 DEFAULT_VIDEO_HEIGHT = 480
@@ -64,6 +69,11 @@ class SPRunner(BaseDeviceRunner):
 
     def close_device(self):
         self._shutdown = True
+        removed = cleanup_orphaned_video_files()
+        if removed:
+            self.logger.info(
+                f"SPRunner {self.device_id}: cleaned up {removed} orphaned video file(s)"
+            )
         self.logger.info(f"SPRunner {self.device_id}: SHM cleaned up")
         return True
 
@@ -96,7 +106,7 @@ class SPRunner(BaseDeviceRunner):
         )
 
         self._input_shm.write_request(video_req)
-        self.logger.info(f"SPRunner: request {task_id} sent to SHM")
+        self.logger.info(f"[SP] Request {task_id} sent to SHM input")
 
         resp = self._output_shm.read_response(timeout_s=RESPONSE_TIMEOUT_S)
         if resp is None:
@@ -104,9 +114,39 @@ class SPRunner(BaseDeviceRunner):
                 f"Response timed out after {RESPONSE_TIMEOUT_S}s for task {task_id}"
             )
         if resp.status == VideoStatus.ERROR:
+            self._try_unlink(resp.file_path)
             raise RuntimeError(f"Runner error for task {task_id}: {resp.error_message}")
 
-        # Deserialize the whole video object
-        video = pickle.loads(resp.frame_data)
-
+        file_path = resp.file_path
+        self.logger.info(
+            f"[SP] Received file_path from SHM output: {file_path} "
+            f"(exists={os.path.exists(file_path)}, "
+            f"size={os.path.getsize(file_path):,} bytes)"
+        )
+        try:
+            with open(file_path, "rb") as fh:
+                video = pickle.load(fh)
+            self.logger.info(
+                f"[SP] LOADED video from {file_path}, "
+                f"type={type(video).__name__}, "
+                f"shape={getattr(video, 'shape', 'N/A')}"
+            )
+        except Exception:
+            self.logger.error(f"[SP] FAILED to load video from {file_path}")
+            self._try_unlink(file_path)
+            raise
+        self._try_unlink(file_path)
+        self.logger.info(
+            f"[SP] DELETED temp file {file_path} "
+            f"(exists_after={os.path.exists(file_path)})"
+        )
         return video
+
+    @staticmethod
+    def _try_unlink(path: str) -> None:
+        if not path:
+            return
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
