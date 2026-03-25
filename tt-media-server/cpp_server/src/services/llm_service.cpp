@@ -27,21 +27,11 @@ using tt::services::TokenParseResult;
 
 namespace {
 
-struct StreamDecodeState {
-  std::vector<int> ids;
-  std::string emitted;
-};
-
-std::string stripTrailingReplacementChars(const std::string& s) {
-  // U+FFFD in UTF-8 is the 3-byte sequence EF BF BD
-  std::string result = s;
-  while (result.size() >= 3 &&
-         static_cast<unsigned char>(result[result.size() - 3]) == 0xEF &&
-         static_cast<unsigned char>(result[result.size() - 2]) == 0xBF &&
-         static_cast<unsigned char>(result[result.size() - 1]) == 0xBD) {
-    result.resize(result.size() - 3);
-  }
-  return result;
+bool endsWithReplacementChar(const std::string& s) {
+  return s.size() >= 3 &&
+         static_cast<unsigned char>(s[s.size() - 3]) == 0xEF &&
+         static_cast<unsigned char>(s[s.size() - 2]) == 0xBF &&
+         static_cast<unsigned char>(s[s.size() - 1]) == 0xBD;
 }
 
 }  // namespace
@@ -172,7 +162,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   const std::unordered_set<int64_t> STOP_TOKEN_SET(STOP_IDS.begin(),
                                                    STOP_IDS.end());
 
-  std::unordered_map<std::string, StreamDecodeState> decodeStates;
+  std::unordered_map<std::string, std::vector<int>> pending_decode;
 
   while (running_) {
     if (!worker_manager_->checkWorkerAlive(workerIdx)) {
@@ -202,28 +192,16 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         pending_tasks_.fetch_sub(1);
       }
 
-      // Cumulative decode: buffer token IDs and decode the full sequence each
-      // step so multi-byte UTF-8 characters that span tokens are emitted
-      // correctly instead of producing U+FFFD replacement characters.
-      auto& ds = decodeStates[taskId];
-      ds.ids.push_back(static_cast<int>(token.token_id));
+      // Buffer token IDs whose decode ends with U+FFFD (incomplete UTF-8).
+      // Only the small pending buffer is decoded each step — O(1) amortized.
+      auto& pending = pending_decode[taskId];
+      pending.push_back(static_cast<int>(token.token_id));
 
-      std::string full = tokenizer_->decode(ds.ids);
+      std::string decoded = tokenizer_->decode(pending);
       std::string delta;
-      if (isFinal) {
-        if (full.size() >= ds.emitted.size() &&
-            full.compare(0, ds.emitted.size(), ds.emitted) == 0) {
-          delta = full.substr(ds.emitted.size());
-        } else {
-          delta = full;
-        }
-      } else {
-        std::string clean = stripTrailingReplacementChars(full);
-        if (clean.size() > ds.emitted.size() &&
-            clean.compare(0, ds.emitted.size(), ds.emitted) == 0) {
-          delta = clean.substr(ds.emitted.size());
-          ds.emitted = std::move(clean);
-        }
+      if (isFinal || !endsWithReplacementChar(decoded)) {
+        delta = std::move(decoded);
+        pending.clear();
       }
 
       TokenParseResult parseResult{ContentType::ANSWER, delta, true};
@@ -272,7 +250,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       callback(response, isFinal);
 
       if (isFinal) {
-        decodeStates.erase(taskId);
+        pending_decode.erase(taskId);
         if (reasoning_parser_) {
           reasoning_parser_->finalizeTask(taskId);
         }
