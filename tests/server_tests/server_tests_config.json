@@ -1958,7 +1958,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 2
+                    "num_of_devices": 1
                 }
             },
             {
@@ -1987,7 +1987,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 2,
+                    "num_of_devices": 1,
                     "cnn_time": 5,
                     "response_format": "json",
                     "top_k": 3,
@@ -3237,7 +3237,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4
+                    "num_of_devices": 1
                 }
             },
             {
@@ -3266,7 +3266,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 10
                 }
@@ -3284,7 +3284,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 14
                 }
@@ -3302,7 +3302,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 23
                 }
@@ -3445,7 +3445,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 2
+                    "num_of_devices": 1
                 }
             },
             {
@@ -3474,7 +3474,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 2,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 10
                 }
@@ -3492,7 +3492,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 2,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 14
                 }
@@ -3510,7 +3510,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 2,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 23
                 }
@@ -3861,7 +3861,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 2
+                    "num_of_devices": 1
                 }
             },
             {
@@ -3890,7 +3890,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 2,
+                    "num_of_devices": 1,
                     "num_inference_steps": 20,
                     "image_generation_time": 10
                 }
@@ -3908,7 +3908,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 2,
+                    "num_of_devices": 1,
                     "num_inference_steps": 30,
                     "image_generation_time": 14
                 }
@@ -3926,7 +3926,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 2,
+                    "num_of_devices": 1,
                     "num_inference_steps": 50,
                     "image_generation_time": 23
                 }
@@ -4069,7 +4069,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 4
+                    "num_of_devices": 1
                 }
             },
             {
@@ -4173,7 +4173,7 @@
                     "mock_mode": false
                 },
                 "targets": {
-                    "num_of_devices": 8
+                    "num_of_devices": 1
                 }
             },
             {
