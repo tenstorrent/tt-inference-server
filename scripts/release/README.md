@@ -48,7 +48,7 @@ flowchart TD
   RELEASE_BRANCH --> cherry["Optional Step 1B:<br/>cherry-pick fixes onto `RELEASE_BRANCH`"]
   cherry --> modelSpec["Step 2: update `workflows/model_spec.py`<br/>from Nightly Models CI or manual edits"]
   modelSpec --> outputOnly["Optional Step 2B:<br/>run `update_model_spec.py --output-only`<br/>after manual edits"]
-  outputOnly --> prereleaseArtifacts["Generate pre-release artifacts<br/>model diff JSON/MD, docs, `release_model_spec.json`"]
+  outputOnly --> prereleaseArtifacts["Generate pre-release artifacts<br/>model diff JSON/MD"]
   prereleaseArtifacts --> pushStable["Step 3: push `RELEASE_BRANCH`"]
   pushStable --> releaseCi["Step 4: run Release Models CI"]
 
@@ -119,8 +119,16 @@ The steps below are automated in the `pre_release.py` script, but it is common t
 ```bash
 python3 scripts/release/pre_release.py --models-ci-run-id 19339722549 --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}"
 
+# keep only the chosen tt-metal commits in the generated pre-release artifacts
+python3 scripts/release/pre_release.py --models-ci-run-id 19339722549 --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}" \
+  --tt-metal-commits abc1234 def5678
+
 # if using just manual uplifted commits without --models-ci-run-id, the uplifting from the models ci runs is skipped.
 python3 scripts/release/pre_release.py --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}"
+
+# if rerunning after manual model_spec.py edits, optionally keep only one intended tt-metal uplift
+python3 scripts/release/pre_release.py --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}" \
+  --tt-metal-commits abc1234
 
 # run with --commit to fully automate
 python3 scripts/release/pre_release.py --models-ci-run-id 19339722549 --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}" --commit
@@ -162,8 +170,8 @@ otherwise those entries render as `N/A` in the markdown output.
 Both flows also accept `--tt-metal-commits <commit> [<commit> ...]` to keep
 only template diffs whose resulting `tt_metal_commit` exactly matches one of
 the supplied values. Any other template with a `tt_metal_commit` diff is
-reverted to its previous release template before the release diff, docs, and
-`release_model_spec.json` are generated. If no previous release template exists
+reverted to its previous release template before the pre-release diff artifacts
+are generated. If no previous release template exists
 for a changed template, the entire current `ModelSpecTemplate` is deleted.
 
 When using `--models-ci-run-id` in this step, pass the Nightly Models CI
@@ -185,8 +193,8 @@ Before starting Step 2, `workflows/model_spec.py` should be clean relative to
 manual edits before running `--output-only`.
 
 Manually edit `model_spec.py`. After changes are added, re-run the helper to
-stamp `release_version` on templates whose `tt_metal_commit` changed, then
-re-generate the Model Support documentation and `release_model_spec.json`:
+stamp `release_version` on templates whose `tt_metal_commit` changed and
+re-generate the pre-release diff artifacts:
 
 ```bash
 python3 scripts/release/update_model_spec.py --output-only
@@ -201,13 +209,10 @@ python3 scripts/release/update_model_spec.py --output-only \
 - `workflows/model_spec.py`: Updates `ModelSpecTemplate`:
   - `tt_metal_commit`: from Models CI run id, or manual edits; non-allowlisted diffs are reverted to the previous release template when `--tt-metal-commits` is used, or deleted if the template did not exist in the previous release.
   - `release_version`: where tt_metal_commit has been changed.
-- `release_model_spec.json`: all model specs fully expanded from the ModelSpecTemplates in `workflows/model_spec.py`
-- `release_logs/v{VERSION}/pre_release_models_diff.json`: summary of changed `ModelSpecTemplate` records derived from the filtered git diff of `workflows/model_spec.py` against the previous release version branch, with CI links when available. This is used for post-release as well. and in `scripts/release/post_release.py`.
+- `release_logs/v{VERSION}/pre_release_models_diff.json`: summary of changed `ModelSpecTemplate` records derived from the filtered git diff of `workflows/model_spec.py` against the previous release version branch, with CI links when available. This now drives release dispatch refs, validates release device coverage in `.github/workflows/models-ci-config.json`, and is used by `scripts/release/post_release.py`.
 - `release_logs/v{VERSION}/pre_release_models_diff.md`: This markdown version of `pre_release_models_diff.json` is used by `scripts/release/generate_release_notes.py`.
 - `release_logs/v{VERSION}/models_ci_all_results_*.json`: this has full Models CI parsed data for analysis
 - `release_logs/v{VERSION}/models_ci_last_good_*.json`: this may be used downstream for release process
-- `docs/model_support/*.md`: regenerated model support documentation (model type pages, hardware pages, individual model pages)
-- `README.md`: updates to the `Model Support` section (links to docs/model_support/)
 
 ### Step 3: force update `RELEASE_BRANCH` branch
 
@@ -220,10 +225,17 @@ git push --force-with-lease origin "${RELEASE_BRANCH}"
 
 https://github.com/tenstorrent/tt-shield/actions/workflows/release.yml
 - use workflow from: BASE_BRANCH_OR_COMMIT
-- tt-metal ref: uplift tt-metal commit
+- tt-metal ref: resolved from `release_logs/v{VERSION}/pre_release_models_diff.json`
 - tt-inference-server ref: ${RELEASE_BRANCH}
-- vllm: uplift vllm commit
+- vllm: resolved from `release_logs/v{VERSION}/pre_release_models_diff.json`
 - workflow: release
+
+Before dispatch, the pre-release helper rewrites
+`.github/workflows/models-ci-config.json` so that only models matched from
+`release_logs/v{VERSION}/pre_release_models_diff.json` retain `ci.release`, and
+their `ci.release.devices` are set exactly to the matched device lists. It then
+validates that alignment and fails fast if any unexpected `ci.release` entries
+remain.
 
 On failure, repeat Pre-release steps or use Hot-Fix workflow.
 On success, continue Release steps.
@@ -240,7 +252,7 @@ Evalulate acceptance criteria for `--models-ci-run-id` from reports.json `accept
 Log and move (via [crane](https://github.com/google/go-containerregistry/blob/BASE_BRANCH_OR_COMMIT/cmd/crane/doc/crane.md)) the Docker images built within the Release workflow.
 The two key release artifacts are:
 - Docker images
-- Repo model support documentation (already updated during pre-release)
+- Repo compatibility artifacts and documentation
 - release notes
 
 When using `--models-ci-run-id` in this step, pass the Release Models CI
@@ -251,6 +263,9 @@ python3 scripts/release/generate_release_artifacts.py --models-ci-run-id 2933972
 ```
 
 #### Outputs:
+- `release_model_spec.json`: all model specs fully expanded from the finalized `workflows/model_spec.py`
+- `docs/model_support/*.md`: regenerated model support documentation (model type pages, hardware pages, individual model pages)
+- `README.md`: updates to the `Model Support` section (links to `docs/model_support/`)
 - `release_logs/v{VERSION}/release_artifacts_summary.json`
 - `release_logs/v{VERSION}/release_artifacts_summary.md`
 - `release_logs/v{VERSION}/models_ci_all_results_*.json`
@@ -337,7 +352,7 @@ This helper:
 - increments `VERSION`
 - updates `workflows/model_spec.py` using `release_logs/v{VERSION}/pre_release_models_diff.json`
 - generates and stages `release_model_spec.json`
-- generates `doc/model_support`
+- regenerates `docs/model_support/` and `README.md`
 - writes `release_logs/post_release_pr.md`
 
 Open a PR from the post-release branch back to development trunk (`main`). That PR carries the next

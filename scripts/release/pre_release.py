@@ -21,24 +21,27 @@ from pathlib import Path
 from typing import List, Optional, Sequence
 
 try:
-    from dispatch_release_models_ci import (
-        dispatch_release_workflow,
+    from dispatch_release_models_ci import dispatch_release_workflow
+    from release_dispatch_inputs import (
+        prune_release_models_ci_config,
         resolve_release_workflow_refs,
+        validate_release_models_ci_config,
     )
     from release_paths import get_versioned_release_logs_dir
 except ImportError:
-    from scripts.release.dispatch_release_models_ci import (
-        dispatch_release_workflow,
+    from scripts.release.dispatch_release_models_ci import dispatch_release_workflow
+    from scripts.release.release_dispatch_inputs import (
+        prune_release_models_ci_config,
         resolve_release_workflow_refs,
+        validate_release_models_ci_config,
     )
     from scripts.release.release_paths import get_versioned_release_logs_dir
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 MODEL_SPEC_PATH = Path("workflows/model_spec.py")
-README_PATH = Path("README.md")
-RELEASE_MODEL_SPEC_PATH = Path("release_model_spec.json")
-MODEL_SUPPORT_DOCS_DIR = Path("docs/model_support")
+MODELS_CI_CONFIG_PATH = Path(".github/workflows/models-ci-config.json")
+PRE_RELEASE_DIFF_JSON = "pre_release_models_diff.json"
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -61,6 +64,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Nightly Models CI workflow run ID used to update model_spec.py.",
+    )
+    parser.add_argument(
+        "--tt-metal-commits",
+        nargs="+",
+        default=None,
+        help=(
+            "Only keep template diffs whose resulting tt_metal_commit exactly "
+            "matches one of these values; revert other tt_metal_commit diffs to "
+            "the previous release template when possible."
+        ),
     )
     parser.add_argument(
         "--commit",
@@ -185,13 +198,19 @@ def has_manual_model_spec_changes(repo_root: Path) -> bool:
     )
 
 
-def run_update_model_spec(repo_root: Path, models_ci_run_id: Optional[int]) -> None:
+def run_update_model_spec(
+    repo_root: Path,
+    models_ci_run_id: Optional[int],
+    tt_metal_commits: Optional[Sequence[str]] = None,
+) -> None:
     """Delegate model-spec generation to update_model_spec.py."""
     command = [sys.executable, str(Path(__file__).with_name("update_model_spec.py"))]
     if models_ci_run_id is None:
         command.append("--output-only")
     else:
         command.extend(["--models-ci-run-id", str(models_ci_run_id)])
+    if tt_metal_commits:
+        command.extend(["--tt-metal-commits", *tt_metal_commits])
     run_command(command, cwd=repo_root, capture_output=False)
 
 
@@ -203,11 +222,20 @@ def read_version(version_file: Path) -> str:
     return version
 
 
+def resolve_pre_release_diff_path(version: str) -> Path:
+    """Return the versioned pre-release diff JSON path."""
+    return get_versioned_release_logs_dir(version) / PRE_RELEASE_DIFF_JSON
+
+
 def start_release_models_ci(base_ref: str, release_branch: str) -> None:
-    """Dispatch the Release Models CI workflow from existing pre-release outputs."""
-    tt_metal_ref, vllm_ref = resolve_release_workflow_refs(
-        REPO_ROOT / RELEASE_MODEL_SPEC_PATH
-    )
+    """Dispatch the Release Models CI workflow from the pre-release diff JSON."""
+    version = read_version(REPO_ROOT / "VERSION")
+    release_diff_path = REPO_ROOT / resolve_pre_release_diff_path(version)
+    models_ci_config_path = REPO_ROOT / MODELS_CI_CONFIG_PATH
+
+    tt_metal_ref, vllm_ref = resolve_release_workflow_refs(release_diff_path)
+    prune_release_models_ci_config(release_diff_path, models_ci_config_path)
+    validate_release_models_ci_config(release_diff_path, models_ci_config_path)
     run_url = dispatch_release_workflow(
         base_ref=base_ref,
         release_branch=release_branch,
@@ -226,9 +254,6 @@ def collect_pre_release_paths(version: str) -> List[Path]:
     """Return the generated pre-release paths that should be staged."""
     return [
         MODEL_SPEC_PATH,
-        README_PATH,
-        RELEASE_MODEL_SPEC_PATH,
-        MODEL_SUPPORT_DOCS_DIR,
         get_versioned_release_logs_dir(version),
     ]
 
@@ -320,7 +345,7 @@ def main() -> int:
             "pre_release.py to generate output-only artifacts."
         )
 
-    run_update_model_spec(REPO_ROOT, args.models_ci_run_id)
+    run_update_model_spec(REPO_ROOT, args.models_ci_run_id, args.tt_metal_commits)
 
     if not args.commit:
         print_next_steps(version, args.release_branch)

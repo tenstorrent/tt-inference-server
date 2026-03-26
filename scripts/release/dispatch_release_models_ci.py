@@ -6,8 +6,7 @@
 import json
 import os
 import time
-from pathlib import Path
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Dict, Optional, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -87,49 +86,6 @@ def _github_api_request(
         ) from error
     except URLError as error:
         raise RuntimeError(f"GitHub API request failed for {url}: {error}") from error
-
-
-def _iter_release_model_specs(node: object) -> Iterable[dict]:
-    """Yield serialized model spec dicts from the nested release_model_spec JSON."""
-    if isinstance(node, dict):
-        if "model_id" in node:
-            yield node
-            return
-        for value in node.values():
-            yield from _iter_release_model_specs(value)
-
-
-def _require_single_unique_value(values: Iterable[str], field_name: str) -> str:
-    """Require exactly one non-empty unique value for one release field."""
-    unique_values = sorted(
-        {value.strip() for value in values if value and value.strip()}
-    )
-    if not unique_values:
-        raise ValueError(
-            f"release_model_spec.json does not contain any non-empty {field_name} values."
-        )
-    if len(unique_values) > 1:
-        formatted_values = ", ".join(unique_values)
-        raise ValueError(
-            f"release_model_spec.json contains multiple {field_name} values: "
-            f"{formatted_values}"
-        )
-    return unique_values[0]
-
-
-def resolve_release_workflow_refs(release_model_spec_path: Path) -> Tuple[str, str]:
-    """Resolve the single tt-metal and vLLM refs required by release.yml."""
-    data = json.loads(release_model_spec_path.read_text())
-    serialized_specs = list(_iter_release_model_specs(data.get("model_specs", {})))
-    tt_metal_ref = _require_single_unique_value(
-        (spec.get("tt_metal_commit", "") for spec in serialized_specs),
-        "tt_metal_commit",
-    )
-    vllm_ref = _require_single_unique_value(
-        (spec.get("vllm_commit", "") for spec in serialized_specs),
-        "vllm_commit",
-    )
-    return tt_metal_ref, vllm_ref
 
 
 def _find_recent_release_workflow_run_url(

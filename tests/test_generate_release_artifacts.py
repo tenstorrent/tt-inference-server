@@ -512,6 +512,12 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     ci_json_path = tmp_path / "last_good.json"
     ci_json_path.write_text("{}")
     output_dir = tmp_path / "release_logs" / "v0.10.0"
+    model_spec_path = tmp_path / "workflows" / "model_spec.py"
+    model_spec_path.parent.mkdir(parents=True)
+    model_spec_path.write_text("MODEL_SPECS = {}\n")
+    readme_path = tmp_path / "README.md"
+    readme_path.write_text("# README\n")
+    release_model_spec_path = tmp_path / "release_model_spec.json"
     merged_spec = {"model-a": make_record("model-a", make_image("demo"))}
     result_tuple = (
         defaultdict(list),
@@ -527,8 +533,23 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
         dev=False,
         release=True,
         output_dir=str(output_dir),
+        model_spec_path=str(model_spec_path),
+        readme_path=str(readme_path),
+        release_model_spec_path=str(release_model_spec_path),
         dry_run=False,
     )
+    event_order = []
+
+    def mark_event(name):
+        def _inner(*args, **kwargs):
+            event_order.append(name)
+            if name == "write_release_notes":
+                return output_dir / "release_notes.md"
+            if name == "write_release_performance_outputs":
+                return {"schema_version": "0.1.0", "models": {}}
+            return None
+
+        return _inner
 
     with patch.object(gra, "configure_logging"), patch.object(
         gra, "get_versioned_release_logs_dir", return_value=output_dir
@@ -548,9 +569,17 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     ) as write_output_mock, patch.object(
         gra,
         "write_release_performance_outputs",
-        return_value={"schema_version": "0.1.0", "models": {}},
+        side_effect=mark_event("write_release_performance_outputs"),
     ) as performance_mock, patch.object(
-        gra, "write_release_notes", return_value=output_dir / "release_notes.md"
+        gra,
+        "write_release_model_spec_output",
+        side_effect=mark_event("write_release_model_spec_output"),
+    ) as export_mock, patch.object(
+        gra,
+        "regenerate_model_support_docs_and_update_readme",
+        side_effect=mark_event("regenerate_model_support_docs_and_update_readme"),
+    ) as docs_mock, patch.object(
+        gra, "write_release_notes", side_effect=mark_event("write_release_notes")
     ) as release_notes_mock, patch.object(
         gra, "emit_markdown_summary"
     ) as emit_mock, patch.object(gra, "get_version", return_value="0.10.0"):
@@ -560,9 +589,71 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     generate_mock.assert_called_once_with(merged_spec, False)
     write_output_mock.assert_called_once()
     performance_mock.assert_called_once_with(merged_spec, output_dir, False)
+    export_mock.assert_called_once_with(
+        model_spec_path=model_spec_path,
+        output_path=release_model_spec_path,
+        dry_run=False,
+    )
+    docs_mock.assert_called_once_with(
+        model_spec_path=model_spec_path,
+        readme_path=readme_path,
+        dry_run=False,
+    )
     release_notes_mock.assert_called_once_with(
         output_dir,
         "0.10.0",
         release_performance_data={"schema_version": "0.1.0", "models": {}},
     )
     emit_mock.assert_called_once_with(output_dir / "release_artifacts_summary.md")
+    assert event_order == [
+        "write_release_performance_outputs",
+        "write_release_model_spec_output",
+        "regenerate_model_support_docs_and_update_readme",
+        "write_release_notes",
+    ]
+
+
+def test_main_dev_flow_skips_release_only_compatibility_outputs(tmp_path):
+    ci_json_path = tmp_path / "last_good.json"
+    ci_json_path.write_text("{}")
+    output_dir = tmp_path / "release_logs" / "v0.10.0"
+    args = Namespace(
+        models_ci_last_good_json=str(ci_json_path),
+        models_ci_run_id=None,
+        out_root=None,
+        dev=True,
+        release=False,
+        output_dir=str(output_dir),
+        model_spec_path=str(tmp_path / "workflows" / "model_spec.py"),
+        readme_path=str(tmp_path / "README.md"),
+        release_model_spec_path=str(tmp_path / "release_model_spec.json"),
+        dry_run=False,
+    )
+    merged_spec = {"model-a": make_record("model-a", make_image("demo", channel="dev"))}
+    result_tuple = (defaultdict(list), 0, {}, {}, defaultdict(list))
+
+    with patch.object(gra, "configure_logging"), patch.object(
+        gra, "get_versioned_release_logs_dir", return_value=output_dir
+    ), patch(
+        "argparse.ArgumentParser.parse_args",
+        return_value=args,
+    ), patch.object(
+        gra, "resolve_release_output_dir", return_value=output_dir
+    ), patch.object(gra, "check_docker_installed", return_value=True), patch.object(
+        gra, "check_crane_installed", return_value=True
+    ), patch.object(
+        gra, "merge_specs_with_ci_data", return_value=merged_spec
+    ), patch.object(
+        gra, "generate_release_artifacts", return_value=result_tuple
+    ), patch.object(gra, "write_output"), patch.object(
+        gra, "write_release_model_spec_output"
+    ) as export_mock, patch.object(
+        gra, "regenerate_model_support_docs_and_update_readme"
+    ) as docs_mock, patch.object(
+        gra, "write_release_notes"
+    ) as release_notes_mock, patch.object(gra, "emit_markdown_summary"):
+        assert gra.main() == 0
+
+    export_mock.assert_not_called()
+    docs_mock.assert_not_called()
+    release_notes_mock.assert_not_called()

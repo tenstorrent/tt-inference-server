@@ -26,6 +26,9 @@ from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, cast
 
 try:
+    from generate_model_support_docs import (
+        regenerate_model_support_docs_and_update_readme,
+    )
     from release_diff import (
         AppliedRecordSummary,
         PostReleaseSummary,
@@ -38,12 +41,14 @@ try:
     from update_model_spec import (
         build_template_snapshots,
         extract_template_block_spans,
-        regenerate_model_support_docs_and_update_readme,
         reload_and_export_model_specs_json,
         update_template_fields,
         update_template_optional_string_field,
     )
 except ImportError:
+    from scripts.release.generate_model_support_docs import (
+        regenerate_model_support_docs_and_update_readme,
+    )
     from scripts.release.release_diff import (
         AppliedRecordSummary,
         PostReleaseSummary,
@@ -56,7 +61,6 @@ except ImportError:
     from scripts.release.update_model_spec import (
         build_template_snapshots,
         extract_template_block_spans,
-        regenerate_model_support_docs_and_update_readme,
         reload_and_export_model_specs_json,
         update_template_fields,
         update_template_optional_string_field,

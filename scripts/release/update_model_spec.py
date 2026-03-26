@@ -1158,217 +1158,6 @@ def reload_and_export_model_specs_json(model_spec_path, output_json_path):
     print(f"\nExported {num_specs} model specs to {output_json_path}")
 
 
-def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"):
-    """
-    Generate model support documentation by calling generate_model_support_docs.py.
-
-    Args:
-        model_spec_path: Path to the model_spec.py file
-        output_dir: Output directory for model support docs (default: docs/model_support)
-    """
-    from scripts.release.generate_model_support_docs import (
-        EXCLUDED_DEVICES,
-        DEVICE_HARDWARE_PAGE_GROUPS_MAPPING,
-        generate_models_by_hardware_page,
-        generate_model_type_page,
-        generate_model_page_group_page,
-        group_templates_by_model,
-        get_model_type_for_templates,
-        get_model_subdir,
-        get_model_page_group_filename,
-        write_file,
-    )
-    from scripts.release.release_performance import load_release_performance_data
-    from workflows.workflow_types import ModelType
-
-    # Dynamically import the updated model_spec module to get fresh spec_templates
-    repo_root = model_spec_path.parent.parent
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
-
-    spec = importlib.util.spec_from_file_location("model_spec_docs", model_spec_path)
-    model_spec_module = importlib.util.module_from_spec(spec)
-    sys.modules["model_spec_docs"] = model_spec_module
-    spec.loader.exec_module(model_spec_module)
-
-    templates = model_spec_module.spec_templates
-    output_path = Path(output_dir)
-
-    print(f"Generating Model Support documentation from {len(templates)} templates")
-    print(f"Output directory: {output_path}")
-    release_performance_data = load_release_performance_data()
-
-    # Note: docs/model_support/README.md is no longer generated.
-    # The model support content is maintained directly in root README.md
-    # via regenerate_model_support_docs_and_update_readme().
-
-    # Generate models by hardware page
-    hardware_content = generate_models_by_hardware_page(
-        templates, release_performance_data=release_performance_data
-    )
-    write_file(output_path / "models_by_hardware.md", hardware_content)
-
-    # Generate model type table pages (in subdirectory as README.md)
-    for model_type in ModelType:
-        type_templates = [t for t in templates if t.model_type == model_type]
-        if not type_templates:
-            continue
-
-        subdir = model_type.short_name.lower()
-        page_content = generate_model_type_page(
-            templates,
-            model_type,
-            release_performance_data=release_performance_data,
-        )
-        write_file(output_path / subdir / "README.md", page_content)
-
-    # Group templates by model name and generate per-page-group pages in subdirectories
-    model_groups = group_templates_by_model(templates)
-
-    for model_name, model_templates in model_groups.items():
-        model_type = get_model_type_for_templates(model_templates)
-        subdir = get_model_subdir(model_type)
-
-        # Get all devices for this model
-        model_devices = set()
-        for template in model_templates:
-            for dev_spec in template.device_model_specs:
-                model_devices.add(dev_spec.device)
-
-        # Generate one page per page group (not per device)
-        generated_groups = set()
-        for device in model_devices:
-            if device in EXCLUDED_DEVICES:
-                continue
-            group = DEVICE_HARDWARE_PAGE_GROUPS_MAPPING.get(device)
-            if group and id(group) not in generated_groups:
-                generated_groups.add(id(group))
-                filename = get_model_page_group_filename(model_name, group)
-                page_content = generate_model_page_group_page(
-                    model_name,
-                    model_templates,
-                    group,
-                    release_performance_data=release_performance_data,
-                )
-                write_file(output_path / subdir / filename, page_content)
-
-    print("Documentation generation complete!")
-
-
-def regenerate_model_support_docs_and_update_readme(
-    model_spec_path, readme_path="README.md"
-):
-    """
-    Regenerate docs/model_support/ and update the Model Support section in README.md.
-
-    Generates docs/model_support/ documentation (model type pages, hardware page,
-    individual model pages), then generates the model support section content directly
-    and adjusts paths to work from repo root. Uses HTML comment markers for idempotent
-    replacement.
-
-    Args:
-        model_spec_path: Path to the model_spec.py file
-        readme_path: Path to README.md file (default: README.md)
-    """
-    from scripts.release.generate_model_support_docs import generate_directory_readme
-
-    readme_file = Path(readme_path)
-    if not readme_file.exists():
-        print(f"Warning: README.md not found at {readme_path}, skipping update")
-        return
-
-    # First, regenerate the model support docs (model type pages, hardware page, model pages)
-    generate_model_support_docs(model_spec_path)
-
-    # Load templates to generate the model support section content directly
-    repo_root = model_spec_path.parent.parent
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
-
-    spec = importlib.util.spec_from_file_location("model_spec_readme", model_spec_path)
-    model_spec_module = importlib.util.module_from_spec(spec)
-    sys.modules["model_spec_readme"] = model_spec_module
-    spec.loader.exec_module(model_spec_module)
-    templates = model_spec_module.spec_templates
-
-    # Generate the model support content directly (no intermediate file)
-    model_support_content = generate_directory_readme(templates)
-
-    # Adjust relative paths to work from repo root
-    # - Links like (llm/README.md) -> (docs/model_support/llm/README.md)
-    # - Links like (models_by_hardware.md#...) -> (docs/model_support/models_by_hardware.md#...)
-    # - Links like (llm/Model.md) -> (docs/model_support/llm/Model.md)
-    # Skip external links (http/https) and parent links (..)
-    def adjust_link(match):
-        link_text = match.group(1)
-        link_path = match.group(2)
-
-        # Skip external links and parent directory links
-        if link_path.startswith(("http://", "https://", "..")):
-            return match.group(0)
-
-        # Prepend docs/model_support/ to relative paths
-        return f"[{link_text}](docs/model_support/{link_path})"
-
-    adjusted_content = re.sub(
-        r"\[([^\]]+)\]\(([^)]+)\)", adjust_link, model_support_content
-    )
-
-    # Remove the "# Model Support" header since README.md already has "## Model Support"
-    # and remove the intro line about "This directory contains..."
-    lines = adjusted_content.split("\n")
-    filtered_lines = []
-    skip_next_empty = False
-    for line in lines:
-        if line.startswith("# Model Support"):
-            skip_next_empty = True
-            continue
-        if line.startswith("This directory contains documentation"):
-            skip_next_empty = True
-            continue
-        if skip_next_empty and line.strip() == "":
-            skip_next_empty = False
-            continue
-        skip_next_empty = False
-        filtered_lines.append(line)
-
-    model_support_section = "\n".join(filtered_lines).strip()
-
-    # Read current README content
-    with open(readme_file, "r") as f:
-        content = f.read()
-
-    # Replace content between MODEL_SUPPORT markers
-    start_marker = "<!-- MODEL_SUPPORT_START -->"
-    end_marker = "<!-- MODEL_SUPPORT_END -->"
-
-    start_pos = content.find(start_marker)
-    end_pos = content.find(end_marker)
-
-    if start_pos == -1 or end_pos == -1:
-        print(
-            f"Warning: Model Support markers not found in {readme_path}, skipping update"
-        )
-        return
-
-    # Build new section with markers
-    new_section = f"{start_marker}\n{model_support_section}\n{end_marker}"
-
-    end_pos += len(end_marker)
-    updated_content = content[:start_pos] + new_section + content[end_pos:]
-
-    # Write back to file
-    with open(readme_file, "w") as f:
-        f.write(updated_content)
-
-    print(f"\nSuccessfully updated Model Support section in {readme_path}")
-
-
-def update_readme_model_support(model_spec_path, readme_path="README.md"):
-    """Backward-compatible wrapper for the explicit README/docs regeneration helper."""
-    return regenerate_model_support_docs_and_update_readme(model_spec_path, readme_path)
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Update model_spec.py commits from last_good_json CI results"
@@ -1383,14 +1172,6 @@ def main():
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="Print changes without modifying files"
-    )
-    parser.add_argument(
-        "--output-json",
-        default="release_model_spec.json",
-        help=(
-            "Path to output JSON file with all model specs "
-            "(default: release_model_spec.json)"
-        ),
     )
     parser.add_argument(
         "--output-only",
@@ -1409,11 +1190,6 @@ def main():
             "matches one of these values; revert other tt_metal_commit diffs to "
             "the previous release template when possible."
         ),
-    )
-    parser.add_argument(
-        "--readme-path",
-        default="README.md",
-        help="Path to README.md file (default: README.md)",
     )
     parser.add_argument(
         "--ignore-perf-status",
@@ -1497,15 +1273,6 @@ def main():
             current_content=updated_content,
             base_ref=base_release_ref,
         )
-
-        # Regenerate docs/model_support/ and update README.md Model Support section.
-        regenerate_model_support_docs_and_update_readme(
-            model_spec_path, args.readme_path
-        )
-
-        # Export MODEL_SPECS to JSON
-        output_json_path = Path(args.output_json)
-        reload_and_export_model_specs_json(model_spec_path, output_json_path)
 
         return
 
@@ -1703,10 +1470,6 @@ def main():
                 f.write(filtered_content)
             print(f"\nSuccessfully updated {args.model_spec_path}")
 
-            # Export MODEL_SPECS to JSON
-            output_json_path = Path(args.output_json)
-            reload_and_export_model_specs_json(model_spec_path, output_json_path)
-
             generate_release_diff_outputs_from_git(
                 model_spec_path,
                 release_output_dir,
@@ -1714,16 +1477,10 @@ def main():
                 ci_metadata_by_occurrence=ci_metadata_by_occurrence,
                 base_ref=base_release_ref,
             )
-
-            # Regenerate docs/model_support/ and update README.md Model Support section.
-            regenerate_model_support_docs_and_update_readme(model_spec_path)
     else:
         print("\nNo updates needed.")
 
-        # Even if no updates were made, export the current MODEL_SPECS to JSON
         if not args.dry_run:
-            output_json_path = Path(args.output_json)
-            reload_and_export_model_specs_json(model_spec_path, output_json_path)
             generate_release_diff_outputs_from_git(
                 model_spec_path,
                 release_output_dir,

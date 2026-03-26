@@ -18,9 +18,11 @@ Usage:
     python scripts/release/generate_model_support_docs.py
     python scripts/release/generate_model_support_docs.py --dry-run
     python scripts/release/generate_model_support_docs.py --output-dir docs/model_support
+    python scripts/release/generate_model_support_docs.py --update-readme
 """
 
 import argparse
+import importlib.util
 import re
 import sys
 from collections import defaultdict
@@ -36,7 +38,6 @@ from workflows.model_spec import (
     ModelSpecTemplate,
     generate_default_docker_link,
     model_weights_to_model_name,
-    spec_templates,
 )
 from workflows.perf_targets import get_perf_target
 from workflows.workflow_types import (
@@ -70,14 +71,14 @@ class HardwarePageGroup:
         return cls(name=device_type.to_product_str(), device_ordering=(device_type,))
 
 
-# Mapping inference engine to documentation link (reused from update_model_spec.py)
+# Mapping inference engine to documentation link shared across model support pages.
 INFERENCE_ENGINE_README_LINKS = {
     InferenceEngine.VLLM.value: "../../../vllm-tt-metal/README.md",
     InferenceEngine.MEDIA.value: "../../../tt-media-server/README.md",
     InferenceEngine.FORGE.value: "../../../tt-media-server/README.md",
 }
 
-# Mapping device type to hardware link text (reused from update_model_spec.py)
+# Mapping device type to hardware link text shared across model support pages.
 DEVICE_HARDWARE_LINKS = {
     DeviceTypes.T3K: "https://tenstorrent.com/hardware/tt-loudbox",
     DeviceTypes.N150: "https://tenstorrent.com/hardware/wormhole",
@@ -1208,47 +1209,56 @@ def write_file(path: Path, content: str, dry_run: bool = False) -> None:
     print(f"Wrote: {path}")
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Generate Model Support documentation from MODEL_SPECS"
-    )
-    parser.add_argument(
-        "--output-dir",
-        default="docs/model_support",
-        help="Output directory (default: docs/model_support)",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print what would be generated without writing files",
-    )
-    parser.add_argument(
-        "--model-spec-path",
-        default="workflows/model_spec.py",
-        help="Path to model_spec.py (default: workflows/model_spec.py)",
-    )
+def load_model_spec_module(model_spec_path: Path, module_name: str):
+    """Dynamically load a specific model_spec.py module from disk."""
+    resolved_model_spec_path = Path(model_spec_path).resolve()
+    repo_root = resolved_model_spec_path.parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
-    args = parser.parse_args()
+    spec = importlib.util.spec_from_file_location(module_name, resolved_model_spec_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Failed to load module spec from {resolved_model_spec_path}")
 
-    output_dir = Path(args.output_dir)
-    templates = spec_templates
+    model_spec_module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = model_spec_module
+    spec.loader.exec_module(model_spec_module)
+    return model_spec_module
+
+
+def load_templates_from_model_spec(model_spec_path: Path) -> List[ModelSpecTemplate]:
+    """Load spec_templates from an explicit model_spec.py path."""
+    module = load_model_spec_module(
+        Path(model_spec_path), "model_support_docs_model_spec"
+    )
+    return module.spec_templates
+
+
+def generate_model_support_docs(
+    model_spec_path: Path,
+    output_dir: Path = Path("docs/model_support"),
+    dry_run: bool = False,
+) -> None:
+    """Generate docs/model_support pages from the given model_spec.py path."""
+    templates = load_templates_from_model_spec(Path(model_spec_path))
+    output_dir = Path(output_dir)
 
     print(f"Generating Model Support documentation from {len(templates)} templates")
     print(f"Output directory: {output_dir}")
-    if args.dry_run:
+    if dry_run:
         print("[DRY RUN MODE]")
     print()
 
     # Note: docs/model_support/README.md is no longer generated here.
     # The model support content is maintained directly in root README.md
-    # via update_model_spec.py's update_readme_model_support() function.
+    # via regenerate_model_support_docs_and_update_readme().
     release_performance_data = load_release_performance_data()
 
     # Generate models by hardware page
     hardware_content = generate_models_by_hardware_page(
         templates, release_performance_data=release_performance_data
     )
-    write_file(output_dir / "models_by_hardware.md", hardware_content, args.dry_run)
+    write_file(output_dir / "models_by_hardware.md", hardware_content, dry_run)
 
     # Generate model type table pages (in subdirectory as README.md)
     for model_type in ModelType:
@@ -1263,7 +1273,7 @@ def main():
             model_type,
             release_performance_data=release_performance_data,
         )
-        write_file(output_dir / subdir / "README.md", page_content, args.dry_run)
+        write_file(output_dir / subdir / "README.md", page_content, dry_run)
 
     # Group templates by model name and generate per-page-group pages in subdirectories
     model_groups = group_templates_by_model(templates)
@@ -1294,18 +1304,153 @@ def main():
                     group,
                     release_performance_data=release_performance_data,
                 )
-                write_file(output_dir / subdir / filename, page_content, args.dry_run)
+                write_file(output_dir / subdir / filename, page_content, dry_run)
 
     print()
     print("Documentation generation complete!")
-    if not args.dry_run:
+    if not dry_run:
         print(f"Output directory: {output_dir}")
         print()
         print(
             "NOTE: Old per-device pages (e.g., Llama-3.1-8B_galaxy_t3k.md) should be removed"
         )
         print("      manually, as they have been replaced by combined page group pages")
-        print("      (e.g., Llama-3.1-8B_galaxy.md covers both GALAXY and GALAXY_T3K)")
+
+
+def regenerate_model_support_docs_and_update_readme(
+    model_spec_path: Path,
+    readme_path: Path = Path("README.md"),
+    output_dir: Path = Path("docs/model_support"),
+    dry_run: bool = False,
+) -> None:
+    """Regenerate docs/model_support/ and update the root README Model Support section."""
+    readme_file = Path(readme_path)
+    if not readme_file.exists():
+        print(f"Warning: README.md not found at {readme_path}, skipping update")
+        return
+
+    generate_model_support_docs(
+        model_spec_path=Path(model_spec_path),
+        output_dir=Path(output_dir),
+        dry_run=dry_run,
+    )
+
+    templates = load_templates_from_model_spec(Path(model_spec_path))
+    model_support_content = generate_directory_readme(templates)
+
+    def adjust_link(match):
+        link_text = match.group(1)
+        link_path = match.group(2)
+        if link_path.startswith(("http://", "https://", "..")):
+            return match.group(0)
+        return f"[{link_text}](docs/model_support/{link_path})"
+
+    adjusted_content = re.sub(
+        r"\[([^\]]+)\]\(([^)]+)\)", adjust_link, model_support_content
+    )
+
+    lines = adjusted_content.split("\n")
+    filtered_lines = []
+    skip_next_empty = False
+    for line in lines:
+        if line.startswith("# Model Support"):
+            skip_next_empty = True
+            continue
+        if line.startswith("This directory contains documentation"):
+            skip_next_empty = True
+            continue
+        if skip_next_empty and line.strip() == "":
+            skip_next_empty = False
+            continue
+        skip_next_empty = False
+        filtered_lines.append(line)
+
+    model_support_section = "\n".join(filtered_lines).strip()
+
+    with open(readme_file, "r") as f:
+        content = f.read()
+
+    start_marker = "<!-- MODEL_SUPPORT_START -->"
+    end_marker = "<!-- MODEL_SUPPORT_END -->"
+    start_pos = content.find(start_marker)
+    end_pos = content.find(end_marker)
+    if start_pos == -1 or end_pos == -1:
+        print(
+            f"Warning: Model Support markers not found in {readme_path}, skipping update"
+        )
+        return
+
+    new_section = f"{start_marker}\n{model_support_section}\n{end_marker}"
+    end_pos += len(end_marker)
+    updated_content = content[:start_pos] + new_section + content[end_pos:]
+
+    if dry_run:
+        print(f"[DRY RUN] Would update Model Support section in {readme_path}")
+        return
+
+    with open(readme_file, "w") as f:
+        f.write(updated_content)
+
+    print(f"\nSuccessfully updated Model Support section in {readme_path}")
+
+
+def update_readme_model_support(
+    model_spec_path: Path,
+    readme_path: Path = Path("README.md"),
+) -> None:
+    """Backward-compatible wrapper for the explicit README/docs regeneration helper."""
+    regenerate_model_support_docs_and_update_readme(
+        model_spec_path=Path(model_spec_path),
+        readme_path=Path(readme_path),
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Generate Model Support documentation from MODEL_SPECS"
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="docs/model_support",
+        help="Output directory (default: docs/model_support)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be generated without writing files",
+    )
+    parser.add_argument(
+        "--model-spec-path",
+        default="workflows/model_spec.py",
+        help="Path to model_spec.py (default: workflows/model_spec.py)",
+    )
+    parser.add_argument(
+        "--readme-path",
+        default="README.md",
+        help="Path to README.md file (default: README.md)",
+    )
+    parser.add_argument(
+        "--update-readme",
+        action="store_true",
+        help="Also refresh the Model Support section in README.md",
+    )
+
+    args = parser.parse_args()
+
+    if args.update_readme:
+        regenerate_model_support_docs_and_update_readme(
+            model_spec_path=Path(args.model_spec_path),
+            readme_path=Path(args.readme_path),
+            output_dir=Path(args.output_dir),
+            dry_run=args.dry_run,
+        )
+        return
+
+    generate_model_support_docs(
+        model_spec_path=Path(args.model_spec_path),
+        output_dir=Path(args.output_dir),
+        dry_run=args.dry_run,
+    )
 
 
 if __name__ == "__main__":

@@ -1145,9 +1145,6 @@ def test_main_output_only_updates_release_version_before_generating_outputs(tmp_
     )
     model_spec_path.write_text(current_content)
 
-    readme_path = tmp_path / "README.md"
-    readme_path.write_text("# README\n")
-    output_json_path = tmp_path / "release_model_spec.json"
     release_output_dir = tmp_path / "release_logs" / "v0.10.0"
 
     args = type(
@@ -1157,9 +1154,7 @@ def test_main_output_only_updates_release_version_before_generating_outputs(tmp_
             "last_good_json": None,
             "model_spec_path": str(model_spec_path),
             "dry_run": False,
-            "output_json": str(output_json_path),
             "output_only": True,
-            "readme_path": str(readme_path),
             "ignore_perf_status": False,
             "models_ci_run_id": None,
             "out_root": None,
@@ -1184,11 +1179,7 @@ def test_main_output_only_updates_release_version_before_generating_outputs(tmp_
         return_value=release_output_dir,
     ), patch(
         "scripts.release.update_model_spec.generate_release_diff_outputs_from_git"
-    ) as diff_mock, patch(
-        "scripts.release.update_model_spec.regenerate_model_support_docs_and_update_readme"
-    ) as readme_mock, patch(
-        "scripts.release.update_model_spec.reload_and_export_model_specs_json"
-    ) as export_mock:
+    ) as diff_mock:
         main()
 
     assert model_spec_path.read_text() == updated_content
@@ -1196,8 +1187,6 @@ def test_main_output_only_updates_release_version_before_generating_outputs(tmp_
     assert apply_release_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
     assert diff_mock.call_args.kwargs["current_content"] == updated_content
     assert diff_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
-    readme_mock.assert_called_once_with(model_spec_path, str(readme_path))
-    export_mock.assert_called_once_with(model_spec_path, output_json_path)
 
 
 def test_main_uses_resolved_release_output_dir_for_diff_outputs(tmp_path):
@@ -1210,7 +1199,6 @@ def test_main_uses_resolved_release_output_dir_for_diff_outputs(tmp_path):
     last_good_json_path = input_dir / "models_ci_last_good.json"
     last_good_json_path.write_text("{}\n")
 
-    output_json_path = tmp_path / "release_model_spec.json"
     release_output_dir = tmp_path / "release_logs" / "v0.10.0"
 
     args = type(
@@ -1220,9 +1208,7 @@ def test_main_uses_resolved_release_output_dir_for_diff_outputs(tmp_path):
             "last_good_json": str(last_good_json_path),
             "model_spec_path": str(model_spec_path),
             "dry_run": False,
-            "output_json": str(output_json_path),
             "output_only": False,
-            "readme_path": str(tmp_path / "README.md"),
             "ignore_perf_status": False,
             "models_ci_run_id": None,
             "out_root": None,
@@ -1240,14 +1226,11 @@ def test_main_uses_resolved_release_output_dir_for_diff_outputs(tmp_path):
         "scripts.release.update_model_spec.resolve_release_output_dir",
         return_value=release_output_dir,
     ) as resolve_mock, patch(
-        "scripts.release.update_model_spec.reload_and_export_model_specs_json"
-    ) as export_mock, patch(
         "scripts.release.update_model_spec.generate_release_diff_outputs_from_git"
     ) as diff_mock:
         main()
 
     resolve_mock.assert_called_once_with(None)
-    export_mock.assert_called_once_with(model_spec_path, output_json_path)
     assert diff_mock.call_args.args[1] == release_output_dir
     assert diff_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
     assert diff_mock.call_args.kwargs["current_content"] == "spec_templates = []\n"
@@ -1260,7 +1243,6 @@ def test_main_ci_uses_filtered_content_for_outputs(tmp_path):
 
     last_good_json_path = tmp_path / "models_ci_last_good.json"
     last_good_json_path.write_text("{}\n")
-    output_json_path = tmp_path / "release_model_spec.json"
     release_output_dir = tmp_path / "release_logs" / "v0.10.0"
     filtered_content = "spec_templates = []\n# filtered\n"
 
@@ -1271,9 +1253,7 @@ def test_main_ci_uses_filtered_content_for_outputs(tmp_path):
             "last_good_json": str(last_good_json_path),
             "model_spec_path": str(model_spec_path),
             "dry_run": False,
-            "output_json": str(output_json_path),
             "output_only": False,
-            "readme_path": str(tmp_path / "README.md"),
             "ignore_perf_status": False,
             "models_ci_run_id": None,
             "out_root": None,
@@ -1297,18 +1277,12 @@ def test_main_ci_uses_filtered_content_for_outputs(tmp_path):
         "scripts.release.update_model_spec.revert_disallowed_tt_metal_commit_diffs_from_git",
         return_value=(filtered_content, 1, 0),
     ) as filter_mock, patch(
-        "scripts.release.update_model_spec.reload_and_export_model_specs_json"
-    ) as export_mock, patch(
         "scripts.release.update_model_spec.generate_release_diff_outputs_from_git"
-    ) as diff_mock, patch(
-        "scripts.release.update_model_spec.regenerate_model_support_docs_and_update_readme"
-    ) as readme_mock:
+    ) as diff_mock:
         main()
 
     assert model_spec_path.read_text() == filtered_content
     assert filter_mock.call_args.kwargs["tt_metal_commits"] == ["allow123"]
     assert filter_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
-    export_mock.assert_called_once_with(model_spec_path, output_json_path)
     assert diff_mock.call_args.kwargs["current_content"] == filtered_content
     assert diff_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
-    readme_mock.assert_called_once_with(model_spec_path)

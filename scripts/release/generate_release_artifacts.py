@@ -50,6 +50,9 @@ from workflows.model_spec import MODEL_SPECS
 from workflows.utils import get_version, parse_commits_from_docker_image
 
 try:
+    from generate_model_support_docs import (
+        regenerate_model_support_docs_and_update_readme,
+    )
     from generate_release_notes import (
         build_release_notes,
         load_git_release_performance_data,
@@ -62,7 +65,11 @@ try:
         write_release_performance_data,
     )
     from release_paths import get_versioned_release_logs_dir, resolve_release_output_dir
+    from update_model_spec import reload_and_export_model_specs_json
 except ImportError:
+    from scripts.release.generate_model_support_docs import (
+        regenerate_model_support_docs_and_update_readme,
+    )
     from scripts.release.generate_release_notes import (
         build_release_notes,
         load_git_release_performance_data,
@@ -78,6 +85,7 @@ except ImportError:
         get_versioned_release_logs_dir,
         resolve_release_output_dir,
     )
+    from scripts.release.update_model_spec import reload_and_export_model_specs_json
 
 logger = logging.getLogger(__name__)
 
@@ -768,6 +776,24 @@ def write_release_performance_outputs(
     return release_performance_data
 
 
+def write_release_model_spec_output(
+    model_spec_path: Path,
+    output_path: Path,
+    dry_run: bool,
+) -> None:
+    """Write release_model_spec.json from the finalized model_spec.py."""
+    if dry_run:
+        count = len(MODEL_SPECS)
+        logger.info(
+            "Dry-run mode: skipping compatibility export of "
+            f"{count} model specs to {output_path}"
+        )
+        return
+
+    reload_and_export_model_specs_json(model_spec_path, output_path)
+    logger.info(f"Written release model spec compatibility artifact to {output_path}")
+
+
 def write_release_notes(
     output_dir: Path,
     version: str,
@@ -844,6 +870,24 @@ def main():
         help=f"Directory for output files (default: {default_output_dir})",
     )
     parser.add_argument(
+        "--model-spec-path",
+        default="workflows/model_spec.py",
+        help="Path to model_spec.py file (default: workflows/model_spec.py)",
+    )
+    parser.add_argument(
+        "--readme-path",
+        default="README.md",
+        help="Path to README.md file (default: README.md)",
+    )
+    parser.add_argument(
+        "--release-model-spec-path",
+        default="release_model_spec.json",
+        help=(
+            "Path to release_model_spec.json compatibility artifact "
+            "(default: release_model_spec.json)"
+        ),
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", help="Preview actions without executing them"
     )
 
@@ -917,7 +961,19 @@ def main():
         release_performance_data = write_release_performance_outputs(
             merged_spec, output_dir, args.dry_run
         )
-        logger.info("\nStep 5: Writing release notes...")
+        logger.info("\nStep 5: Writing release model spec compatibility artifact...")
+        write_release_model_spec_output(
+            model_spec_path=Path(args.model_spec_path),
+            output_path=Path(args.release_model_spec_path),
+            dry_run=args.dry_run,
+        )
+        logger.info("\nStep 6: Regenerating model support docs and README...")
+        regenerate_model_support_docs_and_update_readme(
+            model_spec_path=Path(args.model_spec_path),
+            readme_path=Path(args.readme_path),
+            dry_run=args.dry_run,
+        )
+        logger.info("\nStep 7: Writing release notes...")
         notes_path = write_release_notes(
             output_dir,
             get_version(),
@@ -937,6 +993,8 @@ def main():
     )
     if notes_path:
         logger.info(f"Release notes: {notes_path}")
+    if args.release:
+        logger.info(f"Release model spec: {Path(args.release_model_spec_path)}")
     logger.info(f"Unique images to build: {unique_images_count}")
     logger.info(f"Images promoted from Models CI: {len(copied_images)}")
     logger.info(f"Existing images with CI backing: {len(existing_with_ci_ref)}")

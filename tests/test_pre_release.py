@@ -1,3 +1,4 @@
+import sys
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import call, patch
@@ -43,6 +44,7 @@ def test_main_skips_branch_reset_for_manual_model_spec_rerun():
         base_branch="main",
         release_branch="stable",
         models_ci_run_id=None,
+        tt_metal_commits=None,
         commit=False,
         start_release_workflow=False,
     )
@@ -61,7 +63,7 @@ def test_main_skips_branch_reset_for_manual_model_spec_rerun():
         assert pr.main() == 0
 
     prepare_mock.assert_not_called()
-    update_mock.assert_called_once_with(pr.REPO_ROOT, None)
+    update_mock.assert_called_once_with(pr.REPO_ROOT, None, None)
     next_steps_mock.assert_called_once_with("0.9.0", "stable")
 
 
@@ -70,6 +72,7 @@ def test_main_requires_clean_worktree_before_branch_reset():
         base_branch="main",
         release_branch="stable",
         models_ci_run_id=123,
+        tt_metal_commits=None,
         commit=False,
         start_release_workflow=False,
     )
@@ -88,6 +91,7 @@ def test_main_manual_mode_requires_existing_model_spec_edits():
         base_branch="main",
         release_branch="stable",
         models_ci_run_id=None,
+        tt_metal_commits=None,
         commit=False,
         start_release_workflow=False,
     )
@@ -112,6 +116,7 @@ def test_main_commit_flow_stages_commits_and_pushes():
         base_branch="main",
         release_branch="stable",
         models_ci_run_id=123,
+        tt_metal_commits=None,
         commit=True,
         start_release_workflow=False,
     )
@@ -130,7 +135,7 @@ def test_main_commit_flow_stages_commits_and_pushes():
         assert pr.main() == 0
 
     prepare_mock.assert_called_once_with(pr.REPO_ROOT, "main", "stable")
-    update_mock.assert_called_once_with(pr.REPO_ROOT, 123)
+    update_mock.assert_called_once_with(pr.REPO_ROOT, 123, None)
     stage_mock.assert_called_once_with(pr.REPO_ROOT, "0.9.0")
     assert git_mock.call_args_list == [
         call(
@@ -164,6 +169,74 @@ def test_parse_args_allows_start_release_workflow_without_commit():
 
     assert args.start_release_workflow is True
     assert args.commit is False
+    assert args.tt_metal_commits is None
+
+
+def test_parse_args_accepts_tt_metal_commits():
+    args = pr.parse_args(
+        [
+            "--base-branch",
+            "main",
+            "--release-branch",
+            "stable",
+            "--tt-metal-commits",
+            "abc1234",
+            "def5678",
+        ]
+    )
+
+    assert args.tt_metal_commits == ["abc1234", "def5678"]
+
+
+@pytest.mark.parametrize(
+    ("models_ci_run_id", "tt_metal_commits", "expected_command"),
+    [
+        (
+            None,
+            None,
+            [
+                sys.executable,
+                str(Path(pr.__file__).with_name("update_model_spec.py")),
+                "--output-only",
+            ],
+        ),
+        (
+            None,
+            ["abc1234"],
+            [
+                sys.executable,
+                str(Path(pr.__file__).with_name("update_model_spec.py")),
+                "--output-only",
+                "--tt-metal-commits",
+                "abc1234",
+            ],
+        ),
+        (
+            123,
+            ["abc1234", "def5678"],
+            [
+                sys.executable,
+                str(Path(pr.__file__).with_name("update_model_spec.py")),
+                "--models-ci-run-id",
+                "123",
+                "--tt-metal-commits",
+                "abc1234",
+                "def5678",
+            ],
+        ),
+    ],
+)
+def test_run_update_model_spec_forwards_tt_metal_commits(
+    models_ci_run_id, tt_metal_commits, expected_command
+):
+    repo_root = Path("/tmp/repo")
+
+    with patch.object(pr, "run_command") as run_command_mock:
+        pr.run_update_model_spec(repo_root, models_ci_run_id, tt_metal_commits)
+
+    run_command_mock.assert_called_once_with(
+        expected_command, cwd=repo_root, capture_output=False
+    )
 
 
 def test_main_dispatch_only_mode_skips_generation_and_git_writes():
@@ -171,6 +244,7 @@ def test_main_dispatch_only_mode_skips_generation_and_git_writes():
         base_branch="main",
         release_branch="stable",
         models_ci_run_id=None,
+        tt_metal_commits=None,
         commit=False,
         start_release_workflow=True,
     )
@@ -193,11 +267,97 @@ def test_main_dispatch_only_mode_skips_generation_and_git_writes():
     git_mock.assert_not_called()
 
 
+def test_start_release_models_ci_uses_versioned_diff_and_models_ci_config():
+    expected_diff_path = (
+        pr.REPO_ROOT
+        / pr.get_versioned_release_logs_dir("0.9.0")
+        / pr.PRE_RELEASE_DIFF_JSON
+    )
+    expected_models_ci_config_path = pr.REPO_ROOT / pr.MODELS_CI_CONFIG_PATH
+
+    with patch.object(pr, "read_version", return_value="0.9.0"), patch.object(
+        pr,
+        "prune_release_models_ci_config",
+        return_value={"Llama-3.2-1B-Instruct": ["N150", "N300", "T3K"]},
+    ) as prune_mock, patch.object(
+        pr,
+        "validate_release_models_ci_config",
+        return_value={"Llama-3.2-1B-Instruct": ["N150", "N300", "T3K"]},
+    ) as validate_mock, patch.object(
+        pr,
+        "resolve_release_workflow_refs",
+        return_value=("metal-sha", "vllm-sha"),
+    ) as refs_mock, patch.object(
+        pr,
+        "dispatch_release_workflow",
+        return_value="https://github.com/run/123",
+    ) as dispatch_mock:
+        pr.start_release_models_ci("main", "stable")
+
+    refs_mock.assert_called_once_with(expected_diff_path)
+    prune_mock.assert_called_once_with(
+        expected_diff_path, expected_models_ci_config_path
+    )
+    validate_mock.assert_called_once_with(
+        expected_diff_path, expected_models_ci_config_path
+    )
+    dispatch_mock.assert_called_once_with(
+        base_ref="main",
+        release_branch="stable",
+        tt_metal_ref="metal-sha",
+        vllm_ref="vllm-sha",
+    )
+
+
+def test_resolve_pre_release_diff_path_returns_versioned_json_path():
+    assert pr.resolve_pre_release_diff_path("0.9.0") == (
+        pr.get_versioned_release_logs_dir("0.9.0") / pr.PRE_RELEASE_DIFF_JSON
+    )
+
+
+def test_start_release_models_ci_uses_versioned_diff_path():
+    with patch.object(
+        pr,
+        "read_version",
+        return_value="0.9.0",
+    ), patch.object(
+        pr,
+        "prune_release_models_ci_config",
+        return_value={"Llama-3.2-1B-Instruct": ["N150", "N300", "T3K"]},
+    ), patch.object(
+        pr,
+        "resolve_release_workflow_refs",
+        return_value=("metal-sha", "vllm-sha"),
+    ) as refs_mock, patch.object(
+        pr,
+        "validate_release_models_ci_config",
+        return_value={"Llama-3.2-1B-Instruct": ["N150", "N300", "T3K"]},
+    ), patch.object(
+        pr,
+        "dispatch_release_workflow",
+        return_value="https://github.com/run/123",
+    ) as dispatch_mock:
+        pr.start_release_models_ci("main", "stable")
+
+    refs_mock.assert_called_once_with(
+        pr.REPO_ROOT
+        / pr.get_versioned_release_logs_dir("0.9.0")
+        / pr.PRE_RELEASE_DIFF_JSON
+    )
+    dispatch_mock.assert_called_once_with(
+        base_ref="main",
+        release_branch="stable",
+        tt_metal_ref="metal-sha",
+        vllm_ref="vllm-sha",
+    )
+
+
 def test_main_dispatches_release_workflow_after_push():
     args = Namespace(
         base_branch="main",
         release_branch="stable",
         models_ci_run_id=123,
+        tt_metal_commits=None,
         commit=True,
         start_release_workflow=True,
     )
