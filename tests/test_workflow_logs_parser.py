@@ -88,3 +88,51 @@ def test_parse_workflow_logs_dir_blocks_regression_failures_from_passing(tmp_pat
     assert parsed["summary"]["regression_passed"] is False
     assert parsed["summary"]["regression_ok"] is False
     assert parsed["summary"]["is_passing"] is False
+
+
+def test_parse_workflow_logs_dir_supports_wrapped_runtime_model_spec(tmp_path):
+    workflow_logs_dir = tmp_path / "workflow_logs_demo"
+    runtime_model_specs_dir = workflow_logs_dir / "runtime_model_specs"
+    reports_data_dir = workflow_logs_dir / "reports_output" / "release" / "data"
+    runtime_model_specs_dir.mkdir(parents=True)
+    reports_data_dir.mkdir(parents=True)
+
+    (runtime_model_specs_dir / "model_spec.json").write_text(
+        json.dumps(
+            {
+                "runtime_model_spec": {
+                    "model_id": "demo-model",
+                    "docker_image": "ghcr.io/tenstorrent/demo:tag",
+                    "cli_args": {
+                        "override_docker_image": "ghcr.io/tenstorrent/demo:override"
+                    },
+                },
+                "runtime_config": {"workflow": "release"},
+            }
+        )
+    )
+    (reports_data_dir / "report_data_demo-model_123.json").write_text(
+        json.dumps(
+            {
+                "evals": [{"accuracy_check": 2}],
+                "benchmark_target_evaluation": {
+                    "status": "target",
+                    "reference_available": True,
+                    "errors": [],
+                    "regression": {"checked": False, "passed": True, "failures": []},
+                },
+            }
+        )
+    )
+
+    with patch.object(
+        workflow_logs_parser,
+        "parse_commits_from_docker_image",
+        return_value=("a" * 40, "1" * 7),
+    ):
+        parsed = workflow_logs_parser.parse_workflow_logs_dir(workflow_logs_dir)
+
+    assert parsed is not None
+    assert parsed["summary"]["model_id"] == "demo-model"
+    assert parsed["summary"]["docker_image"] == "ghcr.io/tenstorrent/demo:override"
+    assert parsed["model_specs"]["runtime_config"]["workflow"] == "release"

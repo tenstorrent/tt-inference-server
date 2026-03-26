@@ -1286,3 +1286,55 @@ def test_main_ci_uses_filtered_content_for_outputs(tmp_path):
     assert filter_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
     assert diff_mock.call_args.kwargs["current_content"] == filtered_content
     assert diff_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
+
+
+def test_main_models_ci_run_id_keeps_nightly_reader_defaults(tmp_path):
+    model_spec_path = tmp_path / "workflows" / "model_spec.py"
+    model_spec_path.parent.mkdir(parents=True)
+    model_spec_path.write_text("spec_templates = []\n")
+    release_output_dir = tmp_path / "release_logs" / "v0.10.0"
+    last_good_json_path = tmp_path / "models_ci_last_good.json"
+    last_good_json_path.write_text("{}\n")
+
+    args = type(
+        "Args",
+        (),
+        {
+            "last_good_json": None,
+            "model_spec_path": str(model_spec_path),
+            "dry_run": False,
+            "output_only": False,
+            "ignore_perf_status": False,
+            "models_ci_run_id": 19339722549,
+            "out_root": None,
+            "tt_metal_commits": None,
+        },
+    )()
+
+    fake_models_ci_reader = Mock()
+    fake_models_ci_reader.run_ci_pipeline = Mock(return_value=last_good_json_path)
+
+    with patch.dict(
+        "sys.modules", {"scripts.release.models_ci_reader": fake_models_ci_reader}
+    ), patch(
+        "argparse.ArgumentParser.parse_args",
+        return_value=args,
+    ), patch(
+        "scripts.release.update_model_spec.resolve_latest_release_branch_ref",
+        return_value="origin/v0.10.0",
+    ), patch(
+        "scripts.release.update_model_spec.resolve_release_output_dir",
+        return_value=release_output_dir,
+    ), patch(
+        "scripts.release.update_model_spec.spec_templates",
+        [],
+    ), patch(
+        "scripts.release.update_model_spec.generate_release_diff_outputs_from_git"
+    ):
+        main()
+
+    assert fake_models_ci_reader.run_ci_pipeline.call_args.args == (
+        19339722549,
+        release_output_dir,
+    )
+    assert fake_models_ci_reader.run_ci_pipeline.call_args.kwargs == {}

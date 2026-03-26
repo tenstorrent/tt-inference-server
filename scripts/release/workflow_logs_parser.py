@@ -56,8 +56,20 @@ def load_model_spec_json(model_specs_dir: Path) -> Tuple[Optional[dict], Optiona
     except Exception as e:
         logger.warning(f"Failed to parse model spec JSON from {spec_file}: {e}")
         return None, None
-    model_id = data.get("model_id")
-    return data, model_id
+    model_spec_json = data.get("runtime_model_spec")
+    if isinstance(model_spec_json, dict):
+        flattened_model_spec_json = dict(model_spec_json)
+        runtime_config = data.get("runtime_config")
+        if runtime_config is not None:
+            flattened_model_spec_json["runtime_config"] = runtime_config
+        model_spec_json = flattened_model_spec_json
+    elif isinstance(data, dict):
+        model_spec_json = data
+    else:
+        return None, None
+
+    model_id = model_spec_json.get("model_id")
+    return model_spec_json, model_id
 
 
 def load_report_data_json(reports_root: Path, model_id: str) -> Optional[dict]:
@@ -204,6 +216,67 @@ def _get_regression_summary(
     return regression_checked, regression_passed, regression_ok
 
 
+def build_parsed_workflow_logs_data(
+    dir_name: str, model_spec_json: dict, report_data_json: dict
+) -> Optional[dict]:
+    """Build parsed workflow-log style data from already-loaded JSON payloads."""
+    model_id = model_spec_json.get("model_id")
+    if not model_id:
+        logger.warning(f"Could not find model_id in parsed model spec for {dir_name}")
+        return None
+
+    benchmark_target_evaluation = _get_benchmark_target_evaluation(report_data_json)
+    perf_status = benchmark_target_evaluation.get("status", "experimental")
+    benchmarks_completed = benchmark_target_evaluation.get(
+        "reference_available", False
+    ) and not bool(benchmark_target_evaluation.get("errors"))
+    accuracy_status = parse_accuracy_status(report_data_json)
+    evals_completed = parse_evals_completed(report_data_json)
+    regression_checked, regression_passed, regression_ok = _get_regression_summary(
+        benchmark_target_evaluation
+    )
+    is_passing = benchmarks_completed and accuracy_status and regression_ok
+
+    spec_docker_image = model_spec_json.get("docker_image")
+    override_docker_image = model_spec_json.get("cli_args", {}).get(
+        "override_docker_image"
+    )
+    docker_image = override_docker_image if override_docker_image else spec_docker_image
+
+    tt_metal_commit = None
+    vllm_commit = None
+    if docker_image:
+        tt_metal_commit, vllm_commit = parse_commits_from_docker_image(docker_image)
+
+    logger.info(
+        f"Successfully parsed {dir_name}: model_id={model_id}, "
+        f"perf={perf_status}, benchmarks_completed={benchmarks_completed}, "
+        f"accuracy={accuracy_status}, evals_completed={evals_completed}, "
+        f"regression_ok={regression_ok}, passing={is_passing}"
+    )
+
+    return {
+        "dir_name": dir_name,
+        "summary": {
+            "model_id": model_id,
+            "perf_status": perf_status,
+            "benchmarks_completed": benchmarks_completed,
+            "accuracy_status": accuracy_status,
+            "evals_completed": evals_completed,
+            "regression_checked": regression_checked,
+            "regression_passed": regression_passed,
+            "regression_ok": regression_ok,
+            "is_passing": is_passing,
+            "docker_image": docker_image,
+            "tt_metal_commit": tt_metal_commit,
+            "vllm_commit": vllm_commit,
+        },
+        "model_specs": model_spec_json,
+        "reports_output": report_data_json,
+        "tt_smi_output": None,
+    }
+
+
 def parse_workflow_logs_dir(
     workflow_logs_dir: Path, last_run_only: bool = True
 ) -> Optional[dict]:
@@ -276,66 +349,9 @@ def parse_workflow_logs_dir(
         logger.warning(f"Could not find report data in {workflow_logs_dir}")
         return None
 
-    # Parse status
-    benchmark_target_evaluation = _get_benchmark_target_evaluation(report_data_json)
-    perf_status = benchmark_target_evaluation.get("status", "experimental")
-    benchmarks_completed = benchmark_target_evaluation.get(
-        "reference_available", False
-    ) and not bool(benchmark_target_evaluation.get("errors"))
-    accuracy_status = parse_accuracy_status(report_data_json)
-    evals_completed = parse_evals_completed(report_data_json)
-    regression_checked, regression_passed, regression_ok = _get_regression_summary(
-        benchmark_target_evaluation
+    return build_parsed_workflow_logs_data(
+        workflow_logs_dir.name, model_spec_json, report_data_json
     )
-    is_passing = benchmarks_completed and accuracy_status and regression_ok
-
-    # Extract docker image and parse commits
-    spec_docker_image = model_spec_json.get("docker_image") if model_spec_json else None
-    override_docker_image = (
-        model_spec_json.get("cli_args", {}).get("override_docker_image")
-        if model_spec_json
-        else None
-    )
-    docker_image = override_docker_image if override_docker_image else spec_docker_image
-
-    tt_metal_commit = None
-    vllm_commit = None
-    if docker_image:
-        tt_metal_commit, vllm_commit = parse_commits_from_docker_image(docker_image)
-
-    logger.info(
-        f"Successfully parsed {workflow_logs_dir.name}: model_id={model_id}, "
-        f"perf={perf_status}, benchmarks_completed={benchmarks_completed}, "
-        f"accuracy={accuracy_status}, evals_completed={evals_completed}, "
-        f"regression_ok={regression_ok}, passing={is_passing}"
-    )
-
-    # TODO: add tt_smi_output parsing
-    tt_smi_output = None
-
-    result = {
-        "dir_name": workflow_logs_dir.name,
-        "summary": {
-            "model_id": model_id,
-            "perf_status": perf_status,
-            "benchmarks_completed": benchmarks_completed,
-            "accuracy_status": accuracy_status,
-            "evals_completed": evals_completed,
-            "regression_checked": regression_checked,
-            "regression_passed": regression_passed,
-            "regression_ok": regression_ok,
-            "is_passing": is_passing,
-            "docker_image": docker_image,
-            "tt_metal_commit": tt_metal_commit,
-            "vllm_commit": vllm_commit,
-        },
-        "model_specs": model_spec_json,
-        "reports_output": report_data_json,
-        "tt_smi_output": tt_smi_output,
-    }
-    # TODO: return lists of results if last_run_only is False
-
-    return result
 
 
 def write_workflow_logs_output(parsed_data: dict, output_path: Path) -> None:

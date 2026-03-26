@@ -19,7 +19,11 @@ from typing import Dict, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
-from workflow_logs_parser import parse_workflow_logs_dir
+from workflow_logs_parser import (
+    build_parsed_workflow_logs_data,
+    latest_json_by_mtime,
+    parse_workflow_logs_dir,
+)
 
 try:
     from release_paths import get_versioned_release_logs_dir, resolve_release_output_dir
@@ -736,6 +740,25 @@ def parse_job_name(job_name: str) -> Optional[dict]:
     Returns:
         Dict with workflow_type, model_name, hardware_name, hardware or None if parse fails
     """
+    job_name_suffix = job_name.split("/")[-1].strip()
+
+    # Try dynamic workflow job format:
+    # "prefix / run-release-<model_name>-<hardware_name>-<device>"
+    if job_name_suffix.startswith("run-"):
+        workflow_and_rest = job_name_suffix[len("run-") :]
+        workflow_parts = workflow_and_rest.split("-", 1)
+        if len(workflow_parts) == 2:
+            workflow_type, job_identity = workflow_parts
+            identity_parts = job_identity.rsplit("-", 2)
+            if len(identity_parts) == 3:
+                model_name, hardware_name, hardware = identity_parts
+                return {
+                    "workflow_type": workflow_type.strip(),
+                    "model_name": model_name.strip(),
+                    "hardware_name": hardware_name.strip(),
+                    "hardware": hardware.strip(),
+                }
+
     # Try 4-parameter test format: "prefix / test (workflow_type, model_name, hardware_name, hardware)"
     pattern = (
         r".+\s*/\s*test\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)"
@@ -899,6 +922,81 @@ def match_jobs_to_workflow_logs(
 
     logger.warning(f"Could not match any job to {workflow_logs_dir_name}")
     return None
+
+
+def match_job_to_artifact_dir(
+    jobs_ci_metadata: List[dict], artifact_dir_name: str
+) -> Optional[dict]:
+    """Match workflow-log or report artifact directories back to one job."""
+    if artifact_dir_name.startswith("workflow_logs_"):
+        return match_jobs_to_workflow_logs(jobs_ci_metadata, artifact_dir_name)
+
+    job_id_match = re.search(r"_(\d+)$", artifact_dir_name)
+    if not job_id_match:
+        logger.warning(
+            f"Could not extract job id from artifact directory: {artifact_dir_name}"
+        )
+        return None
+
+    job_id = int(job_id_match.group(1))
+    for job in jobs_ci_metadata:
+        if job.get("job_id") != job_id:
+            continue
+        parsed_job = parse_job_name(job.get("job_name", "")) or {}
+        matched_job = {
+            "job_id": job.get("job_id"),
+            "job_name": job.get("job_name"),
+            "job_status": job.get("job_status"),
+            "job_conclusion": job.get("job_conclusion"),
+            "job_url": job.get("job_url"),
+            "started_at": job.get("started_at"),
+            "completed_at": job.get("completed_at"),
+            "model_name": parsed_job.get("model_name"),
+            "hardware": parsed_job.get("hardware"),
+            "hardware_name": parsed_job.get("hardware_name"),
+        }
+        logger.info(f"Matched job {job_id} to {artifact_dir_name}")
+        return matched_job
+
+    logger.warning(f"Could not match any job to {artifact_dir_name}")
+    return None
+
+
+def _collect_artifact_run_ids(parent_run_id: int, jobs: List[dict]) -> List[int]:
+    """Return parent and reusable-workflow child run IDs in stable order."""
+    artifact_run_ids = [parent_run_id]
+    seen_run_ids = {parent_run_id}
+    for job in jobs:
+        job_run_id = job.get("run_id")
+        if not isinstance(job_run_id, int) or job_run_id in seen_run_ids:
+            continue
+        artifact_run_ids.append(job_run_id)
+        seen_run_ids.add(job_run_id)
+    return artifact_run_ids
+
+
+def _parse_report_artifact_dir(report_artifact_dir: Path) -> Optional[dict]:
+    """Parse a downloaded `report_*` artifact into workflow-log style data."""
+    report_json_path = latest_json_by_mtime(report_artifact_dir, "report_*.json")
+    model_spec_json_path = latest_json_by_mtime(
+        report_artifact_dir, "model_spec_*.json"
+    )
+    if not report_json_path or not model_spec_json_path:
+        logger.warning(
+            f"Could not find report/model_spec JSON pair in report artifact: {report_artifact_dir}"
+        )
+        return None
+
+    try:
+        report_data_json = json.loads(report_json_path.read_text())
+        model_spec_json = json.loads(model_spec_json_path.read_text())
+    except Exception as exc:
+        logger.warning(f"Failed to parse report artifact {report_artifact_dir}: {exc}")
+        return None
+
+    return build_parsed_workflow_logs_data(
+        report_artifact_dir.name, model_spec_json, report_data_json
+    )
 
 
 def _print_token_setup_instructions():
@@ -1401,20 +1499,27 @@ def process_run_directory(
         }
 
     # Process all workflow_logs_* artifact directories
-    artifact_dirs = [
+    workflow_log_dirs = [
         d
         for d in run_out_dir.iterdir()
         if d.is_dir() and d.name.startswith("workflow_logs_")
     ]
+    report_artifact_dirs = [
+        d for d in run_out_dir.iterdir() if d.is_dir() and d.name.startswith("report_")
+    ]
+    artifact_dirs = workflow_log_dirs + report_artifact_dirs
     logger.info(
         f"Found {len(artifact_dirs)} artifact directories in {run_out_dir.name}"
     )
+    seen_model_job_keys = set()
 
     for art_dir in artifact_dirs:
         logger.info(f"Processing artifact directory: {art_dir.name}")
 
-        # Use new workflow_logs_parser module
-        workflow_logs_dict = parse_workflow_logs_dir(art_dir)
+        if art_dir.name.startswith("workflow_logs_"):
+            workflow_logs_dict = parse_workflow_logs_dir(art_dir)
+        else:
+            workflow_logs_dict = _parse_report_artifact_dir(art_dir)
         if not workflow_logs_dict:
             logger.warning(f"Failed to parse {art_dir.name}, skipping")
             continue
@@ -1426,9 +1531,18 @@ def process_run_directory(
         if jobs_ci_metadata:
             dir_name = workflow_logs_dict.get("dir_name")
             if dir_name:
-                matched_job_info = match_jobs_to_workflow_logs(
-                    jobs_ci_metadata, dir_name
-                )
+                matched_job_info = match_job_to_artifact_dir(jobs_ci_metadata, dir_name)
+
+        seen_model_job_key = (
+            model_id,
+            matched_job_info.get("job_id") if matched_job_info else None,
+        )
+        if seen_model_job_key in seen_model_job_keys:
+            logger.info(
+                f"Skipping duplicate parsed artifact for model/job {seen_model_job_key}: {art_dir.name}"
+            )
+            continue
+        seen_model_job_keys.add(seen_model_job_key)
 
         # Create model-specific ci_metadata with job metadata
         model_ci_metadata = None
@@ -1524,6 +1638,8 @@ def download_runs(
     remove_existing: bool = False,
 ) -> None:
     """Download workflow runs without processing them."""
+    explicit_run_requested = run_id is not None
+
     # Resolve workflow and list recent runs
     wf = get_workflow(owner, repo, workflow_file, token)
     workflow_id = wf.get("id")
@@ -1540,15 +1656,15 @@ def download_runs(
         runs = list_workflow_runs(workflow_id, owner, repo, token, per_page=max_runs)
 
     for run in runs:
-        run_id = run.get("id")
+        current_run_id = run.get("id")
         run_number = run.get("run_number")
 
         # Create run dir e.g. On_nightly_236_18247117045
-        run_dir_name = f"On_nightly_{run_number}_{run_id}"
+        run_dir_name = f"On_nightly_{run_number}_{current_run_id}"
         run_out_dir = out_root / "ci_run_logs" / run_dir_name
 
         # Skip if directory exists and remove_existing is False
-        if run_out_dir.exists() and not remove_existing:
+        if run_out_dir.exists() and not remove_existing and not explicit_run_requested:
             logs_dir = run_out_dir / "logs"
             artifact_dirs = [
                 d
@@ -1567,7 +1683,7 @@ def download_runs(
 
         # Save run metadata for later processing
         run_ci_metadata = {
-            "run_id": run_id,
+            "run_id": current_run_id,
             "run_number": run_number,
             "owner": owner,
             "repo": repo,
@@ -1588,8 +1704,8 @@ def download_runs(
             ensure_dir(logs_dir)
 
             # Get all jobs and save their metadata
-            logger.info(f"Listing all jobs for run {run_id}")
-            jobs = list_run_jobs(run_id, owner, repo, token)
+            logger.info(f"Listing all jobs for run {current_run_id}")
+            jobs = list_run_jobs(current_run_id, owner, repo, token)
             logger.info(f"Found {len(jobs)} total jobs")
 
             # Extract job metadata for saving
@@ -1597,6 +1713,7 @@ def download_runs(
             for job in jobs:
                 job_info = {
                     "job_id": job.get("id"),
+                    "run_id": job.get("run_id"),
                     "job_name": job.get("name"),
                     "job_status": job.get("status"),
                     "job_conclusion": job.get("conclusion"),
@@ -1621,32 +1738,41 @@ def download_runs(
 
             logger.debug(traceback.format_exc())
 
-        # List and download artifacts matching workflow logs
-        try:
-            artifacts = list_run_artifacts(run_id, owner, repo, token)
-            logger.info(f"Found {len(artifacts)} artifacts for run {run_id}")
-        except Exception:
-            artifacts = []
-
-        for artifact in artifacts:
-            name = artifact.get("name", "")
-            if not name.startswith("workflow_logs_"):
-                continue
-            artifact_id = artifact.get("id")
-            archive_url = artifact.get("archive_download_url")
-            if not artifact_id and not archive_url:
-                continue
+        # List and download artifacts matching workflow logs from the parent run
+        # and any reusable-workflow child runs referenced by the jobs list.
+        artifact_run_ids = _collect_artifact_run_ids(
+            current_run_id, jobs if "jobs" in locals() else []
+        )
+        for artifact_run_id in artifact_run_ids:
             try:
-                ref = archive_url if archive_url else artifact_id
-                z = download_artifact_zip(ref, owner, repo, token)
-                art_dir = run_out_dir / name
-                if art_dir.exists():
-                    shutil.rmtree(art_dir)
-                extract_zip_to_dir(z, art_dir)
-                logger.info(f"  ✓ {name}")
-            except Exception as e:
-                logger.warning(f"  ✗ {name}: {e}")
-                continue
+                artifacts = list_run_artifacts(artifact_run_id, owner, repo, token)
+                logger.info(
+                    f"Found {len(artifacts)} artifacts for run {artifact_run_id}"
+                )
+            except Exception:
+                artifacts = []
+
+            for artifact in artifacts:
+                name = artifact.get("name", "")
+                if not (
+                    name.startswith("workflow_logs_") or name.startswith("report_")
+                ):
+                    continue
+                artifact_id = artifact.get("id")
+                archive_url = artifact.get("archive_download_url")
+                if not artifact_id and not archive_url:
+                    continue
+                try:
+                    ref = archive_url if archive_url else artifact_id
+                    z = download_artifact_zip(ref, owner, repo, token)
+                    art_dir = run_out_dir / name
+                    if art_dir.exists():
+                        shutil.rmtree(art_dir)
+                    extract_zip_to_dir(z, art_dir)
+                    logger.info(f"  ✓ {name}")
+                except Exception as e:
+                    logger.warning(f"  ✗ {name}: {e}")
+                    continue
 
 
 def process_all_runs(

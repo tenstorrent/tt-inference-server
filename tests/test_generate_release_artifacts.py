@@ -1,9 +1,10 @@
 import json
 import subprocess
+import sys
 from argparse import Namespace
 from collections import defaultdict
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import scripts.release.generate_release_artifacts as gra
 from scripts.release.release_diff import build_template_key
@@ -59,6 +60,29 @@ def make_record(model_id, target_image, *, ci_image=None, model_spec=None):
         ci_data={"docker_image": ci_image} if ci_image else {},
         target_docker_image=target_image,
     )
+
+
+def make_release_diff_record(*, model_arch="DemoModel", devices=None):
+    devices = devices or ["N150"]
+    return {
+        "template_key": build_template_key(
+            "demo_impl", ["demo/model"], devices, "vllm"
+        ),
+        "impl": "demo-impl",
+        "impl_id": "demo_impl",
+        "model_arch": model_arch,
+        "inference_engine": "vllm",
+        "weights": ["demo/model"],
+        "devices": devices,
+        "status_before": "EXPERIMENTAL",
+        "status_after": "COMPLETE",
+        "tt_metal_commit_before": "aaaaaaa",
+        "tt_metal_commit_after": "bbbbbbb",
+        "vllm_commit_before": None,
+        "vllm_commit_after": None,
+        "ci_job_url": "https://example.com/jobs/456",
+        "ci_run_number": 123,
+    }
 
 
 def test_merge_specs_with_ci_data_derives_dev_image_without_mutating_model_specs(
@@ -348,10 +372,14 @@ def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
         ],
     )
 
+    release_performance_module = sys.modules[
+        gra.build_release_performance_data.__module__
+    ]
+
     with patch.object(
         gra, "get_release_performance_path", return_value=baseline_path
-    ), patch(
-        "scripts.release.release_performance.get_perf_target", return_value=perf_target
+    ), patch.object(
+        release_performance_module, "get_perf_target", return_value=perf_target
     ):
         release_performance_data = gra.write_release_performance_outputs(
             merged_spec, output_dir, dry_run=False
@@ -378,6 +406,134 @@ def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
         baseline_entry["report_data"]["benchmark_target_evaluation"]["status"]
         == "target"
     )
+
+
+def test_write_release_performance_diff_output_filters_to_release_models(tmp_path):
+    output_dir = tmp_path / "release_logs" / "v0.10.0"
+    output_dir.mkdir(parents=True)
+    (output_dir / "pre_release_models_diff.json").write_text(
+        json.dumps([make_release_diff_record()])
+    )
+    release_performance_data = {
+        "schema_version": "0.1.0",
+        "models": {
+            "DemoModel": {
+                "n150": {
+                    "demo_impl": {
+                        "vLLM": {
+                            "model": "DemoModel",
+                            "device": "n150",
+                            "impl_id": "demo_impl",
+                            "inference_engine": "vLLM",
+                            "perf_status": "target",
+                            "accuracy_status": True,
+                            "benchmarks_summary": [
+                                {
+                                    "task_type": "text",
+                                    "isl": 128,
+                                    "osl": 128,
+                                    "max_concurrency": 1,
+                                    "ttft": 52.0,
+                                }
+                            ],
+                            "report_data": {
+                                "parameter_support_tests": {
+                                    "results": {"test_smoke": [{"status": "failed"}]}
+                                }
+                            },
+                        }
+                    }
+                }
+            },
+            "UnrelatedModel": {
+                "n300": {
+                    "demo_impl": {
+                        "vLLM": {
+                            "model": "UnrelatedModel",
+                            "device": "n300",
+                            "impl_id": "demo_impl",
+                            "inference_engine": "vLLM",
+                            "perf_status": "target",
+                            "accuracy_status": True,
+                            "benchmarks_summary": [],
+                            "report_data": {},
+                        }
+                    }
+                }
+            },
+        },
+    }
+    base_release_performance_data = {
+        "schema_version": "0.1.0",
+        "models": {
+            "DemoModel": {
+                "n150": {
+                    "demo_impl": {
+                        "vLLM": {
+                            "model": "DemoModel",
+                            "device": "n150",
+                            "impl_id": "demo_impl",
+                            "inference_engine": "vLLM",
+                            "perf_status": "functional",
+                            "accuracy_status": True,
+                            "benchmarks_summary": [
+                                {
+                                    "task_type": "text",
+                                    "isl": 128,
+                                    "osl": 128,
+                                    "max_concurrency": 1,
+                                    "ttft": 45.0,
+                                }
+                            ],
+                            "report_data": {
+                                "parameter_support_tests": {
+                                    "results": {"test_smoke": [{"status": "passed"}]}
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+    with patch.object(
+        gra,
+        "load_git_release_performance_data",
+        return_value=base_release_performance_data,
+    ), patch.object(
+        gra,
+        "get_release_performance_path",
+        return_value=tmp_path
+        / "benchmarking"
+        / "benchmark_targets"
+        / "release_performance.json",
+    ):
+        output_path = gra.write_release_performance_diff_output(
+            output_dir, release_performance_data
+        )
+
+    diff_data = json.loads(output_path.read_text())
+    assert diff_data["records"] == [
+        {
+            "after_entry": release_performance_data["models"]["DemoModel"]["n150"][
+                "demo_impl"
+            ]["vLLM"],
+            "before_entry": base_release_performance_data["models"]["DemoModel"][
+                "n150"
+            ]["demo_impl"]["vLLM"],
+            "device": "N150",
+            "diff_status": "changed",
+            "impl_id": "demo_impl",
+            "inference_engine": "vllm",
+            "model_arch": "DemoModel",
+            "summary": "Perf status: functional -> target; Benchmarks ~1; LLM API tests ~1",
+            "template_key": build_template_key(
+                "demo_impl", ["demo/model"], ["N150"], "vllm"
+            ),
+            "weights": ["demo/model"],
+        }
+    ]
 
 
 def test_write_release_notes_uses_raw_json_inputs(tmp_path):
@@ -547,6 +703,8 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
                 return output_dir / "release_notes.md"
             if name == "write_release_performance_outputs":
                 return {"schema_version": "0.1.0", "models": {}}
+            if name == "write_release_performance_diff_output":
+                return output_dir / "release_performance_diff.json"
             return None
 
         return _inner
@@ -572,6 +730,10 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
         side_effect=mark_event("write_release_performance_outputs"),
     ) as performance_mock, patch.object(
         gra,
+        "write_release_performance_diff_output",
+        side_effect=mark_event("write_release_performance_diff_output"),
+    ) as performance_diff_mock, patch.object(
+        gra,
         "write_release_model_spec_output",
         side_effect=mark_event("write_release_model_spec_output"),
     ) as export_mock, patch.object(
@@ -589,6 +751,9 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     generate_mock.assert_called_once_with(merged_spec, False)
     write_output_mock.assert_called_once()
     performance_mock.assert_called_once_with(merged_spec, output_dir, False)
+    performance_diff_mock.assert_called_once_with(
+        output_dir, {"schema_version": "0.1.0", "models": {}}
+    )
     export_mock.assert_called_once_with(
         model_spec_path=model_spec_path,
         output_path=release_model_spec_path,
@@ -607,10 +772,115 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     emit_mock.assert_called_once_with(output_dir / "release_artifacts_summary.md")
     assert event_order == [
         "write_release_performance_outputs",
+        "write_release_performance_diff_output",
         "write_release_model_spec_output",
         "regenerate_model_support_docs_and_update_readme",
         "write_release_notes",
     ]
+
+
+def test_main_release_run_id_reads_release_workflow(tmp_path):
+    ci_json_path = tmp_path / "last_good.json"
+    ci_json_path.write_text("{}")
+    output_dir = tmp_path / "release_logs" / "v0.10.0"
+    args = Namespace(
+        models_ci_last_good_json=None,
+        models_ci_run_id=23578993514,
+        out_root=None,
+        dev=False,
+        release=True,
+        output_dir=str(output_dir),
+        model_spec_path=str(tmp_path / "workflows" / "model_spec.py"),
+        readme_path=str(tmp_path / "README.md"),
+        release_model_spec_path=str(tmp_path / "release_model_spec.json"),
+        dry_run=False,
+    )
+    merged_spec = {"model-a": make_record("model-a", make_image("demo"))}
+    result_tuple = (defaultdict(list), 0, {}, {}, defaultdict(list))
+
+    fake_models_ci_reader = SimpleNamespace(
+        run_ci_pipeline=Mock(return_value=ci_json_path)
+    )
+
+    with patch.dict(
+        "sys.modules", {"scripts.release.models_ci_reader": fake_models_ci_reader}
+    ), patch.object(gra, "configure_logging"), patch.object(
+        gra, "get_versioned_release_logs_dir", return_value=output_dir
+    ), patch(
+        "argparse.ArgumentParser.parse_args",
+        return_value=args,
+    ), patch.object(
+        gra, "resolve_release_output_dir", return_value=output_dir
+    ), patch.object(gra, "check_docker_installed", return_value=True), patch.object(
+        gra, "check_crane_installed", return_value=True
+    ), patch.object(
+        gra, "merge_specs_with_ci_data", return_value=merged_spec
+    ), patch.object(
+        gra, "generate_release_artifacts", return_value=result_tuple
+    ), patch.object(gra, "write_output"), patch.object(
+        gra,
+        "write_release_performance_outputs",
+        return_value={"schema_version": "0.1.0", "models": {}},
+    ), patch.object(gra, "write_release_performance_diff_output"), patch.object(
+        gra, "write_release_model_spec_output"
+    ), patch.object(
+        gra, "regenerate_model_support_docs_and_update_readme"
+    ), patch.object(
+        gra, "write_release_notes", return_value=output_dir / "release_notes.md"
+    ), patch.object(gra, "emit_markdown_summary"), patch.object(
+        gra, "get_version", return_value="0.10.0"
+    ):
+        assert gra.main() == 0
+
+    fake_models_ci_reader.run_ci_pipeline.assert_called_once_with(
+        23578993514, output_dir, workflow_file=gra.RELEASE_WORKFLOW_FILE
+    )
+
+
+def test_main_dev_run_id_keeps_default_workflow(tmp_path):
+    ci_json_path = tmp_path / "last_good.json"
+    ci_json_path.write_text("{}")
+    output_dir = tmp_path / "release_logs" / "v0.10.0"
+    args = Namespace(
+        models_ci_last_good_json=None,
+        models_ci_run_id=23578993514,
+        out_root=None,
+        dev=True,
+        release=False,
+        output_dir=str(output_dir),
+        model_spec_path=str(tmp_path / "workflows" / "model_spec.py"),
+        readme_path=str(tmp_path / "README.md"),
+        release_model_spec_path=str(tmp_path / "release_model_spec.json"),
+        dry_run=False,
+    )
+    merged_spec = {"model-a": make_record("model-a", make_image("demo", channel="dev"))}
+    result_tuple = (defaultdict(list), 0, {}, {}, defaultdict(list))
+
+    fake_models_ci_reader = SimpleNamespace(
+        run_ci_pipeline=Mock(return_value=ci_json_path)
+    )
+
+    with patch.dict(
+        "sys.modules", {"scripts.release.models_ci_reader": fake_models_ci_reader}
+    ), patch.object(gra, "configure_logging"), patch.object(
+        gra, "get_versioned_release_logs_dir", return_value=output_dir
+    ), patch(
+        "argparse.ArgumentParser.parse_args",
+        return_value=args,
+    ), patch.object(
+        gra, "resolve_release_output_dir", return_value=output_dir
+    ), patch.object(gra, "check_docker_installed", return_value=True), patch.object(
+        gra, "check_crane_installed", return_value=True
+    ), patch.object(
+        gra, "merge_specs_with_ci_data", return_value=merged_spec
+    ), patch.object(
+        gra, "generate_release_artifacts", return_value=result_tuple
+    ), patch.object(gra, "write_output"), patch.object(gra, "emit_markdown_summary"):
+        assert gra.main() == 0
+
+    fake_models_ci_reader.run_ci_pipeline.assert_called_once_with(
+        23578993514, output_dir
+    )
 
 
 def test_main_dev_flow_skips_release_only_compatibility_outputs(tmp_path):

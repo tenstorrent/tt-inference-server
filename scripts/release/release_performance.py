@@ -11,7 +11,12 @@ import unicodedata
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+try:
+    from release_diff import ReleaseDiffRecord
+except ImportError:
+    from scripts.release.release_diff import ReleaseDiffRecord
 
 from workflows.perf_targets import get_perf_target
 
@@ -309,6 +314,369 @@ def iter_release_performance_entries(
                 impl_engines = device_impls[impl_id]
                 for inference_engine in sorted(impl_engines.keys()):
                     yield impl_engines[inference_engine]
+
+
+PerformanceEntry = Dict[str, Any]
+PerformanceFullKey = Tuple[str, str, str, str]
+PerformancePartialKey = Tuple[str, str, str]
+_AMBIGUOUS_MATCH = object()
+
+
+def _normalize_model_name(model_name: Any) -> str:
+    return str(model_name or "").strip().lower()
+
+
+def _normalize_engine_key(inference_engine: Any) -> str:
+    return normalize_inference_engine_name(inference_engine).strip().lower()
+
+
+def build_release_performance_entry_indices(
+    release_performance_data: Dict[str, Any],
+) -> Tuple[
+    Dict[PerformanceFullKey, PerformanceEntry],
+    Dict[PerformancePartialKey, PerformanceEntry],
+]:
+    """Build exact and fallback indices for release-performance entry matching."""
+    full_index: Dict[PerformanceFullKey, PerformanceEntry] = {}
+    partial_candidates: Dict[PerformancePartialKey, Any] = {}
+
+    for entry in iter_release_performance_entries(release_performance_data):
+        full_key = (
+            _normalize_model_name(entry.get("model")),
+            normalize_device_name(entry.get("device")),
+            str(entry.get("impl_id") or "").strip(),
+            _normalize_engine_key(entry.get("inference_engine")),
+        )
+        partial_key = (
+            str(entry.get("impl_id") or "").strip(),
+            normalize_device_name(entry.get("device")),
+            _normalize_engine_key(entry.get("inference_engine")),
+        )
+        full_index[full_key] = entry
+
+        existing_entry = partial_candidates.get(partial_key)
+        if existing_entry is None:
+            partial_candidates[partial_key] = entry
+        else:
+            partial_candidates[partial_key] = _AMBIGUOUS_MATCH
+
+    partial_index = {
+        key: value
+        for key, value in partial_candidates.items()
+        if value is not _AMBIGUOUS_MATCH
+    }
+    return full_index, partial_index
+
+
+def lookup_release_performance_entry(
+    full_index: Dict[PerformanceFullKey, PerformanceEntry],
+    partial_index: Dict[PerformancePartialKey, PerformanceEntry],
+    record: ReleaseDiffRecord,
+    device: str,
+) -> Optional[PerformanceEntry]:
+    """Resolve one release diff record/device pair to a release-performance entry."""
+    full_key = (
+        _normalize_model_name(record.get("model_arch")),
+        normalize_device_name(device),
+        str(record.get("impl_id") or "").strip(),
+        _normalize_engine_key(record.get("inference_engine")),
+    )
+    entry = full_index.get(full_key)
+    if entry is not None:
+        return entry
+
+    partial_key = (
+        str(record.get("impl_id") or "").strip(),
+        normalize_device_name(device),
+        _normalize_engine_key(record.get("inference_engine")),
+    )
+    return partial_index.get(partial_key)
+
+
+def _benchmark_row_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
+    return (
+        row.get("task_type", "text"),
+        row.get("isl", row.get("input_sequence_length", 0)),
+        row.get("osl", row.get("output_sequence_length", 0)),
+        row.get("image_height", 0),
+        row.get("image_width", 0),
+        row.get("images_per_prompt", 0),
+        row.get("max_concurrency", row.get("max_con", 0)),
+    )
+
+
+def _index_benchmark_rows(rows: Any) -> Dict[Tuple[Any, ...], str]:
+    indexed_rows = {}
+    if not isinstance(rows, list):
+        return indexed_rows
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        indexed_rows[_benchmark_row_key(row)] = json.dumps(row, sort_keys=True)
+    return indexed_rows
+
+
+def _summarize_parameter_support_results(
+    entry: Optional[PerformanceEntry],
+) -> Dict[str, str]:
+    if entry is None:
+        return {}
+    tests = entry.get("report_data", {}).get("parameter_support_tests", {})
+    results = tests.get("results", {})
+    if not isinstance(results, dict):
+        return {}
+
+    summary = {}
+    for test_case, test_results in results.items():
+        if not isinstance(test_results, list):
+            continue
+        total_count = len(test_results)
+        passed_count = sum(
+            1 for test_result in test_results if test_result.get("status") == "passed"
+        )
+        failed_count = sum(
+            1 for test_result in test_results if test_result.get("status") == "failed"
+        )
+        summary[test_case] = (
+            f"{passed_count}/{total_count} passed, {failed_count} failed"
+        )
+    return summary
+
+
+def _format_change_counts(label: str, added: int, removed: int, updated: int) -> str:
+    parts = []
+    if added:
+        parts.append(f"+{added}")
+    if removed:
+        parts.append(f"-{removed}")
+    if updated:
+        parts.append(f"~{updated}")
+    if not parts:
+        return ""
+    return f"{label} {' '.join(parts)}"
+
+
+def _normalize_status_value(status_value: Any) -> Optional[str]:
+    if status_value is None:
+        return None
+    status_text = str(status_value)
+    if not status_text:
+        return None
+    if status_text.startswith("ModelStatusTypes."):
+        return status_text.split(".", 1)[1]
+    return status_text
+
+
+def _format_status_change(
+    before: Any, after: Any, unchanged_label: str = "No change"
+) -> str:
+    normalized_before = _normalize_status_value(before)
+    normalized_after = _normalize_status_value(after)
+    if normalized_before and normalized_after:
+        if normalized_before != normalized_after:
+            return f"{normalized_before} -> {normalized_after}"
+        return f"{normalized_after} (no change)"
+    if normalized_after:
+        return f"New: {normalized_after}"
+    if normalized_before:
+        return f"Removed: {normalized_before}"
+    return unchanged_label
+
+
+def _summarize_benchmark_changes(
+    before_entry: Optional[PerformanceEntry], after_entry: Optional[PerformanceEntry]
+) -> str:
+    before_rows = _index_benchmark_rows(
+        before_entry.get("benchmarks_summary") if before_entry else []
+    )
+    after_rows = _index_benchmark_rows(
+        after_entry.get("benchmarks_summary") if after_entry else []
+    )
+    if not before_rows and not after_rows:
+        return ""
+    if not before_rows:
+        return f"Benchmarks added ({len(after_rows)} row(s))"
+    if not after_rows:
+        return f"Benchmarks removed ({len(before_rows)} row(s))"
+
+    before_keys = set(before_rows.keys())
+    after_keys = set(after_rows.keys())
+    updated_count = sum(
+        1 for key in before_keys & after_keys if before_rows[key] != after_rows[key]
+    )
+    return _format_change_counts(
+        "Benchmarks",
+        len(after_keys - before_keys),
+        len(before_keys - after_keys),
+        updated_count,
+    )
+
+
+def _summarize_test_result_changes(
+    before_entry: Optional[PerformanceEntry], after_entry: Optional[PerformanceEntry]
+) -> str:
+    before_summary = _summarize_parameter_support_results(before_entry)
+    after_summary = _summarize_parameter_support_results(after_entry)
+    if not before_summary and not after_summary:
+        return ""
+    if not before_summary:
+        return f"LLM API tests added ({len(after_summary)} case(s))"
+    if not after_summary:
+        return f"LLM API tests removed ({len(before_summary)} case(s))"
+
+    before_keys = set(before_summary.keys())
+    after_keys = set(after_summary.keys())
+    updated_count = sum(
+        1
+        for key in before_keys & after_keys
+        if before_summary[key] != after_summary[key]
+    )
+    return _format_change_counts(
+        "LLM API tests",
+        len(after_keys - before_keys),
+        len(before_keys - after_keys),
+        updated_count,
+    )
+
+
+def summarize_release_performance_diff(
+    before_entry: Optional[PerformanceEntry], after_entry: Optional[PerformanceEntry]
+) -> str:
+    """Return the human-readable summary used by release notes and JSON output."""
+    if before_entry is None and after_entry is None:
+        return "No release data"
+    if before_entry is None:
+        return "New release data"
+    if after_entry is None:
+        return "Removed release data"
+
+    changes = []
+    if before_entry.get("perf_status") != after_entry.get("perf_status"):
+        changes.append(
+            "Perf status: "
+            + _format_status_change(
+                before_entry.get("perf_status"),
+                after_entry.get("perf_status"),
+                unchanged_label="No change",
+            )
+        )
+    if before_entry.get("accuracy_status") != after_entry.get("accuracy_status"):
+        changes.append(
+            "Accuracy status: "
+            + _format_status_change(
+                before_entry.get("accuracy_status"),
+                after_entry.get("accuracy_status"),
+                unchanged_label="No change",
+            )
+        )
+
+    benchmark_change = _summarize_benchmark_changes(before_entry, after_entry)
+    if benchmark_change:
+        changes.append(benchmark_change)
+
+    test_change = _summarize_test_result_changes(before_entry, after_entry)
+    if test_change:
+        changes.append(test_change)
+
+    if not changes:
+        return "No performance changes"
+    return "; ".join(changes)
+
+
+def _classify_release_performance_diff(
+    before_entry: Optional[PerformanceEntry],
+    after_entry: Optional[PerformanceEntry],
+    summary: str,
+) -> str:
+    if before_entry is None and after_entry is None:
+        return "no_data"
+    if before_entry is None:
+        return "new"
+    if after_entry is None:
+        return "removed"
+    if summary == "No performance changes":
+        return "unchanged"
+    return "changed"
+
+
+def build_release_performance_diff_records(
+    release_diff_records: Sequence[ReleaseDiffRecord],
+    release_performance_data: Dict[str, Any],
+    base_release_performance_data: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Build release-scoped performance diff records keyed by template/device."""
+    current_indices = build_release_performance_entry_indices(release_performance_data)
+    base_indices = build_release_performance_entry_indices(
+        base_release_performance_data
+    )
+    diff_records: List[Dict[str, Any]] = []
+
+    for record in release_diff_records:
+        for device in record.get("devices", []):
+            after_entry = lookup_release_performance_entry(
+                current_indices[0], current_indices[1], record, device
+            )
+            before_entry = lookup_release_performance_entry(
+                base_indices[0], base_indices[1], record, device
+            )
+            summary = summarize_release_performance_diff(before_entry, after_entry)
+            diff_records.append(
+                {
+                    "template_key": record.get("template_key"),
+                    "model_arch": record.get("model_arch"),
+                    "impl_id": record.get("impl_id"),
+                    "inference_engine": record.get("inference_engine"),
+                    "weights": deepcopy(record.get("weights", [])),
+                    "device": device,
+                    "diff_status": _classify_release_performance_diff(
+                        before_entry, after_entry, summary
+                    ),
+                    "summary": summary,
+                    "before_entry": deepcopy(before_entry),
+                    "after_entry": deepcopy(after_entry),
+                }
+            )
+
+    return diff_records
+
+
+def build_release_performance_diff_data(
+    release_diff_records: Sequence[ReleaseDiffRecord],
+    release_performance_data: Dict[str, Any],
+    base_release_performance_data: Dict[str, Any],
+    base_ref: str = "HEAD",
+    compared_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Build the structured release-scoped performance diff artifact."""
+    compared_path_value = compared_path or get_release_performance_path()
+    try:
+        compared_path_text = str(compared_path_value.relative_to(PROJECT_ROOT))
+    except ValueError:
+        compared_path_text = str(compared_path_value)
+
+    diff_records = build_release_performance_diff_records(
+        release_diff_records,
+        release_performance_data,
+        base_release_performance_data,
+    )
+    return {
+        "schema_version": RELEASE_PERFORMANCE_SCHEMA_VERSION,
+        "base_ref": base_ref,
+        "compared_path": compared_path_text,
+        "records": diff_records,
+    }
+
+
+def write_release_performance_diff_data(
+    release_performance_diff_data: Dict[str, Any], path: Path
+) -> Path:
+    """Write the release performance diff JSON with deterministic formatting."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(release_performance_diff_data, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 def _split_benchmark_rows(entry: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:

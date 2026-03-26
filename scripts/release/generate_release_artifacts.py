@@ -60,8 +60,10 @@ try:
     )
     from release_performance import (
         build_release_performance_data,
+        build_release_performance_diff_data,
         get_release_performance_path,
         load_release_performance_data,
+        write_release_performance_diff_data,
         write_release_performance_data,
     )
     from release_paths import get_versioned_release_logs_dir, resolve_release_output_dir
@@ -77,8 +79,10 @@ except ImportError:
     )
     from scripts.release.release_performance import (
         build_release_performance_data,
+        build_release_performance_diff_data,
         get_release_performance_path,
         load_release_performance_data,
+        write_release_performance_diff_data,
         write_release_performance_data,
     )
     from scripts.release.release_paths import (
@@ -97,6 +101,7 @@ IMAGE_STATUS_EXISTS_WITHOUT_CI = "exists_without_ci"
 IMAGE_STATUS_COPY_FROM_CI = "copy_from_ci"
 IMAGE_STATUS_COPIED = "copied"
 IMAGE_STATUS_NEEDS_BUILD = "needs_build"
+RELEASE_WORKFLOW_FILE = "release.yml"
 CommitPair = Tuple[Optional[str], Optional[str]]
 
 
@@ -776,6 +781,31 @@ def write_release_performance_outputs(
     return release_performance_data
 
 
+def write_release_performance_diff_output(
+    output_dir: Path,
+    release_performance_data: Dict[str, Any],
+) -> Path:
+    """Write the release-scoped performance diff JSON artifact."""
+    release_diff_records = load_optional_json(
+        output_dir / "pre_release_models_diff.json", default=[]
+    )
+    release_performance_path = get_release_performance_path()
+    base_release_performance_data = load_git_release_performance_data(
+        release_performance_path
+    )
+    release_performance_diff_data = build_release_performance_diff_data(
+        release_diff_records=release_diff_records,
+        release_performance_data=release_performance_data,
+        base_release_performance_data=base_release_performance_data,
+        base_ref="HEAD",
+        compared_path=release_performance_path,
+    )
+    output_path = output_dir / "release_performance_diff.json"
+    write_release_performance_diff_data(release_performance_diff_data, output_path)
+    logger.info(f"Written release performance diff JSON to {output_path}")
+    return output_path
+
+
 def write_release_model_spec_output(
     model_spec_path: Path,
     output_path: Path,
@@ -910,9 +940,14 @@ def main():
     if args.models_ci_run_id:
         from scripts.release.models_ci_reader import run_ci_pipeline
 
+        run_ci_pipeline_kwargs = {}
+        if args.release:
+            run_ci_pipeline_kwargs["workflow_file"] = RELEASE_WORKFLOW_FILE
+
         ci_json_path = run_ci_pipeline(
             args.models_ci_run_id,
             resolve_release_output_dir(args.out_root),
+            **run_ci_pipeline_kwargs,
         )
     else:
         ci_json_path = Path(args.models_ci_last_good_json).resolve()
@@ -961,19 +996,21 @@ def main():
         release_performance_data = write_release_performance_outputs(
             merged_spec, output_dir, args.dry_run
         )
-        logger.info("\nStep 5: Writing release model spec compatibility artifact...")
+        logger.info("\nStep 5: Writing release performance diff output...")
+        write_release_performance_diff_output(output_dir, release_performance_data)
+        logger.info("\nStep 6: Writing release model spec compatibility artifact...")
         write_release_model_spec_output(
             model_spec_path=Path(args.model_spec_path),
             output_path=Path(args.release_model_spec_path),
             dry_run=args.dry_run,
         )
-        logger.info("\nStep 6: Regenerating model support docs and README...")
+        logger.info("\nStep 7: Regenerating model support docs and README...")
         regenerate_model_support_docs_and_update_readme(
             model_spec_path=Path(args.model_spec_path),
             readme_path=Path(args.readme_path),
             dry_run=args.dry_run,
         )
-        logger.info("\nStep 7: Writing release notes...")
+        logger.info("\nStep 8: Writing release notes...")
         notes_path = write_release_notes(
             output_dir,
             get_version(),

@@ -248,13 +248,15 @@ On success, continue Release steps.
 ## Release
 
 ```bash
-python3 release.py --models-ci-run-id 19339722549 --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}"
+python3 release.py --models-ci-run-id 23578993514 --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}"
 ```
 
 ### step 5: generate release artifacts
 
-Evalulate acceptance criteria for `--models-ci-run-id` from reports.json `acceptance_criteria=True` field for each model. All models must be acceptance_criteria. For the release to be accepted as success.
+Evalulate acceptance criteria for `--models-ci-run-id` from reports.json `acceptance_criteria=True` field for each model. All models must be passing acceptance_criteria for the release to be accepted as success.
 Log and move (via [crane](https://github.com/google/go-containerregistry/blob/BASE_BRANCH_OR_COMMIT/cmd/crane/doc/crane.md)) the Docker images built within the Release workflow.
+
+
 The two key release artifacts are:
 - Docker images
 - Repo compatibility artifacts and documentation
@@ -264,7 +266,7 @@ When using `--models-ci-run-id` in this step, pass the Release Models CI
 workflow run ID from Step 4.
 
 ```bash
-python3 scripts/release/generate_release_artifacts.py --models-ci-run-id 29339722549 --release
+python3 scripts/release/generate_release_artifacts.py --models-ci-run-id 23578993514 --release
 ```
 
 #### Outputs:
@@ -275,6 +277,7 @@ python3 scripts/release/generate_release_artifacts.py --models-ci-run-id 2933972
 - `release_logs/v{VERSION}/release_artifacts_summary.md`
 - `release_logs/v{VERSION}/models_ci_all_results_*.json`
 - `release_logs/v{VERSION}/release_notes_v{VERSION}.md`
+- `release_logs/v{VERSION}/release_performance_diff.json`
 - `benchmarking/benchmark_targets/release_performance.json`
 
 The checked-in `benchmarking/benchmark_targets/release_performance.json` baseline

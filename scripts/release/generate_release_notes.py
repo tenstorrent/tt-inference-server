@@ -10,27 +10,23 @@ import json
 import subprocess
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 try:
     from release_diff import ReleaseDiffRecord
     from release_paths import get_versioned_release_logs_dir
     from release_performance import (
         RELEASE_PERFORMANCE_SCHEMA_VERSION,
+        build_release_performance_diff_records,
         get_release_performance_path,
-        iter_release_performance_entries,
-        normalize_device_name,
-        normalize_inference_engine_name,
     )
 except ImportError:
     from scripts.release.release_diff import ReleaseDiffRecord
     from scripts.release.release_paths import get_versioned_release_logs_dir
     from scripts.release.release_performance import (
         RELEASE_PERFORMANCE_SCHEMA_VERSION,
+        build_release_performance_diff_records,
         get_release_performance_path,
-        iter_release_performance_entries,
-        normalize_device_name,
-        normalize_inference_engine_name,
     )
 
 
@@ -39,7 +35,6 @@ EMPTY_RELEASE_PERFORMANCE_DATA = {
     "schema_version": RELEASE_PERFORMANCE_SCHEMA_VERSION,
     "models": {},
 }
-_AMBIGUOUS_MATCH = object()
 
 SECTION_TITLES = {
     "summary_of_changes": "Summary of Changes",
@@ -52,10 +47,6 @@ SECTION_TITLES = {
     "contributors": "Contributors",
     "assets": "Assets",
 }
-
-PerformanceEntry = Dict[str, Any]
-PerformanceFullKey = Tuple[str, str, str, str]
-PerformancePartialKey = Tuple[str, str, str]
 
 
 def read_version(version_file: Path) -> str:
@@ -272,274 +263,13 @@ def render_release_artifacts_summary(summary_data: Dict[str, Any]) -> str:
     return "\n\n".join(section for section in sections if section.strip())
 
 
-def _normalize_model_name(model_name: Any) -> str:
-    return str(model_name or "").strip().lower()
-
-
-def _normalize_engine_key(inference_engine: Any) -> str:
-    return normalize_inference_engine_name(inference_engine).strip().lower()
-
-
-def _performance_full_key(entry: PerformanceEntry) -> PerformanceFullKey:
-    return (
-        _normalize_model_name(entry.get("model")),
-        normalize_device_name(entry.get("device")),
-        str(entry.get("impl_id") or "").strip(),
-        _normalize_engine_key(entry.get("inference_engine")),
-    )
-
-
-def _performance_partial_key(entry: PerformanceEntry) -> PerformancePartialKey:
-    return (
-        str(entry.get("impl_id") or "").strip(),
-        normalize_device_name(entry.get("device")),
-        _normalize_engine_key(entry.get("inference_engine")),
-    )
-
-
-def _build_performance_entry_indices(
-    release_performance_data: Dict[str, Any],
-) -> Tuple[
-    Dict[PerformanceFullKey, PerformanceEntry],
-    Dict[PerformancePartialKey, PerformanceEntry],
-]:
-    full_index: Dict[PerformanceFullKey, PerformanceEntry] = {}
-    partial_candidates: Dict[PerformancePartialKey, Any] = {}
-
-    for entry in iter_release_performance_entries(release_performance_data):
-        full_key = _performance_full_key(entry)
-        partial_key = _performance_partial_key(entry)
-        full_index[full_key] = entry
-
-        existing_entry = partial_candidates.get(partial_key)
-        if existing_entry is None:
-            partial_candidates[partial_key] = entry
-        else:
-            partial_candidates[partial_key] = _AMBIGUOUS_MATCH
-
-    partial_index = {
-        key: value
-        for key, value in partial_candidates.items()
-        if value is not _AMBIGUOUS_MATCH
-    }
-    return full_index, partial_index
-
-
-def _lookup_performance_entry(
-    full_index: Dict[PerformanceFullKey, PerformanceEntry],
-    partial_index: Dict[PerformancePartialKey, PerformanceEntry],
-    record: ReleaseDiffRecord,
-    device: str,
-) -> Optional[PerformanceEntry]:
-    full_key = (
-        _normalize_model_name(record.get("model_arch")),
-        normalize_device_name(device),
-        str(record.get("impl_id") or "").strip(),
-        _normalize_engine_key(record.get("inference_engine")),
-    )
-    entry = full_index.get(full_key)
-    if entry is not None:
-        return entry
-
-    partial_key = (
-        str(record.get("impl_id") or "").strip(),
-        normalize_device_name(device),
-        _normalize_engine_key(record.get("inference_engine")),
-    )
-    return partial_index.get(partial_key)
-
-
-def _benchmark_row_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
-    return (
-        row.get("task_type", "text"),
-        row.get("isl", row.get("input_sequence_length", 0)),
-        row.get("osl", row.get("output_sequence_length", 0)),
-        row.get("image_height", 0),
-        row.get("image_width", 0),
-        row.get("images_per_prompt", 0),
-        row.get("max_concurrency", row.get("max_con", 0)),
-    )
-
-
-def _index_benchmark_rows(rows: Any) -> Dict[Tuple[Any, ...], str]:
-    indexed_rows = {}
-    if not isinstance(rows, list):
-        return indexed_rows
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        indexed_rows[_benchmark_row_key(row)] = json.dumps(row, sort_keys=True)
-    return indexed_rows
-
-
-def _summarize_parameter_support_results(
-    entry: Optional[PerformanceEntry],
-) -> Dict[str, str]:
-    if entry is None:
-        return {}
-    tests = entry.get("report_data", {}).get("parameter_support_tests", {})
-    results = tests.get("results", {})
-    if not isinstance(results, dict):
-        return {}
-
-    summary = {}
-    for test_case, test_results in results.items():
-        if not isinstance(test_results, list):
-            continue
-        total_count = len(test_results)
-        passed_count = sum(
-            1 for test_result in test_results if test_result.get("status") == "passed"
-        )
-        failed_count = sum(
-            1 for test_result in test_results if test_result.get("status") == "failed"
-        )
-        summary[test_case] = (
-            f"{passed_count}/{total_count} passed, {failed_count} failed"
-        )
-    return summary
-
-
-def _format_change_counts(label: str, added: int, removed: int, updated: int) -> str:
-    parts = []
-    if added:
-        parts.append(f"+{added}")
-    if removed:
-        parts.append(f"-{removed}")
-    if updated:
-        parts.append(f"~{updated}")
-    if not parts:
-        return ""
-    return f"{label} {' '.join(parts)}"
-
-
-def _summarize_benchmark_changes(
-    before_entry: Optional[PerformanceEntry], after_entry: Optional[PerformanceEntry]
-) -> str:
-    before_rows = _index_benchmark_rows(
-        before_entry.get("benchmarks_summary") if before_entry else []
-    )
-    after_rows = _index_benchmark_rows(
-        after_entry.get("benchmarks_summary") if after_entry else []
-    )
-    if not before_rows and not after_rows:
-        return ""
-    if not before_rows:
-        return f"Benchmarks added ({len(after_rows)} row(s))"
-    if not after_rows:
-        return f"Benchmarks removed ({len(before_rows)} row(s))"
-
-    before_keys = set(before_rows.keys())
-    after_keys = set(after_rows.keys())
-    updated_count = sum(
-        1 for key in before_keys & after_keys if before_rows[key] != after_rows[key]
-    )
-    return _format_change_counts(
-        "Benchmarks",
-        len(after_keys - before_keys),
-        len(before_keys - after_keys),
-        updated_count,
-    )
-
-
-def _summarize_test_result_changes(
-    before_entry: Optional[PerformanceEntry], after_entry: Optional[PerformanceEntry]
-) -> str:
-    before_summary = _summarize_parameter_support_results(before_entry)
-    after_summary = _summarize_parameter_support_results(after_entry)
-    if not before_summary and not after_summary:
-        return ""
-    if not before_summary:
-        return f"LLM API tests added ({len(after_summary)} case(s))"
-    if not after_summary:
-        return f"LLM API tests removed ({len(before_summary)} case(s))"
-
-    before_keys = set(before_summary.keys())
-    after_keys = set(after_summary.keys())
-    updated_count = sum(
-        1
-        for key in before_keys & after_keys
-        if before_summary[key] != after_summary[key]
-    )
-    return _format_change_counts(
-        "LLM API tests",
-        len(after_keys - before_keys),
-        len(before_keys - after_keys),
-        updated_count,
-    )
-
-
-def _summarize_performance_diff(
-    before_entry: Optional[PerformanceEntry], after_entry: Optional[PerformanceEntry]
-) -> str:
-    if before_entry is None and after_entry is None:
+def _render_performance_diff_cell(diff_records: List[Dict[str, Any]]) -> str:
+    if not diff_records:
         return "No release data"
-    if before_entry is None:
-        return "New release data"
-    if after_entry is None:
-        return "Removed release data"
-
-    changes = []
-    if before_entry.get("perf_status") != after_entry.get("perf_status"):
-        changes.append(
-            "Perf status: "
-            + _format_status_change(
-                before_entry.get("perf_status"),
-                after_entry.get("perf_status"),
-                unchanged_label="No change",
-            )
-        )
-    if before_entry.get("accuracy_status") != after_entry.get("accuracy_status"):
-        changes.append(
-            "Accuracy status: "
-            + _format_status_change(
-                str(before_entry.get("accuracy_status"))
-                if before_entry.get("accuracy_status") is not None
-                else None,
-                str(after_entry.get("accuracy_status"))
-                if after_entry.get("accuracy_status") is not None
-                else None,
-                unchanged_label="No change",
-            )
-        )
-
-    benchmark_change = _summarize_benchmark_changes(before_entry, after_entry)
-    if benchmark_change:
-        changes.append(benchmark_change)
-
-    test_change = _summarize_test_result_changes(before_entry, after_entry)
-    if test_change:
-        changes.append(test_change)
-
-    if not changes:
-        return "No performance changes"
-    return "; ".join(changes)
-
-
-def _render_performance_diff_cell(
-    record: ReleaseDiffRecord,
-    current_indices: Tuple[
-        Dict[PerformanceFullKey, PerformanceEntry],
-        Dict[PerformancePartialKey, PerformanceEntry],
-    ],
-    base_indices: Tuple[
-        Dict[PerformanceFullKey, PerformanceEntry],
-        Dict[PerformancePartialKey, PerformanceEntry],
-    ],
-) -> str:
-    device_summaries = []
-    for device in record.get("devices", []):
-        current_entry = _lookup_performance_entry(
-            current_indices[0], current_indices[1], record, device
-        )
-        base_entry = _lookup_performance_entry(
-            base_indices[0], base_indices[1], record, device
-        )
-        summary = _summarize_performance_diff(base_entry, current_entry)
-        device_summaries.append(f"{device}: {summary}")
-
-    if not device_summaries:
-        return "No release data"
-    return "<br>".join(device_summaries)
+    return "<br>".join(
+        f"{diff_record['device']}: {diff_record['summary']}"
+        for diff_record in diff_records
+    )
 
 
 def render_model_diff_markdown(
@@ -553,8 +283,14 @@ def render_model_diff_markdown(
         lines.append("No updates were made.")
         return "\n".join(lines)
 
-    current_indices = _build_performance_entry_indices(release_performance_data)
-    base_indices = _build_performance_entry_indices(base_release_performance_data)
+    performance_diff_by_template: Dict[str, List[Dict[str, Any]]] = {}
+    for diff_record in build_release_performance_diff_records(
+        release_diff_records,
+        release_performance_data,
+        base_release_performance_data,
+    ):
+        template_key = str(diff_record.get("template_key") or "")
+        performance_diff_by_template.setdefault(template_key, []).append(diff_record)
 
     lines.extend(
         [
@@ -567,7 +303,7 @@ def render_model_diff_markdown(
         weights = record.get("weights") or []
         devices = record.get("devices") or []
         performance_diff = _render_performance_diff_cell(
-            record, current_indices, base_indices
+            performance_diff_by_template.get(str(record.get("template_key") or ""), [])
         )
         lines.append(
             "| "
