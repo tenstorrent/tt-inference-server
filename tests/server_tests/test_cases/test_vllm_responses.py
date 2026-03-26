@@ -605,7 +605,24 @@ def test_text(report_test, api_client, text_config, request):
             )
 
 
-@pytest.mark.parametrize("choice", ["auto", "none", "required"])
+@pytest.mark.parametrize(
+    "choice",
+    [
+        "auto",
+        pytest.param(
+            "none",
+            marks=pytest.mark.xfail(
+                reason="vLLM does not support tool_choice='none' https://github.com/vllm-project/vllm/issues/33966"
+            ),
+        ),
+        pytest.param(
+            "required",
+            marks=pytest.mark.xfail(
+                reason="vLLM does not support tool_choice='required' https://github.com/vllm-project/vllm/issues/33966"
+            ),
+        ),
+    ],
+)
 def test_tool_choice(report_test, api_client, choice, request):
     """Tests the 'tool_choice' parameter."""
     payload = {
@@ -672,7 +689,18 @@ def test_top_logprobs(report_test, api_client, top_logprobs_val, request):
         api_client(payload)
 
 
-@pytest.mark.parametrize("truncation", ["auto", "disabled"])
+@pytest.mark.parametrize(
+    "truncation",
+    [
+        pytest.param(
+            "auto",
+            marks=pytest.mark.xfail(
+                reason="vLLM does not support truncation=auto https://github.com/vllm-project/vllm/issues/38132"
+            ),
+        ),
+        "disabled",
+    ],
+)
 def test_truncation(report_test, api_client, truncation, max_context, request):
     """Tests the 'truncation' parameter.
 
