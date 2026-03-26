@@ -1937,6 +1937,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto",
+                },
                 override_tt_config={
                     "sample_on_device_mode": "decode_only",
                     "trace_region_size": 56000000,
