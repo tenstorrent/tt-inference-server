@@ -224,7 +224,7 @@ git push --force-with-lease origin "${RELEASE_BRANCH}"
 ### Step 4: Start `Release` Models CI GitHub Actions Workflow
 
 https://github.com/tenstorrent/tt-shield/actions/workflows/release.yml
-- use workflow from: BASE_BRANCH_OR_COMMIT
+- use workflow from: `main`
 - tt-metal ref: resolved from `release_logs/v{VERSION}/pre_release_models_diff.json`
 - tt-inference-server ref: ${RELEASE_BRANCH}
 - vllm: resolved from `release_logs/v{VERSION}/pre_release_models_diff.json`

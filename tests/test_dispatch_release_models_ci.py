@@ -26,7 +26,6 @@ def test_dispatch_release_workflow_posts_expected_payload(monkeypatch):
     monkeypatch.setattr(dispatch_ci, "_github_api_request", fake_github_api_request)
 
     run_url = dispatch_ci.dispatch_release_workflow(
-        base_ref="main",
         release_branch="stable",
         tt_metal_ref="metal-sha",
         vllm_ref="vllm-sha",

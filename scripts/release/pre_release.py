@@ -227,7 +227,7 @@ def resolve_pre_release_diff_path(version: str) -> Path:
     return get_versioned_release_logs_dir(version) / PRE_RELEASE_DIFF_JSON
 
 
-def start_release_models_ci(base_ref: str, release_branch: str) -> None:
+def start_release_models_ci(release_branch: str) -> None:
     """Dispatch the Release Models CI workflow from the pre-release diff JSON."""
     version = read_version(REPO_ROOT / "VERSION")
     release_diff_path = REPO_ROOT / resolve_pre_release_diff_path(version)
@@ -237,7 +237,6 @@ def start_release_models_ci(base_ref: str, release_branch: str) -> None:
     prune_release_models_ci_config(release_diff_path, models_ci_config_path)
     validate_release_models_ci_config(release_diff_path, models_ci_config_path)
     run_url = dispatch_release_workflow(
-        base_ref=base_ref,
         release_branch=release_branch,
         tt_metal_ref=tt_metal_ref,
         vllm_ref=vllm_ref,
@@ -306,7 +305,7 @@ def main() -> int:
     """Main entry point for pre-release preparation."""
     args = parse_args()
     if args.start_release_workflow and not args.commit:
-        start_release_models_ci(args.base_branch, args.release_branch)
+        start_release_models_ci(args.release_branch)
         return 0
 
     version = read_version(REPO_ROOT / "VERSION")
@@ -372,7 +371,7 @@ def main() -> int:
         capture_output=False,
     )
     if args.start_release_workflow:
-        start_release_models_ci(args.base_branch, args.release_branch)
+        start_release_models_ci(args.release_branch)
     return 0
 
 

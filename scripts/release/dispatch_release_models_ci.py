@@ -16,6 +16,7 @@ GITHUB_API_VERSION = "2022-11-28"
 TT_SHIELD_OWNER = "tenstorrent"
 TT_SHIELD_REPO = "tt-shield"
 RELEASE_WORKFLOW_FILE = "release.yml"
+TT_SHIELD_WORKFLOW_REF = "main"
 
 
 def normalize_dispatch_ref(base_ref: str) -> str:
@@ -108,13 +109,12 @@ def _find_recent_release_workflow_run_url(
 
 def dispatch_release_workflow(
     *,
-    base_ref: str,
     release_branch: str,
     tt_metal_ref: str,
     vllm_ref: str,
 ) -> Optional[str]:
     """Dispatch tt-shield release.yml and return a run URL when available."""
-    dispatch_ref = normalize_dispatch_ref(base_ref)
+    dispatch_ref = TT_SHIELD_WORKFLOW_REF
     token = get_github_token()
     payload = {
         "ref": dispatch_ref,

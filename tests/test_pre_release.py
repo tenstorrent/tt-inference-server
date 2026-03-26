@@ -260,7 +260,7 @@ def test_main_dispatch_only_mode_skips_generation_and_git_writes():
     ) as update_mock, patch.object(pr, "run_git_command") as git_mock:
         assert pr.main() == 0
 
-    dispatch_mock.assert_called_once_with("main", "stable")
+    dispatch_mock.assert_called_once_with("stable")
     read_version_mock.assert_not_called()
     prepare_mock.assert_not_called()
     update_mock.assert_not_called()
@@ -292,7 +292,7 @@ def test_start_release_models_ci_uses_versioned_diff_and_models_ci_config():
         "dispatch_release_workflow",
         return_value="https://github.com/run/123",
     ) as dispatch_mock:
-        pr.start_release_models_ci("main", "stable")
+        pr.start_release_models_ci("stable")
 
     refs_mock.assert_called_once_with(expected_diff_path)
     prune_mock.assert_called_once_with(
@@ -302,7 +302,6 @@ def test_start_release_models_ci_uses_versioned_diff_and_models_ci_config():
         expected_diff_path, expected_models_ci_config_path
     )
     dispatch_mock.assert_called_once_with(
-        base_ref="main",
         release_branch="stable",
         tt_metal_ref="metal-sha",
         vllm_ref="vllm-sha",
@@ -337,7 +336,7 @@ def test_start_release_models_ci_uses_versioned_diff_path():
         "dispatch_release_workflow",
         return_value="https://github.com/run/123",
     ) as dispatch_mock:
-        pr.start_release_models_ci("main", "stable")
+        pr.start_release_models_ci("stable")
 
     refs_mock.assert_called_once_with(
         pr.REPO_ROOT
@@ -345,7 +344,6 @@ def test_start_release_models_ci_uses_versioned_diff_path():
         / pr.PRE_RELEASE_DIFF_JSON
     )
     dispatch_mock.assert_called_once_with(
-        base_ref="main",
         release_branch="stable",
         tt_metal_ref="metal-sha",
         vllm_ref="vllm-sha",
@@ -367,8 +365,7 @@ def test_main_dispatches_release_workflow_after_push():
         if git_args and git_args[0] == "push":
             event_order.append("push")
 
-    def fake_start_release_models_ci(base_ref, release_branch):
-        assert base_ref == "main"
+    def fake_start_release_models_ci(release_branch):
         assert release_branch == "stable"
         event_order.append("dispatch")
 
@@ -388,4 +385,4 @@ def test_main_dispatches_release_workflow_after_push():
         assert pr.main() == 0
 
     assert event_order == ["push", "dispatch"]
-    dispatch_mock.assert_called_once_with("main", "stable")
+    dispatch_mock.assert_called_once_with("stable")
