@@ -2,13 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
-from server_tests.test_config import TEST_CONFIGS
-from workflows.utils import ensure_readwriteable_dir, run_command
+from tests.test_config import TEST_CONFIGS
+from workflows.utils import ensure_readwriteable_dir, get_repo_root_path, run_command
 from workflows.workflow_config import (
     WORKFLOW_CONFIGS,
     WORKFLOW_BENCHMARKS_AIPERF_CONFIG,
@@ -123,6 +125,34 @@ def run_single_workflow(model_spec, runtime_config, json_fpath):
     )
 
 
+def find_test_config_by_model_and_device(model: str, device: str):
+    config_path = (
+        get_repo_root_path() / "tests" / "server_tests" / "server_tests_config.json"
+    )
+    with Path(config_path).open("r") as handle:
+        configs = json.load(handle)
+
+    for config in configs:
+        if model in config.get("weights", []) and config.get("device") == device:
+            return config
+    return None
+
+
+def should_run_spec_tests(model_spec, runtime_config):
+    config = find_test_config_by_model_and_device(
+        model_spec.model_name, runtime_config.device
+    )
+    if config:
+        return True
+
+    logger.info(
+        "Skipping SPEC_TESTS for model=%s device=%s: no matching server test config.",
+        model_spec.model_name,
+        runtime_config.device,
+    )
+    return False
+
+
 def run_workflows(model_spec, runtime_config, json_fpath):
     workflow_results = []
     if WorkflowType.from_string(runtime_config.workflow) == WorkflowType.RELEASE:
@@ -131,8 +161,9 @@ def run_workflows(model_spec, runtime_config, json_fpath):
         workflows_to_run = [
             WorkflowType.EVALS,
             WorkflowType.BENCHMARKS,
-            WorkflowType.SPEC_TESTS,
         ]
+        if should_run_spec_tests(model_spec, runtime_config):
+            workflows_to_run.append(WorkflowType.SPEC_TESTS)
         if model_spec.model_name in TEST_CONFIGS:
             workflows_to_run.append(WorkflowType.TESTS)
         workflows_to_run.append(WorkflowType.REPORTS)

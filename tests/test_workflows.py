@@ -195,7 +195,10 @@ class TestWorkflowExecution:
         # Mock run_single_workflow to return ordered named results
         with patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
-        ) as mock_run_single:
+        ) as mock_run_single, patch(
+            "workflows.run_workflows.find_test_config_by_model_and_device",
+            return_value={"test_cases": []},
+        ):
             workflow_results = run_workflows(
                 model_spec, runtime_config, "test_json_path.json"
             )
@@ -221,6 +224,48 @@ class TestWorkflowExecution:
             # First workflow should start without trace capture disabled
             # Subsequent workflows should have trace capture disabled
 
+    def test_release_workflow_omits_spec_tests_when_unconfigured(self):
+        """Test release skips spec-tests when no matching server test config exists."""
+        configured_model_name = next(iter(TEST_CONFIGS))
+        model_spec = Namespace(
+            model_name=configured_model_name,
+        )
+        runtime_config = RuntimeConfig(
+            model=configured_model_name,
+            workflow="release",
+            device="n150",
+            impl="tt-transformers",
+            disable_trace_capture=False,
+        )
+        workflow_calls = []
+
+        def mock_run_single(model_spec_arg, runtime_config_arg, json_fpath):
+            workflow_type = WorkflowType.from_string(runtime_config_arg.workflow)
+            workflow_calls.append(workflow_type.name)
+            return WorkflowResult(
+                workflow_name=workflow_type.name.lower(),
+                return_code=len(workflow_calls) - 1,
+            )
+
+        with patch(
+            "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
+        ) as mock_run_single, patch(
+            "workflows.run_workflows.find_test_config_by_model_and_device",
+            return_value=None,
+        ):
+            workflow_results = run_workflows(
+                model_spec, runtime_config, "test_json_path.json"
+            )
+
+        assert workflow_calls == ["EVALS", "BENCHMARKS", "TESTS", "REPORTS"]
+        assert mock_run_single.call_count == 4
+        assert workflow_results == [
+            WorkflowResult(workflow_name="evals", return_code=0),
+            WorkflowResult(workflow_name="benchmarks", return_code=1),
+            WorkflowResult(workflow_name="tests", return_code=2),
+            WorkflowResult(workflow_name="reports", return_code=3),
+        ]
+
     def test_release_workflow_omits_tests_when_unconfigured(self):
         """Test release skips the pytest workflow for models without test config."""
         model_spec = Namespace(
@@ -245,17 +290,19 @@ class TestWorkflowExecution:
 
         with patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
+        ), patch(
+            "workflows.run_workflows.find_test_config_by_model_and_device",
+            return_value=None,
         ):
             workflow_results = run_workflows(
                 model_spec, runtime_config, "test_json_path.json"
             )
 
-        assert workflow_calls == ["EVALS", "BENCHMARKS", "SPEC_TESTS", "REPORTS"]
+        assert workflow_calls == ["EVALS", "BENCHMARKS", "REPORTS"]
         assert workflow_results == [
             WorkflowResult(workflow_name="evals", return_code=0),
             WorkflowResult(workflow_name="benchmarks", return_code=1),
-            WorkflowResult(workflow_name="spec_tests", return_code=2),
-            WorkflowResult(workflow_name="reports", return_code=3),
+            WorkflowResult(workflow_name="reports", return_code=2),
         ]
 
     def test_non_release_workflow_includes_reports_result(self):
