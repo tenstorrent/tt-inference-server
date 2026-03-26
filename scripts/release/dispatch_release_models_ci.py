@@ -6,17 +6,23 @@
 import json
 import os
 import time
+from string import hexdigits
 from typing import Dict, Optional, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 GITHUB_API = "https://api.github.com"
+GITHUB_GRAPHQL_API = "https://api.github.com/graphql"
 GITHUB_API_VERSION = "2022-11-28"
 TT_SHIELD_OWNER = "tenstorrent"
 TT_SHIELD_REPO = "tt-shield"
 RELEASE_WORKFLOW_FILE = "release.yml"
 TT_SHIELD_WORKFLOW_REF = "main"
+TT_METAL_OWNER = "tenstorrent"
+TT_METAL_REPO = "tt-metal"
+VLLM_OWNER = "tenstorrent"
+VLLM_REPO = "vllm"
 
 
 def normalize_dispatch_ref(base_ref: str) -> str:
@@ -51,6 +57,31 @@ def get_github_token() -> str:
             "Set it with: export GH_PAT='your_github_token_here'"
         )
     return token
+
+
+def normalize_repo_ref(ref: str) -> str:
+    """Normalize a repo ref so GitHub can resolve it to a commit."""
+    normalized_ref = ref.strip()
+    if normalized_ref.startswith("refs/heads/"):
+        normalized_ref = normalized_ref[len("refs/heads/") :]
+    elif normalized_ref.startswith("refs/tags/"):
+        normalized_ref = normalized_ref[len("refs/tags/") :]
+    elif normalized_ref.startswith("origin/"):
+        normalized_ref = normalized_ref[len("origin/") :]
+
+    if not normalized_ref:
+        raise ValueError("Repository ref cannot be empty.")
+    return normalized_ref
+
+
+def _is_full_commit_sha(value: str) -> bool:
+    """Return True when the value is a 40-character hexadecimal commit SHA."""
+    return len(value) == 40 and all(char in hexdigits for char in value)
+
+
+def _is_short_commit_sha(value: str) -> bool:
+    """Return True when the value looks like an abbreviated hexadecimal SHA."""
+    return 7 <= len(value) < 40 and all(char in hexdigits for char in value)
 
 
 def _build_github_headers(token: str) -> Dict[str, str]:
@@ -107,6 +138,91 @@ def _find_recent_release_workflow_run_url(
     return workflow_runs[0].get("html_url")
 
 
+def _github_graphql_request(query: str, variables: Dict[str, str], token: str) -> dict:
+    """Run one GitHub GraphQL request and return the decoded JSON object."""
+    _, response_body = _github_api_request(
+        GITHUB_GRAPHQL_API,
+        token,
+        method="POST",
+        payload={"query": query, "variables": variables},
+    )
+    data = json.loads(response_body.decode("utf-8")) if response_body else {}
+    if not isinstance(data, dict):
+        raise RuntimeError("GitHub GraphQL response was not a JSON object.")
+    errors = data.get("errors")
+    if errors:
+        raise RuntimeError(f"GitHub GraphQL request failed: {errors}")
+    return data
+
+
+def _resolve_commit_sha_from_graphql(
+    owner: str, repo: str, ref: str, token: str
+) -> str:
+    """Resolve an abbreviated SHA via a repo-scoped GitHub GraphQL lookup."""
+    query = """
+    query ResolveCommitOid($owner: String!, $repo: String!, $expression: String!) {
+      repository(owner: $owner, name: $repo) {
+        object(expression: $expression) {
+          __typename
+          ... on Commit {
+            oid
+          }
+        }
+      }
+    }
+    """
+    data = _github_graphql_request(
+        query,
+        {"owner": owner, "repo": repo, "expression": ref},
+        token,
+    )
+    repository = data.get("data", {}).get("repository")
+    if not isinstance(repository, dict):
+        raise RuntimeError(
+            f"GitHub GraphQL did not return repository data for {owner}/{repo}."
+        )
+    git_object = repository.get("object")
+    if not isinstance(git_object, dict) or git_object.get("__typename") != "Commit":
+        raise RuntimeError(
+            "GitHub GraphQL did not resolve a commit object for "
+            f"{owner}/{repo} ref {ref!r}."
+        )
+    resolved_sha = git_object.get("oid")
+    if not isinstance(resolved_sha, str) or not _is_full_commit_sha(resolved_sha):
+        raise RuntimeError(
+            "GitHub GraphQL returned an invalid commit SHA for "
+            f"{owner}/{repo} ref {ref!r}: {resolved_sha!r}"
+        )
+    return resolved_sha
+
+
+def _resolve_commit_sha(owner: str, repo: str, ref: str, token: str) -> str:
+    """Resolve a branch, tag, or abbreviated commit to a full commit SHA."""
+    normalized_ref = normalize_repo_ref(ref)
+    if _is_full_commit_sha(normalized_ref):
+        return normalized_ref
+
+    url = f"{GITHUB_API}/repos/{owner}/{repo}/commits/{quote(normalized_ref, safe='')}"
+    try:
+        _, response_body = _github_api_request(url, token)
+    except RuntimeError:
+        if _is_short_commit_sha(normalized_ref):
+            return _resolve_commit_sha_from_graphql(owner, repo, normalized_ref, token)
+        raise
+    data = json.loads(response_body.decode("utf-8")) if response_body else {}
+    resolved_sha = data.get("sha")
+    if not isinstance(resolved_sha, str):
+        raise RuntimeError(
+            f"GitHub did not return a commit SHA for {owner}/{repo} ref {normalized_ref!r}."
+        )
+    if not _is_full_commit_sha(resolved_sha):
+        raise RuntimeError(
+            "GitHub returned an invalid commit SHA for "
+            f"{owner}/{repo} ref {normalized_ref!r}: {resolved_sha!r}"
+        )
+    return resolved_sha
+
+
 def dispatch_release_workflow(
     *,
     release_branch: str,
@@ -116,12 +232,16 @@ def dispatch_release_workflow(
     """Dispatch tt-shield release.yml and return a run URL when available."""
     dispatch_ref = TT_SHIELD_WORKFLOW_REF
     token = get_github_token()
+    tt_metal_sha = _resolve_commit_sha(
+        TT_METAL_OWNER, TT_METAL_REPO, tt_metal_ref, token
+    )
+    vllm_sha = _resolve_commit_sha(VLLM_OWNER, VLLM_REPO, vllm_ref, token)
     payload = {
         "ref": dispatch_ref,
         "inputs": {
-            "tt-metal-commit": tt_metal_ref,
+            "tt-metal-commit": tt_metal_sha,
             "tt-inference-server-commit": release_branch,
-            "vllm-commit": vllm_ref,
+            "vllm-commit": vllm_sha,
             "workflow": "release",
         },
     }

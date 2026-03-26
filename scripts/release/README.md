@@ -225,9 +225,9 @@ git push --force-with-lease origin "${RELEASE_BRANCH}"
 
 https://github.com/tenstorrent/tt-shield/actions/workflows/release.yml
 - use workflow from: `main`
-- tt-metal ref: resolved from `release_logs/v{VERSION}/pre_release_models_diff.json`
+- tt-metal ref: resolved from `release_logs/v{VERSION}/pre_release_models_diff.json`, then expanded to a full `tenstorrent/tt-metal` commit SHA
 - tt-inference-server ref: ${RELEASE_BRANCH}
-- vllm: resolved from `release_logs/v{VERSION}/pre_release_models_diff.json`
+- vllm: resolved from `release_logs/v{VERSION}/pre_release_models_diff.json`, then expanded to a full `tenstorrent/vllm` commit SHA
 - workflow: release
 
 Before dispatch, the pre-release helper rewrites
