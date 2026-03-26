@@ -9,8 +9,8 @@ from config.constants import TTS_RESPONSE_FORMATS
 from domain.base_request import BaseRequest
 from pydantic import PrivateAttr, field_validator
 
-# Default max text length (SpeechT5 limitation)
-DEFAULT_MAX_TTS_TEXT_LENGTH = 600
+# Default max text length (runner handles chunking internally)
+DEFAULT_MAX_TTS_TEXT_LENGTH = 20000
 
 
 class TextToSpeechRequest(BaseRequest):
