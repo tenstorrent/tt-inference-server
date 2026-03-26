@@ -117,13 +117,13 @@ The pre-release steps occur on `RELEASE_BRANCH` branch only. This means that the
 The steps below are automated in the `pre_release.py` script, but it is common that manual edits to `model_spec.py` are needed to uplift commits, so by default the commits are not done.
 
 ```bash
-python3 pre_release.py --models-ci-run-id 19339722549 --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}"
+python3 scripts/release/pre_release.py --models-ci-run-id 19339722549 --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}"
 
 # if using just manual uplifted commits without --models-ci-run-id, the uplifting from the models ci runs is skipped.
-python3 pre_release.py --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}"
+python3 scripts/release/pre_release.py --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}"
 
 # run with --commit to fully automate
-python3 pre_release.py --models-ci-run-id 19339722549 --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}" --commit
+python3 scripts/release/pre_release.py --models-ci-run-id 19339722549 --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}" --commit
 ```
 
 ### Step 1: cut new `RELEASE_BRANCH` branch
