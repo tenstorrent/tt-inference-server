@@ -14,7 +14,7 @@ from unittest.mock import mock_open, patch
 import pytest
 
 from run import main
-from tests.test_config import TEST_CONFIGS
+from server_tests.test_config import TEST_CONFIGS
 from workflows.model_spec import (
     MODEL_SPECS,
     get_model_id,
