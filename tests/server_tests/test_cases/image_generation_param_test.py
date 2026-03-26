@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Only the fields that differ from default_payload need to be specified.
 _MODEL_DIFF_PARAM_OVERRIDES = {
     "FLUX.1-dev": {"guidance_scale": 20.0},
-    "FLUX.1-schnell": {"num_inference_steps": 8},
+    "FLUX.1-schnell": {"seed": 0},
 }
 default_payload = {
     "prompt": "A beautiful sunset over a mountain landscape with vibrant colors",
