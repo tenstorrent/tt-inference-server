@@ -418,7 +418,7 @@ def test_write_release_notes_uses_raw_json_inputs(tmp_path):
         )
     )
     release_performance_data = {
-        "schema_version": 1,
+        "schema_version": "0.1.0",
         "models": {
             "DemoModel": {
                 "n150": {
@@ -451,7 +451,7 @@ def test_write_release_notes_uses_raw_json_inputs(tmp_path):
         },
     }
     base_release_performance_data = {
-        "schema_version": 1,
+        "schema_version": "0.1.0",
         "models": {
             "DemoModel": {
                 "n150": {
@@ -545,7 +545,7 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     ) as write_output_mock, patch.object(
         gra,
         "write_release_performance_outputs",
-        return_value={"schema_version": 1, "models": {}},
+        return_value={"schema_version": "0.1.0", "models": {}},
     ) as performance_mock, patch.object(
         gra, "write_release_notes", return_value=output_dir / "release_notes.md"
     ) as release_notes_mock, patch.object(
@@ -560,6 +560,6 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     release_notes_mock.assert_called_once_with(
         output_dir,
         "0.10.0",
-        release_performance_data={"schema_version": 1, "models": {}},
+        release_performance_data={"schema_version": "0.1.0", "models": {}},
     )
     emit_mock.assert_called_once_with(output_dir / "release_artifacts_summary.md")
