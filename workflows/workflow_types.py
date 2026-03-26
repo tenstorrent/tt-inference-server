@@ -37,6 +37,7 @@ class WorkflowVenvType(IntEnum):
     EVALS_AUDIO = auto()
     EVALS_VIDEO = auto()
     EVALS_EMBEDDING = auto()
+    BENCHMARKS_HTTP_CLIENT_VLLM_API = auto()
     BENCHMARKS_EMBEDDING = auto()
     BENCHMARKS_VIDEO = auto()
     BENCHMARKS_VLLM = auto()
