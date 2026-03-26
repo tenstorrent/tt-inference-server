@@ -1289,7 +1289,7 @@ _eval_config_list = [
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
-                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                gen_kwargs={"stream": "false"},
                 seed=42,
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -1318,7 +1318,7 @@ _eval_config_list = [
                     "tokenizer_backend": "huggingface",
                     "max_length": 65536,
                 },
-                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                gen_kwargs={"stream": "false"},
                 seed=42,
             ),
         ],
