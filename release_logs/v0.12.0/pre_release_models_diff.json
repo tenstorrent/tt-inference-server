@@ -17,7 +17,7 @@
     "status_before": "FUNCTIONAL",
     "status_after": "FUNCTIONAL",
     "tt_metal_commit_before": "84b4c53",
-    "tt_metal_commit_after": "2f70ab2",
+    "tt_metal_commit_after": "2f70ab27",
     "vllm_commit_before": "222ee06",
     "vllm_commit_after": "1908628",
     "ci_job_url": null,
