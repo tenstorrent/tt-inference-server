@@ -1658,8 +1658,9 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="84b4c53",
-        vllm_commit="222ee06",
+        release_version="0.12.0",
+        tt_metal_commit="2f70ab2",
+        vllm_commit="1908628",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2657,47 +2658,8 @@ audio_tts_templates = [
         status=ModelStatusTypes.COMPLETE,
     ),
     ModelSpecTemplate(
-        weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="e4a2dea",
-        impl=whisper_impl,
-        min_disk_gb=15,
-        min_ram_gb=6,
-        model_type=ModelType.AUDIO,
-        inference_engine=InferenceEngine.MEDIA.value,
-        device_model_specs=[
-            DeviceModelSpec(
-                device=DeviceTypes.P150,
-                max_concurrency=1,
-                max_context=64 * 1024,
-                default_impl=True,
-                env_vars={
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
-                },
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.P300,
-                max_concurrency=2,
-                max_context=64 * 1024,
-                default_impl=True,
-                env_vars={
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto",
-                },
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.P300X2,
-                max_concurrency=4,
-                max_context=64 * 1024,
-                default_impl=True,
-                env_vars={
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
-                },
-            ),
-        ],
-        status=ModelStatusTypes.COMPLETE,
-    ),
-    ModelSpecTemplate(
         weights=["microsoft/speecht5_tts"],
-        tt_metal_commit="e4a2dea",
+        tt_metal_commit="a9b09e0",
         release_version="0.9.0",
         impl=speecht5_impl,
         min_disk_gb=15,
@@ -2719,45 +2681,6 @@ audio_tts_templates = [
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
-    ),
-    ModelSpecTemplate(
-        weights=["microsoft/speecht5_tts"],
-        tt_metal_commit="e4a2dea",
-        impl=speecht5_impl,
-        min_disk_gb=15,
-        min_ram_gb=6,
-        model_type=ModelType.TEXT_TO_SPEECH,
-        inference_engine=InferenceEngine.MEDIA.value,
-        device_model_specs=[
-            DeviceModelSpec(
-                device=DeviceTypes.P150,
-                max_concurrency=1,
-                max_context=64 * 1024,
-                default_impl=True,
-                env_vars={
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
-                },
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.P300,
-                max_concurrency=2,
-                max_context=64 * 1024,
-                default_impl=True,
-                env_vars={
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto",
-                },
-            ),
-            DeviceModelSpec(
-                device=DeviceTypes.P300X2,
-                max_concurrency=4,
-                max_context=64 * 1024,
-                default_impl=True,
-                env_vars={
-                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
-                },
-            ),
-        ],
-        status=ModelStatusTypes.EXPERIMENTAL,
     ),
 ]
 
