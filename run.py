@@ -209,6 +209,11 @@ def parse_arguments():
         action="store_true",
         help="Expand benchmark sweep concurrencies to powers-of-2 up to model max.",
     )
+    parser.add_argument(
+        "--override-tt-metal-models",
+        type=str,
+        help="Path to a local tt-metal/models directory to bind-mount over the container's /home/container_app_user/tt-metal/models (useful for rapid iteration without rebuilding the Docker image)",
+    )
 
     args = parser.parse_args()
 
@@ -338,6 +343,7 @@ def format_cli_args_summary(args, model_spec):
         f"  disable_trace_capture:      {args.disable_trace_capture}",
         f"  override_tt_config:         {args.override_tt_config}",
         f"  vllm_override_args:         {args.vllm_override_args}",
+        f"  override_tt_metal_models:   {args.override_tt_metal_models}",
         f"  model_spec_json:            {args.model_spec_json}",
         f"  workflow_args:              {args.workflow_args}",
         f"  reset_venvs:                {args.reset_venvs}",
@@ -541,3 +547,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+

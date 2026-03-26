@@ -1765,6 +1765,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     # to match what benchmarks actually use
     _model_max_concurrency = model_spec.device_model_spec.max_concurrency
     _max_context = model_spec.device_model_spec.max_context
+    _max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
     raw_perf_refs = (
         model_spec.device_model_spec.perf_reference
         if model_spec.device_model_spec.perf_reference
@@ -1772,7 +1773,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     )
     perf_refs = [
         cap_benchmark_params(
-            params, _max_context, _model_max_concurrency, model_spec.model_name
+            params, _max_context, _max_tokens_all_users, _model_max_concurrency, model_spec.model_name
         )
         for params in raw_perf_refs
     ]
@@ -3884,3 +3885,4 @@ def server_tests_generate_report(args, server_mode, model_spec, report_id, metad
 
 if __name__ == "__main__":
     sys.exit(main())
+

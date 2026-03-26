@@ -103,8 +103,8 @@ _QWEN_VL_IMAGE_ISL_OSL_PAIRS = [
     for isl, osl in _TEXT_ISL_OSL_PAIRS_128_TO_32K
 ]
 
-_QWEN_VL_CONCURRENCIES = [1, 32]
-_QWEN_VL_NUM_PROMPTS = {1: 8, 32: 128}
+_QWEN_VL_CONCURRENCIES = [1, 32, 128]
+_QWEN_VL_NUM_PROMPTS = {1: 8, 32: 128, 128: 512}
 
 MODEL_BENCHMARK_SWEEP_OVERRIDES = {
     "Qwen2.5-VL-7B-Instruct": {
@@ -130,6 +130,7 @@ MODEL_BENCHMARK_SWEEP_OVERRIDES = {
 def _expand_override_text_sweep_params(
     override: dict,
     max_context: int,
+    max_tokens_all_users: int,
     model_max_concurrency: int,
 ) -> List[BenchmarkTaskParams]:
     """Build text sweep params from a MODEL_BENCHMARK_SWEEP_OVERRIDES entry."""
@@ -137,7 +138,7 @@ def _expand_override_text_sweep_params(
     num_prompts_map = override["num_prompts_by_concurrency"]
     for isl, osl in override["text_isl_osl_pairs"]:
         allowed_max = get_benchmark_max_concurrency(
-            isl, osl, max_context, model_max_concurrency
+            isl, osl, max_context, max_tokens_all_users, model_max_concurrency
         )
         for concurrency in override["concurrencies"]:
             if concurrency > allowed_max:
@@ -156,6 +157,7 @@ def _expand_override_text_sweep_params(
 def _expand_override_image_sweep_params(
     override: dict,
     max_context: int,
+    max_tokens_all_users: int,
     model_max_concurrency: int,
     model_name: str,
 ) -> List[BenchmarkTaskParams]:
@@ -172,7 +174,7 @@ def _expand_override_image_sweep_params(
             model_name=model_name,
         )
         allowed_max = get_benchmark_max_concurrency(
-            isl, osl, max_context, model_max_concurrency, vision_tokens
+            isl, osl, max_context, max_tokens_all_users, model_max_concurrency, vision_tokens
         )
         for concurrency in override["concurrencies"]:
             if concurrency > allowed_max:
@@ -196,10 +198,14 @@ def _expand_text_sweep_params(
     isl: int,
     osl: int,
     max_context: int,
+    max_tokens_all_users: int,
     model_max_concurrency: int,
 ) -> List[BenchmarkTaskParams]:
+    if isl + osl > max_context:
+        return []
+
     allowed_max_concurrency = get_benchmark_max_concurrency(
-        isl, osl, max_context, model_max_concurrency
+        isl, osl, max_context, max_tokens_all_users, model_max_concurrency
     )
     concurrencies = [1]
     if allowed_max_concurrency > 1:
@@ -223,6 +229,7 @@ def _expand_image_sweep_params(
     image_width: int,
     images_per_prompt: int,
     max_context: int,
+    max_tokens_all_users: int,
     model_max_concurrency: int,
     model_name: str,
 ) -> List[BenchmarkTaskParams]:
@@ -236,6 +243,7 @@ def _expand_image_sweep_params(
         isl,
         osl,
         max_context,
+        max_tokens_all_users,
         model_max_concurrency,
         vision_tokens=vision_tokens,
     )
@@ -328,7 +336,7 @@ def calculate_vision_tokens(
 
 
 def get_benchmark_max_concurrency(
-    isl, osl, max_context, model_max_concurrency=32, vision_tokens=0
+    isl, osl, max_context, max_tokens_all_users, model_max_concurrency=32, vision_tokens=0
 ):
     """
     Calculate the maximum concurrency for benchmarks based on context limits.
@@ -339,7 +347,8 @@ def get_benchmark_max_concurrency(
     Args:
         isl: Input sequence length (text tokens)
         osl: Output sequence length
-        max_context: Maximum context length supported by the model
+        max_context: Maximum context length supported by the model (per-request limit)
+        max_tokens_all_users: Maximum supported number of tokens in a batch at any given time
         model_max_concurrency: Maximum concurrency supported by the model (default: 32)
         vision_tokens: Number of vision tokens per request (default: 0 for LLM-only)
 
@@ -353,8 +362,8 @@ def get_benchmark_max_concurrency(
     if total_seq_len > max_context:
         return 1
 
-    # Calculate maximum concurrency that fits within context limit
-    max_concurrency_by_context = max_context // total_seq_len
+    # Calculate maximum concurrency that fits within total token budget
+    max_concurrency_by_context = max_tokens_all_users // total_seq_len
 
     # Return the minimum of context-limited and model-limited concurrency
     return min(max_concurrency_by_context, model_max_concurrency)
@@ -393,6 +402,7 @@ def expand_concurrency_sweep_params(
     params_list: Iterable[BenchmarkTaskParams],
     *,
     max_context: int,
+    max_tokens_all_users: int,
     model_max_concurrency: int,
     model_name: str,
     candidate_concurrencies: List[int],
@@ -430,6 +440,7 @@ def expand_concurrency_sweep_params(
         capped_probe = cap_benchmark_params(
             BenchmarkTaskParams(**probe_data),
             max_context=max_context,
+            max_tokens_all_users=max_tokens_all_users,
             model_max_concurrency=model_max_concurrency,
             model_name=model_name,
         )
@@ -459,6 +470,7 @@ def expand_concurrency_sweep_params(
 def cap_benchmark_params(
     params: BenchmarkTaskParams,
     max_context: int,
+    max_tokens_all_users: int,
     model_max_concurrency: int,
     model_name: str = None,
 ) -> BenchmarkTaskParams:
@@ -468,7 +480,8 @@ def cap_benchmark_params(
 
     Args:
         params: Original benchmark task parameters
-        max_context: Maximum context length supported by the model
+        max_context: Maximum context length supported by the model (per-request limit)
+        max_tokens_all_users: Maximum supported number of tokens in a batch at any given time
         model_max_concurrency: Maximum concurrency supported by the model
         model_name: Model name for vision token calculation (optional)
 
@@ -491,7 +504,7 @@ def cap_benchmark_params(
 
     # Calculate the allowed max_concurrency based on sequence length (including vision tokens)
     calculated_max_concurrency = get_benchmark_max_concurrency(
-        params.isl, params.osl, max_context, model_max_concurrency, vision_tokens
+        params.isl, params.osl, max_context, max_tokens_all_users, model_max_concurrency, vision_tokens
     )
 
     # Cap the max_concurrency if it exceeds the calculated limit
@@ -534,12 +547,17 @@ for model_id, model_spec in MODEL_SPECS.items():
     device = model_spec.device_type
     model_max_concurrency = model_spec.device_model_spec.max_concurrency
     max_context = model_spec.device_model_spec.max_context
+    max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
     perf_reference = model_spec.device_model_spec.perf_reference
 
     # Apply capping to each perf reference entry (including vision tokens for VLM models)
     capped_perf_reference = [
         cap_benchmark_params(
-            params, max_context, model_max_concurrency, model_spec.model_name
+            params,
+            max_context,
+            max_tokens_all_users,
+            model_max_concurrency,
+            model_spec.model_name,
         )
         for params in perf_reference
     ]
@@ -580,7 +598,7 @@ for model_id, model_spec in MODEL_SPECS.items():
             override = MODEL_BENCHMARK_SWEEP_OVERRIDES.get(model_spec.model_name)
             if override:
                 sweep_params = _expand_override_text_sweep_params(
-                    override, max_context, model_max_concurrency
+                    override, max_context, max_tokens_all_users, model_max_concurrency
                 )
                 if (
                     "image_isl_osl_resolution_pairs" in override
@@ -589,6 +607,7 @@ for model_id, model_spec in MODEL_SPECS.items():
                     sweep_params += _expand_override_image_sweep_params(
                         override,
                         max_context,
+                        max_tokens_all_users,
                         model_max_concurrency,
                         model_spec.model_name,
                     )
@@ -605,6 +624,7 @@ for model_id, model_spec in MODEL_SPECS.items():
                                 isl=isl,
                                 osl=osl,
                                 max_context=max_context,
+                                max_tokens_all_users=max_tokens_all_users,
                                 model_max_concurrency=model_max_concurrency,
                             )
                         ]
@@ -620,6 +640,7 @@ for model_id, model_spec in MODEL_SPECS.items():
                                     image_width=width,
                                     images_per_prompt=images_per_prompt,
                                     max_context=max_context,
+                                    max_tokens_all_users=max_tokens_all_users,
                                     model_max_concurrency=model_max_concurrency,
                                     model_name=model_spec.model_name,
                                 )
@@ -633,3 +654,4 @@ for model_id, model_spec in MODEL_SPECS.items():
         tasks.append(benchmark_task_runs)
 
     BENCHMARK_CONFIGS[model_id] = BenchmarkConfig(model_id=model_id, tasks=tasks)
+

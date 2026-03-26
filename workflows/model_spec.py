@@ -303,6 +303,16 @@ class DeviceModelSpec:
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
+        max_tokens_all_users = self.max_context
+        data_parallel_size = self.vllm_args.get("data_parallel_size")
+        if data_parallel_size is None:
+            data_parallel_size = self.override_tt_config.get("data_parallel", 1)
+        if isinstance(data_parallel_size, str):
+            data_parallel_size = int(data_parallel_size)
+        if data_parallel_size and data_parallel_size > 1:
+            max_tokens_all_users = self.max_context * data_parallel_size
+        object.__setattr__(self, "max_tokens_all_users", max_tokens_all_users)
+
         default_vllm_args = {
             "block_size": "64",
             "max_model_len": str(self.max_context),
@@ -2056,7 +2066,7 @@ vlm_templates = [
             "Qwen/Qwen2.5-VL-7B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="a3e85a80ae",
+        tt_metal_commit="7de5835cc7",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
@@ -2081,6 +2091,23 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
+                env_vars={
+                    "TT_MM_THROTTLE_PERF": 5,
+                },
+                override_tt_config={
+                    "data_parallel": 4,
+                    "trace_region_size": 50000000,
+                    "sample_on_device_mode": "decode_only",
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -2095,7 +2122,7 @@ vlm_templates = [
             "allenai/olmOCR-2-7B-1025",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="a3e85a80ae",
+        tt_metal_commit="7de5835cc7",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
@@ -2120,6 +2147,21 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
+                override_tt_config={
+                    "data_parallel": 4,
+                    "trace_region_size": 50000000,
+                    "sample_on_device_mode": "decode_only",
+                },
+                env_vars={"TT_MM_THROTTLE_PERF": 5},
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -2982,3 +3024,4 @@ def get_runtime_model_spec(args):
     model_spec.apply_runtime_args(args)
 
     return model_spec
+

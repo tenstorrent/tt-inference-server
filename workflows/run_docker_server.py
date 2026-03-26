@@ -241,6 +241,19 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         else:
             logger.info(f"Skipping {key} in docker run command, value={value}")
 
+    if getattr(args, "override_tt_metal_models", None):
+        import os
+
+        models_path = os.path.abspath(args.override_tt_metal_models)
+        assert os.path.isdir(models_path), (
+            f"--override-tt-metal-models path does not exist: {models_path}"
+        )
+        user_home_path = "/home/container_app_user"
+        docker_command += [
+            "--mount", f"type=bind,src={models_path},dst={user_home_path}/tt-metal/models",
+        ]
+        logger.info(f"Overriding tt-metal models from: {models_path}")
+
     if args.dev_mode:
         # development mounts
         # Define the environment file path for the container.
@@ -355,3 +368,4 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "docker_log_file_path": str(docker_log_file_path),
         "service_port": args.service_port,
     }
+
