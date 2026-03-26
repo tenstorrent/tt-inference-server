@@ -16,7 +16,6 @@
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
 #include "profiling/tracy.hpp"
-#include "services/llm_service.hpp"
 #include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
 #include "worker/worker_manager.hpp"
@@ -62,7 +61,7 @@ int main(int argc, char* argv[]) {
   std::string host = "0.0.0.0";
   uint16_t port = 8000;
   int threads = std::thread::hardware_concurrency();
-  tt::utils::service_factory::registerServices();
+  tt::utils::service_factory::initializeServices();
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];

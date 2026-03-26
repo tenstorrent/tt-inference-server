@@ -223,6 +223,7 @@ set(LLM_ENGINE_SOURCES
     src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
     src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
     src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
+    src/services/memory_manager.cpp
 )
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
@@ -362,13 +363,13 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
-    src/api/socket_controller.cpp
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
     src/ipc/boost_ipc_warmup_signal_queue.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
+    src/services/memory_manager.cpp
     src/services/reasoning_parser.cpp
     src/utils/tokenizer.cpp
     src/utils/logger.cpp
@@ -377,12 +378,14 @@ set(SOURCES
     src/worker/single_process_worker.cpp
     src/worker/worker_manager.cpp
     src/utils/service_factory.cpp
+    src/utils/service_container.cpp
     src/utils/runner_factory.cpp
     src/utils/tokenizer_config_loader.cpp
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
     src/runners/embedding_runner.cpp
     src/services/embedding_service.cpp
+    src/services/disaggregation_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/inter_server_service.cpp
     src/metrics/metrics.cpp

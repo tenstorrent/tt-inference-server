@@ -102,10 +102,20 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds) const {
   }
   if (tokenIds.empty()) return "";
 
+  // Fast path: no special tokens to filter
   if (special_token_ids_.empty()) {
     return tok_->Decode(tokenIds);
   }
 
+  // Fast path: single token, check if special
+  if (tokenIds.size() == 1) {
+    if (special_token_ids_.find(tokenIds[0]) != special_token_ids_.end()) {
+      return "";  // Special token, skip it
+    }
+    return tok_->Decode(tokenIds);
+  }
+
+  // Slow path: multiple tokens, filter special tokens
   std::vector<int> filtered;
   filtered.reserve(tokenIds.size());
   for (int id : tokenIds) {
@@ -115,6 +125,58 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds) const {
   }
   if (filtered.empty()) return "";
   return tok_->Decode(filtered);
+}
+
+// ---------------------------------------------------------------------------
+// StreamDecoder
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// U+FFFD in UTF-8 is the 3-byte sequence EF BF BD
+bool endsWithReplacementChar(const std::string& s) {
+  return s.size() >= 3 && static_cast<unsigned char>(s[s.size() - 3]) == 0xEF &&
+         static_cast<unsigned char>(s[s.size() - 2]) == 0xBF &&
+         static_cast<unsigned char>(s[s.size() - 1]) == 0xBD;
+}
+
+}  // namespace
+
+Tokenizer::StreamDecoder::StreamDecoder(const Tokenizer& tokenizer)
+    : tokenizer_(tokenizer) {}
+
+std::string Tokenizer::StreamDecoder::step(int tokenId) {
+  // Fast path: no pending tokens, decode single token directly
+  if (pending_.empty()) {
+    std::string decoded = tokenizer_.decode({tokenId});
+    if (!endsWithReplacementChar(decoded)) {
+      return decoded;
+    }
+    // Incomplete UTF-8, buffer it
+    pending_.push_back(tokenId);
+    return "";
+  }
+
+  // Slow path: we have buffered tokens, try adding this one
+  pending_.push_back(tokenId);
+  std::string decoded = tokenizer_.decode(pending_);
+  if (!endsWithReplacementChar(decoded)) {
+    pending_.clear();
+    return decoded;
+  }
+  return "";
+}
+
+std::string Tokenizer::StreamDecoder::flush() {
+  if (pending_.empty()) return "";
+  std::string decoded = tokenizer_.decode(pending_);
+  pending_.clear();
+  return decoded;
+}
+
+std::unique_ptr<Tokenizer::StreamDecoder> Tokenizer::createStreamDecoder()
+    const {
+  return std::make_unique<StreamDecoder>(*this);
 }
 
 // ---------------------------------------------------------------------------

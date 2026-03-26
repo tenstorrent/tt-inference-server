@@ -39,6 +39,9 @@ from ttnn.model_preprocessing import preprocess_model_parameters
 from utils.decorators import log_execution_time
 from utils.text_utils import TextUtils
 
+# two-command-queue (2CQ) trace execution path
+WHISPER_NUM_COMMAND_QUEUES = 2
+
 
 class TTWhisperRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
@@ -49,6 +52,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         device_params = {
             "l1_small_size": WHISPER_L1_SMALL_SIZE,
             "trace_region_size": WHISPER_TRACE_REGION_SIZE,
+            "num_command_queues": WHISPER_NUM_COMMAND_QUEUES,
         }
         return device_params
 
