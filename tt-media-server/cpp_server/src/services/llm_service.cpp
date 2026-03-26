@@ -168,14 +168,19 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     while (worker->cfg.result_queue->blockingPop(token)) {
       anyActivity = true;
 
+      std::string taskId = std::string(token.task_id);
       auto val = stream_callbacks_.get(token.task_id);
       if (!val.has_value()) {
-        throw std::runtime_error("callback not found for task_id: " +
-                                 std::string(token.task_id));
+        // Client disconnected or task was cancelled — discard remaining
+        // tokens and clean up local state for this task.
+        streamDecoders.erase(taskId);
+        if (reasoning_parser_) {
+          reasoning_parser_->finalizeTask(taskId);
+        }
+        continue;
       }
       auto callback = val.value();
 
-      std::string taskId = std::string(token.task_id);
       bool isFinal = token.isFinal();
 
       if (isFinal) {
