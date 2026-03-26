@@ -27,7 +27,9 @@ from evals.eval_config import EVAL_CONFIGS
 from stress_tests.stress_tests_summary_report import (
     generate_report as stress_test_generate_report_helper,
 )
-from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
+from server_tests.utils.vllm_parameter_json_to_md import (
+    main as generate_vllm_parameter_report,
+)
 from workflows.acceptance_criteria import (
     acceptance_criteria_check,
     format_acceptance_summary_markdown,

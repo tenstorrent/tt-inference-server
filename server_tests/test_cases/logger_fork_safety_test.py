@@ -8,7 +8,7 @@ import os
 import signal
 import threading
 
-from tests.server_tests.base_test import BaseTest
+from server_tests.base_test import BaseTest
 
 logger = logging.getLogger(__name__)
 

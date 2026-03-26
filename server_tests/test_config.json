@@ -2,7 +2,7 @@
     "test_cases": [
         {
             "name": "DeviceLivenessTest",
-            "module": "tests.server_tests.test_cases.device_liveness_test",
+            "module": "server_tests.test_cases.device_liveness_test",
             "enabled": true,
             "description": "Test for device liveness checks",
             "test_config": {
@@ -18,7 +18,7 @@
         },
         {
             "name": "ImageGenerationLoadTest",
-            "module": "tests.server_tests.test_cases.image_generation_load_test",
+            "module": "server_tests.test_cases.image_generation_load_test",
             "enabled": true,
             "description": "Tests Whisper model evaluation",
             "test_config": {
@@ -36,7 +36,7 @@
         },
         {
             "name": "ImageGenerationLoadTest",
-            "module": "tests.server_tests.test_cases.image_generation_load_test",
+            "module": "server_tests.test_cases.image_generation_load_test",
             "enabled": true,
             "description": "Tests Whisper model evaluation",
             "test_config": {
@@ -54,7 +54,7 @@
         },
         {
             "name": "ImageGenerationLoadTest",
-            "module": "tests.server_tests.test_cases.image_generation_load_test",
+            "module": "server_tests.test_cases.image_generation_load_test",
             "enabled": true,
             "description": "Tests Whisper model evaluation",
             "test_config": {
@@ -72,7 +72,7 @@
         },
         {
             "name": "ImageGenerationParamTest",
-            "module": "tests.server_tests.test_cases.image_generation_param_test",
+            "module": "server_tests.test_cases.image_generation_param_test",
             "enabled": true,
             "description": "Test image gen params",
             "test_config": {
