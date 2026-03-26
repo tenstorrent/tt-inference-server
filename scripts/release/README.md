@@ -11,7 +11,7 @@ A release is defined by:
 - pre-built and validated docker images with tt-metal, vLLM, and other libaries required to run inference
 - automatically generated documentation pointing to usage of the docker images
 
-A release is prepared from the `stable` branch at a chosen
+A release is prepared from the `RELEASE_BRANCH` branch at a chosen
 `tt-inference-server` commit. Most releases use one Nightly Models CI run to
 populate and validate the `workflows/model_spec.py` updates, or simply update these  manually from results of interactive development. plus one Release
 Models CI run to validate the final release Docker images.
@@ -27,11 +27,11 @@ to give a seamless transition to running the latest released version and Docker 
 
 ## Branch roles
 
-- `main`: active development trunk branch.
-- `stable`: release staging branch cut from `main`.
+- `BASE_BRANCH_OR_COMMIT`: active development trunk branch (`main`).
+- `RELEASE_BRANCH`: default is `stable`, release staging branch cut from dev branch.
 - `<namett>/hot-fix-<description>`: hot-fix branch used when a fix must land on
-  `main` and also be cherry-picked into `stable` or a patch branch.
-- `vx.y.z`: release branch cut from `stable`. Repo default branch, updated after every release.
+  dev branch, e.g. `main`, and also be cherry-picked into `RELEASE_BRANCH` or a patch branch.
+- `vx.y.z`: release branch cut from `RELEASE_BRANCH`. Repo default branch, updated after every release.
 - `patch-vx.y.z`: staging branch for patching an older shipped release.
 
 ## Git workflow diagram
@@ -44,17 +44,17 @@ Follow the git workflow for release described in the diagram below:
 
 ```mermaid
 flowchart TD
-  start["Choose release target<br/>from `main`"] --> stable["Step 1: reset `stable` to chosen commit"]
-  stable --> cherry["Optional Step 1B:<br/>cherry-pick fixes onto `stable`"]
+  start["Choose release target<br/>from `BASE_BRANCH_OR_COMMIT`"] --> RELEASE_BRANCH["Step 1: reset `RELEASE_BRANCH` to chosen commit"]
+  RELEASE_BRANCH --> cherry["Optional Step 1B:<br/>cherry-pick fixes onto `RELEASE_BRANCH`"]
   cherry --> modelSpec["Step 2: update `workflows/model_spec.py`<br/>from Nightly Models CI or manual edits"]
   modelSpec --> outputOnly["Optional Step 2B:<br/>run `update_model_spec.py --output-only`<br/>after manual edits"]
   outputOnly --> prereleaseArtifacts["Generate pre-release artifacts<br/>model diff JSON/MD, docs, `release_model_spec.json`"]
-  prereleaseArtifacts --> pushStable["Step 3: push `stable`"]
+  prereleaseArtifacts --> pushStable["Step 3: push `RELEASE_BRANCH`"]
   pushStable --> releaseCi["Step 4: run Release Models CI"]
 
   releaseCi --> ciGate{"Release Models CI passes?"}
   ciGate -->|"No"| retry["Repeat pre-release or apply hot-fix"]
-  retry --> stable
+  retry --> RELEASE_BRANCH
   ciGate -->|"Yes"| releaseArtifacts["Step 5: run `generate_release_artifacts.py --release`"]
 
   releaseArtifacts --> manualImages["Optional Step 5B:<br/>build missing manual release images"]
@@ -63,13 +63,13 @@ flowchart TD
   releaseArtifacts --> branchRelease
   branchRelease --> githubRelease["Create GitHub release<br/>using generated release notes"]
 
-  githubRelease --> postBranch["Step 7: create `post-release-vx.y.z` from `main`"]
+  githubRelease --> postBranch["Step 7: create `post-release-vx.y.z` from `BASE_BRANCH_OR_COMMIT`"]
   postBranch --> postRelease["Step 8: run `post_release.py`"]
-  postRelease --> carryForward["Carry release changes back to `main`:<br/>increment `VERSION`, update model specs, regenerate docs"]
-  carryForward --> prMain["Open PR back to `main`"]
+  postRelease --> carryForward["Carry release changes back to `BASE_BRANCH_OR_COMMIT`:<br/>increment `VERSION`, update model specs, regenerate docs"]
+  carryForward --> prMain["Open PR back to `BASE_BRANCH_OR_COMMIT`"]
   prMain --> defaultBranch["Step 9: make `vx.y.z` the default branch"]
 
-  hotfix["Hot-fix path:<br/>fix on `main`, then cherry-pick to `stable`<br/>or `patch-vx.y.z` as needed"] --> cherry
+  hotfix["Hot-fix path:<br/>fix on `BASE_BRANCH_OR_COMMIT`, then cherry-pick to `RELEASE_BRANCH`<br/>or `patch-vx.y.z` as needed"] --> cherry
   olderPatch["Older release patch path:<br/>work from `patch-vx.y.z`, bump patch version,<br/>re-run artifact promotion, publish patch release"] --> githubRelease
 ```
 
@@ -88,7 +88,7 @@ Permissions:
   - [GitHub Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
     with read access to `tt-shield` and write access to `tt-inference-server`
     packages.
-  - `crane` CLI: <https://github.com/google/go-containerregistry/tree/main/cmd/crane>
+  - `crane` CLI: <https://github.com/google/go-containerregistry/tree/BASE_BRANCH_OR_COMMIT/cmd/crane>
 
 Authenticate locally:
 
@@ -103,19 +103,41 @@ docker login ghcr.io -u "${GH_ID}" -p "${GH_PAT}"
 The operational release gate is a passing Models CI. If any regression
 is accepted into a release, capture it explicitly in the release notes known issues section.
 
+Set branch vars accordingly, these are defaults for real releases:
+```bash
+# BASE_BRANCH_OR_COMMIT can be a specific commit if needed, ideally not outside history of BASE_BRANCH_OR_COMMIT branch.
+export BASE_BRANCH_OR_COMMIT="main"
+export RELEASE_BRANCH="stable"
+```
+
 ## Pre-release
 
-The pre-release steps occur on `stable` branch only. This means that the automatic diffs to model_spec.py need to be added to `main` in Post-release.
+The pre-release steps occur on `RELEASE_BRANCH` branch only. This means that the automatic diffs to model_spec.py need to be added to `BASE_BRANCH_OR_COMMIT` in Post-release.
 
-### Step 1: cut new `stable` branch
+The steps below are automated in the `pre_release.py` script, but it is common that manual edits to `model_spec.py` are needed to uplift commits, so by default the commits are not done.
 
-Release engineer will use pre-defined tt-inference-server commit, this can be from results of nightly Models CI run for example, or a specific version required for a specific feature, or before a feature was added.
 ```bash
-git checkout main
+python3 pre_release.py --models-ci-run-id 19339722549 --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}"
+
+# if using just manual uplifted commits without --models-ci-run-id, the uplifting from the models ci runs is skipped.
+python3 pre_release.py --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}"
+
+# run with --commit to fully automate
+python3 pre_release.py --models-ci-run-id 19339722549 --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}" --commit
+```
+
+### Step 1: cut new `RELEASE_BRANCH` branch
+
+Release engineer will use pre-defined tt-inference-server commit BASE_BRANCH_OR_COMMIT, this can be from results of nightly Models CI run for example, or a specific version required for a specific feature, or before a feature was added.
+```bash
+git checkout "${BASE_BRANCH_OR_COMMIT}"
 git pull
-# Make local stable point to tip of main with chosen commit
-git branch -f stable <chosen tt-inference-server commit>
-git checkout stable
+# Make local RELEASE_BRANCH point to tip of BASE_BRANCH with chosen commit
+# e.g. if RELEASE_BRANCH=stable
+git branch -f "${RELEASE_BRANCH}" <chosen tt-inference-server commit>
+git checkout "${RELEASE_BRANCH}"
+# if release branch DNE, make it
+git checkout -b "${RELEASE_BRANCH}"
 ```
 
 ### [optional] Step 1B: cherry-pick any commits needed
@@ -148,7 +170,7 @@ python3 scripts/release/update_model_spec.py --models-ci-run-id 19339722549
 ### [optional] step 2B: manual changes to model_spec.py
 
 Before starting Step 2, `workflows/model_spec.py` should be clean relative to
-`HEAD` on `stable`. After the CI-driven update has run, you may then make
+`HEAD` on `RELEASE_BRANCH`. After the CI-driven update has run, you may then make
 manual edits before running `--output-only`.
 
 Manually edit `model_spec.py`. After changes are added, re-run the helper to
@@ -172,25 +194,35 @@ python3 scripts/release/update_model_spec.py --output-only
 - `docs/model_support/*.md`: regenerated model support documentation (model type pages, hardware pages, individual model pages)
 - `README.md`: updates to the `Model Support` section (links to docs/model_support/)
 
-### Step 3: force update `stable` branch
+### Step 3: force update `RELEASE_BRANCH` branch
 
 ```bash
 git commit -m 'pre-release-vx.y.z'
-git push --force-with-lease origin stable
+git push --force-with-lease origin "${RELEASE_BRANCH}"
 ```
-
-## Release
 
 ### Step 4: Start `Release` Models CI GitHub Actions Workflow
 
 https://github.com/tenstorrent/tt-shield/actions/workflows/release.yml
+- use workflow from: BASE_BRANCH_OR_COMMIT
+- tt-metal ref: uplift tt-metal commit
+- tt-inference-server ref: ${RELEASE_BRANCH}
+- vllm: uplift vllm commit
+- workflow: release
 
 On failure, repeat Pre-release steps or use Hot-Fix workflow.
 On success, continue Release steps.
 
+## Release
+
+```bash
+python3 release.py --models-ci-run-id 19339722549 --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}"
+```
+
 ### step 5: generate release artifacts
 
-Log and move (via [crane](https://github.com/google/go-containerregistry/blob/main/cmd/crane/doc/crane.md)) the Docker images built within the Release workflow.
+Evalulate acceptance criteria for `--models-ci-run-id` from reports.json `acceptance_criteria=True` field for each model. All models must be acceptance_criteria. For the release to be accepted as success.
+Log and move (via [crane](https://github.com/google/go-containerregistry/blob/BASE_BRANCH_OR_COMMIT/cmd/crane/doc/crane.md)) the Docker images built within the Release workflow.
 The two key release artifacts are:
 - Docker images
 - Repo model support documentation (already updated during pre-release)
@@ -244,9 +276,9 @@ step it should pick up the manually added docker images.
 ### Step 6: Make release
 
 ```bash
-git checkout stable
-git checkout -b v${VERSION}
-git push -u origin v${VERSION}
+git checkout "${RELEASE_BRANCH}"
+git checkout -b "v${VERSION}"
+git push -u origin "v${VERSION}"
 ```
 
 Make [new release on GitHub repo](https://github.com/tenstorrent/tt-inference-server/releases/new)
@@ -257,12 +289,12 @@ body, and fill in any sections that were left blank by the generator.
 
 ## Post-release
 
-After the release branch is completed, prepare the next release as development state on `main`.
+After the release branch is completed, prepare the next release as development state on `BASE_BRANCH_OR_COMMIT`.
 
 ### step 7: make post-release branch
 
 ```bash
-git checkout main
+git checkout "${BASE_BRANCH_OR_COMMIT}"
 git pull
 git checkout -b post-release-vx.y.z
 git checkout vx.y.z -- release_logs
@@ -272,12 +304,12 @@ git checkout vx.y.z -- release_logs
 
 The script uses the pre-release record of the model diffs from
 `release_logs/v{VERSION}/pre_release_models_diff.json` to determine which
-released template updates from `stable` should be carried back onto `main`.
-For each matching template on `main`, commit or status fields are only updated
-when `main` still has the released starting value from the pre-release diff.
-If `main` has already been changed manually, that field update is discarded and
+released template updates from `RELEASE_BRANCH` should be carried back onto `BASE_BRANCH_OR_COMMIT`.
+For each matching template on `BASE_BRANCH_OR_COMMIT`, commit or status fields are only updated
+when `BASE_BRANCH_OR_COMMIT` still has the released starting value from the pre-release diff.
+If `BASE_BRANCH_OR_COMMIT` has already been changed manually, that field update is discarded and
 reported in the PR draft. The template `release_version` is only updated when
-the released `tt_metal_commit` is also applied; if `main` has already diverged
+the released `tt_metal_commit` is also applied; if `BASE_BRANCH_OR_COMMIT` has already diverged
 on `tt_metal_commit`, leave `release_version` unchanged.
 
 ```bash
@@ -293,7 +325,7 @@ This helper:
 - generates `doc/model_support`
 - writes `release_logs/post_release_pr.md`
 
-Open a PR from the post-release branch back to `main`. That PR carries the next
+Open a PR from the post-release branch back to development trunk (`main`). That PR carries the next
 development VERSION, any forward-looking `model_spec.py` commit updates, and the
 regenerated docs for the next release window.
 
@@ -307,21 +339,21 @@ This will in turn direct them to correct and updated documentation and images wi
 
 If a fix is needed in the current release:
 
-1. Create a hot-fix branch from `main`.
-2. PR the fix back to `main`.
-3. Cherry-pick the merged fix into `stable` if it must land in the current release (see Step 1B).
+1. Create a hot-fix branch from `BASE_BRANCH_OR_COMMIT`.
+2. PR the fix back to `BASE_BRANCH_OR_COMMIT`.
+3. Cherry-pick the merged fix into `RELEASE_BRANCH` if it must land in the current release (see Step 1B).
 4. If the issue affects an older shipped release, cherry-pick into the
    appropriate `patch-vx.y.z` branch instead and see section below.
 
 This keeps the fix anchored in the trunk branch while still allowing a
 release or patch branch to pick it up intentionally.
 
-If the fix cannot be done on `main` the fix can be PR direct to `stable` or `patch-vx.y.z`
+If the fix cannot be done on `BASE_BRANCH_OR_COMMIT` the fix can be PR direct to `RELEASE_BRANCH` or `patch-vx.y.z`
 
 ## Patching older releases
 
 Older shipped versions are patched from dedicated patch branches, not from
-`stable`.
+`RELEASE_BRANCH`.
 
 Typical flow:
 
@@ -331,6 +363,6 @@ Typical flow:
 4. Re-run artifact promotion and any required Docker builds.
 5. Create the patch tag and GitHub release.
 
-If there are unresolvable conflicts when cherry-picking from `main`, keep the
+If there are unresolvable conflicts when cherry-picking from `BASE_BRANCH_OR_COMMIT`, keep the
 patch fix isolated to the patch branch and document the divergence clearly in
 release notes.
