@@ -4360,10 +4360,10 @@
                 "max_num_batched_tokens": "131072",
                 "max-log-len": "32",
                 "seed": "9472",
-                "override_tt_config": "{\"trace_region_size\": 56000000}"
+                "override_tt_config": "{\"trace_region_size\": 100000000}"
               },
               "override_tt_config": {
-                "trace_region_size": 56000000
+                "trace_region_size": 100000000
               },
               "env_vars": {
                 "MESH_DEVICE": "P300x2",
@@ -4401,7 +4401,7 @@
             "status": "FUNCTIONAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
             "override_tt_config": {
-              "trace_region_size": 56000000
+              "trace_region_size": 100000000
             },
             "supported_modalities": [
               "text"
