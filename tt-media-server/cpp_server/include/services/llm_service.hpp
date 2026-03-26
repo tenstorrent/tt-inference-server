@@ -43,6 +43,17 @@ class LLMService
 
   void preProcess(domain::CompletionRequest& request) const override;
 
+  /**
+   * Abort an in-flight request. Detaches and removes any registered streaming
+   * callback for the given task ID and signals the worker to drop the
+   * sequence from its scheduler. The detached callback is invoked with
+   * isFinal=true and finish_reason="abort" to unblock any synchronous
+   * waiters (e.g. processRequest). For streaming requests, callers must set
+   * their done flag before calling this method so the callback returns
+   * immediately. Safe to call from any thread. Idempotent.
+   */
+  void abortRequest(const domain::TaskID& taskId);
+
  protected:
   void postProcess(domain::CompletionResponse& response) const override;
   size_t currentQueueSize() const override;

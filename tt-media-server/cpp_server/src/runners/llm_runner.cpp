@@ -2,8 +2,10 @@
 
 #include <cassert>
 #include <thread>
+#include <vector>
 
 #include "config/settings.hpp"
+#include "ipc/boost_ipc_cancel_queue.hpp"
 #include "profiling/tracy.hpp"
 
 namespace tt::runners {
@@ -12,8 +14,9 @@ using Config = tt::config::LLMConfig;
 
 LLMRunner::LLMRunner(const Config& config,
                      ipc::TokenRingBuffer<65536>* resultQueue,
-                     ITaskQueue* taskQueue)
-    : config_(config), result_queue_(resultQueue) {
+                     ITaskQueue* taskQueue,
+                     ipc::BoostIpcCancelQueue* cancelQueue)
+    : config_(config), result_queue_(resultQueue), cancel_queue_(cancelQueue) {
   scheduler_ =
       makeScheduler(config_, taskQueue, tt::config::maxInFlightCount());
 
@@ -21,7 +24,8 @@ LLMRunner::LLMRunner(const Config& config,
     ZoneScopedN("LLMRunner::process_token_result");
     Sequence* seq = scheduler_->findSequence(result.taskId);
 
-    assert(seq);
+    // Sequence was aborted between model run and token callback — discard.
+    if (!seq || seq->isAborted()) return;
 
     if (result.isError) {
       scheduler_->removeSequence(result.taskId);
@@ -91,6 +95,16 @@ void LLMRunner::run() {
 void LLMRunner::stop() { stopped_.store(true, std::memory_order_relaxed); }
 
 void LLMRunner::step() {
+  // Drain cancel queue before scheduling so aborted sequences are excluded
+  // from the next batch.
+  if (cancel_queue_) {
+    std::vector<TaskID> cancelled;
+    cancel_queue_->tryPopAll(cancelled);
+    for (const auto& taskId : cancelled) {
+      scheduler_->abortRequest(taskId);
+    }
+  }
+
   auto [seqs, is_prefill] = scheduler_->schedule();
   if (seqs.empty()) return;
   ZoneScopedN("LLMRunner::step");

@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -27,10 +28,19 @@ namespace {
 
 void sseSend(const std::string& sse, trantor::EventLoop* loop,
              const std::shared_ptr<drogon::ResponseStreamPtr>& streamPtr,
-             const std::shared_ptr<ConcurrentQueue<std::string>>& accumulator) {
+             const std::shared_ptr<ConcurrentQueue<std::string>>& accumulator,
+             const std::shared_ptr<std::vector<std::string>>& earlyBuffer,
+             std::function<void()> onDisconnect = nullptr) {
   if (!accumulator) {
-    loop->queueInLoop([streamPtr, sse]() {
-      if (*streamPtr) (*streamPtr)->send(sse);
+    loop->queueInLoop([streamPtr, earlyBuffer, sse,
+                       onDisconnect = std::move(onDisconnect)]() {
+      if (*streamPtr) {
+        bool ok = (*streamPtr)->send(sse);
+        if (!ok && onDisconnect) onDisconnect();
+      } else if (earlyBuffer) {
+        // Stream not ready yet — buffer for flush when it opens.
+        earlyBuffer->push_back(sse);
+      }
     });
     return;
   }
@@ -39,8 +49,14 @@ void sseSend(const std::string& sse, trantor::EventLoop* loop,
     auto accumulated = accumulator->drain();
     std::string batch;
     for (auto& s : accumulated) batch.append(s);
-    loop->queueInLoop([streamPtr, batch = std::move(batch)]() {
-      if (*streamPtr) (*streamPtr)->send(batch);
+    loop->queueInLoop([streamPtr, earlyBuffer, batch = std::move(batch),
+                       onDisconnect = std::move(onDisconnect)]() {
+      if (*streamPtr) {
+        bool ok = (*streamPtr)->send(batch);
+        if (!ok && onDisconnect) onDisconnect();
+      } else if (earlyBuffer) {
+        earlyBuffer->push_back(batch);
+      }
     });
   }
 }
@@ -313,17 +329,29 @@ void LLMController::handleStreaming(
       std::optional<std::chrono::high_resolution_clock::time_point>>();
   auto firstContentChunk = std::make_shared<std::atomic<bool>>(true);
 
+  // Abort callback: fires when the TCP connection drops mid-stream.
+  // Captured by value so it stays alive for the duration of the streaming
+  // session. Called on the IO thread from inside sseSend().
+  const std::string TASK_ID_STR = reqPtr->task_id.id;
+  auto onDisconnect = [TASK_ID_STR, service = this->service, done]() {
+    if (!done->exchange(true)) {
+      TT_LOG_INFO("[LLMController] Client disconnected, aborting task {}",
+                  TASK_ID_STR);
+      service->abortRequest(domain::TaskID(TASK_ID_STR));
+    }
+  };
+
   // Submit the streaming request before setting up the HTTP stream so that a
   // full queue throws QueueFullException here, allowing us to return a proper
   // 429.
-  auto streamingCallback = [loop, streamPtr, done, COMPLETION_ID, MODEL,
-                            CREATED, isChat, INCLUDE_USAGE, CONTINUOUS_USAGE,
-                            completionTokens, startTime, firstTokenTime,
-                            secondTokenTime, firstContentChunk, reqPtr,
-                            accumulator](
+  auto streamingCallback = [loop, streamPtr, earlyBuffer, done, COMPLETION_ID,
+                            MODEL, CREATED, isChat, INCLUDE_USAGE,
+                            CONTINUOUS_USAGE, completionTokens, startTime,
+                            firstTokenTime, secondTokenTime, firstContentChunk,
+                            reqPtr, accumulator, onDisconnect](
                                const domain::StreamingChunkResponse& chunk,
                                bool isFinal) {
-    if (done->load() || !*streamPtr) {
+    if (done->load()) {
       return;
     }
     if (!chunk.choices.empty()) {
@@ -371,7 +399,7 @@ void LLMController::handleStreaming(
       }
 
       if (!sse.empty()) {
-        sseSend(sse, loop, streamPtr, accumulator);
+        sseSend(sse, loop, streamPtr, accumulator, earlyBuffer, onDisconnect);
       }
     }
     if (isFinal) {
