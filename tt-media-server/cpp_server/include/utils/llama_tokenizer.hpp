@@ -12,7 +12,6 @@ class LlamaTokenizer final : public Tokenizer {
   using Tokenizer::Tokenizer;
 
   std::string modelName() const { return "meta-llama/Llama-3.1-8B-Instruct"; }
-  int specialTokenDecodeThreshold() const { return 128000; }
   std::vector<int64_t> stopTokenIds() const { return {128001, 128008, 128009}; }
 
   std::string applyChatTemplate(

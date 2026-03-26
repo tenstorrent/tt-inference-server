@@ -83,7 +83,7 @@ jobs:
       - name: Run tt-inference-server tests
         run: |
           echo "Running tests from tests/ directory..."
-          pytest tests/ --ignore=tests/server_tests -v --tb=short --continue-on-collection-errors > main_test_output.txt 2>&1 || echo "MAIN_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
+          pytest tests/ -v --tb=short --continue-on-collection-errors > main_test_output.txt 2>&1 || echo "MAIN_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
 
           # try to find final pytest summary line (robust)
           SUMMARY_LINE=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" main_test_output.txt | tail -n 1 || true)
@@ -402,7 +402,6 @@ jobs:
               });
             }
 
-
   llm-streaming-performance:
     needs: detect-changes
     name: LLM Streaming Performance Test
@@ -494,8 +493,81 @@ jobs:
       - name: Check test result
         run: exit ${{ env.TEST_EXIT_CODE }}
 
-  cpp-server-llm-streaming:
+  cpp-format-check:
     needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Lint & Format Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: C++ format check (.clang-format)
+        run: |
+          cd cpp_server
+          if ! find include src tests benchmarks -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
+            | xargs -0 -r clang-format-20 --dry-run --Werror >/dev/null 2>&1; then
+            echo '::error::Some C++ files are not formatted per .clang-format.'
+            echo 'To fix locally, run from repo root:'
+            echo '  cd tt-media-server/cpp_server && find include src tests benchmarks -type f \( -name '"'"'*.cpp'"'"' -o -name '"'"'*.h'"'"' -o -name '"'"'*.hpp'"'"' \) -print0 | xargs -0 clang-format-20 -i'
+            exit 1
+          fi
+
+      - name: C++ lint check (build with clang-tidy)
+        run: |
+          cd cpp_server
+          ./build.sh --clang-tidy
+
+  cpp-build:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Build & Unit Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Build C++ server
+        run: |
+          cd cpp_server
+          ./build.sh
+          cd ..
+
+      - name: Run C++ unit tests
+        run: |
+          cd cpp_server/build
+          ctest --output-on-failure
+          cd ../..
+
+      - name: Upload C++ build
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-build
+          path: |
+            tt-media-server/cpp_server/build/
+            tt-media-server/cpp_server/tokenizers/
+          retention-days: 1
+
+  cpp-server-llm-streaming:
+    needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Server LLM Streaming Performance Test
     runs-on: ubuntu-latest
@@ -514,28 +586,14 @@ jobs:
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
 
-      - name: Build C++ server
-        run: |
-          cd cpp_server
-          ./build.sh --clang-tidy
-          cd ..
+      - name: Download C++ build
+        uses: actions/download-artifact@v4
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
 
-      - name: C++ format check (.clang-format)
-        run: |
-          cd cpp_server
-          if ! find include src tests benchmarks -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
-            | xargs -0 -r clang-format-20 --dry-run --Werror >/dev/null 2>&1; then
-            echo '::error::Some C++ files are not formatted per .clang-format.'
-            echo 'To fix locally, run from repo root:'
-            echo '  cd tt-media-server/cpp_server && find include src tests benchmarks -type f \( -name '"'"'*.cpp'"'"' -o -name '"'"'*.h'"'"' -o -name '"'"'*.hpp'"'"' \) -print0 | xargs -0 clang-format-20 -i'
-            exit 1
-          fi
-
-      - name: Run C++ unit tests
-        run: |
-          cd cpp_server/build
-          ctest --output-on-failure
-          cd ../..
+      - name: Make binaries executable
+        run: chmod +x cpp_server/build/tt_media_server_cpp
 
       - name: Start C++ server (test runner mode)
         run: |
@@ -674,7 +732,7 @@ jobs:
         run: exit ${{ env.BENCH_FAIL }}
 
   cpp-server-llm-streaming-mock-pipeline:
-    needs: detect-changes
+    needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Server LLM Streaming (mock_pipeline)
     runs-on: ubuntu-latest
@@ -693,11 +751,14 @@ jobs:
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
 
-      - name: Build C++ server
-        run: |
-          cd cpp_server
-          ./build.sh
-          cd ..
+      - name: Download C++ build
+        uses: actions/download-artifact@v4
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Make binaries executable
+        run: chmod +x cpp_server/build/tt_media_server_cpp
 
       - name: Start C++ server (mock_pipeline backend)
         run: |
@@ -836,7 +897,7 @@ jobs:
         run: exit ${{ env.BENCH_FAIL }}
 
   cpp-server-prefill-decode-split:
-    needs: detect-changes
+    needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Server Prefill/Decode Split Test
     runs-on: ubuntu-latest
@@ -855,11 +916,14 @@ jobs:
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
 
-      - name: Build C++ server
-        run: |
-          cd cpp_server
-          ./build.sh
-          cd ..
+      - name: Download C++ build
+        uses: actions/download-artifact@v4
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Make binaries executable
+        run: chmod +x cpp_server/build/tt_media_server_cpp
 
       - name: Start Decode server (receives HTTP, listens for prefill)
         run: |
@@ -1299,6 +1363,8 @@ jobs:
       - forge-runner-cpu-tests
       - llm-streaming-performance
       - test-coverage
+      - cpp-format-check
+      - cpp-build
       - cpp-server-llm-streaming
       - cpp-server-llm-streaming-mock-pipeline
       - cpp-server-prefill-decode-split

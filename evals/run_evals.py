@@ -389,9 +389,8 @@ def main():
 
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
     if model_spec.model_name not in EVAL_CONFIGS:
-        raise ValueError(
-            f"No evaluation tasks defined for model: {model_spec.model_name}"
-        )
+        message = f"No evaluation tasks defined for model: {model_spec.model_name}"
+        raise ValueError(message)
     eval_config = EVAL_CONFIGS[model_spec.model_name]
     eval_config = _select_eval_config(eval_config, runtime_config)
 
@@ -415,13 +414,14 @@ def main():
         model_spec.model_type in EVAL_TASK_TYPES
         and model_spec.model_type != ModelType.AUDIO
     ):
-        return run_media_evals(
+        return_code = run_media_evals(
             eval_config,
             model_spec,
             device,
             args.output_path,
             runtime_config.service_port,
         )
+        return return_code
 
     # For AUDIO models, skip PromptClient and let lmms-eval handle server communication
     # Note: AudioClient is NOT used here
@@ -457,16 +457,22 @@ def main():
         if all(return_code == 0 for return_code in return_codes):
             logger.info("✅ Completed evals")
             return 0
-        else:
-            logger.error(
-                f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
-            )
-            return 1
+        logger.error(
+            f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
+        )
+        return 1
 
     # For LLM models, use PromptClient for health checks and trace capture
     else:
-        # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
-        prompt_client = PromptClient(env_config, model_spec=model_spec)
+        prompt_client = PromptClient(
+            env_config,
+            model_spec=model_spec,
+            runtime_config=runtime_config,
+        )
+        logger.info(
+            "Using tensor_cache_timeout:=%ss for first-run tensor cache generation when cache monitoring is active",
+            prompt_client.cache_monitor.get_tensor_cache_timeout(),
+        )
         if not prompt_client.wait_for_healthy():
             logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
             return 1
@@ -505,11 +511,10 @@ def main():
         if all(return_code == 0 for return_code in return_codes):
             logger.info("✅ Completed evals")
             return 0
-        else:
-            logger.error(
-                f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
-            )
-            return 1
+        logger.error(
+            f"⛔ evals failed with return codes: {return_codes}. See logs above for details."
+        )
+        return 1
 
 
 def run_media_evals(all_params, model_spec, device, output_path, service_port):

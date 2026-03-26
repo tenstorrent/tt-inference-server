@@ -22,6 +22,8 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       taskQueue(taskQueue),
       decodeQueue(config.max_in_flight_count),
       maxInFlightCount(config.max_in_flight_count * 30) {
+  memoryThread = std::thread([this] { memoryLoop(); });
+
   auto decodeCb = [this](const llm_engine::TokenResult& result) {
     while (!decodeQueue.push(result)) {
       std::this_thread::yield();
@@ -32,6 +34,10 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
 }
 
 SpPipelineRunner::~SpPipelineRunner() {
+  stop();
+  if (memoryThread.joinable()) {
+    memoryThread.join();
+  }
   if (modelRunner) {
     modelRunner->exit();
   }
@@ -98,6 +104,30 @@ void SpPipelineRunner::stop() {
   stopped.store(true, std::memory_order_relaxed);
 }
 
+void SpPipelineRunner::memoryLoop() {
+  tt::domain::ManageMemoryTask task{};
+  std::vector<tt::domain::ManageMemoryTask> retryQueue;
+
+  while (!stopped.load(std::memory_order_relaxed)) {
+    if (!retryQueue.empty()) {
+      auto result = memoryManager.handle_task(retryQueue.front());
+      if (result.status != domain::ManageMemoryStatus::WAITING) {
+        memoryResults.push(result);
+        retryQueue.erase(retryQueue.begin());
+      }
+    } else if (memoryRequests.tryPop(task)) {
+      auto result = memoryManager.handle_task(task);
+      if (result.status == domain::ManageMemoryStatus::WAITING) {
+        retryQueue.push_back(task);
+      } else {
+        memoryResults.push(result);
+      }
+    } else {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+}
+
 void SpPipelineRunner::step() {
   drainDecodeResults();
 
@@ -112,6 +142,11 @@ void SpPipelineRunner::step() {
     ZoneScopedN("SpPipelineRunner::write_to_device");
     std::unique_ptr<llm_engine::Sequence> owned(seq);
     llm_engine::TaskID taskId = seq->taskId;
+
+    if (!seq->samplingParams->max_tokens.has_value()) {
+      seq->samplingParams->max_tokens =
+          static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
+    }
 
     modelRunner->write(taskId.id, seq->tokenIds,
                        seq->samplingParams->max_tokens.value(),

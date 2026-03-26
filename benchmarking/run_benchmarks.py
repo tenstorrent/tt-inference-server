@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 import jwt
+import requests
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent
@@ -247,13 +248,14 @@ def main():
                     f"Enabling genai-perf debug mode (2 benchmarks) for limit_samples_mode={limit_samples_mode_str}"
                 )
 
-        return run_genai_benchmarks(
+        return_code = run_genai_benchmarks(
             model_spec=model_spec,
             output_path=args.output_path,
             jwt_secret=jwt_secret,
             service_port=service_port,
             debug=debug_mode,
         )
+        return return_code
 
     # set environment vars
     if jwt_secret:
@@ -278,9 +280,8 @@ def main():
 
     # Look up the evaluation configuration for the model using BENCHMARK_CONFIGS.
     if model_spec.model_id not in BENCHMARK_CONFIGS:
-        raise ValueError(
-            f"No benchmark tasks defined for model: {model_spec.model_name}"
-        )
+        message = f"No benchmark tasks defined for model: {model_spec.model_name}"
+        raise ValueError(message)
     benchmark_config = BENCHMARK_CONFIGS[model_spec.model_id]
     smoke_test_mode = _is_smoke_test_mode(runtime_config)
     if smoke_test_mode:
@@ -318,9 +319,10 @@ def main():
     ]
 
     if model_spec.model_type in BENCHMARKS_TASK_TYPES:
-        return run_benchmarks(
+        return_code = run_benchmarks(
             all_params, model_spec, device, args.output_path, service_port
         )
+        return return_code
 
     log_str = "Running benchmarks for:\n"
     log_str += f"  {'#':<3} {'isl':<10} {'osl':<10} {'max_concurrency':<15} {'num_prompts':<12}\n"
@@ -339,9 +341,9 @@ def main():
                 log_str += f"  {i:<3} {param.isl:<10} {param.osl:<10} {param.max_concurrency:<15} {param.images_per_prompt:<12} {param.image_height:<12} {param.image_width:<12} {param.num_prompts:<12}\n"
     logger.info(log_str)
 
-    assert all_params, (
-        f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
-    )
+    if not all_params:
+        message = f"No benchmark tasks defined for model: {model_spec.model_name} on device: {device.name}"
+        raise AssertionError(message)
 
     logger.info("Wait for the vLLM server to be ready ...")
     env_config = EnvironmentConfig()
@@ -350,8 +352,15 @@ def main():
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
-    # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs
-    prompt_client = PromptClient(env_config, model_spec=model_spec)
+    prompt_client = PromptClient(
+        env_config,
+        model_spec=model_spec,
+        runtime_config=runtime_config,
+    )
+    logger.info(
+        "Using tensor_cache_timeout:=%ss for first-run tensor cache generation when cache monitoring is active",
+        prompt_client.cache_monitor.get_tensor_cache_timeout(),
+    )
     if not prompt_client.wait_for_healthy():
         logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks. ")
         return 1
@@ -385,7 +394,11 @@ def main():
                     )
                 captured_traces.update(sorted_context_lens_set)
             for i, params in enumerate(params_list, 1):
-                health_check = prompt_client.get_health()
+                try:
+                    health_check = prompt_client.get_health()
+                except requests.exceptions.RequestException as error:
+                    logger.error("Health check request failed: %s", error)
+                    return 1
                 if health_check.status_code != 200:
                     logger.error("⛔️ vLLM server is not healthy. Aborting benchmarks.")
                     return 1

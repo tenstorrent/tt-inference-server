@@ -19,11 +19,15 @@ namespace tt::domain {
 struct ChatCompletionMessage {
   std::string role = "assistant";
   std::string content;
+  std::optional<std::string> reasoning;
 
   Json::Value toJson() const {
     Json::Value json;
     json["role"] = role;
     json["content"] = content;
+    if (reasoning.has_value()) {
+      json["reasoning"] = reasoning.value();
+    }
     return json;
   }
 };
@@ -78,6 +82,7 @@ struct ChatCompletionResponse {
   std::string toJsonString() const {
     Json::StreamWriterBuilder writer;
     writer["indentation"] = "";
+    writer["emitUTF8"] = true;
     return Json::writeString(writer, toJson());
   }
 
@@ -93,6 +98,7 @@ struct ChatCompletionResponse {
       ChatCompletionChoice chatChoice;
       chatChoice.index = choice.index;
       chatChoice.message.content = choice.text;
+      chatChoice.message.reasoning = choice.reasoning;
       chatChoice.finish_reason = choice.finish_reason.value_or("stop");
       response.choices.push_back(std::move(chatChoice));
     }
@@ -107,6 +113,7 @@ struct ChatCompletionResponse {
 struct ChatCompletionDelta {
   std::optional<std::string> role;
   std::optional<std::string> content;
+  std::optional<std::string> reasoning;  // Reasoning content for DeepSeek R1
 
   Json::Value toJson() const {
     Json::Value json;
@@ -115,6 +122,9 @@ struct ChatCompletionDelta {
     }
     if (content.has_value()) {
       json["content"] = content.value();
+    }
+    if (reasoning.has_value()) {
+      json["reasoning"] = reasoning.value();
     }
     return json;
   }
@@ -177,6 +187,7 @@ struct ChatCompletionStreamChunk {
   std::string toJsonString() const {
     Json::StreamWriterBuilder writer;
     writer["indentation"] = "";
+    writer["emitUTF8"] = true;
     return Json::writeString(writer, toJson());
   }
 
@@ -227,6 +238,11 @@ struct ChatCompletionStreamChunk {
     ChatCompletionStreamChoice choice;
     choice.index = completionChoice.index;
     choice.delta.content = completionChoice.text;
+
+    // Include reasoning content if present (DeepSeek R1 style)
+    if (completionChoice.reasoning.has_value()) {
+      choice.delta.reasoning = completionChoice.reasoning;
+    }
 
     if (completionChoice.finish_reason.has_value()) {
       const std::string& reason = completionChoice.finish_reason.value();
