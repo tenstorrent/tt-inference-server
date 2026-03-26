@@ -97,7 +97,7 @@ class Tokenizer {
       bool addGenerationPrompt = true) const = 0;
 
   /**
-   * Create a stream decoder for incremental token-by-token decoding.
+   * Stream decoder for incremental token-by-token decoding.
    * Buffers incomplete UTF-8 sequences across tokens automatically.
    */
   class StreamDecoder {
@@ -105,9 +105,8 @@ class Tokenizer {
     explicit StreamDecoder(const Tokenizer& tokenizer);
 
     /**
-     * Decode the next token. Returns the decoded text delta, or "" if the
-     * token is part of an incomplete multi-byte UTF-8 sequence still being
-     * buffered. Typically O(1) — only a small pending buffer is decoded.
+     * Decodes the next token. Returns the decoded text delta, or "" if the
+     * token is part of an incomplete multi-byte UTF-8 sequence still being buffered.
      */
     std::string step(int tokenId);
 
