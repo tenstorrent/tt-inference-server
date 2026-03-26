@@ -1882,6 +1882,104 @@
     },
     {
         "weights": [
+            "speecht5_tts"
+        ],
+        "device": "p150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
+                "name": "SpeechT5TTSTest",
+                "module": "tests.server_tests.test_cases.speecht5_tts_test",
+                "enabled": false,
+                "description": "Test SpeechT5 Text-to-Speech functionality",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {}
+            },
+            {
+                "name": "TestTTSServerHealth",
+                "module": "tests.server_tests.test_cases.tts_integration_test",
+                "enabled": false,
+                "description": "Test server health and availability",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "tts_generation_time": 10,
+                    "sample_count": 10,
+                    "compare_audio": true
+                }
+            },
+            {
+                "name": "TTSParamTest",
+                "module": "tests.server_tests.test_cases.tts_param_test",
+                "enabled": true,
+                "description": "Test TTS generation with parameter variations",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {}
+            },
+            {
+                "name": "TTSIntegrationTest",
+                "module": "tests.server_tests.test_cases.tts_integration_test",
+                "enabled": true,
+                "description": "Test TTS error handling and input validation",
+                "test_config": {
+                    "test_timeout": 300,
+                    "retry_attempts": 1,
+                    "retry_delay": 10,
+                    "break_on_failure": false,
+                    "mock_mode": false
+                },
+                "targets": {}
+            }
+        ]
+    },
+    {
+        "weights": [
             "mobilenetv2"
         ],
         "device": "n150",
