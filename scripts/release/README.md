@@ -223,6 +223,11 @@ git push --force-with-lease origin "${RELEASE_BRANCH}"
 
 ### Step 4: Start `Release` Models CI GitHub Actions Workflow
 
+Dispatch release Models CI workflow for these release models in `release_logs/v{VERSION}/pre_release_models_diff.json`:
+```bash
+python3 scripts/release/pre_release.py --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}" --start-release-workflow
+```
+
 https://github.com/tenstorrent/tt-shield/actions/workflows/release.yml
 - use workflow from: `main`
 - tt-metal ref: resolved from `release_logs/v{VERSION}/pre_release_models_diff.json`, then expanded to a full `tenstorrent/tt-metal` commit SHA

@@ -18,10 +18,10 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 try:
-    from dispatch_release_models_ci import dispatch_release_workflow
+    from dispatch_release_models_ci import dispatch_release_workflow, get_github_token
     from release_dispatch_inputs import (
         prune_release_models_ci_config,
         resolve_release_workflow_refs,
@@ -29,7 +29,10 @@ try:
     )
     from release_paths import get_versioned_release_logs_dir
 except ImportError:
-    from scripts.release.dispatch_release_models_ci import dispatch_release_workflow
+    from scripts.release.dispatch_release_models_ci import (
+        dispatch_release_workflow,
+        get_github_token,
+    )
     from scripts.release.release_dispatch_inputs import (
         prune_release_models_ci_config,
         resolve_release_workflow_refs,
@@ -42,6 +45,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 MODEL_SPEC_PATH = Path("workflows/model_spec.py")
 MODELS_CI_CONFIG_PATH = Path(".github/workflows/models-ci-config.json")
 PRE_RELEASE_DIFF_JSON = "pre_release_models_diff.json"
+PRE_CONDITION_PREPARE = "prepare"
+PRE_CONDITION_GENERATE = "generate"
+PRE_CONDITION_DISPATCH = "dispatch"
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -198,6 +204,93 @@ def has_manual_model_spec_changes(repo_root: Path) -> bool:
     )
 
 
+def determine_skip_branch_setup(
+    args: argparse.Namespace,
+    changed_paths: Sequence[str],
+    current_branch: Optional[str],
+) -> bool:
+    """Return True when a manual model_spec.py rerun should skip branch reset."""
+    if not changed_paths:
+        return False
+
+    manual_only_change_set = {MODEL_SPEC_PATH.as_posix()}
+    if (
+        args.models_ci_run_id is None
+        and current_branch == args.release_branch
+        and set(changed_paths) == manual_only_change_set
+    ):
+        print(
+            "Detected manual edits to workflows/model_spec.py on the release branch; "
+            "skipping release branch reset."
+        )
+        return True
+
+    formatted_paths = ", ".join(changed_paths)
+    raise RuntimeError(
+        "Working tree must be clean before resetting the release branch. "
+        "Only manual workflows/model_spec.py edits are allowed when rerunning "
+        f"without --models-ci-run-id on {args.release_branch}. "
+        f"Current changes: {formatted_paths}"
+    )
+
+
+def validate_manual_model_spec_precondition(args: argparse.Namespace) -> None:
+    """Require manual model_spec.py edits when rerunning without Models CI input."""
+    if args.models_ci_run_id is None and not has_manual_model_spec_changes(REPO_ROOT):
+        raise RuntimeError(
+            "No manual changes to workflows/model_spec.py were found. "
+            "Edit workflows/model_spec.py on the release branch, then rerun "
+            "pre_release.py to generate output-only artifacts."
+        )
+
+
+def resolve_release_workflow_inputs(version: str) -> Tuple[Path, str, str]:
+    """Resolve the versioned pre-release diff path and workflow refs."""
+    release_diff_path = REPO_ROOT / resolve_pre_release_diff_path(version)
+    tt_metal_ref, vllm_ref = resolve_release_workflow_refs(release_diff_path)
+    return release_diff_path, tt_metal_ref, vllm_ref
+
+
+def validate_release_workflow_preconditions(version: str) -> None:
+    """Require dispatch auth and a valid pre-release diff before workflow dispatch."""
+    get_github_token()
+    try:
+        resolve_release_workflow_inputs(version)
+    except (FileNotFoundError, ValueError) as error:
+        raise RuntimeError(f"Release workflow preconditions failed: {error}") from error
+
+
+def pre_condition_check(
+    args: argparse.Namespace,
+    *,
+    phase: str,
+    changed_paths: Optional[Sequence[str]] = None,
+    current_branch: Optional[str] = None,
+    version: Optional[str] = None,
+) -> bool:
+    """Run fail-fast validation before mutating release state."""
+    if phase == PRE_CONDITION_PREPARE:
+        if args.start_release_workflow:
+            get_github_token()
+        if changed_paths is None:
+            raise ValueError("changed_paths are required for prepare preconditions.")
+        return determine_skip_branch_setup(args, changed_paths, current_branch)
+
+    if phase == PRE_CONDITION_GENERATE:
+        validate_manual_model_spec_precondition(args)
+        return False
+
+    if phase == PRE_CONDITION_DISPATCH:
+        if not args.start_release_workflow:
+            return False
+        if version is None:
+            raise ValueError("version is required for dispatch preconditions.")
+        validate_release_workflow_preconditions(version)
+        return False
+
+    raise ValueError(f"Unknown precondition phase: {phase}")
+
+
 def run_update_model_spec(
     repo_root: Path,
     models_ci_run_id: Optional[int],
@@ -230,10 +323,9 @@ def resolve_pre_release_diff_path(version: str) -> Path:
 def start_release_models_ci(release_branch: str) -> None:
     """Dispatch the Release Models CI workflow from the pre-release diff JSON."""
     version = read_version(REPO_ROOT / "VERSION")
-    release_diff_path = REPO_ROOT / resolve_pre_release_diff_path(version)
+    release_diff_path, tt_metal_ref, vllm_ref = resolve_release_workflow_inputs(version)
     models_ci_config_path = REPO_ROOT / MODELS_CI_CONFIG_PATH
 
-    tt_metal_ref, vllm_ref = resolve_release_workflow_refs(release_diff_path)
     prune_release_models_ci_config(release_diff_path, models_ci_config_path)
     validate_release_models_ci_config(release_diff_path, models_ci_config_path)
     run_url = dispatch_release_workflow(
@@ -304,47 +396,27 @@ def print_next_steps(version: str, release_branch: str) -> None:
 def main() -> int:
     """Main entry point for pre-release preparation."""
     args = parse_args()
+    version = read_version(REPO_ROOT / "VERSION")
     if args.start_release_workflow and not args.commit:
+        pre_condition_check(args, phase=PRE_CONDITION_DISPATCH, version=version)
         start_release_models_ci(args.release_branch)
         return 0
 
-    version = read_version(REPO_ROOT / "VERSION")
     changed_paths = list_changed_paths(REPO_ROOT)
     current_branch = get_current_branch(REPO_ROOT)
-
-    skip_branch_setup = False
-    if changed_paths:
-        manual_only_change_set = {MODEL_SPEC_PATH.as_posix()}
-        if (
-            args.models_ci_run_id is None
-            and current_branch == args.release_branch
-            and set(changed_paths) == manual_only_change_set
-        ):
-            skip_branch_setup = True
-            print(
-                "Detected manual edits to workflows/model_spec.py on the release branch; "
-                "skipping release branch reset."
-            )
-        else:
-            formatted_paths = ", ".join(changed_paths)
-            raise RuntimeError(
-                "Working tree must be clean before resetting the release branch. "
-                "Only manual workflows/model_spec.py edits are allowed when rerunning "
-                f"without --models-ci-run-id on {args.release_branch}. "
-                f"Current changes: {formatted_paths}"
-            )
+    skip_branch_setup = pre_condition_check(
+        args,
+        phase=PRE_CONDITION_PREPARE,
+        changed_paths=changed_paths,
+        current_branch=current_branch,
+    )
 
     if not skip_branch_setup:
         prepare_release_branch(REPO_ROOT, args.base_branch, args.release_branch)
 
-    if args.models_ci_run_id is None and not has_manual_model_spec_changes(REPO_ROOT):
-        raise RuntimeError(
-            "No manual changes to workflows/model_spec.py were found. "
-            "Edit workflows/model_spec.py on the release branch, then rerun "
-            "pre_release.py to generate output-only artifacts."
-        )
-
+    pre_condition_check(args, phase=PRE_CONDITION_GENERATE)
     run_update_model_spec(REPO_ROOT, args.models_ci_run_id, args.tt_metal_commits)
+    pre_condition_check(args, phase=PRE_CONDITION_DISPATCH, version=version)
 
     if not args.commit:
         print_next_steps(version, args.release_branch)

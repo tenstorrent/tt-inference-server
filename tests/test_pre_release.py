@@ -156,6 +156,30 @@ def test_main_commit_flow_stages_commits_and_pushes():
     ]
 
 
+def test_main_does_not_require_github_token_without_release_workflow():
+    args = Namespace(
+        base_branch="main",
+        release_branch="stable",
+        models_ci_run_id=123,
+        tt_metal_commits=None,
+        commit=False,
+        start_release_workflow=False,
+    )
+
+    with patch.object(pr, "parse_args", return_value=args), patch.object(
+        pr, "read_version", return_value="0.9.0"
+    ), patch.object(pr, "list_changed_paths", return_value=[]), patch.object(
+        pr, "get_current_branch", return_value="main"
+    ), patch.object(pr, "prepare_release_branch"), patch.object(
+        pr, "run_update_model_spec"
+    ), patch.object(pr, "print_next_steps"), patch.object(
+        pr, "get_github_token"
+    ) as token_mock:
+        assert pr.main() == 0
+
+    token_mock.assert_not_called()
+
+
 def test_parse_args_allows_start_release_workflow_without_commit():
     args = pr.parse_args(
         [
@@ -250,21 +274,80 @@ def test_main_dispatch_only_mode_skips_generation_and_git_writes():
     )
 
     with patch.object(pr, "parse_args", return_value=args), patch.object(
+        pr, "read_version", return_value="0.9.0"
+    ) as read_version_mock, patch.object(
+        pr, "get_github_token", return_value="token"
+    ) as token_mock, patch.object(
+        pr, "resolve_release_workflow_refs", return_value=("metal-sha", "vllm-sha")
+    ) as refs_mock, patch.object(
         pr, "start_release_models_ci"
     ) as dispatch_mock, patch.object(
-        pr, "read_version"
-    ) as read_version_mock, patch.object(
         pr, "prepare_release_branch"
     ) as prepare_mock, patch.object(
         pr, "run_update_model_spec"
     ) as update_mock, patch.object(pr, "run_git_command") as git_mock:
         assert pr.main() == 0
 
+    token_mock.assert_called_once_with()
+    refs_mock.assert_called_once_with(
+        pr.REPO_ROOT
+        / pr.get_versioned_release_logs_dir("0.9.0")
+        / pr.PRE_RELEASE_DIFF_JSON
+    )
     dispatch_mock.assert_called_once_with("stable")
-    read_version_mock.assert_not_called()
+    read_version_mock.assert_called_once_with(pr.REPO_ROOT / "VERSION")
     prepare_mock.assert_not_called()
     update_mock.assert_not_called()
     git_mock.assert_not_called()
+
+
+def test_main_release_workflow_requires_github_token():
+    args = Namespace(
+        base_branch="main",
+        release_branch="stable",
+        models_ci_run_id=None,
+        tt_metal_commits=None,
+        commit=False,
+        start_release_workflow=True,
+    )
+
+    with patch.object(pr, "parse_args", return_value=args), patch.object(
+        pr, "read_version", return_value="0.9.0"
+    ), patch.object(
+        pr, "get_github_token", side_effect=RuntimeError("GH_PAT is required")
+    ), patch.object(pr, "start_release_models_ci") as dispatch_mock:
+        with pytest.raises(RuntimeError, match="GH_PAT is required"):
+            pr.main()
+
+    dispatch_mock.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "dispatch_error",
+    [
+        FileNotFoundError("Pre-release diff JSON not found"),
+        ValueError("contains multiple tt_metal_commit_after values"),
+    ],
+)
+def test_main_dispatch_only_mode_fails_preconditions_before_dispatch(dispatch_error):
+    args = Namespace(
+        base_branch="main",
+        release_branch="stable",
+        models_ci_run_id=None,
+        tt_metal_commits=None,
+        commit=False,
+        start_release_workflow=True,
+    )
+
+    with patch.object(pr, "parse_args", return_value=args), patch.object(
+        pr, "read_version", return_value="0.9.0"
+    ), patch.object(pr, "get_github_token", return_value="token"), patch.object(
+        pr, "resolve_release_workflow_refs", side_effect=dispatch_error
+    ), patch.object(pr, "start_release_models_ci") as dispatch_mock:
+        with pytest.raises(RuntimeError, match="Release workflow preconditions failed"):
+            pr.main()
+
+    dispatch_mock.assert_not_called()
 
 
 def test_start_release_models_ci_uses_versioned_diff_and_models_ci_config():
@@ -277,6 +360,10 @@ def test_start_release_models_ci_uses_versioned_diff_and_models_ci_config():
 
     with patch.object(pr, "read_version", return_value="0.9.0"), patch.object(
         pr,
+        "resolve_release_workflow_inputs",
+        return_value=(expected_diff_path, "metal-sha", "vllm-sha"),
+    ) as inputs_mock, patch.object(
+        pr,
         "prune_release_models_ci_config",
         return_value={"Llama-3.2-1B-Instruct": ["N150", "N300", "T3K"]},
     ) as prune_mock, patch.object(
@@ -285,16 +372,12 @@ def test_start_release_models_ci_uses_versioned_diff_and_models_ci_config():
         return_value={"Llama-3.2-1B-Instruct": ["N150", "N300", "T3K"]},
     ) as validate_mock, patch.object(
         pr,
-        "resolve_release_workflow_refs",
-        return_value=("metal-sha", "vllm-sha"),
-    ) as refs_mock, patch.object(
-        pr,
         "dispatch_release_workflow",
         return_value="https://github.com/run/123",
     ) as dispatch_mock:
         pr.start_release_models_ci("stable")
 
-    refs_mock.assert_called_once_with(expected_diff_path)
+    inputs_mock.assert_called_once_with("0.9.0")
     prune_mock.assert_called_once_with(
         expected_diff_path, expected_models_ci_config_path
     )
@@ -321,13 +404,19 @@ def test_start_release_models_ci_uses_versioned_diff_path():
         return_value="0.9.0",
     ), patch.object(
         pr,
+        "resolve_release_workflow_inputs",
+        return_value=(
+            pr.REPO_ROOT
+            / pr.get_versioned_release_logs_dir("0.9.0")
+            / pr.PRE_RELEASE_DIFF_JSON,
+            "metal-sha",
+            "vllm-sha",
+        ),
+    ) as inputs_mock, patch.object(
+        pr,
         "prune_release_models_ci_config",
         return_value={"Llama-3.2-1B-Instruct": ["N150", "N300", "T3K"]},
     ), patch.object(
-        pr,
-        "resolve_release_workflow_refs",
-        return_value=("metal-sha", "vllm-sha"),
-    ) as refs_mock, patch.object(
         pr,
         "validate_release_models_ci_config",
         return_value={"Llama-3.2-1B-Instruct": ["N150", "N300", "T3K"]},
@@ -338,11 +427,7 @@ def test_start_release_models_ci_uses_versioned_diff_path():
     ) as dispatch_mock:
         pr.start_release_models_ci("stable")
 
-    refs_mock.assert_called_once_with(
-        pr.REPO_ROOT
-        / pr.get_versioned_release_logs_dir("0.9.0")
-        / pr.PRE_RELEASE_DIFF_JSON
-    )
+    inputs_mock.assert_called_once_with("0.9.0")
     dispatch_mock.assert_called_once_with(
         release_branch="stable",
         tt_metal_ref="metal-sha",
@@ -373,6 +458,8 @@ def test_main_dispatches_release_workflow_after_push():
         pr, "read_version", return_value="0.9.0"
     ), patch.object(pr, "list_changed_paths", return_value=[]), patch.object(
         pr, "get_current_branch", return_value="main"
+    ), patch.object(pr, "get_github_token", return_value="token"), patch.object(
+        pr, "resolve_release_workflow_refs", return_value=("metal-sha", "vllm-sha")
     ), patch.object(pr, "prepare_release_branch"), patch.object(
         pr, "run_update_model_spec"
     ), patch.object(pr, "stage_pre_release_outputs"), patch.object(
@@ -386,3 +473,35 @@ def test_main_dispatches_release_workflow_after_push():
 
     assert event_order == ["push", "dispatch"]
     dispatch_mock.assert_called_once_with("stable")
+
+
+def test_main_commit_flow_validates_dispatch_inputs_before_git_writes():
+    args = Namespace(
+        base_branch="main",
+        release_branch="stable",
+        models_ci_run_id=123,
+        tt_metal_commits=None,
+        commit=True,
+        start_release_workflow=True,
+    )
+
+    with patch.object(pr, "parse_args", return_value=args), patch.object(
+        pr, "read_version", return_value="0.9.0"
+    ), patch.object(pr, "list_changed_paths", return_value=[]), patch.object(
+        pr, "get_current_branch", return_value="main"
+    ), patch.object(pr, "get_github_token", return_value="token"), patch.object(
+        pr, "prepare_release_branch"
+    ), patch.object(pr, "run_update_model_spec") as update_mock, patch.object(
+        pr,
+        "resolve_release_workflow_refs",
+        side_effect=ValueError("contains multiple tt_metal_commit_after values"),
+    ), patch.object(pr, "stage_pre_release_outputs") as stage_mock, patch.object(
+        pr, "run_git_command"
+    ) as git_mock, patch.object(pr, "start_release_models_ci") as dispatch_mock:
+        with pytest.raises(RuntimeError, match="Release workflow preconditions failed"):
+            pr.main()
+
+    update_mock.assert_called_once_with(pr.REPO_ROOT, 123, None)
+    stage_mock.assert_not_called()
+    git_mock.assert_not_called()
+    dispatch_mock.assert_not_called()
