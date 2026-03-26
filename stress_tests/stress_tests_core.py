@@ -766,6 +766,8 @@ class StressTests:
 
         if self.env_config.vllm_api_key:
             env["OPENAI_API_KEY"] = self.env_config.vllm_api_key
+        elif self.env_config.api_key:
+            env["OPENAI_API_KEY"] = self.env_config.api_key
         elif self.env_config.jwt_secret:
             env["OPENAI_API_KEY"] = self.env_config.jwt_secret
         else:

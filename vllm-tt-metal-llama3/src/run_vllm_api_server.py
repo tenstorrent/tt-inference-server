@@ -16,8 +16,8 @@ from vllm import ModelRegistry
 from utils.logging_utils import set_vllm_logging_config
 from utils.prompt_client import run_background_trace_capture
 from utils.vllm_run_utils import (
+    configure_vllm_api_key_env,
     create_model_symlink,
-    get_encoded_api_key,
     resolve_commit,
 )
 
@@ -172,38 +172,8 @@ def handle_secrets(model_spec_json):
             "HF_TOKEN is not set - this may cause issues accessing private models or models requiring authorization"
         )
 
-    # Check if --no-auth was passed via CLI args
     no_auth = model_spec_json.get("cli_args", {}).get("no_auth", False)
-    if no_auth:
-        # Remove VLLM_API_KEY if present to disable authorization
-        if "VLLM_API_KEY" in os.environ:
-            del os.environ["VLLM_API_KEY"]
-        logger.info(
-            "--no-auth is set: requests to vLLM API will not require authorization. "
-            "HTTP Authorization header will not be checked."
-        )
-        return
-
-    # Check for VLLM_API_KEY first, then fall back to JWT_SECRET
-    vllm_api_key = os.getenv("VLLM_API_KEY")
-    if vllm_api_key:
-        logger.info("VLLM_API_KEY is already set, using existing value")
-        return
-
-    # VLLM_API_KEY is not set, check if JWT_SECRET is available
-    jwt_secret = os.getenv("JWT_SECRET")
-    if not jwt_secret:
-        logger.warning(
-            "Neither VLLM_API_KEY nor JWT_SECRET are set: HTTP requests to vLLM API will not require authorization"
-        )
-        return
-
-    encoded_api_key = get_encoded_api_key(jwt_secret)
-    if encoded_api_key is not None:
-        os.environ["VLLM_API_KEY"] = encoded_api_key
-        logger.info(
-            "JWT_SECRET is set: HTTP requests to vLLM API require bearer token in 'Authorization' header. See docs for how to get bearer token."
-        )
+    configure_vllm_api_key_env(no_auth)
 
 
 def runtime_settings(model_spec_json, impl_id):

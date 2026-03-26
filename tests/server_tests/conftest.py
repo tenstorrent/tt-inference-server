@@ -7,8 +7,7 @@ import pytest
 import requests
 import json
 from datetime import datetime
-from utils.prompt_client import PromptClient
-from utils.prompt_configs import EnvironmentConfig
+from utils.prompt_configs import EnvironmentConfig, resolve_authorization_bearer
 
 
 # 1. Add command-line options for endpoint and metadata
@@ -80,8 +79,7 @@ def api_client(endpoint_url):
 
     def _make_request(json_payload, timeout=30):
         env_config = EnvironmentConfig()
-        prompt_client = PromptClient(env_config)
-        authorization = prompt_client._get_authorization()
+        authorization = resolve_authorization_bearer(env_config)
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {authorization}",

@@ -2,9 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
+import json
+import logging
+import os
 from dataclasses import dataclass
 from typing import List, Optional
-import os
+
+import jwt
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -49,8 +55,28 @@ class EnvironmentConfig:
         "HF_MODEL_REPO_ID", "meta-llama/Llama-3.1-70B-Instruct"
     )
     vllm_api_key: Optional[str] = os.environ.get("VLLM_API_KEY")
+    api_key: Optional[str] = os.environ.get("API_KEY")
     jwt_secret: Optional[str] = os.environ.get("JWT_SECRET")
     deploy_url: str = os.environ.get("DEPLOY_URL", "http://127.0.0.1")
     service_port: str = os.environ.get("SERVICE_PORT", "7000")
     cache_root: str = os.environ.get("CACHE_ROOT", ".")
     mesh_device: str = get_mesh_device()
+
+
+def resolve_authorization_bearer(env_config: EnvironmentConfig) -> Optional[str]:
+    """Bearer token for API requests: VLLM_API_KEY, then API_KEY, then JWT from JWT_SECRET."""
+    if env_config.vllm_api_key:
+        return env_config.vllm_api_key
+
+    if env_config.api_key:
+        return env_config.api_key
+
+    if env_config.jwt_secret:
+        json_payload = json.loads('{"team_id": "tenstorrent", "token_id":"debug-test"}')
+        return jwt.encode(json_payload, env_config.jwt_secret, algorithm="HS256")
+
+    logger.warning(
+        "Neither VLLM_API_KEY, API_KEY, nor JWT_SECRET environment variables are set. "
+        "Proceeding without authorization."
+    )
+    return None

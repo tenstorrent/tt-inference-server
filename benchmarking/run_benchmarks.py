@@ -328,6 +328,7 @@ def main():
     env_config = EnvironmentConfig()
     env_config.jwt_secret = jwt_secret
     env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
+    env_config.api_key = os.getenv("API_KEY")
     env_config.service_port = service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
