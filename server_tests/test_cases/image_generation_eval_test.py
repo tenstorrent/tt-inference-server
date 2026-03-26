@@ -65,6 +65,23 @@ CONFIG = ImageGenConfig()
 HEALTH_CONFIG = HealthCheckConfig()
 
 
+SDXL_RESOLUTION_MODEL_NAME_SUFFIX = {
+    (512, 512): "-512x512",
+}
+
+
+def resolve_model_name(base_model_name: str, image_resolution: Optional[tuple]) -> str:
+    """Append resolution suffix to model name for accuracy reference lookup.
+
+    Only appends a suffix for non-default resolutions (e.g. 512x512).
+    The default 1024x1024 uses the base model name unchanged.
+    """
+    if image_resolution is None:
+        return base_model_name
+    suffix = SDXL_RESOLUTION_MODEL_NAME_SUFFIX.get(tuple(image_resolution), "")
+    return f"{base_model_name}{suffix}"
+
+
 @dataclass
 class ImageGenerationEvalsTestRequest:
     """Request parameters for image generation eval."""
@@ -75,6 +92,7 @@ class ImageGenerationEvalsTestRequest:
     num_inference_steps: int = CONFIG.DEFAULT_INFERENCE_STEPS
     server_url: Optional[str] = None
     request_timeout: Optional[int] = None
+    image_resolution: Optional[tuple] = None
     lora_path: Optional[str] = None
     lora_scale: Optional[float] = None
 
@@ -139,13 +157,22 @@ class ImageGenerationEvalsTest(BaseTest):
         status_list: list[ImageGenerationTestStatus],
     ) -> dict:
         """Compute metrics and check accuracy."""
-        logger.info("Step 3: Computing FID and CLIP scores")
-        fid_score, avg_clip, std_clip = calculate_metrics(status_list)
+        resolution = request.image_resolution or (1024, 1024)
+        logger.info("Step 3: Computing FID and CLIP scores (resolution=%s)", resolution)
+        fid_score, avg_clip, std_clip = calculate_metrics(
+            status_list, image_resolution=resolution
+        )
         logger.info("FID: %.2f, CLIP: %.4f ± %.4f", fid_score, avg_clip, std_clip)
 
-        logger.info("Step 4: Checking accuracy against reference")
+        reference_model_name = resolve_model_name(
+            request.model_name, request.image_resolution
+        )
+        logger.info(
+            "Step 4: Checking accuracy against reference (key=%s)",
+            reference_model_name,
+        )
         accuracy_check = calculate_accuracy_check(
-            fid_score, avg_clip, request.num_prompts, request.model_name
+            fid_score, avg_clip, request.num_prompts, reference_model_name
         )
 
         self.eval_results = {

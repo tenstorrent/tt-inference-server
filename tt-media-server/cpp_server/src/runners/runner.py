@@ -41,7 +41,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--cache-path",
         type=Path,
-        default=Path("/mnt/models/deepseek-ai/cache-2026-03-09"),
+        default=Path("/mnt/models/deepseek-ai/cache-2026-03-22"),
         help="Path to the weight cache directory (required for --weights real)",
     )
     parser.add_argument(
@@ -146,6 +146,11 @@ def _open_mesh_device(
         return ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(4, 2))
 
 
+def _run_dummy_inference(model_pipeline: ModelPipeline) -> None:
+    while not _shutdown:
+        model_pipeline.run_inference(prompt_token_ids=None, max_new_tokens=1)
+
+
 def main() -> None:
     signal.signal(signal.SIGTERM, _handle_sigterm)
     rank = _rank()
@@ -186,8 +191,7 @@ def main() -> None:
             _run_shm_bridge(model_pipeline)
         else:
             print(f"Rank {rank}: Waiting (non-host)")
-            while not _shutdown:
-                signal.pause()
+            _run_dummy_inference(model_pipeline)
 
         model_pipeline.terminate()
     finally:

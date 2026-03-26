@@ -200,6 +200,7 @@ class DeviceTypes(Enum):
     GALAXY = "galaxy"
     T3K = "t3k"
     P300 = "p300"
+    P150 = "p150"
     P150X4 = "p150x4"  # 4x P150 cards (1,4 mesh)
     P150X8 = "p150x8"  # BH LoudBox - 8x P150 (2,4 mesh)
     P300X2 = "p300x2"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
@@ -245,6 +246,7 @@ class AudioResponseFormat(Enum):
     OGG = "ogg"
 
 
+SDXL_VALID_IMAGE_RESOLUTIONS = frozenset({(1024, 1024), (512, 512)})
 AUDIO_RESPONSE_FORMATS = frozenset(e.value for e in AudioResponseFormat)
 
 # TTS formats that require ffmpeg for encoding (WAV does not)
@@ -350,6 +352,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 3000,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
@@ -631,6 +634,24 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
@@ -650,6 +671,24 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 2,
         "queue_for_multiprocessing": QueueType.BatchFifo.value,
+    },
+    (ModelRunners.TT_WHISPER, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_WHISPER, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_WHISPER, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
     },
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),

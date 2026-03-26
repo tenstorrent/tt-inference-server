@@ -19,6 +19,9 @@ from typing import Callable
 PREFILL_MAX_TOKEN_IDS = 131072  # matches C++ sp_pipeline::PREFILL_MAX_TOKEN_IDS (128k)
 DECODE_MAX_TOKEN_IDS = 1
 
+# Matches sp_pipeline::SharedMemoryState (shared_memory.hpp): uint64_t cursor only.
+_STATE_SHM_SIZE = 8
+
 
 @dataclass(frozen=True)
 class PrefillMessage:
@@ -60,6 +63,7 @@ class SharedMemory:
         self._message_size = self._HEADER_SIZE + max_token_ids * self.TOKEN_ID_SIZE
         self._total_size = self.SLOTS * self._message_size
         self._shm: _shm.SharedMemory | None = None
+        self._shm_state: _shm.SharedMemory | None = None
         self._buf: memoryview | None = None
         self._pos = 0
         self._is_shutdown = is_shutdown
@@ -82,7 +86,22 @@ class SharedMemory:
         os.chmod(f"/dev/shm/{self._name}", 0o666)
         self._buf = self._shm.buf
 
+        # C++ may create "{name}_state" for the persisted cursor. Open it here too so
+        # multiprocessing.resource_tracker registers it and unlinks on process exit
+        # (same lifecycle as the ring buffer), even if C++ created the segment first.
+        state_name = f"{self._name}_state"
+        try:
+            self._shm_state = _shm.SharedMemory(name=state_name, create=False)
+        except FileNotFoundError:
+            self._shm_state = _shm.SharedMemory(
+                name=state_name, create=True, size=_STATE_SHM_SIZE
+            )
+        os.chmod(f"/dev/shm/{state_name}", 0o666)
+
     def close(self) -> None:
+        if self._shm_state:
+            self._shm_state.close()
+            self._shm_state = None
         if self._shm:
             self._shm.close()
             self._shm = None

@@ -173,7 +173,7 @@ def print_summary(reports: List[TestReport], test_cases):
     return failed == 0
 
 
-def main():
+def main() -> int:
     """Main entry point"""
 
     # Configure logging first
@@ -221,10 +221,8 @@ def main():
                             )
                 except Exception:
                     logger.warning("  (Failed to load available configurations)")
-                    # return success to not fail CI runs that don't have spec tests
-                    return 0
-                # gracefully exit
-                return 0
+                # explicit model/device selection without a matching config is a failure
+                return 1
         else:
             logger.warning("TEST_CONFIG_JSON environment variable not set")
             logger.warning("Please either:")
@@ -234,7 +232,7 @@ def main():
             logger.warning(
                 "  2. Provide --model and --device arguments to auto-select from server_tests_config.json"
             )
-            sys.exit(0)
+            return 0
 
         # Load test cases from the test_cases_config
         test_cases = []
@@ -282,7 +280,7 @@ def main():
 
         if not test_cases:
             logger.error("No test cases loaded")
-            sys.exit(1)
+            return 1
 
         logger.info(f"Created {len(test_cases)} test case(s)")
 
@@ -304,13 +302,13 @@ def main():
 
     except KeyboardInterrupt:
         logger.info("Test execution interrupted by user")
-        sys.exit(130)
+        return 130
     except Exception as e:
         logger.error(f"Fatal error during test execution: {e}")
         import traceback
 
         traceback.print_exc()
-        sys.exit(1)
+        return 1
 
 
 def parse_args():
@@ -355,4 +353,4 @@ def parse_args():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
