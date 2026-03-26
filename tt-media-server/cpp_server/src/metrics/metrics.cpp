@@ -177,9 +177,7 @@ void ServerMetrics::onRequestCompleted(const std::string& task_id,
       .Increment();
 }
 
-void ServerMetrics::setQueueDepth(double n) {
-  queue_depth_->Set(n);
-}
+void ServerMetrics::setQueueDepth(double n) { queue_depth_->Set(n); }
 
 std::string ServerMetrics::renderText() const {
   prometheus::TextSerializer serializer;

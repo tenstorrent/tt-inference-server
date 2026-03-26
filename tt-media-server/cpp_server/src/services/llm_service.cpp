@@ -352,7 +352,6 @@ void LLMService::processStreamingRequest(
   tt::metrics::ServerMetrics::instance().onRequestSubmitted(
       taskId, static_cast<int>(prompt.size()));
 
-
   auto sequence = std::make_unique<llm_engine::Sequence>(
       llm_engine::TaskID(taskId),
       tt::config::llmEngineConfig().kvcache_block_size, std::move(tokenIds));
