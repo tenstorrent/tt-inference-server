@@ -99,6 +99,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "stable-diffusion-xl-base-1.0"
                 }
             },
             {
@@ -275,6 +278,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "stable-diffusion-xl-base-1.0"
                 }
             }
         ]
@@ -379,6 +385,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "stable-diffusion-xl-base-1.0"
                 }
             },
             {
@@ -555,6 +564,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "stable-diffusion-xl-base-1.0"
                 }
             },
             {
@@ -2110,6 +2122,191 @@
     },
     {
         "weights": [
+            "resnet-50"
+        ],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "vovnet"
+        ],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "efficientnet"
+        ],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "segformer"
+        ],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "vit"
+        ],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
             "Wan2.2-T2V-A14B-Diffusers"
         ],
         "device": "t3k",
@@ -2742,7 +2939,7 @@
                 "targets": {
                     "num_of_devices": 1,
                     "num_inference_steps": 20,
-                    "image_generation_time": 10
+                    "image_generation_time": 16
                 }
             },
             {
@@ -2760,7 +2957,7 @@
                 "targets": {
                     "num_of_devices": 1,
                     "num_inference_steps": 30,
-                    "image_generation_time": 14
+                    "image_generation_time": 23
                 }
             },
             {
@@ -2778,7 +2975,7 @@
                 "targets": {
                     "num_of_devices": 1,
                     "num_inference_steps": 50,
-                    "image_generation_time": 23
+                    "image_generation_time": 36
                 }
             },
             {
@@ -2792,6 +2989,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "FLUX.1-dev"
                 }
             }
         ]
@@ -2896,6 +3096,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "FLUX.1-dev"
                 }
             }
         ]
@@ -3000,6 +3203,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "FLUX.1-schnell"
                 }
             }
         ]
@@ -3104,6 +3310,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "FLUX.1-schnell"
                 }
             }
         ]
@@ -3208,6 +3417,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "Motif-Image-6B-Preview"
                 }
             }
         ]
@@ -3312,6 +3524,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "Motif-Image-6B-Preview"
                 }
             }
         ]
@@ -3416,6 +3631,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "FLUX.1-dev"
                 }
             }
         ]
@@ -3520,6 +3738,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "FLUX.1-dev"
                 }
             }
         ]
@@ -3624,6 +3845,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "FLUX.1-dev"
                 }
             }
         ]
@@ -3728,6 +3952,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "FLUX.1-dev"
                 }
             }
         ]
@@ -3832,6 +4059,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "FLUX.1-schnell"
                 }
             }
         ]
@@ -3936,6 +4166,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "FLUX.1-schnell"
                 }
             }
         ]
@@ -4040,6 +4273,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "FLUX.1-schnell"
                 }
             }
         ]
@@ -4144,6 +4380,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "FLUX.1-schnell"
                 }
             }
         ]
@@ -4248,6 +4487,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "Motif-Image-6B-Preview"
                 }
             }
         ]
@@ -4352,6 +4594,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "Motif-Image-6B-Preview"
                 }
             }
         ]
@@ -4456,6 +4701,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "Motif-Image-6B-Preview"
                 }
             }
         ]
@@ -4630,6 +4878,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "stable-diffusion-3.5-large"
                 }
             }
         ]
@@ -4734,6 +4985,9 @@
                     "retry_delay": 60,
                     "break_on_failure": false,
                     "mock_mode": false
+                },
+                "targets": {
+                    "model": "stable-diffusion-3.5-large"
                 }
             }
         ]
