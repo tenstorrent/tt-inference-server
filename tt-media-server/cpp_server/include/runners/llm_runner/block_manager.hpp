@@ -36,6 +36,13 @@ class BlockManager {
   bool canAppend(const Sequence& seq) const;
   void mayAppend(Sequence& seq);
 
+  int blockSize() const { return block_size_; }
+  int numFreeBlocks() const { return static_cast<int>(free_block_ids_.size()); }
+  const std::deque<int>& freeBlockIds() const { return free_block_ids_; }
+
+  void claimBlock(int blockId);
+  void releaseBlock(int blockId);
+
  private:
   Block& allocateBlock(int blockId);
   void deallocateBlock(int blockId);

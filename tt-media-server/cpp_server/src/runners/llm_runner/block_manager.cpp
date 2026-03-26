@@ -69,6 +69,14 @@ void BlockManager::deallocateBlock(int blockId) {
       << " free=" << free_block_ids_.size() << std::endl;
 }
 
+void BlockManager::claimBlock(int blockId) { allocateBlock(blockId); }
+
+void BlockManager::releaseBlock(int blockId) {
+  Block& block = blocks_[static_cast<size_t>(blockId)];
+  block.ref_count = 0;
+  deallocateBlock(blockId);
+}
+
 bool BlockManager::canAllocate(const Sequence& seq) const {
   return static_cast<int>(free_block_ids_.size()) >=
          static_cast<int>(seq.numBlocks());
