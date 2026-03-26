@@ -16,6 +16,7 @@ from workflows.utils import get_repo_root_path
 from workflows.workflow_types import DeviceTypes
 
 logger = logging.getLogger(__name__)
+RELEASE_PERFORMANCE_SCHEMA_VERSION = "0.1.0"
 
 DEFAULT_PERF_TARGETS_MAP: Dict[str, float] = {
     "functional": 0.10,
@@ -312,11 +313,16 @@ def load_perf_targets_json(
 def load_release_perf_targets_json(path: Optional[Path] = None) -> Dict[str, Any]:
     filepath = Path(path or get_release_perf_targets_path())
     if not filepath.exists():
-        return {"schema_version": 1, "models": {}}
+        return {"schema_version": RELEASE_PERFORMANCE_SCHEMA_VERSION, "models": {}}
     with filepath.open("r", encoding="utf-8") as file:
         data = json.load(file)
     if not isinstance(data.get("models"), dict):
-        return {"schema_version": data.get("schema_version", 1), "models": {}}
+        return {
+            "schema_version": data.get(
+                "schema_version", RELEASE_PERFORMANCE_SCHEMA_VERSION
+            ),
+            "models": {},
+        }
     return data
 
 

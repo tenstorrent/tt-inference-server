@@ -35,7 +35,7 @@ def make_template():
 
 def test_generate_model_page_group_page_embeds_matching_release_report():
     release_performance_data = {
-        "schema_version": 1,
+        "schema_version": "0.1.0",
         "models": {
             "DemoModel": {
                 "n150": {
@@ -123,7 +123,7 @@ def test_generate_model_page_group_page_skips_release_report_without_match():
         "DemoModel",
         [make_template()],
         HardwarePageGroup.from_device_type(DeviceTypes.N150),
-        release_performance_data={"schema_version": 1, "models": {}},
+        release_performance_data={"schema_version": "0.1.0", "models": {}},
     )
 
     assert "Release Report" not in markdown
@@ -131,7 +131,7 @@ def test_generate_model_page_group_page_skips_release_report_without_match():
 
 def make_summary_release_performance_data():
     return {
-        "schema_version": 1,
+        "schema_version": "0.1.0",
         "models": {
             "DemoModel": {
                 "n150": {

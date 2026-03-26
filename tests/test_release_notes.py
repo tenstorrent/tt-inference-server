@@ -43,7 +43,7 @@ def make_release_performance_data(
     *, perf_status="functional", ttft=45.0, test_status="passed"
 ):
     return {
-        "schema_version": 1,
+        "schema_version": "0.1.0",
         "models": {
             "DemoModel": {
                 "n150": {

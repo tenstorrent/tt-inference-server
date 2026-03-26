@@ -341,7 +341,7 @@ def test_get_regression_perf_target_reads_release_baseline(monkeypatch):
     monkeypatch.setattr(
         "workflows.perf_targets.release_performance_reference",
         {
-            "schema_version": 1,
+            "schema_version": "0.1.0",
             "models": {
                 "DemoModel": {
                     "n150": {
@@ -385,7 +385,7 @@ def test_get_named_perf_reference_merges_regression_targets(monkeypatch):
     monkeypatch.setattr(
         "workflows.perf_targets.release_performance_reference",
         {
-            "schema_version": 1,
+            "schema_version": "0.1.0",
             "models": {
                 "Qwen3-32B": {
                     "galaxy": {

@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 RELEASE_PERFORMANCE_PATH = (
     PROJECT_ROOT / "benchmarking" / "benchmark_targets" / "release_performance.json"
 )
-RELEASE_PERFORMANCE_SCHEMA_VERSION = 1
+RELEASE_PERFORMANCE_SCHEMA_VERSION = "0.1.0"
 
 
 def get_release_performance_path() -> Path:
