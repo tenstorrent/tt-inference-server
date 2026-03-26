@@ -159,12 +159,23 @@ manually edited templates whose `tt_metal_commit` changed. When CI references
 are available they are attached to the changed `ModelSpecTemplate` records;
 otherwise those entries render as `N/A` in the markdown output.
 
+Both flows also accept `--tt-metal-commits <commit> [<commit> ...]` to keep
+only template diffs whose resulting `tt_metal_commit` exactly matches one of
+the supplied values. Any other template with a `tt_metal_commit` diff is
+reverted to its previous release template before the release diff, docs, and
+`release_model_spec.json` are generated. If no previous release template exists
+for a changed template, the entire current `ModelSpecTemplate` is deleted.
+
 When using `--models-ci-run-id` in this step, pass the Nightly Models CI
 workflow run ID.
 
 ```bash
 # process a specific Nightly Models CI workflow run_id to update passing models
 python3 scripts/release/update_model_spec.py --models-ci-run-id 19339722549
+
+# keep only the chosen tt-metal commits in the final release diff/output set
+python3 scripts/release/update_model_spec.py --models-ci-run-id 19339722549 \
+  --tt-metal-commits abc1234 def5678
 ```
 
 ### [optional] step 2B: manual changes to model_spec.py
@@ -179,15 +190,19 @@ re-generate the Model Support documentation and `release_model_spec.json`:
 
 ```bash
 python3 scripts/release/update_model_spec.py --output-only
+
+# optionally keep only one intended tt-metal uplift in the release artifacts
+python3 scripts/release/update_model_spec.py --output-only \
+  --tt-metal-commits abc1234
 ```
 
 #### outputs
 
 - `workflows/model_spec.py`: Updates `ModelSpecTemplate`:
-  - `tt_metal_commit`: from Models CI run id, or manual edits.
+  - `tt_metal_commit`: from Models CI run id, or manual edits; non-allowlisted diffs are reverted to the previous release template when `--tt-metal-commits` is used, or deleted if the template did not exist in the previous release.
   - `release_version`: where tt_metal_commit has been changed.
 - `release_model_spec.json`: all model specs fully expanded from the ModelSpecTemplates in `workflows/model_spec.py`
-- `release_logs/v{VERSION}/pre_release_models_diff.json`: summary of changed `ModelSpecTemplate` records derived from the git diff of `workflows/model_spec.py` against the previous release version branch, with CI links when available. This is used for post-release as well. and in `scripts/release/post_release.py`.
+- `release_logs/v{VERSION}/pre_release_models_diff.json`: summary of changed `ModelSpecTemplate` records derived from the filtered git diff of `workflows/model_spec.py` against the previous release version branch, with CI links when available. This is used for post-release as well. and in `scripts/release/post_release.py`.
 - `release_logs/v{VERSION}/pre_release_models_diff.md`: This markdown version of `pre_release_models_diff.json` is used by `scripts/release/generate_release_notes.py`.
 - `release_logs/v{VERSION}/models_ci_all_results_*.json`: this has full Models CI parsed data for analysis
 - `release_logs/v{VERSION}/models_ci_last_good_*.json`: this may be used downstream for release process

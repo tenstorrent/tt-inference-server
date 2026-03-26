@@ -37,7 +37,7 @@ import subprocess
 import sys
 import types
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -71,6 +71,16 @@ except ImportError:
     )
 
 RELEASE_BRANCH_PATTERN = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+LEGACY_UTILS_REPORT_MODULE = "workflows.utils_report"
+LEGACY_UTILS_REPORT_IMPORT_PATTERN = re.compile(
+    rf"^from\s+{re.escape(LEGACY_UTILS_REPORT_MODULE)}\s+import\s+(?P<imports>.+)$",
+    re.MULTILINE,
+)
+LEGACY_UTILS_REPORT_NAME_MAP = {
+    "BenchmarkTaskParams": "BenchmarkTaskParams",
+    "BenchmarkTaskParamsCNN": "BenchmarkTaskParamsCNN",
+    "PerformanceTarget": "PerfTarget as PerformanceTarget",
+}
 
 
 def map_perf_status_to_model_status(perf_status):
@@ -598,8 +608,37 @@ def load_model_spec_module_from_content(
     module = types.ModuleType(module_name)
     module.__file__ = str(model_spec_path)
     sys.modules[module_name] = module
-    exec(compile(content, str(model_spec_path), "exec"), module.__dict__)
+    normalized_content = normalize_legacy_model_spec_imports(content)
+    exec(compile(normalized_content, str(model_spec_path), "exec"), module.__dict__)
     return module
+
+
+def normalize_legacy_model_spec_imports(content: str) -> str:
+    """Rewrite legacy imports in historical model_spec.py content."""
+
+    def replace_legacy_import(match: re.Match) -> str:
+        requested_imports = [
+            import_name.strip()
+            for import_name in match.group("imports").split(",")
+            if import_name.strip()
+        ]
+        rewritten_imports = []
+        unsupported_imports = []
+        for import_name in requested_imports:
+            rewritten_name = LEGACY_UTILS_REPORT_NAME_MAP.get(import_name)
+            if rewritten_name is None:
+                unsupported_imports.append(import_name)
+                continue
+            rewritten_imports.append(rewritten_name)
+        if unsupported_imports:
+            unsupported_names = ", ".join(sorted(unsupported_imports))
+            raise ValueError(
+                "Unsupported historical model_spec import(s) from "
+                f"{LEGACY_UTILS_REPORT_MODULE}: {unsupported_names}"
+            )
+        return "from workflows.perf_targets import " + ", ".join(rewritten_imports)
+
+    return LEGACY_UTILS_REPORT_IMPORT_PATTERN.sub(replace_legacy_import, content)
 
 
 def evaluate_template_block(model_spec_module, template_text: str):
@@ -835,6 +874,68 @@ def build_release_diff_record(
     }
 
 
+def has_release_diff_commit_change(
+    before_snapshot: Optional[TemplateSnapshot],
+    after_snapshot: Optional[TemplateSnapshot],
+) -> bool:
+    """Return True when a template changed release-tracked commit fields."""
+    if after_snapshot is None:
+        return False
+
+    before_tt_metal_commit = (
+        before_snapshot["tt_metal_commit"] if before_snapshot else None
+    )
+    before_vllm_commit = before_snapshot["vllm_commit"] if before_snapshot else None
+    after_tt_metal_commit = after_snapshot["tt_metal_commit"]
+    after_vllm_commit = after_snapshot["vllm_commit"]
+
+    if before_snapshot is None:
+        return bool(after_tt_metal_commit or after_vllm_commit)
+
+    return (
+        before_tt_metal_commit != after_tt_metal_commit
+        or before_vllm_commit != after_vllm_commit
+    )
+
+
+def iter_template_snapshot_matches(
+    before_snapshots: List[TemplateSnapshot],
+    after_snapshots: List[TemplateSnapshot],
+    context: str,
+):
+    """Yield matched before/after template snapshots in source order."""
+    before_by_template_key = build_snapshot_index_by_template_key(
+        before_snapshots, f"{context} (before snapshots)"
+    )
+    build_snapshot_index_by_template_key(
+        after_snapshots, f"{context} (after snapshots)"
+    )
+    matched_before_occurrence_keys = set()
+    unmatched_after_snapshots = []
+
+    for index, after_snapshot in enumerate(after_snapshots):
+        before_snapshot = before_by_template_key.get(after_snapshot["template_key"])
+        if before_snapshot is None:
+            unmatched_after_snapshots.append((index, after_snapshot))
+            continue
+
+        matched_before_occurrence_keys.add(before_snapshot["occurrence_key"])
+        yield index, before_snapshot, after_snapshot
+
+    unmatched_before_by_occurrence = {
+        snapshot["occurrence_key"]: snapshot
+        for snapshot in before_snapshots
+        if snapshot["occurrence_key"] not in matched_before_occurrence_keys
+    }
+
+    for index, after_snapshot in unmatched_after_snapshots:
+        yield (
+            index,
+            unmatched_before_by_occurrence.get(after_snapshot["occurrence_key"]),
+            after_snapshot,
+        )
+
+
 def build_release_diff_records_from_git(
     model_spec_path: Path,
     current_content: Optional[str] = None,
@@ -854,48 +955,14 @@ def build_release_diff_records_from_git(
     )
 
     ci_metadata_by_occurrence = ci_metadata_by_occurrence or {}
-    before_by_template_key = build_snapshot_index_by_template_key(
-        before_snapshots, "building release diff records from git (before snapshots)"
-    )
-    build_snapshot_index_by_template_key(
-        after_snapshots, "building release diff records from git (after snapshots)"
-    )
-    matched_before_occurrence_keys = set()
     records = []
-    unmatched_after_snapshots = []
 
-    for after_snapshot in after_snapshots:
-        before_snapshot = before_by_template_key.get(after_snapshot["template_key"])
-        if before_snapshot is None:
-            unmatched_after_snapshots.append(after_snapshot)
-            continue
-
-        matched_before_occurrence_keys.add(before_snapshot["occurrence_key"])
-        if before_snapshot["template_text"] == after_snapshot["template_text"]:
-            continue
-
-        records.append(
-            build_release_diff_record(
-                before_snapshot,
-                after_snapshot,
-                ci_metadata_by_occurrence.get(after_snapshot["occurrence_key"]),
-            )
-        )
-
-    unmatched_before_by_occurrence = {
-        snapshot["occurrence_key"]: snapshot
-        for snapshot in before_snapshots
-        if snapshot["occurrence_key"] not in matched_before_occurrence_keys
-    }
-
-    for after_snapshot in unmatched_after_snapshots:
-        before_snapshot = unmatched_before_by_occurrence.get(
-            after_snapshot["occurrence_key"]
-        )
-        if (
-            before_snapshot
-            and before_snapshot["template_text"] == after_snapshot["template_text"]
-        ):
+    for _, before_snapshot, after_snapshot in iter_template_snapshot_matches(
+        before_snapshots,
+        after_snapshots,
+        "building release diff records from git",
+    ):
+        if not has_release_diff_commit_change(before_snapshot, after_snapshot):
             continue
 
         records.append(
@@ -926,6 +993,89 @@ def generate_release_diff_outputs_from_git(
     return write_release_diff_outputs(update_records, output_dir)
 
 
+def revert_disallowed_tt_metal_commit_diffs_from_git(
+    model_spec_path: Path,
+    current_content: str,
+    tt_metal_commits: Optional[List[str]] = None,
+    base_ref: Optional[str] = None,
+):
+    """Revert or delete changed templates whose resulting `tt_metal_commit` is not allowlisted."""
+    if not tt_metal_commits:
+        return current_content, 0, 0
+
+    allowed_tt_metal_commits: Set[str] = set(tt_metal_commits)
+    base_text = read_git_base_model_spec_content(model_spec_path, ref=base_ref)
+    before_snapshots = build_template_snapshots(
+        model_spec_path, base_text, "model_spec_tt_metal_filter_before"
+    )
+    after_snapshots = build_template_snapshots(
+        model_spec_path, current_content, "model_spec_tt_metal_filter_after"
+    )
+    template_spans = extract_template_block_spans(current_content)
+
+    if len(template_spans) != len(after_snapshots):
+        raise ValueError(
+            "Template block count does not match loaded spec_templates count"
+        )
+
+    replacement_by_index = {}
+    deleted_indices = set()
+
+    for index, before_snapshot, after_snapshot in iter_template_snapshot_matches(
+        before_snapshots,
+        after_snapshots,
+        "filtering tt_metal_commit changes from git",
+    ):
+        after_commit = after_snapshot["tt_metal_commit"]
+        if after_commit in allowed_tt_metal_commits:
+            continue
+        if (
+            before_snapshot
+            and before_snapshot["template_text"] == after_snapshot["template_text"]
+        ):
+            continue
+        if before_snapshot is None:
+            print(
+                "Deleting template with non-allowlisted tt_metal_commit because "
+                "no previous release template was found for "
+                f"{after_snapshot['impl_id']} with tt_metal_commit={after_commit}."
+            )
+            deleted_indices.add(index)
+            continue
+        replacement_by_index[index] = before_snapshot["template_text"]
+
+    updated_content = current_content
+    changed_indices = sorted(
+        set(replacement_by_index).union(deleted_indices),
+        reverse=True,
+    )
+    for index in changed_indices:
+        start_pos, end_pos, _ = template_spans[index]
+        if index in deleted_indices:
+            delete_start = start_pos
+            line_start = current_content.rfind("\n", 0, start_pos) + 1
+            if current_content[line_start:start_pos].strip() == "":
+                delete_start = line_start
+            delete_end = end_pos
+            if (
+                delete_end < len(current_content)
+                and current_content[delete_end] == "\n"
+            ):
+                delete_end += 1
+            updated_content = (
+                updated_content[:delete_start] + updated_content[delete_end:]
+            )
+            continue
+
+        updated_content = (
+            updated_content[:start_pos]
+            + replacement_by_index[index]
+            + updated_content[end_pos:]
+        )
+
+    return updated_content, len(replacement_by_index), len(deleted_indices)
+
+
 def apply_release_version_to_manual_updates_from_git(
     model_spec_path: Path,
     current_content: str,
@@ -947,14 +1097,6 @@ def apply_release_version_to_manual_updates_from_git(
             "Template block count does not match loaded spec_templates count"
         )
 
-    before_by_template_key = build_snapshot_index_by_template_key(
-        before_snapshots, "stamping release_version from git (before snapshots)"
-    )
-    build_snapshot_index_by_template_key(
-        after_snapshots, "stamping release_version from git (after snapshots)"
-    )
-    matched_before_occurrence_keys = set()
-    unmatched_after_snapshots = []
     indices_to_update = []
 
     def maybe_mark_for_release_version(index, before_snapshot, after_snapshot):
@@ -964,25 +1106,11 @@ def apply_release_version_to_manual_updates_from_git(
             return
         indices_to_update.append(index)
 
-    for index, after_snapshot in enumerate(after_snapshots):
-        before_snapshot = before_by_template_key.get(after_snapshot["template_key"])
-        if before_snapshot is None:
-            unmatched_after_snapshots.append((index, after_snapshot))
-            continue
-
-        matched_before_occurrence_keys.add(before_snapshot["occurrence_key"])
-        maybe_mark_for_release_version(index, before_snapshot, after_snapshot)
-
-    unmatched_before_by_occurrence = {
-        snapshot["occurrence_key"]: snapshot
-        for snapshot in before_snapshots
-        if snapshot["occurrence_key"] not in matched_before_occurrence_keys
-    }
-
-    for index, after_snapshot in unmatched_after_snapshots:
-        before_snapshot = unmatched_before_by_occurrence.get(
-            after_snapshot["occurrence_key"]
-        )
+    for index, before_snapshot, after_snapshot in iter_template_snapshot_matches(
+        before_snapshots,
+        after_snapshots,
+        "stamping release_version from git",
+    ):
         maybe_mark_for_release_version(index, before_snapshot, after_snapshot)
 
     updated_content = current_content
@@ -1273,6 +1401,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--tt-metal-commits",
+        nargs="+",
+        default=None,
+        help=(
+            "Only keep template diffs whose resulting tt_metal_commit exactly "
+            "matches one of these values; revert other tt_metal_commit diffs to "
+            "the previous release template when possible."
+        ),
+    )
+    parser.add_argument(
         "--readme-path",
         default="README.md",
         help="Path to README.md file (default: README.md)",
@@ -1314,9 +1452,29 @@ def main():
         )
 
         current_content = model_spec_path.read_text()
+        filtered_content, reverted_templates, deleted_templates = (
+            revert_disallowed_tt_metal_commit_diffs_from_git(
+                model_spec_path,
+                current_content,
+                tt_metal_commits=args.tt_metal_commits,
+                base_ref=base_release_ref,
+            )
+        )
+        if reverted_templates:
+            print(
+                "Reverted templates with non-allowlisted tt_metal_commit diffs: "
+                f"{reverted_templates}"
+            )
+        if deleted_templates:
+            print(
+                "Deleted templates with non-allowlisted tt_metal_commit diffs and "
+                "no previous release template: "
+                f"{deleted_templates}"
+            )
+
         updated_content, release_version_updates = (
             apply_release_version_to_manual_updates_from_git(
-                model_spec_path, current_content, VERSION, base_ref=base_release_ref
+                model_spec_path, filtered_content, VERSION, base_ref=base_release_ref
             )
         )
 
@@ -1498,18 +1656,52 @@ def main():
             )
             updates_made += 1
 
+    filtered_content, reverted_templates, deleted_templates = (
+        revert_disallowed_tt_metal_commit_diffs_from_git(
+            model_spec_path,
+            updated_content,
+            tt_metal_commits=args.tt_metal_commits,
+            base_ref=base_release_ref,
+        )
+    )
+    if reverted_templates:
+        print(
+            "Reverted templates with non-allowlisted tt_metal_commit diffs: "
+            f"{reverted_templates}"
+        )
+    if deleted_templates:
+        print(
+            "Deleted templates with non-allowlisted tt_metal_commit diffs and "
+            "no previous release template: "
+            f"{deleted_templates}"
+        )
+    content_changed = filtered_content != content
+
     # Write updated content
-    if updates_made > 0:
+    if content_changed:
         if args.dry_run:
+            change_summary_parts = []
+            if updates_made > 0:
+                change_summary_parts.append(f"update {updates_made} templates")
+            if reverted_templates > 0:
+                change_summary_parts.append(
+                    f"revert {reverted_templates} non-allowlisted tt_metal diffs"
+                )
+            if deleted_templates > 0:
+                change_summary_parts.append(
+                    f"delete {deleted_templates} non-allowlisted new templates"
+                )
+            if not change_summary_parts:
+                change_summary_parts.append("apply filtered model_spec changes")
             print(
-                f"\n[DRY RUN] Would update {updates_made} templates in {args.model_spec_path}"
+                "\n[DRY RUN] Would "
+                + " and ".join(change_summary_parts)
+                + f" in {args.model_spec_path}"
             )
         else:
             with open(model_spec_path, "w") as f:
-                f.write(updated_content)
-            print(
-                f"\nSuccessfully updated {updates_made} templates in {args.model_spec_path}"
-            )
+                f.write(filtered_content)
+            print(f"\nSuccessfully updated {args.model_spec_path}")
 
             # Export MODEL_SPECS to JSON
             output_json_path = Path(args.output_json)
@@ -1518,7 +1710,7 @@ def main():
             generate_release_diff_outputs_from_git(
                 model_spec_path,
                 release_output_dir,
-                current_content=updated_content,
+                current_content=filtered_content,
                 ci_metadata_by_occurrence=ci_metadata_by_occurrence,
                 base_ref=base_release_ref,
             )
@@ -1535,7 +1727,7 @@ def main():
             generate_release_diff_outputs_from_git(
                 model_spec_path,
                 release_output_dir,
-                current_content=content,
+                current_content=filtered_content,
                 ci_metadata_by_occurrence=ci_metadata_by_occurrence,
                 base_ref=base_release_ref,
             )

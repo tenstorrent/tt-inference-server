@@ -13,9 +13,34 @@ from scripts.release.update_model_spec import (
     generate_release_diff_outputs_from_git,
     load_model_spec_module_from_content,
     main,
+    revert_disallowed_tt_metal_commit_diffs_from_git,
     resolve_latest_release_branch_ref,
     update_template_fields,
 )
+
+
+def test_load_model_spec_module_from_content_supports_legacy_perf_target_imports():
+    model_spec_path = Path("workflows/model_spec.py")
+    legacy_module_name = "workflows.utils_report"
+    legacy_content = f"""
+from {legacy_module_name} import BenchmarkTaskParams, PerformanceTarget
+
+spec_templates = []
+SAMPLE_TARGET = PerformanceTarget(ttft_ms=1.23, tolerance=0.05)
+SAMPLE_PARAMS = BenchmarkTaskParams(targets={{"customer_complete": SAMPLE_TARGET}})
+"""
+
+    loaded_module = load_model_spec_module_from_content(
+        model_spec_path,
+        legacy_content,
+        "legacy_model_spec_module",
+    )
+
+    assert loaded_module.SAMPLE_TARGET.ttft_ms == 1.23
+    assert (
+        loaded_module.SAMPLE_PARAMS.targets["customer_complete"]
+        == loaded_module.SAMPLE_TARGET
+    )
 
 
 def make_snapshot(
@@ -48,6 +73,18 @@ def make_snapshot(
         "template_key": build_template_key(impl_id, weights, devices, inference_engine),
         "occurrence_key": (impl_id, occurrence_index),
     }
+
+
+def test_build_template_key_returns_readable_identity():
+    assert build_template_key(
+        "demo_impl",
+        ["demo/model", "org/model with spaces"],
+        ["N150", "GALAXY_T3K"],
+        "vllm",
+    ) == (
+        "template:v1|impl_id=demo_impl|engine=vllm|"
+        "weights=demo/model,org/model%20with%20spaces|devices=N150,GALAXY_T3K"
+    )
 
 
 def test_resolve_latest_release_branch_ref_selects_highest_semver_branch():
@@ -310,6 +347,44 @@ def test_build_release_diff_records_from_git_includes_ci_and_manual_changes():
     assert manual_record["ci_run_number"] is None
 
 
+def test_build_release_diff_records_from_git_skips_status_only_changes():
+    model_spec_path = Path("/tmp/workflows/model_spec.py")
+    base_snapshots = [
+        make_snapshot(
+            "same_impl",
+            0,
+            "before-template",
+            status="FUNCTIONAL",
+            tt_metal_commit="aaaaaaa",
+            vllm_commit="1111111",
+        )
+    ]
+    after_snapshots = [
+        make_snapshot(
+            "same_impl",
+            0,
+            "after-template",
+            status="COMPLETE",
+            tt_metal_commit="aaaaaaa",
+            vllm_commit="1111111",
+        )
+    ]
+
+    with patch(
+        "scripts.release.update_model_spec.read_git_base_model_spec_content",
+        return_value="base-content",
+    ), patch(
+        "scripts.release.update_model_spec.build_template_snapshots",
+        side_effect=[base_snapshots, after_snapshots],
+    ):
+        records = build_release_diff_records_from_git(
+            model_spec_path,
+            current_content="current-content",
+        )
+
+    assert records == []
+
+
 def test_generate_release_diff_outputs_from_git_writes_markdown_and_json(tmp_path):
     model_spec_path = tmp_path / "workflows" / "model_spec.py"
     model_spec_path.parent.mkdir(parents=True)
@@ -421,6 +496,213 @@ def test_generate_release_diff_outputs_from_git_handles_no_changes(tmp_path):
 
     assert "No updates were made." in markdown_path.read_text()
     assert json.loads(json_path.read_text()) == []
+
+
+def test_revert_disallowed_tt_metal_commit_diffs_from_git_reverts_only_disallowed_changes(
+    tmp_path,
+):
+    model_spec_path = tmp_path / "workflows" / "model_spec.py"
+    model_spec_path.parent.mkdir(parents=True)
+
+    allowed_template = (
+        "ModelSpecTemplate(\n"
+        '        weights=["org/allowed"],\n'
+        "        impl=allowed_impl,\n"
+        '        tt_metal_commit="allow123",\n'
+        '        vllm_commit="1111111",\n'
+        "        status=ModelStatusTypes.FUNCTIONAL,\n"
+        "    ),"
+    )
+    blocked_template = (
+        "ModelSpecTemplate(\n"
+        '        weights=["org/blocked"],\n'
+        "        impl=blocked_impl,\n"
+        '        tt_metal_commit="block123",\n'
+        '        vllm_commit="2222222",\n'
+        "        status=ModelStatusTypes.FUNCTIONAL,\n"
+        "    ),"
+    )
+    current_content = f"spec_templates = [\n{allowed_template}\n{blocked_template}\n]\n"
+
+    before_snapshots = [
+        make_snapshot(
+            "allowed_impl",
+            0,
+            allowed_template.replace("allow123", "base1234"),
+            weights=["org/allowed"],
+            tt_metal_commit="base1234",
+            vllm_commit="1111111",
+            status="FUNCTIONAL",
+        ),
+        make_snapshot(
+            "blocked_impl",
+            0,
+            blocked_template.replace("block123", "base9999"),
+            weights=["org/blocked"],
+            tt_metal_commit="base9999",
+            vllm_commit="2222222",
+            status="FUNCTIONAL",
+        ),
+    ]
+    after_snapshots = [
+        make_snapshot(
+            "allowed_impl",
+            0,
+            allowed_template,
+            weights=["org/allowed"],
+            tt_metal_commit="allow123",
+            vllm_commit="1111111",
+            status="FUNCTIONAL",
+        ),
+        make_snapshot(
+            "blocked_impl",
+            0,
+            blocked_template,
+            weights=["org/blocked"],
+            tt_metal_commit="block123",
+            vllm_commit="2222222",
+            status="FUNCTIONAL",
+        ),
+    ]
+
+    with patch(
+        "scripts.release.update_model_spec.read_git_base_model_spec_content",
+        return_value="base-content",
+    ), patch(
+        "scripts.release.update_model_spec.build_template_snapshots",
+        side_effect=[before_snapshots, after_snapshots],
+    ):
+        filtered_content, reverted_count, deleted_count = (
+            revert_disallowed_tt_metal_commit_diffs_from_git(
+                model_spec_path,
+                current_content,
+                tt_metal_commits=["allow123"],
+            )
+        )
+
+    assert reverted_count == 1
+    assert deleted_count == 0
+    assert 'tt_metal_commit="allow123"' in filtered_content
+    assert 'tt_metal_commit="block123"' not in filtered_content
+    assert 'tt_metal_commit="base9999"' in filtered_content
+
+
+def test_revert_disallowed_tt_metal_commit_diffs_from_git_reverts_release_version_only_diff(
+    tmp_path,
+):
+    model_spec_path = tmp_path / "workflows" / "model_spec.py"
+    model_spec_path.parent.mkdir(parents=True)
+
+    before_template = (
+        "ModelSpecTemplate(\n"
+        '        weights=["org/blocked"],\n'
+        "        impl=blocked_impl,\n"
+        '        tt_metal_commit="block123",\n'
+        '        vllm_commit="2222222",\n'
+        "        status=ModelStatusTypes.FUNCTIONAL,\n"
+        "    ),"
+    )
+    after_template = (
+        "ModelSpecTemplate(\n"
+        '        weights=["org/blocked"],\n'
+        "        impl=blocked_impl,\n"
+        '        release_version="0.12.0",\n'
+        '        tt_metal_commit="block123",\n'
+        '        vllm_commit="2222222",\n'
+        "        status=ModelStatusTypes.FUNCTIONAL,\n"
+        "    ),"
+    )
+    current_content = f"spec_templates = [\n{after_template}\n]\n"
+    before_snapshots = [
+        make_snapshot(
+            "blocked_impl",
+            0,
+            before_template,
+            weights=["org/blocked"],
+            tt_metal_commit="block123",
+            vllm_commit="2222222",
+            status="FUNCTIONAL",
+        )
+    ]
+    after_snapshots = [
+        make_snapshot(
+            "blocked_impl",
+            0,
+            after_template,
+            weights=["org/blocked"],
+            tt_metal_commit="block123",
+            vllm_commit="2222222",
+            status="FUNCTIONAL",
+        )
+    ]
+
+    with patch(
+        "scripts.release.update_model_spec.read_git_base_model_spec_content",
+        return_value="base-content",
+    ), patch(
+        "scripts.release.update_model_spec.build_template_snapshots",
+        side_effect=[before_snapshots, after_snapshots],
+    ):
+        filtered_content, reverted_count, deleted_count = (
+            revert_disallowed_tt_metal_commit_diffs_from_git(
+                model_spec_path,
+                current_content,
+                tt_metal_commits=["allow123"],
+            )
+        )
+
+    assert reverted_count == 1
+    assert deleted_count == 0
+    assert 'release_version="0.12.0"' not in filtered_content
+    assert filtered_content == f"spec_templates = [\n{before_template}\n]\n"
+
+
+def test_revert_disallowed_tt_metal_commit_diffs_from_git_deletes_unmatched_templates(
+    tmp_path,
+):
+    model_spec_path = tmp_path / "workflows" / "model_spec.py"
+    model_spec_path.parent.mkdir(parents=True)
+    current_content = (
+        "spec_templates = [\n"
+        "    ModelSpecTemplate(\n"
+        '        weights=["org/new"],\n'
+        "        impl=new_impl,\n"
+        '        tt_metal_commit="new1234",\n'
+        '        vllm_commit="1111111",\n'
+        "        status=ModelStatusTypes.FUNCTIONAL,\n"
+        "    ),\n"
+        "]\n"
+    )
+    after_snapshots = [
+        make_snapshot(
+            "new_impl",
+            0,
+            current_content.split("[\n", 1)[1].rsplit("\n]\n", 1)[0],
+            weights=["org/new"],
+            tt_metal_commit="new1234",
+            vllm_commit="1111111",
+            status="FUNCTIONAL",
+        )
+    ]
+
+    with patch(
+        "scripts.release.update_model_spec.read_git_base_model_spec_content",
+        return_value="base-content",
+    ), patch(
+        "scripts.release.update_model_spec.build_template_snapshots",
+        side_effect=[[], after_snapshots],
+    ):
+        filtered_content, reverted_count, deleted_count = (
+            revert_disallowed_tt_metal_commit_diffs_from_git(
+                model_spec_path,
+                current_content,
+                tt_metal_commits=["allow123"],
+            )
+        )
+
+    assert filtered_content == "spec_templates = [\n]\n"
+    assert reverted_count == 0
+    assert deleted_count == 1
 
 
 def test_build_release_diff_records_from_git_uses_provided_base_ref():
@@ -881,6 +1163,7 @@ def test_main_output_only_updates_release_version_before_generating_outputs(tmp_
             "ignore_perf_status": False,
             "models_ci_run_id": None,
             "out_root": None,
+            "tt_metal_commits": ["bbbbbbb"],
         },
     )()
 
@@ -890,6 +1173,9 @@ def test_main_output_only_updates_release_version_before_generating_outputs(tmp_
     ), patch(
         "scripts.release.update_model_spec.resolve_latest_release_branch_ref",
         return_value="origin/v0.10.0",
+    ), patch(
+        "scripts.release.update_model_spec.revert_disallowed_tt_metal_commit_diffs_from_git",
+        return_value=("filtered-content\n", 0, 0),
     ), patch(
         "scripts.release.update_model_spec.apply_release_version_to_manual_updates_from_git",
         return_value=(updated_content, 1),
@@ -906,6 +1192,7 @@ def test_main_output_only_updates_release_version_before_generating_outputs(tmp_
         main()
 
     assert model_spec_path.read_text() == updated_content
+    assert apply_release_mock.call_args.args[1] == "filtered-content\n"
     assert apply_release_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
     assert diff_mock.call_args.kwargs["current_content"] == updated_content
     assert diff_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
@@ -939,6 +1226,7 @@ def test_main_uses_resolved_release_output_dir_for_diff_outputs(tmp_path):
             "ignore_perf_status": False,
             "models_ci_run_id": None,
             "out_root": None,
+            "tt_metal_commits": None,
         },
     )()
 
@@ -963,3 +1251,64 @@ def test_main_uses_resolved_release_output_dir_for_diff_outputs(tmp_path):
     assert diff_mock.call_args.args[1] == release_output_dir
     assert diff_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
     assert diff_mock.call_args.kwargs["current_content"] == "spec_templates = []\n"
+
+
+def test_main_ci_uses_filtered_content_for_outputs(tmp_path):
+    model_spec_path = tmp_path / "workflows" / "model_spec.py"
+    model_spec_path.parent.mkdir(parents=True)
+    model_spec_path.write_text("spec_templates = []\n")
+
+    last_good_json_path = tmp_path / "models_ci_last_good.json"
+    last_good_json_path.write_text("{}\n")
+    output_json_path = tmp_path / "release_model_spec.json"
+    release_output_dir = tmp_path / "release_logs" / "v0.10.0"
+    filtered_content = "spec_templates = []\n# filtered\n"
+
+    args = type(
+        "Args",
+        (),
+        {
+            "last_good_json": str(last_good_json_path),
+            "model_spec_path": str(model_spec_path),
+            "dry_run": False,
+            "output_json": str(output_json_path),
+            "output_only": False,
+            "readme_path": str(tmp_path / "README.md"),
+            "ignore_perf_status": False,
+            "models_ci_run_id": None,
+            "out_root": None,
+            "tt_metal_commits": ["allow123"],
+        },
+    )()
+
+    with patch(
+        "argparse.ArgumentParser.parse_args",
+        return_value=args,
+    ), patch(
+        "scripts.release.update_model_spec.resolve_latest_release_branch_ref",
+        return_value="origin/v0.10.0",
+    ), patch(
+        "scripts.release.update_model_spec.spec_templates",
+        [],
+    ), patch(
+        "scripts.release.update_model_spec.resolve_release_output_dir",
+        return_value=release_output_dir,
+    ), patch(
+        "scripts.release.update_model_spec.revert_disallowed_tt_metal_commit_diffs_from_git",
+        return_value=(filtered_content, 1, 0),
+    ) as filter_mock, patch(
+        "scripts.release.update_model_spec.reload_and_export_model_specs_json"
+    ) as export_mock, patch(
+        "scripts.release.update_model_spec.generate_release_diff_outputs_from_git"
+    ) as diff_mock, patch(
+        "scripts.release.update_model_spec.regenerate_model_support_docs_and_update_readme"
+    ) as readme_mock:
+        main()
+
+    assert model_spec_path.read_text() == filtered_content
+    assert filter_mock.call_args.kwargs["tt_metal_commits"] == ["allow123"]
+    assert filter_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
+    export_mock.assert_called_once_with(model_spec_path, output_json_path)
+    assert diff_mock.call_args.kwargs["current_content"] == filtered_content
+    assert diff_mock.call_args.kwargs["base_ref"] == "origin/v0.10.0"
+    readme_mock.assert_called_once_with(model_spec_path)

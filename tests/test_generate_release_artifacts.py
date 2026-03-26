@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import scripts.release.generate_release_artifacts as gra
+from scripts.release.release_diff import build_template_key
 from workflows.perf_targets import PerfTarget, PerfTargetSet
 
 
@@ -386,7 +387,9 @@ def test_write_release_notes_uses_raw_json_inputs(tmp_path):
         json.dumps(
             [
                 {
-                    "template_key": "template:demo",
+                    "template_key": build_template_key(
+                        "demo_impl", ["demo/model"], ["N150"], "vllm"
+                    ),
                     "impl": "demo-impl",
                     "impl_id": "demo_impl",
                     "model_arch": "DemoModel",

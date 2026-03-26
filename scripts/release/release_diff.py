@@ -1,6 +1,5 @@
-import hashlib
-import json
 from typing import Dict, List, Optional, Sequence, Tuple, TypedDict
+from urllib.parse import quote
 
 
 TEMPLATE_KEY_VERSION = "v1"
@@ -94,21 +93,34 @@ def normalize_template_identity(
     }
 
 
+def _encode_template_identity_component(value: str) -> str:
+    """Escape template identity components while keeping common characters readable."""
+    return quote(str(value).strip(), safe="/._-")
+
+
+def _encode_template_identity_list(values: Sequence[str]) -> str:
+    """Render one normalized identity list as a readable deterministic token."""
+    return ",".join(_encode_template_identity_component(value) for value in values)
+
+
 def build_template_key(
     impl_id: str,
     weights: Sequence[str],
     devices: Sequence[str],
     inference_engine: str,
 ) -> str:
-    """Build a deterministic hash for a template identity."""
+    """Build a readable deterministic key for a template identity."""
     normalized_identity = normalize_template_identity(
         impl_id, weights, devices, inference_engine
     )
-    encoded_identity = json.dumps(
-        normalized_identity, sort_keys=True, separators=(",", ":")
+
+    return (
+        f"template:{normalized_identity['version']}"
+        f"|impl_id={_encode_template_identity_component(normalized_identity['impl_id'])}"
+        f"|engine={_encode_template_identity_component(normalized_identity['inference_engine'])}"
+        f"|weights={_encode_template_identity_list(normalized_identity['weights'])}"
+        f"|devices={_encode_template_identity_list(normalized_identity['devices'])}"
     )
-    digest = hashlib.sha256(encoded_identity.encode("utf-8")).hexdigest()
-    return f"template:{digest}"
 
 
 def build_template_key_from_snapshot(snapshot: TemplateSnapshot) -> str:

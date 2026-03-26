@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from scripts.release.generate_release_notes import build_release_notes
 from scripts.release.generate_release_notes import main
+from scripts.release.release_diff import build_template_key
 from scripts.release.release_paths import (
     get_versioned_release_logs_dir,
     resolve_release_output_dir,
@@ -21,7 +22,9 @@ def test_release_paths_use_versioned_release_logs():
 
 def make_release_diff_record():
     return {
-        "template_key": "template:demo",
+        "template_key": build_template_key(
+            "demo_impl", ["demo/model"], ["N150"], "vllm"
+        ),
         "impl": "demo-impl",
         "impl_id": "demo_impl",
         "model_arch": "DemoModel",

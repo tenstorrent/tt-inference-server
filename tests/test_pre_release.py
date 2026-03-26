@@ -44,6 +44,7 @@ def test_main_skips_branch_reset_for_manual_model_spec_rerun():
         release_branch="stable",
         models_ci_run_id=None,
         commit=False,
+        start_release_workflow=False,
     )
 
     with patch.object(pr, "parse_args", return_value=args), patch.object(
@@ -70,6 +71,7 @@ def test_main_requires_clean_worktree_before_branch_reset():
         release_branch="stable",
         models_ci_run_id=123,
         commit=False,
+        start_release_workflow=False,
     )
 
     with patch.object(pr, "parse_args", return_value=args), patch.object(
@@ -87,6 +89,7 @@ def test_main_manual_mode_requires_existing_model_spec_edits():
         release_branch="stable",
         models_ci_run_id=None,
         commit=False,
+        start_release_workflow=False,
     )
 
     with patch.object(pr, "parse_args", return_value=args), patch.object(
@@ -110,6 +113,7 @@ def test_main_commit_flow_stages_commits_and_pushes():
         release_branch="stable",
         models_ci_run_id=123,
         commit=True,
+        start_release_workflow=False,
     )
 
     with patch.object(pr, "parse_args", return_value=args), patch.object(
@@ -145,3 +149,83 @@ def test_main_commit_flow_stages_commits_and_pushes():
             capture_output=False,
         ),
     ]
+
+
+def test_parse_args_allows_start_release_workflow_without_commit():
+    args = pr.parse_args(
+        [
+            "--base-branch",
+            "main",
+            "--release-branch",
+            "stable",
+            "--start-release-workflow",
+        ]
+    )
+
+    assert args.start_release_workflow is True
+    assert args.commit is False
+
+
+def test_main_dispatch_only_mode_skips_generation_and_git_writes():
+    args = Namespace(
+        base_branch="main",
+        release_branch="stable",
+        models_ci_run_id=None,
+        commit=False,
+        start_release_workflow=True,
+    )
+
+    with patch.object(pr, "parse_args", return_value=args), patch.object(
+        pr, "start_release_models_ci"
+    ) as dispatch_mock, patch.object(
+        pr, "read_version"
+    ) as read_version_mock, patch.object(
+        pr, "prepare_release_branch"
+    ) as prepare_mock, patch.object(
+        pr, "run_update_model_spec"
+    ) as update_mock, patch.object(pr, "run_git_command") as git_mock:
+        assert pr.main() == 0
+
+    dispatch_mock.assert_called_once_with("main", "stable")
+    read_version_mock.assert_not_called()
+    prepare_mock.assert_not_called()
+    update_mock.assert_not_called()
+    git_mock.assert_not_called()
+
+
+def test_main_dispatches_release_workflow_after_push():
+    args = Namespace(
+        base_branch="main",
+        release_branch="stable",
+        models_ci_run_id=123,
+        commit=True,
+        start_release_workflow=True,
+    )
+    event_order = []
+
+    def fake_run_git_command(repo_root, *git_args, **kwargs):
+        if git_args and git_args[0] == "push":
+            event_order.append("push")
+
+    def fake_start_release_models_ci(base_ref, release_branch):
+        assert base_ref == "main"
+        assert release_branch == "stable"
+        event_order.append("dispatch")
+
+    with patch.object(pr, "parse_args", return_value=args), patch.object(
+        pr, "read_version", return_value="0.9.0"
+    ), patch.object(pr, "list_changed_paths", return_value=[]), patch.object(
+        pr, "get_current_branch", return_value="main"
+    ), patch.object(pr, "prepare_release_branch"), patch.object(
+        pr, "run_update_model_spec"
+    ), patch.object(pr, "stage_pre_release_outputs"), patch.object(
+        pr, "has_staged_changes", return_value=True
+    ), patch.object(
+        pr, "run_git_command", side_effect=fake_run_git_command
+    ), patch.object(
+        pr, "start_release_models_ci", side_effect=fake_start_release_models_ci
+    ) as dispatch_mock:
+        assert pr.main() == 0
+
+    assert event_order == ["push", "dispatch"]
+    dispatch_mock.assert_called_once_with("main", "stable")

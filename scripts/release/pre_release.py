@@ -21,8 +21,16 @@ from pathlib import Path
 from typing import List, Optional, Sequence
 
 try:
+    from dispatch_release_models_ci import (
+        dispatch_release_workflow,
+        resolve_release_workflow_refs,
+    )
     from release_paths import get_versioned_release_logs_dir
 except ImportError:
+    from scripts.release.dispatch_release_models_ci import (
+        dispatch_release_workflow,
+        resolve_release_workflow_refs,
+    )
     from scripts.release.release_paths import get_versioned_release_logs_dir
 
 
@@ -33,7 +41,7 @@ RELEASE_MODEL_SPEC_PATH = Path("release_model_spec.json")
 MODEL_SUPPORT_DOCS_DIR = Path("docs/model_support")
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Prepare a release branch and generate pre-release artifacts"
@@ -59,7 +67,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Commit generated outputs and force-push the release branch.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--start-release-workflow",
+        action="store_true",
+        help="After pushing the release branch, dispatch tt-shield release.yml.",
+    )
+    return parser.parse_args(argv)
 
 
 def run_command(
@@ -190,6 +203,25 @@ def read_version(version_file: Path) -> str:
     return version
 
 
+def start_release_models_ci(base_ref: str, release_branch: str) -> None:
+    """Dispatch the Release Models CI workflow from existing pre-release outputs."""
+    tt_metal_ref, vllm_ref = resolve_release_workflow_refs(
+        REPO_ROOT / RELEASE_MODEL_SPEC_PATH
+    )
+    run_url = dispatch_release_workflow(
+        base_ref=base_ref,
+        release_branch=release_branch,
+        tt_metal_ref=tt_metal_ref,
+        vllm_ref=vllm_ref,
+    )
+    if run_url:
+        print(f"Started Release Models CI workflow: {run_url}")
+    else:
+        print(
+            "Dispatched Release Models CI workflow, but could not determine the run URL yet."
+        )
+
+
 def collect_pre_release_paths(version: str) -> List[Path]:
     """Return the generated pre-release paths that should be staged."""
     return [
@@ -248,6 +280,10 @@ def print_next_steps(version: str, release_branch: str) -> None:
 def main() -> int:
     """Main entry point for pre-release preparation."""
     args = parse_args()
+    if args.start_release_workflow and not args.commit:
+        start_release_models_ci(args.base_branch, args.release_branch)
+        return 0
+
     version = read_version(REPO_ROOT / "VERSION")
     changed_paths = list_changed_paths(REPO_ROOT)
     current_branch = get_current_branch(REPO_ROOT)
@@ -310,6 +346,8 @@ def main() -> int:
         args.release_branch,
         capture_output=False,
     )
+    if args.start_release_workflow:
+        start_release_models_ci(args.base_branch, args.release_branch)
     return 0
 
 
