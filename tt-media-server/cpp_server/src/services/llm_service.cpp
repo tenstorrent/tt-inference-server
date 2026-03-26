@@ -234,13 +234,13 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
       if (isFinal) {
         streamDecoders.erase(taskId);
-        std::string finish_reason = "unknown";
+        std::string finishReason = "unknown";
         if (!response.choices.empty() &&
             response.choices[0].finish_reason.has_value()) {
-          finish_reason = response.choices[0].finish_reason.value();
+          finishReason = response.choices[0].finish_reason.value();
         }
         tt::metrics::ServerMetrics::instance().onRequestCompleted(
-            taskId, finish_reason);
+            taskId, finishReason);
         if (reasoning_parser_) {
           reasoning_parser_->finalizeTask(taskId);
         }
