@@ -19,9 +19,9 @@ from typing import Optional
 
 import aiohttp
 
-from tests.server_tests.base_test import BaseTest
-from tests.server_tests.test_cases.server_helper import DEFAULT_AUTHORIZATION
-from tests.server_tests.test_classes import TestConfig
+from server_tests.base_test import BaseTest
+from server_tests.test_cases.server_helper import DEFAULT_AUTHORIZATION
+from server_tests.test_classes import TestConfig
 
 logger = logging.getLogger(__name__)
 
