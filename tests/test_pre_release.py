@@ -388,6 +388,7 @@ def test_start_release_models_ci_uses_versioned_diff_and_models_ci_config():
         release_branch="stable",
         tt_metal_ref="metal-sha",
         vllm_ref="vllm-sha",
+        run_ai_summary=False,
     )
 
 
@@ -432,6 +433,7 @@ def test_start_release_models_ci_uses_versioned_diff_path():
         release_branch="stable",
         tt_metal_ref="metal-sha",
         vllm_ref="vllm-sha",
+        run_ai_summary=False,
     )
 
 

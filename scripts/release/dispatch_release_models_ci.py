@@ -18,7 +18,7 @@ GITHUB_API_VERSION = "2022-11-28"
 TT_SHIELD_OWNER = "tenstorrent"
 TT_SHIELD_REPO = "tt-shield"
 RELEASE_WORKFLOW_FILE = "release.yml"
-TT_SHIELD_WORKFLOW_REF = "main"
+TT_SHIELD_WORKFLOW_REF = "tstesco/disable-ai-summary-test"
 TT_METAL_OWNER = "tenstorrent"
 TT_METAL_REPO = "tt-metal"
 VLLM_OWNER = "tenstorrent"
@@ -228,6 +228,7 @@ def dispatch_release_workflow(
     release_branch: str,
     tt_metal_ref: str,
     vllm_ref: str,
+    run_ai_summary: Optional[bool] = None,
 ) -> Optional[str]:
     """Dispatch tt-shield release.yml and return a run URL when available."""
     dispatch_ref = TT_SHIELD_WORKFLOW_REF
@@ -245,6 +246,8 @@ def dispatch_release_workflow(
             "workflow": "release",
         },
     }
+    if run_ai_summary is not None:
+        payload["inputs"]["run-ai-summary"] = run_ai_summary
     dispatch_url = (
         f"{GITHUB_API}/repos/{TT_SHIELD_OWNER}/{TT_SHIELD_REPO}/actions/workflows/"
         f"{quote(RELEASE_WORKFLOW_FILE, safe='')}/dispatches"

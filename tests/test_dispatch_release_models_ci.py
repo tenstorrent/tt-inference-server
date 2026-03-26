@@ -53,12 +53,56 @@ def test_dispatch_release_workflow_posts_expected_payload(monkeypatch):
         "/repos/tenstorrent/tt-shield/actions/workflows/release.yml/dispatches"
     )
     assert captured["requests"][2]["payload"] == {
-        "ref": "main",
+        "ref": dispatch_ci.TT_SHIELD_WORKFLOW_REF,
         "inputs": {
             "tt-metal-commit": tt_metal_sha,
             "tt-inference-server-commit": "stable",
             "vllm-commit": vllm_sha,
             "workflow": "release",
+        },
+    }
+
+
+def test_dispatch_release_workflow_includes_run_ai_summary_input(monkeypatch):
+    captured = {"requests": []}
+    tt_metal_sha = "a" * 40
+    vllm_sha = "b" * 40
+
+    def fake_github_api_request(url, token, method="GET", payload=None):
+        captured["requests"].append(
+            {"url": url, "token": token, "method": method, "payload": payload}
+        )
+        if method == "GET":
+            if "/repos/tenstorrent/tt-metal/commits/" in url:
+                return 200, json.dumps({"sha": tt_metal_sha}).encode("utf-8")
+            if "/repos/tenstorrent/vllm/commits/" in url:
+                return 200, json.dumps({"sha": vllm_sha}).encode("utf-8")
+        return 204, b""
+
+    monkeypatch.setattr(dispatch_ci, "get_github_token", lambda: "token-123")
+    monkeypatch.setattr(dispatch_ci, "_github_api_request", fake_github_api_request)
+    monkeypatch.setattr(
+        dispatch_ci,
+        "_find_recent_release_workflow_run_url",
+        lambda dispatch_ref, token: "https://github.com/run/456",
+    )
+
+    run_url = dispatch_ci.dispatch_release_workflow(
+        release_branch="stable",
+        tt_metal_ref="metal-sha",
+        vllm_ref="vllm-sha",
+        run_ai_summary=False,
+    )
+
+    assert run_url == "https://github.com/run/456"
+    assert captured["requests"][2]["payload"] == {
+        "ref": dispatch_ci.TT_SHIELD_WORKFLOW_REF,
+        "inputs": {
+            "tt-metal-commit": tt_metal_sha,
+            "tt-inference-server-commit": "stable",
+            "vllm-commit": vllm_sha,
+            "workflow": "release",
+            "run-ai-summary": False,
         },
     }
 

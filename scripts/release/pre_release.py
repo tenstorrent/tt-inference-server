@@ -332,6 +332,7 @@ def start_release_models_ci(release_branch: str) -> None:
         release_branch=release_branch,
         tt_metal_ref=tt_metal_ref,
         vllm_ref=vllm_ref,
+        run_ai_summary=False,
     )
     if run_url:
         print(f"Started Release Models CI workflow: {run_url}")
