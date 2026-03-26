@@ -24,21 +24,16 @@ namespace tt::services {
 using tt::services::ContentType;
 using tt::services::TokenParseResult;
 
-LLMService::LLMService()
-    : mode_(tt::config::llmMode()), tokenizer_(&tt::utils::activeTokenizer()) {
+LLMService::LLMService() : tokenizer_(&tt::utils::activeTokenizer()) {
   size_t numWorkers = tt::config::numWorkers();
   max_queue_size_ = tt::config::maxQueueSize();
 
   worker_manager_ = std::make_unique<tt::worker::WorkerManager>(numWorkers);
   reasoning_parser_ = std::make_unique<ReasoningParser>();
 
-  TT_LOG_INFO("[LLMService] Initialized (mode={}, workers={})",
-              tt::config::toString(mode_), numWorkers);
+  TT_LOG_INFO("[LLMService] Initialized (workers={})", numWorkers);
   queue_manager_ =
       std::make_unique<tt::ipc::QueueManager>(static_cast<int>(numWorkers));
-
-  socket_service_ = std::make_shared<tt::sockets::InterServerService>();
-  socket_service_->initializeFromConfig();
 }
 
 LLMService::~LLMService() { stop(); }
@@ -49,16 +44,12 @@ void LLMService::start() {
     return;
   }
 
-  TT_LOG_INFO("[LLMService] Starting (mode={}, workers={})",
-              tt::config::toString(mode_), worker_manager_->numWorkers());
+  TT_LOG_INFO("[LLMService] Starting (workers={})",
+              worker_manager_->numWorkers());
 
   worker_manager_->start();
   tracy_config::tracyStartupSchedulerParent();
   startConsumers();
-
-  if (socket_service_ && socket_service_->isEnabled()) {
-    socket_service_->start();
-  }
 
   TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
   TT_LOG_INFO("[LLMService] Service started");
@@ -123,11 +114,6 @@ void LLMService::stop() {
   consumer_threads_.clear();
 
   worker_manager_->stop();
-
-  // Stop socket service
-  if (socket_service_) {
-    socket_service_->stop();
-  }
 
   TT_LOG_INFO("[LLMService] Stopped");
   queue_manager_->clear();
@@ -327,7 +313,6 @@ void LLMService::processStreamingRequest(
 
   stream_callbacks_.insert(taskId, std::move(callback));
 
-  // Initialize reasoning parser state for this task
   if (reasoning_parser_) {
     reasoning_parser_->initializeTask(taskId);
   }
@@ -335,30 +320,6 @@ void LLMService::processStreamingRequest(
   auto prompt = std::get<std::vector<int>>(request.prompt);
   std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
 
-  if (mode_ == tt::config::LLMMode::DECODE_ONLY) {
-    if (!prefill_request_callback_) {
-      stream_callbacks_.erase(taskId);
-      pending_tasks_.fetch_sub(1);
-      throw std::runtime_error("No prefill request callback configured");
-    }
-
-    domain::PrefillRequest prefillReq{domain::TaskID(taskId)};
-    prefillReq.token_ids = tokenIds;
-    prefillReq.max_tokens = request.max_tokens;
-
-    bool sent = prefill_request_callback_(prefillReq);
-
-    if (!sent) {
-      stream_callbacks_.erase(taskId);
-      pending_tasks_.fetch_sub(1);
-      throw std::runtime_error(
-          "Failed to send prefill request (not connected)");
-    }
-    TT_LOG_DEBUG("[LLMService:DECODE] Forwarded prefill request {} ({} tokens)",
-                 taskId, tokenIds.size());
-    return;
-  }
-
   auto sequence = std::make_unique<llm_engine::Sequence>(
       llm_engine::TaskID(taskId),
       tt::config::llmEngineConfig().kvcache_block_size, std::move(tokenIds));
@@ -368,77 +329,15 @@ void LLMService::processStreamingRequest(
   queue_manager_->task_queue->push(*std::move(sequence));
 }
 
-std::shared_ptr<tt::sockets::InterServerService> LLMService::getSocketService()
-    const {
-  return socket_service_;
-}
+void LLMService::postProcess(domain::CompletionResponse& response) const {
+  // Parse and strip reasoning blocks from all choices
+  if (reasoning_parser_) {
+    for (auto& choice : response.choices) {
+      auto result = reasoning_parser_->parseComplete(choice.text);
 
-void LLMService::setPrefillRequestCallback(PrefillRequestCallback callback) {
-  prefill_request_callback_ = std::move(callback);
-}
-
-std::optional<LLMService::StreamCallback> LLMService::detachStreamCallback(
-    const std::string& taskId) {
-  auto val = stream_callbacks_.take(taskId);
-  if (val.has_value()) {
-    pending_tasks_.fetch_sub(1);
+      // Replace text with answer only (reasoning stripped)
+      choice.text = std::move(result.answer);
+    }
   }
-  return val;
 }
-
-void LLMService::submitDecodeContinuation(domain::CompletionRequest request,
-                                          StreamCallback callback) {
-  std::string taskId = request.task_id.id;
-
-  pending_tasks_.fetch_add(1);
-  TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
-  stream_callbacks_.insert(taskId, std::move(callback));
-
-  auto prompt = std::get<std::vector<int>>(request.prompt);
-  std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
-
-  auto sequence = std::make_unique<llm_engine::Sequence>(
-      llm_engine::TaskID(taskId),
-      tt::config::llmEngineConfig().kvcache_block_size, std::move(tokenIds));
-  sequence->numPromptTokens = prompt.size();
-  sequence->samplingParams = std::make_unique<llm_engine::SamplingParams>(
-      tt::utils::mapper::mapSamplingParams(request));
-  queue_manager_->task_queue->push(*std::move(sequence));
-
-  TT_LOG_DEBUG(
-      "[LLMService:DECODE] Queued decode continuation for task {} "
-      "(prompt_tokens={}, max_tokens={})",
-      taskId, prompt.size(),
-      request.max_tokens.has_value()
-          ? std::to_string(request.max_tokens.value())
-          : "none");
-}
-
-void LLMService::handleConnectionLost() {
-  TT_LOG_ERROR("[LLMService] Failing pending tasks due to connection loss");
-
-  stream_callbacks_.forEach(
-      [](const std::string& taskId,
-         std::function<void(domain::StreamingChunkResponse&, bool)>& callback) {
-        domain::StreamingChunkResponse errorResponse{domain::TaskID(taskId)};
-        errorResponse.id = taskId;
-        errorResponse.created =
-            std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::system_clock::now().time_since_epoch())
-                .count();
-
-        domain::CompletionChoice choice;
-        choice.text = "";
-        choice.index = 0;
-        choice.finish_reason = "error";
-        errorResponse.choices.push_back(std::move(choice));
-        errorResponse.error = "Connection to remote server lost";
-
-        callback(errorResponse, true);
-      });
-
-  stream_callbacks_.clear();
-  pending_tasks_.store(0);
-}
-
 }  // namespace tt::services
