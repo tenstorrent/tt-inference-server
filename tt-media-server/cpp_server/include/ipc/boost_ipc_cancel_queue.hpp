@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "domain/task_id.hpp"
+#include "ipc/cancel_queue.hpp"
 
 namespace tt::ipc {
 
@@ -25,7 +26,7 @@ constexpr size_t CANCEL_QUEUE_CAPACITY = 1024;
  * push() is non-blocking (drops the message and logs a warning when full).
  * tryPopAll() drains every available message without blocking.
  */
-class BoostIpcCancelQueue {
+class BoostIpcCancelQueue : public ICancelQueue {
  public:
   /** Create the queue (main-process side). */
   BoostIpcCancelQueue(const std::string& name, size_t capacity);
@@ -33,22 +34,15 @@ class BoostIpcCancelQueue {
   /** Open an existing queue (worker-process side). */
   explicit BoostIpcCancelQueue(const std::string& name);
 
-  ~BoostIpcCancelQueue();
+  ~BoostIpcCancelQueue() override;
 
-  /**
-   * Non-blocking push. Silently drops the message if the queue is full
-   * (the request will finish on its own shortly anyway).
-   * Thread-safe.
-   */
-  void push(const tt::domain::TaskID& taskId);
+  void push(const tt::domain::TaskID& taskId) override;
 
-  /**
-   * Drain all available cancel messages into out without blocking.
-   * Intended to be called once per scheduler step from the worker thread.
-   */
-  void tryPopAll(std::vector<tt::domain::TaskID>& out);
+  void tryPopAll(std::vector<tt::domain::TaskID>& out) override;
 
-  static void remove(const std::string& name);
+  void remove() override;
+
+  static void removeByName(const std::string& name);
 
  private:
   std::string name_;

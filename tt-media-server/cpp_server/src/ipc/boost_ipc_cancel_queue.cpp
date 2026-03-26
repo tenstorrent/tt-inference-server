@@ -58,7 +58,11 @@ void BoostIpcCancelQueue::tryPopAll(std::vector<TaskID>& out) {
   }
 }
 
-void BoostIpcCancelQueue::remove(const std::string& name) {
+void BoostIpcCancelQueue::remove() {
+  bi_ipc::message_queue::remove(name_.c_str());
+}
+
+void BoostIpcCancelQueue::removeByName(const std::string& name) {
   bi_ipc::message_queue::remove(name.c_str());
 }
 

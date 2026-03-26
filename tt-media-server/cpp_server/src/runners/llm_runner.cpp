@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "config/settings.hpp"
-#include "ipc/boost_ipc_cancel_queue.hpp"
+#include "ipc/cancel_queue.hpp"
 #include "profiling/tracy.hpp"
 
 namespace tt::runners {
@@ -14,8 +14,7 @@ using Config = tt::config::LLMConfig;
 
 LLMRunner::LLMRunner(const Config& config,
                      ipc::TokenRingBuffer<65536>* resultQueue,
-                     ITaskQueue* taskQueue,
-                     ipc::BoostIpcCancelQueue* cancelQueue)
+                     ITaskQueue* taskQueue, ipc::ICancelQueue* cancelQueue)
     : config_(config), result_queue_(resultQueue), cancel_queue_(cancelQueue) {
   scheduler_ =
       makeScheduler(config_, taskQueue, tt::config::maxInFlightCount());

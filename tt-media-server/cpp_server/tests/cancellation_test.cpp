@@ -284,7 +284,7 @@ TEST(LLMRunnerCancelTest, AbortBeforeStart_EmitsNoTokens) {
 // must complete normally.
 TEST(LLMRunnerCancelTest, AbortViaCancelQueue_StopsEmitting) {
   std::string cancelQName = "tt_cancel_runner_test_" + std::to_string(getpid());
-  tt::ipc::BoostIpcCancelQueue::remove(cancelQName);
+  tt::ipc::BoostIpcCancelQueue::removeByName(cancelQName);
 
   Config config = makeEngineConfig();
   auto taskQueue = makeQueue();
@@ -354,7 +354,7 @@ TEST(LLMRunnerCancelTest, AbortViaCancelQueue_StopsEmitting) {
   }
 
   resultQueue.shutdown();
-  tt::ipc::BoostIpcCancelQueue::remove(cancelQName);
+  tt::ipc::BoostIpcCancelQueue::removeByName(cancelQName);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -365,8 +365,10 @@ class CancelQueueTest : public ::testing::Test {
  protected:
   static constexpr const char* Q_NAME = "tt_cancel_queue_unit_test";
 
-  void SetUp() override { tt::ipc::BoostIpcCancelQueue::remove(Q_NAME); }
-  void TearDown() override { tt::ipc::BoostIpcCancelQueue::remove(Q_NAME); }
+  void SetUp() override { tt::ipc::BoostIpcCancelQueue::removeByName(Q_NAME); }
+  void TearDown() override {
+    tt::ipc::BoostIpcCancelQueue::removeByName(Q_NAME);
+  }
 };
 
 // Pushing a TaskID and immediately draining it returns the same ID.

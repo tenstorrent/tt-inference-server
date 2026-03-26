@@ -9,6 +9,7 @@
 
 #include "ipc/boost_ipc_cancel_queue.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
+#include "ipc/cancel_queue.hpp"
 #include "ipc/shared_memory.hpp"
 
 namespace tt::ipc {
@@ -25,7 +26,7 @@ class QueueManager {
   std::shared_ptr<BoostIpcTaskQueue> task_queue;
   std::vector<std::shared_ptr<TokenRingBuffer<RING_BUFFER_CAPACITY>>>
       result_queues;
-  std::vector<std::shared_ptr<BoostIpcCancelQueue>> cancel_queues;
+  std::vector<std::shared_ptr<ICancelQueue>> cancel_queues;
 
   explicit QueueManager(int numWorkers) {
     BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
@@ -39,7 +40,7 @@ class QueueManager {
 
       std::string cancelName =
           std::string(CANCEL_QUEUE_NAME) + "_" + std::to_string(i);
-      BoostIpcCancelQueue::remove(cancelName);
+      BoostIpcCancelQueue::removeByName(cancelName);
       cancel_queues.emplace_back(std::make_shared<BoostIpcCancelQueue>(
           cancelName, CANCEL_QUEUE_CAPACITY));
     }
@@ -52,10 +53,8 @@ class QueueManager {
     for (auto& queue : result_queues) {
       queue->shutdown();
     }
-    for (size_t i = 0; i < cancel_queues.size(); i++) {
-      std::string cancelName =
-          std::string(CANCEL_QUEUE_NAME) + "_" + std::to_string(i);
-      BoostIpcCancelQueue::remove(cancelName);
+    for (auto& cq : cancel_queues) {
+      cq->remove();
     }
     cancel_queues.clear();
   }
