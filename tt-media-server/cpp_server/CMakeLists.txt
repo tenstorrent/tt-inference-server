@@ -349,7 +349,6 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
-    src/api/socket_controller.cpp
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
@@ -365,12 +364,14 @@ set(SOURCES
     src/worker/single_process_worker.cpp
     src/worker/worker_manager.cpp
     src/utils/service_factory.cpp
+    src/utils/service_container.cpp
     src/utils/runner_factory.cpp
     src/utils/tokenizer_config_loader.cpp
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
     src/runners/embedding_runner.cpp
     src/services/embedding_service.cpp
+    src/services/disaggregation_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/inter_server_service.cpp
 )
