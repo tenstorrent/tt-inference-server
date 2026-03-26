@@ -634,10 +634,6 @@ def test_tool_choice(report_test, api_client, choice, request):
         "tool_choice": choice,
         "max_output_tokens": 256,
     }
-    if choice in ("none", "required"):
-        with pytest.raises(requests.exceptions.HTTPError):
-            api_client(payload)
-        return
 
     response = api_client(payload)
 
@@ -726,8 +722,15 @@ def test_truncation(report_test, api_client, truncation, max_context, request):
         "truncation": truncation,
     }
 
-    with pytest.raises(requests.exceptions.HTTPError, match="400 Client Error"):
-        api_client(payload)
+    if truncation == "auto":
+        response = api_client(payload, timeout=120)
+        assert response.get("status") in ("completed", "incomplete")
+        input_tokens = response.get("usage", {}).get("input_tokens", 0)
+        assert 0 < input_tokens <= max_context
+    else:
+        # disabled truncation should reject oversized input
+        with pytest.raises(requests.exceptions.HTTPError, match="400"):
+            api_client(payload, timeout=120)
 
 
 def test_user(report_test, api_client, request):
