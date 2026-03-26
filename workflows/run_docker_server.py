@@ -273,13 +273,12 @@ def generate_docker_run_command(
     if model_spec.inference_engine == InferenceEngine.VLLM.value:
         docker_command.extend(["--model", model_spec.hf_model_repo])
         docker_command.extend(["--tt-device", runtime_config.device])
-
-    if runtime_config.no_auth:
-        docker_command.append("--no-auth")
-    if runtime_config.disable_trace_capture:
-        docker_command.append("--disable-trace-capture")
-    if runtime_config.service_port and str(runtime_config.service_port) != "8000":
-        docker_command.extend(["--service-port", str(runtime_config.service_port)])
+        if runtime_config.no_auth:
+            docker_command.append("--no-auth")
+        if runtime_config.disable_trace_capture:
+            docker_command.append("--disable-trace-capture")
+        if runtime_config.service_port and str(runtime_config.service_port) != "8000":
+            docker_command.extend(["--service-port", str(runtime_config.service_port)])
     if runtime_config.interactive:
         docker_command.extend(["bash", "-c", "sleep infinity"])
 

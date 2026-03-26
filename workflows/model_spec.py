@@ -1788,8 +1788,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="3f72232",
-        vllm_commit="409b1cd",
+        tt_metal_commit="25305db",
+        vllm_commit="6e67d2d",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2716,18 +2716,27 @@ audio_tts_templates = [
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P300,
                 max_concurrency=2,
                 max_context=64 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P300X2,
                 max_concurrency=4,
                 max_context=64 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
+                },
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
@@ -2770,18 +2779,27 @@ audio_tts_templates = [
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P300,
                 max_concurrency=2,
                 max_context=64 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P300X2,
                 max_concurrency=4,
                 max_context=64 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,

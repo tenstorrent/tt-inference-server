@@ -37,6 +37,7 @@ class ImageGenerationLoadTest(BaseTest):
             "image_generation_time", 9
         )  # in seconds
         num_inference_steps = self.targets.get("num_inference_steps", 20)
+        image_resolution = self.targets.get("image_resolution")
 
         payload["num_inference_steps"] = num_inference_steps
 
@@ -58,6 +59,7 @@ class ImageGenerationLoadTest(BaseTest):
             "average_duration": average_duration,
             "target_time": image_generation_target_time,
             "devices": devices,
+            "image_resolution": image_resolution,
             "success": success,
         }
 
@@ -90,7 +92,6 @@ class ImageGenerationLoadTest(BaseTest):
                 logger.error("[%s] Exception after %.2fs: %s", index, duration, e)
                 raise
 
-        # NOTE: warmup never runs due to early return inside first iteration
         for iteration in range(2):
             session_timeout = aiohttp.ClientTimeout(total=2000)
             async with aiohttp.ClientSession(
@@ -98,9 +99,11 @@ class ImageGenerationLoadTest(BaseTest):
             ) as session:
                 tasks = [timed_request(session, i + 1) for i in range(batch_size)]
                 results = await asyncio.gather(*tasks)
-                requests_duration = max(results)
-                total_duration = sum(results)
-                avg_duration = total_duration / batch_size
-                return requests_duration, avg_duration
-            if iteration == 0:
-                logger.info("Warmup run done.")
+
+                if iteration == 0:
+                    logger.info("Warmup run done.")
+                else:
+                    requests_duration = max(results)
+                    total_duration = sum(results)
+                    avg_duration = total_duration / batch_size
+                    return requests_duration, avg_duration

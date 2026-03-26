@@ -246,6 +246,7 @@ class AudioResponseFormat(Enum):
     OGG = "ogg"
 
 
+SDXL_VALID_IMAGE_RESOLUTIONS = frozenset({(1024, 1024), (512, 512)})
 AUDIO_RESPONSE_FORMATS = frozenset(e.value for e in AudioResponseFormat)
 
 # TTS formats that require ffmpeg for encoding (WAV does not)
@@ -351,6 +352,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 3000,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
@@ -662,6 +664,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 2,
         "queue_for_multiprocessing": QueueType.BatchFifo.value,
+        "request_processing_timeout_seconds": 2000,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),

@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
 
 namespace tt::api {
@@ -43,7 +44,8 @@ class LLMController : public drogon::HttpController<LLMController> {
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
  private:
-  std::shared_ptr<services::LLMService> service_;
+  std::shared_ptr<services::LLMService> service;
+  std::shared_ptr<services::DisaggregationService> disaggregationService;
 
   /**
    * Handle streaming completion (SSE). When is_chat is true, emits
