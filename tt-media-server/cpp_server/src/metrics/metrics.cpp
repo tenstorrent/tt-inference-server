@@ -124,25 +124,30 @@ void ServerMetrics::onRequestSubmitted(const std::string& task_id,
 
 void ServerMetrics::onToken(const std::string& task_id) {
   auto now = std::chrono::steady_clock::now();
-  std::lock_guard<std::mutex> lock(contexts_mutex_);
-  auto it = contexts_.find(task_id);
-  if (it == contexts_.end()) return;
+  double ttft = -1.0;
+  double itl = -1.0;
+  {
+    std::lock_guard<std::mutex> lock(contexts_mutex_);
+    auto it = contexts_.find(task_id);
+    if (it == contexts_.end()) return;
 
-  auto& ctx = it->second;
-  ctx.generation_tokens++;
-  generation_tokens_total_->Increment();
+    auto& ctx = it->second;
+    ctx.generation_tokens++;
 
-  if (!ctx.first_token_time.has_value()) {
-    ctx.first_token_time = now;
-    double ttft = std::chrono::duration<double>(now - ctx.start_time).count();
-    ttft_seconds_->Observe(ttft);
-  } else if (ctx.prev_token_time.has_value()) {
-    double itl =
-        std::chrono::duration<double>(now - ctx.prev_token_time.value())
-            .count();
-    inter_token_latency_seconds_->Observe(itl);
+    if (!ctx.first_token_time.has_value()) {
+      ctx.first_token_time = now;
+      ttft = std::chrono::duration<double>(now - ctx.start_time).count();
+    } else if (ctx.prev_token_time.has_value()) {
+      itl = std::chrono::duration<double>(now - ctx.prev_token_time.value())
+                .count();
+    }
+    ctx.prev_token_time = now;
   }
-  ctx.prev_token_time = now;
+  // Prometheus operations have their own internal locks — call outside
+  // contexts_mutex_ to avoid nested locking and serialising token delivery.
+  generation_tokens_total_->Increment();
+  if (ttft >= 0.0) ttft_seconds_->Observe(ttft);
+  if (itl >= 0.0) inter_token_latency_seconds_->Observe(itl);
 }
 
 void ServerMetrics::onRequestCompleted(const std::string& task_id,
