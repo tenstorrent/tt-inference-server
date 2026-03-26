@@ -779,7 +779,7 @@ class TestSpecTestsBehavior:
     """Test spec-tests return codes for missing config and interruption."""
 
     def test_spec_tests_missing_config_returns_one(self):
-        spec_tests_run = importlib.import_module("tests.server_tests.run")
+        spec_tests_run = importlib.import_module("server_tests.run_spec_tests")
         args = Namespace(
             runtime_model_spec_json="runtime.json",
             model="missing-model",
@@ -799,7 +799,7 @@ class TestSpecTestsBehavior:
         assert result == 1
 
     def test_spec_tests_keyboard_interrupt_returns_130(self):
-        spec_tests_run = importlib.import_module("tests.server_tests.run")
+        spec_tests_run = importlib.import_module("server_tests.run_spec_tests")
         args = Namespace(
             runtime_model_spec_json="runtime.json",
             model="Llama-3.1-8B-Instruct",
