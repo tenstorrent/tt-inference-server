@@ -39,9 +39,9 @@ ManageMemoryStatus MemoryManager::allocateKv(
   }
 
   int blkSize = blockManager->blockSize();
-  size_t numBlocks = (static_cast<size_t>(inputSeqLen) +
-                      static_cast<size_t>(blkSize) - 1) /
-                     static_cast<size_t>(blkSize);
+  size_t numBlocks =
+      (static_cast<size_t>(inputSeqLen) + static_cast<size_t>(blkSize) - 1) /
+      static_cast<size_t>(blkSize);
 
   if (static_cast<size_t>(blockManager->numFreeBlocks()) < numBlocks) {
     return ManageMemoryStatus::WAITING;
@@ -58,8 +58,7 @@ ManageMemoryStatus MemoryManager::allocateKv(
     blockManager->claimBlock(blockId);
     outBlockIds.push_back(blockId);
     // TODO: map blockId to actual device DRAM address
-    outLocations.push_back(
-        KvDestination{static_cast<uint64_t>(blockId), 0});
+    outLocations.push_back(KvDestination{static_cast<uint64_t>(blockId), 0});
   }
   return ManageMemoryStatus::SUCCESS;
 }
