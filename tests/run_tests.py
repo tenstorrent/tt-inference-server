@@ -57,11 +57,16 @@ def build_test_command(
         / f"test_{model_spec.model_id}__{run_timestamp}_{task.task_name}"
     )
 
+    if task.task_name == "vllm_responses":
+        # vLLM responses test needs the service port to connect to the server
+        test_kwargs_list.extend(
+            ["--endpoint-url", f"http://127.0.0.1:{service_port}/v1/responses"]
+        )
     cmd = [
         str(test_exec),
         task.test_path,
         "--model-name",
-        model_spec.model_name,
+        model_spec.hf_model_repo,
         "--model-impl",
         model_spec.impl.impl_name,
         "--output-path",

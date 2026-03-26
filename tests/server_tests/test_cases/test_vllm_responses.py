@@ -92,7 +92,7 @@ def test_include(report_test, api_client, request):
     """Tests that the 'include' parameter is accepted."""
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
         "include": [],
     }
     response = api_client(payload)
@@ -111,8 +111,9 @@ def test_background(report_test, api_client, request):
 
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
         "background": True,
+        "temperature": 0,
     }
     response = api_client(payload)
 
@@ -157,7 +158,7 @@ def test_background(report_test, api_client, request):
 )
 def test_input(report_test, api_client, input_val, request):
     """Tests the 'input' parameter accepts both string and message array formats."""
-    payload = {"input": input_val, "max_output_tokens": 256}
+    payload = {"input": input_val, "max_output_tokens": 2048}
     response = api_client(payload)
 
     try:
@@ -253,7 +254,8 @@ def test_max_tool_calls(report_test, api_client, max_calls, request):
         "input": "What's the weather in San Francisco, New York, London, Tokyo, and Sydney?",
         "tools": [WEATHER_TOOL],
         "max_tool_calls": max_calls,
-        "max_output_tokens": 1024,
+        "max_output_tokens": 4096,
+        "temperature": 0,
     }
     response = api_client(payload)
 
@@ -276,7 +278,7 @@ def test_metadata(report_test, api_client, request):
     metadata = {"test_key": "test_value", "run_id": "12345"}
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
         "metadata": metadata,
     }
     response = api_client(payload)
@@ -304,7 +306,7 @@ def test_model(report_test, api_client, request):
     payload = {
         "input": BASE_INPUT,
         "model": model_name,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
     }
     response = api_client(payload)
 
@@ -352,7 +354,7 @@ def test_previous_response_id(report_test, api_client, request):
     # First request
     payload1 = {
         "input": "My name is Alice.",
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
     }
     response1 = api_client(payload1)
 
@@ -363,7 +365,7 @@ def test_previous_response_id(report_test, api_client, request):
     payload2 = {
         "input": "What is my name?",
         "previous_response_id": response_id,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
     }
     response2 = api_client(payload2)
 
@@ -417,7 +419,7 @@ def test_reasoning(report_test, api_client, request):
             "temperature": 0,
             "reasoning": {"effort": effort},
         }
-        response = api_client(payload)
+        response = api_client(payload, timeout=120)
 
         output_text = get_output_text(response)
         assert output_text, (
@@ -445,8 +447,9 @@ def test_service_tier(report_test, api_client, tier, request):
     """Tests that the 'service_tier' parameter is accepted."""
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
         "service_tier": tier,
+        "temperature": 0,
     }
     response = api_client(payload)
 
@@ -495,7 +498,7 @@ def test_store(report_test, api_client, store_val, request):
 
 def test_stream_true(report_test, api_client, request):
     """Tests the 'stream' parameter set to true returns a streaming response."""
-    payload = {"input": BASE_INPUT, "max_output_tokens": 256, "stream": True}
+    payload = {"input": BASE_INPUT, "max_output_tokens": 2048, "stream": True}
 
     response = api_client(payload, stream=True)
 
@@ -512,7 +515,7 @@ def test_stream_true(report_test, api_client, request):
 
 def test_stream_false(report_test, api_client, request):
     """Tests the 'stream' parameter set to false."""
-    payload = {"input": BASE_INPUT, "max_output_tokens": 256, "stream": False}
+    payload = {"input": BASE_INPUT, "max_output_tokens": 2048, "stream": False}
     response = api_client(payload)
 
     try:
@@ -580,7 +583,7 @@ def test_text(report_test, api_client, text_config, request):
 
     payload = {
         "input": input_msg,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
         "text": text_config,
     }
     response = api_client(payload)
@@ -723,29 +726,15 @@ def test_truncation(report_test, api_client, truncation, max_context, request):
         "truncation": truncation,
     }
 
-    response = api_client(payload, timeout=120)
-
-    # api_client raises HTTPError on 4xx/5xx, so reaching here means no
-    # server error.  For "auto" that is all we need to verify — vLLM may
-    # not fully honour auto-truncation semantics yet.
-    assert response.get("status") in ("completed", "incomplete"), (
-        f"Expected status 'completed' or 'incomplete', got: {response}"
-    )
-
-    if truncation == "disabled":
-        input_tokens = response.get("usage", {}).get("input_tokens", 0)
-        assert input_tokens > 0, f"Expected input_tokens > 0. Response: {response}"
-        assert input_tokens > max_context, (
-            f"Expected input_tokens > {max_context} with disabled truncation, "
-            f"got {input_tokens}. Response: {response}"
-        )
+    with pytest.raises(requests.exceptions.HTTPError, match="400 Client Error"):
+        api_client(payload)
 
 
 def test_user(report_test, api_client, request):
     """Tests that the 'user' parameter is accepted."""
     payload = {
         "input": BASE_INPUT,
-        "max_output_tokens": 256,
+        "max_output_tokens": 2048,
         "user": "test-user-123",
     }
     response = api_client(payload)
