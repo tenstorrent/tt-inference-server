@@ -84,8 +84,8 @@ class SlotRingBuffer {
   void open() {
     int fd = shm_open(name.c_str(), O_RDWR, 0);
     if (fd < 0) {
-      throw std::runtime_error("SlotRingBuffer: unable to open shared memory: " +
-                               name);
+      throw std::runtime_error(
+          "SlotRingBuffer: unable to open shared memory: " + name);
     }
 
     memPointer = mmap(nullptr, Msg::K_TOTAL_SIZE, PROT_READ | PROT_WRITE,
@@ -183,4 +183,4 @@ class SlotRingBuffer {
 using PrefillSlotBuffer = SlotRingBuffer<PREFILL_MAX_TOKEN_IDS>;
 using DecodeSlotBuffer = SlotRingBuffer<DECODE_MAX_TOKEN_IDS>;
 
-}  // namespace sp_pipeline
+}  // namespace tt::ipc

@@ -10,8 +10,8 @@
 #include <thread>
 #include <vector>
 
-#include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 #include "ipc/slot_ring_buffer.hpp"
+#include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 
 namespace sp_pipeline {
 
