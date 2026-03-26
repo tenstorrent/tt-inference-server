@@ -106,7 +106,8 @@ class Tokenizer {
 
     /**
      * Decodes the next token. Returns the decoded text delta, or "" if the
-     * token is part of an incomplete multi-byte UTF-8 sequence still being buffered.
+     * token is part of an incomplete multi-byte UTF-8 sequence still being
+     * buffered.
      */
     std::string step(int tokenId);
 
