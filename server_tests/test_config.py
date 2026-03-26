@@ -41,9 +41,7 @@ _test_config_list = [
         tasks=[
             TestTask(
                 task_name="vllm_chat_completions",
-                test_path=Path(
-                    "server_tests/test_cases/test_vllm_chat_completions.py"
-                ),
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
                 test_args=("s", "v"),
             ),
         ],
@@ -53,9 +51,7 @@ _test_config_list = [
         tasks=[
             TestTask(
                 task_name="vllm_chat_completions",
-                test_path=Path(
-                    "server_tests/test_cases/test_vllm_chat_completions.py"
-                ),
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
                 test_args=("s", "v"),
             ),
         ],
@@ -65,9 +61,7 @@ _test_config_list = [
         tasks=[
             TestTask(
                 task_name="vllm_chat_completions",
-                test_path=Path(
-                    "server_tests/test_cases/test_vllm_chat_completions.py"
-                ),
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
                 test_args=("s", "v"),
             ),
         ],
