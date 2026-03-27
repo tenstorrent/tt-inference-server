@@ -92,7 +92,7 @@ def _apply_report_schema_overrides(schema: Dict[str, Any]) -> Dict[str, Any]:
                 "type": "string",
                 "enum": ["API", "docker"],
             }
-        for field_name in ("tt_metal_commit", "vllm_commit"):
+        for field_name in ("release_version", "tt_metal_commit", "vllm_commit"):
             if field_name in metadata_properties:
                 metadata_properties[field_name] = {
                     "type": ["string", "null"],

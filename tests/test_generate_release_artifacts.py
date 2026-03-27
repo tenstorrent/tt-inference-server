@@ -158,6 +158,7 @@ def make_release_report(
             "model_id": "demo_model",
             "model_name": "DemoModel",
             "device": "n150",
+            "release_version": "0.10.0",
             "runtime_model_spec_json": "/tmp/runtime_model_spec.json",
         },
         "benchmarks_summary": [
@@ -547,6 +548,7 @@ def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
                 "ci_run_url": "https://example.com/runs/123",
                 "ci_job_url": "https://example.com/jobs/456",
                 "release_report": {
+                    "metadata": {"release_version": "0.10.0"},
                     "benchmarks": [
                         {
                             "task_type": "text",
@@ -669,15 +671,24 @@ def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
         )
 
     entry = release_performance_data["models"]["DemoModel"]["n150"]["demo_impl"]["vLLM"]
+    assert entry["release_version"] == "0.10.0"
     assert len(entry["perf_target_results"]) == 1
-    assert entry["perf_target_results"][0]["benchmark_summary"]["ttft"] == 45.0
+    assert list(entry["perf_target_results"][0].keys()) == [
+        "is_summary_data_point",
+        "config",
+        "measured_metrics",
+    ]
+    assert entry["perf_target_results"][0]["is_summary_data_point"] is True
+    assert entry["perf_target_results"][0]["measured_metrics"]["ttft"] == 45.0
     assert not (output_dir / "release_performance.md").exists()
     baseline = json.loads(baseline_path.read_text())
     baseline_entry = baseline["models"]["DemoModel"]["n150"]["demo_impl"]["vLLM"]
+    assert list(baseline_entry.keys())[:2] == ["perf_status", "release_version"]
+    assert baseline_entry["release_version"] == "0.10.0"
     assert "benchmarks_summary" not in baseline_entry
     assert baseline_entry["perf_target_results"][0]["config"]["isl"] == 128
-    assert baseline_entry["perf_target_results"][0]["benchmark_summary"]["ttft"] == 45.0
-    assert baseline_entry["perf_target_results"][0]["benchmark_summary"]["isl"] == 128
+    assert "targets" not in baseline_entry["perf_target_results"][0]
+    assert "benchmark_summary" not in baseline_entry["perf_target_results"][0]
     assert baseline_entry["perf_target_results"][0]["measured_metrics"]["ttft"] == 45.0
     assert (
         baseline_entry["perf_target_results"][0]["measured_metrics"]["tput_user"]

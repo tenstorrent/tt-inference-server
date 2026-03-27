@@ -38,6 +38,12 @@
             "docker"
           ]
         },
+        "release_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "tt_metal_commit": {
           "type": [
             "string",
@@ -64,6 +70,7 @@
         "inference_engine",
         "device",
         "server_mode",
+        "release_version",
         "tt_metal_commit",
         "vllm_commit",
         "run_command"

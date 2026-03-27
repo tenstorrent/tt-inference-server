@@ -386,29 +386,14 @@
         "config": {
           "$ref": "#/$defs/perf_target_config"
         },
-        "targets": {
-          "$ref": "#/$defs/summary_targets"
-        },
         "measured_metrics": {
           "$ref": "#/$defs/measured_metrics"
-        },
-        "benchmark_summary": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/benchmark_row"
-            },
-            {
-              "type": "null"
-            }
-          ]
         }
       },
       "required": [
         "is_summary_data_point",
         "config",
-        "targets",
-        "measured_metrics",
-        "benchmark_summary"
+        "measured_metrics"
       ],
       "additionalProperties": false
     },
@@ -433,23 +418,8 @@
     "entry": {
       "type": "object",
       "properties": {
-        "model": {
-          "type": "string"
-        },
-        "device": {
-          "type": "string"
-        },
-        "impl_id": {
-          "type": "string"
-        },
-        "inference_engine": {
-          "type": "string"
-        },
         "perf_status": {
           "$ref": "#/$defs/perf_status"
-        },
-        "accuracy_status": {
-          "$ref": "#/$defs/nullable_boolean"
         },
         "ci_run_number": {
           "$ref": "#/$defs/nullable_integer"
@@ -460,46 +430,23 @@
         "ci_job_url": {
           "$ref": "#/$defs/nullable_string"
         },
-        "benchmarks_summary": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/benchmark_row"
-          }
+        "release_version": {
+          "$ref": "#/$defs/nullable_string"
         },
         "perf_target_results": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/perf_target_result"
           }
-        },
-        "perf_target_summary": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/perf_target_result"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "report_data": {
-          "$ref": "#/$defs/report_data"
         }
       },
       "required": [
-        "model",
-        "device",
-        "impl_id",
-        "inference_engine",
         "perf_status",
-        "accuracy_status",
         "ci_run_number",
         "ci_run_url",
         "ci_job_url",
-        "benchmarks_summary",
-        "perf_target_results",
-        "perf_target_summary",
-        "report_data"
+        "release_version",
+        "perf_target_results"
       ],
       "additionalProperties": false
     },

@@ -32,7 +32,7 @@ from workflows.model_spec import get_runtime_model_spec
 from workflows.run_docker_server import (
     generate_docker_run_command,
 )
-from workflows.runtime_config import RuntimeConfig
+from workflows.runtime_config import RuntimeConfig, get_invoked_run_command
 from workflows.workflow_types import DeviceTypes
 
 
@@ -65,7 +65,9 @@ def mock_args():
         workflow_args=None,
         override_docker_image=None,
         service_port="8000",
+        bind_host="0.0.0.0",
         disable_trace_capture=False,
+        disable_metal_timeout=False,
         percentile_report=False,
         dev_mode=False,
         override_tt_config=None,
@@ -212,6 +214,7 @@ class TestModelSpecCliArgsCompatibility:
             streaming="true",
             preprocessing="false",
             sdxl_num_prompts="42",
+            original_run_command="python run.py --model Mistral-7B-Instruct-v0.3 --workflow benchmarks --tt-device n150 --docker-server",
         )
         runtime_config.run_id = "run-123"
 
@@ -233,6 +236,10 @@ class TestModelSpecCliArgsCompatibility:
         assert model_spec.cli_args["streaming"] == "true"
         assert model_spec.cli_args["preprocessing"] == "false"
         assert model_spec.cli_args["sdxl_num_prompts"] == "42"
+        assert (
+            model_spec.cli_args["original_run_command"]
+            == "python run.py --model Mistral-7B-Instruct-v0.3 --workflow benchmarks --tt-device n150 --docker-server"
+        )
         assert model_spec.cli_args["run_id"] == "run-123"
 
     @pytest.mark.parametrize(
@@ -1091,6 +1098,43 @@ class TestSecretsHandling:
 class TestUtilityFunctions:
     """Tests for utility functions."""
 
+    def test_get_invoked_run_command_prefers_matching_orig_argv(self):
+        command = get_invoked_run_command(
+            argv=["run.py", "--model", "demo-model", "--workflow", "release"],
+            orig_argv=[
+                "python3",
+                "run.py",
+                "--model",
+                "demo-model",
+                "--workflow",
+                "release",
+            ],
+        )
+
+        assert command == "python3 run.py --model demo-model --workflow release"
+
+    def test_get_invoked_run_command_falls_back_to_sys_argv_shape(self):
+        command = get_invoked_run_command(
+            argv=["run.py", "--model", "demo-model", "--workflow", "release"],
+            orig_argv=["pytest", "tests/test_run_arguments.py"],
+        )
+
+        assert command == "run.py --model demo-model --workflow release"
+
+    def test_runtime_config_from_args_captures_original_run_command(self, mock_args):
+        argv = ["run.py", "--model", "demo-model", "--workflow", "release"]
+        orig_argv = ["python3", *argv]
+        mock_args.model = "demo-model"
+        mock_args.workflow = "release"
+
+        with patch("sys.argv", argv), patch.object(sys, "orig_argv", orig_argv):
+            runtime_config = RuntimeConfig.from_args(mock_args)
+
+        assert (
+            runtime_config.original_run_command
+            == "python3 run.py --model demo-model --workflow release"
+        )
+
     @patch("subprocess.check_output")
     def test_get_commit_sha(self, mock_check_output):
         """Test git commit SHA retrieval."""
@@ -1127,6 +1171,32 @@ class TestUtilityFunctions:
 
         mock_get_log_dir.assert_called_once()
         mock_ensure_dir.assert_called_once_with(mock_log_dir)
+
+    def test_runtime_config_json_round_trip_preserves_original_run_command(
+        self, tmp_path
+    ):
+        runtime_config = RuntimeConfig(
+            model="Mistral-7B-Instruct-v0.3",
+            workflow="release",
+            device="n150",
+            original_run_command="python run.py --model Mistral-7B-Instruct-v0.3 --workflow release --tt-device n150 --docker-server",
+        )
+        model_spec = MagicMock()
+        model_spec.get_serialized_dict.return_value = {"model_id": "demo-model"}
+
+        json_path = runtime_config.to_json(
+            model_spec,
+            "2026-03-27_00-00-00",
+            "demo-model",
+            tmp_path,
+        )
+
+        loaded = RuntimeConfig.from_json(str(json_path))
+
+        assert (
+            loaded.original_run_command
+            == "python run.py --model Mistral-7B-Instruct-v0.3 --workflow release --tt-device n150 --docker-server"
+        )
 
     def test_validate_setup_warns_for_older_model_spec_release_version(
         self, mock_model_spec, mock_runtime_config, caplog

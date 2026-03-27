@@ -45,9 +45,10 @@ def make_report_data():
             "inference_engine": "vLLM",
             "device": "N150",
             "server_mode": "API",
+            "release_version": "0.12.0",
             "tt_metal_commit": "a" * 40,
             "vllm_commit": "b" * 7,
-            "run_command": "python run.py --model demo-model --tt-device N150 --workflow release ",
+            "run_command": "python run.py --model demo-model --tt-device N150 --workflow release --generate-report-schema",
         },
         "benchmarks_summary": [
             {
@@ -130,17 +131,24 @@ def _install_main_monkeypatches(
         hf_model_repo="demo/model",
         impl=SimpleNamespace(impl_name="demo_impl"),
         inference_engine="vLLM",
+        release_version="0.12.0",
         tt_metal_commit="a" * 40,
         vllm_commit="b" * 7,
         device_type=run_reports.DeviceTypes.N150,
         device_model_spec=SimpleNamespace(default_impl=True),
     )
+    original_run_command = (
+        "python run.py --model demo-model --tt-device N150 --workflow release"
+    )
+    if generate_report_schema:
+        original_run_command = f"{original_run_command} --generate-report-schema"
     runtime_config = SimpleNamespace(
         model="demo-model",
         device="N150",
         docker_server=False,
         percentile_report=False,
         generate_report_schema=generate_report_schema,
+        original_run_command=original_run_command,
     )
 
     monkeypatch.setattr(run_reports, "parse_args", lambda: args)
@@ -225,6 +233,13 @@ def _install_main_monkeypatches(
 
 def test_validate_report_data_accepts_representative_release_report():
     validate_report_data(make_report_data())
+
+
+def test_validate_report_data_allows_null_release_version():
+    report_data = make_report_data()
+    report_data["metadata"]["release_version"] = None
+
+    validate_report_data(report_data)
 
 
 def test_reports_schema_uses_draft_2020_12():
@@ -312,6 +327,12 @@ def test_run_reports_main_validates_generated_raw_report(tmp_path, monkeypatch):
     assert len(validated_paths) == 1
     assert validated_paths[0].exists()
     assert validated_paths[0].parent == output_path / "release" / "data"
+    report_data = json.loads(validated_paths[0].read_text(encoding="utf-8"))
+    assert report_data["metadata"]["release_version"] == "0.12.0"
+    assert (
+        report_data["metadata"]["run_command"]
+        == "python run.py --model demo-model --tt-device N150 --workflow release"
+    )
 
 
 def test_run_reports_main_raises_after_writing_raw_report_on_validation_failure(

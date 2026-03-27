@@ -6,6 +6,7 @@
 import json
 import importlib
 import os
+import sys
 import tempfile
 from argparse import Namespace
 from pathlib import Path
@@ -609,8 +610,11 @@ class TestMainWorkflowIntegration:
             "reports",
             "--generate-report-schema",
         ]
+        orig_argv = ["python", *test_args]
 
-        with patch("sys.argv", test_args), patch(
+        with patch("sys.argv", test_args), patch.object(
+            sys, "orig_argv", orig_argv
+        ), patch(
             "run.run_workflows",
             return_value=[WorkflowResult(workflow_name="reports", return_code=0)],
         ) as mock_run_workflows, patch(
@@ -622,6 +626,10 @@ class TestMainWorkflowIntegration:
         assert mock_run_workflows.called
         runtime_config = mock_run_workflows.call_args.args[1]
         assert runtime_config.generate_report_schema is True
+        assert (
+            runtime_config.original_run_command
+            == "python run.py --model Llama-3.1-8B-Instruct --device n150 --workflow reports --generate-report-schema"
+        )
 
     def test_main_workflow_benchmarks_no_docker(
         self, temp_dir, mock_env_vars, mock_version_file

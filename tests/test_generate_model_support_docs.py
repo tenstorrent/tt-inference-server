@@ -53,16 +53,6 @@ def test_generate_model_page_group_page_embeds_matching_release_report():
                                         "osl": 128,
                                         "max_concurrency": 1,
                                     },
-                                    "targets": {
-                                        "ttft_ms": 50.0,
-                                        "ttft_streaming_ms": None,
-                                        "tput_user": 10.0,
-                                        "tput_prefill": None,
-                                        "e2el_ms": None,
-                                        "tput": None,
-                                        "rtr": None,
-                                        "tolerance": 0.05,
-                                    },
                                     "measured_metrics": {
                                         "ttft": 42.0,
                                         "tput_user": 11.0,
@@ -71,22 +61,6 @@ def test_generate_model_page_group_page_embeds_matching_release_report():
                                         "tput_prefill": None,
                                         "e2el_ms": None,
                                         "rtr": None,
-                                    },
-                                    "benchmark_summary": {
-                                        "task_type": "text",
-                                        "isl": 128,
-                                        "osl": 128,
-                                        "max_concurrency": 1,
-                                        "ttft": 42.0,
-                                        "tput_user": 11.0,
-                                        "target_checks": {
-                                            "target": {
-                                                "ttft_check": 2,
-                                                "tput_user_check": 2,
-                                                "ttft": 50.0,
-                                                "tput_user": 10.0,
-                                            }
-                                        },
                                     },
                                 }
                             ],
@@ -137,16 +111,6 @@ def make_summary_release_performance_data():
                                         "osl": 128,
                                         "max_concurrency": 1,
                                     },
-                                    "targets": {
-                                        "ttft_ms": 50.0,
-                                        "ttft_streaming_ms": None,
-                                        "tput_user": 10.0,
-                                        "tput_prefill": None,
-                                        "e2el_ms": None,
-                                        "tput": 22.0,
-                                        "rtr": None,
-                                        "tolerance": 0.05,
-                                    },
                                     "measured_metrics": {
                                         "ttft": 42.0,
                                         "tput_user": 11.0,
@@ -155,15 +119,6 @@ def make_summary_release_performance_data():
                                         "tput_prefill": None,
                                         "e2el_ms": None,
                                         "rtr": None,
-                                    },
-                                    "benchmark_summary": {
-                                        "task_type": "text",
-                                        "isl": 128,
-                                        "osl": 128,
-                                        "max_concurrency": 1,
-                                        "ttft": 42.0,
-                                        "tput_user": 11.0,
-                                        "tput": 22.0,
                                     },
                                 }
                             ],

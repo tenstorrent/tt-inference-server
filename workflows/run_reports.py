@@ -4131,19 +4131,16 @@ def main():
     assert device == model_spec.device_type
 
     server_mode = "API"
-    command_flag = ""
     if docker_server:
         server_mode = "docker"
-        command_flag = "--docker-server"
-    generate_report_schema_flag = ""
-    if runtime_config.generate_report_schema:
-        generate_report_schema_flag = "--generate-report-schema"
 
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     report_id = f"{model_spec.model_id}_{run_timestamp}"
 
-    # only show the impl run command if non-default impl is used
-    if model_spec.device_model_spec.default_impl:
+    run_cmd = getattr(runtime_config, "original_run_command", None)
+    if not run_cmd:
+        # Compatibility fallback for older runtime JSON files that predate
+        # original_run_command persistence.
         run_cmd_parts = [
             "python",
             "run.py",
@@ -4151,27 +4148,15 @@ def main():
             model,
             "--tt-device",
             device_str,
-            "--workflow",
-            "release",
         ]
-    else:
-        run_cmd_parts = [
-            "python",
-            "run.py",
-            "--model",
-            model,
-            "--tt-device",
-            device_str,
-            "--impl",
-            model_spec.impl.impl_name,
-            "--workflow",
-            "release",
-        ]
-    if command_flag:
-        run_cmd_parts.append(command_flag)
-    if generate_report_schema_flag:
-        run_cmd_parts.append(generate_report_schema_flag)
-    run_cmd = " ".join(run_cmd_parts)
+        if not model_spec.device_model_spec.default_impl:
+            run_cmd_parts.extend(["--impl", model_spec.impl.impl_name])
+        run_cmd_parts.extend(["--workflow", "release"])
+        if docker_server:
+            run_cmd_parts.append("--docker-server")
+        if runtime_config.generate_report_schema:
+            run_cmd_parts.append("--generate-report-schema")
+        run_cmd = " ".join(run_cmd_parts)
 
     metadata = {
         "report_id": report_id,
@@ -4183,6 +4168,7 @@ def main():
         "inference_engine": model_spec.inference_engine,
         "device": device_str,
         "server_mode": server_mode,
+        "release_version": model_spec.release_version,
         "tt_metal_commit": model_spec.tt_metal_commit,
         "vllm_commit": model_spec.vllm_commit,
         "run_command": run_cmd,

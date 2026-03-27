@@ -74,7 +74,7 @@ def write_release_performance_data(
     data_path = path or get_release_performance_path()
     data_path.parent.mkdir(parents=True, exist_ok=True)
     data_path.write_text(
-        json.dumps(release_performance_data, indent=4, sort_keys=True) + "\n",
+        json.dumps(release_performance_data, indent=4) + "\n",
         encoding="utf-8",
     )
     return data_path
@@ -159,16 +159,14 @@ def _build_perf_target_results(
 
     results: List[Dict[str, Any]] = []
     for perf_target in perf_target_set.perf_targets:
+        if not perf_target.is_summary:
+            continue
         matched_row = perf_target_set.find_matching_row(benchmarks_summary, perf_target)
         results.append(
             {
                 "is_summary_data_point": perf_target.is_summary,
                 "config": perf_target.benchmark_identity(),
-                "targets": perf_target.summary_targets(),
                 "measured_metrics": _extract_measured_metrics(matched_row),
-                "benchmark_summary": deepcopy(matched_row)
-                if isinstance(matched_row, dict)
-                else None,
             }
         )
     return results
@@ -203,12 +201,23 @@ def _filter_benchmark_rows_for_perf_targets(
     """Keep only benchmark rows that correspond to evaluated perf targets."""
     filtered_rows: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
     for result in perf_target_results:
-        benchmark_summary = result.get("benchmark_summary")
-        if not isinstance(benchmark_summary, dict):
+        config = result.get("config")
+        measured_metrics = result.get("measured_metrics")
+        if not isinstance(config, dict) or not isinstance(measured_metrics, dict):
             continue
-        filtered_rows[_benchmark_identity_key(benchmark_summary)] = deepcopy(
-            benchmark_summary
+        benchmark_row = deepcopy(config)
+        benchmark_row.update(
+            {
+                "ttft": measured_metrics.get("ttft"),
+                "tput_user": measured_metrics.get("tput_user"),
+                "tput": measured_metrics.get("tput"),
+                "ttft_streaming_ms": measured_metrics.get("ttft_streaming_ms"),
+                "tput_prefill": measured_metrics.get("tput_prefill"),
+                "e2el_ms": measured_metrics.get("e2el_ms"),
+                "rtr": measured_metrics.get("rtr"),
+            }
         )
+        filtered_rows[_benchmark_identity_key(benchmark_row)] = benchmark_row
     return sorted(filtered_rows.values(), key=_benchmark_sort_key)
 
 
@@ -236,6 +245,10 @@ def build_release_performance_entry(
     report_data = _normalize_release_report_json(ci_data.get("release_report") or {})
     if not report_data:
         return None
+    metadata = report_data.get("metadata") if isinstance(report_data, dict) else {}
+    release_version = (
+        metadata.get("release_version") if isinstance(metadata, dict) else None
+    )
     benchmarks_summary = report_data.get("benchmarks_summary", [])
     perf_target_results = _build_perf_target_results(
         model_name=model_spec.model_name,
@@ -244,6 +257,7 @@ def build_release_performance_entry(
     )
     return {
         "perf_status": ci_data.get("perf_status"),
+        "release_version": release_version,
         "ci_run_number": ci_data.get("ci_run_number"),
         "ci_run_url": ci_data.get("ci_run_url"),
         "ci_job_url": ci_data.get("ci_job_url"),

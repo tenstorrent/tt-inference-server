@@ -34,6 +34,7 @@ def test_release_performance_schema_validates_representative_generated_entry():
                     "demo_impl": {
                         "vLLM": {
                             "perf_status": "target",
+                            "release_version": "0.10.0",
                             "ci_run_number": 123,
                             "ci_run_url": "https://example.com/runs/123",
                             "ci_job_url": "https://example.com/jobs/456",
@@ -46,16 +47,6 @@ def test_release_performance_schema_validates_representative_generated_entry():
                                         "osl": 128,
                                         "max_concurrency": 1,
                                     },
-                                    "targets": {
-                                        "ttft_ms": 50.0,
-                                        "ttft_streaming_ms": None,
-                                        "tput_user": 10.0,
-                                        "tput_prefill": None,
-                                        "e2el_ms": None,
-                                        "tput": 12.0,
-                                        "rtr": None,
-                                        "tolerance": 0.05,
-                                    },
                                     "measured_metrics": {
                                         "ttft": 45.0,
                                         "tput_user": 12.0,
@@ -64,14 +55,6 @@ def test_release_performance_schema_validates_representative_generated_entry():
                                         "tput_prefill": None,
                                         "e2el_ms": None,
                                         "rtr": None,
-                                    },
-                                    "benchmark_summary": {
-                                        "task_type": "text",
-                                        "isl": 128,
-                                        "osl": 128,
-                                        "max_concurrency": 1,
-                                        "ttft": 45.0,
-                                        "tput_user": 12.0,
                                     },
                                 }
                             ],
