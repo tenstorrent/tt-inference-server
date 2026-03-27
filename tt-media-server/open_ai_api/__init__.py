@@ -62,7 +62,7 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
     ],
     ModelServices.TRAINING.value: [
         ServiceRoute(
-            fine_tuning.router, "/v1/training", None, ["Fine-tuning"]
+            fine_tuning.router, "/v1", None, ["Fine-tuning"]
         ),
     ],
     ModelServices.EMBEDDING.value: [
