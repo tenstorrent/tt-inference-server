@@ -18,32 +18,21 @@ from config.constants import (
 router = APIRouter()
 
 
-@router.get("/datasets")
-async def list_available_datasets(api_key: str = Security(get_api_key)):
+@router.get("/catalog")
+async def get_catalog(api_key: str = Security(get_api_key)):
     """
-    List all available datasets.
+    List available models and datasets for fine-tuning.
 
     Returns:
-        JSONResponse: List of available datasets.
+        JSONResponse: Catalog containing available models and datasets.
     """
     datasets = [loader.value for loader in AVAILABLE_DATASET_LOADERS.keys()]
-    return JSONResponse(content={"data": datasets})
-
-
-@router.get("/models")
-async def list_training_models(api_key: str = Security(get_api_key)):
-    """
-    List all available training models.
-
-    Returns:
-        JSONResponse: List of available training models.
-    """
     runners = MODEL_SERVICE_RUNNER_MAP.get(ModelServices.TRAINING, set())
     models = []
     for runner in runners:
         names = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner, set())
         models.extend(n.value for n in names)
-    return JSONResponse(content={"data": models})
+    return JSONResponse(content={"models": models, "datasets": datasets})
 
 
 @router.post("/jobs")
@@ -88,7 +77,7 @@ async def list_fine_tuning_jobs(
     """
     try:
         jobs = service.get_all_jobs_metadata(JobTypes.TRAINING)
-        return JSONResponse(content={"object": "list", "data": jobs, "has_more": False})
+        return JSONResponse(content={"jobs": jobs})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list jobs: {str(e)}")
 
@@ -118,24 +107,24 @@ async def get_fine_tuning_job_metadata(
 @router.get("/jobs/{job_id}/metrics")
 async def get_training_metrics(
     job_id: str,
-    after: int = 0,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
+    """
+    Retrieve training metrics for a fine-tuning job.
+
+    Returns:
+        JSONResponse: List of metric points recorded during training.
+
+    Raises:
+        HTTPException: If job not found.
+    """
     job_data = service.get_job_metadata(job_id)
     if not job_data:
         raise HTTPException(404, "Job not found")
 
-    metrics = service.get_job_metrics(job_id, after)
-    is_final = job_data.get("status") in ("completed", "failed", "cancelled")
-
-    return JSONResponse(
-        content={
-            "data": metrics,
-            "next_after": after + len(metrics),
-            "is_final": is_final,
-        }
-    )
+    metrics = service.get_job_metrics(job_id)
+    return JSONResponse(content=metrics)
 
 
 @router.post("/jobs/{job_id}/cancel")
@@ -160,31 +149,45 @@ async def cancel_fine_tuning_job(
         )
 
     return JSONResponse(content=status)
-
-
+    
 @router.get("/jobs/{job_id}/checkpoints")
-async def list_fine_tuning_checkpoints(
+async def get_job_checkpoints(
     job_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
-    List checkpoints for a fine-tuning job.
+    List checkpoints saved during a fine-tuning job.
 
     Returns:
-        JSONResponse: List of model checkpoints.
+        JSONResponse: List of checkpoint entries.
 
     Raises:
         HTTPException: If job not found.
     """
-    try:
-        # TODO: Implement file retrieval instead of result path, and discuss if we return
-        # all checkpoints or just the last model weights state which is saved to result_path
-        result_path = service.get_job_result_path(job_id)
-        return JSONResponse(
-            content={"object": "string", "data": result_path, "has_more": False}
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get checkpoints: {str(e)}"
-        )
+    job_data = service.get_job_metadata(job_id)
+    if not job_data:
+        raise HTTPException(404, "Job not found")
+    checkpoints = service.get_job_checkpoints(job_id)
+    return JSONResponse(content=checkpoints)
+
+@router.get("/jobs/{job_id}/logs")
+async def get_job_logs(
+    job_id: str,
+    service: BaseJobService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """
+    Retrieve log entries for a fine-tuning job.
+
+    Returns:
+        JSONResponse: List of log entries.
+
+    Raises:
+        HTTPException: If job not found.
+    """
+    job_data = service.get_job_metadata(job_id)
+    if not job_data:
+        raise HTTPException(404, "Job not found")
+    logs = service.get_job_logs(job_id)
+    return JSONResponse(content=logs)
