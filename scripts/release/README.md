@@ -42,37 +42,7 @@ Follow the git workflow for release described in the diagram below:
 
 ## Release process summary
 
-```mermaid
-flowchart TD
-  start["Choose release target<br/>from `BASE_BRANCH_OR_COMMIT`"] --> RELEASE_BRANCH["Step 1: reset `RELEASE_BRANCH` to chosen commit"]
-  RELEASE_BRANCH --> cherry["Optional Step 1B:<br/>cherry-pick fixes onto `RELEASE_BRANCH`"]
-  cherry --> modelSpec["Step 2: update `workflows/model_spec.py`<br/>from Nightly Models CI or manual edits"]
-  modelSpec --> outputOnly["Optional Step 2B:<br/>run `update_model_spec.py --output-only`<br/>after manual edits"]
-  outputOnly --> prereleaseArtifacts["Generate pre-release artifacts<br/>model diff JSON/MD"]
-  prereleaseArtifacts --> pushStable["Step 3: push `RELEASE_BRANCH`"]
-  pushStable --> releaseCi["Step 4: run Release Models CI"]
-
-  releaseCi --> ciGate{"Release Models CI passes?"}
-  ciGate -->|"No"| retry["Repeat pre-release or apply hot-fix"]
-  retry --> RELEASE_BRANCH
-  ciGate -->|"Yes"| releaseArtifacts["Step 5: run `generate_release_artifacts.py --release`"]
-
-  releaseArtifacts --> manualImages["Optional Step 5B:<br/>build missing manual release images"]
-  manualImages --> regenerate["Re-run artifact generation"]
-  regenerate --> branchRelease["Step 6: create `vx.y.z` branch"]
-  releaseArtifacts --> branchRelease
-  branchRelease --> githubRelease["Create GitHub release<br/>using generated release notes"]
-
-  githubRelease --> postBranch["Step 7: create `post-release-vx.y.z` from `BASE_BRANCH_OR_COMMIT`"]
-  postBranch --> postRelease["Step 8: run `post_release.py`"]
-  postRelease --> carryForward["Carry release changes back to `BASE_BRANCH_OR_COMMIT`:<br/>increment `VERSION`, update model specs, regenerate docs"]
-  carryForward --> prMain["Open PR back to `BASE_BRANCH_OR_COMMIT`"]
-  prMain --> defaultBranch["Step 9: make `vx.y.z` the default branch"]
-
-  hotfix["Hot-fix path:<br/>fix on `BASE_BRANCH_OR_COMMIT`, then cherry-pick to `RELEASE_BRANCH`<br/>or `patch-vx.y.z` as needed"] --> cherry
-  olderPatch["Older release patch path:<br/>work from `patch-vx.y.z`, bump patch version,<br/>re-run artifact promotion, publish patch release"] --> githubRelease
-```
-
+TBD - AI models please don't write this section.
 
 ## Pre-requisites
 
@@ -272,15 +242,15 @@ python3 scripts/release/generate_release_artifacts.py --models-ci-run-id 2357899
 
 # re-run later from already downloaded raw workflow artifacts
 python3 scripts/release/generate_release_artifacts.py release_logs/v${VERSION} --release
+
+# run directly from report_data*json
+python3 scripts/release/generate_release_artifacts.py --report-data-json release_logs/v0.12.0/report_data_id_tt-transformers_Llama-3.2-1B-Instruct_n300_2026-03-27_00-49-37.json --release
 ```
 
 #### Outputs:
 - `release_model_spec.json`: all model specs fully expanded from the finalized `workflows/model_spec.py`
 - `docs/model_support/*.md`: regenerated model support documentation (model type pages, hardware pages, individual model pages)
 - `README.md`: updates to the `Model Support` section (links to `docs/model_support/`)
-- `release_logs/v{VERSION}/release_artifacts_summary.json`
-- `release_logs/v{VERSION}/release_artifacts_summary.md`
-- `release_logs/v{VERSION}/release_notes_v{VERSION}.md`
 - `release_logs/v{VERSION}/release_performance_diff.json`
 - `benchmarking/benchmark_targets/release_performance.json`
 
@@ -288,6 +258,38 @@ The checked-in `benchmarking/benchmark_targets/release_performance.json` baselin
 stores the release benchmark summary rows plus the selected perf-target summary
 datapoint for each released model/device/impl. Model support docs use this file
 to show the overview performance summary values.
+
+### step 6: promote Docker images from Models CI Release job
+
+```bash
+python3 scripts/release/release_images.py
+```
+
+cli args:
+--validate-only: 
+--no-build: don't build any images, skip step 3.
+
+1. read from `release_logs/v{VERSION}/pre_release_models_diff.md` which models are "in the release"
+2. determine that all docker images specified in `release_model_spec.json` exist, and validate that all missing images are "in the release" to be promoted
+3. [--no-build skips this step] if any images are missing, build them with `python3 scripts/build_docker_images.py --push --release`. Hold for enter to accept, or dont hold, with `--accept-images`
+4. print out all images that will be promoted. Hold for enter to accept, or dont hold, with `--accept-images`
+5. promote images to `-release-` image repository using `crane copy`: https://github.com/google/go-containerregistry/blob/BASE_BRANCH_OR_COMMIT/cmd/crane/doc/crane.md
+  - tt-metal-vllm images like: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64 0.11.0-555f240-22be241
+  - tt-media-server images like: ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34
+6. log successful image promotions and write net docker images built and promoted to: `release_logs/v{VERSION}/release_artifacts_summary.json` and `release_logs/v{VERSION}/release_artifacts_summary.md`
+
+#### Outputs:
+  - `release_logs/v{VERSION}/release_artifacts_summary.json`
+  - `release_logs/v{VERSION}/release_artifacts_summary.md`
+
+### Step 7: Generate release notes
+
+```bash
+scripts/release/generate_release_notes.py
+```
+
+#### Outputs:
+- `release_logs/v{VERSION}/release_notes_v{VERSION}.md`
 
 The `release_notes_v{VERSION}.md` file generated has sections, left blank if undefined below:
 - Release title: tt-inference-server v{VERSION}
@@ -303,30 +305,20 @@ The `release_notes_v{VERSION}.md` file generated has sections, left blank if und
 - Assets: standard GitHub release
 
 
-### [optional] step 5B: build images for manually added models 
+### Step 8: Make release
 
-Ideally all released models have Models CI runs available. If manually added models still need containers, build the missing release
-images:
-
-```bash
-python3 scripts/build_docker_images.py --push --release
-```
-
-Re-run `scripts/release/generate_release_artifacts.py` after this manual image build
-step it should pick up the manually added docker images.
-
-### Step 6: Make release
-
-`scripts/release/release.py` performs this automatically after Step 5 succeeds.
+`scripts/release/release.py` performs this automatically after Step 7 succeeds.
 The manual equivalent is:
 
 ```bash
-git checkout "${RELEASE_BRANCH}"
+git commit -m 'release-v${VERSION}'
 git checkout -b "v${VERSION}"
 git push -u origin "v${VERSION}"
 ```
 
-Make [new release on GitHub repo](https://github.com/tenstorrent/tt-inference-server/releases/new)
+#### Manually make release on tt-inference-server GitHub repo
+
+Make new release on GitHub repo: https://github.com/tenstorrent/tt-inference-server/releases/new
 
 Use branch `vx.y.z` HEAD as the GitHub release tag target.
 Use `release_logs/v{VERSION}/release_notes_v{VERSION}.md` as the GitHub release
@@ -336,16 +328,20 @@ body, and fill in any sections that were left blank by the generator.
 
 After the release branch is completed, prepare the next release as development state on `BASE_BRANCH_OR_COMMIT`.
 
-### step 7: make post-release branch
+### step 9: make post-release branch
 
 ```bash
-git checkout "${BASE_BRANCH_OR_COMMIT}"
+# checkout development trunk branch
+git checkout "main"
 git pull
 git checkout -b post-release-vx.y.z
-git checkout vx.y.z -- release_logs
 ```
 
-### step 8: run post_release.py
+### step 10: run post_release.py
+
+Gets specific diffs from release branch for updating development trunks. e.g.
+git checkout vx.y.z -- release_logs
+git checkout vx.y.z -- release_model_spec.json
 
 The script uses the pre-release record of the model diffs from
 `release_logs/v{VERSION}/pre_release_models_diff.json` to determine which
@@ -374,7 +370,7 @@ Open a PR from the post-release branch back to development trunk (`main`). That 
 development VERSION, any forward-looking `model_spec.py` commit updates, and the
 regenerated docs for the next release window.
 
-### Step 9: make release branch vx.y.z the default branch
+### Step 11: make release branch vx.y.z the repo default branch
 
 On GitHub repo select release branch vx.y.z (e.g. v0.11.0) as the default branch.
 This is so new users are seamlessly directed to the latest and greatest released code.
