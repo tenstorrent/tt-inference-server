@@ -937,6 +937,10 @@ llm_templates = [
                 max_concurrency=1,
                 max_context=16 * 1024,
                 default_impl=True,
+                env_vars={
+                    "VLLM_ENABLE_RESPONSES_API_STORE": 1,
+                    "VLLM_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS": 1,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
