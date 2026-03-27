@@ -271,10 +271,8 @@ struct EmbeddingService::Impl {
       // Build batch of requests
       std::vector<domain::EmbeddingRequest> batch;
       auto taskIdFromJson = [](const Json::Value& j) -> domain::TaskID {
-        if (j.isMember("task_id") && !j["task_id"].asString().empty()) {
-          return domain::TaskID(j["task_id"].asString());
-        }
         return domain::TaskID(domain::TaskID::generate());
+        (void)j;  // task_id from JSON is ignored; use monotonic counter
       };
       if (reqJson.isArray()) {
         for (const auto& item : reqJson) {
@@ -335,7 +333,7 @@ struct EmbeddingService::Impl {
       appendUint32(static_cast<uint32_t>(batch.size()));
 
       for (size_t i = 0; i < batch.size(); ++i) {
-        appendString(batch[i].task_id.id);
+        appendUint32(batch[i].task_id.id);
 
         if (i < responses.size() && responses[i].error.empty()) {
           responseBuffer.push_back(0);  // has_error = false
@@ -635,13 +633,13 @@ struct EmbeddingService::Impl {
     };
 
     // Parse responses into a map by task_id
-    std::unordered_map<std::string, domain::EmbeddingResponse> responseMap;
+    std::unordered_map<uint32_t, domain::EmbeddingResponse> responseMap;
     uint32_t numResponses = readUint32();
     responseMap.reserve(numResponses);
 
     for (uint32_t i = 0; i < numResponses && offset < responseBuffer.size();
          ++i) {
-      domain::EmbeddingResponse resp{domain::TaskID(readString())};
+      domain::EmbeddingResponse resp{domain::TaskID(readUint32())};
       uint8_t hasError = responseBuffer[offset++];
 
       if (hasError) {
@@ -652,8 +650,8 @@ struct EmbeddingService::Impl {
         resp.model = readString();
       }
 
-      auto key = resp.task_id.id;
-      responseMap.insert_or_assign(std::move(key), std::move(resp));
+      uint32_t key = resp.task_id.id;
+      responseMap.insert_or_assign(key, std::move(resp));
     }
 
     auto t5 = std::chrono::steady_clock::now();
@@ -680,7 +678,7 @@ struct EmbeddingService::Impl {
 
     // Match responses to requests by task_id
     for (auto& pending : batch) {
-      auto it = responseMap.find(pending->request.task_id.id);
+      auto it = responseMap.find(pending->request.task_id.id);  // uint32_t key
       if (it != responseMap.end()) {
         pending->promise.set_value(std::move(it->second));
       } else {

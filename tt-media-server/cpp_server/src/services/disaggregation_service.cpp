@@ -68,7 +68,7 @@ void DisaggregationService::setupSocketHandlers() {
         });
 
     socketService->setConnectionLostCallback([this]() {
-      streamCallbacks.forEach([](const std::string& taskId,
+      streamCallbacks.forEach([](uint32_t taskId,
                                  const StreamCallback& callback) {
         auto response = domain::StreamingChunkResponse(domain::TaskID(taskId));
         response.choices.push_back(domain::CompletionChoice(""));

@@ -36,8 +36,7 @@ struct ManageMemoryTask {
   KvMemoryLayout memory_layout{KvMemoryLayout::Paged};
 
   void serialize(std::ostream& os) const {
-    auto tid_buf = task_id.ipcSerialize();
-    os.write(tid_buf.data(), static_cast<std::streamsize>(tid_buf.size()));
+    os.write(reinterpret_cast<const char*>(&task_id.id), sizeof(task_id.id));
     auto a = static_cast<std::uint8_t>(action);
     os.write(reinterpret_cast<const char*>(&a), sizeof(a));
     os.write(reinterpret_cast<const char*>(&input_seq_len),
@@ -48,9 +47,7 @@ struct ManageMemoryTask {
 
   static ManageMemoryTask deserialize(std::istream& is) {
     ManageMemoryTask task;
-    char tid_buf[TaskID::K_SERIALIZED_SIZE];
-    is.read(tid_buf, TaskID::K_SERIALIZED_SIZE);
-    task.task_id = TaskID::ipcDeserialize(tid_buf, TaskID::K_SERIALIZED_SIZE);
+    is.read(reinterpret_cast<char*>(&task.task_id.id), sizeof(task.task_id.id));
     std::uint8_t a = 0;
     is.read(reinterpret_cast<char*>(&a), sizeof(a));
     task.action = static_cast<MemoryManagementAction>(a);
@@ -75,8 +72,7 @@ struct ManageMemoryResult {
   std::vector<KvDestination> memory_locations;
 
   void serialize(std::ostream& os) const {
-    auto tid_buf = task_id.ipcSerialize();
-    os.write(tid_buf.data(), static_cast<std::streamsize>(tid_buf.size()));
+    os.write(reinterpret_cast<const char*>(&task_id.id), sizeof(task_id.id));
     auto s = static_cast<std::uint8_t>(status);
     os.write(reinterpret_cast<const char*>(&s), sizeof(s));
     std::uint32_t n = static_cast<std::uint32_t>(memory_locations.size());
@@ -91,9 +87,8 @@ struct ManageMemoryResult {
 
   static ManageMemoryResult deserialize(std::istream& is) {
     ManageMemoryResult result;
-    char tid_buf[TaskID::K_SERIALIZED_SIZE];
-    is.read(tid_buf, TaskID::K_SERIALIZED_SIZE);
-    result.task_id = TaskID::ipcDeserialize(tid_buf, TaskID::K_SERIALIZED_SIZE);
+    is.read(reinterpret_cast<char*>(&result.task_id.id),
+            sizeof(result.task_id.id));
     std::uint8_t s = 0;
     is.read(reinterpret_cast<char*>(&s), sizeof(s));
     result.status = static_cast<ManageMemoryStatus>(s);

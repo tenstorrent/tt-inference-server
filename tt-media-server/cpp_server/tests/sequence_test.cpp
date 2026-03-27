@@ -14,10 +14,10 @@ namespace llm_engine {
 namespace {
 
 TEST(SequenceIDTest, SerializeDeserialize_RoundTrip) {
-  TaskID orig(TaskID("seq-id-test"));
+  TaskID orig(TaskID(1));
 
   std::vector<char> buf = orig.ipcSerialize();
-  ASSERT_EQ(buf.size(), 36);
+  ASSERT_EQ(buf.size(), sizeof(uint32_t));
 
   TaskID restored = TaskID::ipcDeserialize(buf.data(), buf.size());
   EXPECT_EQ(restored.id, orig.id);
@@ -163,7 +163,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
 }
 
 TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
-  Sequence orig(TaskID("seq-empty-tokens"), 256, {},
+  Sequence orig(TaskID(2), 256, {},
                 SamplingParams{.max_tokens = 10});
   orig.lastToken = 0;
 
@@ -180,7 +180,7 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
 }
 
 TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
-  Sequence orig(TaskID("seq-append"), 256, {10, 20},
+  Sequence orig(TaskID(3), 256, {10, 20},
                 SamplingParams{.max_tokens = 5});
   orig.appendToken(30);
   orig.appendToken(40);

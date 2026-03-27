@@ -6,6 +6,7 @@
 #include <drogon/drogon.h>
 #include <json/json.h>
 
+#include <cstdint>
 #include <memory>
 
 #include "services/disaggregation_service.hpp"
@@ -58,9 +59,9 @@ class LLMController : public drogon::HttpController<LLMController> {
       bool isChat) const;
 
   /**
-   * Generate a unique completion ID (hex string).
+   * Generate a unique completion ID.
    */
-  static std::string generateCompletionId();
+  static uint32_t generateCompletionId();
 
   /**
    * Build OpenAI-style error JSON (flat object/message/type/param/code).

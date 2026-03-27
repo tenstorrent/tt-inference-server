@@ -13,9 +13,6 @@
 #include <unistd.h>
 
 #include <boost/interprocess/ipc/message_queue.hpp>
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>
 #include <cassert>
 #include <cstdlib>
 #include <iostream>
@@ -45,8 +42,8 @@ int main() {
                               MAX_MSG_SIZE);
 
   // Build two sequences with known values.
-  std::string seq1Id = TaskID::generate();
-  std::string seq2Id = TaskID::generate();
+  uint32_t seq1Id = TaskID::generate();
+  uint32_t seq2Id = TaskID::generate();
   Sequence seq1(TaskID(seq1Id), 256, {1, 2, 3, 4},
                 SamplingParams{.max_tokens = 10});
   Sequence seq2(TaskID(seq2Id), 256, {10, 20, 30},

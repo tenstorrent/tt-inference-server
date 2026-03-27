@@ -138,32 +138,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   const std::unordered_set<int64_t> STOP_TOKEN_SET(STOP_IDS.begin(),
                                                    STOP_IDS.end());
 
-  std::unordered_map<std::string,
+  std::unordered_map<uint32_t,
                      std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>
       streamDecoders;
-
-  // Per-request state used to throttle ITL metric events.
-  //
-  // Pushing one EventITLSample per token causes a string heap-allocation
-  // (task_id is a UUID, 36 chars — above SSO) and a mutex acquisition on every
-  // generated token.  At ~120k tok/s that overhead degrades throughput by ~7%.
-  //
-  // Mitigation: observe ITL once every kITLSampleStride consecutive tokens.
-  // The reported quantiles remain statistically representative; the absolute
-  // ITL values are accurate because the caller pre-computes elapsed time
-  // between the two most recent CONSECUTIVE tokens rather than relying on the
-  // spacing between sampled events.
-  //
-  // TODO: Remove once task IDs become uint32 — then per-event cost is
-  // negligible (no heap allocation) and onToken() can be called for every
-  // token unconditionally.
-  static constexpr int kITLSampleStride = 5;
-
-  struct MetricsSamplingState {
-    int token_count = 0;
-    std::chrono::steady_clock::time_point prev_token_time;
-  };
-  std::unordered_map<std::string, MetricsSamplingState> metricsSampling;
 
   while (running_) {
     if (!worker_manager_->checkWorkerAlive(workerIdx)) {
@@ -178,13 +155,12 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     while (worker->cfg.result_queue->blockingPop(token)) {
       anyActivity = true;
 
-      std::string taskId = std::string(token.task_id);
-      auto val = stream_callbacks_.get(token.task_id);
+      uint32_t taskId = token.task_id;
+      auto val = stream_callbacks_.get(taskId);
       if (!val.has_value()) {
         // Client disconnected or task was cancelled — discard remaining
         // tokens and clean up local state for this task.
         streamDecoders.erase(taskId);
-        metricsSampling.erase(taskId);
         if (reasoning_parser_) {
           reasoning_parser_->finalizeTask(taskId);
         }
@@ -195,7 +171,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       bool isFinal = token.isFinal();
 
       if (isFinal) {
-        stream_callbacks_.erase(token.task_id);
+        stream_callbacks_.erase(taskId);
         pending_tasks_.fetch_sub(1);
         tt::metrics::ServerMetrics::instance().setQueueDepth(
             static_cast<double>(pending_tasks_.load()));
@@ -207,29 +183,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       std::string delta = decoder->step(static_cast<int>(token.token_id));
       if (isFinal) delta += decoder->flush();
 
-      // Record token-level metrics before reasoning filtering so all
-      // generated tokens (including hidden reasoning tokens) are counted.
-      //
-      // Hot-path budget: only a map counter increment for non-sampled tokens.
-      // steady_clock::now() and metric queue pushes happen only on the first
-      // token (TTFT) and every kITLSampleStride-th subsequent token.
-      // The ITL value is divided by kITLSampleStride to yield a per-token
-      // estimate (assumes roughly uniform decode step latency).
-      {
-        auto& ms = metricsSampling[taskId];
-        if (ms.token_count == 0) {
-          tt::metrics::ServerMetrics::instance().onToken(taskId);
-          ms.prev_token_time = std::chrono::steady_clock::now();
-        } else if (ms.token_count % kITLSampleStride == 0) {
-          auto now = std::chrono::steady_clock::now();
-          double itl =
-              std::chrono::duration<double>(now - ms.prev_token_time).count() /
-              kITLSampleStride;
-          tt::metrics::ServerMetrics::instance().onITLSample(taskId, itl);
-          ms.prev_token_time = now;
-        }
-        ms.token_count++;
-      }
+      // Record token-level metrics (every token).
+      tt::metrics::ServerMetrics::instance().onToken(taskId);
 
       TokenParseResult parseResult{ContentType::ANSWER, delta, true};
       if (reasoning_parser_) {
@@ -242,7 +197,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       }
 
       domain::StreamingChunkResponse response{domain::TaskID(taskId)};
-      response.id = taskId;
+      response.id = std::to_string(taskId);
       response.created =
           std::chrono::duration_cast<std::chrono::seconds>(
               std::chrono::system_clock::now().time_since_epoch())
@@ -283,10 +238,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
             response.choices[0].finish_reason.has_value()) {
           finishReason = response.choices[0].finish_reason.value();
         }
-        int genTokens = metricsSampling[taskId].token_count;
-        metricsSampling.erase(taskId);
         tt::metrics::ServerMetrics::instance().onRequestCompleted(
-            taskId, finishReason, genTokens);
+            taskId, finishReason);
         if (reasoning_parser_) {
           reasoning_parser_->finalizeTask(taskId);
         }
@@ -319,7 +272,7 @@ domain::CompletionResponse LLMService::processRequest(
       std::holds_alternative<std::vector<int>>(request.prompt)
           ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
           : 0;
-  const std::string TASK_ID = request.task_id.id;
+  const uint32_t TASK_ID = request.task_id.id;
   const std::string MODEL = request.model.value_or("default");
 
   processStreamingRequest(
@@ -346,7 +299,7 @@ domain::CompletionResponse LLMService::processRequest(
   cv.wait(lock, [&] { return done; });
 
   domain::CompletionResponse response{domain::TaskID(TASK_ID)};
-  response.id = TASK_ID;
+  response.id = std::to_string(TASK_ID);
   response.model = MODEL;
   response.created = std::chrono::duration_cast<std::chrono::seconds>(
                          std::chrono::system_clock::now().time_since_epoch())
@@ -376,10 +329,10 @@ void LLMService::processStreamingRequest(
   assert(callback != nullptr);
 
   ZoneScopedN("LLMService::processStreamingRequest");
-  if (request.task_id.id.empty()) {
+  if (request.task_id.id == 0) {
     throw std::runtime_error("task_id must be set before submitting request");
   }
-  std::string taskId = request.task_id.id;
+  uint32_t taskId = request.task_id.id;
 
   pending_tasks_.fetch_add(1);
   TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -42,7 +43,7 @@ class DisaggregationService {
   tt::config::LLMMode mode;
   std::shared_ptr<LLMService> llmService;
   std::shared_ptr<sockets::InterServerService> socketService;
-  ConcurrentMap<std::string, StreamCallback> streamCallbacks;
+  ConcurrentMap<uint32_t, StreamCallback> streamCallbacks;
 };
 
 }  // namespace tt::services

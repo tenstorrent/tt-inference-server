@@ -1,46 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
-
 #pragma once
 
-#include <algorithm>
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>
-#include <cassert>
-#include <cstddef>
+#include <atomic>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <iostream>
-#include <string>
 #include <vector>
 
 namespace tt::domain {
 
 struct TaskID {
-  static constexpr size_t K_SERIALIZED_SIZE = 36;
+  static constexpr size_t K_SERIALIZED_SIZE = sizeof(uint32_t);
 
   TaskID() = default;
-  explicit TaskID(std::string taskId) : id(std::move(taskId)) {}
+  explicit TaskID(uint32_t taskId) : id(taskId) {}
 
-  std::string id;
+  uint32_t id = 0;
 
   bool operator==(const TaskID& other) const { return id == other.id; }
 
   std::vector<char> ipcSerialize() const {
-    std::vector<char> buf(K_SERIALIZED_SIZE, '\0');
-    std::copy_n(id.begin(), std::min(id.size(), K_SERIALIZED_SIZE),
-                buf.begin());
+    std::vector<char> buf(K_SERIALIZED_SIZE);
+    std::memcpy(buf.data(), &id, K_SERIALIZED_SIZE);
     return buf;
   }
 
-  static TaskID ipcDeserialize(const char* data, size_t len) {
-    size_t actualLen = strnlen(data, len);
-    return TaskID(std::string(data, actualLen));
+  static TaskID ipcDeserialize(const char* data, size_t /*len*/) {
+    uint32_t val = 0;
+    std::memcpy(&val, data, sizeof(val));
+    return TaskID(val);
   }
 
-  static std::string generate() {
-    return boost::uuids::to_string(boost::uuids::random_generator()());
+  static uint32_t generate() {
+    static std::atomic<uint32_t> counter{1};
+    return counter.fetch_add(1, std::memory_order_relaxed);
   }
 };
 
@@ -54,7 +49,7 @@ namespace std {
 template <>
 struct hash<tt::domain::TaskID> {
   size_t operator()(const tt::domain::TaskID& s) const {
-    return hash<string>{}(s.id);
+    return hash<uint32_t>{}(s.id);
   }
 };
 }  // namespace std

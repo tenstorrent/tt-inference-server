@@ -19,7 +19,7 @@ Sequence::Sequence(TaskID taskId, int blockSize, std::vector<int64_t> tokenIds,
       numPromptTokens(this->tokenIds.size()),
       samplingParams(std::make_unique<SamplingParams>(samplingParams)),
       blockSize(blockSize) {
-  assert(!this->taskId.id.empty() && "Sequence requires a non-empty task_id");
+  assert(this->taskId.id != 0 && "Sequence requires a non-zero task_id");
   if (!this->tokenIds.empty()) {
     lastToken = this->tokenIds.back();
   }
@@ -51,9 +51,7 @@ void Sequence::appendToken(int64_t tokenId) {
 void Sequence::serialize(std::ostream& os) const {
   size_t tokenIdsSize = tokenIds.size();
   size_t blockTableSize = blockTable.size();
-  size_t idSize = taskId.id.size();
-  os.write(reinterpret_cast<const char*>(&idSize), sizeof(idSize));
-  os.write(taskId.id.c_str(), idSize);
+  os.write(reinterpret_cast<const char*>(&taskId.id), sizeof(taskId.id));
   os.write(reinterpret_cast<const char*>(&lastToken), sizeof(lastToken));
   os.write(reinterpret_cast<const char*>(&numPromptTokens),
            sizeof(numPromptTokens));
@@ -73,14 +71,12 @@ void Sequence::serialize(std::ostream& os) const {
 }
 
 Sequence* Sequence::deserialize(std::istream& is) {
-  size_t taskIdSize;
-  is.read(reinterpret_cast<char*>(&taskIdSize), sizeof(taskIdSize));
-  std::string taskIdStr(taskIdSize, '\0');
-  is.read(taskIdStr.data(), taskIdSize);
+  uint32_t taskIdVal = 0;
+  is.read(reinterpret_cast<char*>(&taskIdVal), sizeof(taskIdVal));
 
   Config defaultConfig;
   Sequence* seq =
-      new Sequence(TaskID(std::move(taskIdStr)),
+      new Sequence(TaskID(taskIdVal),
                    defaultConfig.kvcache_block_size, std::vector<int64_t>{});
 
   is.read(reinterpret_cast<char*>(&seq->lastToken), sizeof(seq->lastToken));

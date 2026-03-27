@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <cstring>
 
 #include "domain/task_id.hpp"
 
@@ -34,12 +35,12 @@ struct PrefillRequestMessage {
 
   template <class Archive>
   static PrefillRequestMessage read(Archive& ar) {
-    std::string tid;
+    uint32_t tid;
     std::string p;
     std::vector<int64_t> tids;
     int mt;
     ar(tid, p, tids, mt);
-    PrefillRequestMessage msg(tt::domain::TaskID(std::move(tid)));
+    PrefillRequestMessage msg{tt::domain::TaskID(tid)};
     msg.prompt = std::move(p);
     msg.token_ids = std::move(tids);
     msg.max_tokens = (mt == -1) ? std::nullopt : std::optional<int>(mt);
@@ -75,7 +76,7 @@ struct PrefillResultMessage {
 
   template <class Archive>
   static PrefillResultMessage read(Archive& ar) {
-    std::string tid;
+    uint32_t tid;
     std::string genText;
     bool fin;
     int tg;
@@ -83,7 +84,7 @@ struct PrefillResultMessage {
     std::vector<int64_t> tids;
     int rt;
     ar(tid, genText, fin, tg, pt, tids, rt);
-    PrefillResultMessage msg(tt::domain::TaskID(std::move(tid)));
+    PrefillResultMessage msg{tt::domain::TaskID(tid)};
     msg.generated_text = std::move(genText);
     msg.finished = fin;
     msg.tokens_generated = tg;

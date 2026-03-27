@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -28,7 +29,7 @@ class MemoryManager {
     std::vector<domain::KvDestination> locations;
   };
 
-  ConcurrentMap<std::string, Reservation> reservations;
+  ConcurrentMap<uint32_t, Reservation> reservations;
 };
 
 }  // namespace tt::services

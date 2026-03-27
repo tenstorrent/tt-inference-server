@@ -16,6 +16,7 @@
 
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
+#include "domain/task_id.hpp"
 #include "domain/chat_completion_response.hpp"
 #include "domain/completion_response.hpp"
 #include "profiling/tracy.hpp"
@@ -80,19 +81,8 @@ LLMController::LLMController() {
   TT_LOG_INFO("[LLMController] Initialized (service already started)");
 }
 
-std::string LLMController::generateCompletionId() {
-  static std::mutex genMutex;
-  static std::random_device rd;
-  static std::mt19937 gen(rd());
-  static std::uniform_int_distribution<> dis(0, 15);
-  static const char* hexChars = "0123456789abcdef";
-
-  std::lock_guard<std::mutex> lock(genMutex);
-  std::ostringstream ss;
-  for (int i = 0; i < 24; ++i) {
-    ss << hexChars[dis(gen)];
-  }
-  return ss.str();
+uint32_t LLMController::generateCompletionId() {
+  return tt::domain::TaskID::generate();
 }
 
 Json::Value LLMController::errorJson(const std::string& message,

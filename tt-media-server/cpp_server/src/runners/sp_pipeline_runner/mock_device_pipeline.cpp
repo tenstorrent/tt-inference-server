@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <string>
 
 #include "profiling/tracy.hpp"
 #include "runners/llm_runner/debug.hpp"
@@ -26,7 +27,7 @@ void MockDevicePipeline::write(const std::string& taskId,
                                const std::vector<int64_t>& tokenIds,
                                uint32_t maxTokens, RequestPhase phase) {
   auto req = std::make_unique<PipelineRequest>();
-  req->taskId = taskId;
+  req->taskId = static_cast<uint32_t>(std::stoul(taskId));
   req->tokenIds = tokenIds;
   req->maxTokens = maxTokens;
   req->isDecode = (phase == RequestPhase::DECODE);

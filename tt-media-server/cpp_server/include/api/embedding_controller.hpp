@@ -42,7 +42,7 @@ class EmbeddingController : public drogon::HttpController<EmbeddingController> {
   std::shared_ptr<services::EmbeddingService> service_;
   std::atomic<uint64_t> request_counter_{0};
 
-  std::string generateTaskId();
+  uint32_t generateTaskId();
 };
 
 }  // namespace tt::api

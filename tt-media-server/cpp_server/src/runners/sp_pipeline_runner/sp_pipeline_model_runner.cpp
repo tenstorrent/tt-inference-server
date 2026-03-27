@@ -3,6 +3,8 @@
 
 #include "runners/sp_pipeline_runner/sp_pipeline_model_runner.hpp"
 
+#include <string>
+
 #include "runners/llm_runner/debug.hpp"
 
 namespace sp_pipeline {
@@ -36,8 +38,8 @@ void SpPipelineModelRunner::readerLoop() {
   ReadResult readBuf;
   while (!stop.load(std::memory_order_relaxed)) {
     if (deviceOutput.tryRead(readBuf)) {
-      llm_engine::TaskID tid = llm_engine::TaskID::ipcDeserialize(
-          readBuf.taskId.data(), llm_engine::TaskID::K_SERIALIZED_SIZE);
+      uint32_t tidVal = static_cast<uint32_t>(std::stoul(readBuf.taskId));
+      llm_engine::TaskID tid(tidVal);
       uint64_t tokenId = readBuf.tokenIds.empty() ? 0 : readBuf.tokenIds[0];
       llm_engine::TokenResult result(std::move(tid), tokenId);
       decodeCallback(result);

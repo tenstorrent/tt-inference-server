@@ -30,12 +30,9 @@ LLMRunner::LLMRunner(const Config& config,
           .flags = static_cast<uint32_t>(ipc::SharedToken::FLAG_FINAL |
                                          ipc::SharedToken::FLAG_ERROR),
           .token_id = 0,
-          .task_id = {},
+          .task_id = result.taskId.id,
           .padding = {},
       };
-      strncpy(shared.task_id, result.taskId.id.c_str(),
-              sizeof(shared.task_id) - 1);
-      shared.task_id[sizeof(shared.task_id) - 1] = '\0';
       while (!result_queue_->push(shared)) {
         std::this_thread::yield();
       }
@@ -55,12 +52,9 @@ LLMRunner::LLMRunner(const Config& config,
           .flags = static_cast<uint32_t>(finished ? ipc::SharedToken::FLAG_FINAL
                                                   : 0),
           .token_id = result.tokenId,
-          .task_id = {},
+          .task_id = result.taskId.id,
           .padding = {},
       };
-      strncpy(shared.task_id, result.taskId.id.c_str(),
-              sizeof(shared.task_id) - 1);
-      shared.task_id[sizeof(shared.task_id) - 1] = '\0';
       while (!result_queue_->push(shared)) {
         std::this_thread::yield();
       }

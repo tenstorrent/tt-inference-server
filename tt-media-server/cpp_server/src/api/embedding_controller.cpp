@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "config/settings.hpp"
+#include "domain/task_id.hpp"
 #include "profiling/tracy.hpp"
 #include "services/base_service.hpp"
 #include "utils/logger.hpp"
@@ -108,7 +109,9 @@ EmbeddingController::EmbeddingController() {
 
 EmbeddingController::~EmbeddingController() = default;
 
-std::string EmbeddingController::generateTaskId() { return randomHex(24); }
+uint32_t EmbeddingController::generateTaskId() {
+  return tt::domain::TaskID::generate();
+}
 
 void EmbeddingController::createEmbedding(
     const drogon::HttpRequestPtr& req,
