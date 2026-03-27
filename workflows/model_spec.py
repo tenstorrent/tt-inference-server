@@ -1968,7 +1968,6 @@ llm_templates = [
         release_version="0.12.0",
         tt_metal_commit="2f70ab27",
         vllm_commit="1908628",
-        docker_image="ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.11.0-2f70ab272dc38806e9cdd5482818a046ae9814ea-7c6685a-67975288903",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
