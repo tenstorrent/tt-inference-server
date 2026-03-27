@@ -56,33 +56,47 @@ def make_release_performance_data(
                 "n150": {
                     "demo_impl": {
                         "vLLM": {
-                            "model": "DemoModel",
-                            "device": "n150",
-                            "impl_id": "demo_impl",
-                            "inference_engine": "vLLM",
                             "perf_status": perf_status,
-                            "accuracy_status": True,
                             "ci_run_number": 123,
                             "ci_run_url": "https://example.com/runs/123",
                             "ci_job_url": "https://example.com/jobs/456",
-                            "benchmarks_summary": [
+                            "perf_target_results": [
                                 {
-                                    "task_type": "text",
-                                    "isl": 128,
-                                    "osl": 128,
-                                    "max_concurrency": 1,
-                                    "ttft": ttft,
+                                    "is_summary_data_point": True,
+                                    "config": {
+                                        "task_type": "text",
+                                        "isl": 128,
+                                        "osl": 128,
+                                        "max_concurrency": 1,
+                                    },
+                                    "targets": {
+                                        "ttft_ms": 50.0,
+                                        "ttft_streaming_ms": None,
+                                        "tput_user": 10.0,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "tput": None,
+                                        "rtr": None,
+                                        "tolerance": 0.05,
+                                    },
+                                    "measured_metrics": {
+                                        "ttft": ttft,
+                                        "tput_user": None,
+                                        "tput": None,
+                                        "ttft_streaming_ms": None,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "rtr": None,
+                                    },
+                                    "benchmark_summary": {
+                                        "task_type": "text",
+                                        "isl": 128,
+                                        "osl": 128,
+                                        "max_concurrency": 1,
+                                        "ttft": ttft,
+                                    },
                                 }
                             ],
-                            "report_data": {
-                                "parameter_support_tests": {
-                                    "results": {
-                                        "test_smoke": [
-                                            {"status": test_status},
-                                        ]
-                                    }
-                                }
-                            },
                         }
                     }
                 }
@@ -98,6 +112,7 @@ def make_artifacts_summary_data():
             "docs/model_support/",
             "README.md",
         ],
+        "built_images": ["ghcr.io/tenstorrent/built:tag"],
         "acceptance_warnings": [
             {
                 "heading": "DemoModel on N150",
@@ -124,33 +139,47 @@ def make_performance_entry(
     test_status="passed",
 ):
     return {
-        "model": model,
-        "device": device,
-        "impl_id": "demo_impl",
-        "inference_engine": "vLLM",
         "perf_status": perf_status,
-        "accuracy_status": True,
         "ci_run_number": 123,
         "ci_run_url": "https://example.com/runs/123",
         "ci_job_url": "https://example.com/jobs/456",
-        "benchmarks_summary": [
+        "perf_target_results": [
             {
-                "task_type": "text",
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "ttft": ttft,
+                "is_summary_data_point": True,
+                "config": {
+                    "task_type": "text",
+                    "isl": 128,
+                    "osl": 128,
+                    "max_concurrency": 1,
+                },
+                "targets": {
+                    "ttft_ms": 50.0,
+                    "ttft_streaming_ms": None,
+                    "tput_user": 10.0,
+                    "tput_prefill": None,
+                    "e2el_ms": None,
+                    "tput": None,
+                    "rtr": None,
+                    "tolerance": 0.05,
+                },
+                "measured_metrics": {
+                    "ttft": ttft,
+                    "tput_user": None,
+                    "tput": None,
+                    "ttft_streaming_ms": None,
+                    "tput_prefill": None,
+                    "e2el_ms": None,
+                    "rtr": None,
+                },
+                "benchmark_summary": {
+                    "task_type": "text",
+                    "isl": 128,
+                    "osl": 128,
+                    "max_concurrency": 1,
+                    "ttft": ttft,
+                },
             }
         ],
-        "report_data": {
-            "parameter_support_tests": {
-                "results": {
-                    "test_smoke": [
-                        {"status": test_status},
-                    ]
-                }
-            }
-        },
     }
 
 
@@ -174,15 +203,13 @@ def test_build_release_notes_renders_raw_inputs_and_performance_diff():
         in notes
     )
     assert "| Performance Diff |" in notes
-    assert (
-        "N150: Perf status: functional -> target; Benchmarks ~1; LLM API tests ~1"
-        in notes
-    )
+    assert "N150: Perf status: functional -> target; Perf targets ~1" in notes
     assert "## Performance\n" in notes
     assert "### DemoModel on n150 (demo_impl, vLLM)" in notes
     assert "## Scale Out\n" in notes
     assert "## Deprecations and breaking changes\n" in notes
     assert "### Generated Release Artifacts" in notes
+    assert "### Docker Images Built Locally" in notes
     assert "### Release Acceptance Warnings" in notes
     assert "## Release Artifacts Summary\n" in notes
     assert "### Images Promoted from Models CI" in notes
@@ -190,6 +217,7 @@ def test_build_release_notes_renders_raw_inputs_and_performance_diff():
     assert "## Assets\n" in notes
     assert "https://ghcr.io/tenstorrent/release:tag" in notes
     assert "https://ghcr.io/tenstorrent/build:tag" in notes
+    assert "https://ghcr.io/tenstorrent/built:tag" in notes
 
 
 def test_build_release_performance_diff_data_classifies_all_diff_states():
@@ -269,7 +297,7 @@ def test_build_release_performance_diff_data_classifies_all_diff_states():
         "unchanged",
     ]
     assert [record["summary"] for record in diff_data["records"]] == [
-        "Perf status: functional -> target; Benchmarks ~1; LLM API tests ~1",
+        "Perf status: functional -> target; Perf targets ~1",
         "New release data",
         "Removed release data",
         "No performance changes",
@@ -411,8 +439,5 @@ def test_main_reads_raw_release_inputs_from_release_dir(tmp_path):
         "## Model and Hardware Support Diff\n\nThis document shows model specification updates."
         in notes
     )
-    assert (
-        "N150: Perf status: functional -> target; Benchmarks ~1; LLM API tests ~1"
-        in notes
-    )
+    assert "N150: Perf status: functional -> target; Perf targets ~1" in notes
     assert "## Performance\n" in notes

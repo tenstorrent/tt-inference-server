@@ -220,6 +220,7 @@ def render_release_artifacts_summary(summary_data: Dict[str, Any]) -> str:
     if not isinstance(summary_data, dict):
         return ""
 
+    built_images = summary_data.get("built_images", [])
     copied_images = summary_data.get("copied_images", {})
     existing_with_ci_ref = summary_data.get("existing_with_ci_ref", {})
     existing_without_ci_ref = summary_data.get("existing_without_ci_ref", [])
@@ -234,6 +235,11 @@ def render_release_artifacts_summary(summary_data: Dict[str, Any]) -> str:
             if isinstance(generated_artifacts, list)
             else [],
             "No generated release artifacts were recorded.",
+        ),
+        _render_release_artifact_list(
+            "Docker Images Built Locally",
+            sorted(built_images) if isinstance(built_images, list) else [],
+            "No images were built locally.",
         ),
         _render_release_artifact_map(
             "Images Promoted from Models CI",
@@ -404,7 +410,7 @@ def build_release_notes(
     return "\n\n".join(parts).rstrip() + "\n"
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Generate GitHub release notes from versioned release outputs"
@@ -438,12 +444,11 @@ def parse_args() -> argparse.Namespace:
         "--output",
         help="Output markdown path. Defaults to release_logs/v{VERSION}/release_notes_v{VERSION}.md.",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> int:
-    args = parse_args()
-
+def run_from_args(args: argparse.Namespace) -> int:
+    """Run release note generation from parsed CLI arguments."""
     version = args.version or read_version(Path(args.version_file))
     release_dir = get_versioned_release_logs_dir(version)
 
@@ -496,6 +501,11 @@ def main() -> int:
 
     print(f"Wrote draft release notes to {output_path}")
     return 0
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = parse_args(argv)
+    return run_from_args(args)
 
 
 if __name__ == "__main__":

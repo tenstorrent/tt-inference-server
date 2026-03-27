@@ -43,32 +43,36 @@ def test_generate_model_page_group_page_embeds_matching_release_report():
                 "n150": {
                     "demo_impl": {
                         "vLLM": {
-                            "model": "DemoModel",
-                            "device": "n150",
-                            "impl_id": "demo_impl",
-                            "inference_engine": "vLLM",
                             "ci_run_url": "https://example.com/runs/123",
-                            "benchmarks_summary": [
+                            "perf_target_results": [
                                 {
-                                    "task_type": "text",
-                                    "isl": 128,
-                                    "osl": 128,
-                                    "max_concurrency": 1,
-                                    "ttft": 42.0,
-                                    "tput_user": 11.0,
-                                    "target_checks": {
-                                        "target": {
-                                            "ttft_check": 2,
-                                            "tput_user_check": 2,
-                                            "ttft": 50.0,
-                                            "tput_user": 10.0,
-                                        }
+                                    "is_summary_data_point": True,
+                                    "config": {
+                                        "task_type": "text",
+                                        "isl": 128,
+                                        "osl": 128,
+                                        "max_concurrency": 1,
                                     },
-                                }
-                            ],
-                            "report_data": {
-                                "benchmarks_summary": [
-                                    {
+                                    "targets": {
+                                        "ttft_ms": 50.0,
+                                        "ttft_streaming_ms": None,
+                                        "tput_user": 10.0,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "tput": None,
+                                        "rtr": None,
+                                        "tolerance": 0.05,
+                                    },
+                                    "measured_metrics": {
+                                        "ttft": 42.0,
+                                        "tput_user": 11.0,
+                                        "tput": None,
+                                        "ttft_streaming_ms": None,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "rtr": None,
+                                    },
+                                    "benchmark_summary": {
                                         "task_type": "text",
                                         "isl": 128,
                                         "osl": 128,
@@ -83,22 +87,9 @@ def test_generate_model_page_group_page_embeds_matching_release_report():
                                                 "tput_user": 10.0,
                                             }
                                         },
-                                    }
-                                ],
-                                "parameter_support_tests": {
-                                    "endpoint_url": "http://localhost:8000",
-                                    "test_run_timestamp_utc": "2026-03-11T12:00:00",
-                                    "results": {
-                                        "test_smoke": [
-                                            {
-                                                "status": "passed",
-                                                "test_node_name": "test_smoke[param]",
-                                                "message": "",
-                                            }
-                                        ]
                                     },
-                                },
-                            },
+                                }
+                            ],
                         }
                     }
                 }
@@ -115,8 +106,6 @@ def test_generate_model_page_group_page_embeds_matching_release_report():
 
     assert "## Release Report" in markdown
     assert "### Performance Benchmark Targets" in markdown
-    assert "### Test Results" in markdown
-    assert "### LLM API Test Metadata" in markdown
     assert "Source: [CI run](https://example.com/runs/123)" in markdown
 
 
@@ -139,27 +128,45 @@ def make_summary_release_performance_data():
                 "n150": {
                     "demo_impl": {
                         "vLLM": {
-                            "model": "DemoModel",
-                            "device": "n150",
-                            "impl_id": "demo_impl",
-                            "inference_engine": "vLLM",
-                            "perf_target_summary": {
-                                "config": {
-                                    "task_type": "text",
-                                    "isl": 128,
-                                    "osl": 128,
-                                    "max_concurrency": 1,
-                                },
-                                "measured_metrics": {
-                                    "ttft": 42.0,
-                                    "tput_user": 11.0,
-                                    "tput": 22.0,
-                                    "ttft_streaming_ms": None,
-                                    "tput_prefill": None,
-                                    "e2el_ms": None,
-                                    "rtr": None,
-                                },
-                            },
+                            "perf_target_results": [
+                                {
+                                    "is_summary_data_point": True,
+                                    "config": {
+                                        "task_type": "text",
+                                        "isl": 128,
+                                        "osl": 128,
+                                        "max_concurrency": 1,
+                                    },
+                                    "targets": {
+                                        "ttft_ms": 50.0,
+                                        "ttft_streaming_ms": None,
+                                        "tput_user": 10.0,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "tput": 22.0,
+                                        "rtr": None,
+                                        "tolerance": 0.05,
+                                    },
+                                    "measured_metrics": {
+                                        "ttft": 42.0,
+                                        "tput_user": 11.0,
+                                        "tput": 22.0,
+                                        "ttft_streaming_ms": None,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "rtr": None,
+                                    },
+                                    "benchmark_summary": {
+                                        "task_type": "text",
+                                        "isl": 128,
+                                        "osl": 128,
+                                        "max_concurrency": 1,
+                                        "ttft": 42.0,
+                                        "tput_user": 11.0,
+                                        "tput": 22.0,
+                                    },
+                                }
+                            ],
                         }
                     }
                 }

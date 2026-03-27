@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import textwrap
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -13,7 +14,9 @@ from scripts.build_docker_images import (
     get_docker_root_dir,
     get_max_concurrent_builds,
     check_resources_for_new_build,
+    filter_model_configs_by_docker_images,
     log_resource_summary,
+    load_docker_image_manifest,
     MEMORY_PER_BUILD_GB,
     MEMORY_RESERVE_GB,
     DISK_PER_BUILD_GB,
@@ -352,3 +355,40 @@ class TestLogResourceSummary:
 
         assert "Available memory after reserve" in caplog.text
         assert "below the minimum per-build requirement" in caplog.text
+
+
+class TestDockerImageManifestSelection:
+    def test_loads_and_filters_exact_docker_images(self, tmp_path):
+        manifest_path = tmp_path / "docker-images.json"
+        manifest_path.write_text(
+            '{"docker_images": ["ghcr.io/tenstorrent/demo-release-image:tag"]}'
+        )
+        model_configs = {
+            "model-a": SimpleNamespace(
+                docker_image="ghcr.io/tenstorrent/demo-release-image:tag"
+            ),
+            "model-b": SimpleNamespace(
+                docker_image="ghcr.io/tenstorrent/other-release-image:tag"
+            ),
+        }
+
+        docker_images = load_docker_image_manifest(manifest_path)
+        filtered_configs = filter_model_configs_by_docker_images(
+            model_configs, docker_images
+        )
+
+        assert docker_images == ["ghcr.io/tenstorrent/demo-release-image:tag"]
+        assert list(filtered_configs.keys()) == ["model-a"]
+
+    def test_rejects_manifest_images_missing_from_model_specs(self):
+        model_configs = {
+            "model-a": SimpleNamespace(
+                docker_image="ghcr.io/tenstorrent/demo-release-image:tag"
+            ),
+        }
+
+        with pytest.raises(ValueError, match="not present in MODEL_SPECS"):
+            filter_model_configs_by_docker_images(
+                model_configs,
+                ["ghcr.io/tenstorrent/unknown-release-image:tag"],
+            )

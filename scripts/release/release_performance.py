@@ -174,6 +174,61 @@ def _build_perf_target_results(
     return results
 
 
+def _benchmark_identity_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
+    """Build a stable identity for one benchmark datapoint row."""
+
+    def _normalize_identity_value(value: Any) -> Any:
+        if isinstance(value, str):
+            stripped_value = value.strip()
+            if stripped_value.isdigit():
+                return int(stripped_value)
+            return stripped_value
+        return value
+
+    return (
+        _normalize_identity_value(row.get("task_type", "text")),
+        _normalize_identity_value(row.get("isl", row.get("input_sequence_length"))),
+        _normalize_identity_value(row.get("osl", row.get("output_sequence_length"))),
+        _normalize_identity_value(row.get("max_concurrency", row.get("max_con"))),
+        _normalize_identity_value(row.get("image_height")),
+        _normalize_identity_value(row.get("image_width")),
+        _normalize_identity_value(row.get("images_per_prompt")),
+        _normalize_identity_value(row.get("num_requests")),
+    )
+
+
+def _filter_benchmark_rows_for_perf_targets(
+    perf_target_results: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Keep only benchmark rows that correspond to evaluated perf targets."""
+    filtered_rows: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    for result in perf_target_results:
+        benchmark_summary = result.get("benchmark_summary")
+        if not isinstance(benchmark_summary, dict):
+            continue
+        filtered_rows[_benchmark_identity_key(benchmark_summary)] = deepcopy(
+            benchmark_summary
+        )
+    return sorted(filtered_rows.values(), key=_benchmark_sort_key)
+
+
+def _filter_report_benchmark_rows(
+    rows: Any, allowed_keys: Sequence[Tuple[Any, ...]]
+) -> List[Dict[str, Any]]:
+    """Filter one report benchmark row list down to the allowed benchmark identities."""
+    if not isinstance(rows, list):
+        return []
+    allowed_key_set = set(allowed_keys)
+    filtered_rows = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if _benchmark_identity_key(row) not in allowed_key_set:
+            continue
+        filtered_rows.append(deepcopy(row))
+    return filtered_rows
+
+
 def build_release_performance_entry(
     model_spec: Any, ci_data: Dict[str, Any]
 ) -> Optional[Dict[str, Any]]:
@@ -187,31 +242,12 @@ def build_release_performance_entry(
         device=normalize_device_name(model_spec.device_type),
         benchmarks_summary=benchmarks_summary,
     )
-    perf_target_summary = next(
-        (
-            result
-            for result in perf_target_results
-            if result.get("is_summary_data_point", False)
-        ),
-        None,
-    )
-
     return {
-        "model": model_spec.model_name,
-        "device": normalize_device_name(model_spec.device_type),
-        "impl_id": model_spec.impl.impl_id,
-        "inference_engine": normalize_inference_engine_name(
-            model_spec.inference_engine
-        ),
         "perf_status": ci_data.get("perf_status"),
-        "accuracy_status": ci_data.get("accuracy_status"),
         "ci_run_number": ci_data.get("ci_run_number"),
         "ci_run_url": ci_data.get("ci_run_url"),
         "ci_job_url": ci_data.get("ci_job_url"),
-        "benchmarks_summary": benchmarks_summary,
         "perf_target_results": perf_target_results,
-        "perf_target_summary": perf_target_summary,
-        "report_data": report_data,
     }
 
 
@@ -250,10 +286,10 @@ def build_release_performance_data(records: Iterable[Any]) -> Dict[str, Any]:
             continue
         _set_release_performance_entry(
             models,
-            entry["model"],
-            entry["device"],
-            entry["impl_id"],
-            entry["inference_engine"],
+            record.model_spec.model_name,
+            normalize_device_name(record.model_spec.device_type),
+            record.model_spec.impl.impl_id,
+            normalize_inference_engine_name(record.model_spec.inference_engine),
             entry,
         )
 
@@ -281,9 +317,14 @@ def get_release_performance_entry(
 
 
 def get_release_performance_summary(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    summary = entry.get("perf_target_summary")
-    if isinstance(summary, dict):
-        return summary
+    perf_target_results = entry.get("perf_target_results")
+    if not isinstance(perf_target_results, list):
+        return None
+    for result in perf_target_results:
+        if not isinstance(result, dict):
+            continue
+        if result.get("is_summary_data_point", False):
+            return result
     return None
 
 
@@ -305,6 +346,14 @@ def iter_release_performance_entries(
     release_performance_data: Dict[str, Any],
 ) -> Iterable[Dict[str, Any]]:
     """Yield release-performance entries in deterministic order."""
+    for _, _, _, _, entry in iter_release_performance_items(release_performance_data):
+        yield entry
+
+
+def iter_release_performance_items(
+    release_performance_data: Dict[str, Any],
+) -> Iterable[Tuple[str, str, str, str, Dict[str, Any]]]:
+    """Yield release-performance entries with their nested map identity."""
     models = release_performance_data.get("models", {})
     for model_name in sorted(models.keys()):
         model_devices = models[model_name]
@@ -313,7 +362,13 @@ def iter_release_performance_entries(
             for impl_id in sorted(device_impls.keys()):
                 impl_engines = device_impls[impl_id]
                 for inference_engine in sorted(impl_engines.keys()):
-                    yield impl_engines[inference_engine]
+                    yield (
+                        model_name,
+                        device,
+                        impl_id,
+                        inference_engine,
+                        impl_engines[inference_engine],
+                    )
 
 
 PerformanceEntry = Dict[str, Any]
@@ -340,17 +395,23 @@ def build_release_performance_entry_indices(
     full_index: Dict[PerformanceFullKey, PerformanceEntry] = {}
     partial_candidates: Dict[PerformancePartialKey, Any] = {}
 
-    for entry in iter_release_performance_entries(release_performance_data):
+    for (
+        model_name,
+        device,
+        impl_id,
+        inference_engine,
+        entry,
+    ) in iter_release_performance_items(release_performance_data):
         full_key = (
-            _normalize_model_name(entry.get("model")),
-            normalize_device_name(entry.get("device")),
-            str(entry.get("impl_id") or "").strip(),
-            _normalize_engine_key(entry.get("inference_engine")),
+            _normalize_model_name(model_name),
+            normalize_device_name(device),
+            str(impl_id or "").strip(),
+            _normalize_engine_key(inference_engine),
         )
         partial_key = (
-            str(entry.get("impl_id") or "").strip(),
-            normalize_device_name(entry.get("device")),
-            _normalize_engine_key(entry.get("inference_engine")),
+            str(impl_id or "").strip(),
+            normalize_device_name(device),
+            _normalize_engine_key(inference_engine),
         )
         full_index[full_key] = entry
 
@@ -393,54 +454,26 @@ def lookup_release_performance_entry(
     return partial_index.get(partial_key)
 
 
-def _benchmark_row_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
-    return (
-        row.get("task_type", "text"),
-        row.get("isl", row.get("input_sequence_length", 0)),
-        row.get("osl", row.get("output_sequence_length", 0)),
-        row.get("image_height", 0),
-        row.get("image_width", 0),
-        row.get("images_per_prompt", 0),
-        row.get("max_concurrency", row.get("max_con", 0)),
-    )
-
-
-def _index_benchmark_rows(rows: Any) -> Dict[Tuple[Any, ...], str]:
-    indexed_rows = {}
-    if not isinstance(rows, list):
-        return indexed_rows
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        indexed_rows[_benchmark_row_key(row)] = json.dumps(row, sort_keys=True)
-    return indexed_rows
-
-
-def _summarize_parameter_support_results(
-    entry: Optional[PerformanceEntry],
-) -> Dict[str, str]:
+def _index_perf_target_results(entry: Optional[PerformanceEntry]) -> Dict[str, str]:
+    indexed_results = {}
     if entry is None:
-        return {}
-    tests = entry.get("report_data", {}).get("parameter_support_tests", {})
-    results = tests.get("results", {})
-    if not isinstance(results, dict):
-        return {}
+        return indexed_results
 
-    summary = {}
-    for test_case, test_results in results.items():
-        if not isinstance(test_results, list):
+    perf_target_results = entry.get("perf_target_results")
+    if not isinstance(perf_target_results, list):
+        return indexed_results
+
+    for result in perf_target_results:
+        if not isinstance(result, dict):
             continue
-        total_count = len(test_results)
-        passed_count = sum(
-            1 for test_result in test_results if test_result.get("status") == "passed"
+        config = result.get("config")
+        if not isinstance(config, dict):
+            continue
+        indexed_results[json.dumps(config, sort_keys=True)] = json.dumps(
+            result,
+            sort_keys=True,
         )
-        failed_count = sum(
-            1 for test_result in test_results if test_result.get("status") == "failed"
-        )
-        summary[test_case] = (
-            f"{passed_count}/{total_count} passed, {failed_count} failed"
-        )
-    return summary
+    return indexed_results
 
 
 def _format_change_counts(label: str, added: int, removed: int, updated: int) -> str:
@@ -486,53 +519,24 @@ def _format_status_change(
 def _summarize_benchmark_changes(
     before_entry: Optional[PerformanceEntry], after_entry: Optional[PerformanceEntry]
 ) -> str:
-    before_rows = _index_benchmark_rows(
-        before_entry.get("benchmarks_summary") if before_entry else []
-    )
-    after_rows = _index_benchmark_rows(
-        after_entry.get("benchmarks_summary") if after_entry else []
-    )
-    if not before_rows and not after_rows:
+    before_results = _index_perf_target_results(before_entry)
+    after_results = _index_perf_target_results(after_entry)
+    if not before_results and not after_results:
         return ""
-    if not before_rows:
-        return f"Benchmarks added ({len(after_rows)} row(s))"
-    if not after_rows:
-        return f"Benchmarks removed ({len(before_rows)} row(s))"
+    if not before_results:
+        return f"Perf targets added ({len(after_results)} row(s))"
+    if not after_results:
+        return f"Perf targets removed ({len(before_results)} row(s))"
 
-    before_keys = set(before_rows.keys())
-    after_keys = set(after_rows.keys())
-    updated_count = sum(
-        1 for key in before_keys & after_keys if before_rows[key] != after_rows[key]
-    )
-    return _format_change_counts(
-        "Benchmarks",
-        len(after_keys - before_keys),
-        len(before_keys - after_keys),
-        updated_count,
-    )
-
-
-def _summarize_test_result_changes(
-    before_entry: Optional[PerformanceEntry], after_entry: Optional[PerformanceEntry]
-) -> str:
-    before_summary = _summarize_parameter_support_results(before_entry)
-    after_summary = _summarize_parameter_support_results(after_entry)
-    if not before_summary and not after_summary:
-        return ""
-    if not before_summary:
-        return f"LLM API tests added ({len(after_summary)} case(s))"
-    if not after_summary:
-        return f"LLM API tests removed ({len(before_summary)} case(s))"
-
-    before_keys = set(before_summary.keys())
-    after_keys = set(after_summary.keys())
+    before_keys = set(before_results.keys())
+    after_keys = set(after_results.keys())
     updated_count = sum(
         1
         for key in before_keys & after_keys
-        if before_summary[key] != after_summary[key]
+        if before_results[key] != after_results[key]
     )
     return _format_change_counts(
-        "LLM API tests",
+        "Perf targets",
         len(after_keys - before_keys),
         len(before_keys - after_keys),
         updated_count,
@@ -560,23 +564,10 @@ def summarize_release_performance_diff(
                 unchanged_label="No change",
             )
         )
-    if before_entry.get("accuracy_status") != after_entry.get("accuracy_status"):
-        changes.append(
-            "Accuracy status: "
-            + _format_status_change(
-                before_entry.get("accuracy_status"),
-                after_entry.get("accuracy_status"),
-                unchanged_label="No change",
-            )
-        )
 
     benchmark_change = _summarize_benchmark_changes(before_entry, after_entry)
     if benchmark_change:
         changes.append(benchmark_change)
-
-    test_change = _summarize_test_result_changes(before_entry, after_entry)
-    if test_change:
-        changes.append(test_change)
 
     if not changes:
         return "No performance changes"
@@ -680,9 +671,11 @@ def write_release_performance_diff_data(
 
 
 def _split_benchmark_rows(entry: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
-    rows = entry.get("benchmarks_summary")
-    if not isinstance(rows, list):
-        rows = entry.get("report_data", {}).get("benchmarks_summary", [])
+    rows = _filter_benchmark_rows_for_perf_targets(
+        entry.get("perf_target_results")
+        if isinstance(entry.get("perf_target_results"), list)
+        else []
+    )
     return {
         "text": [row for row in rows if row.get("task_type", "text") == "text"],
         "vlm": [row for row in rows if row.get("task_type", "text") == "vlm"],
@@ -1085,17 +1078,7 @@ def render_benchmark_summary_markdown(
 
 def render_test_results_markdown(entry: Dict[str, Any], heading_level: int = 3) -> str:
     """Render parameter support test results for one release-performance entry."""
-    parameter_support_tests = (
-        entry.get("report_data", {}).get("parameter_support_tests") or {}
-    )
-    if not parameter_support_tests.get("results"):
-        return ""
-
-    heading_prefix = "#" * heading_level
-    body = _render_parameter_support_markdown(
-        parameter_support_tests, heading_level=heading_level + 1
-    )
-    return f"{heading_prefix} Test Results\n\n{body}"
+    return ""
 
 
 def render_release_report_section(
@@ -1141,7 +1124,13 @@ def render_release_notes_performance_markdown(
 ) -> str:
     """Render the release-notes performance section from the baseline data."""
     sections = []
-    for entry in iter_release_performance_entries(release_performance_data):
+    for (
+        model_name,
+        device,
+        impl_id,
+        inference_engine,
+        entry,
+    ) in iter_release_performance_items(release_performance_data):
         body_sections = []
         benchmark_markdown = render_benchmark_summary_markdown(entry, heading_level=4)
         test_results_markdown = render_test_results_markdown(entry, heading_level=4)
@@ -1155,10 +1144,7 @@ def render_release_notes_performance_markdown(
         sections.append(
             "\n\n".join(
                 [
-                    (
-                        f"### {entry['model']} on {entry['device']} "
-                        f"({entry['impl_id']}, {entry['inference_engine']})"
-                    ),
+                    (f"### {model_name} on {device} ({impl_id}, {inference_engine})"),
                     "\n\n".join(body_sections),
                 ]
             )

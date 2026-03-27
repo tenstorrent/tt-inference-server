@@ -1237,6 +1237,54 @@ def list_image_combinations(model_configs, build_metal_commit=None):
     return unique_sha_combinations
 
 
+def load_docker_image_manifest(manifest_path):
+    """Load an exact docker-image allowlist from JSON."""
+    manifest_file = Path(manifest_path)
+    with open(manifest_file, "r", encoding="utf-8") as file:
+        manifest_data = json.load(file)
+
+    if isinstance(manifest_data, dict):
+        docker_images = manifest_data.get("docker_images")
+    elif isinstance(manifest_data, list):
+        docker_images = manifest_data
+    else:
+        raise ValueError(
+            f"Docker image manifest must be a JSON object or list: {manifest_file}"
+        )
+
+    if not isinstance(docker_images, list) or not docker_images:
+        raise ValueError(
+            f"Docker image manifest must contain a non-empty docker_images list: {manifest_file}"
+        )
+
+    normalized_images = sorted({str(image).strip() for image in docker_images if image})
+    if not normalized_images:
+        raise ValueError(f"No docker images found in manifest: {manifest_file}")
+    return normalized_images
+
+
+def filter_model_configs_by_docker_images(model_configs, docker_images):
+    """Select only model configs whose exact docker_image is present in the allowlist."""
+    docker_image_set = {str(image) for image in docker_images}
+    filtered_configs = {
+        model_id: model_config
+        for model_id, model_config in model_configs.items()
+        if getattr(model_config, "docker_image", None) in docker_image_set
+    }
+    matched_images = {
+        model_config.docker_image
+        for model_config in filtered_configs.values()
+        if getattr(model_config, "docker_image", None)
+    }
+    missing_images = sorted(docker_image_set - matched_images)
+    if missing_images:
+        raise ValueError(
+            "Docker image manifest includes image(s) not present in MODEL_SPECS: "
+            + ", ".join(missing_images)
+        )
+    return filtered_configs
+
+
 def _run_resource_aware_queue(
     args_tuples,
     max_concurrent,
@@ -1552,6 +1600,14 @@ if __name__ == "__main__":
         help="Only build containers with this exact tt-metal commit",
     )
     parser.add_argument(
+        "--docker-image-manifest",
+        type=str,
+        help=(
+            "Path to a JSON manifest containing an exact docker_images allowlist. "
+            "Only matching MODEL_SPECS entries will be built."
+        ),
+    )
+    parser.add_argument(
         "--max-workers",
         type=int,
         help="Ceiling on parallel workers (resource-based auto-limit applies first)",
@@ -1592,6 +1648,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     logger.info(f"ubuntu_version: {args.ubuntu_version}")
     logger.info(f"build_metal_commit: {args.build_metal_commit}")
+    logger.info(f"docker_image_manifest: {args.docker_image_manifest}")
     logger.info(f"max_workers: {args.max_workers}")
     logger.info(f"force_build: {args.force_build}")
     logger.info(f"release: {args.release}")
@@ -1604,8 +1661,15 @@ if __name__ == "__main__":
     logger.info(f"memory_per_build: {args.memory_per_build}")
     logger.info(f"disk_per_build: {args.disk_per_build}")
 
+    selected_model_specs = MODEL_SPECS
+    if args.docker_image_manifest:
+        selected_model_specs = filter_model_configs_by_docker_images(
+            MODEL_SPECS,
+            load_docker_image_manifest(args.docker_image_manifest),
+        )
+
     build_docker_images(
-        MODEL_SPECS,
+        selected_model_specs,
         force_build=args.force_build,
         release=args.release,
         multihost=args.multihost,

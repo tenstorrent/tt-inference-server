@@ -10,11 +10,6 @@ import pytest
 
 import scripts.release.generate_release_artifacts as gra
 from scripts.release.release_diff import build_template_key
-from scripts.release.validate_model_spec_template_images import (
-    MissingTemplateImage,
-    TemplateImageReference,
-    TemplateImageValidationResult,
-)
 from workflows.perf_targets import PerfTarget, PerfTargetSet
 
 
@@ -552,6 +547,24 @@ def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
                 "ci_run_url": "https://example.com/runs/123",
                 "ci_job_url": "https://example.com/jobs/456",
                 "release_report": {
+                    "benchmarks": [
+                        {
+                            "task_type": "text",
+                            "input_sequence_length": "128",
+                            "output_sequence_length": "128",
+                            "max_con": "1",
+                            "mean_ttft_ms": "45.0",
+                            "mean_tps": "12.0",
+                        },
+                        {
+                            "task_type": "text",
+                            "input_sequence_length": "2048",
+                            "output_sequence_length": "128",
+                            "max_con": "4",
+                            "mean_ttft_ms": "80.0",
+                            "mean_tps": "30.0",
+                        },
+                    ],
                     "benchmarks_summary": [
                         {
                             "task_type": "text",
@@ -568,7 +581,15 @@ def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
                                     "tput_user": 10.0,
                                 }
                             },
-                        }
+                        },
+                        {
+                            "task_type": "text",
+                            "isl": 2048,
+                            "osl": 128,
+                            "max_concurrency": 4,
+                            "ttft": 80.0,
+                            "tput_user": 30.0,
+                        },
                     ],
                     "benchmark_target_evaluation": {
                         "status": "target",
@@ -648,26 +669,22 @@ def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
         )
 
     entry = release_performance_data["models"]["DemoModel"]["n150"]["demo_impl"]["vLLM"]
-    assert entry["benchmarks_summary"][0]["ttft"] == 45.0
+    assert len(entry["perf_target_results"]) == 1
+    assert entry["perf_target_results"][0]["benchmark_summary"]["ttft"] == 45.0
     assert not (output_dir / "release_performance.md").exists()
     baseline = json.loads(baseline_path.read_text())
     baseline_entry = baseline["models"]["DemoModel"]["n150"]["demo_impl"]["vLLM"]
-    assert baseline_entry["benchmarks_summary"][0]["ttft"] == 45.0
-    assert baseline_entry["benchmarks_summary"][0]["isl"] == 128
+    assert "benchmarks_summary" not in baseline_entry
     assert baseline_entry["perf_target_results"][0]["config"]["isl"] == 128
-    assert baseline_entry["perf_target_summary"]["measured_metrics"]["ttft"] == 45.0
+    assert baseline_entry["perf_target_results"][0]["benchmark_summary"]["ttft"] == 45.0
+    assert baseline_entry["perf_target_results"][0]["benchmark_summary"]["isl"] == 128
+    assert baseline_entry["perf_target_results"][0]["measured_metrics"]["ttft"] == 45.0
     assert (
-        baseline_entry["perf_target_summary"]["measured_metrics"]["tput_user"] == 12.0
+        baseline_entry["perf_target_results"][0]["measured_metrics"]["tput_user"]
+        == 12.0
     )
-    assert baseline_entry["report_data"]["benchmarks_summary"][0]["ttft"] == 45.0
-    assert (
-        "test_smoke"
-        in baseline_entry["report_data"]["parameter_support_tests"]["results"]
-    )
-    assert (
-        baseline_entry["report_data"]["benchmark_target_evaluation"]["status"]
-        == "target"
-    )
+    assert "perf_target_summary" not in baseline_entry
+    assert "report_data" not in baseline_entry
 
 
 def test_write_release_performance_diff_output_filters_to_release_models(tmp_path):
@@ -683,26 +700,44 @@ def test_write_release_performance_diff_output_filters_to_release_models(tmp_pat
                 "n150": {
                     "demo_impl": {
                         "vLLM": {
-                            "model": "DemoModel",
-                            "device": "n150",
-                            "impl_id": "demo_impl",
-                            "inference_engine": "vLLM",
                             "perf_status": "target",
-                            "accuracy_status": True,
-                            "benchmarks_summary": [
+                            "perf_target_results": [
                                 {
-                                    "task_type": "text",
-                                    "isl": 128,
-                                    "osl": 128,
-                                    "max_concurrency": 1,
-                                    "ttft": 52.0,
+                                    "is_summary_data_point": True,
+                                    "config": {
+                                        "task_type": "text",
+                                        "isl": 128,
+                                        "osl": 128,
+                                        "max_concurrency": 1,
+                                    },
+                                    "targets": {
+                                        "ttft_ms": 50.0,
+                                        "ttft_streaming_ms": None,
+                                        "tput_user": 10.0,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "tput": None,
+                                        "rtr": None,
+                                        "tolerance": 0.05,
+                                    },
+                                    "measured_metrics": {
+                                        "ttft": 52.0,
+                                        "tput_user": None,
+                                        "tput": None,
+                                        "ttft_streaming_ms": None,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "rtr": None,
+                                    },
+                                    "benchmark_summary": {
+                                        "task_type": "text",
+                                        "isl": 128,
+                                        "osl": 128,
+                                        "max_concurrency": 1,
+                                        "ttft": 52.0,
+                                    },
                                 }
                             ],
-                            "report_data": {
-                                "parameter_support_tests": {
-                                    "results": {"test_smoke": [{"status": "failed"}]}
-                                }
-                            },
                         }
                     }
                 }
@@ -711,14 +746,8 @@ def test_write_release_performance_diff_output_filters_to_release_models(tmp_pat
                 "n300": {
                     "demo_impl": {
                         "vLLM": {
-                            "model": "UnrelatedModel",
-                            "device": "n300",
-                            "impl_id": "demo_impl",
-                            "inference_engine": "vLLM",
                             "perf_status": "target",
-                            "accuracy_status": True,
-                            "benchmarks_summary": [],
-                            "report_data": {},
+                            "perf_target_results": [],
                         }
                     }
                 }
@@ -732,26 +761,44 @@ def test_write_release_performance_diff_output_filters_to_release_models(tmp_pat
                 "n150": {
                     "demo_impl": {
                         "vLLM": {
-                            "model": "DemoModel",
-                            "device": "n150",
-                            "impl_id": "demo_impl",
-                            "inference_engine": "vLLM",
                             "perf_status": "functional",
-                            "accuracy_status": True,
-                            "benchmarks_summary": [
+                            "perf_target_results": [
                                 {
-                                    "task_type": "text",
-                                    "isl": 128,
-                                    "osl": 128,
-                                    "max_concurrency": 1,
-                                    "ttft": 45.0,
+                                    "is_summary_data_point": True,
+                                    "config": {
+                                        "task_type": "text",
+                                        "isl": 128,
+                                        "osl": 128,
+                                        "max_concurrency": 1,
+                                    },
+                                    "targets": {
+                                        "ttft_ms": 50.0,
+                                        "ttft_streaming_ms": None,
+                                        "tput_user": 10.0,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "tput": None,
+                                        "rtr": None,
+                                        "tolerance": 0.05,
+                                    },
+                                    "measured_metrics": {
+                                        "ttft": 45.0,
+                                        "tput_user": None,
+                                        "tput": None,
+                                        "ttft_streaming_ms": None,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "rtr": None,
+                                    },
+                                    "benchmark_summary": {
+                                        "task_type": "text",
+                                        "isl": 128,
+                                        "osl": 128,
+                                        "max_concurrency": 1,
+                                        "ttft": 45.0,
+                                    },
                                 }
                             ],
-                            "report_data": {
-                                "parameter_support_tests": {
-                                    "results": {"test_smoke": [{"status": "passed"}]}
-                                }
-                            },
                         }
                     }
                 }
@@ -789,7 +836,7 @@ def test_write_release_performance_diff_output_filters_to_release_models(tmp_pat
             "impl_id": "demo_impl",
             "inference_engine": "vllm",
             "model_arch": "DemoModel",
-            "summary": "Perf status: functional -> target; Benchmarks ~1; LLM API tests ~1",
+            "summary": "Perf status: functional -> target; Perf targets ~1",
             "template_key": build_template_key(
                 "demo_impl", ["demo/model"], ["N150"], "vllm"
             ),
@@ -861,26 +908,44 @@ def test_write_release_notes_uses_raw_json_inputs(tmp_path):
                 "n150": {
                     "demo_impl": {
                         "vLLM": {
-                            "model": "DemoModel",
-                            "device": "n150",
-                            "impl_id": "demo_impl",
-                            "inference_engine": "vLLM",
                             "perf_status": "target",
-                            "accuracy_status": True,
-                            "benchmarks_summary": [
+                            "perf_target_results": [
                                 {
-                                    "task_type": "text",
-                                    "isl": 128,
-                                    "osl": 128,
-                                    "max_concurrency": 1,
-                                    "ttft": 52.0,
+                                    "is_summary_data_point": True,
+                                    "config": {
+                                        "task_type": "text",
+                                        "isl": 128,
+                                        "osl": 128,
+                                        "max_concurrency": 1,
+                                    },
+                                    "targets": {
+                                        "ttft_ms": 50.0,
+                                        "ttft_streaming_ms": None,
+                                        "tput_user": 10.0,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "tput": None,
+                                        "rtr": None,
+                                        "tolerance": 0.05,
+                                    },
+                                    "measured_metrics": {
+                                        "ttft": 52.0,
+                                        "tput_user": None,
+                                        "tput": None,
+                                        "ttft_streaming_ms": None,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "rtr": None,
+                                    },
+                                    "benchmark_summary": {
+                                        "task_type": "text",
+                                        "isl": 128,
+                                        "osl": 128,
+                                        "max_concurrency": 1,
+                                        "ttft": 52.0,
+                                    },
                                 }
                             ],
-                            "report_data": {
-                                "parameter_support_tests": {
-                                    "results": {"test_smoke": [{"status": "failed"}]}
-                                }
-                            },
                         }
                     }
                 }
@@ -894,26 +959,44 @@ def test_write_release_notes_uses_raw_json_inputs(tmp_path):
                 "n150": {
                     "demo_impl": {
                         "vLLM": {
-                            "model": "DemoModel",
-                            "device": "n150",
-                            "impl_id": "demo_impl",
-                            "inference_engine": "vLLM",
                             "perf_status": "functional",
-                            "accuracy_status": True,
-                            "benchmarks_summary": [
+                            "perf_target_results": [
                                 {
-                                    "task_type": "text",
-                                    "isl": 128,
-                                    "osl": 128,
-                                    "max_concurrency": 1,
-                                    "ttft": 45.0,
+                                    "is_summary_data_point": True,
+                                    "config": {
+                                        "task_type": "text",
+                                        "isl": 128,
+                                        "osl": 128,
+                                        "max_concurrency": 1,
+                                    },
+                                    "targets": {
+                                        "ttft_ms": 50.0,
+                                        "ttft_streaming_ms": None,
+                                        "tput_user": 10.0,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "tput": None,
+                                        "rtr": None,
+                                        "tolerance": 0.05,
+                                    },
+                                    "measured_metrics": {
+                                        "ttft": 45.0,
+                                        "tput_user": None,
+                                        "tput": None,
+                                        "ttft_streaming_ms": None,
+                                        "tput_prefill": None,
+                                        "e2el_ms": None,
+                                        "rtr": None,
+                                    },
+                                    "benchmark_summary": {
+                                        "task_type": "text",
+                                        "isl": 128,
+                                        "osl": 128,
+                                        "max_concurrency": 1,
+                                        "ttft": 45.0,
+                                    },
                                 }
                             ],
-                            "report_data": {
-                                "parameter_support_tests": {
-                                    "results": {"test_smoke": [{"status": "passed"}]}
-                                }
-                            },
                         }
                     }
                 }
@@ -934,150 +1017,91 @@ def test_write_release_notes_uses_raw_json_inputs(tmp_path):
 
     notes = notes_path.read_text()
     assert "## Model and Hardware Support Diff" in notes
-    assert (
-        "N150: Perf status: functional -> target; Benchmarks ~1; LLM API tests ~1"
-        in notes
-    )
+    assert "N150: Perf status: functional -> target; Perf targets ~1" in notes
     assert "## Release Artifacts Summary" in notes
     assert "## Performance\n" in notes
     assert "### DemoModel on n150 (demo_impl, vLLM)" in notes
 
 
-def test_main_wires_release_flow_and_emits_summary(tmp_path):
-    ci_artifacts_path = tmp_path / "release_logs" / "v0.10.0"
-    ci_artifacts_path.mkdir(parents=True)
+def test_generate_release_artifact_outputs_runs_release_only_steps(tmp_path):
     output_dir = tmp_path / "release_logs" / "v0.10.0"
-    model_spec_path = tmp_path / "workflows" / "model_spec.py"
-    model_spec_path.parent.mkdir(parents=True)
-    model_spec_path.write_text("MODEL_SPECS = {}\n")
-    readme_path = tmp_path / "README.md"
-    readme_path.write_text("# README\n")
-    release_model_spec_path = tmp_path / "release_model_spec.json"
-    merged_spec = {"model-a": make_record("model-a", make_image("demo"))}
-    result_tuple = (
-        defaultdict(list),
-        0,
-        {"ghcr.io/tenstorrent/release:tag": "ghcr.io/tenstorrent/ci:tag"},
-        {},
-        defaultdict(list),
-    )
-    args = Namespace(
-        ci_artifacts_path=str(ci_artifacts_path),
-        models_ci_run_id=None,
-        report_data_json=None,
-        out_root=None,
-        dev=False,
-        release=True,
-        output_dir=str(output_dir),
-        model_spec_path=str(model_spec_path),
-        readme_path=str(readme_path),
-        release_model_spec_path=str(release_model_spec_path),
+    request = gra.ReleaseArtifactsRequest(
+        merged_spec={"model-a": make_record("model-a", make_image("demo"))},
+        output_dir=output_dir,
+        model_spec_path=tmp_path / "workflows" / "model_spec.py",
+        readme_path=tmp_path / "README.md",
+        release_model_spec_path=tmp_path / "release_model_spec.json",
+        version="0.10.0",
         dry_run=False,
+        release=True,
     )
-    event_order = []
 
-    def mark_event(name):
-        def _inner(*args, **kwargs):
-            event_order.append(name)
-            if name == "write_release_notes":
-                return output_dir / "release_notes.md"
-            if name == "write_release_performance_outputs":
-                return {"schema_version": "0.1.0", "models": {}}
-            if name == "write_release_performance_diff_output":
-                return output_dir / "release_performance_diff.json"
-            return None
-
-        return _inner
-
-    with patch.object(gra, "configure_logging"), patch.object(
-        gra, "get_versioned_release_logs_dir", return_value=output_dir
-    ), patch(
-        "argparse.ArgumentParser.parse_args",
-        return_value=args,
-    ), patch.object(
-        gra, "resolve_release_output_dir", return_value=output_dir
-    ), patch.object(gra, "check_docker_installed", return_value=True), patch.object(
-        gra, "check_crane_installed", return_value=True
-    ), patch.object(
-        gra, "load_ci_data_from_artifacts_path", return_value={"model-a": {}}
-    ) as load_ci_data_mock, patch.object(
-        gra, "merge_specs_with_ci_data", return_value=merged_spec
-    ) as merge_mock, patch.object(
-        gra, "generate_release_artifacts", return_value=result_tuple
-    ) as generate_mock, patch.object(
-        gra, "write_output", side_effect=mark_event("write_output")
-    ) as write_output_mock, patch.object(
+    with patch.object(
+        gra, "build_acceptance_warnings", return_value=[{"model_id": "model-a"}]
+    ) as warnings_mock, patch.object(
+        gra,
+        "write_acceptance_warnings_output",
+        return_value=output_dir / "release_acceptance_warnings.json",
+    ) as warnings_output_mock, patch.object(
         gra,
         "write_release_performance_outputs",
-        side_effect=mark_event("write_release_performance_outputs"),
+        return_value={"schema_version": "0.1.0", "models": {}},
     ) as performance_mock, patch.object(
         gra,
         "write_release_performance_diff_output",
-        side_effect=mark_event("write_release_performance_diff_output"),
-    ) as performance_diff_mock, patch.object(
-        gra,
-        "write_release_model_spec_output",
-        side_effect=mark_event("write_release_model_spec_output"),
+        return_value=output_dir / "release_performance_diff.json",
+    ) as diff_mock, patch.object(
+        gra, "write_release_model_spec_output"
     ) as export_mock, patch.object(
-        gra,
-        "regenerate_model_support_docs_and_update_readme",
-        side_effect=mark_event("regenerate_model_support_docs_and_update_readme"),
-    ) as docs_mock, patch.object(
-        gra, "write_release_notes", side_effect=mark_event("write_release_notes")
-    ) as release_notes_mock, patch.object(
-        gra, "build_acceptance_warnings", return_value=[]
-    ) as acceptance_mock, patch.object(
-        gra,
-        "validate_model_spec_template_images",
-        return_value=TemplateImageValidationResult(),
-    ) as validate_mock, patch.object(
-        gra, "emit_markdown_summary"
-    ) as emit_mock, patch.object(gra, "get_version", return_value="0.10.0"):
-        assert gra.main() == 0
+        gra, "regenerate_model_support_docs_and_update_readme"
+    ) as docs_mock:
+        result = gra.generate_release_artifact_outputs(request)
 
-    load_ci_data_mock.assert_called_once_with(ci_artifacts_path)
-    merge_mock.assert_called_once_with({"model-a": {}}, False)
-    generate_mock.assert_called_once_with(
-        merged_spec,
+    warnings_mock.assert_called_once_with(request.merged_spec)
+    warnings_output_mock.assert_called_once_with(
+        [{"model_id": "model-a"}],
+        output_dir,
         False,
-        image_exists_cache={},
-        allow_ci_promotion=True,
     )
-    validate_mock.assert_called_once()
-    acceptance_mock.assert_called_once_with(
-        merged_spec,
-        recompute_benchmark_target_evaluation=False,
-    )
-    write_output_mock.assert_called_once()
-    performance_mock.assert_called_once_with(merged_spec, output_dir, False)
-    performance_diff_mock.assert_called_once_with(
+    performance_mock.assert_called_once_with(request.merged_spec, output_dir, False)
+    diff_mock.assert_called_once_with(
         output_dir, {"schema_version": "0.1.0", "models": {}}
     )
     export_mock.assert_called_once_with(
-        model_spec_path=model_spec_path,
-        output_path=release_model_spec_path,
+        model_spec_path=request.model_spec_path,
+        output_path=request.release_model_spec_path,
         dry_run=False,
     )
     docs_mock.assert_called_once_with(
-        model_spec_path=model_spec_path,
-        readme_path=readme_path,
+        model_spec_path=request.model_spec_path,
+        readme_path=request.readme_path,
         release_performance_data={"schema_version": "0.1.0", "models": {}},
         dry_run=False,
     )
-    release_notes_mock.assert_called_once_with(
-        output_dir,
-        "0.10.0",
-        release_performance_data={"schema_version": "0.1.0", "models": {}},
+    assert (
+        result.acceptance_warnings_path
+        == output_dir / "release_acceptance_warnings.json"
     )
-    emit_mock.assert_called_once_with(output_dir / "release_artifacts_summary.md")
-    assert event_order == [
-        "write_release_performance_outputs",
-        "write_release_performance_diff_output",
-        "write_release_model_spec_output",
-        "regenerate_model_support_docs_and_update_readme",
-        "write_output",
-        "write_release_notes",
-    ]
+    assert str(request.release_model_spec_path) in result.generated_artifacts
+
+
+def test_generate_release_artifact_outputs_returns_empty_for_dev_mode(tmp_path):
+    request = gra.ReleaseArtifactsRequest(
+        merged_spec={},
+        output_dir=tmp_path / "release_logs" / "v0.10.0",
+        model_spec_path=tmp_path / "workflows" / "model_spec.py",
+        readme_path=tmp_path / "README.md",
+        release_model_spec_path=tmp_path / "release_model_spec.json",
+        version="0.10.0",
+        dry_run=False,
+        release=False,
+    )
+
+    result = gra.generate_release_artifact_outputs(request)
+
+    assert result.generated_artifacts == ()
+    assert result.acceptance_warnings == ()
+    assert result.acceptance_warnings_path is None
 
 
 def test_main_release_run_id_reads_release_workflow(tmp_path):
@@ -1096,7 +1120,6 @@ def test_main_release_run_id_reads_release_workflow(tmp_path):
         dry_run=False,
     )
     merged_spec = {"model-a": make_record("model-a", make_image("demo"))}
-    result_tuple = (defaultdict(list), 0, {}, {}, defaultdict(list))
 
     with patch.object(gra, "configure_logging"), patch.object(
         gra, "get_versioned_release_logs_dir", return_value=output_dir
@@ -1105,36 +1128,22 @@ def test_main_release_run_id_reads_release_workflow(tmp_path):
         return_value=args,
     ), patch.object(
         gra, "resolve_release_output_dir", return_value=output_dir
-    ), patch.object(gra, "check_docker_installed", return_value=True), patch.object(
-        gra, "check_crane_installed", return_value=True
     ), patch.object(
         gra, "load_ci_data_from_run_id", return_value={"model-a": {}}
     ) as load_ci_data_mock, patch.object(
         gra, "merge_specs_with_ci_data", return_value=merged_spec
-    ), patch.object(
-        gra, "generate_release_artifacts", return_value=result_tuple
-    ), patch.object(gra, "write_output"), patch.object(
-        gra,
-        "write_release_performance_outputs",
-        return_value={"schema_version": "0.1.0", "models": {}},
-    ), patch.object(gra, "write_release_performance_diff_output"), patch.object(
-        gra, "write_release_model_spec_output"
-    ), patch.object(
-        gra, "regenerate_model_support_docs_and_update_readme"
-    ), patch.object(
-        gra, "write_release_notes", return_value=output_dir / "release_notes.md"
-    ), patch.object(
-        gra,
-        "validate_model_spec_template_images",
-        return_value=TemplateImageValidationResult(),
-    ), patch.object(gra, "emit_markdown_summary"), patch.object(
-        gra, "get_version", return_value="0.10.0"
-    ):
+    ) as merge_mock, patch.object(
+        gra, "generate_release_artifact_outputs"
+    ) as outputs_mock, patch.object(gra, "get_version", return_value="0.10.0"):
         assert gra.main() == 0
 
     load_ci_data_mock.assert_called_once_with(
         23578993514, output_dir, workflow_file=gra.RELEASE_WORKFLOW_FILE
     )
+    merge_mock.assert_called_once_with({"model-a": {}}, False)
+    outputs_mock.assert_called_once()
+    request = outputs_mock.call_args.args[0]
+    assert request.release is True
 
 
 def test_main_dev_run_id_keeps_default_workflow(tmp_path):
@@ -1153,7 +1162,6 @@ def test_main_dev_run_id_keeps_default_workflow(tmp_path):
         dry_run=False,
     )
     merged_spec = {"model-a": make_record("model-a", make_image("demo", channel="dev"))}
-    result_tuple = (defaultdict(list), 0, {}, {}, defaultdict(list))
 
     with patch.object(gra, "configure_logging"), patch.object(
         gra, "get_versioned_release_logs_dir", return_value=output_dir
@@ -1162,156 +1170,23 @@ def test_main_dev_run_id_keeps_default_workflow(tmp_path):
         return_value=args,
     ), patch.object(
         gra, "resolve_release_output_dir", return_value=output_dir
-    ), patch.object(gra, "check_docker_installed", return_value=True), patch.object(
-        gra, "check_crane_installed", return_value=True
     ), patch.object(
         gra, "load_ci_data_from_run_id", return_value={"model-a": {}}
     ) as load_ci_data_mock, patch.object(
         gra, "merge_specs_with_ci_data", return_value=merged_spec
     ), patch.object(
-        gra, "generate_release_artifacts", return_value=result_tuple
-    ), patch.object(
-        gra,
-        "validate_model_spec_template_images",
-        return_value=TemplateImageValidationResult(),
-    ), patch.object(gra, "write_output"), patch.object(gra, "emit_markdown_summary"):
+        gra, "generate_release_artifact_outputs"
+    ) as outputs_mock, patch.object(gra, "get_version", return_value="0.10.0"):
         assert gra.main() == 0
 
     load_ci_data_mock.assert_called_once_with(
         23578993514, output_dir, workflow_file="on-nightly.yml"
     )
+    request = outputs_mock.call_args.args[0]
+    assert request.release is False
 
 
-def test_main_dev_flow_skips_release_only_compatibility_outputs(tmp_path):
-    ci_artifacts_path = tmp_path / "release_logs" / "v0.10.0"
-    ci_artifacts_path.mkdir(parents=True)
-    output_dir = tmp_path / "release_logs" / "v0.10.0"
-    args = Namespace(
-        ci_artifacts_path=str(ci_artifacts_path),
-        models_ci_run_id=None,
-        report_data_json=None,
-        out_root=None,
-        dev=True,
-        release=False,
-        output_dir=str(output_dir),
-        model_spec_path=str(tmp_path / "workflows" / "model_spec.py"),
-        readme_path=str(tmp_path / "README.md"),
-        release_model_spec_path=str(tmp_path / "release_model_spec.json"),
-        dry_run=False,
-    )
-    merged_spec = {"model-a": make_record("model-a", make_image("demo", channel="dev"))}
-    result_tuple = (defaultdict(list), 0, {}, {}, defaultdict(list))
-
-    with patch.object(gra, "configure_logging"), patch.object(
-        gra, "get_versioned_release_logs_dir", return_value=output_dir
-    ), patch(
-        "argparse.ArgumentParser.parse_args",
-        return_value=args,
-    ), patch.object(
-        gra, "resolve_release_output_dir", return_value=output_dir
-    ), patch.object(gra, "check_docker_installed", return_value=True), patch.object(
-        gra, "check_crane_installed", return_value=True
-    ), patch.object(
-        gra, "load_ci_data_from_artifacts_path", return_value={"model-a": {}}
-    ), patch.object(
-        gra, "merge_specs_with_ci_data", return_value=merged_spec
-    ), patch.object(
-        gra, "generate_release_artifacts", return_value=result_tuple
-    ), patch.object(
-        gra,
-        "validate_model_spec_template_images",
-        return_value=TemplateImageValidationResult(),
-    ), patch.object(gra, "write_output"), patch.object(
-        gra, "write_release_model_spec_output"
-    ) as export_mock, patch.object(
-        gra, "regenerate_model_support_docs_and_update_readme"
-    ) as docs_mock, patch.object(
-        gra, "write_release_notes"
-    ) as release_notes_mock, patch.object(gra, "emit_markdown_summary"):
-        assert gra.main() == 0
-
-    export_mock.assert_not_called()
-    docs_mock.assert_not_called()
-    release_notes_mock.assert_not_called()
-
-
-def test_main_fails_after_promotion_when_template_images_are_missing(tmp_path):
-    ci_artifacts_path = tmp_path / "release_logs" / "v0.10.0"
-    ci_artifacts_path.mkdir(parents=True)
-    output_dir = tmp_path / "release_logs" / "v0.10.0"
-    args = Namespace(
-        ci_artifacts_path=str(ci_artifacts_path),
-        models_ci_run_id=None,
-        report_data_json=None,
-        out_root=None,
-        dev=False,
-        release=True,
-        output_dir=str(output_dir),
-        model_spec_path=str(tmp_path / "workflows" / "model_spec.py"),
-        readme_path=str(tmp_path / "README.md"),
-        release_model_spec_path=str(tmp_path / "release_model_spec.json"),
-        dry_run=False,
-    )
-    merged_spec = {"model-a": make_record("model-a", make_image("demo"))}
-    result_tuple = (defaultdict(list), 0, {}, {}, defaultdict(list))
-    validation_result = TemplateImageValidationResult(
-        missing_images=(
-            MissingTemplateImage(
-                image="ghcr.io/tenstorrent/demo-release-image:tag",
-                references=(
-                    TemplateImageReference(
-                        template_label="demo-impl | engine=vllm | weights=demo/model | devices=N150",
-                        model_ids=("id_demo_impl_model_n150",),
-                    ),
-                ),
-            ),
-        )
-    )
-
-    with patch.object(gra, "configure_logging"), patch.object(
-        gra, "get_versioned_release_logs_dir", return_value=output_dir
-    ), patch(
-        "argparse.ArgumentParser.parse_args",
-        return_value=args,
-    ), patch.object(
-        gra, "resolve_release_output_dir", return_value=output_dir
-    ), patch.object(gra, "check_docker_installed", return_value=True), patch.object(
-        gra, "check_crane_installed", return_value=True
-    ), patch.object(
-        gra, "load_ci_data_from_artifacts_path", return_value={"model-a": {}}
-    ), patch.object(
-        gra, "merge_specs_with_ci_data", return_value=merged_spec
-    ), patch.object(
-        gra, "generate_release_artifacts", return_value=result_tuple
-    ) as generate_mock, patch.object(
-        gra,
-        "validate_model_spec_template_images",
-        return_value=validation_result,
-    ) as validate_mock, patch.object(
-        gra,
-        "format_missing_template_image_validation_error",
-        return_value="missing template image",
-    ) as format_mock, patch.object(
-        gra, "build_acceptance_warnings"
-    ) as acceptance_mock, patch.object(
-        gra, "write_output"
-    ) as write_output_mock, patch.object(gra, "emit_markdown_summary") as emit_mock:
-        assert gra.main() == 1
-
-    generate_mock.assert_called_once_with(
-        merged_spec,
-        False,
-        image_exists_cache={},
-        allow_ci_promotion=True,
-    )
-    validate_mock.assert_called_once()
-    format_mock.assert_called_once_with(validation_result, is_dev=False)
-    acceptance_mock.assert_not_called()
-    write_output_mock.assert_not_called()
-    emit_mock.assert_not_called()
-
-
-def test_run_from_args_report_data_json_dispatches_and_recomputes_acceptance(tmp_path):
+def test_run_from_args_report_data_json_dispatches_and_builds_release_request(tmp_path):
     report_path = tmp_path / "report_data_demo.json"
     report_path.write_text(json.dumps(make_release_report(parameter_status="failed")))
     output_dir = tmp_path / "release_logs" / "v0.10.0"
@@ -1337,43 +1212,17 @@ def test_run_from_args_report_data_json_dispatches_and_recomputes_acceptance(tmp
         release_model_spec_path=str(tmp_path / "release_model_spec.json"),
         dry_run=False,
     )
-    result_tuple = (defaultdict(list), 0, {}, {}, defaultdict(list))
 
     with patch.object(
         gra, "resolve_release_output_dir", return_value=output_dir
     ), patch.object(gra, "get_version", return_value="0.10.0"), patch.object(
         gra, "load_ci_data_from_report_data_json", return_value={"demo_model": {}}
     ) as load_report_mock, patch.object(
-        gra, "check_docker_installed", return_value=True
-    ), patch.object(gra, "check_crane_installed") as crane_mock, patch.object(
         gra, "merge_specs_with_ci_data", return_value=merged_spec
-    ), patch.object(
-        gra, "generate_release_artifacts", return_value=result_tuple
-    ) as generate_mock, patch.object(
-        gra,
-        "validate_model_spec_template_images",
-        return_value=TemplateImageValidationResult(),
-    ), patch.object(
-        gra, "write_release_performance_outputs", return_value={"models": {}}
-    ), patch.object(gra, "write_release_performance_diff_output"), patch.object(
-        gra, "write_release_model_spec_output"
-    ), patch.object(
-        gra, "regenerate_model_support_docs_and_update_readme"
-    ), patch.object(
-        gra, "write_release_notes", return_value=output_dir / "release_notes.md"
-    ), patch.object(gra, "emit_markdown_summary"), patch.object(
-        gra, "write_output"
-    ) as write_output_mock:
+    ), patch.object(gra, "generate_release_artifact_outputs") as outputs_mock:
         assert gra.run_from_args(args) == 0
 
     load_report_mock.assert_called_once_with(report_path)
-    crane_mock.assert_not_called()
-    generate_mock.assert_called_once_with(
-        merged_spec,
-        False,
-        image_exists_cache={},
-        allow_ci_promotion=False,
-    )
-    acceptance_warnings = write_output_mock.call_args.kwargs["acceptance_warnings"]
-    assert len(acceptance_warnings) == 1
-    assert acceptance_warnings[0]["model_id"] == "demo_model"
+    outputs_mock.assert_called_once()
+    request = outputs_mock.call_args.args[0]
+    assert request.release is True

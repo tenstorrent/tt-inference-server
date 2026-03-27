@@ -4,36 +4,20 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 """
-Create release image artifacts by copying CI docker images to release registry.
+Generate Step-5 release compatibility, documentation, and performance artifacts.
 
-This script manages docker image artifacts for releases by:
-- Merging raw release CI workflow data with MODEL_SPECS
-- Checking if release docker images exist on remote
-- Copying CI docker images to release registry using crane
-- Tracking images that need building in JSON and markdown output
-- Generating versioned release notes for release runs
+This script owns the release-artifact generation step by:
+- Loading CI or standalone report data for the finalized release branch
+- Recomputing acceptance warnings from raw release report data
+- Updating the checked-in release performance baseline and diff output
+- Exporting `release_model_spec.json`
+- Regenerating `docs/model_support/` and the root `README.md`
 
 Usage:
-    python3 generate_release_artifacts.py <ci_artifacts_path> [--dev | --release] [--dry-run]
-    python3 generate_release_artifacts.py --models-ci-run-id <run_id> [--dev | --release] [--dry-run]
-    python3 generate_release_artifacts.py --report-data-json <path> [--dev | --release] [--dry-run]
+    python3 generate_release_artifacts.py <ci_artifacts_path> --release [--dry-run]
+    python3 generate_release_artifacts.py --models-ci-run-id <run_id> --release [--dry-run]
+    python3 generate_release_artifacts.py --report-data-json <path> --release [--dry-run]
     python3 generate_release_artifacts.py --help
-
-Examples:
-    # Update dev images from downloaded CI artifacts
-    python3 generate_release_artifacts.py release_logs/v{VERSION} --dev
-
-    # Update release images from downloaded CI artifacts
-    python3 generate_release_artifacts.py release_logs/v{VERSION} --release
-
-    # Automatically fetch CI data by run ID and update dev images
-    python3 generate_release_artifacts.py --models-ci-run-id 19339722549 --dev
-
-    # Dry-run dev images
-    python3 generate_release_artifacts.py release_logs/v{VERSION} --dev --dry-run
-
-    # Run the full release-artifact flow from one local report_data JSON
-    python3 generate_release_artifacts.py --report-data-json release_logs/v{VERSION}/report_data_*.json --release
 """
 
 import argparse
@@ -68,10 +52,6 @@ try:
         load_git_release_performance_data,
         load_optional_json,
     )
-    from validate_model_spec_template_images import (
-        format_missing_template_image_validation_error,
-        validate_model_spec_template_images,
-    )
     from release_performance import (
         build_release_performance_data,
         build_release_performance_diff_data,
@@ -98,10 +78,6 @@ except ImportError:
         build_release_notes,
         load_git_release_performance_data,
         load_optional_json,
-    )
-    from scripts.release.validate_model_spec_template_images import (
-        format_missing_template_image_validation_error,
-        validate_model_spec_template_images,
     )
     from scripts.release.release_performance import (
         build_release_performance_data,
@@ -157,6 +133,31 @@ class ImagePlan:
     model_ids: Tuple[str, ...]
     status: str
     ci_source_image: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class ReleaseArtifactsRequest:
+    """Typed Step-5 request built from CLI inputs."""
+
+    merged_spec: Dict[str, MergedModelRecord]
+    output_dir: Path
+    model_spec_path: Path
+    readme_path: Path
+    release_model_spec_path: Path
+    version: str
+    dry_run: bool
+    release: bool
+
+
+@dataclass(frozen=True)
+class ReleaseArtifactsResult:
+    """Typed Step-5 result used by wrappers and tests."""
+
+    generated_artifacts: Tuple[str, ...]
+    acceptance_warnings: Tuple[Dict[str, Any], ...]
+    acceptance_warnings_path: Optional[Path]
+    release_performance_path: Optional[Path]
+    release_performance_diff_path: Optional[Path]
 
 
 def configure_logging() -> None:
@@ -1108,8 +1109,6 @@ def write_release_performance_outputs(
 
 def build_acceptance_warnings(
     merged_spec: Dict[str, MergedModelRecord],
-    *,
-    recompute_benchmark_target_evaluation: bool = False,
 ) -> List[Dict[str, Any]]:
     """Recompute release acceptance from raw reports and return warning entries."""
     warnings: List[Dict[str, Any]] = []
@@ -1118,22 +1117,15 @@ def build_acceptance_warnings(
         if not isinstance(release_report, dict) or not release_report:
             continue
 
-        if recompute_benchmark_target_evaluation:
-            benchmark_target_evaluation = evaluate_benchmark_targets(
-                release_report, model_spec=record.model_spec
-            )
-        else:
-            benchmark_target_evaluation = release_report.get(
-                "benchmark_target_evaluation"
-            )
+        benchmark_target_evaluation = evaluate_benchmark_targets(
+            release_report, model_spec=record.model_spec
+        )
         accepted, acceptance_blockers = acceptance_criteria_check(
             release_report,
             benchmark_target_evaluation=benchmark_target_evaluation
             if isinstance(benchmark_target_evaluation, dict)
             else None,
-            model_spec=record.model_spec
-            if recompute_benchmark_target_evaluation
-            else None,
+            model_spec=record.model_spec,
         )
         if accepted:
             continue
@@ -1163,6 +1155,24 @@ def build_acceptance_warnings(
         )
 
     return warnings
+
+
+def write_acceptance_warnings_output(
+    warnings: List[Dict[str, Any]], output_dir: Path, dry_run: bool
+) -> Optional[Path]:
+    """Persist Step-5 acceptance warnings for later Step-6 summary generation."""
+    if dry_run:
+        logger.info(
+            "Dry-run mode: skipping acceptance warnings output in %s",
+            output_dir / "release_acceptance_warnings.json",
+        )
+        return None
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "release_acceptance_warnings.json"
+    output_path.write_text(json.dumps(warnings, indent=2), encoding="utf-8")
+    logger.info("Written release acceptance warnings to %s", output_path)
+    return output_path
 
 
 def require_release_diff_path(output_dir: Path) -> Path:
@@ -1258,29 +1268,18 @@ def emit_markdown_summary(markdown_path: Path) -> None:
 
 def build_generated_artifact_paths(
     *,
-    image_target: str,
     output_dir: Path,
-    version: str,
     release_model_spec_path: Path,
     readme_path: Path,
 ) -> List[str]:
-    """Return repo-relative paths for the artifacts documented by this release run."""
-    generated_paths = [
-        str(output_dir / f"{image_target}_artifacts_summary.json"),
-        str(output_dir / f"{image_target}_artifacts_summary.md"),
+    """Return repo-relative paths for the Step-5 artifacts produced for a release."""
+    return [
+        str(release_model_spec_path),
+        "docs/model_support/",
+        str(readme_path),
+        str(output_dir / "release_performance_diff.json"),
+        str(get_release_performance_path()),
     ]
-    if image_target == "release":
-        generated_paths.extend(
-            [
-                str(release_model_spec_path),
-                "docs/model_support/",
-                str(readme_path),
-                str(output_dir / "release_performance_diff.json"),
-                str(output_dir / f"release_notes_v{version}.md"),
-                str(get_release_performance_path()),
-            ]
-        )
-    return generated_paths
 
 
 def add_cli_arguments(
@@ -1395,7 +1394,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     """Parse and validate CLI arguments."""
     default_output_dir = get_versioned_release_logs_dir()
     parser = argparse.ArgumentParser(
-        description="Create release image artifacts by copying CI docker images",
+        description="Generate Step-5 release artifacts from CI or report data",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -1409,12 +1408,93 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return args
 
 
+def build_release_artifacts_request(
+    args: argparse.Namespace, merged_spec: Dict[str, MergedModelRecord]
+) -> ReleaseArtifactsRequest:
+    """Build the typed Step-5 request from parsed CLI inputs."""
+    return ReleaseArtifactsRequest(
+        merged_spec=merged_spec,
+        output_dir=resolve_release_output_dir(args.output_dir),
+        model_spec_path=Path(args.model_spec_path),
+        readme_path=Path(args.readme_path),
+        release_model_spec_path=Path(args.release_model_spec_path),
+        version=get_version(),
+        dry_run=args.dry_run,
+        release=bool(args.release),
+    )
+
+
+def generate_release_artifact_outputs(
+    request: ReleaseArtifactsRequest,
+) -> ReleaseArtifactsResult:
+    """Execute Step 5 and return the structured release-artifact result."""
+    if not request.release:
+        logger.info(
+            "Dev mode no longer performs image promotion here; no Step-5 release artifacts generated."
+        )
+        return ReleaseArtifactsResult(
+            generated_artifacts=(),
+            acceptance_warnings=(),
+            acceptance_warnings_path=None,
+            release_performance_path=None,
+            release_performance_diff_path=None,
+        )
+
+    logger.info("\nStep 2: Recomputing release acceptance warnings...")
+    acceptance_warnings = build_acceptance_warnings(request.merged_spec)
+    acceptance_warnings_path = write_acceptance_warnings_output(
+        acceptance_warnings,
+        request.output_dir,
+        request.dry_run,
+    )
+
+    logger.info("\nStep 3: Writing release performance outputs...")
+    release_performance_data = write_release_performance_outputs(
+        request.merged_spec,
+        request.output_dir,
+        request.dry_run,
+    )
+
+    logger.info("\nStep 4: Writing release performance diff output...")
+    release_performance_diff_path = write_release_performance_diff_output(
+        request.output_dir,
+        release_performance_data,
+    )
+
+    logger.info("\nStep 5: Writing release model spec compatibility artifact...")
+    write_release_model_spec_output(
+        model_spec_path=request.model_spec_path,
+        output_path=request.release_model_spec_path,
+        dry_run=request.dry_run,
+    )
+
+    logger.info("\nStep 6: Regenerating model support docs and README...")
+    regenerate_model_support_docs_and_update_readme(
+        model_spec_path=request.model_spec_path,
+        readme_path=request.readme_path,
+        release_performance_data=release_performance_data,
+        dry_run=request.dry_run,
+    )
+
+    generated_artifacts = tuple(
+        build_generated_artifact_paths(
+            output_dir=request.output_dir,
+            release_model_spec_path=request.release_model_spec_path,
+            readme_path=request.readme_path,
+        )
+    )
+    return ReleaseArtifactsResult(
+        generated_artifacts=generated_artifacts,
+        acceptance_warnings=tuple(acceptance_warnings),
+        acceptance_warnings_path=acceptance_warnings_path,
+        release_performance_path=get_release_performance_path(),
+        release_performance_diff_path=release_performance_diff_path,
+    )
+
+
 def run_from_args(args: argparse.Namespace) -> int:
     """Run the release-artifact flow from parsed CLI arguments."""
-    output_dir = resolve_release_output_dir(args.output_dir)
-    version = get_version()
     ci_data: Dict[str, Dict[str, Any]]
-    report_only_mode = bool(args.report_data_json)
 
     if args.models_ci_run_id is not None:
         ci_data = load_ci_data_from_run_id(
@@ -1427,142 +1507,33 @@ def run_from_args(args: argparse.Namespace) -> int:
     else:
         ci_data = load_ci_data_from_artifacts_path(Path(args.ci_artifacts_path))
 
-    image_target = "dev" if args.dev else "release"
+    output_dir = resolve_release_output_dir(args.output_dir)
+    run_target = "dev" if args.dev else "release"
 
     logger.info("=" * 80)
-    logger.info("RELEASE IMAGE ARTIFACTS SCRIPT")
+    logger.info("RELEASE ARTIFACT GENERATION")
     logger.info("=" * 80)
     logger.info(f"Loaded CI entries: {len(ci_data)}")
-    logger.info(f"Image target:     {image_target}")
+    logger.info(f"Run target:       {run_target}")
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"Dry-run mode:     {args.dry_run}")
     logger.info("=" * 80 + "\n")
 
-    if not check_docker_installed():
-        return 1
-    if not report_only_mode and not check_crane_installed():
-        return 1
-
     logger.info("\nStep 1: Merging CI data with MODEL_SPECS...")
     merged_spec = merge_specs_with_ci_data(ci_data, args.dev)
-
-    logger.info("\nStep 2: Creating release artifacts...")
-    image_exists_cache: Dict[str, bool] = {}
-    (
-        images_to_build,
-        unique_images_count,
-        copied_images,
-        existing_with_ci_ref,
-        existing_without_ci_ref,
-    ) = generate_release_artifacts(
-        merged_spec,
-        args.dry_run,
-        image_exists_cache=image_exists_cache,
-        allow_ci_promotion=not report_only_mode,
-    )
-
-    logger.info(
-        "\nPost-promotion validation: checking ModelSpecTemplate Docker images..."
-    )
-    template_image_validation = validate_model_spec_template_images(
-        is_dev=args.dev,
-        check_image_exists=check_image_exists,
-        cache=image_exists_cache,
-    )
-    if not template_image_validation.is_valid:
-        validation_error = format_missing_template_image_validation_error(
-            template_image_validation,
-            is_dev=args.dev,
-        )
-        for line in validation_error.splitlines():
-            logger.error(line)
-        return 1
-
-    acceptance_warnings: List[Dict[str, Any]] = []
-    notes_path = None
-    generated_artifacts = build_generated_artifact_paths(
-        image_target=image_target,
-        output_dir=output_dir,
-        version=version,
-        release_model_spec_path=Path(args.release_model_spec_path),
-        readme_path=Path(args.readme_path),
-    )
-
-    if args.release:
-        logger.info("\nStep 3: Recomputing release acceptance warnings...")
-        acceptance_warnings = build_acceptance_warnings(
-            merged_spec,
-            recompute_benchmark_target_evaluation=report_only_mode,
-        )
-        logger.info("\nStep 4: Writing release performance outputs...")
-        release_performance_data = write_release_performance_outputs(
-            merged_spec, output_dir, args.dry_run
-        )
-        logger.info("\nStep 5: Writing release performance diff output...")
-        write_release_performance_diff_output(output_dir, release_performance_data)
-        logger.info("\nStep 6: Writing release model spec compatibility artifact...")
-        write_release_model_spec_output(
-            model_spec_path=Path(args.model_spec_path),
-            output_path=Path(args.release_model_spec_path),
-            dry_run=args.dry_run,
-        )
-        logger.info("\nStep 7: Regenerating model support docs and README...")
-        regenerate_model_support_docs_and_update_readme(
-            model_spec_path=Path(args.model_spec_path),
-            readme_path=Path(args.readme_path),
-            release_performance_data=release_performance_data,
-            dry_run=args.dry_run,
-        )
-        logger.info("\nStep 8: Writing output files...")
-        write_output(
-            images_to_build,
-            copied_images,
-            existing_with_ci_ref,
-            existing_without_ci_ref,
-            output_dir,
-            image_target,
-            generated_artifacts=generated_artifacts,
-            acceptance_warnings=acceptance_warnings,
-        )
-        logger.info("\nStep 9: Writing release notes...")
-        notes_path = write_release_notes(
-            output_dir,
-            version,
-            release_performance_data=release_performance_data,
-        )
-    else:
-        logger.info("\nStep 3: Writing output files...")
-        write_output(
-            images_to_build,
-            copied_images,
-            existing_with_ci_ref,
-            existing_without_ci_ref,
-            output_dir,
-            image_target,
-            generated_artifacts=generated_artifacts,
-        )
+    request = build_release_artifacts_request(args, merged_spec)
+    result = generate_release_artifact_outputs(request)
 
     logger.info("\n" + "=" * 80)
     logger.info("COMPLETED SUCCESSFULLY")
     logger.info("=" * 80)
-    if args.dry_run:
-        logger.info("This was a DRY-RUN - no release images were copied")
-        logger.info("=" * 80)
-
-    logger.info(f"Output JSON: {output_dir / f'{image_target}_artifacts_summary.json'}")
-    logger.info(
-        f"Output Markdown: {output_dir / f'{image_target}_artifacts_summary.md'}"
-    )
-    if notes_path:
-        logger.info(f"Release notes: {notes_path}")
-    if args.release:
-        logger.info(f"Release model spec: {Path(args.release_model_spec_path)}")
-    logger.info(f"Unique images to build: {unique_images_count}")
-    logger.info(f"Images promoted from Models CI: {len(copied_images)}")
-    logger.info(f"Existing images with CI backing: {len(existing_with_ci_ref)}")
-    logger.info(f"Existing images without CI backing: {len(existing_without_ci_ref)}")
-
-    emit_markdown_summary(output_dir / f"{image_target}_artifacts_summary.md")
+    if result.generated_artifacts:
+        logger.info("Generated artifacts:")
+        for artifact_path in result.generated_artifacts:
+            logger.info(" - %s", artifact_path)
+    if result.acceptance_warnings_path:
+        logger.info("Acceptance warnings: %s", result.acceptance_warnings_path)
+    logger.info("Release acceptance warnings: %s", len(result.acceptance_warnings))
 
     return 0
 

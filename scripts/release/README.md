@@ -225,14 +225,12 @@ python3 scripts/release/release.py --models-ci-run-id 23578993514 --release-bran
 
 Recompute acceptance criteria for each release report during artifact generation using
 `workflows/acceptance_criteria.py`. Any failing models are emitted as warnings in the
-logs and release artifact summary, but do not block artifact generation.
-Log and move (via [crane](https://github.com/google/go-containerregistry/blob/BASE_BRANCH_OR_COMMIT/cmd/crane/doc/crane.md)) the Docker images built within the Release workflow.
+logs and in `release_logs/v{VERSION}/release_acceptance_warnings.json`, but do not
+block artifact generation. Step 5 does not mutate container registries and does not
+write the final release summary or release notes.
 
-
-The two key release artifacts are:
-- Docker images
-- Repo compatibility artifacts and documentation
-- release notes
+The Step 5 artifacts are the repo compatibility artifacts and documentation used by
+the later release steps.
 
 When using `--models-ci-run-id` in this step, pass the Release Models CI
 workflow run ID from Step 4.
@@ -253,6 +251,7 @@ python3 scripts/release/generate_release_artifacts.py --report-data-json release
 - `README.md`: updates to the `Model Support` section (links to `docs/model_support/`)
 - `release_logs/v{VERSION}/release_performance_diff.json`
 - `benchmarking/benchmark_targets/release_performance.json`
+- `release_logs/v{VERSION}/release_acceptance_warnings.json`: structured non-blocking acceptance warnings for Step 6 summary generation
 
 The checked-in `benchmarking/benchmark_targets/release_performance.json` baseline
 stores the release benchmark summary rows plus the selected perf-target summary
@@ -263,20 +262,31 @@ to show the overview performance summary values.
 
 ```bash
 python3 scripts/release/release_images.py
+
+# validate only, no mutation
+python3 scripts/release/release_images.py --validate-only
+
+# skip local builds and only attempt CI-backed promotions
+python3 scripts/release/release_images.py --no-build
+
+# explicitly re-read a Release Models CI workflow run
+python3 scripts/release/release_images.py --models-ci-run-id 23578993514
 ```
 
 cli args:
---validate-only: 
---no-build: don't build any images, skip step 3.
+- `--validate-only`: validate release image state and write the summary without building or promoting images
+- `--no-build`: do not build missing images locally before promotion
+- `--accept-images`: skip the Enter-to-continue prompts before local builds and CI promotions
 
-1. read from `release_logs/v{VERSION}/pre_release_models_diff.md` which models are "in the release"
-2. determine that all docker images specified in `release_model_spec.json` exist, and validate that all missing images are "in the release" to be promoted
-3. [--no-build skips this step] if any images are missing, build them with `python3 scripts/build_docker_images.py --push --release`. Hold for enter to accept, or dont hold, with `--accept-images`
-4. print out all images that will be promoted. Hold for enter to accept, or dont hold, with `--accept-images`
-5. promote images to `-release-` image repository using `crane copy`: https://github.com/google/go-containerregistry/blob/BASE_BRANCH_OR_COMMIT/cmd/crane/doc/crane.md
+1. read `release_logs/v{VERSION}/pre_release_models_diff.json` to determine which models are in the release
+2. read `release_model_spec.json` to determine the full finalized set of release Docker images
+3. verify that every image referenced by `release_model_spec.json` exists, and fail fast if any missing image is outside the current release scope
+4. [--no-build skips this step] if any release-scoped images are still missing and have no valid Models CI source image, build exactly that missing set with `python3 scripts/build_docker_images.py --push --release`
+5. print out all Models CI-backed promotions. Hold for Enter to accept, or skip the prompt with `--accept-images`
+6. promote images to the `-release-` repository using `crane copy`: https://github.com/google/go-containerregistry/blob/BASE_BRANCH_OR_COMMIT/cmd/crane/doc/crane.md
   - tt-metal-vllm images like: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64 0.11.0-555f240-22be241
   - tt-media-server images like: ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34
-6. log successful image promotions and write net docker images built and promoted to: `release_logs/v{VERSION}/release_artifacts_summary.json` and `release_logs/v{VERSION}/release_artifacts_summary.md`
+7. write the final release artifact summary, including generated repo artifacts, acceptance warnings, images built locally, and images promoted from Models CI, to `release_logs/v{VERSION}/release_artifacts_summary.json` and `release_logs/v{VERSION}/release_artifacts_summary.md`
 
 #### Outputs:
   - `release_logs/v{VERSION}/release_artifacts_summary.json`
@@ -285,7 +295,7 @@ cli args:
 ### Step 7: Generate release notes
 
 ```bash
-scripts/release/generate_release_notes.py
+python3 scripts/release/generate_release_notes.py
 ```
 
 #### Outputs:
@@ -308,6 +318,9 @@ The `release_notes_v{VERSION}.md` file generated has sections, left blank if und
 ### Step 8: Make release
 
 `scripts/release/release.py` performs this automatically after Step 7 succeeds.
+It refuses to proceed if there are unexpected worktree changes outside the deterministic
+release outputs.
+
 The manual equivalent is:
 
 ```bash
