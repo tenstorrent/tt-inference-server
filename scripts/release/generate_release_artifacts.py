@@ -1173,16 +1173,13 @@ def build_generated_artifact_paths(
     return generated_paths
 
 
-def main():
-    """Main entry point for the script."""
-    configure_logging()
-    default_output_dir = get_versioned_release_logs_dir()
-    parser = argparse.ArgumentParser(
-        description="Create release image artifacts by copying CI docker images",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
-
+def add_cli_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    default_output_dir: Path,
+    include_target_flags: bool = True,
+) -> None:
+    """Add CLI arguments shared by release-artifact entrypoints."""
     parser.add_argument(
         "ci_artifacts_path",
         nargs="?",
@@ -1208,10 +1205,11 @@ def main():
             f"(default: {default_output_dir})"
         ),
     )
-    parser.add_argument("--dev", action="store_true", help="Target -dev- images")
-    parser.add_argument(
-        "--release", action="store_true", help="Target -release- images"
-    )
+    if include_target_flags:
+        parser.add_argument("--dev", action="store_true", help="Target -dev- images")
+        parser.add_argument(
+            "--release", action="store_true", help="Target -release- images"
+        )
     parser.add_argument(
         "--output-dir",
         default=None,
@@ -1239,23 +1237,51 @@ def main():
         "--dry-run", action="store_true", help="Preview actions without executing them"
     )
 
-    args = parser.parse_args()
 
-    if args.dev and args.release:
-        parser.error("--dev and --release are mutually exclusive")
-    if not args.dev and not args.release:
-        parser.error("Either --dev or --release must be specified")
+def validate_args(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    *,
+    require_target_flag: bool,
+) -> None:
+    """Validate parsed CLI arguments before execution."""
+    if require_target_flag:
+        if args.dev and args.release:
+            parser.error("--dev and --release are mutually exclusive")
+        if not args.dev and not args.release:
+            parser.error("Either --dev or --release must be specified")
 
-    if args.models_ci_run_id and args.ci_artifacts_path:
+    if args.models_ci_run_id is not None and args.ci_artifacts_path:
         parser.error("Provide --models-ci-run-id or ci_artifacts_path, not both.")
-    if not args.models_ci_run_id and not args.ci_artifacts_path:
+    if args.models_ci_run_id is None and not args.ci_artifacts_path:
         parser.error("Provide --models-ci-run-id or ci_artifacts_path.")
 
+
+def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    """Parse and validate CLI arguments."""
+    default_output_dir = get_versioned_release_logs_dir()
+    parser = argparse.ArgumentParser(
+        description="Create release image artifacts by copying CI docker images",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    add_cli_arguments(
+        parser,
+        default_output_dir=default_output_dir,
+        include_target_flags=True,
+    )
+    args = parser.parse_args(argv)
+    validate_args(parser, args, require_target_flag=True)
+    return args
+
+
+def run_from_args(args: argparse.Namespace) -> int:
+    """Run the release-artifact flow from parsed CLI arguments."""
     output_dir = resolve_release_output_dir(args.output_dir)
     version = get_version()
     ci_data: Dict[str, Dict[str, Any]]
 
-    if args.models_ci_run_id:
+    if args.models_ci_run_id is not None:
         ci_data = load_ci_data_from_run_id(
             args.models_ci_run_id,
             resolve_release_output_dir(args.out_root),
@@ -1398,6 +1424,13 @@ def main():
     emit_markdown_summary(output_dir / f"{image_target}_artifacts_summary.md")
 
     return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """Main entry point for the script."""
+    configure_logging()
+    args = parse_args(argv)
+    return run_from_args(args)
 
 
 if __name__ == "__main__":

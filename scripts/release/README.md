@@ -248,7 +248,7 @@ On success, continue Release steps.
 ## Release
 
 ```bash
-python3 release.py --models-ci-run-id 23578993514 --base-branch "${BASE_BRANCH_OR_COMMIT}" --release-branch "${RELEASE_BRANCH}"
+python3 scripts/release/release.py --models-ci-run-id 23578993514 --release-branch "${RELEASE_BRANCH}"
 ```
 
 ### step 5: generate release artifacts
@@ -316,6 +316,9 @@ Re-run `scripts/release/generate_release_artifacts.py` after this manual image b
 step it should pick up the manually added docker images.
 
 ### Step 6: Make release
+
+`scripts/release/release.py` performs this automatically after Step 5 succeeds.
+The manual equivalent is:
 
 ```bash
 git checkout "${RELEASE_BRANCH}"
