@@ -664,7 +664,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 2,
         "queue_for_multiprocessing": QueueType.BatchFifo.value,
-        "request_processing_timeout_seconds": 3000,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),
