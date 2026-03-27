@@ -136,7 +136,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
   const auto stopIds = tokenizer_->stopTokenIds();
   const std::unordered_set<int64_t> stopTokenSet(stopIds.begin(),
-                                                   stopIds.end());
+                                                 stopIds.end());
 
   std::unordered_map<std::string,
                      std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>

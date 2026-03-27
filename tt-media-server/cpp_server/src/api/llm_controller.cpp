@@ -289,7 +289,7 @@ void LLMController::handleStreaming(
       reqPtr->stream_options
           ->include_usage;  // Default to true if not specified
   const bool continuousUsage = reqPtr->stream_options.has_value() &&
-                                reqPtr->stream_options->continuous_usage_stats;
+                               reqPtr->stream_options->continuous_usage_stats;
 
   auto accumulator = tt::config::enableAccumulatedStreaming()
                          ? std::make_shared<ConcurrentQueue<std::string>>()
@@ -321,8 +321,8 @@ void LLMController::handleStreaming(
   // Submit the streaming request before setting up the HTTP stream so that a
   // full queue throws QueueFullException here, allowing us to return a proper
   // 429.
-  auto streamingCallback = [loop, streamPtr, done, completionId, model,
-                            created, isChat, includeUsage, continuousUsage,
+  auto streamingCallback = [loop, streamPtr, done, completionId, model, created,
+                            isChat, includeUsage, continuousUsage,
                             completionTokens, startTime, firstTokenTime,
                             secondTokenTime, firstContentChunk, reqPtr,
                             accumulator](
