@@ -19,24 +19,24 @@ ServerMetrics& ServerMetrics::instance() {
 
 // Quantiles reported by the latency summaries (φ, ε) — exact values, 60 s
 // window.
-static const prometheus::Summary::Quantiles kLatencyQuantiles{
+static const prometheus::Summary::Quantiles K_LATENCY_QUANTILES{
     {0.50, 0.01},
     {0.90, 0.005},
     {0.95, 0.005},
     {0.99, 0.001},
 };
 
-static const prometheus::Histogram::BucketBoundaries kPromptTokenBuckets{
+static const prometheus::Histogram::BucketBoundaries K_PROMPT_TOKEN_BUCKETS{
     1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 4096, 8192};
 
-static const prometheus::Histogram::BucketBoundaries kGenTokenBuckets{
+static const prometheus::Histogram::BucketBoundaries K_GEN_TOKEN_BUCKETS{
     1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 4096};
 
 ServerMetrics::ServerMetrics() {
   model_name_ = tt::config::runnerType();
   registry_ = std::make_shared<prometheus::Registry>();
 
-  const std::map<std::string, std::string> model_label = {
+  const std::map<std::string, std::string> modelLabel = {
       {"model_name", model_name_}};
 
   // ----- counters --------------------------------------------------------
@@ -44,14 +44,14 @@ ServerMetrics::ServerMetrics() {
                               .Name("tt_prompt_tokens_total")
                               .Help("Total number of prompt tokens processed")
                               .Register(*registry_)
-                              .Add(model_label);
+                              .Add(modelLabel);
 
   generation_tokens_total_ =
       &prometheus::BuildCounter()
            .Name("tt_generation_tokens_total")
            .Help("Total number of generation tokens produced")
            .Register(*registry_)
-           .Add(model_label);
+           .Add(modelLabel);
 
   request_success_family_ =
       &prometheus::BuildCounter()
@@ -84,35 +84,35 @@ ServerMetrics::ServerMetrics() {
            .Name("tt_e2e_request_latency_seconds")
            .Help("End-to-end request latency from submission to final token")
            .Register(*registry_)
-           .Add(model_label, kLatencyQuantiles, std::chrono::seconds{60}, 5);
+           .Add(modelLabel, K_LATENCY_QUANTILES, std::chrono::seconds{60}, 5);
 
   ttft_seconds_ =
       &prometheus::BuildSummary()
            .Name("tt_time_to_first_token_seconds")
            .Help("Time from request submission to first generated token")
            .Register(*registry_)
-           .Add(model_label, kLatencyQuantiles, std::chrono::seconds{60}, 5);
+           .Add(modelLabel, K_LATENCY_QUANTILES, std::chrono::seconds{60}, 5);
 
   inter_token_latency_seconds_ =
       &prometheus::BuildSummary()
            .Name("tt_inter_token_latency_seconds")
            .Help("Latency between consecutive generated tokens (decode step)")
            .Register(*registry_)
-           .Add(model_label, kLatencyQuantiles, std::chrono::seconds{60}, 5);
+           .Add(modelLabel, K_LATENCY_QUANTILES, std::chrono::seconds{60}, 5);
 
   request_prompt_tokens_ =
       &prometheus::BuildHistogram()
            .Name("tt_request_prompt_tokens")
            .Help("Distribution of prompt token counts per request")
            .Register(*registry_)
-           .Add(model_label, kPromptTokenBuckets);
+           .Add(modelLabel, K_PROMPT_TOKEN_BUCKETS);
 
   request_generation_tokens_ =
       &prometheus::BuildHistogram()
            .Name("tt_request_generation_tokens")
            .Help("Distribution of generated token counts per request")
            .Register(*registry_)
-           .Add(model_label, kGenTokenBuckets);
+           .Add(modelLabel, K_GEN_TOKEN_BUCKETS);
 
   // ----- start background metrics thread ----------------------------------
   running_ = true;
@@ -130,34 +130,34 @@ ServerMetrics::~ServerMetrics() {
 // Zero prometheus work on the calling thread.
 // -----------------------------------------------------------------------------
 
-void ServerMetrics::onRequestSubmitted(const std::string& task_id,
-                                       int prompt_tokens) {
+void ServerMetrics::onRequestSubmitted(const std::string& taskId,
+                                       int promptTokens) {
   if (!tryPushEvent(EventRequestSubmitted{
-          task_id, std::chrono::steady_clock::now(), prompt_tokens})) {
+          taskId, std::chrono::steady_clock::now(), promptTokens})) {
     TT_LOG_WARN("[ServerMetrics] event queue full, dropping RequestSubmitted");
   }
 }
 
-void ServerMetrics::onToken(const std::string& task_id) {
+void ServerMetrics::onToken(const std::string& taskId) {
   if (!tryPushEvent(
-          EventFirstToken{task_id, std::chrono::steady_clock::now()})) {
+          EventFirstToken{taskId, std::chrono::steady_clock::now()})) {
     TT_LOG_WARN("[ServerMetrics] event queue full, dropping FirstToken");
   }
 }
 
-void ServerMetrics::onITLSample(const std::string& task_id,
-                                double itl_seconds) {
-  if (!tryPushEvent(EventITLSample{task_id, itl_seconds})) {
+void ServerMetrics::onITLSample(const std::string& taskId,
+                                double itlSeconds) {
+  if (!tryPushEvent(EventITLSample{taskId, itlSeconds})) {
     TT_LOG_WARN("[ServerMetrics] event queue full, dropping ITLSample");
   }
 }
 
-void ServerMetrics::onRequestCompleted(const std::string& task_id,
-                                       const std::string& finish_reason,
-                                       int generation_tokens) {
-  if (!tryPushEvent(EventRequestCompleted{task_id,
+void ServerMetrics::onRequestCompleted(const std::string& taskId,
+                                       const std::string& finishReason,
+                                       int generationTokens) {
+  if (!tryPushEvent(EventRequestCompleted{taskId,
                                           std::chrono::steady_clock::now(),
-                                          finish_reason, generation_tokens})) {
+                                          finishReason, generationTokens})) {
     TT_LOG_WARN("[ServerMetrics] event queue full, dropping RequestCompleted");
   }
 }
@@ -176,12 +176,12 @@ bool ServerMetrics::tryPushEvent(MetricsEvent event) {
   if (event_queue_.size() >= kMaxEventQueueSize) {
     return false;
   }
-  const bool was_empty = event_queue_.empty();
+  const bool wasEmpty = event_queue_.empty();
   event_queue_.push(std::move(event));
   // Only wake the consumer when the queue transitions empty → non-empty.
   // Notifying on every push causes a futex syscall per token (~120k/s on the
   // mock runner), which is the dominant source of overhead.
-  if (was_empty) event_queue_cv_.notify_one();
+  if (wasEmpty) event_queue_cv_.notify_one();
   return true;
 }
 
