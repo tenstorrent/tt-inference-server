@@ -100,6 +100,10 @@ FetchContent_MakeAvailable(spdlog)
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost REQUIRED)
 
+# tt-blaze pipeline_manager (core-only, no hardware deps)
+set(PM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+add_subdirectory(tt-blaze/pipeline_manager)
+
 # Option for Tracy support
 option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
 
@@ -205,6 +209,7 @@ set(LLM_ENGINE_SOURCES
     src/utils/llama_tokenizer.cpp
     src/utils/tokenizer_config_loader.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
+    src/runners/sp_pipeline_runner/sp_pipeline_runner_demo.cpp
     src/runners/sp_pipeline_runner/i_sp_pipeline_model_runner.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
     src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
@@ -227,7 +232,7 @@ target_include_directories(llm_engine PUBLIC
     ${TT_METAL_INCLUDE_DIRS}
 )
 # Link tokenizers_cpp and JsonCpp since settings.cpp depends on tokenizer.hpp
-target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp)
+target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp PipelineManager::Core)
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     target_compile_definitions(llm_engine PUBLIC USE_METAL_CPP_LIB)
     # Find tt_metal library directory

@@ -6,6 +6,7 @@
 #include "runners/embedding_runner.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
+#include "sp_pipeline_runner/sp_pipeline_runner_demo.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::utils::runner_factory {
@@ -25,6 +26,10 @@ std::unique_ptr<runners::IRunner> createRunner(
 
       if (cfg.runner_type == config::ModelRunnerType::PIPELINE ||
           cfg.runner_type == config::ModelRunnerType::MOCK_PIPELINE) {
+        TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner");
+        return std::make_unique<runners::SpPipelineRunnerDemo>(cfg, resultQueue,
+                                                               taskQueue);
+      } else if (cfg.runner_type == config::ModelRunnerType::PIPELINE_MANAGER) {
         TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner");
         return std::make_unique<runners::SpPipelineRunner>(cfg, resultQueue,
                                                            taskQueue);

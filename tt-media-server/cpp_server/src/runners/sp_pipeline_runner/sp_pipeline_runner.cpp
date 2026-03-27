@@ -7,11 +7,11 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <pipeline_manager/pipeline_manager_types.hpp>
 #include <thread>
 
 #include "llm_runner/sequence.hpp"
 #include "utils/logger.hpp"
-#include <pipeline_manager/pipeline_manager_types.hpp>
 
 namespace {
 
@@ -26,7 +26,7 @@ inline pm::ISRequest makeCancelRequest(uint32_t slotId) {
 }
 
 inline void fillSequenceFields(pm::ISRequest& req,
-                                 const llm_engine::Sequence& seq) {
+                               const llm_engine::Sequence& seq) {
   req.token_count = static_cast<uint32_t>(seq.tokenIds.size());
   for (uint32_t i = 0; i < req.token_count && i < pm::MAX_SEQ_LEN; i++) {
     req.tokens[i] = static_cast<uint32_t>(seq.tokenIds[i]);
@@ -39,7 +39,7 @@ inline void fillSequenceFields(pm::ISRequest& req,
 }
 
 inline pm::ISRequest makeSubmitRequest(uint32_t slotId,
-                                 const llm_engine::Sequence& seq) {
+                                       const llm_engine::Sequence& seq) {
   pm::ISRequest req{};
   req.type = pm::RequestType::SUBMIT;
   req.slot_id = slotId;
@@ -48,7 +48,7 @@ inline pm::ISRequest makeSubmitRequest(uint32_t slotId,
 }
 
 inline pm::ISRequest makeContinueRequest(uint32_t slotId,
-                                   const llm_engine::Sequence& seq) {
+                                         const llm_engine::Sequence& seq) {
   pm::ISRequest req{};
   req.type = pm::RequestType::CONTINUE;
   req.slot_id = slotId;
@@ -69,8 +69,9 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       taskQueue(taskQueue),
       maxInFlightCount(config.max_in_flight_count * 30) {
   memoryThread = std::thread([this] { memoryLoop(); });
-  pipeline = std::make_unique<tt_blaze::pipeline_manager::MockPipeline>(); 
-  pipelineManager = std::make_unique<tt_blaze::pipeline_manager::PipelineManager>(*pipeline);
+  pipeline = std::make_unique<tt_blaze::pipeline_manager::MockPipeline>();
+  pipelineManager =
+      std::make_unique<tt_blaze::pipeline_manager::PipelineManager>(*pipeline);
   pipelineManager->start();
 }
 
@@ -103,7 +104,7 @@ bool SpPipelineRunner::warmup() {
       warmupTaskId,
       1,  // block_size (doesn't matter for warmup)
       warmupTokens, warmupParams);
-  
+
   pipelineManager->push_request(makeAllocateRequest(nextRequestID++));
 
   pm::PMResponse response{};
@@ -176,7 +177,10 @@ void SpPipelineRunner::memoryLoop() {
 }
 
 void SpPipelineRunner::step() {
-  pipelineManager->tick();
+  // an open question: do we want to drain the task, response and output queues
+  // here? or just pop each one once every iteration? I am afraid of starvation.
+
+  pipelineManager->tick();  // temporary until PM gains the API thread ?
   auto response = getResponse();
   if (response.has_value()) {
     handleResponse(*response);
@@ -244,7 +248,9 @@ void SpPipelineRunner::handleResponse(pm::PMResponse& response) {
   auto seq = std::move(it->second);
   requestToSequence.erase(it);
   if (response.error_code != 0) {
-    TT_LOG_ERROR("SpPipelineRunner: Response for request {} returned error code {}", response.request_id, response.error_code);
+    TT_LOG_ERROR(
+        "SpPipelineRunner: Response for request {} returned error code {}",
+        response.request_id, response.error_code);
     pushErrorToken(seq->taskId);
     return;
   }
@@ -265,15 +271,19 @@ void SpPipelineRunner::handleOutput(pm::OutputMessage& output) {
   bool finished = output.is_complete || stopTokenIds.count(output.token_id);
   pushToken(seq.taskId, output.token_id, finished);
   if (finished) {
+    // We need a mechanism here for when to evict in the future, we dont support
+    // multi-turn conversations yet because we cancel the slot after the first
+    // prompt.
     pipelineManager->push_request(makeCancelRequest(output.slot_id));
     slotToSequence.erase(it);
     --inFlightCount;
   }
 }
 
-
-void SpPipelineRunner::handleRequest(std::unique_ptr<llm_engine::Sequence> request) {
-  if (auto slotId = request->getKVCacheAddress(); slotId != llm_engine::INVALID_KV_CACHE_ADDRESS) {
+void SpPipelineRunner::handleRequest(
+    std::unique_ptr<llm_engine::Sequence> request) {
+  if (auto slotId = request->getKVCacheAddress();
+      slotId != llm_engine::INVALID_KV_CACHE_ADDRESS) {
     auto slot = static_cast<uint32_t>(slotId);
     pipelineManager->push_request(makeContinueRequest(slot, *request));
     slotToSequence[slot] = std::move(request);

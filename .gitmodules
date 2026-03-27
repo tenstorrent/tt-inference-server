@@ -1,0 +1,6 @@
+[submodule "tt-media-server/cpp_server/tt-media-server/cpp_server/tt-blaze"]
+	path = tt-media-server/cpp_server/tt-media-server/cpp_server/tt-blaze
+	url = git@github.com:tenstorrent/tt-blaze.git
+[submodule "tt-media-server/cpp_server/tt-blaze"]
+	path = tt-media-server/cpp_server/tt-blaze
+	url = git@github.com:tenstorrent/tt-blaze.git
