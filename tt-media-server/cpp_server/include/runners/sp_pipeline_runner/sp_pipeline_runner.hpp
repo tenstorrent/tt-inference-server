@@ -43,10 +43,10 @@ class SpPipelineRunner : public IRunner {
   
   std::optional<tt_blaze::pipeline_manager::PMResponse> getResponse();
   std::optional<tt_blaze::pipeline_manager::OutputMessage> getOutput();
-  bool handleResponse(tt_blaze::pipeline_manager::PMResponse& response);
-  bool handleOutput(tt_blaze::pipeline_manager::OutputMessage& output);
+  void handleResponse(tt_blaze::pipeline_manager::PMResponse& response);
+  void handleOutput(tt_blaze::pipeline_manager::OutputMessage& output);
   std::unique_ptr<llm_engine::Sequence> getRequest();
-  bool handleRequest(std::unique_ptr<llm_engine::Sequence> request);
+  void handleRequest(std::unique_ptr<llm_engine::Sequence> request);
 
   tt::config::LLMConfig config;
   std::unordered_set<int64_t> stopTokenIds;

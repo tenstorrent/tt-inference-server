@@ -17,6 +17,8 @@ using TaskID = tt::domain::TaskID;
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
 
+constexpr int32_t INVALID_KV_CACHE_ADDRESS = -1;
+
 struct TokenResult {
   TaskID taskId;
   uint64_t tokenId = 0;
@@ -78,7 +80,7 @@ class Sequence {
  private:
   size_t numTokens() const { return tokenIds.size(); }
   int blockSize;
-  uint64_t address = 0x0;
+  int32_t address = INVALID_KV_CACHE_ADDRESS;
 };
 
 }  // namespace llm_engine
