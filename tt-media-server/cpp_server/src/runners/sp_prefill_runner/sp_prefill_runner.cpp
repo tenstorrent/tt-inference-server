@@ -6,9 +6,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
-#include <thread>
 
-#include "domain/manage_memory.hpp"
 #include "ipc/shared_memory.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
@@ -24,8 +22,6 @@ SpPrefillRunner::SpPrefillRunner(const config::LLMConfig& config,
       taskQueue(taskQueue),
       prefillQueue(256),  // Small queue since we only have 1 in flight
       activeSequence(nullptr) {
-  memoryThread = std::thread([this] { memoryLoop(); });
-
   auto prefillCb = [this](const llm_engine::TokenResult& result) {
     while (!prefillQueue.push(result)) {
       std::this_thread::yield();
@@ -37,9 +33,6 @@ SpPrefillRunner::SpPrefillRunner(const config::LLMConfig& config,
 
 SpPrefillRunner::~SpPrefillRunner() {
   stop();
-  if (memoryThread.joinable()) {
-    memoryThread.join();
-  }
   if (modelRunner) {
     modelRunner->exit();
   }
@@ -47,7 +40,45 @@ SpPrefillRunner::~SpPrefillRunner() {
 
 void SpPrefillRunner::run() {
   while (!stopped.load(std::memory_order_relaxed)) {
-    step();
+    // Get next sequence from task queue
+    auto* seq = taskQueue->tryPop();
+    if (!seq) {
+      std::this_thread::yield();
+      continue;
+    }
+
+    activeSequence.reset(seq);
+    TT_LOG_DEBUG("SpPrefillRunner: Starting prefill for task {}",
+                 activeSequence->taskId.id);
+
+    // Send prefill request
+    modelRunner->write(activeSequence->taskId.id, activeSequence->tokenIds);
+
+    // Wait synchronously for the single prefill token
+    llm_engine::TokenResult result;
+    while (!stopped.load(std::memory_order_relaxed)) {
+      if (prefillQueue.pop(result)) {
+        break;
+      }
+      std::this_thread::yield();
+    }
+
+    if (stopped.load(std::memory_order_relaxed)) {
+      break;
+    }
+
+    // Process the result
+    if (result.isError) {
+      TT_LOG_WARN("SpPrefillRunner: Error token for task {}", result.taskId.id);
+      pushErrorToken(result.taskId);
+    } else {
+      TT_LOG_DEBUG("SpPrefillRunner: Received prefill token {} for task {}",
+                   result.tokenId, result.taskId.id);
+      pushToken(result.taskId, result.tokenId, true);  // Always finished
+    }
+
+    // Clear active sequence
+    activeSequence.reset();
   }
 }
 
@@ -104,83 +135,6 @@ bool SpPrefillRunner::warmup() {
 void SpPrefillRunner::stop() {
   TT_LOG_INFO("SpPrefillRunner: Stopping");
   stopped.store(true, std::memory_order_relaxed);
-}
-
-void SpPrefillRunner::step() {
-  ZoneScopedN("SpPrefillRunner::step");
-
-  // Process incoming prefill results first
-  drainPrefillResults();
-
-  // If no active sequence, try to get one from the queue
-  if (!activeSequence) {
-    auto* seq = taskQueue->tryPop();
-    if (!seq) {
-      std::this_thread::yield();
-      return;
-    }
-
-    activeSequence.reset(seq);
-    TT_LOG_DEBUG("SpPrefillRunner: Starting prefill for task {}",
-                 activeSequence->taskId.id);
-
-    // Send prefill request
-    modelRunner->write(activeSequence->taskId.id, activeSequence->tokenIds);
-  }
-}
-
-void SpPrefillRunner::drainPrefillResults() {
-  ZoneScopedN("SpPrefillRunner::drainPrefillResults");
-
-  std::vector<llm_engine::TokenResult> results;
-  prefillQueue.popMany(results, 256);
-
-  for (const auto& dr : results) {
-    if (dr.isError) {
-      TT_LOG_WARN("SpPrefillRunner: Error token for task {}", dr.taskId.id);
-      pushErrorToken(dr.taskId);
-
-      // Clear active sequence if it matches
-      if (activeSequence && activeSequence->taskId == dr.taskId) {
-        activeSequence.reset();
-      }
-      continue;
-    }
-
-    TT_LOG_DEBUG("SpPrefillRunner: Received token {} for task {}", dr.tokenId,
-                 dr.taskId.id);
-
-    pushToken(dr.taskId, dr.tokenId, true);  // Always finished after prefill
-
-    // Clear active sequence if it matches
-    if (activeSequence && activeSequence->taskId == dr.taskId) {
-      activeSequence.reset();
-    }
-  }
-}
-
-void SpPrefillRunner::memoryLoop() {
-  tt::domain::ManageMemoryTask task{};
-  std::vector<tt::domain::ManageMemoryTask> retryQueue;
-
-  while (!stopped.load(std::memory_order_relaxed)) {
-    if (!retryQueue.empty()) {
-      auto result = memoryManager.handle_task(retryQueue.front());
-      if (result.status != domain::ManageMemoryStatus::WAITING) {
-        memoryResults.push(result);
-        retryQueue.erase(retryQueue.begin());
-      }
-    } else if (memoryRequests.tryPop(task)) {
-      auto result = memoryManager.handle_task(task);
-      if (result.status == domain::ManageMemoryStatus::WAITING) {
-        retryQueue.push_back(task);
-      } else {
-        memoryResults.push(result);
-      }
-    } else {
-      std::this_thread::yield();
-    }
-  }
 }
 
 void SpPrefillRunner::pushToken(const llm_engine::TaskID& taskId,
