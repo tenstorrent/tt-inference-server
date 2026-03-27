@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import base64
 import json
+import shlex
+import sys
 import uuid
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
@@ -19,6 +21,21 @@ def _short_uuid() -> str:
     """Return 8-character random UUID."""
     u = uuid.uuid4()
     return base64.urlsafe_b64encode(u.bytes)[:8].decode("utf-8")
+
+
+def get_invoked_run_command(argv=None, orig_argv=None) -> str:
+    """Return the closest available shell-safe command used to invoke run.py."""
+    active_argv = list(sys.argv if argv is None else argv)
+    active_orig_argv = list(
+        getattr(sys, "orig_argv", []) if orig_argv is None else orig_argv
+    )
+
+    if active_argv and active_orig_argv and len(active_orig_argv) >= len(active_argv):
+        suffix = active_orig_argv[-len(active_argv) :]
+        if suffix == active_argv:
+            return shlex.join(active_orig_argv)
+
+    return shlex.join(active_argv or ["run.py"])
 
 
 @dataclass
@@ -83,6 +100,7 @@ class RuntimeConfig:
     tt_metal_python_venv_dir: Optional[str] = None
     tt_metal_home: Optional[str] = None
     vllm_dir: Optional[str] = None
+    original_run_command: Optional[str] = None
 
     # Runtime state (set during execution, not from CLI)
     run_id: Optional[str] = None
@@ -140,6 +158,7 @@ class RuntimeConfig:
             tt_metal_python_venv_dir=args.tt_metal_python_venv_dir,
             tt_metal_home=args.tt_metal_home,
             vllm_dir=args.vllm_dir,
+            original_run_command=get_invoked_run_command(),
         )
 
     def to_dict(self) -> dict:
