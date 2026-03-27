@@ -147,8 +147,8 @@ void SpPrefillRunner::drainPrefillResults() {
       continue;
     }
 
-    TT_LOG_DEBUG("SpPrefillRunner: Received token {} for task {}",
-                 dr.tokenId, dr.taskId.id);
+    TT_LOG_DEBUG("SpPrefillRunner: Received token {} for task {}", dr.tokenId,
+                 dr.taskId.id);
 
     pushToken(dr.taskId, dr.tokenId, true);  // Always finished after prefill
 
