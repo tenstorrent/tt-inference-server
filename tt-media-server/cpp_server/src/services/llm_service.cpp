@@ -304,7 +304,7 @@ domain::CompletionResponse LLMService::processRequest(
 
   response.usage = {PROMPT_TOKENS, completionTokens,
                     PROMPT_TOKENS + completionTokens, std::nullopt,
-                    std::nullopt};
+                    std::nullopt, std::nullopt};
 
   return response;
 }

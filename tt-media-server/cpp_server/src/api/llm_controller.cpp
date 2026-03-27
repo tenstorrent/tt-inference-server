@@ -71,6 +71,7 @@ LLMController::LLMController() {
   const auto& c = tt::utils::ServiceContainer::instance();
   service = c.llm();
   disaggregationService = c.disaggregation();
+  sessionManager = c.sessionManager();
 
   if (!service) {
     throw std::runtime_error(
@@ -150,6 +151,15 @@ void LLMController::completions(
     handleStreaming(request, std::move(callback), false);
   } else {
     try {
+      // Create session if not provided
+      if (!request->session_id.has_value() && sessionManager) {
+        auto session = sessionManager->createSession(std::nullopt);
+        request->session_id = session.getSessionId();
+      }
+
+      // Save session_id before moving request
+      auto sessionId = request->session_id;
+
       auto startTime = std::chrono::high_resolution_clock::now();
       auto response = service->submitRequest(std::move(*request));
       auto endTime = std::chrono::high_resolution_clock::now();
@@ -166,6 +176,11 @@ void LLMController::completions(
           response.usage.tps =
               response.usage.completion_tokens * 1000.0 / totalDuration.count();
         }
+      }
+
+      // Include session_id in response if present
+      if (sessionId.has_value()) {
+        response.usage.session_id = sessionId;
       }
 
       auto resp = drogon::HttpResponse::newHttpResponse();
@@ -237,6 +252,15 @@ void LLMController::chatCompletions(
     handleStreaming(request, std::move(callback), true);
   } else {
     try {
+      // Create session if not provided
+      if (!request->session_id.has_value() && sessionManager) {
+        auto session = sessionManager->createSession(std::nullopt);
+        request->session_id = session.getSessionId();
+      }
+
+      // Save session_id before moving request
+      auto sessionId = request->session_id;
+
       auto startTime = std::chrono::high_resolution_clock::now();
       auto completion = service->submitRequest(std::move(*request));
       auto endTime = std::chrono::high_resolution_clock::now();
@@ -253,6 +277,11 @@ void LLMController::chatCompletions(
           completion.usage.tps = completion.usage.completion_tokens * 1000.0 /
                                  totalDuration.count();
         }
+      }
+
+      // Include session_id in response if present
+      if (sessionId.has_value()) {
+        completion.usage.session_id = sessionId;
       }
 
       auto chatResponse =
@@ -275,6 +304,12 @@ void LLMController::handleStreaming(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     bool isChat) const {
   ZoneScopedN("API::handleStreaming");
+
+  // Create session if not provided
+  if (!reqPtr->session_id.has_value() && sessionManager) {
+    auto session = sessionManager->createSession(std::nullopt);
+    reqPtr->session_id = session.getSessionId();
+  }
 
   const std::string COMPLETION_ID =
       (isChat ? "chatcmpl-" : "cmpl-") + reqPtr->task_id.id;
@@ -347,7 +382,7 @@ void LLMController::handleStreaming(
         if (CONTINUOUS_USAGE) {
           usage = domain::CompletionUsage{reqPtr->prompt_tokens_count,
                                           CURRENT_TOKENS, CURRENT_TOKENS,
-                                          std::nullopt, std::nullopt};
+                                          std::nullopt, std::nullopt, std::nullopt};
         }
         auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
             COMPLETION_ID, MODEL, CREATED, chunk.choices[0], usage);
@@ -355,7 +390,7 @@ void LLMController::handleStreaming(
           std::optional<domain::CompletionUsage> initialUsage;
           if (CONTINUOUS_USAGE) {
             initialUsage = domain::CompletionUsage{
-                reqPtr->prompt_tokens_count, 0, 0, std::nullopt, std::nullopt};
+                reqPtr->prompt_tokens_count, 0, 0, std::nullopt, std::nullopt, std::nullopt};
           }
           auto initialChunk =
               domain::ChatCompletionStreamChunk::makeInitialChunk(
@@ -389,7 +424,7 @@ void LLMController::handleStreaming(
           if (INCLUDE_USAGE) {
             const int TOKENS = completionTokens->load();
             domain::CompletionUsage usage{reqPtr->prompt_tokens_count, TOKENS,
-                                          TOKENS, std::nullopt, std::nullopt};
+                                          TOKENS, std::nullopt, std::nullopt, std::nullopt};
 
             if (firstTokenTime->has_value()) {
               auto ttftDuration =
@@ -416,6 +451,11 @@ void LLMController::handleStreaming(
                 TT_LOG_DEBUG("[LLMController] Final TPS: {} tokens/sec",
                              usage.tps.value());
               }
+            }
+
+            // Include session_id in usage if present
+            if (reqPtr->session_id.has_value()) {
+              usage.session_id = reqPtr->session_id;
             }
 
             if (isChat) {
@@ -474,6 +514,110 @@ void LLMController::handleStreaming(
   resp->addHeader("Connection", "keep-alive");
   resp->addHeader("X-Accel-Buffering", "no");
 
+  callback(resp);
+}
+
+void LLMController::createSession(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+  if (!sessionManager) {
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(
+        errorJson("Session management not available", "not_implemented"));
+    resp->setStatusCode(drogon::k501NotImplemented);
+    callback(resp);
+    return;
+  }
+
+  try {
+    std::optional<int> slotId;
+
+    // Try to parse request body for optional slot_id
+    if (req->getBody().length() > 0) {
+      Json::Value requestBody;
+      Json::CharReaderBuilder builder;
+      std::istringstream bodyStream(std::string(req->getBody()));
+      std::string errs;
+
+      if (Json::parseFromStream(builder, bodyStream, &requestBody, &errs)) {
+        if (requestBody.isMember("slot_id") &&
+            requestBody["slot_id"].isInt()) {
+          slotId = requestBody["slot_id"].asInt();
+        }
+      }
+    }
+
+    auto session = sessionManager->createSession(slotId);
+
+    Json::Value response = session.toJson();
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k201Created);
+    callback(resp);
+  } catch (const std::exception& e) {
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(
+        errorJson(e.what(), "internal_error"));
+    resp->setStatusCode(drogon::k500InternalServerError);
+    callback(resp);
+  }
+}
+
+void LLMController::closeSession(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+    const std::string& sessionId) const {
+  if (!sessionManager) {
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(
+        errorJson("Session management not available", "not_implemented"));
+    resp->setStatusCode(drogon::k501NotImplemented);
+    callback(resp);
+    return;
+  }
+
+  bool success = sessionManager->closeSession(sessionId);
+
+  if (success) {
+    Json::Value response;
+    response["success"] = true;
+    response["message"] = "Session closed";
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    callback(resp);
+  } else {
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(
+        errorJson("Session not found", "not_found"));
+    resp->setStatusCode(drogon::k404NotFound);
+    callback(resp);
+  }
+}
+
+void LLMController::getSlotId(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+    const std::string& sessionId) const {
+  if (!sessionManager) {
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(
+        errorJson("Session management not available", "not_implemented"));
+    resp->setStatusCode(drogon::k501NotImplemented);
+    callback(resp);
+    return;
+  }
+
+  int slotId = sessionManager->getSlotIdBySessionId(sessionId);
+
+  if (slotId == -1) {
+    // Check if session exists at all
+    auto session = sessionManager->getSession(sessionId);
+    if (!session.has_value()) {
+      auto resp = drogon::HttpResponse::newHttpJsonResponse(
+          errorJson("Session not found", "not_found"));
+      resp->setStatusCode(drogon::k404NotFound);
+      callback(resp);
+      return;
+    }
+  }
+
+  Json::Value response;
+  response["session_id"] = sessionId;
+  response["slot_id"] = slotId;
+  auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
   callback(resp);
 }
 
