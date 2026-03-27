@@ -17,7 +17,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from tests.test_config import TEST_CONFIGS, TestTask
+from server_tests.test_config import TEST_CONFIGS, TestTask
 from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
@@ -57,15 +57,22 @@ def build_test_command(
         / f"test_{model_spec.model_id}__{run_timestamp}_{task.task_name}"
     )
 
+    if task.task_name == "vllm_responses":
+        # vLLM responses test needs the service port to connect to the server
+        test_kwargs_list.extend(
+            ["--endpoint-url", f"http://127.0.0.1:{service_port}/v1/responses"]
+        )
     cmd = [
         str(test_exec),
         task.test_path,
         "--model-name",
-        model_spec.model_name,
+        model_spec.hf_model_repo,
         "--model-impl",
         model_spec.impl.impl_name,
         "--output-path",
         output_dir_path,
+        "--max-context",
+        str(model_spec.device_model_spec.max_context),
     ]
     cmd.extend(test_kwargs_list)
     # force all cmd parts to be strs

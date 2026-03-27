@@ -83,7 +83,7 @@ jobs:
       - name: Run tt-inference-server tests
         run: |
           echo "Running tests from tests/ directory..."
-          pytest tests/ --ignore=tests/server_tests -v --tb=short --continue-on-collection-errors > main_test_output.txt 2>&1 || echo "MAIN_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
+          pytest tests/ -v --tb=short --continue-on-collection-errors > main_test_output.txt 2>&1 || echo "MAIN_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
 
           # try to find final pytest summary line (robust)
           SUMMARY_LINE=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" main_test_output.txt | tail -n 1 || true)

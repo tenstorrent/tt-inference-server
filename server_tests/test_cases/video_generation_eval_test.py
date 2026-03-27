@@ -13,12 +13,12 @@ import imageio.v3 as iio
 import requests
 from PIL import Image
 
-from tests.server_tests.base_test import BaseTest
-from tests.server_tests.test_cases.server_helper import (
+from server_tests.base_test import BaseTest
+from server_tests.test_cases.server_helper import (
     DEFAULT_AUTHORIZATION,
     SERVER_BASE_URL,
 )
-from tests.server_tests.test_classes import TestConfig
+from server_tests.test_classes import TestConfig
 from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import sdxl_get_prompts
 
@@ -32,7 +32,7 @@ DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
 ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
 VIDEO_GENERATION_ENDPOINT = "v1/videos/generations"
-DATASET_DIR = "tests/server_tests/datasets/videos"
+DATASET_DIR = "server_tests/datasets/videos"
 
 
 @dataclass

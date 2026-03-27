@@ -7,7 +7,7 @@ import logging
 
 import aiohttp
 
-from tests.server_tests.base_test import BaseTest
+from server_tests.base_test import BaseTest
 
 # Set up logging
 logger = logging.getLogger(__name__)

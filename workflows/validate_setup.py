@@ -9,7 +9,7 @@ from pathlib import Path
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
-from tests.test_config import TEST_CONFIGS
+from server_tests.test_config import TEST_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     check_path_permissions_for_uid,

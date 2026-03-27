@@ -24,7 +24,7 @@ from server_tests.base_test import BaseTest
 
 logger = logging.getLogger(__name__)
 
-DATASET_DIR = "tests/server_tests/datasets/libritts_subset"
+DATASET_DIR = "server_tests/datasets/libritts_subset"
 METADATA_FILE = "metadata.json"
 
 headers = {
