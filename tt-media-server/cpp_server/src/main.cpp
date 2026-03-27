@@ -127,10 +127,10 @@ int main(int argc, char* argv[]) {
 
     // Check for Bearer token on protected endpoints
     const std::string& authHeader = req->getHeader("Authorization");
-    constexpr std::string_view BEARER_PREFIX = "Bearer ";
+    constexpr std::string_view bearerPrefix = "Bearer ";
 
-    if (authHeader.size() <= BEARER_PREFIX.size() ||
-        authHeader.compare(0, BEARER_PREFIX.size(), BEARER_PREFIX) != 0) {
+    if (authHeader.size() <= bearerPrefix.size() ||
+        authHeader.compare(0, bearerPrefix.size(), bearerPrefix) != 0) {
       auto resp = drogon::HttpResponse::newHttpJsonResponse(Json::Value(
           "Missing or invalid Authorization header. Expected: Bearer <token>"));
       resp->setStatusCode(drogon::k401Unauthorized);
@@ -139,8 +139,8 @@ int main(int argc, char* argv[]) {
       return;
     }
 
-    std::string_view providedToken(authHeader.data() + BEARER_PREFIX.size(),
-                                   authHeader.size() - BEARER_PREFIX.size());
+    std::string_view providedToken(authHeader.data() + bearerPrefix.size(),
+                                   authHeader.size() - bearerPrefix.size());
 
     if (providedToken != SecurityFilter::getExpectedToken()) {
       auto resp = drogon::HttpResponse::newHttpJsonResponse(

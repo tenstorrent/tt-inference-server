@@ -64,7 +64,7 @@ namespace tt::api {
 LLMController::LLMController() {
   if (!tt::config::isLlmServiceEnabled()) {
     TT_LOG_INFO(
-        "[LLMController] Skipping initialization (TT_MODEL_SERVICE != llm)");
+        "[LLMController] Skipping initialization (TT_model_SERVICE != llm)");
     return;
   }
 
@@ -276,19 +276,19 @@ void LLMController::handleStreaming(
     bool isChat) const {
   ZoneScopedN("API::handleStreaming");
 
-  const std::string COMPLETION_ID =
+  const std::string completionId =
       (isChat ? "chatcmpl-" : "cmpl-") + reqPtr->task_id.id;
-  const std::string MODEL = reqPtr->model.value_or("default");
-  const int64_t CREATED = static_cast<int64_t>(
+  const std::string model = reqPtr->model.value_or("default");
+  const int64_t created = static_cast<int64_t>(
       std::chrono::duration_cast<std::chrono::seconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count());
 
-  const bool INCLUDE_USAGE =
+  const bool includeUsage =
       !reqPtr->stream_options.has_value() ||
       reqPtr->stream_options
           ->include_usage;  // Default to true if not specified
-  const bool CONTINUOUS_USAGE = reqPtr->stream_options.has_value() &&
+  const bool continuousUsage = reqPtr->stream_options.has_value() &&
                                 reqPtr->stream_options->continuous_usage_stats;
 
   auto accumulator = tt::config::enableAccumulatedStreaming()
@@ -321,8 +321,8 @@ void LLMController::handleStreaming(
   // Submit the streaming request before setting up the HTTP stream so that a
   // full queue throws QueueFullException here, allowing us to return a proper
   // 429.
-  auto streamingCallback = [loop, streamPtr, done, COMPLETION_ID, MODEL,
-                            CREATED, isChat, INCLUDE_USAGE, CONTINUOUS_USAGE,
+  auto streamingCallback = [loop, streamPtr, done, completionId, model,
+                            created, isChat, includeUsage, continuousUsage,
                             completionTokens, startTime, firstTokenTime,
                             secondTokenTime, firstContentChunk, reqPtr,
                             accumulator](
@@ -332,34 +332,34 @@ void LLMController::handleStreaming(
       return;
     }
     if (!chunk.choices.empty()) {
-      const int CURRENT_TOKENS = completionTokens->fetch_add(1) + 1;
+      const int currentTokens = completionTokens->fetch_add(1) + 1;
 
       auto now = std::chrono::high_resolution_clock::now();
       if (!firstTokenTime->has_value()) {
         *firstTokenTime = now;
-      } else if (CURRENT_TOKENS == 2 && !secondTokenTime->has_value()) {
+      } else if (currentTokens == 2 && !secondTokenTime->has_value()) {
         *secondTokenTime = now;
       }
 
       std::string sse;
       if (isChat) {
         std::optional<domain::CompletionUsage> usage;
-        if (CONTINUOUS_USAGE) {
+        if (continuousUsage) {
           usage = domain::CompletionUsage{reqPtr->prompt_tokens_count,
-                                          CURRENT_TOKENS, CURRENT_TOKENS,
+                                          currentTokens, currentTokens,
                                           std::nullopt, std::nullopt};
         }
         auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
-            COMPLETION_ID, MODEL, CREATED, chunk.choices[0], usage);
+            completionId, model, created, chunk.choices[0], usage);
         if (firstContentChunk->exchange(false)) {
           std::optional<domain::CompletionUsage> initialUsage;
-          if (CONTINUOUS_USAGE) {
+          if (continuousUsage) {
             initialUsage = domain::CompletionUsage{
                 reqPtr->prompt_tokens_count, 0, 0, std::nullopt, std::nullopt};
           }
           auto initialChunk =
               domain::ChatCompletionStreamChunk::makeInitialChunk(
-                  COMPLETION_ID, MODEL, CREATED, initialUsage);
+                  completionId, model, created, initialUsage);
           sse = initialChunk.toSSE() + streamChunk.toSSE();
         } else {
           sse = streamChunk.toSSE();
@@ -367,10 +367,10 @@ void LLMController::handleStreaming(
       } else if (!chunk.choices[0].text.empty() ||
                  !chunk.choices[0].finish_reason.has_value()) {
         domain::StreamingChunkResponse out(reqPtr->task_id);
-        out.id = COMPLETION_ID;
+        out.id = completionId;
         out.object = "text_completion";
-        out.model = MODEL;
-        out.created = CREATED;
+        out.model = model;
+        out.created = created;
         out.choices = chunk.choices;
         sse = out.toSSE();
       }
@@ -380,16 +380,16 @@ void LLMController::handleStreaming(
       }
     }
     if (isFinal) {
-      loop->queueInLoop([streamPtr, done, isChat, INCLUDE_USAGE, COMPLETION_ID,
-                         MODEL, CREATED, completionTokens, startTime,
+      loop->queueInLoop([streamPtr, done, isChat, includeUsage, completionId,
+                         model, created, completionTokens, startTime,
                          firstTokenTime, secondTokenTime, reqPtr,
                          accumulator]() {
         if (!done->exchange(true) && *streamPtr) {
           flushAccumulated(accumulator, streamPtr);
-          if (INCLUDE_USAGE) {
-            const int TOKENS = completionTokens->load();
-            domain::CompletionUsage usage{reqPtr->prompt_tokens_count, TOKENS,
-                                          TOKENS, std::nullopt, std::nullopt};
+          if (includeUsage) {
+            const int tokens = completionTokens->load();
+            domain::CompletionUsage usage{reqPtr->prompt_tokens_count, tokens,
+                                          tokens, std::nullopt, std::nullopt};
 
             if (firstTokenTime->has_value()) {
               auto ttftDuration =
@@ -400,7 +400,7 @@ void LLMController::handleStreaming(
                   100.0;
             }
 
-            if (TOKENS > 1) {
+            if (tokens > 1) {
               auto finalTime = std::chrono::high_resolution_clock::now();
               auto baseTime = secondTokenTime->has_value()
                                   ? secondTokenTime->value()
@@ -412,7 +412,7 @@ void LLMController::handleStreaming(
                 auto timeSeconds =
                     static_cast<double>(totalDuration.count()) / 1000000.0;
                 usage.tps =
-                    std::round((TOKENS - 1) / timeSeconds * 1000.0) / 1000.0;
+                    std::round((tokens - 1) / timeSeconds * 1000.0) / 1000.0;
                 TT_LOG_DEBUG("[LLMController] Final TPS: {} tokens/sec",
                              usage.tps.value());
               }
@@ -421,14 +421,14 @@ void LLMController::handleStreaming(
             if (isChat) {
               (*streamPtr)
                   ->send(domain::ChatCompletionStreamChunk::makeUsageChunk(
-                             COMPLETION_ID, MODEL, CREATED, usage)
+                             completionId, model, created, usage)
                              .toSSE());
             } else {
               domain::StreamingChunkResponse usageChunk(reqPtr->task_id);
-              usageChunk.id = COMPLETION_ID;
+              usageChunk.id = completionId;
               usageChunk.object = "text_completion";
-              usageChunk.model = MODEL;
-              usageChunk.created = CREATED;
+              usageChunk.model = model;
+              usageChunk.created = created;
               usageChunk.usage = usage;
               (*streamPtr)->send(usageChunk.toSSE());
             }

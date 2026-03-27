@@ -134,9 +134,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     return;
   }
 
-  const auto STOP_IDS = tokenizer_->stopTokenIds();
-  const std::unordered_set<int64_t> STOP_TOKEN_SET(STOP_IDS.begin(),
-                                                   STOP_IDS.end());
+  const auto stopIds = tokenizer_->stopTokenIds();
+  const std::unordered_set<int64_t> stopTokenSet(stopIds.begin(),
+                                                   stopIds.end());
 
   std::unordered_map<std::string,
                      std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>
@@ -148,7 +148,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   // (task_id is a UUID, 36 chars — above SSO) and a mutex acquisition on every
   // generated token.  At ~120k tok/s that overhead degrades throughput by ~7%.
   //
-  // Mitigation: observe ITL once every K_ITL_SAMPLE_STRIDE consecutive tokens.
+  // Mitigation: observe ITL once every kItlSampleStride consecutive tokens.
   // The reported quantiles remain statistically representative; the absolute
   // ITL values are accurate because the caller pre-computes elapsed time
   // between the two most recent CONSECUTIVE tokens rather than relying on the
@@ -157,7 +157,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   // TODO: Remove once task IDs become uint32 — then per-event cost is
   // negligible (no heap allocation) and onToken() can be called for every
   // token unconditionally.
-  static constexpr int K_ITL_SAMPLE_STRIDE = 5;
+  static constexpr int kItlSampleStride = 5;
 
   struct MetricsSamplingState {
     int token_count = 0;
@@ -212,19 +212,19 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       //
       // Hot-path budget: only a map counter increment for non-sampled tokens.
       // steady_clock::now() and metric queue pushes happen only on the first
-      // token (TTFT) and every K_ITL_SAMPLE_STRIDE-th subsequent token.
-      // The ITL value is divided by K_ITL_SAMPLE_STRIDE to yield a per-token
+      // token (TTFT) and every kItlSampleStride-th subsequent token.
+      // The ITL value is divided by kItlSampleStride to yield a per-token
       // estimate (assumes roughly uniform decode step latency).
       {
         auto& ms = metricsSampling[taskId];
         if (ms.token_count == 0) {
           tt::metrics::ServerMetrics::instance().onToken(taskId);
           ms.prev_token_time = std::chrono::steady_clock::now();
-        } else if (ms.token_count % K_ITL_SAMPLE_STRIDE == 0) {
+        } else if (ms.token_count % kItlSampleStride == 0) {
           auto now = std::chrono::steady_clock::now();
           double itl =
               std::chrono::duration<double>(now - ms.prev_token_time).count() /
-              K_ITL_SAMPLE_STRIDE;
+              kItlSampleStride;
           tt::metrics::ServerMetrics::instance().onITLSample(taskId, itl);
           ms.prev_token_time = now;
         }
@@ -268,7 +268,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         choice.token_id = static_cast<int64_t>(token.token_id);
         if (isFinal) {
           bool isStop =
-              STOP_TOKEN_SET.count(static_cast<int64_t>(token.token_id)) > 0;
+              stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
           choice.finish_reason = isStop ? "stop" : "length";
         }
       }
@@ -315,12 +315,12 @@ domain::CompletionResponse LLMService::processRequest(
   int completionTokens = 0;
   std::string finishReason = "stop";
 
-  const int PROMPT_TOKENS =
+  const int promptTokens =
       std::holds_alternative<std::vector<int>>(request.prompt)
           ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
           : 0;
-  const std::string TASK_ID = request.task_id.id;
-  const std::string MODEL = request.model.value_or("default");
+  const std::string taskId = request.task_id.id;
+  const std::string model = request.model.value_or("default");
 
   processStreamingRequest(
       std::move(request),
@@ -345,9 +345,9 @@ domain::CompletionResponse LLMService::processRequest(
   std::unique_lock<std::mutex> lock(mtx);
   cv.wait(lock, [&] { return done; });
 
-  domain::CompletionResponse response{domain::TaskID(TASK_ID)};
-  response.id = TASK_ID;
-  response.model = MODEL;
+  domain::CompletionResponse response{domain::TaskID(taskId)};
+  response.id = taskId;
+  response.model = model;
   response.created = std::chrono::duration_cast<std::chrono::seconds>(
                          std::chrono::system_clock::now().time_since_epoch())
                          .count();
@@ -362,8 +362,8 @@ domain::CompletionResponse LLMService::processRequest(
   choice.finish_reason = finishReason;
   response.choices.push_back(std::move(choice));
 
-  response.usage = {PROMPT_TOKENS, completionTokens,
-                    PROMPT_TOKENS + completionTokens, std::nullopt,
+  response.usage = {promptTokens, completionTokens,
+                    promptTokens + completionTokens, std::nullopt,
                     std::nullopt};
 
   return response;

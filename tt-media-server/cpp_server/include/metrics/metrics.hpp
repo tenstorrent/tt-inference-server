@@ -66,7 +66,7 @@ class ServerMetrics {
    *
    * The caller (LLMService) is responsible for:
    *   - Computing the elapsed time between two consecutive tokens.
-   *   - Calling this method only every K_ITL_SAMPLE_STRIDE tokens (defined in
+   *   - Calling this method only every kItlSampleStride tokens (defined in
    *     llm_service.cpp) to amortise the per-event cost (string copy + mutex).
    *
    * itl_seconds must be the actual elapsed time between two CONSECUTIVE tokens
@@ -119,7 +119,7 @@ class ServerMetrics {
     std::string task_id;
     std::chrono::steady_clock::time_point time;
   };
-  // Fired every K_ITL_SAMPLE_STRIDE tokens (see llm_service.cpp).
+  // Fired every kItlSampleStride tokens (see llm_service.cpp).
   // itl_seconds is the actual elapsed time between two CONSECUTIVE tokens,
   // pre-computed by the caller so this thread needs no per-task clock state.
   struct EventITLSample {
