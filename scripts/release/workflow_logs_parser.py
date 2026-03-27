@@ -13,7 +13,7 @@ CI runs, extracting model specifications, performance reports, and status inform
 import json
 import logging
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 # Add project root to Python path to allow imports from workflows
 import sys
@@ -199,11 +199,16 @@ def parse_benchmarks_completed(report_data: dict) -> bool:
         return False
 
 
-def _get_benchmark_target_evaluation(report_data: dict) -> dict:
+def _get_benchmark_target_evaluation(
+    report_data: dict,
+    model_spec: Optional[Any] = None,
+    *,
+    prefer_report_evaluation: bool = True,
+) -> dict:
     benchmark_target_evaluation = report_data.get("benchmark_target_evaluation")
-    if isinstance(benchmark_target_evaluation, dict):
+    if prefer_report_evaluation and isinstance(benchmark_target_evaluation, dict):
         return benchmark_target_evaluation
-    return evaluate_benchmark_targets(report_data)
+    return evaluate_benchmark_targets(report_data, model_spec=model_spec)
 
 
 def _get_regression_summary(
@@ -217,7 +222,12 @@ def _get_regression_summary(
 
 
 def build_parsed_workflow_logs_data(
-    dir_name: str, model_spec_json: dict, report_data_json: dict
+    dir_name: str,
+    model_spec_json: dict,
+    report_data_json: dict,
+    *,
+    resolved_model_spec: Optional[Any] = None,
+    prefer_report_benchmark_target_evaluation: bool = True,
 ) -> Optional[dict]:
     """Build parsed workflow-log style data from already-loaded JSON payloads."""
     model_id = model_spec_json.get("model_id")
@@ -225,7 +235,11 @@ def build_parsed_workflow_logs_data(
         logger.warning(f"Could not find model_id in parsed model spec for {dir_name}")
         return None
 
-    benchmark_target_evaluation = _get_benchmark_target_evaluation(report_data_json)
+    benchmark_target_evaluation = _get_benchmark_target_evaluation(
+        report_data_json,
+        model_spec=resolved_model_spec,
+        prefer_report_evaluation=prefer_report_benchmark_target_evaluation,
+    )
     perf_status = benchmark_target_evaluation.get("status", "experimental")
     benchmarks_completed = benchmark_target_evaluation.get(
         "reference_available", False

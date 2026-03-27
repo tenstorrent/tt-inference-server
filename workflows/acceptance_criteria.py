@@ -54,13 +54,18 @@ REPORT_METRIC_FALLBACK_FIELDS = {
 
 
 def acceptance_criteria_check(
-    report_data: dict, benchmark_target_evaluation: Optional[Dict[str, Any]] = None
+    report_data: dict,
+    benchmark_target_evaluation: Optional[Dict[str, Any]] = None,
+    model_spec: Optional[ModelSpec] = None,
 ) -> Tuple[bool, Dict[str, str]]:
     """Return acceptance status and blocker details for release report data."""
-    acceptance_criteria = _load_acceptance_criteria_from_report(report_data)
+    acceptance_criteria = _load_acceptance_criteria_from_report(
+        report_data, model_spec=model_spec
+    )
     acceptance_blockers = {}
     benchmark_target_evaluation = (
-        benchmark_target_evaluation or evaluate_benchmark_targets(report_data)
+        benchmark_target_evaluation
+        or evaluate_benchmark_targets(report_data, model_spec=model_spec)
     )
     acceptance_blockers.update(
         _benchmarks_acceptance(benchmark_target_evaluation, acceptance_criteria)
@@ -126,8 +131,12 @@ def format_acceptance_summary_markdown(
     return "\n".join(lines)
 
 
-def evaluate_benchmark_targets(report_data: dict) -> Dict[str, Any]:
-    acceptance_criteria = _load_acceptance_criteria_from_report(report_data)
+def evaluate_benchmark_targets(
+    report_data: dict, model_spec: Optional[ModelSpec] = None
+) -> Dict[str, Any]:
+    acceptance_criteria = _load_acceptance_criteria_from_report(
+        report_data, model_spec=model_spec
+    )
     benchmarks_summary = report_data.get("benchmarks_summary")
     analysis = _empty_benchmark_analysis()
     if not isinstance(benchmarks_summary, list) or not benchmarks_summary:
@@ -135,7 +144,9 @@ def evaluate_benchmark_targets(report_data: dict) -> Dict[str, Any]:
         return analysis
 
     perf_references = _load_perf_references_from_report(
-        report_data, acceptance_criteria
+        report_data,
+        acceptance_criteria,
+        model_spec=model_spec,
     )
     if not perf_references:
         analysis["errors"].append(
@@ -341,14 +352,20 @@ def _spec_tests_acceptance(spec_tests: Any, required: bool) -> Dict[str, str]:
 def _load_perf_references_from_report(
     report_data: Dict[str, Any],
     acceptance_criteria: Optional[AcceptanceCriteria] = None,
+    model_spec: Optional[ModelSpec] = None,
 ) -> List[BenchmarkTaskParams]:
-    model_spec = _load_runtime_model_spec_from_report(report_data)
-    if model_spec is not None:
-        perf_reference = getattr(model_spec.device_model_spec, "perf_reference", [])
+    resolved_model_spec = model_spec or _load_runtime_model_spec_from_report(
+        report_data
+    )
+    if resolved_model_spec is not None:
+        device_model_spec = getattr(resolved_model_spec, "device_model_spec", None)
+        perf_reference = getattr(device_model_spec, "perf_reference", [])
         if perf_reference:
             return perf_reference
 
-    model_name, device = _resolve_report_identity(report_data)
+    model_name, device = _resolve_report_identity(
+        report_data, model_spec=resolved_model_spec
+    )
     if not model_name or not device:
         return []
     return get_named_perf_reference(
@@ -361,25 +378,22 @@ def _load_perf_references_from_report(
 
 def _load_acceptance_criteria_from_report(
     report_data: Dict[str, Any],
+    model_spec: Optional[ModelSpec] = None,
 ) -> AcceptanceCriteria:
-    model_spec = _load_runtime_model_spec_from_report(report_data)
-    if model_spec is not None:
-        if getattr(model_spec, "acceptance_criteria", None) is not None:
+    resolved_model_spec = model_spec or _load_runtime_model_spec_from_report(
+        report_data
+    )
+    if resolved_model_spec is not None:
+        device_model_spec = getattr(resolved_model_spec, "device_model_spec", None)
+        if getattr(resolved_model_spec, "acceptance_criteria", None) is not None:
             return resolve_acceptance_criteria(
-                model_spec.acceptance_criteria,
-                perf_targets_map=getattr(
-                    model_spec.device_model_spec, "perf_targets_map", None
-                ),
+                resolved_model_spec.acceptance_criteria,
+                perf_targets_map=getattr(device_model_spec, "perf_targets_map", None),
             )
-        if (
-            getattr(model_spec.device_model_spec, "acceptance_criteria", None)
-            is not None
-        ):
+        if getattr(device_model_spec, "acceptance_criteria", None) is not None:
             return resolve_acceptance_criteria(
-                model_spec.device_model_spec.acceptance_criteria,
-                perf_targets_map=getattr(
-                    model_spec.device_model_spec, "perf_targets_map", None
-                ),
+                device_model_spec.acceptance_criteria,
+                perf_targets_map=getattr(device_model_spec, "perf_targets_map", None),
             )
     return resolve_acceptance_criteria(perf_targets_map=DEFAULT_PERF_TARGETS_MAP)
 
@@ -514,7 +528,15 @@ def _flatten_spec_test_reports(reports: List[Dict[str, Any]]) -> List[Dict[str, 
 
 def _resolve_report_identity(
     report_data: Dict[str, Any],
+    model_spec: Optional[ModelSpec] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
+    if model_spec is not None:
+        model_name = getattr(model_spec, "model_name", None)
+        device_type = getattr(model_spec, "device_type", None)
+        device_name = getattr(device_type, "name", device_type)
+        if model_name and device_name:
+            return str(model_name), str(device_name).lower()
+
     metadata = report_data.get("metadata", {})
     model_name = metadata.get("model_name")
     device = metadata.get("device")

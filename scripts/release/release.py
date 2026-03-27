@@ -151,6 +151,7 @@ def build_release_artifact_args(args: argparse.Namespace) -> argparse.Namespace:
     return argparse.Namespace(
         ci_artifacts_path=args.ci_artifacts_path,
         models_ci_run_id=args.models_ci_run_id,
+        report_data_json=args.report_data_json,
         out_root=args.out_root,
         dev=False,
         release=True,

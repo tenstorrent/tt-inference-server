@@ -16,6 +16,7 @@ This script manages docker image artifacts for releases by:
 Usage:
     python3 generate_release_artifacts.py <ci_artifacts_path> [--dev | --release] [--dry-run]
     python3 generate_release_artifacts.py --models-ci-run-id <run_id> [--dev | --release] [--dry-run]
+    python3 generate_release_artifacts.py --report-data-json <path> [--dev | --release] [--dry-run]
     python3 generate_release_artifacts.py --help
 
 Examples:
@@ -30,6 +31,9 @@ Examples:
 
     # Dry-run dev images
     python3 generate_release_artifacts.py release_logs/v{VERSION} --dev --dry-run
+
+    # Run the full release-artifact flow from one local report_data JSON
+    python3 generate_release_artifacts.py --report-data-json release_logs/v{VERSION}/report_data_*.json --release
 """
 
 import argparse
@@ -50,6 +54,7 @@ sys.path.insert(0, str(project_root))
 from workflows.model_spec import MODEL_SPECS
 from workflows.acceptance_criteria import (
     acceptance_criteria_check,
+    evaluate_benchmark_targets,
     format_acceptance_summary_markdown,
 )
 from workflows.utils import get_version, parse_commits_from_docker_image
@@ -84,6 +89,7 @@ try:
         download_runs as models_ci_download_runs,
         process_run_directory as process_ci_run_directory,
     )
+    from workflow_logs_parser import build_parsed_workflow_logs_data
 except ImportError:
     from scripts.release.generate_model_support_docs import (
         regenerate_model_support_docs_and_update_readme,
@@ -117,6 +123,7 @@ except ImportError:
         download_runs as models_ci_download_runs,
         process_run_directory as process_ci_run_directory,
     )
+    from scripts.release.workflow_logs_parser import build_parsed_workflow_logs_data
 
 logger = logging.getLogger(__name__)
 
@@ -369,6 +376,73 @@ def load_ci_data_from_artifacts_path(
     return build_ci_data_from_raw_results(
         load_raw_ci_results_from_run_directory(run_out_dir)
     )
+
+
+def _load_report_data_json(report_data_json_path: Path) -> Dict[str, Any]:
+    resolved_path = report_data_json_path.resolve()
+    if not resolved_path.exists():
+        raise FileNotFoundError(f"Report data JSON not found: {resolved_path}")
+    if not resolved_path.is_file():
+        raise ValueError(f"Report data JSON must be a file, got: {resolved_path}")
+
+    with resolved_path.open("r", encoding="utf-8") as file:
+        report_data = json.load(file)
+    if not isinstance(report_data, dict):
+        raise ValueError(f"Report data JSON must contain an object: {resolved_path}")
+    return report_data
+
+
+def _build_report_only_ci_entry(
+    report_path: Path,
+    model_spec: Any,
+    report_data: Dict[str, Any],
+) -> Dict[str, Any]:
+    parsed_workflow_logs = build_parsed_workflow_logs_data(
+        report_path.stem,
+        model_spec.get_serialized_dict(),
+        report_data,
+        resolved_model_spec=model_spec,
+        prefer_report_benchmark_target_evaluation=False,
+    )
+    if not parsed_workflow_logs:
+        raise ValueError(f"Could not parse standalone report data: {report_path}")
+
+    return _flatten_raw_ci_entry(
+        {
+            "workflow_logs": {
+                "summary": parsed_workflow_logs.get("summary") or {},
+                "reports_output": parsed_workflow_logs.get("reports_output") or {},
+            },
+            "ci_metadata": {},
+            "ci_logs": {},
+        }
+    )
+
+
+def load_ci_data_from_report_data_json(
+    report_data_json_path: Path,
+) -> Dict[str, Dict[str, Any]]:
+    """Build one normalized CI entry from a standalone report_data JSON file."""
+    report_data = _load_report_data_json(report_data_json_path)
+    metadata = report_data.get("metadata") or {}
+    model_id = metadata.get("model_id")
+    if not model_id:
+        raise ValueError(
+            f"Report data JSON is missing metadata.model_id: {report_data_json_path}"
+        )
+
+    model_spec = MODEL_SPECS.get(model_id)
+    if model_spec is None:
+        raise ValueError(
+            "Report data JSON references model_id not present in checked-in "
+            f"MODEL_SPECS: {model_id}"
+        )
+
+    return {
+        model_id: _build_report_only_ci_entry(
+            report_data_json_path, model_spec, report_data
+        )
+    }
 
 
 def merge_specs_with_ci_data(
@@ -673,12 +747,29 @@ def plan_image_action(
     target_image: str,
     records: List[MergedModelRecord],
     image_exists_cache: Dict[str, bool],
+    *,
+    allow_ci_promotion: bool = True,
 ) -> ImagePlan:
     """Compute a single image-level action for all models sharing one target image."""
     model_ids = tuple(record.model_id for record in records)
     release_exists = check_image_exists(target_image, cache=image_exists_cache)
     if release_exists:
         logger.info("  Found image on remote container registry")
+
+    if not allow_ci_promotion:
+        logger.info("  Standalone report mode: skipping Models CI source lookup")
+        if release_exists:
+            return ImagePlan(
+                target_image=target_image,
+                model_ids=model_ids,
+                status=IMAGE_STATUS_EXISTS_WITHOUT_CI,
+            )
+        logger.info("  No existing release image found, image needs building")
+        return ImagePlan(
+            target_image=target_image,
+            model_ids=model_ids,
+            status=IMAGE_STATUS_NEEDS_BUILD,
+        )
 
     ci_source_image = select_ci_source_for_image(
         target_image, records, image_exists_cache
@@ -792,6 +883,8 @@ def generate_release_artifacts(
     merged_spec: Dict[str, MergedModelRecord],
     dry_run: bool,
     image_exists_cache: Optional[Dict[str, bool]] = None,
+    *,
+    allow_ci_promotion: bool = True,
 ) -> Tuple[
     DefaultDict[str, List[str]],
     int,
@@ -824,7 +917,12 @@ def generate_release_artifacts(
         logger.info(
             f"  Shared by models: {', '.join(record.model_id for record in records)}"
         )
-        image_plan = plan_image_action(target_image, records, image_exists_cache)
+        image_plan = plan_image_action(
+            target_image,
+            records,
+            image_exists_cache,
+            allow_ci_promotion=allow_ci_promotion,
+        )
         image_plan = execute_image_plan(image_plan, dry_run)
         apply_image_plan(
             image_plan,
@@ -1010,6 +1108,8 @@ def write_release_performance_outputs(
 
 def build_acceptance_warnings(
     merged_spec: Dict[str, MergedModelRecord],
+    *,
+    recompute_benchmark_target_evaluation: bool = False,
 ) -> List[Dict[str, Any]]:
     """Recompute release acceptance from raw reports and return warning entries."""
     warnings: List[Dict[str, Any]] = []
@@ -1018,11 +1118,21 @@ def build_acceptance_warnings(
         if not isinstance(release_report, dict) or not release_report:
             continue
 
-        benchmark_target_evaluation = release_report.get("benchmark_target_evaluation")
+        if recompute_benchmark_target_evaluation:
+            benchmark_target_evaluation = evaluate_benchmark_targets(
+                release_report, model_spec=record.model_spec
+            )
+        else:
+            benchmark_target_evaluation = release_report.get(
+                "benchmark_target_evaluation"
+            )
         accepted, acceptance_blockers = acceptance_criteria_check(
             release_report,
             benchmark_target_evaluation=benchmark_target_evaluation
             if isinstance(benchmark_target_evaluation, dict)
+            else None,
+            model_spec=record.model_spec
+            if recompute_benchmark_target_evaluation
             else None,
         )
         if accepted:
@@ -1198,6 +1308,15 @@ def add_cli_arguments(
         ),
     )
     parser.add_argument(
+        "--report-data-json",
+        default=None,
+        help=(
+            "Path to one standalone report_data_*.json file. This runs the full "
+            "artifact-generation flow using the checked-in workflows/model_spec.py "
+            "entry for metadata.model_id and skips image promotion from Models CI."
+        ),
+    )
+    parser.add_argument(
         "--out-root",
         default=None,
         help=(
@@ -1251,10 +1370,25 @@ def validate_args(
         if not args.dev and not args.release:
             parser.error("Either --dev or --release must be specified")
 
-    if args.models_ci_run_id is not None and args.ci_artifacts_path:
-        parser.error("Provide --models-ci-run-id or ci_artifacts_path, not both.")
-    if args.models_ci_run_id is None and not args.ci_artifacts_path:
-        parser.error("Provide --models-ci-run-id or ci_artifacts_path.")
+    provided_inputs = [
+        input_name
+        for input_name, is_provided in (
+            ("ci_artifacts_path", bool(args.ci_artifacts_path)),
+            ("--models-ci-run-id", args.models_ci_run_id is not None),
+            ("--report-data-json", bool(args.report_data_json)),
+        )
+        if is_provided
+    ]
+    if len(provided_inputs) > 1:
+        parser.error(
+            "Provide exactly one of ci_artifacts_path, --models-ci-run-id, "
+            "or --report-data-json."
+        )
+    if not provided_inputs:
+        parser.error(
+            "Provide one of ci_artifacts_path, --models-ci-run-id, "
+            "or --report-data-json."
+        )
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -1280,6 +1414,7 @@ def run_from_args(args: argparse.Namespace) -> int:
     output_dir = resolve_release_output_dir(args.output_dir)
     version = get_version()
     ci_data: Dict[str, Dict[str, Any]]
+    report_only_mode = bool(args.report_data_json)
 
     if args.models_ci_run_id is not None:
         ci_data = load_ci_data_from_run_id(
@@ -1287,6 +1422,8 @@ def run_from_args(args: argparse.Namespace) -> int:
             resolve_release_output_dir(args.out_root),
             workflow_file=RELEASE_WORKFLOW_FILE if args.release else "on-nightly.yml",
         )
+    elif args.report_data_json:
+        ci_data = load_ci_data_from_report_data_json(Path(args.report_data_json))
     else:
         ci_data = load_ci_data_from_artifacts_path(Path(args.ci_artifacts_path))
 
@@ -1303,7 +1440,7 @@ def run_from_args(args: argparse.Namespace) -> int:
 
     if not check_docker_installed():
         return 1
-    if not check_crane_installed():
+    if not report_only_mode and not check_crane_installed():
         return 1
 
     logger.info("\nStep 1: Merging CI data with MODEL_SPECS...")
@@ -1321,6 +1458,7 @@ def run_from_args(args: argparse.Namespace) -> int:
         merged_spec,
         args.dry_run,
         image_exists_cache=image_exists_cache,
+        allow_ci_promotion=not report_only_mode,
     )
 
     logger.info(
@@ -1352,7 +1490,10 @@ def run_from_args(args: argparse.Namespace) -> int:
 
     if args.release:
         logger.info("\nStep 3: Recomputing release acceptance warnings...")
-        acceptance_warnings = build_acceptance_warnings(merged_spec)
+        acceptance_warnings = build_acceptance_warnings(
+            merged_spec,
+            recompute_benchmark_target_evaluation=report_only_mode,
+        )
         logger.info("\nStep 4: Writing release performance outputs...")
         release_performance_data = write_release_performance_outputs(
             merged_spec, output_dir, args.dry_run

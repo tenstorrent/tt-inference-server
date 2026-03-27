@@ -6,6 +6,8 @@ from collections import defaultdict
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 import scripts.release.generate_release_artifacts as gra
 from scripts.release.release_diff import build_template_key
 from scripts.release.validate_model_spec_template_images import (
@@ -39,6 +41,7 @@ def make_image(
 def make_model_spec(
     docker_image,
     *,
+    model_id="demo_model",
     tt_metal_commit=TT_METAL_COMMIT,
     vllm_commit=VLLM_COMMIT,
     model_name="DemoModel",
@@ -47,7 +50,15 @@ def make_model_spec(
     impl_name="demo-impl",
     inference_engine="vLLM",
 ):
-    return SimpleNamespace(
+    device_model_spec = SimpleNamespace(
+        perf_reference=[],
+        acceptance_criteria=None,
+        perf_targets_map={},
+        env_vars={},
+        vllm_args={},
+    )
+    model_spec = SimpleNamespace(
+        model_id=model_id,
         docker_image=docker_image,
         tt_metal_commit=tt_metal_commit,
         vllm_commit=vllm_commit,
@@ -55,7 +66,20 @@ def make_model_spec(
         device_type=SimpleNamespace(name=device_name),
         impl=SimpleNamespace(impl_id=impl_id, impl_name=impl_name),
         inference_engine=inference_engine,
+        device_model_spec=device_model_spec,
+        acceptance_criteria=None,
+        cli_args={},
     )
+    model_spec.get_serialized_dict = lambda: {
+        "model_id": model_spec.model_id,
+        "docker_image": model_spec.docker_image,
+        "tt_metal_commit": model_spec.tt_metal_commit,
+        "vllm_commit": model_spec.vllm_commit,
+        "model_name": model_spec.model_name,
+        "device_type": model_spec.device_type.name,
+        "cli_args": dict(model_spec.cli_args),
+    }
+    return model_spec
 
 
 def make_record(model_id, target_image, *, ci_image=None, model_spec=None):
@@ -135,7 +159,12 @@ def make_release_report(
     *, functional_status="target", parameter_status="passed", spec_test_success=None
 ):
     report = {
-        "metadata": {"model_name": "DemoModel", "device": "n150"},
+        "metadata": {
+            "model_id": "demo_model",
+            "model_name": "DemoModel",
+            "device": "n150",
+            "runtime_model_spec_json": "/tmp/runtime_model_spec.json",
+        },
         "benchmarks_summary": [
             {
                 "task_type": "text",
@@ -183,6 +212,49 @@ def make_release_report(
             ]
         }
     return report
+
+
+def test_parse_args_rejects_report_data_json_with_other_inputs():
+    with pytest.raises(SystemExit):
+        gra.parse_args(
+            [
+                "--report-data-json",
+                "release_logs/v0.10.0/report_data_demo.json",
+                "--models-ci-run-id",
+                "123",
+                "--release",
+            ]
+        )
+
+
+def test_load_ci_data_from_report_data_json_uses_checked_in_model_spec(tmp_path):
+    report_path = tmp_path / "report_data_demo.json"
+    report_data = make_release_report()
+    report_data["metadata"]["model_id"] = "demo_model"
+    report_data["metadata"]["runtime_model_spec_json"] = "/tmp/ignored_runtime.json"
+    report_path.write_text(json.dumps(report_data))
+    checked_in_spec = make_model_spec(make_image("checked-in"), model_id="demo_model")
+
+    with patch.object(gra, "MODEL_SPECS", {"demo_model": checked_in_spec}):
+        ci_data = gra.load_ci_data_from_report_data_json(report_path)
+
+    assert list(ci_data.keys()) == ["demo_model"]
+    assert ci_data["demo_model"]["docker_image"] == checked_in_spec.docker_image
+    assert (
+        ci_data["demo_model"]["release_report"]["metadata"]["runtime_model_spec_json"]
+        == "/tmp/ignored_runtime.json"
+    )
+
+
+def test_load_ci_data_from_report_data_json_fails_for_unknown_model_id(tmp_path):
+    report_path = tmp_path / "report_data_demo.json"
+    report_data = make_release_report()
+    report_data["metadata"]["model_id"] = "unknown_model"
+    report_path.write_text(json.dumps(report_data))
+
+    with patch.object(gra, "MODEL_SPECS", {}):
+        with pytest.raises(ValueError, match="unknown_model"):
+            gra.load_ci_data_from_report_data_json(report_path)
 
 
 def test_merge_specs_with_ci_data_derives_dev_image_without_mutating_model_specs():
@@ -426,6 +498,39 @@ def test_generate_release_artifacts_marks_shared_image_for_build_on_commit_misma
     assert copied_images == {}
     assert existing_with_ci_ref == {}
     assert dict(existing_without_ci_ref) == {}
+    copy_mock.assert_not_called()
+
+
+def test_generate_release_artifacts_skips_ci_promotion_in_report_only_mode():
+    target_image = make_image("demo")
+    ci_image = make_image("demo-ci", channel="dev")
+    merged_spec = {
+        "model-a": make_record("model-a", target_image, ci_image=ci_image),
+    }
+
+    with patch.object(
+        gra,
+        "check_image_exists",
+        side_effect=lambda image, cache=None: image == target_image,
+    ) as exists_mock, patch.object(gra, "copy_docker_image") as copy_mock:
+        (
+            images_to_build,
+            unique_images_count,
+            copied_images,
+            existing_with_ci_ref,
+            existing_without_ci_ref,
+        ) = gra.generate_release_artifacts(
+            merged_spec,
+            dry_run=False,
+            allow_ci_promotion=False,
+        )
+
+    assert dict(images_to_build) == {}
+    assert unique_images_count == 0
+    assert copied_images == {}
+    assert existing_with_ci_ref == {}
+    assert dict(existing_without_ci_ref) == {target_image: ["model-a"]}
+    assert exists_mock.call_count == 1
     copy_mock.assert_not_called()
 
 
@@ -859,6 +964,7 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     args = Namespace(
         ci_artifacts_path=str(ci_artifacts_path),
         models_ci_run_id=None,
+        report_data_json=None,
         out_root=None,
         dev=False,
         release=True,
@@ -931,9 +1037,17 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
 
     load_ci_data_mock.assert_called_once_with(ci_artifacts_path)
     merge_mock.assert_called_once_with({"model-a": {}}, False)
-    generate_mock.assert_called_once_with(merged_spec, False, image_exists_cache={})
+    generate_mock.assert_called_once_with(
+        merged_spec,
+        False,
+        image_exists_cache={},
+        allow_ci_promotion=True,
+    )
     validate_mock.assert_called_once()
-    acceptance_mock.assert_called_once_with(merged_spec)
+    acceptance_mock.assert_called_once_with(
+        merged_spec,
+        recompute_benchmark_target_evaluation=False,
+    )
     write_output_mock.assert_called_once()
     performance_mock.assert_called_once_with(merged_spec, output_dir, False)
     performance_diff_mock.assert_called_once_with(
@@ -971,6 +1085,7 @@ def test_main_release_run_id_reads_release_workflow(tmp_path):
     args = Namespace(
         ci_artifacts_path=None,
         models_ci_run_id=23578993514,
+        report_data_json=None,
         out_root=None,
         dev=False,
         release=True,
@@ -1027,6 +1142,7 @@ def test_main_dev_run_id_keeps_default_workflow(tmp_path):
     args = Namespace(
         ci_artifacts_path=None,
         models_ci_run_id=23578993514,
+        report_data_json=None,
         out_root=None,
         dev=True,
         release=False,
@@ -1073,6 +1189,7 @@ def test_main_dev_flow_skips_release_only_compatibility_outputs(tmp_path):
     args = Namespace(
         ci_artifacts_path=str(ci_artifacts_path),
         models_ci_run_id=None,
+        report_data_json=None,
         out_root=None,
         dev=True,
         release=False,
@@ -1125,6 +1242,7 @@ def test_main_fails_after_promotion_when_template_images_are_missing(tmp_path):
     args = Namespace(
         ci_artifacts_path=str(ci_artifacts_path),
         models_ci_run_id=None,
+        report_data_json=None,
         out_root=None,
         dev=False,
         release=True,
@@ -1180,9 +1298,82 @@ def test_main_fails_after_promotion_when_template_images_are_missing(tmp_path):
     ) as write_output_mock, patch.object(gra, "emit_markdown_summary") as emit_mock:
         assert gra.main() == 1
 
-    generate_mock.assert_called_once_with(merged_spec, False, image_exists_cache={})
+    generate_mock.assert_called_once_with(
+        merged_spec,
+        False,
+        image_exists_cache={},
+        allow_ci_promotion=True,
+    )
     validate_mock.assert_called_once()
     format_mock.assert_called_once_with(validation_result, is_dev=False)
     acceptance_mock.assert_not_called()
     write_output_mock.assert_not_called()
     emit_mock.assert_not_called()
+
+
+def test_run_from_args_report_data_json_dispatches_and_recomputes_acceptance(tmp_path):
+    report_path = tmp_path / "report_data_demo.json"
+    report_path.write_text(json.dumps(make_release_report(parameter_status="failed")))
+    output_dir = tmp_path / "release_logs" / "v0.10.0"
+    output_dir.mkdir(parents=True)
+    merged_spec = {
+        "demo_model": gra.MergedModelRecord(
+            model_id="demo_model",
+            model_spec=make_model_spec(make_image("demo"), model_id="demo_model"),
+            ci_data={"release_report": make_release_report(parameter_status="failed")},
+            target_docker_image=make_image("demo"),
+        )
+    }
+    args = Namespace(
+        ci_artifacts_path=None,
+        models_ci_run_id=None,
+        report_data_json=str(report_path),
+        out_root=None,
+        dev=False,
+        release=True,
+        output_dir=str(output_dir),
+        model_spec_path=str(tmp_path / "workflows" / "model_spec.py"),
+        readme_path=str(tmp_path / "README.md"),
+        release_model_spec_path=str(tmp_path / "release_model_spec.json"),
+        dry_run=False,
+    )
+    result_tuple = (defaultdict(list), 0, {}, {}, defaultdict(list))
+
+    with patch.object(
+        gra, "resolve_release_output_dir", return_value=output_dir
+    ), patch.object(gra, "get_version", return_value="0.10.0"), patch.object(
+        gra, "load_ci_data_from_report_data_json", return_value={"demo_model": {}}
+    ) as load_report_mock, patch.object(
+        gra, "check_docker_installed", return_value=True
+    ), patch.object(gra, "check_crane_installed") as crane_mock, patch.object(
+        gra, "merge_specs_with_ci_data", return_value=merged_spec
+    ), patch.object(
+        gra, "generate_release_artifacts", return_value=result_tuple
+    ) as generate_mock, patch.object(
+        gra,
+        "validate_model_spec_template_images",
+        return_value=TemplateImageValidationResult(),
+    ), patch.object(
+        gra, "write_release_performance_outputs", return_value={"models": {}}
+    ), patch.object(gra, "write_release_performance_diff_output"), patch.object(
+        gra, "write_release_model_spec_output"
+    ), patch.object(
+        gra, "regenerate_model_support_docs_and_update_readme"
+    ), patch.object(
+        gra, "write_release_notes", return_value=output_dir / "release_notes.md"
+    ), patch.object(gra, "emit_markdown_summary"), patch.object(
+        gra, "write_output"
+    ) as write_output_mock:
+        assert gra.run_from_args(args) == 0
+
+    load_report_mock.assert_called_once_with(report_path)
+    crane_mock.assert_not_called()
+    generate_mock.assert_called_once_with(
+        merged_spec,
+        False,
+        image_exists_cache={},
+        allow_ci_promotion=False,
+    )
+    acceptance_warnings = write_output_mock.call_args.kwargs["acceptance_warnings"]
+    assert len(acceptance_warnings) == 1
+    assert acceptance_warnings[0]["model_id"] == "demo_model"

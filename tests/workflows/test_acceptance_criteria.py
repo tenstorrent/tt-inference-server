@@ -465,7 +465,7 @@ def test_acceptance_criteria_check_supports_perf_subset_and_tolerance_override(
     )
     monkeypatch.setattr(
         "workflows.acceptance_criteria._load_acceptance_criteria_from_report",
-        lambda *_: AcceptanceCriteria(
+        lambda *_, **__: AcceptanceCriteria(
             perf_checks=(
                 AcceptanceBenchmarkCheck(
                     isl=128,
@@ -507,7 +507,7 @@ def test_acceptance_criteria_check_skips_optional_sections_when_disabled(
     )
     monkeypatch.setattr(
         "workflows.acceptance_criteria._load_acceptance_criteria_from_report",
-        lambda *_: AcceptanceCriteria(
+        lambda *_, **__: AcceptanceCriteria(
             eval_checks=AcceptanceSectionCriteria(required=False),
             tests_checks=AcceptanceSectionCriteria(required=False),
             spec_tests_checks=AcceptanceSectionCriteria(required=False),

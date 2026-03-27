@@ -11,6 +11,7 @@ def make_args(**overrides):
     args = {
         "ci_artifacts_path": None,
         "models_ci_run_id": 23578993514,
+        "report_data_json": None,
         "out_root": None,
         "output_dir": "release_logs/v0.10.0",
         "model_spec_path": "workflows/model_spec.py",
@@ -35,8 +36,21 @@ def test_parse_args_accepts_release_branch_and_step5_inputs():
 
     assert args.models_ci_run_id == 23578993514
     assert args.ci_artifacts_path is None
+    assert args.report_data_json is None
     assert args.release_branch == "stable"
     assert args.dry_run is False
+
+
+def test_build_release_artifact_args_preserves_report_data_json():
+    release_args = rel.build_release_artifact_args(
+        make_args(
+            models_ci_run_id=None, report_data_json="release_logs/v0.10.0/report.json"
+        )
+    )
+
+    assert release_args.report_data_json == "release_logs/v0.10.0/report.json"
+    assert release_args.release is True
+    assert release_args.dev is False
 
 
 def test_main_requires_current_release_branch():
@@ -92,6 +106,7 @@ def test_main_runs_step5_then_creates_and_pushes_release_branch():
     release_args = artifacts_mock.call_args.args[0]
     assert release_args.ci_artifacts_path == "release_logs/v0.10.0"
     assert release_args.models_ci_run_id is None
+    assert release_args.report_data_json is None
     assert release_args.dev is False
     assert release_args.release is True
     assert release_args.release_model_spec_path == "release_model_spec.json"
