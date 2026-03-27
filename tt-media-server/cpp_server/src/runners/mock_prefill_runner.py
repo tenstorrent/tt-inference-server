@@ -34,7 +34,7 @@ import sys
 import time
 from typing import Optional
 
-from shared_memory import PREFILL_MAX_TOKEN_IDS, SharedMemory, PrefillMessage
+from shared_memory import PREFILL_MAX_TOKEN_IDS, PrefillMessage, SharedMemory
 
 _shutdown = False
 
@@ -108,11 +108,11 @@ def _connect_to_workers() -> dict[int, socket.socket]:
             sock.close()
 
     if worker_sockets:
-        print(
-            f"Rank 0: Connected to {len(worker_sockets)} workers", file=sys.stderr
-        )
+        print(f"Rank 0: Connected to {len(worker_sockets)} workers", file=sys.stderr)
     else:
-        print("Rank 0: No workers connected, running in standalone mode", file=sys.stderr)
+        print(
+            "Rank 0: No workers connected, running in standalone mode", file=sys.stderr
+        )
     return worker_sockets
 
 
@@ -137,7 +137,9 @@ def run_rank0_coordinator() -> None:
         with SharedMemory(
             c2p_name, max_token_ids=PREFILL_MAX_TOKEN_IDS, is_shutdown=_is_shutdown
         ) as c2p, SharedMemory(
-            p2c_name, max_token_ids=1, is_shutdown=_is_shutdown  # Only 1 token output
+            p2c_name,
+            max_token_ids=1,
+            is_shutdown=_is_shutdown,  # Only 1 token output
         ) as p2c:
             print("Rank 0: SHM bridge started successfully", file=sys.stderr)
 
@@ -155,7 +157,7 @@ def run_rank0_coordinator() -> None:
                 task_id_str = msg.task_id.decode("utf-8", errors="ignore").rstrip(
                     "\x00"
                 )
-                
+
                 print(
                     f"Rank 0: Received prefill request task_id={task_id_str}, "
                     f"num_tokens={len(msg.token_ids)}, "
@@ -176,9 +178,9 @@ def run_rank0_coordinator() -> None:
 
                 # Return exactly one token (first token from reasoning sequence)
                 prefill_token = 128798  # <think> token
-                
+
                 p2c.write_token(msg.task_id, prefill_token)
-                
+
                 print(
                     f"Rank 0: Sent prefill token {prefill_token} for task {task_id_str}",
                     file=sys.stderr,
@@ -218,7 +220,7 @@ def run_worker_rank(rank: int) -> None:
                 break
 
             task_id_str = msg.task_id.decode("utf-8", errors="ignore").rstrip("\x00")
-            
+
             print(
                 f"Rank {rank}: Received prefill request task_id={task_id_str}, "
                 f"num_tokens={len(msg.token_ids)}, "
