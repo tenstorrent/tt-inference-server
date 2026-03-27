@@ -6,8 +6,10 @@
 import json
 import os
 import time
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from string import hexdigits
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -23,6 +25,20 @@ TT_METAL_OWNER = "tenstorrent"
 TT_METAL_REPO = "tt-metal"
 VLLM_OWNER = "tenstorrent"
 VLLM_REPO = "vllm"
+WORKFLOW_RUN_LOOKUP_PAGE_SIZE = 10
+WORKFLOW_RUN_LOOKUP_RETRIES = 5
+WORKFLOW_RUN_LOOKUP_SLEEP_SECONDS = 2
+WORKFLOW_RUN_CREATED_AT_SKEW_SECONDS = 1
+
+
+@dataclass(frozen=True)
+class WorkflowRunSummary:
+    """Minimal workflow run fields used to correlate a dispatch to its run."""
+
+    run_id: int
+    html_url: Optional[str]
+    created_at: Optional[datetime]
+    status: Optional[str]
 
 
 def normalize_dispatch_ref(base_ref: str) -> str:
@@ -120,22 +136,73 @@ def _github_api_request(
         raise RuntimeError(f"GitHub API request failed for {url}: {error}") from error
 
 
-def _find_recent_release_workflow_run_url(
+def _parse_github_datetime(value: object) -> Optional[datetime]:
+    """Parse a GitHub timestamp string into an aware UTC datetime."""
+    if not isinstance(value, str) or not value:
+        return None
+    return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+
+def _list_recent_release_workflow_runs(
     dispatch_ref: str, token: str
-) -> Optional[str]:
-    """Look up the most recent workflow_dispatch run for release.yml."""
+) -> List[WorkflowRunSummary]:
+    """List recent workflow_dispatch runs for release.yml on the dispatch ref."""
     encoded_workflow = quote(RELEASE_WORKFLOW_FILE, safe="")
     encoded_branch = quote(dispatch_ref, safe="")
     url = (
         f"{GITHUB_API}/repos/{TT_SHIELD_OWNER}/{TT_SHIELD_REPO}/actions/workflows/"
-        f"{encoded_workflow}/runs?per_page=10&event=workflow_dispatch&branch={encoded_branch}"
+        f"{encoded_workflow}/runs?per_page={WORKFLOW_RUN_LOOKUP_PAGE_SIZE}"
+        f"&event=workflow_dispatch&branch={encoded_branch}"
     )
     _, response_body = _github_api_request(url, token)
     data = json.loads(response_body.decode("utf-8")) if response_body else {}
     workflow_runs = data.get("workflow_runs", [])
-    if not workflow_runs:
-        return None
-    return workflow_runs[0].get("html_url")
+    if not isinstance(workflow_runs, list):
+        return []
+
+    run_summaries = []
+    for workflow_run in workflow_runs:
+        if not isinstance(workflow_run, dict):
+            continue
+        run_id = workflow_run.get("id")
+        if not isinstance(run_id, int):
+            continue
+        html_url = workflow_run.get("html_url")
+        if not isinstance(html_url, str):
+            html_url = None
+        status = workflow_run.get("status")
+        if not isinstance(status, str):
+            status = None
+        run_summaries.append(
+            WorkflowRunSummary(
+                run_id=run_id,
+                html_url=html_url,
+                created_at=_parse_github_datetime(workflow_run.get("created_at")),
+                status=status,
+            )
+        )
+    return run_summaries
+
+
+def _select_new_release_workflow_run(
+    recent_runs: List[WorkflowRunSummary],
+    baseline_run_ids: Set[int],
+    dispatch_started_at: datetime,
+) -> Optional[WorkflowRunSummary]:
+    """Return the first newly visible run created by this dispatch window."""
+    created_at_threshold = dispatch_started_at - timedelta(
+        seconds=WORKFLOW_RUN_CREATED_AT_SKEW_SECONDS
+    )
+    for workflow_run in recent_runs:
+        if workflow_run.run_id in baseline_run_ids:
+            continue
+        if (
+            workflow_run.created_at is not None
+            and workflow_run.created_at < created_at_threshold
+        ):
+            continue
+        return workflow_run
+    return None
 
 
 def _github_graphql_request(query: str, variables: Dict[str, str], token: str) -> dict:
@@ -237,6 +304,10 @@ def dispatch_release_workflow(
         TT_METAL_OWNER, TT_METAL_REPO, tt_metal_ref, token
     )
     vllm_sha = _resolve_commit_sha(VLLM_OWNER, VLLM_REPO, vllm_ref, token)
+    baseline_run_ids = {
+        workflow_run.run_id
+        for workflow_run in _list_recent_release_workflow_runs(dispatch_ref, token)
+    }
     payload = {
         "ref": dispatch_ref,
         "inputs": {
@@ -252,20 +323,30 @@ def dispatch_release_workflow(
         f"{GITHUB_API}/repos/{TT_SHIELD_OWNER}/{TT_SHIELD_REPO}/actions/workflows/"
         f"{quote(RELEASE_WORKFLOW_FILE, safe='')}/dispatches"
     )
+    dispatch_started_at = datetime.now(timezone.utc)
     status_code, response_body = _github_api_request(
         dispatch_url, token, method="POST", payload=payload
     )
     if response_body:
         response_data = json.loads(response_body.decode("utf-8"))
-        return response_data.get("html_url") or response_data.get("run_url")
+        run_url = response_data.get("html_url") or response_data.get("run_url")
+        if run_url:
+            return run_url
     if status_code not in (200, 201, 204):
         raise RuntimeError(
             f"Unexpected status code from release workflow dispatch: {status_code}"
         )
 
-    for _ in range(3):
-        run_url = _find_recent_release_workflow_run_url(dispatch_ref, token)
-        if run_url:
-            return run_url
-        time.sleep(2)
+    print(
+        "Release workflow dispatch accepted successfully; "
+        "polling for the newly started workflow run ID..."
+    )
+    for _ in range(WORKFLOW_RUN_LOOKUP_RETRIES):
+        recent_runs = _list_recent_release_workflow_runs(dispatch_ref, token)
+        workflow_run = _select_new_release_workflow_run(
+            recent_runs, baseline_run_ids, dispatch_started_at
+        )
+        if workflow_run and workflow_run.html_url:
+            return workflow_run.html_url
+        time.sleep(WORKFLOW_RUN_LOOKUP_SLEEP_SECONDS)
     return None
