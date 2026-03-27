@@ -6,7 +6,7 @@
   "$defs": {
     "device_names": {
       "type": "string",
-      "enum": ["N150", "N300", "T3K", "GALAXY", "GALAXY_BH", "P100", "P150X4", "P150X8", "P300X2", "DUAL_GALAXY"]
+      "enum": ["N150", "N300", "T3K", "GALAXY", "GALAXY_BH", "P100", "P150X4", "P150X8", "P300X2", "DUAL_GALAXY", "QUAD_GALAXY"]
     },
     "device_arg_entry": {
       "type": "object",
