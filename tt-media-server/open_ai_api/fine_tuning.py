@@ -8,12 +8,7 @@ from fastapi.responses import JSONResponse
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
-from utils.dataset_loaders.dataset_resolver import AVAILABLE_DATASET_LOADERS
-from config.constants import (
-    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
-    MODEL_SERVICE_RUNNER_MAP,
-    ModelServices,
-)
+from utils.build_catalog import TRAINING_CATALOG
 
 router = APIRouter()
 
@@ -21,18 +16,12 @@ router = APIRouter()
 @router.get("/catalog")
 async def get_catalog(api_key: str = Security(get_api_key)):
     """
-    List available models and datasets for fine-tuning.
+    List available models, datasets, trainers, optimizers, and clusters for fine-tuning.
 
     Returns:
-        JSONResponse: Catalog containing available models and datasets.
+        JSONResponse: Full training catalog.
     """
-    datasets = [loader.value for loader in AVAILABLE_DATASET_LOADERS.keys()]
-    runners = MODEL_SERVICE_RUNNER_MAP.get(ModelServices.TRAINING, set())
-    models = []
-    for runner in runners:
-        names = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner, set())
-        models.extend(n.value for n in names)
-    return JSONResponse(content={"models": models, "datasets": datasets})
+    return JSONResponse(content=TRAINING_CATALOG)
 
 
 @router.post("/jobs")

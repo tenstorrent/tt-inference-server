@@ -268,6 +268,15 @@ class JobTypes(Enum):
 class DatasetLoaders(Enum):
     SST2 = "sst2"
 
+class TrainingTrainers(Enum):
+    LORA = "lora"
+    SFT = "sft"
+    GRPO = "grpo"
+
+
+class TrainingOptimizers(Enum):
+    ADAMW = "adamw"
+
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
 def _vllm_config(
