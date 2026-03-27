@@ -167,8 +167,12 @@ bool ServerMetrics::tryPushEvent(MetricsEvent event) {
   if (event_queue_.size() >= kMaxEventQueueSize) {
     return false;
   }
+  const bool was_empty = event_queue_.empty();
   event_queue_.push(std::move(event));
-  event_queue_cv_.notify_one();
+  // Only wake the consumer when the queue transitions empty → non-empty.
+  // Notifying on every push causes a futex syscall per token (~120k/s on the
+  // mock runner), which is the dominant source of overhead.
+  if (was_empty) event_queue_cv_.notify_one();
   return true;
 }
 
@@ -179,17 +183,21 @@ bool ServerMetrics::tryPushEvent(MetricsEvent event) {
 
 void ServerMetrics::metricsLoop() {
   while (true) {
-    MetricsEvent event;
+    std::queue<MetricsEvent> batch;
     {
       std::unique_lock<std::mutex> lock(event_queue_mutex_);
       event_queue_cv_.wait(lock, [this] {
         return !event_queue_.empty() || !running_.load();
       });
       if (event_queue_.empty()) break;  // running_ == false and queue drained
-      event = std::move(event_queue_.front());
-      event_queue_.pop();
+      // Swap the entire queue out under the lock, then release immediately.
+      // Producers can keep pushing while we process the batch.
+      std::swap(batch, event_queue_);
     }
-    processEvent(event);
+    while (!batch.empty()) {
+      processEvent(batch.front());
+      batch.pop();
+    }
   }
 }
 
