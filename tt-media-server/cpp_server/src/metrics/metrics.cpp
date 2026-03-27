@@ -195,9 +195,8 @@ void ServerMetrics::metricsLoop() {
     std::queue<MetricsEvent> batch;
     {
       std::unique_lock<std::mutex> lock(event_queue_mutex_);
-      event_queue_cv_.wait(lock, [this] {
-        return !event_queue_.empty() || !running_.load();
-      });
+      event_queue_cv_.wait(
+          lock, [this] { return !event_queue_.empty() || !running_.load(); });
       if (event_queue_.empty()) break;  // running_ == false and queue drained
       // Swap the entire queue out under the lock, then release immediately.
       // Producers can keep pushing while we process the batch.
@@ -266,8 +265,7 @@ void ServerMetrics::handleRequestCompleted(const EventRequestCompleted& e) {
   }
   if (e.generation_tokens > 0)
     generation_tokens_total_->Increment(e.generation_tokens);
-  request_generation_tokens_->Observe(
-      static_cast<double>(e.generation_tokens));
+  request_generation_tokens_->Observe(static_cast<double>(e.generation_tokens));
 
   request_success_family_
       ->Add({{"model_name", model_name_}, {"finished_reason", e.finish_reason}})

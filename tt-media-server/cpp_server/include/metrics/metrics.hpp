@@ -135,9 +135,8 @@ class ServerMetrics {
     int generation_tokens;
   };
 
-  using MetricsEvent =
-      std::variant<EventRequestSubmitted, EventFirstToken, EventITLSample,
-                   EventRequestCompleted>;
+  using MetricsEvent = std::variant<EventRequestSubmitted, EventFirstToken,
+                                    EventITLSample, EventRequestCompleted>;
 
   // -------------------------------------------------------------------------
   // Background thread
