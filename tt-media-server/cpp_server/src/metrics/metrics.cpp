@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include "config/settings.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::metrics {
 
@@ -112,80 +113,149 @@ ServerMetrics::ServerMetrics() {
            .Help("Distribution of generated token counts per request")
            .Register(*registry_)
            .Add(model_label, kGenTokenBuckets);
+
+  // ----- start background metrics thread ----------------------------------
+  running_ = true;
+  metrics_thread_ = std::thread(&ServerMetrics::metricsLoop, this);
 }
+
+ServerMetrics::~ServerMetrics() {
+  running_ = false;
+  event_queue_cv_.notify_all();
+  if (metrics_thread_.joinable()) metrics_thread_.join();
+}
+
+// -----------------------------------------------------------------------------
+// Public API — capture timestamp immediately, push event, return.
+// Zero prometheus work on the calling thread.
+// -----------------------------------------------------------------------------
 
 void ServerMetrics::onRequestSubmitted(const std::string& task_id,
                                        int prompt_tokens) {
-  std::lock_guard<std::mutex> lock(contexts_mutex_);
-  contexts_.emplace(
-      task_id, RequestContext{.start_time = std::chrono::steady_clock::now(),
-                              .prompt_tokens = prompt_tokens});
+  if (!tryPushEvent(EventRequestSubmitted{
+          task_id, std::chrono::steady_clock::now(), prompt_tokens})) {
+    TT_LOG_WARN("[ServerMetrics] event queue full, dropping RequestSubmitted");
+  }
 }
 
 void ServerMetrics::onToken(const std::string& task_id) {
-  auto now = std::chrono::steady_clock::now();
-  double ttft = -1.0;
-  double itl = -1.0;
-  {
-    std::lock_guard<std::mutex> lock(contexts_mutex_);
-    auto it = contexts_.find(task_id);
-    if (it == contexts_.end()) return;
-
-    auto& ctx = it->second;
-    ctx.generation_tokens++;
-
-    if (!ctx.first_token_time.has_value()) {
-      ctx.first_token_time = now;
-      ttft = std::chrono::duration<double>(now - ctx.start_time).count();
-    } else if (ctx.prev_token_time.has_value()) {
-      itl = std::chrono::duration<double>(now - ctx.prev_token_time.value())
-                .count();
-    }
-    ctx.prev_token_time = now;
+  if (!tryPushEvent(
+          EventTokenGenerated{task_id, std::chrono::steady_clock::now()})) {
+    TT_LOG_WARN("[ServerMetrics] event queue full, dropping TokenGenerated");
   }
-  // Prometheus operations have their own internal locks — call outside
-  // contexts_mutex_ to avoid nested locking and serialising token delivery.
-  // generation_tokens_total_ is incremented in bulk at onRequestCompleted()
-  // to avoid a prometheus counter lock acquisition on every single token.
-  if (ttft >= 0.0) ttft_seconds_->Observe(ttft);
-  if (itl >= 0.0) inter_token_latency_seconds_->Observe(itl);
 }
 
 void ServerMetrics::onRequestCompleted(const std::string& task_id,
                                        const std::string& finish_reason) {
-  auto now = std::chrono::steady_clock::now();
-  RequestContext ctx;
-  {
-    std::lock_guard<std::mutex> lock(contexts_mutex_);
-    auto it = contexts_.find(task_id);
-    if (it == contexts_.end()) return;
-    ctx = it->second;
-    contexts_.erase(it);
+  if (!tryPushEvent(EventRequestCompleted{
+          task_id, std::chrono::steady_clock::now(), finish_reason})) {
+    TT_LOG_WARN("[ServerMetrics] event queue full, dropping RequestCompleted");
   }
-
-  // E2E latency
-  double e2e = std::chrono::duration<double>(now - ctx.start_time).count();
-  e2e_latency_seconds_->Observe(e2e);
-
-  // Prompt tokens
-  if (ctx.prompt_tokens > 0) {
-    prompt_tokens_total_->Increment(ctx.prompt_tokens);
-    request_prompt_tokens_->Observe(static_cast<double>(ctx.prompt_tokens));
-  }
-
-  // Generation tokens — bulk increment here avoids per-token counter lock
-  if (ctx.generation_tokens > 0)
-    generation_tokens_total_->Increment(ctx.generation_tokens);
-  request_generation_tokens_->Observe(
-      static_cast<double>(ctx.generation_tokens));
-
-  // Request success counter (label per finish_reason)
-  request_success_family_
-      ->Add({{"model_name", model_name_}, {"finished_reason", finish_reason}})
-      .Increment();
 }
 
-void ServerMetrics::setQueueDepth(double n) { queue_depth_->Set(n); }
+void ServerMetrics::setQueueDepth(double n) {
+  // Called twice per request (not per token) — write directly.
+  queue_depth_->Set(n);
+}
+
+// -----------------------------------------------------------------------------
+// Queue helpers
+// -----------------------------------------------------------------------------
+
+bool ServerMetrics::tryPushEvent(MetricsEvent event) {
+  std::lock_guard<std::mutex> lock(event_queue_mutex_);
+  if (event_queue_.size() >= kMaxEventQueueSize) {
+    return false;
+  }
+  event_queue_.push(std::move(event));
+  event_queue_cv_.notify_one();
+  return true;
+}
+
+// -----------------------------------------------------------------------------
+// Background thread — sole consumer of the queue and contexts_ map.
+// No locking needed for contexts_ or prometheus objects here.
+// -----------------------------------------------------------------------------
+
+void ServerMetrics::metricsLoop() {
+  while (true) {
+    MetricsEvent event;
+    {
+      std::unique_lock<std::mutex> lock(event_queue_mutex_);
+      event_queue_cv_.wait(lock, [this] {
+        return !event_queue_.empty() || !running_.load();
+      });
+      if (event_queue_.empty()) break;  // running_ == false and queue drained
+      event = std::move(event_queue_.front());
+      event_queue_.pop();
+    }
+    processEvent(event);
+  }
+}
+
+void ServerMetrics::processEvent(const MetricsEvent& event) {
+  std::visit(
+      [this](auto&& e) {
+        using T = std::decay_t<decltype(e)>;
+
+        if constexpr (std::is_same_v<T, EventRequestSubmitted>) {
+          contexts_.emplace(e.task_id,
+                            RequestContext{.start_time = e.time,
+                                          .prompt_tokens = e.prompt_tokens});
+
+        } else if constexpr (std::is_same_v<T, EventTokenGenerated>) {
+          auto it = contexts_.find(e.task_id);
+          if (it == contexts_.end()) return;
+          auto& ctx = it->second;
+          ctx.generation_tokens++;
+
+          if (!ctx.first_token_time.has_value()) {
+            ctx.first_token_time = e.time;
+            double ttft =
+                std::chrono::duration<double>(e.time - ctx.start_time).count();
+            ttft_seconds_->Observe(ttft);
+          } else if (ctx.prev_token_time.has_value()) {
+            double itl = std::chrono::duration<double>(
+                             e.time - ctx.prev_token_time.value())
+                             .count();
+            inter_token_latency_seconds_->Observe(itl);
+          }
+          ctx.prev_token_time = e.time;
+
+        } else if constexpr (std::is_same_v<T, EventRequestCompleted>) {
+          auto it = contexts_.find(e.task_id);
+          if (it == contexts_.end()) return;
+          const RequestContext ctx = it->second;
+          contexts_.erase(it);
+
+          double e2e =
+              std::chrono::duration<double>(e.time - ctx.start_time).count();
+          e2e_latency_seconds_->Observe(e2e);
+
+          if (ctx.prompt_tokens > 0) {
+            prompt_tokens_total_->Increment(ctx.prompt_tokens);
+            request_prompt_tokens_->Observe(
+                static_cast<double>(ctx.prompt_tokens));
+          }
+          if (ctx.generation_tokens > 0) {
+            generation_tokens_total_->Increment(ctx.generation_tokens);
+          }
+          request_generation_tokens_->Observe(
+              static_cast<double>(ctx.generation_tokens));
+
+          request_success_family_
+              ->Add({{"model_name", model_name_},
+                     {"finished_reason", e.finish_reason}})
+              .Increment();
+        }
+      },
+      event);
+}
+
+// -----------------------------------------------------------------------------
+// Scrape endpoint — prometheus internal locks make this safe to call from
+// any thread while the metrics thread calls Observe()/Increment().
+// -----------------------------------------------------------------------------
 
 std::string ServerMetrics::renderText() const {
   prometheus::TextSerializer serializer;

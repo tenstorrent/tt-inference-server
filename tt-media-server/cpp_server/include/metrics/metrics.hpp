@@ -12,22 +12,31 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <queue>
 #include <string>
+#include <thread>
 #include <unordered_map>
+#include <variant>
 
 namespace tt::metrics {
 
 /**
  * Singleton Prometheus metrics registry for the TT inference server.
  *
- * Tracks latency histograms (e2e, TTFT, inter-token), token throughput
- * counters, and system state gauges.  Thread-safe: all public methods
- * may be called concurrently from IO threads and consumer threads.
+ * All metric observations are handled by a dedicated background thread.
+ * Callers (LLM service threads) only push lightweight event structs onto a
+ * bounded queue — one atomic push per token, zero prometheus work on the
+ * critical path.  If the queue is full, the event is dropped and a warning
+ * is logged.
  *
- * Expose via GET /metrics → renderText().
+ * setQueueDepth() is the exception: it writes a Gauge directly (called
+ * twice per request, not per token — negligible overhead).
+ *
+ * Expose metrics via GET /metrics → renderText().
  */
 class ServerMetrics {
  public:
@@ -35,6 +44,7 @@ class ServerMetrics {
 
   ServerMetrics(const ServerMetrics&) = delete;
   ServerMetrics& operator=(const ServerMetrics&) = delete;
+  ~ServerMetrics();
 
   /**
    * Called when a streaming request is submitted to the service.
@@ -59,6 +69,7 @@ class ServerMetrics {
   /**
    * Update the in-flight request gauge (call after pending_tasks_ changes).
    * Tracks all requests from submission through final token delivery.
+   * Called directly (not via queue) — twice per request, not per token.
    */
   void setQueueDepth(double n);
 
@@ -68,6 +79,49 @@ class ServerMetrics {
  private:
   ServerMetrics();
 
+  // -------------------------------------------------------------------------
+  // Event types pushed onto the queue by LLM service threads.
+  // Timestamps are captured at call time so measurements are accurate
+  // even though processing happens asynchronously.
+  // -------------------------------------------------------------------------
+  struct EventRequestSubmitted {
+    std::string task_id;
+    std::chrono::steady_clock::time_point time;
+    int prompt_tokens;
+  };
+  struct EventTokenGenerated {
+    std::string task_id;
+    std::chrono::steady_clock::time_point time;
+  };
+  struct EventRequestCompleted {
+    std::string task_id;
+    std::chrono::steady_clock::time_point time;
+    std::string finish_reason;
+  };
+
+  using MetricsEvent =
+      std::variant<EventRequestSubmitted, EventTokenGenerated,
+                   EventRequestCompleted>;
+
+  // -------------------------------------------------------------------------
+  // Background thread
+  // -------------------------------------------------------------------------
+  static constexpr size_t kMaxEventQueueSize = 65536;
+
+  bool tryPushEvent(MetricsEvent event);
+  void metricsLoop();
+  void processEvent(const MetricsEvent& event);
+
+  std::queue<MetricsEvent> event_queue_;
+  std::mutex event_queue_mutex_;
+  std::condition_variable event_queue_cv_;
+  std::atomic<bool> running_{false};
+  std::thread metrics_thread_;
+
+  // -------------------------------------------------------------------------
+  // Per-request timing state — only accessed from metrics_thread_.
+  // No mutex needed: single consumer.
+  // -------------------------------------------------------------------------
   struct RequestContext {
     std::chrono::steady_clock::time_point start_time;
     std::optional<std::chrono::steady_clock::time_point> first_token_time;
@@ -75,7 +129,12 @@ class ServerMetrics {
     int prompt_tokens = 0;
     int generation_tokens = 0;
   };
+  std::unordered_map<std::string, RequestContext> contexts_;
 
+  // -------------------------------------------------------------------------
+  // Prometheus objects — only written from metrics_thread_,
+  // read by renderText() (prometheus internal locks handle that safely).
+  // -------------------------------------------------------------------------
   std::string model_name_;
   std::shared_ptr<prometheus::Registry> registry_;
 
@@ -96,10 +155,6 @@ class ServerMetrics {
   // --- token-count histograms ---
   prometheus::Histogram* request_prompt_tokens_{nullptr};
   prometheus::Histogram* request_generation_tokens_{nullptr};
-
-  // per-request timing / token-count state
-  mutable std::mutex contexts_mutex_;
-  std::unordered_map<std::string, RequestContext> contexts_;
 };
 
 }  // namespace tt::metrics
