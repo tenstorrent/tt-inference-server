@@ -636,7 +636,7 @@ def main():
     if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
         workflow_results = run_workflows(model_spec, runtime_config, json_fpath)
         if all(result.return_code == 0 for result in workflow_results):
-            logger.info("Completed run.py.")
+            logger.info("✅ Completed run.py.")
         else:
             failed_workflows = [
                 f"{result.workflow_name} ({result.return_code})"
@@ -644,22 +644,15 @@ def main():
                 if result.return_code != 0
             ]
             logger.error(
-                f"run.py failed workflows: {failed_workflows}. "
+                f"⛔ failing run.py due to failed workflows: {failed_workflows}. "
                 "See logs above for details."
             )
             main_return_code = 1
     else:
-        logger.info(
-            f"Completed {runtime_config.workflow} workflow, skipping run_workflows()."
-        )
+        logger.info(f"✅ Completed {runtime_config.workflow} workflow.")
 
     logger.info(
-        "The output of the workflows is not checked and any errors will be "
-        "in the logs above and in the saved log file."
-    )
-    logger.info(
-        "If you encounter any issues please share the log file in a GitHub "
-        "issue and server log if available."
+        "If you encounter any issues, please share the log file in a GitHub issue: https://github.com/tenstorrent/tt-inference-server/issues"
     )
     logger.info(f"This log file is saved on local machine at: {run_log_path}")
     return main_return_code
