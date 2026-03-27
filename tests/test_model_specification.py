@@ -125,7 +125,6 @@ class TestModelSpecTemplateSystem:
             ],
             weights=["test/model"],
         )
-        assert template.repacked == 0
         assert template.version == VERSION
         assert template.status == ModelStatusTypes.EXPERIMENTAL
         assert template.docker_image is None
@@ -359,6 +358,34 @@ class TestModelSpecSystem:
             loaded_spec.device_model_spec.tensor_cache_timeout
             == original_spec.device_model_spec.tensor_cache_timeout
         )
+        assert "repacked" not in loaded_spec.get_serialized_dict()
+
+    def test_json_deserialization_ignores_legacy_repacked_field(
+        self, sample_impl, sample_device_model_spec, tmp_path
+    ):
+        original_spec = ModelSpec(
+            device_type=DeviceTypes.T3K,
+            impl=sample_impl,
+            hf_model_repo="meta-llama/Llama-3.1-70B-Instruct",
+            model_id="test-llama-70b-t3k",
+            model_name="Llama-3.1-70B-Instruct",
+            tt_metal_commit="v1.2.3-rc45",
+            vllm_commit="abcdef123456",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_spec=sample_device_model_spec,
+            status=ModelStatusTypes.FUNCTIONAL,
+        )
+
+        legacy_payload = original_spec.get_serialized_dict()
+        legacy_payload["repacked"] = 0
+        json_file = tmp_path / "legacy_model_spec.json"
+        json_file.write_text(json.dumps(legacy_payload), encoding="utf-8")
+
+        loaded_spec = ModelSpec.from_json(json_file)
+
+        assert loaded_spec.model_id == original_spec.model_id
+        assert loaded_spec.status == original_spec.status
+        assert "repacked" not in loaded_spec.get_serialized_dict()
 
     def test_json_serialization_round_trips_acceptance_criteria(
         self, sample_impl, tmp_path

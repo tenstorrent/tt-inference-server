@@ -538,8 +538,6 @@ class HostSetupManager:
             return
 
         assert self.hf_token, "⛔ HF_TOKEN not set."
-        if self.model_spec.repacked == 1:
-            raise ValueError("⛔ Repacked models are not supported for Hugging Face.")
         # setup venv using uv
         venv_config = VENV_CONFIGS[WorkflowVenvType.HF_SETUP]
         venv_config.setup(model_spec=self.model_spec)
