@@ -826,11 +826,75 @@ class TestMainWorkflowIntegration:
             "run.get_current_commit_sha", return_value="deadbeefdead"
         ), patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
-        ), patch("workflows.log_setup.setup_run_logger"):
+        ), patch("workflows.log_setup.setup_run_logger"), patch(
+            "run.logger.info"
+        ) as logger_info_mock:
             result = main()
 
         assert result == 0
         mock_subprocess_run.assert_not_called()
+        logged_messages = [call.args[0] for call in logger_info_mock.call_args_list]
+        assert any(
+            message
+            == f"Server log file is saved at: {mock_server_handle['docker_log_file_path']}"
+            for message in logged_messages
+        )
+
+    def test_main_release_logs_local_server_log_path_after_workflows(
+        self, temp_dir, mock_env_vars, mock_version_file
+    ):
+        """Test release logs the local server log path after workflows complete."""
+        test_args = [
+            "run.py",
+            "--model",
+            "Llama-3.1-8B-Instruct",
+            "--device",
+            "n150",
+            "--workflow",
+            "release",
+            "--local-server",
+            "--tt-metal-home",
+            "/tmp/tt-metal",
+        ]
+
+        mock_server_handle = {
+            "process_name": "tt-inference-server-local-test",
+            "pid": 12345,
+            "local_log_file_path": str(temp_dir / "local.log"),
+            "service_port": "8000",
+        }
+
+        with patch("sys.argv", test_args), patch(
+            "run.validate_setup",
+        ), patch(
+            "run.setup_host",
+            return_value=Namespace(),
+        ), patch(
+            "run.run_local_server",
+            return_value=mock_server_handle,
+        ), patch(
+            "run.run_workflows",
+            return_value=[
+                WorkflowResult(workflow_name="evals", return_code=0),
+                WorkflowResult(workflow_name="benchmarks", return_code=0),
+                WorkflowResult(workflow_name="spec_tests", return_code=0),
+                WorkflowResult(workflow_name="tests", return_code=0),
+                WorkflowResult(workflow_name="reports", return_code=0),
+            ],
+        ), patch("run.get_current_commit_sha", return_value="deadbeefdead"), patch(
+            "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
+        ), patch("workflows.log_setup.setup_run_logger"), patch(
+            "run.logger.info"
+        ) as logger_info_mock:
+            result = main()
+
+        assert result == 0
+        logged_messages = [call.args[0] for call in logger_info_mock.call_args_list]
+        assert any(
+            message
+            == f"Server log file is saved at: {mock_server_handle['local_log_file_path']}"
+            for message in logged_messages
+        )
 
     def test_error_handling_invalid_model(self, mock_env_vars):
         """Test error handling for invalid model configuration."""

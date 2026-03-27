@@ -576,6 +576,7 @@ def main():
         )
 
     # step 4: optionally run inference server
+    server_handle = None
     if runtime_config.docker_server:
         docker_json_fpath = None
         if runtime_config.dev_mode:
@@ -624,10 +625,20 @@ def main():
                     f"Docker run command:\n\n{format_docker_command(docker_command)}\n"
                 )
             return 0
-        run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
+        server_handle = run_docker_server(
+            model_spec, runtime_config, setup_config, docker_json_fpath
+        )
     elif runtime_config.local_server:
         logger.info("Running inference server on localhost ...")
-        run_local_server(model_spec, runtime_config, json_fpath, setup_config)
+        server_handle = run_local_server(
+            model_spec, runtime_config, json_fpath, setup_config
+        )
+
+    server_log_file_path = None
+    if server_handle:
+        server_log_file_path = server_handle.get(
+            "docker_log_file_path"
+        ) or server_handle.get("local_log_file_path")
 
     main_return_code = 0
 
@@ -654,7 +665,9 @@ def main():
     logger.info(
         "If you encounter any issues, please share the log file in a GitHub issue: https://github.com/tenstorrent/tt-inference-server/issues"
     )
-    logger.info(f"This log file is saved on local machine at: {run_log_path}")
+    logger.info(f"This run.py log file is saved at: {run_log_path}")
+    if server_log_file_path:
+        logger.info(f"Server log file is saved at: {server_log_file_path}")
     return main_return_code
 
 
