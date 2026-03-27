@@ -11,6 +11,7 @@ import time
 import aiohttp
 import numpy as np
 from PIL import Image
+
 from server_tests.base_test import BaseTest
 
 # Set up logging
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Model-specific overrides for the "different params" payload.
 # Only the fields that differ from default_payload need to be specified.
 _MODEL_DIFF_PARAM_OVERRIDES = {
-    "FLUX.1-dev": {"guidance_scale": 20.0},
+    "FLUX.1-dev": {"seed": 0},
     "FLUX.1-schnell": {"seed": 0},
 }
 default_payload = {
