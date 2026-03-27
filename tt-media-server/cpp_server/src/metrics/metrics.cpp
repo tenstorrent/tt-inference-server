@@ -145,8 +145,7 @@ void ServerMetrics::onToken(const std::string& taskId) {
   }
 }
 
-void ServerMetrics::onITLSample(const std::string& taskId,
-                                double itlSeconds) {
+void ServerMetrics::onITLSample(const std::string& taskId, double itlSeconds) {
   if (!tryPushEvent(EventITLSample{taskId, itlSeconds})) {
     TT_LOG_WARN("[ServerMetrics] event queue full, dropping ITLSample");
   }
