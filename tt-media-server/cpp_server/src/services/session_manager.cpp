@@ -16,8 +16,8 @@ domain::Session SessionManager::createSession(std::optional<int> slotId) {
   std::string sessionId = session.getSessionId();
   sessions_[sessionId] = session;
 
-  TT_LOG_INFO("[SessionManager] Created session: {} with slot: {}",
-              sessionId, slot);
+  TT_LOG_INFO("[SessionManager] Created session: {} with slot: {}", sessionId,
+              slot);
 
   return session;
 }

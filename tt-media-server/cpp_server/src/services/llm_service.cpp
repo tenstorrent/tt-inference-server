@@ -302,9 +302,9 @@ domain::CompletionResponse LLMService::processRequest(
   choice.finish_reason = finishReason;
   response.choices.push_back(std::move(choice));
 
-  response.usage = {PROMPT_TOKENS, completionTokens,
-                    PROMPT_TOKENS + completionTokens, std::nullopt,
-                    std::nullopt, std::nullopt};
+  response.usage = {
+      PROMPT_TOKENS, completionTokens, PROMPT_TOKENS + completionTokens,
+      std::nullopt,  std::nullopt,     std::nullopt};
 
   return response;
 }

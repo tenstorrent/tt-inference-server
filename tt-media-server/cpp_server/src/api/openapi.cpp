@@ -141,8 +141,7 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     paths["/v1/sessions"]["post"] = buildCreateSessionEndpoint();
 
     // DELETE /v1/sessions/{session_id}
-    paths["/v1/sessions/{session_id}"]["delete"] =
-        buildCloseSessionEndpoint();
+    paths["/v1/sessions/{session_id}"]["delete"] = buildCloseSessionEndpoint();
 
     // GET /v1/sessions/{session_id}/slot
     paths["/v1/sessions/{session_id}/slot"]["get"] = buildGetSlotIdEndpoint();

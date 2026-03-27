@@ -70,10 +70,9 @@ class LLMController : public drogon::HttpController<LLMController> {
    * GET /v1/sessions/{session_id}/slot
    * Get the slot ID for a session.
    */
-  void getSlotId(
-      const drogon::HttpRequestPtr& req,
-      std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-      const std::string& sessionId) const;
+  void getSlotId(const drogon::HttpRequestPtr& req,
+                 std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+                 const std::string& sessionId) const;
 
  private:
   std::shared_ptr<services::LLMService> service;

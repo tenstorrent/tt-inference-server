@@ -381,16 +381,23 @@ void LLMController::handleStreaming(
         std::optional<domain::CompletionUsage> usage;
         if (CONTINUOUS_USAGE) {
           usage = domain::CompletionUsage{reqPtr->prompt_tokens_count,
-                                          CURRENT_TOKENS, CURRENT_TOKENS,
-                                          std::nullopt, std::nullopt, std::nullopt};
+                                          CURRENT_TOKENS,
+                                          CURRENT_TOKENS,
+                                          std::nullopt,
+                                          std::nullopt,
+                                          std::nullopt};
         }
         auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
             COMPLETION_ID, MODEL, CREATED, chunk.choices[0], usage);
         if (firstContentChunk->exchange(false)) {
           std::optional<domain::CompletionUsage> initialUsage;
           if (CONTINUOUS_USAGE) {
-            initialUsage = domain::CompletionUsage{
-                reqPtr->prompt_tokens_count, 0, 0, std::nullopt, std::nullopt, std::nullopt};
+            initialUsage = domain::CompletionUsage{reqPtr->prompt_tokens_count,
+                                                   0,
+                                                   0,
+                                                   std::nullopt,
+                                                   std::nullopt,
+                                                   std::nullopt};
           }
           auto initialChunk =
               domain::ChatCompletionStreamChunk::makeInitialChunk(
@@ -423,8 +430,12 @@ void LLMController::handleStreaming(
           flushAccumulated(accumulator, streamPtr);
           if (INCLUDE_USAGE) {
             const int TOKENS = completionTokens->load();
-            domain::CompletionUsage usage{reqPtr->prompt_tokens_count, TOKENS,
-                                          TOKENS, std::nullopt, std::nullopt, std::nullopt};
+            domain::CompletionUsage usage{reqPtr->prompt_tokens_count,
+                                          TOKENS,
+                                          TOKENS,
+                                          std::nullopt,
+                                          std::nullopt,
+                                          std::nullopt};
 
             if (firstTokenTime->has_value()) {
               auto ttftDuration =
@@ -539,8 +550,7 @@ void LLMController::createSession(
       std::string errs;
 
       if (Json::parseFromStream(builder, bodyStream, &requestBody, &errs)) {
-        if (requestBody.isMember("slot_id") &&
-            requestBody["slot_id"].isInt()) {
+        if (requestBody.isMember("slot_id") && requestBody["slot_id"].isInt()) {
           slotId = requestBody["slot_id"].asInt();
         }
       }
