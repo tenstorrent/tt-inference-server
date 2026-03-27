@@ -148,7 +148,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   // (task_id is a UUID, 36 chars — above SSO) and a mutex acquisition on every
   // generated token.  At ~120k tok/s that overhead degrades throughput by ~7%.
   //
-  // Mitigation: observe ITL once every kITLSampleStride consecutive tokens.
+  // Mitigation: observe ITL once every K_ITL_SAMPLE_STRIDE consecutive tokens.
   // The reported quantiles remain statistically representative; the absolute
   // ITL values are accurate because the caller pre-computes elapsed time
   // between the two most recent CONSECUTIVE tokens rather than relying on the
@@ -157,7 +157,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   // TODO: Remove once task IDs become uint32 — then per-event cost is
   // negligible (no heap allocation) and onToken() can be called for every
   // token unconditionally.
-  static constexpr int kITLSampleStride = 5;
+  static constexpr int K_ITL_SAMPLE_STRIDE = 5;
 
   struct MetricsSamplingState {
     int token_count = 0;
@@ -212,19 +212,19 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       //
       // Hot-path budget: only a map counter increment for non-sampled tokens.
       // steady_clock::now() and metric queue pushes happen only on the first
-      // token (TTFT) and every kITLSampleStride-th subsequent token.
-      // The ITL value is divided by kITLSampleStride to yield a per-token
+      // token (TTFT) and every K_ITL_SAMPLE_STRIDE-th subsequent token.
+      // The ITL value is divided by K_ITL_SAMPLE_STRIDE to yield a per-token
       // estimate (assumes roughly uniform decode step latency).
       {
         auto& ms = metricsSampling[taskId];
         if (ms.token_count == 0) {
           tt::metrics::ServerMetrics::instance().onToken(taskId);
           ms.prev_token_time = std::chrono::steady_clock::now();
-        } else if (ms.token_count % kITLSampleStride == 0) {
+        } else if (ms.token_count % K_ITL_SAMPLE_STRIDE == 0) {
           auto now = std::chrono::steady_clock::now();
           double itl =
               std::chrono::duration<double>(now - ms.prev_token_time).count() /
-              kITLSampleStride;
+              K_ITL_SAMPLE_STRIDE;
           tt::metrics::ServerMetrics::instance().onITLSample(taskId, itl);
           ms.prev_token_time = now;
         }
