@@ -111,6 +111,9 @@ class ServerMetrics {
   bool tryPushEvent(MetricsEvent event);
   void metricsLoop();
   void processEvent(const MetricsEvent& event);
+  void handleRequestSubmitted(const EventRequestSubmitted& e);
+  void handleTokenGenerated(const EventTokenGenerated& e);
+  void handleRequestCompleted(const EventRequestCompleted& e);
 
   std::queue<MetricsEvent> event_queue_;
   std::mutex event_queue_mutex_;

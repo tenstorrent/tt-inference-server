@@ -195,61 +195,63 @@ void ServerMetrics::metricsLoop() {
 
 void ServerMetrics::processEvent(const MetricsEvent& event) {
   std::visit(
-      [this](auto&& e) {
+      [this](const auto& e) {
         using T = std::decay_t<decltype(e)>;
-
-        if constexpr (std::is_same_v<T, EventRequestSubmitted>) {
-          contexts_.emplace(e.task_id,
-                            RequestContext{.start_time = e.time,
-                                          .prompt_tokens = e.prompt_tokens});
-
-        } else if constexpr (std::is_same_v<T, EventTokenGenerated>) {
-          auto it = contexts_.find(e.task_id);
-          if (it == contexts_.end()) return;
-          auto& ctx = it->second;
-          ctx.generation_tokens++;
-
-          if (!ctx.first_token_time.has_value()) {
-            ctx.first_token_time = e.time;
-            double ttft =
-                std::chrono::duration<double>(e.time - ctx.start_time).count();
-            ttft_seconds_->Observe(ttft);
-          } else if (ctx.prev_token_time.has_value()) {
-            double itl = std::chrono::duration<double>(
-                             e.time - ctx.prev_token_time.value())
-                             .count();
-            inter_token_latency_seconds_->Observe(itl);
-          }
-          ctx.prev_token_time = e.time;
-
-        } else if constexpr (std::is_same_v<T, EventRequestCompleted>) {
-          auto it = contexts_.find(e.task_id);
-          if (it == contexts_.end()) return;
-          const RequestContext ctx = it->second;
-          contexts_.erase(it);
-
-          double e2e =
-              std::chrono::duration<double>(e.time - ctx.start_time).count();
-          e2e_latency_seconds_->Observe(e2e);
-
-          if (ctx.prompt_tokens > 0) {
-            prompt_tokens_total_->Increment(ctx.prompt_tokens);
-            request_prompt_tokens_->Observe(
-                static_cast<double>(ctx.prompt_tokens));
-          }
-          if (ctx.generation_tokens > 0) {
-            generation_tokens_total_->Increment(ctx.generation_tokens);
-          }
-          request_generation_tokens_->Observe(
-              static_cast<double>(ctx.generation_tokens));
-
-          request_success_family_
-              ->Add({{"model_name", model_name_},
-                     {"finished_reason", e.finish_reason}})
-              .Increment();
-        }
+        if constexpr (std::is_same_v<T, EventRequestSubmitted>)
+          handleRequestSubmitted(e);
+        else if constexpr (std::is_same_v<T, EventTokenGenerated>)
+          handleTokenGenerated(e);
+        else if constexpr (std::is_same_v<T, EventRequestCompleted>)
+          handleRequestCompleted(e);
       },
       event);
+}
+
+void ServerMetrics::handleRequestSubmitted(const EventRequestSubmitted& e) {
+  contexts_.emplace(e.task_id, RequestContext{.start_time = e.time,
+                                             .prompt_tokens = e.prompt_tokens});
+}
+
+void ServerMetrics::handleTokenGenerated(const EventTokenGenerated& e) {
+  auto it = contexts_.find(e.task_id);
+  if (it == contexts_.end()) return;
+  auto& ctx = it->second;
+  ctx.generation_tokens++;
+
+  if (!ctx.first_token_time.has_value()) {
+    ctx.first_token_time = e.time;
+    double ttft =
+        std::chrono::duration<double>(e.time - ctx.start_time).count();
+    ttft_seconds_->Observe(ttft);
+  } else if (ctx.prev_token_time.has_value()) {
+    double itl =
+        std::chrono::duration<double>(e.time - *ctx.prev_token_time).count();
+    inter_token_latency_seconds_->Observe(itl);
+  }
+  ctx.prev_token_time = e.time;
+}
+
+void ServerMetrics::handleRequestCompleted(const EventRequestCompleted& e) {
+  auto it = contexts_.find(e.task_id);
+  if (it == contexts_.end()) return;
+  const RequestContext ctx = it->second;
+  contexts_.erase(it);
+
+  e2e_latency_seconds_->Observe(
+      std::chrono::duration<double>(e.time - ctx.start_time).count());
+
+  if (ctx.prompt_tokens > 0) {
+    prompt_tokens_total_->Increment(ctx.prompt_tokens);
+    request_prompt_tokens_->Observe(static_cast<double>(ctx.prompt_tokens));
+  }
+  if (ctx.generation_tokens > 0)
+    generation_tokens_total_->Increment(ctx.generation_tokens);
+  request_generation_tokens_->Observe(
+      static_cast<double>(ctx.generation_tokens));
+
+  request_success_family_
+      ->Add({{"model_name", model_name_}, {"finished_reason", e.finish_reason}})
+      .Increment();
 }
 
 // -----------------------------------------------------------------------------
