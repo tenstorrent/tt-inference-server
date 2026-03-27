@@ -23051,6 +23051,557 @@
           }
         }
       }
+    },
+    "allenai/OLMo-3.1-32B-Think": {
+      "GALAXY": {
+        "vLLM": {
+          "olmo3_32b_galaxy": {
+            "model_id": "id_olmo3-32b-galaxy_OLMo-3.1-32B-Think_galaxy",
+            "impl": {
+              "impl_id": "olmo3_32b_galaxy",
+              "impl_name": "olmo3-32b-galaxy",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/demos/llama3_70b_galaxy"
+            },
+            "hf_model_repo": "allenai/OLMo-3.1-32B-Think",
+            "model_name": "OLMo-3.1-32B-Think",
+            "inference_engine": "vLLM",
+            "device_type": "GALAXY",
+            "tt_metal_commit": "ebef510",
+            "device_model_spec": {
+              "device": "GALAXY",
+              "max_concurrency": 32,
+              "max_context": 65664,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": 128,
+                  "osl": 128,
+                  "max_concurrency": 1,
+                  "num_prompts": 8,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 4900.0,
+                      "tput_user": 1.5,
+                      "tput": 1.5,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 980.0,
+                      "tput_user": 7.5,
+                      "tput": 7.5,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 490.0,
+                      "tput_user": 15.0,
+                      "tput": 15.0,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null
+                },
+                {
+                  "isl": 128,
+                  "osl": 128,
+                  "max_concurrency": 32,
+                  "num_prompts": 256,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 146000.0,
+                      "tput_user": 1.35,
+                      "tput": 43.2,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 29200.0,
+                      "tput_user": 6.75,
+                      "tput": 216.0,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 14600.0,
+                      "tput_user": 13.5,
+                      "tput": 432.0,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null
+                },
+                {
+                  "isl": 1024,
+                  "osl": 128,
+                  "max_concurrency": 1,
+                  "num_prompts": 8,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 6200.0,
+                      "tput_user": 1.46,
+                      "tput": 1.46,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 1240.0,
+                      "tput_user": 7.3,
+                      "tput": 7.3,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 620.0,
+                      "tput_user": 14.6,
+                      "tput": 14.6,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null
+                },
+                {
+                  "isl": 1024,
+                  "osl": 128,
+                  "max_concurrency": 32,
+                  "num_prompts": 256,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 34400.0,
+                      "tput_user": 1.33,
+                      "tput": 42.5,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 6880.0,
+                      "tput_user": 6.65,
+                      "tput": 212.5,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 3440.0,
+                      "tput_user": 13.3,
+                      "tput": 425.0,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null
+                },
+                {
+                  "isl": 2048,
+                  "osl": 128,
+                  "max_concurrency": 1,
+                  "num_prompts": 8,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 7100.0,
+                      "tput_user": 1.45,
+                      "tput": 1.45,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 1420.0,
+                      "tput_user": 7.25,
+                      "tput": 7.25,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 710.0,
+                      "tput_user": 14.5,
+                      "tput": 14.5,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null
+                },
+                {
+                  "isl": 2048,
+                  "osl": 128,
+                  "max_concurrency": 32,
+                  "num_prompts": 128,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 16600.0,
+                      "tput_user": 1.37,
+                      "tput": 43.8,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 3320.0,
+                      "tput_user": 6.85,
+                      "tput": 219.0,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 1660.0,
+                      "tput_user": 13.7,
+                      "tput": 438.0,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null
+                },
+                {
+                  "isl": 4096,
+                  "osl": 128,
+                  "max_concurrency": 1,
+                  "num_prompts": 8,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 9000.0,
+                      "tput_user": 1.43,
+                      "tput": 1.43,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 1800.0,
+                      "tput_user": 7.15,
+                      "tput": 7.15,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 900.0,
+                      "tput_user": 14.3,
+                      "tput": 14.3,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null
+                },
+                {
+                  "isl": 4096,
+                  "osl": 128,
+                  "max_concurrency": 32,
+                  "num_prompts": 128,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 120000.0,
+                      "tput_user": 1.35,
+                      "tput": 43.2,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 24000.0,
+                      "tput_user": 6.75,
+                      "tput": 216.0,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 12000.0,
+                      "tput_user": 13.5,
+                      "tput": 432.0,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null
+                },
+                {
+                  "isl": 8192,
+                  "osl": 128,
+                  "max_concurrency": 1,
+                  "num_prompts": 8,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 18000.0,
+                      "tput_user": 1.4,
+                      "tput": 1.4,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 3600.0,
+                      "tput_user": 7.0,
+                      "tput": 7.0,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 1800.0,
+                      "tput_user": 14.0,
+                      "tput": 14.0,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null
+                },
+                {
+                  "isl": 16384,
+                  "osl": 128,
+                  "max_concurrency": 1,
+                  "num_prompts": 8,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 28000.0,
+                      "tput_user": 1.35,
+                      "tput": 1.35,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 5600.0,
+                      "tput_user": 6.75,
+                      "tput": 6.75,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 2800.0,
+                      "tput_user": 13.5,
+                      "tput": 13.5,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null
+                },
+                {
+                  "isl": 32768,
+                  "osl": 128,
+                  "max_concurrency": 1,
+                  "num_prompts": 8,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 67000.0,
+                      "tput_user": 1.3,
+                      "tput": 1.3,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 13400.0,
+                      "tput_user": 6.5,
+                      "tput": 6.5,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 6700.0,
+                      "tput_user": 13.0,
+                      "tput": 13.0,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null
+                },
+                {
+                  "isl": 65536,
+                  "osl": 128,
+                  "max_concurrency": 1,
+                  "num_prompts": 8,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 150000.0,
+                      "tput_user": 1.25,
+                      "tput": 1.25,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 30000.0,
+                      "tput_user": 6.25,
+                      "tput": 6.25,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 15000.0,
+                      "tput_user": 12.5,
+                      "tput": 12.5,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null
+                }
+              ],
+              "vllm_args": {
+                "model": "allenai/OLMo-3.1-32B-Think",
+                "block_size": 64,
+                "max_model_len": "65664",
+                "max_num_seqs": 32,
+                "max_num_batched_tokens": "65664",
+                "max-log-len": "32",
+                "seed": "9472",
+                "override_tt_config": "{\"dispatch_core_axis\": \"col\", \"sample_on_device_mode\": \"all\", \"fabric_config\": \"FABRIC_1D_RING\", \"worker_l1_size\": 1344544, \"trace_region_size\": 184915840}",
+                "data_parallel_size": 1
+              },
+              "override_tt_config": {
+                "dispatch_core_axis": "col",
+                "sample_on_device_mode": "all",
+                "fabric_config": "FABRIC_1D_RING",
+                "worker_l1_size": 1344544,
+                "trace_region_size": 184915840
+              },
+              "env_vars": {
+                "MESH_DEVICE": "TG",
+                "ARCH_NAME": "wormhole_b0"
+              },
+              "system_requirements": null
+            },
+            "system_requirements": {
+              "firmware": {
+                "specifier": ">=18.6.0",
+                "mode": "STRICT"
+              },
+              "kmd": {
+                "specifier": ">=2.1.0",
+                "mode": "STRICT"
+              }
+            },
+            "env_vars": {
+              "VLLM_CONFIGURE_LOGGING": "1",
+              "VLLM_RPC_TIMEOUT": "900000",
+              "VLLM_TARGET_DEVICE": "tt",
+              "TORCHDYNAMO_DISABLE": "1",
+              "MESH_DEVICE": "TG",
+              "ARCH_NAME": "wormhole_b0"
+            },
+            "vllm_commit": "8f36910",
+            "hf_weights_repo": "allenai/OLMo-3.1-32B-Think",
+            "param_count": 32,
+            "min_disk_gb": 84,
+            "min_ram_gb": 80.0,
+            "model_type": "LLM",
+            "repacked": 0,
+            "version": "0.11.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.0-ebef510-8f36910",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/ebef510/models/demos/llama3_70b_galaxy",
+            "override_tt_config": {
+              "dispatch_core_axis": "col",
+              "sample_on_device_mode": "all",
+              "fabric_config": "FABRIC_1D_RING",
+              "worker_l1_size": 1344544,
+              "trace_region_size": 184915840
+            },
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": true,
+            "cli_args": {}
+          }
+        }
+      }
     }
   }
 }
