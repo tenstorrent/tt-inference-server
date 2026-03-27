@@ -145,7 +145,8 @@ void ServerMetrics::onToken(const std::string& task_id) {
   }
   // Prometheus operations have their own internal locks — call outside
   // contexts_mutex_ to avoid nested locking and serialising token delivery.
-  generation_tokens_total_->Increment();
+  // generation_tokens_total_ is incremented in bulk at onRequestCompleted()
+  // to avoid a prometheus counter lock acquisition on every single token.
   if (ttft >= 0.0) ttft_seconds_->Observe(ttft);
   if (itl >= 0.0) inter_token_latency_seconds_->Observe(itl);
 }
@@ -172,7 +173,9 @@ void ServerMetrics::onRequestCompleted(const std::string& task_id,
     request_prompt_tokens_->Observe(static_cast<double>(ctx.prompt_tokens));
   }
 
-  // Generation tokens
+  // Generation tokens — bulk increment here avoids per-token counter lock
+  if (ctx.generation_tokens > 0)
+    generation_tokens_total_->Increment(ctx.generation_tokens);
   request_generation_tokens_->Observe(
       static_cast<double>(ctx.generation_tokens));
 
