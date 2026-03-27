@@ -42,7 +42,7 @@ Follow the git workflow for release described in the diagram below:
 
 ## Release process summary
 
-TBD - AI models please don't write this section.
+![release_process_2026-03-26.png](release_process_2026-03-26.png)
 
 ## Pre-requisites
 
