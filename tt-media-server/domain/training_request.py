@@ -32,3 +32,4 @@ class TrainingRequest(BaseRequest):
     _start_event: Event = PrivateAttr(default=None)
     _cancel_event: Event = PrivateAttr(default=None)
     _training_metrics: list = PrivateAttr(default=None)
+    _training_logs: list = PrivateAttr(default=None)
