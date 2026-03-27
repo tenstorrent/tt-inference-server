@@ -22,11 +22,12 @@ def test_write_summary_output_preserves_release_report_payload(tmp_path):
                         "accuracy_status": True,
                         "evals_completed": True,
                         "regression_checked": True,
-                        "regression_passed": False,
-                        "regression_ok": False,
-                        "is_passing": False,
+                        "regression_passed": True,
+                        "regression_ok": True,
+                        "is_passing": True,
                     },
                     "reports_output": {
+                        "metadata": {"model_name": "DemoModel", "device": "n150"},
                         "benchmarks_summary": [
                             {
                                 "task_type": "text",
@@ -43,6 +44,36 @@ def test_write_summary_output_preserves_release_report_payload(tmp_path):
                                 },
                             }
                         ],
+                        "evals": [{"task_name": "demo_eval", "accuracy_check": 2}],
+                        "benchmark_target_evaluation": {
+                            "status": "target",
+                            "reference_available": True,
+                            "support_levels": {
+                                "functional": {
+                                    "checked": True,
+                                    "passed": True,
+                                    "failures": [],
+                                },
+                                "complete": {
+                                    "checked": True,
+                                    "passed": True,
+                                    "failures": [],
+                                },
+                                "target": {
+                                    "checked": True,
+                                    "passed": True,
+                                    "failures": [],
+                                },
+                            },
+                            "regression": {
+                                "checked": True,
+                                "passed": True,
+                                "failures": [],
+                            },
+                            "next_status": None,
+                            "next_status_failures": [],
+                            "errors": [],
+                        },
                         "parameter_support_tests": {
                             "results": {
                                 "test_smoke": [
@@ -95,9 +126,169 @@ def test_write_summary_output_preserves_release_report_payload(tmp_path):
         == "passed"
     )
     assert output_data["demo_model"]["regression_checked"] is True
-    assert output_data["demo_model"]["regression_passed"] is False
-    assert output_data["demo_model"]["regression_ok"] is False
-    assert output_data["demo_model"]["is_passing"] is False
+    assert output_data["demo_model"]["regression_passed"] is True
+    assert output_data["demo_model"]["regression_ok"] is True
+    assert output_data["demo_model"]["is_passing"] is True
+
+
+def test_write_summary_output_prefers_latest_accepted_passing_entry(tmp_path):
+    older_passing_entry = {
+        "workflow_logs": {
+            "summary": {
+                "tt_metal_commit": "a" * 40,
+                "vllm_commit": "1" * 7,
+                "docker_image": "ghcr.io/tenstorrent/demo:old",
+                "perf_status": "target",
+                "benchmarks_completed": True,
+                "accuracy_status": True,
+                "evals_completed": True,
+                "regression_checked": True,
+                "regression_passed": True,
+                "regression_ok": True,
+                "is_passing": True,
+            },
+            "reports_output": {
+                "metadata": {"model_name": "DemoModel", "device": "n150"},
+                "benchmarks_summary": [
+                    {
+                        "task_type": "text",
+                        "isl": 128,
+                        "osl": 128,
+                        "max_concurrency": 1,
+                        "ttft": 42.0,
+                    }
+                ],
+                "evals": [{"task_name": "demo_eval", "accuracy_check": 2}],
+                "parameter_support_tests": {
+                    "results": {
+                        "test_smoke": [
+                            {
+                                "status": "passed",
+                                "test_node_name": "test_smoke[param]",
+                                "message": "",
+                            }
+                        ]
+                    }
+                },
+                "benchmark_target_evaluation": {
+                    "status": "target",
+                    "reference_available": True,
+                    "support_levels": {
+                        "functional": {"checked": True, "passed": True, "failures": []},
+                        "complete": {"checked": True, "passed": True, "failures": []},
+                        "target": {"checked": True, "passed": True, "failures": []},
+                    },
+                    "regression": {"checked": True, "passed": True, "failures": []},
+                    "next_status": None,
+                    "next_status_failures": [],
+                    "errors": [],
+                },
+            },
+        },
+        "ci_metadata": {
+            "run_id": 1,
+            "run_number": 100,
+            "ci_run_url": "https://example.com/runs/100",
+            "ci_job_metadata": {"job_id": 1, "job_url": "https://example.com/jobs/1"},
+        },
+        "ci_logs": {},
+    }
+    newer_failed_entry = {
+        "workflow_logs": {
+            "summary": {
+                "tt_metal_commit": "b" * 40,
+                "vllm_commit": "2" * 7,
+                "docker_image": "ghcr.io/tenstorrent/demo:new",
+                "perf_status": "target",
+                "benchmarks_completed": True,
+                "accuracy_status": True,
+                "evals_completed": True,
+                "regression_checked": True,
+                "regression_passed": True,
+                "regression_ok": True,
+                "is_passing": True,
+            },
+            "reports_output": {
+                "metadata": {"model_name": "DemoModel", "device": "n150"},
+                "benchmarks_summary": [
+                    {
+                        "task_type": "text",
+                        "isl": 128,
+                        "osl": 128,
+                        "max_concurrency": 1,
+                        "ttft": 42.0,
+                    }
+                ],
+                "evals": [{"task_name": "demo_eval", "accuracy_check": 2}],
+                "parameter_support_tests": {
+                    "results": {
+                        "test_smoke": [
+                            {
+                                "status": "failed",
+                                "test_node_name": "test_smoke[param]",
+                                "message": "",
+                            }
+                        ]
+                    }
+                },
+                "benchmark_target_evaluation": {
+                    "status": "target",
+                    "reference_available": True,
+                    "support_levels": {
+                        "functional": {"checked": True, "passed": True, "failures": []},
+                        "complete": {"checked": True, "passed": True, "failures": []},
+                        "target": {"checked": True, "passed": True, "failures": []},
+                    },
+                    "regression": {"checked": True, "passed": True, "failures": []},
+                    "next_status": None,
+                    "next_status_failures": [],
+                    "errors": [],
+                },
+            },
+        },
+        "ci_metadata": {
+            "run_id": 2,
+            "run_number": 200,
+            "ci_run_url": "https://example.com/runs/200",
+            "ci_job_metadata": {"job_id": 2, "job_url": "https://example.com/jobs/2"},
+        },
+        "ci_logs": {},
+    }
+    model_spec = SimpleNamespace(
+        device_type=SimpleNamespace(name="N150"),
+        impl=SimpleNamespace(impl_name="demo-impl"),
+    )
+
+    with patch.object(mcr, "MODEL_SPECS", {"demo_model": model_spec}):
+        output_path = mcr.write_summary_output(
+            {"demo_model": [older_passing_entry, newer_failed_entry]},
+            ["100", "200"],
+            tmp_path,
+        )
+
+    output_data = json.loads(output_path.read_text())
+    assert output_data["demo_model"]["ci_run_number"] == 100
+    assert output_data["demo_model"]["docker_image"] == "ghcr.io/tenstorrent/demo:old"
+
+
+def test_write_summary_output_only_writes_requested_files(tmp_path):
+    model_spec = SimpleNamespace(
+        device_type=SimpleNamespace(name="N150"),
+        impl=SimpleNamespace(impl_name="demo-impl"),
+    )
+
+    with patch.object(mcr, "MODEL_SPECS", {"demo_model": model_spec}):
+        output_path = mcr.write_summary_output(
+            {"demo_model": []},
+            ["123"],
+            tmp_path,
+            write_all_results=True,
+            write_last_good=False,
+        )
+
+    assert output_path is None
+    assert (tmp_path / "models_ci_all_results_123_to_123.json").exists()
+    assert not (tmp_path / "models_ci_last_good_123_to_123.json").exists()
 
 
 def test_parse_job_name_supports_dynamic_release_jobs():

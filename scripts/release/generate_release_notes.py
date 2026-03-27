@@ -19,6 +19,7 @@ try:
         RELEASE_PERFORMANCE_SCHEMA_VERSION,
         build_release_performance_diff_records,
         get_release_performance_path,
+        render_release_notes_performance_markdown,
     )
 except ImportError:
     from scripts.release.release_diff import ReleaseDiffRecord
@@ -27,6 +28,7 @@ except ImportError:
         RELEASE_PERFORMANCE_SCHEMA_VERSION,
         build_release_performance_diff_records,
         get_release_performance_path,
+        render_release_notes_performance_markdown,
     )
 
 
@@ -41,6 +43,7 @@ SECTION_TITLES = {
     "recommended_system_software_versions": "Recommended system software versions",
     "known_issues": "Known Issues",
     "model_hardware_support_diff": "Model and Hardware Support Diff",
+    "performance": "Performance",
     "scale_out": "Scale Out",
     "deprecations_breaking_changes": "Deprecations and breaking changes",
     "release_artifacts_summary": "Release Artifacts Summary",
@@ -221,8 +224,17 @@ def render_release_artifacts_summary(summary_data: Dict[str, Any]) -> str:
     existing_with_ci_ref = summary_data.get("existing_with_ci_ref", {})
     existing_without_ci_ref = summary_data.get("existing_without_ci_ref", [])
     images_to_build = summary_data.get("images_to_build", [])
+    generated_artifacts = summary_data.get("generated_artifacts", [])
+    acceptance_warnings = summary_data.get("acceptance_warnings", [])
 
     sections = [
+        _render_release_artifact_list(
+            "Generated Release Artifacts",
+            sorted(generated_artifacts)
+            if isinstance(generated_artifacts, list)
+            else [],
+            "No generated release artifacts were recorded.",
+        ),
         _render_release_artifact_map(
             "Images Promoted from Models CI",
             copied_images if isinstance(copied_images, dict) else {},
@@ -260,6 +272,21 @@ def render_release_artifacts_summary(summary_data: Dict[str, Any]) -> str:
             ),
         ),
     ]
+    if isinstance(acceptance_warnings, list):
+        warning_lines = ["### Release Acceptance Warnings", ""]
+        if acceptance_warnings:
+            warning_lines.append(
+                "These warnings are computed locally from release report data and do not block artifact generation."
+            )
+            warning_lines.append("")
+            for warning in acceptance_warnings:
+                heading = (
+                    warning.get("heading") or warning.get("model_id") or "Unknown model"
+                )
+                warning_lines.append(f"- {heading}")
+        else:
+            warning_lines.append("No release acceptance warnings were generated.")
+        sections.insert(1, "\n".join(warning_lines))
     return "\n\n".join(section for section in sections if section.strip())
 
 
@@ -356,6 +383,10 @@ def build_release_notes(
                 release_performance_data,
                 base_release_performance_data or EMPTY_RELEASE_PERFORMANCE_DATA,
             ),
+        ),
+        (
+            "performance",
+            render_release_notes_performance_markdown(release_performance_data),
         ),
         ("scale_out", ""),
         ("deprecations_breaking_changes", ""),

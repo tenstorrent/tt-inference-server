@@ -19,11 +19,18 @@ from typing import Dict, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
-from workflow_logs_parser import (
-    build_parsed_workflow_logs_data,
-    latest_json_by_mtime,
-    parse_workflow_logs_dir,
-)
+try:
+    from workflow_logs_parser import (
+        build_parsed_workflow_logs_data,
+        latest_json_by_mtime,
+        parse_workflow_logs_dir,
+    )
+except ImportError:
+    from scripts.release.workflow_logs_parser import (
+        build_parsed_workflow_logs_data,
+        latest_json_by_mtime,
+        parse_workflow_logs_dir,
+    )
 
 try:
     from release_paths import get_versioned_release_logs_dir, resolve_release_output_dir
@@ -37,6 +44,7 @@ except ImportError:
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 from workflows.model_spec import MODEL_SPECS
+from workflows.acceptance_criteria import acceptance_criteria_check
 
 # Configure logging
 logging.basicConfig(
@@ -1867,10 +1875,112 @@ def process_all_runs(
     return all_models_dict, all_run_numbers
 
 
+def _ci_entry_sort_key(entry: dict) -> Tuple[int, str, str, str]:
+    """Return a stable ordering key for preferring newer CI entries."""
+    ci_metadata = entry.get("ci_metadata") or {}
+    ci_job_metadata = ci_metadata.get("ci_job_metadata") or {}
+    run_number = ci_metadata.get("run_number")
+    try:
+        numeric_run_number = int(run_number)
+    except (TypeError, ValueError):
+        numeric_run_number = -1
+    return (
+        numeric_run_number,
+        str(ci_job_metadata.get("completed_at") or ""),
+        str(ci_job_metadata.get("started_at") or ""),
+        str(entry.get("job_run_datetimestamp") or ""),
+    )
+
+
+def _entry_is_accepted_and_passing(entry: dict) -> bool:
+    """Return True when an entry is both passing and satisfies acceptance criteria."""
+    workflow_logs = entry.get("workflow_logs") or {}
+    summary = workflow_logs.get("summary") or {}
+    if not summary.get("is_passing"):
+        return False
+
+    release_report = workflow_logs.get("reports_output") or {}
+    if not isinstance(release_report, dict) or not release_report:
+        return True
+
+    benchmark_target_evaluation = release_report.get("benchmark_target_evaluation")
+    accepted, _ = acceptance_criteria_check(
+        release_report,
+        benchmark_target_evaluation=benchmark_target_evaluation
+        if isinstance(benchmark_target_evaluation, dict)
+        else None,
+    )
+    return accepted
+
+
+def _build_last_good_summary_entry(
+    model_id: str, chosen: Optional[dict], model_spec: Optional[object]
+) -> dict:
+    """Build one models_ci_last_good summary entry from a raw CI entry."""
+    hardware_name = model_spec.device_type.name if model_spec else None
+    impl_name = model_spec.impl.impl_name if model_spec else None
+
+    if not chosen:
+        return {}
+
+    workflow_data = chosen.get("workflow_logs", {}).get("summary", {})
+    release_report = chosen.get("workflow_logs", {}).get("reports_output", {}) or {}
+    ci_metadata = chosen.get("ci_metadata") or {}
+    ci_job_metadata = ci_metadata.get("ci_job_metadata") or {}
+    ci_logs = chosen.get("ci_logs") or {}
+    return {
+        "device": hardware_name,
+        "impl_name": impl_name,
+        "tt_metal_commit": workflow_data.get("tt_metal_commit"),
+        "vllm_commit": workflow_data.get("vllm_commit"),
+        "docker_image": workflow_data.get("docker_image"),
+        "perf_status": workflow_data.get("perf_status"),
+        "benchmarks_completed": workflow_data.get("benchmarks_completed"),
+        "accuracy_status": workflow_data.get("accuracy_status"),
+        "evals_completed": workflow_data.get("evals_completed"),
+        "regression_checked": workflow_data.get("regression_checked"),
+        "regression_passed": workflow_data.get("regression_passed"),
+        "regression_ok": workflow_data.get("regression_ok"),
+        "is_passing": workflow_data.get("is_passing"),
+        "ci_run_id": ci_metadata.get("run_id"),
+        "ci_run_number": ci_metadata.get("run_number"),
+        "ci_run_url": ci_metadata.get("ci_run_url"),
+        "ci_job_id": ci_job_metadata.get("job_id"),
+        "ci_job_url": ci_job_metadata.get("job_url"),
+        "ci_job_name": ci_job_metadata.get("job_name"),
+        "ci_job_status": ci_job_metadata.get("job_status"),
+        "ci_job_conclusion": ci_job_metadata.get("job_conclusion"),
+        "ci_job_started_at": ci_job_metadata.get("started_at"),
+        "ci_job_completed_at": ci_job_metadata.get("completed_at"),
+        "firmware_bundle": ci_logs.get("firmware_bundle"),
+        "driver_version": ci_logs.get("kmd_version"),
+        "release_report": release_report,
+    }
+
+
+def select_last_good_entry(entries: List[dict]) -> Optional[dict]:
+    """Pick the newest accepted+passing entry, if any, from one model's raw CI data."""
+    if not entries:
+        return None
+
+    accepted_entries = [
+        entry for entry in entries if _entry_is_accepted_and_passing(entry)
+    ]
+    if not accepted_entries:
+        return None
+
+    return max(accepted_entries, key=_ci_entry_sort_key)
+
+
 def write_summary_output(
-    all_models_dict: Dict[str, List[dict]], all_run_numbers: List[str], out_root: Path
-) -> None:
-    """Write summary JSON files for all models and last good passing models."""
+    all_models_dict: Dict[str, List[dict]],
+    all_run_numbers: List[str],
+    out_root: Path,
+    *,
+    write_all_results: bool = False,
+    write_last_good: bool = True,
+) -> Optional[Path]:
+    """Write optional summary JSON files for update_model_spec workflows."""
     if all_run_numbers:
         numeric_run_numbers = [int(rn) for rn in all_run_numbers if rn != "unknown"]
         if numeric_run_numbers:
@@ -1881,70 +1991,33 @@ def write_summary_output(
     else:
         earliest = latest = "unknown"
 
-    # Write full output with ALL models (passing and non-passing)
-    all_models_name = f"models_ci_all_results_{earliest}_to_{latest}.json"
-    all_models_path = out_root / all_models_name
-    logger.info(f"Writing all models JSON to: {all_models_path}")
-    all_models_text = json.dumps(all_models_dict, indent=2)
-    all_models_path.write_text(all_models_text)
-    logger.info(
-        f"Wrote {len(all_models_text.encode('utf-8'))} bytes to {all_models_path}"
-    )
+    if write_all_results:
+        all_models_name = f"models_ci_all_results_{earliest}_to_{latest}.json"
+        all_models_path = out_root / all_models_name
+        logger.info(f"Writing all models JSON to: {all_models_path}")
+        all_models_text = json.dumps(all_models_dict, indent=2)
+        all_models_path.write_text(all_models_text)
+        logger.info(
+            f"Wrote {len(all_models_text.encode('utf-8'))} bytes to {all_models_path}"
+        )
 
-    # Create last good models summary (most recent entry per model, for backward compatibility)
+    if not write_last_good:
+        return None
+
+    # Create last good models summary from newest accepted+passing entry per model.
     models_ci_last_good: Dict[str, dict] = {}
     for model_id in MODEL_SPECS.keys():
         entries = all_models_dict.get(model_id, [])
-
-        # Get model spec to extract hardware and impl name
         model_spec = MODEL_SPECS.get(model_id)
-        hardware_name = model_spec.device_type.name if model_spec else None
-        impl_name = model_spec.impl.impl_name if model_spec else None
-
-        # Check if there are any entries
-        if not entries:
-            models_ci_last_good[model_id] = {}
-            continue
-
-        # Choose entry with max run_number (most recent entry)
-        entries_sorted = sorted(
-            entries,
-            key=lambda e: int(e.get("ci_metadata", {}).get("run_number", -1)),
+        chosen = select_last_good_entry(entries)
+        if chosen is None and entries:
+            logger.warning(
+                "No accepted+passing CI entry found for %s; leaving models_ci_last_good empty",
+                model_id,
+            )
+        models_ci_last_good[model_id] = _build_last_good_summary_entry(
+            model_id, chosen, model_spec
         )
-        chosen = entries_sorted[-1]
-        workflow_data = chosen.get("workflow_logs", {}).get("summary", {})
-        release_report = chosen.get("workflow_logs", {}).get("reports_output", {}) or {}
-        ci_metadata = chosen.get("ci_metadata") or {}
-        ci_job_metadata = ci_metadata.get("ci_job_metadata") or {}
-        ci_logs = chosen.get("ci_logs") or {}
-        models_ci_last_good[model_id] = {
-            "device": hardware_name,
-            "impl_name": impl_name,
-            "tt_metal_commit": workflow_data.get("tt_metal_commit"),
-            "vllm_commit": workflow_data.get("vllm_commit"),
-            "docker_image": workflow_data.get("docker_image"),
-            "perf_status": workflow_data.get("perf_status"),
-            "benchmarks_completed": workflow_data.get("benchmarks_completed"),
-            "accuracy_status": workflow_data.get("accuracy_status"),
-            "evals_completed": workflow_data.get("evals_completed"),
-            "regression_checked": workflow_data.get("regression_checked"),
-            "regression_passed": workflow_data.get("regression_passed"),
-            "regression_ok": workflow_data.get("regression_ok"),
-            "is_passing": workflow_data.get("is_passing"),
-            "ci_run_id": ci_metadata.get("run_id"),
-            "ci_run_number": ci_metadata.get("run_number"),
-            "ci_run_url": ci_metadata.get("ci_run_url"),
-            "ci_job_id": ci_job_metadata.get("job_id"),
-            "ci_job_url": ci_job_metadata.get("job_url"),
-            "ci_job_name": ci_job_metadata.get("job_name"),
-            "ci_job_status": ci_job_metadata.get("job_status"),
-            "ci_job_conclusion": ci_job_metadata.get("job_conclusion"),
-            "ci_job_started_at": ci_job_metadata.get("started_at"),
-            "ci_job_completed_at": ci_job_metadata.get("completed_at"),
-            "firmware_bundle": ci_logs.get("firmware_bundle"),
-            "driver_version": ci_logs.get("kmd_version"),
-            "release_report": release_report,
-        }
 
     # Write models_ci_last_good to file (most recent entry per model)
     last_good_name = f"models_ci_last_good_{earliest}_to_{latest}.json"
@@ -1958,9 +2031,9 @@ def write_summary_output(
 
     # Log summary statistics
     total_models = len(all_models_dict)
-    passing_models = len([1 for k, v in models_ci_last_good.items() if v])
+    passing_models = len([1 for _, value in models_ci_last_good.items() if value])
     logger.info(
-        f"Summary: {total_models} total models, {passing_models} passing models"
+        f"Summary: {total_models} total models, {passing_models} accepted+passing models"
     )
 
     return last_good_path
@@ -1973,8 +2046,11 @@ def run_ci_pipeline(
     repo: str = DEFAULT_REPO,
     workflow_file: str = DEFAULT_WORKFLOW_FILE,
     remove_existing: bool = False,
-) -> Path:
-    """Download and process a single CI workflow run, returning the last_good_path.
+    *,
+    write_all_results: bool = False,
+    write_last_good: bool = True,
+) -> Optional[Path]:
+    """Download and process a single CI workflow run, optionally writing summaries.
 
     Args:
         run_id: GitHub Actions workflow run ID to process.
@@ -1985,7 +2061,7 @@ def run_ci_pipeline(
         remove_existing: If True, re-download even if the run directory already exists.
 
     Returns:
-        Path to the generated models_ci_last_good_*.json file.
+        Path to the generated models_ci_last_good_*.json file when written, else None.
     """
     out_root = resolve_release_output_dir(out_root)
     ensure_dir(out_root)
@@ -2003,7 +2079,13 @@ def run_ci_pipeline(
     all_models_dict, all_run_numbers = process_all_runs(
         out_root, owner, repo, last_run_only=False
     )
-    return write_summary_output(all_models_dict, all_run_numbers, out_root)
+    return write_summary_output(
+        all_models_dict,
+        all_run_numbers,
+        out_root,
+        write_all_results=write_all_results,
+        write_last_good=write_last_good,
+    )
 
 
 def main():
@@ -2039,6 +2121,16 @@ def main():
         action="store_true",
         help="Delete and re-download existing run directories",
     )
+    parser.add_argument(
+        "--write-all-results",
+        action="store_true",
+        help="Write models_ci_all_results_*.json in addition to models_ci_last_good_*.json.",
+    )
+    parser.add_argument(
+        "--skip-last-good",
+        action="store_true",
+        help="Do not write models_ci_last_good_*.json.",
+    )
     args = parser.parse_args()
 
     # Setup output directory
@@ -2071,7 +2163,13 @@ def main():
     )
 
     # Write output files
-    write_summary_output(all_models_dict, all_run_numbers, out_root)
+    write_summary_output(
+        all_models_dict,
+        all_run_numbers,
+        out_root,
+        write_all_results=args.write_all_results,
+        write_last_good=not args.skip_last_good,
+    )
 
 
 if __name__ == "__main__":

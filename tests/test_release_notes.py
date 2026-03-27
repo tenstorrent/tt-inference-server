@@ -93,6 +93,17 @@ def make_release_performance_data(
 
 def make_artifacts_summary_data():
     return {
+        "generated_artifacts": [
+            "release_model_spec.json",
+            "docs/model_support/",
+            "README.md",
+        ],
+        "acceptance_warnings": [
+            {
+                "heading": "DemoModel on N150",
+                "summary_markdown": "### Acceptance Criteria\n\n- Acceptance status: `FAIL`",
+            }
+        ],
         "images_to_build": ["ghcr.io/tenstorrent/build:tag"],
         "copied_images": {
             "ghcr.io/tenstorrent/release:tag": "ghcr.io/tenstorrent/ci:tag"
@@ -167,12 +178,16 @@ def test_build_release_notes_renders_raw_inputs_and_performance_diff():
         "N150: Perf status: functional -> target; Benchmarks ~1; LLM API tests ~1"
         in notes
     )
+    assert "## Performance\n" in notes
+    assert "### DemoModel on n150 (demo_impl, vLLM)" in notes
     assert "## Scale Out\n" in notes
     assert "## Deprecations and breaking changes\n" in notes
-    assert "## Release Artifacts Summary\n\n### Images Promoted from Models CI" in notes
+    assert "### Generated Release Artifacts" in notes
+    assert "### Release Acceptance Warnings" in notes
+    assert "## Release Artifacts Summary\n" in notes
+    assert "### Images Promoted from Models CI" in notes
     assert "## Contributors\n" in notes
     assert "## Assets\n" in notes
-    assert "## Performance\n" not in notes
     assert "https://ghcr.io/tenstorrent/release:tag" in notes
     assert "https://ghcr.io/tenstorrent/build:tag" in notes
 
@@ -400,4 +415,4 @@ def test_main_reads_raw_release_inputs_from_release_dir(tmp_path):
         "N150: Perf status: functional -> target; Benchmarks ~1; LLM API tests ~1"
         in notes
     )
-    assert "## Performance\n" not in notes
+    assert "## Performance\n" in notes

@@ -1295,7 +1295,13 @@ def main():
         last_good_path = run_ci_pipeline(
             args.models_ci_run_id,
             release_output_dir,
+            write_all_results=True,
+            write_last_good=True,
         )
+        if last_good_path is None:
+            raise RuntimeError(
+                "models_ci_reader did not produce models_ci_last_good output"
+            )
     else:
         last_good_path = Path(args.last_good_json)
         if not last_good_path.exists():

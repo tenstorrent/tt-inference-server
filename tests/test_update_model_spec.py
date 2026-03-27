@@ -1337,4 +1337,7 @@ def test_main_models_ci_run_id_keeps_nightly_reader_defaults(tmp_path):
         19339722549,
         release_output_dir,
     )
-    assert fake_models_ci_reader.run_ci_pipeline.call_args.kwargs == {}
+    assert fake_models_ci_reader.run_ci_pipeline.call_args.kwargs == {
+        "write_all_results": True,
+        "write_last_good": True,
+    }

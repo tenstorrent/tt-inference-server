@@ -1,9 +1,11 @@
 from scripts.release.generate_model_support_docs import (
     HardwarePageGroup,
+    generate_model_support_docs,
     generate_model_page_group_page,
     generate_model_type_page,
     generate_models_by_hardware_page,
 )
+from unittest.mock import patch
 from workflows.model_spec import DeviceModelSpec, ImplSpec, ModelSpecTemplate
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes, ModelType
 
@@ -186,3 +188,32 @@ def test_generate_models_by_hardware_page_renders_performance_summary_column():
 
     assert "| Status | Type | Model | Performance Summary |" in markdown
     assert "11 (tok/s/user), TTFT: 42 (ms)" in markdown
+
+
+def test_generate_model_support_docs_cleans_stale_generated_files_and_uses_passed_perf_data(
+    tmp_path,
+):
+    output_dir = tmp_path / "docs" / "model_support"
+    stale_file = output_dir / "llm" / "stale.md"
+    stale_file.parent.mkdir(parents=True, exist_ok=True)
+    stale_file.write_text("stale")
+    preserved_file = output_dir / "custom.md"
+    preserved_file.write_text("keep me")
+
+    with patch(
+        "scripts.release.generate_model_support_docs.load_templates_from_model_spec",
+        return_value=[make_template()],
+    ), patch(
+        "scripts.release.generate_model_support_docs.load_release_performance_data",
+        side_effect=AssertionError("should use explicit release performance data"),
+    ):
+        generate_model_support_docs(
+            model_spec_path=tmp_path / "workflows" / "model_spec.py",
+            output_dir=output_dir,
+            release_performance_data=make_summary_release_performance_data(),
+        )
+
+    assert not stale_file.exists()
+    assert preserved_file.exists()
+    assert (output_dir / "models_by_hardware.md").exists()
+    assert (output_dir / "llm" / "README.md").exists()

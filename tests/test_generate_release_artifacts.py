@@ -4,7 +4,7 @@ import sys
 from argparse import Namespace
 from collections import defaultdict
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import scripts.release.generate_release_artifacts as gra
 from scripts.release.release_diff import build_template_key
@@ -85,22 +85,139 @@ def make_release_diff_record(*, model_arch="DemoModel", devices=None):
     }
 
 
-def test_merge_specs_with_ci_data_derives_dev_image_without_mutating_model_specs(
-    tmp_path,
+def make_raw_ci_entry(
+    *,
+    run_number=123,
+    docker_image=None,
+    release_report=None,
+    ci_job_url="https://example.com/jobs/456",
 ):
+    return {
+        "job_run_datetimestamp": "2026-03-27_10-00-00",
+        "ci_metadata": {
+            "run_number": run_number,
+            "ci_run_url": "https://example.com/runs/123",
+            "ci_job_metadata": {
+                "job_id": 456,
+                "job_url": ci_job_url,
+                "job_name": "demo-job",
+                "job_status": "completed",
+                "job_conclusion": "success",
+                "completed_at": "2026-03-27T10:00:00Z",
+            },
+        },
+        "ci_logs": {"firmware_bundle": "fw", "kmd_version": "kmd"},
+        "workflow_logs": {
+            "summary": {
+                "docker_image": docker_image or make_image("demo-ci", channel="dev"),
+                "tt_metal_commit": TT_METAL_COMMIT,
+                "vllm_commit": VLLM_COMMIT,
+                "perf_status": "target",
+                "benchmarks_completed": True,
+                "accuracy_status": True,
+                "evals_completed": True,
+                "regression_checked": True,
+                "regression_passed": True,
+                "regression_ok": True,
+                "is_passing": True,
+            },
+            "reports_output": release_report or {},
+        },
+    }
+
+
+def make_release_report(*, functional_status="target", parameter_status="passed"):
+    return {
+        "metadata": {"model_name": "DemoModel", "device": "n150"},
+        "benchmarks_summary": [
+            {
+                "task_type": "text",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "ttft": 45.0,
+                "tput_user": 12.0,
+            }
+        ],
+        "evals": [{"task_name": "demo_eval", "accuracy_check": 2, "score": 1.0}],
+        "parameter_support_tests": {
+            "results": {
+                "test_smoke": [
+                    {
+                        "status": parameter_status,
+                        "test_node_name": "test_smoke[param]",
+                        "message": "",
+                    }
+                ]
+            }
+        },
+        "benchmark_target_evaluation": {
+            "status": functional_status,
+            "reference_available": True,
+            "support_levels": {
+                "functional": {"checked": True, "passed": True, "failures": []},
+                "complete": {"checked": True, "passed": True, "failures": []},
+                "target": {"checked": True, "passed": True, "failures": []},
+            },
+            "regression": {"checked": True, "passed": True, "failures": []},
+            "next_status": None,
+            "next_status_failures": [],
+            "errors": [],
+        },
+    }
+
+
+def test_merge_specs_with_ci_data_derives_dev_image_without_mutating_model_specs():
     release_image = make_image("demo")
-    ci_json_path = tmp_path / "last_good.json"
-    ci_json_path.write_text(json.dumps({"demo_model": {"docker_image": "ci-image"}}))
     model_spec = make_model_spec(release_image)
+    ci_data = {"demo_model": {"docker_image": "ci-image"}}
 
     with patch.object(gra, "MODEL_SPECS", {"demo_model": model_spec}):
-        merged = gra.merge_specs_with_ci_data(ci_json_path, is_dev=True)
+        merged = gra.merge_specs_with_ci_data(ci_data, is_dev=True)
 
     assert model_spec.docker_image == release_image
     assert merged["demo_model"].target_docker_image == release_image.replace(
         "-release-", "-dev-"
     )
     assert merged["demo_model"].ci_data == {"docker_image": "ci-image"}
+
+
+def test_build_ci_data_from_raw_results_uses_latest_entry():
+    older_entry = make_raw_ci_entry(
+        run_number=100, ci_job_url="https://example.com/jobs/100"
+    )
+    newer_entry = make_raw_ci_entry(
+        run_number=200, ci_job_url="https://example.com/jobs/200"
+    )
+
+    ci_data = gra.build_ci_data_from_raw_results(
+        {"demo_model": [older_entry, newer_entry]}
+    )
+
+    assert ci_data["demo_model"]["ci_run_number"] == 200
+    assert ci_data["demo_model"]["ci_job_url"] == "https://example.com/jobs/200"
+
+
+def test_build_acceptance_warnings_logs_warning_only():
+    target_image = make_image("demo")
+    failing_report = make_release_report(parameter_status="failed")
+    merged_spec = {
+        "demo_model": gra.MergedModelRecord(
+            model_id="demo_model",
+            model_spec=make_model_spec(target_image),
+            ci_data={
+                "release_report": failing_report,
+                "ci_job_url": "https://example.com/jobs/456",
+            },
+            target_docker_image=target_image,
+        )
+    }
+
+    warnings = gra.build_acceptance_warnings(merged_spec)
+
+    assert len(warnings) == 1
+    assert warnings[0]["model_id"] == "demo_model"
+    assert "Acceptance status: `FAIL`" in warnings[0]["summary_markdown"]
 
 
 def test_extract_commits_from_tag_requires_expected_format():
@@ -159,9 +276,13 @@ def test_write_output_writes_json_and_markdown(tmp_path):
         "total_copied": 1,
         "total_existing_with_ci": 1,
         "total_existing_without_ci": 1,
+        "total_generated_artifacts": 0,
+        "total_acceptance_warnings": 0,
     }
     assert (tmp_path / "release_artifacts_summary.json").exists()
     markdown = (tmp_path / "release_artifacts_summary.md").read_text()
+    assert "Generated Release Artifacts" in markdown
+    assert "Release Acceptance Warnings" in markdown
     assert "Images Promoted from Models CI" in markdown
     assert "https://ghcr.io/tenstorrent/release:tag" in markdown
     assert "https://ghcr.io/tenstorrent/manual:tag" in markdown
@@ -536,6 +657,22 @@ def test_write_release_performance_diff_output_filters_to_release_models(tmp_pat
     ]
 
 
+def test_write_release_performance_diff_output_requires_pre_release_diff_json(tmp_path):
+    output_dir = tmp_path / "release_logs" / "v0.10.0"
+    output_dir.mkdir(parents=True)
+
+    try:
+        gra.write_release_performance_diff_output(
+            output_dir, {"schema_version": "0.1.0", "models": {}}
+        )
+    except FileNotFoundError as exc:
+        assert "pre_release_models_diff.json" in str(exc)
+    else:
+        raise AssertionError(
+            "Expected FileNotFoundError when pre-release diff is missing"
+        )
+
+
 def test_write_release_notes_uses_raw_json_inputs(tmp_path):
     output_dir = tmp_path / "release_logs" / "v0.10.0"
     output_dir.mkdir(parents=True)
@@ -661,12 +798,13 @@ def test_write_release_notes_uses_raw_json_inputs(tmp_path):
         in notes
     )
     assert "## Release Artifacts Summary" in notes
-    assert "## Performance\n" not in notes
+    assert "## Performance\n" in notes
+    assert "### DemoModel on n150 (demo_impl, vLLM)" in notes
 
 
 def test_main_wires_release_flow_and_emits_summary(tmp_path):
-    ci_json_path = tmp_path / "last_good.json"
-    ci_json_path.write_text("{}")
+    ci_artifacts_path = tmp_path / "release_logs" / "v0.10.0"
+    ci_artifacts_path.mkdir(parents=True)
     output_dir = tmp_path / "release_logs" / "v0.10.0"
     model_spec_path = tmp_path / "workflows" / "model_spec.py"
     model_spec_path.parent.mkdir(parents=True)
@@ -683,7 +821,7 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
         defaultdict(list),
     )
     args = Namespace(
-        models_ci_last_good_json=str(ci_json_path),
+        ci_artifacts_path=str(ci_artifacts_path),
         models_ci_run_id=None,
         out_root=None,
         dev=False,
@@ -719,11 +857,13 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     ), patch.object(gra, "check_docker_installed", return_value=True), patch.object(
         gra, "check_crane_installed", return_value=True
     ), patch.object(
+        gra, "load_ci_data_from_artifacts_path", return_value={"model-a": {}}
+    ) as load_ci_data_mock, patch.object(
         gra, "merge_specs_with_ci_data", return_value=merged_spec
     ) as merge_mock, patch.object(
         gra, "generate_release_artifacts", return_value=result_tuple
     ) as generate_mock, patch.object(
-        gra, "write_output"
+        gra, "write_output", side_effect=mark_event("write_output")
     ) as write_output_mock, patch.object(
         gra,
         "write_release_performance_outputs",
@@ -743,12 +883,16 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     ) as docs_mock, patch.object(
         gra, "write_release_notes", side_effect=mark_event("write_release_notes")
     ) as release_notes_mock, patch.object(
+        gra, "build_acceptance_warnings", return_value=[]
+    ) as acceptance_mock, patch.object(
         gra, "emit_markdown_summary"
     ) as emit_mock, patch.object(gra, "get_version", return_value="0.10.0"):
         assert gra.main() == 0
 
-    merge_mock.assert_called_once_with(ci_json_path.resolve(), False)
+    load_ci_data_mock.assert_called_once_with(ci_artifacts_path)
+    merge_mock.assert_called_once_with({"model-a": {}}, False)
     generate_mock.assert_called_once_with(merged_spec, False)
+    acceptance_mock.assert_called_once_with(merged_spec)
     write_output_mock.assert_called_once()
     performance_mock.assert_called_once_with(merged_spec, output_dir, False)
     performance_diff_mock.assert_called_once_with(
@@ -762,6 +906,7 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     docs_mock.assert_called_once_with(
         model_spec_path=model_spec_path,
         readme_path=readme_path,
+        release_performance_data={"schema_version": "0.1.0", "models": {}},
         dry_run=False,
     )
     release_notes_mock.assert_called_once_with(
@@ -775,16 +920,15 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
         "write_release_performance_diff_output",
         "write_release_model_spec_output",
         "regenerate_model_support_docs_and_update_readme",
+        "write_output",
         "write_release_notes",
     ]
 
 
 def test_main_release_run_id_reads_release_workflow(tmp_path):
-    ci_json_path = tmp_path / "last_good.json"
-    ci_json_path.write_text("{}")
     output_dir = tmp_path / "release_logs" / "v0.10.0"
     args = Namespace(
-        models_ci_last_good_json=None,
+        ci_artifacts_path=None,
         models_ci_run_id=23578993514,
         out_root=None,
         dev=False,
@@ -798,13 +942,7 @@ def test_main_release_run_id_reads_release_workflow(tmp_path):
     merged_spec = {"model-a": make_record("model-a", make_image("demo"))}
     result_tuple = (defaultdict(list), 0, {}, {}, defaultdict(list))
 
-    fake_models_ci_reader = SimpleNamespace(
-        run_ci_pipeline=Mock(return_value=ci_json_path)
-    )
-
-    with patch.dict(
-        "sys.modules", {"scripts.release.models_ci_reader": fake_models_ci_reader}
-    ), patch.object(gra, "configure_logging"), patch.object(
+    with patch.object(gra, "configure_logging"), patch.object(
         gra, "get_versioned_release_logs_dir", return_value=output_dir
     ), patch(
         "argparse.ArgumentParser.parse_args",
@@ -814,6 +952,8 @@ def test_main_release_run_id_reads_release_workflow(tmp_path):
     ), patch.object(gra, "check_docker_installed", return_value=True), patch.object(
         gra, "check_crane_installed", return_value=True
     ), patch.object(
+        gra, "load_ci_data_from_run_id", return_value={"model-a": {}}
+    ) as load_ci_data_mock, patch.object(
         gra, "merge_specs_with_ci_data", return_value=merged_spec
     ), patch.object(
         gra, "generate_release_artifacts", return_value=result_tuple
@@ -832,17 +972,15 @@ def test_main_release_run_id_reads_release_workflow(tmp_path):
     ):
         assert gra.main() == 0
 
-    fake_models_ci_reader.run_ci_pipeline.assert_called_once_with(
+    load_ci_data_mock.assert_called_once_with(
         23578993514, output_dir, workflow_file=gra.RELEASE_WORKFLOW_FILE
     )
 
 
 def test_main_dev_run_id_keeps_default_workflow(tmp_path):
-    ci_json_path = tmp_path / "last_good.json"
-    ci_json_path.write_text("{}")
     output_dir = tmp_path / "release_logs" / "v0.10.0"
     args = Namespace(
-        models_ci_last_good_json=None,
+        ci_artifacts_path=None,
         models_ci_run_id=23578993514,
         out_root=None,
         dev=True,
@@ -856,13 +994,7 @@ def test_main_dev_run_id_keeps_default_workflow(tmp_path):
     merged_spec = {"model-a": make_record("model-a", make_image("demo", channel="dev"))}
     result_tuple = (defaultdict(list), 0, {}, {}, defaultdict(list))
 
-    fake_models_ci_reader = SimpleNamespace(
-        run_ci_pipeline=Mock(return_value=ci_json_path)
-    )
-
-    with patch.dict(
-        "sys.modules", {"scripts.release.models_ci_reader": fake_models_ci_reader}
-    ), patch.object(gra, "configure_logging"), patch.object(
+    with patch.object(gra, "configure_logging"), patch.object(
         gra, "get_versioned_release_logs_dir", return_value=output_dir
     ), patch(
         "argparse.ArgumentParser.parse_args",
@@ -872,23 +1004,25 @@ def test_main_dev_run_id_keeps_default_workflow(tmp_path):
     ), patch.object(gra, "check_docker_installed", return_value=True), patch.object(
         gra, "check_crane_installed", return_value=True
     ), patch.object(
+        gra, "load_ci_data_from_run_id", return_value={"model-a": {}}
+    ) as load_ci_data_mock, patch.object(
         gra, "merge_specs_with_ci_data", return_value=merged_spec
     ), patch.object(
         gra, "generate_release_artifacts", return_value=result_tuple
     ), patch.object(gra, "write_output"), patch.object(gra, "emit_markdown_summary"):
         assert gra.main() == 0
 
-    fake_models_ci_reader.run_ci_pipeline.assert_called_once_with(
-        23578993514, output_dir
+    load_ci_data_mock.assert_called_once_with(
+        23578993514, output_dir, workflow_file="on-nightly.yml"
     )
 
 
 def test_main_dev_flow_skips_release_only_compatibility_outputs(tmp_path):
-    ci_json_path = tmp_path / "last_good.json"
-    ci_json_path.write_text("{}")
+    ci_artifacts_path = tmp_path / "release_logs" / "v0.10.0"
+    ci_artifacts_path.mkdir(parents=True)
     output_dir = tmp_path / "release_logs" / "v0.10.0"
     args = Namespace(
-        models_ci_last_good_json=str(ci_json_path),
+        ci_artifacts_path=str(ci_artifacts_path),
         models_ci_run_id=None,
         out_root=None,
         dev=True,
@@ -911,6 +1045,8 @@ def test_main_dev_flow_skips_release_only_compatibility_outputs(tmp_path):
         gra, "resolve_release_output_dir", return_value=output_dir
     ), patch.object(gra, "check_docker_installed", return_value=True), patch.object(
         gra, "check_crane_installed", return_value=True
+    ), patch.object(
+        gra, "load_ci_data_from_artifacts_path", return_value={"model-a": {}}
     ), patch.object(
         gra, "merge_specs_with_ci_data", return_value=merged_spec
     ), patch.object(

@@ -7,29 +7,29 @@
 Create release image artifacts by copying CI docker images to release registry.
 
 This script manages docker image artifacts for releases by:
-- Merging models_ci_last_good JSON with MODEL_SPECS
+- Merging raw release CI workflow data with MODEL_SPECS
 - Checking if release docker images exist on remote
 - Copying CI docker images to release registry using crane
 - Tracking images that need building in JSON and markdown output
 - Generating versioned release notes for release runs
 
 Usage:
-    python3 generate_release_artifacts.py <models_ci_last_good_json> [--dev | --release] [--dry-run]
+    python3 generate_release_artifacts.py <ci_artifacts_path> [--dev | --release] [--dry-run]
     python3 generate_release_artifacts.py --models-ci-run-id <run_id> [--dev | --release] [--dry-run]
     python3 generate_release_artifacts.py --help
 
 Examples:
-    # Update dev images from a last_good JSON file
-    python3 generate_release_artifacts.py release_logs/v{VERSION}/models_ci_last_good_*.json --dev
+    # Update dev images from downloaded CI artifacts
+    python3 generate_release_artifacts.py release_logs/v{VERSION} --dev
 
-    # Update release images from a last_good JSON file
-    python3 generate_release_artifacts.py release_logs/v{VERSION}/models_ci_last_good_*.json --release
+    # Update release images from downloaded CI artifacts
+    python3 generate_release_artifacts.py release_logs/v{VERSION} --release
 
     # Automatically fetch CI data by run ID and update dev images
     python3 generate_release_artifacts.py --models-ci-run-id 19339722549 --dev
 
     # Dry-run dev images
-    python3 generate_release_artifacts.py release_logs/v{VERSION}/models_ci_last_good_*.json --dev --dry-run
+    python3 generate_release_artifacts.py release_logs/v{VERSION} --dev --dry-run
 """
 
 import argparse
@@ -40,6 +40,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path
 from typing import Any, DefaultDict, Dict, List, Optional, Tuple
 
@@ -47,6 +48,10 @@ from typing import Any, DefaultDict, Dict, List, Optional, Tuple
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 from workflows.model_spec import MODEL_SPECS
+from workflows.acceptance_criteria import (
+    acceptance_criteria_check,
+    format_acceptance_summary_markdown,
+)
 from workflows.utils import get_version, parse_commits_from_docker_image
 
 try:
@@ -68,6 +73,13 @@ try:
     )
     from release_paths import get_versioned_release_logs_dir, resolve_release_output_dir
     from update_model_spec import reload_and_export_model_specs_json
+    from models_ci_reader import (
+        DEFAULT_OWNER as MODELS_CI_DEFAULT_OWNER,
+        DEFAULT_REPO as MODELS_CI_DEFAULT_REPO,
+        check_auth as models_ci_check_auth,
+        download_runs as models_ci_download_runs,
+        process_run_directory as process_ci_run_directory,
+    )
 except ImportError:
     from scripts.release.generate_model_support_docs import (
         regenerate_model_support_docs_and_update_readme,
@@ -90,6 +102,13 @@ except ImportError:
         resolve_release_output_dir,
     )
     from scripts.release.update_model_spec import reload_and_export_model_specs_json
+    from scripts.release.models_ci_reader import (
+        DEFAULT_OWNER as MODELS_CI_DEFAULT_OWNER,
+        DEFAULT_REPO as MODELS_CI_DEFAULT_REPO,
+        check_auth as models_ci_check_auth,
+        download_runs as models_ci_download_runs,
+        process_run_directory as process_ci_run_directory,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -165,29 +184,190 @@ def check_docker_installed() -> bool:
     return True
 
 
+def _load_run_ci_metadata(run_out_dir: Path) -> Optional[Dict[str, Any]]:
+    metadata_path = run_out_dir / "run_ci_metadata.json"
+    if not metadata_path.exists():
+        return None
+    with metadata_path.open("r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def _build_raw_ci_entry_sort_key(
+    entry: Dict[str, Any],
+) -> Tuple[int, str, str, str, bool]:
+    ci_metadata = entry.get("ci_metadata") or {}
+    ci_job_metadata = ci_metadata.get("ci_job_metadata") or {}
+    run_number = ci_metadata.get("run_number")
+    try:
+        numeric_run_number = int(run_number)
+    except (TypeError, ValueError):
+        numeric_run_number = -1
+    return (
+        numeric_run_number,
+        str(ci_job_metadata.get("completed_at") or ""),
+        str(ci_job_metadata.get("started_at") or ""),
+        str(entry.get("job_run_datetimestamp") or ""),
+        bool((entry.get("workflow_logs") or {}).get("reports_output")),
+    )
+
+
+def _select_release_ci_entry(entries: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Pick the newest raw CI entry for a model from release workflow artifacts."""
+    if not entries:
+        return None
+    return max(entries, key=_build_raw_ci_entry_sort_key)
+
+
+def _flatten_raw_ci_entry(raw_entry: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Normalize one raw CI entry into the shape expected by release generators."""
+    if not raw_entry:
+        return {}
+
+    workflow_logs = raw_entry.get("workflow_logs") or {}
+    workflow_summary = workflow_logs.get("summary") or {}
+    release_report = workflow_logs.get("reports_output") or {}
+    ci_metadata = raw_entry.get("ci_metadata") or {}
+    ci_job_metadata = ci_metadata.get("ci_job_metadata") or {}
+    ci_logs = raw_entry.get("ci_logs") or {}
+    return {
+        "tt_metal_commit": workflow_summary.get("tt_metal_commit"),
+        "vllm_commit": workflow_summary.get("vllm_commit"),
+        "docker_image": workflow_summary.get("docker_image"),
+        "perf_status": workflow_summary.get("perf_status"),
+        "benchmarks_completed": workflow_summary.get("benchmarks_completed"),
+        "accuracy_status": workflow_summary.get("accuracy_status"),
+        "evals_completed": workflow_summary.get("evals_completed"),
+        "regression_checked": workflow_summary.get("regression_checked"),
+        "regression_passed": workflow_summary.get("regression_passed"),
+        "regression_ok": workflow_summary.get("regression_ok"),
+        "is_passing": workflow_summary.get("is_passing"),
+        "ci_run_id": ci_metadata.get("run_id"),
+        "ci_run_number": ci_metadata.get("run_number"),
+        "ci_run_url": ci_metadata.get("ci_run_url"),
+        "ci_job_id": ci_job_metadata.get("job_id"),
+        "ci_job_url": ci_job_metadata.get("job_url"),
+        "ci_job_name": ci_job_metadata.get("job_name"),
+        "ci_job_status": ci_job_metadata.get("job_status"),
+        "ci_job_conclusion": ci_job_metadata.get("job_conclusion"),
+        "ci_job_started_at": ci_job_metadata.get("started_at"),
+        "ci_job_completed_at": ci_job_metadata.get("completed_at"),
+        "firmware_bundle": ci_logs.get("firmware_bundle"),
+        "driver_version": ci_logs.get("kmd_version"),
+        "release_report": release_report if isinstance(release_report, dict) else {},
+    }
+
+
+def build_ci_data_from_raw_results(
+    all_models_dict: Dict[str, List[Dict[str, Any]]],
+) -> Dict[str, Dict[str, Any]]:
+    """Collapse raw workflow-log entries to one normalized CI record per model."""
+    ci_data_by_model: Dict[str, Dict[str, Any]] = {}
+    for model_id, entries in all_models_dict.items():
+        ci_data_by_model[model_id] = _flatten_raw_ci_entry(
+            _select_release_ci_entry(entries)
+        )
+    return ci_data_by_model
+
+
+def resolve_ci_run_directory(ci_artifacts_path: Path) -> Path:
+    """Resolve a raw CI artifacts path to exactly one downloaded run directory."""
+    resolved_path = ci_artifacts_path.resolve()
+    if not resolved_path.exists():
+        raise FileNotFoundError(f"CI artifacts path not found: {resolved_path}")
+    if not resolved_path.is_dir():
+        raise ValueError(f"CI artifacts path must be a directory, got: {resolved_path}")
+
+    if (resolved_path / "run_ci_metadata.json").exists():
+        return resolved_path
+
+    ci_run_logs_dir = resolved_path / "ci_run_logs"
+    if ci_run_logs_dir.is_dir():
+        run_dirs = sorted(
+            path
+            for path in ci_run_logs_dir.iterdir()
+            if path.is_dir() and path.name.startswith("On_nightly_")
+        )
+        if len(run_dirs) != 1:
+            raise ValueError(
+                "Expected exactly one CI run directory under "
+                f"{ci_run_logs_dir}, found {len(run_dirs)}. "
+                "Pass the specific On_nightly_* directory instead."
+            )
+        return run_dirs[0]
+
+    raise ValueError(
+        "Could not resolve a CI run directory from path: "
+        f"{resolved_path}. Expected a downloaded On_nightly_* directory or a "
+        "release_logs/vX.Y.Z directory containing one ci_run_logs/ run."
+    )
+
+
+def load_raw_ci_results_from_run_directory(
+    run_out_dir: Path,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Parse one downloaded CI run directory into raw per-model entries."""
+    run_ci_metadata = _load_run_ci_metadata(run_out_dir)
+    run_timestamp = datetime.fromtimestamp(run_out_dir.stat().st_mtime).strftime(
+        "%Y-%m-%d_%H-%M-%S"
+    )
+    return process_ci_run_directory(run_out_dir, run_timestamp, run_ci_metadata)
+
+
+def _find_run_directory_for_run_id(out_root: Path, run_id: int) -> Path:
+    ci_run_logs_dir = out_root / "ci_run_logs"
+    if not ci_run_logs_dir.is_dir():
+        raise FileNotFoundError(f"No ci_run_logs directory found under {out_root}")
+    matching_dirs = sorted(
+        path
+        for path in ci_run_logs_dir.iterdir()
+        if path.is_dir() and path.name.endswith(f"_{run_id}")
+    )
+    if len(matching_dirs) != 1:
+        raise ValueError(
+            "Expected exactly one downloaded CI run directory for run id "
+            f"{run_id}, found {len(matching_dirs)}"
+        )
+    return matching_dirs[0]
+
+
+def load_ci_data_from_run_id(
+    run_id: int,
+    out_root: Path,
+    *,
+    workflow_file: str,
+) -> Dict[str, Dict[str, Any]]:
+    """Download raw CI artifacts for one run id and build normalized model records."""
+    token = models_ci_check_auth(MODELS_CI_DEFAULT_OWNER, MODELS_CI_DEFAULT_REPO)
+    models_ci_download_runs(
+        MODELS_CI_DEFAULT_OWNER,
+        MODELS_CI_DEFAULT_REPO,
+        workflow_file,
+        token,
+        out_root,
+        max_runs=1,
+        run_id=run_id,
+    )
+    run_out_dir = _find_run_directory_for_run_id(out_root, run_id)
+    return build_ci_data_from_raw_results(
+        load_raw_ci_results_from_run_directory(run_out_dir)
+    )
+
+
+def load_ci_data_from_artifacts_path(
+    ci_artifacts_path: Path,
+) -> Dict[str, Dict[str, Any]]:
+    """Load normalized CI data directly from downloaded raw workflow-log artifacts."""
+    run_out_dir = resolve_ci_run_directory(ci_artifacts_path)
+    return build_ci_data_from_raw_results(
+        load_raw_ci_results_from_run_directory(run_out_dir)
+    )
+
+
 def merge_specs_with_ci_data(
-    ci_json_path: Path, is_dev: bool
+    ci_data: Dict[str, Dict[str, Any]], is_dev: bool
 ) -> Dict[str, MergedModelRecord]:
-    """
-    Merge models_ci_last_good JSON with MODEL_SPECS.
-
-    Args:
-        ci_json_path: Path to the CI results JSON file
-        is_dev: If True, derive '-dev-' image targets instead of '-release-'
-
-    Returns:
-        Dictionary mapping model_id to merged data containing model_spec, ci_data,
-        and the derived target docker image.
-    """
-    logger.info(f"Loading CI data from: {ci_json_path}")
-
-    if not ci_json_path.exists():
-        raise FileNotFoundError(f"CI JSON file not found: {ci_json_path}")
-
-    with ci_json_path.open("r", encoding="utf-8") as f:
-        ci_data = json.load(f)
-
-    logger.info(f"Loaded CI data for {len(ci_data)} model entries")
+    """Merge normalized CI model data with MODEL_SPECS."""
+    logger.info(f"Loaded normalized CI data for {len(ci_data)} model entries")
 
     merged: Dict[str, MergedModelRecord] = {}
     for model_id, model_spec in MODEL_SPECS.items():
@@ -669,6 +849,9 @@ def write_output(
     existing_without_ci_ref: DefaultDict[str, List[str]],
     output_dir: Path,
     prefix: str,
+    *,
+    generated_artifacts: Optional[List[str]] = None,
+    acceptance_warnings: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, object]:
     """
     Write the artifact summary JSON and markdown files.
@@ -686,11 +869,15 @@ def write_output(
         "copied_images": copied_images,
         "existing_with_ci_ref": existing_with_ci_ref,
         "existing_without_ci_ref": unique_existing_without_ci,
+        "generated_artifacts": sorted(generated_artifacts or []),
+        "acceptance_warnings": acceptance_warnings or [],
         "summary": {
             "total_to_build": len(unique_images),
             "total_copied": len(copied_images),
             "total_existing_with_ci": len(existing_with_ci_ref),
             "total_existing_without_ci": len(existing_without_ci_ref),
+            "total_generated_artifacts": len(generated_artifacts or []),
+            "total_acceptance_warnings": len(acceptance_warnings or []),
         },
     }
 
@@ -699,6 +886,35 @@ def write_output(
 
     markdown_file = output_dir / f"{prefix}_artifacts_summary.md"
     markdown_content = "# Release Artifacts Summary\n\n"
+
+    if acceptance_warnings:
+        markdown_content += "## Release Acceptance Warnings\n\n"
+        markdown_content += (
+            "These warnings are computed locally from release report data and do not block "
+            "artifact generation.\n\n"
+        )
+        for warning in acceptance_warnings:
+            heading = (
+                warning.get("heading") or warning.get("model_id") or "Unknown model"
+            )
+            markdown_content += f"### {heading}\n\n"
+            if warning.get("ci_job_url"):
+                markdown_content += f"CI job: {warning['ci_job_url']}\n\n"
+            markdown_content += warning.get("summary_markdown", "").strip()
+            markdown_content += "\n\n"
+    else:
+        markdown_content += "## Release Acceptance Warnings\n\n"
+        markdown_content += "No release acceptance warnings were generated.\n\n"
+
+    markdown_content += "## Generated Release Artifacts\n\n"
+    if generated_artifacts:
+        for artifact_path in sorted(generated_artifacts):
+            markdown_content += f"- `{artifact_path}`\n"
+        markdown_content += f"\n**Total:** {len(generated_artifacts)}\n\n"
+    else:
+        markdown_content += (
+            "No additional generated release artifacts were recorded.\n\n"
+        )
 
     markdown_content += "## Images Promoted from Models CI\n\n"
     if copied_images:
@@ -781,13 +997,71 @@ def write_release_performance_outputs(
     return release_performance_data
 
 
+def build_acceptance_warnings(
+    merged_spec: Dict[str, MergedModelRecord],
+) -> List[Dict[str, Any]]:
+    """Recompute release acceptance from raw reports and return warning entries."""
+    warnings: List[Dict[str, Any]] = []
+    for record in sorted(merged_spec.values(), key=lambda item: item.model_id):
+        release_report = record.ci_data.get("release_report") or {}
+        if not isinstance(release_report, dict) or not release_report:
+            continue
+
+        benchmark_target_evaluation = release_report.get("benchmark_target_evaluation")
+        accepted, acceptance_blockers = acceptance_criteria_check(
+            release_report,
+            benchmark_target_evaluation=benchmark_target_evaluation
+            if isinstance(benchmark_target_evaluation, dict)
+            else None,
+        )
+        if accepted:
+            continue
+
+        summary_markdown = format_acceptance_summary_markdown(
+            accepted,
+            acceptance_blockers,
+            benchmark_target_evaluation=benchmark_target_evaluation
+            if isinstance(benchmark_target_evaluation, dict)
+            else None,
+        )
+        heading = f"{record.model_spec.model_name} on {getattr(record.model_spec.device_type, 'name', 'unknown')}"
+        ci_job_url = record.ci_data.get("ci_job_url")
+        logger.warning("Release acceptance warning for %s", heading)
+        if ci_job_url:
+            logger.warning("CI job: %s", ci_job_url)
+        for line in summary_markdown.splitlines():
+            logger.warning("%s", line)
+        warnings.append(
+            {
+                "model_id": record.model_id,
+                "heading": heading,
+                "ci_job_url": ci_job_url,
+                "acceptance_blockers": acceptance_blockers,
+                "summary_markdown": summary_markdown,
+            }
+        )
+
+    return warnings
+
+
+def require_release_diff_path(output_dir: Path) -> Path:
+    """Require the pre-release diff artifact before release-only diff generation."""
+    release_diff_path = output_dir / "pre_release_models_diff.json"
+    if not release_diff_path.exists():
+        raise FileNotFoundError(
+            "Missing required pre-release diff artifact: "
+            f"{release_diff_path}. Run pre-release diff generation first."
+        )
+    return release_diff_path
+
+
 def write_release_performance_diff_output(
     output_dir: Path,
     release_performance_data: Dict[str, Any],
 ) -> Path:
     """Write the release-scoped performance diff JSON artifact."""
     release_diff_records = load_optional_json(
-        output_dir / "pre_release_models_diff.json", default=[]
+        require_release_diff_path(output_dir), default=[]
     )
     release_performance_path = get_release_performance_path()
     base_release_performance_data = load_git_release_performance_data(
@@ -861,6 +1135,33 @@ def emit_markdown_summary(markdown_path: Path) -> None:
     sys.stdout.write(markdown_path.read_text(encoding="utf-8"))
 
 
+def build_generated_artifact_paths(
+    *,
+    image_target: str,
+    output_dir: Path,
+    version: str,
+    release_model_spec_path: Path,
+    readme_path: Path,
+) -> List[str]:
+    """Return repo-relative paths for the artifacts documented by this release run."""
+    generated_paths = [
+        str(output_dir / f"{image_target}_artifacts_summary.json"),
+        str(output_dir / f"{image_target}_artifacts_summary.md"),
+    ]
+    if image_target == "release":
+        generated_paths.extend(
+            [
+                str(release_model_spec_path),
+                "docs/model_support/",
+                str(readme_path),
+                str(output_dir / "release_performance_diff.json"),
+                str(output_dir / f"release_notes_v{version}.md"),
+                str(get_release_performance_path()),
+            ]
+        )
+    return generated_paths
+
+
 def main():
     """Main entry point for the script."""
     configure_logging()
@@ -872,15 +1173,21 @@ def main():
     )
 
     parser.add_argument(
-        "models_ci_last_good_json",
+        "ci_artifacts_path",
         nargs="?",
-        help="Path to models_ci_last_good JSON file with CI results",
+        help=(
+            "Path to downloaded raw CI artifacts. Expected either "
+            "release_logs/v{VERSION} or one ci_run_logs/On_nightly_* directory."
+        ),
     )
     parser.add_argument(
         "--models-ci-run-id",
         type=int,
         default=None,
-        help="GitHub Actions workflow run ID; automatically runs models_ci_reader pipeline to produce the last_good JSON",
+        help=(
+            "GitHub Actions workflow run ID; automatically downloads raw workflow "
+            "artifacts and processes them directly."
+        ),
     )
     parser.add_argument(
         "--out-root",
@@ -928,36 +1235,30 @@ def main():
     if not args.dev and not args.release:
         parser.error("Either --dev or --release must be specified")
 
-    if args.models_ci_run_id and args.models_ci_last_good_json:
-        parser.error(
-            "Provide --models-ci-run-id or models_ci_last_good_json, not both."
-        )
-    if not args.models_ci_run_id and not args.models_ci_last_good_json:
-        parser.error("Provide --models-ci-run-id or models_ci_last_good_json.")
+    if args.models_ci_run_id and args.ci_artifacts_path:
+        parser.error("Provide --models-ci-run-id or ci_artifacts_path, not both.")
+    if not args.models_ci_run_id and not args.ci_artifacts_path:
+        parser.error("Provide --models-ci-run-id or ci_artifacts_path.")
 
     output_dir = resolve_release_output_dir(args.output_dir)
+    version = get_version()
+    ci_data: Dict[str, Dict[str, Any]]
 
     if args.models_ci_run_id:
-        from scripts.release.models_ci_reader import run_ci_pipeline
-
-        run_ci_pipeline_kwargs = {}
-        if args.release:
-            run_ci_pipeline_kwargs["workflow_file"] = RELEASE_WORKFLOW_FILE
-
-        ci_json_path = run_ci_pipeline(
+        ci_data = load_ci_data_from_run_id(
             args.models_ci_run_id,
             resolve_release_output_dir(args.out_root),
-            **run_ci_pipeline_kwargs,
+            workflow_file=RELEASE_WORKFLOW_FILE if args.release else "on-nightly.yml",
         )
     else:
-        ci_json_path = Path(args.models_ci_last_good_json).resolve()
+        ci_data = load_ci_data_from_artifacts_path(Path(args.ci_artifacts_path))
 
     image_target = "dev" if args.dev else "release"
 
     logger.info("=" * 80)
     logger.info("RELEASE IMAGE ARTIFACTS SCRIPT")
     logger.info("=" * 80)
-    logger.info(f"CI JSON:          {ci_json_path}")
+    logger.info(f"Loaded CI entries: {len(ci_data)}")
     logger.info(f"Image target:     {image_target}")
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"Dry-run mode:     {args.dry_run}")
@@ -969,7 +1270,7 @@ def main():
         return 1
 
     logger.info("\nStep 1: Merging CI data with MODEL_SPECS...")
-    merged_spec = merge_specs_with_ci_data(ci_json_path, args.dev)
+    merged_spec = merge_specs_with_ci_data(ci_data, args.dev)
 
     logger.info("\nStep 2: Creating release artifacts...")
     (
@@ -980,18 +1281,19 @@ def main():
         existing_without_ci_ref,
     ) = generate_release_artifacts(merged_spec, args.dry_run)
 
-    logger.info("\nStep 3: Writing output files...")
-    write_output(
-        images_to_build,
-        copied_images,
-        existing_with_ci_ref,
-        existing_without_ci_ref,
-        output_dir,
-        image_target,
+    acceptance_warnings: List[Dict[str, Any]] = []
+    notes_path = None
+    generated_artifacts = build_generated_artifact_paths(
+        image_target=image_target,
+        output_dir=output_dir,
+        version=version,
+        release_model_spec_path=Path(args.release_model_spec_path),
+        readme_path=Path(args.readme_path),
     )
 
-    notes_path = None
     if args.release:
+        logger.info("\nStep 3: Recomputing release acceptance warnings...")
+        acceptance_warnings = build_acceptance_warnings(merged_spec)
         logger.info("\nStep 4: Writing release performance outputs...")
         release_performance_data = write_release_performance_outputs(
             merged_spec, output_dir, args.dry_run
@@ -1008,13 +1310,36 @@ def main():
         regenerate_model_support_docs_and_update_readme(
             model_spec_path=Path(args.model_spec_path),
             readme_path=Path(args.readme_path),
+            release_performance_data=release_performance_data,
             dry_run=args.dry_run,
         )
-        logger.info("\nStep 8: Writing release notes...")
+        logger.info("\nStep 8: Writing output files...")
+        write_output(
+            images_to_build,
+            copied_images,
+            existing_with_ci_ref,
+            existing_without_ci_ref,
+            output_dir,
+            image_target,
+            generated_artifacts=generated_artifacts,
+            acceptance_warnings=acceptance_warnings,
+        )
+        logger.info("\nStep 9: Writing release notes...")
         notes_path = write_release_notes(
             output_dir,
-            get_version(),
+            version,
             release_performance_data=release_performance_data,
+        )
+    else:
+        logger.info("\nStep 3: Writing output files...")
+        write_output(
+            images_to_build,
+            copied_images,
+            existing_with_ci_ref,
+            existing_without_ci_ref,
+            output_dir,
+            image_target,
+            generated_artifacts=generated_artifacts,
         )
 
     logger.info("\n" + "=" * 80)

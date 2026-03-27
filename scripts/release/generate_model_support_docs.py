@@ -1234,9 +1234,86 @@ def load_templates_from_model_spec(model_spec_path: Path) -> List[ModelSpecTempl
     return module.spec_templates
 
 
+def build_expected_generated_paths(
+    templates: List[ModelSpecTemplate], output_dir: Path
+) -> Set[Path]:
+    """Return the full set of markdown paths generated for the given templates."""
+    expected_paths: Set[Path] = {output_dir / "models_by_hardware.md"}
+
+    for model_type in ModelType:
+        type_templates = [
+            template for template in templates if template.model_type == model_type
+        ]
+        if not type_templates:
+            continue
+        expected_paths.add(output_dir / model_type.short_name.lower() / "README.md")
+
+    model_groups = group_templates_by_model(templates)
+    for model_name, model_templates in model_groups.items():
+        model_type = get_model_type_for_templates(model_templates)
+        subdir = get_model_subdir(model_type)
+        model_devices = {
+            dev_spec.device
+            for template in model_templates
+            for dev_spec in template.device_model_specs
+        }
+        generated_groups = set()
+        for device in model_devices:
+            if device in EXCLUDED_DEVICES:
+                continue
+            group = DEVICE_HARDWARE_PAGE_GROUPS_MAPPING.get(device)
+            if not group or id(group) in generated_groups:
+                continue
+            generated_groups.add(id(group))
+            expected_paths.add(
+                output_dir / subdir / get_model_page_group_filename(model_name, group)
+            )
+
+    return expected_paths
+
+
+def cleanup_stale_generated_files(
+    output_dir: Path, expected_paths: Set[Path], dry_run: bool = False
+) -> None:
+    """Delete stale generated markdown files from the known model-support layout."""
+    known_subdirs = {model_type.short_name.lower() for model_type in ModelType}
+    stale_paths: List[Path] = []
+
+    models_by_hardware_path = output_dir / "models_by_hardware.md"
+    if (
+        models_by_hardware_path.exists()
+        and models_by_hardware_path not in expected_paths
+    ):
+        stale_paths.append(models_by_hardware_path)
+
+    for subdir_name in known_subdirs:
+        subdir_path = output_dir / subdir_name
+        if not subdir_path.is_dir():
+            continue
+        for markdown_path in subdir_path.glob("*.md"):
+            if markdown_path not in expected_paths:
+                stale_paths.append(markdown_path)
+
+    for stale_path in sorted(stale_paths):
+        if dry_run:
+            print(f"[DRY RUN] Would delete stale generated file: {stale_path}")
+            continue
+        stale_path.unlink(missing_ok=True)
+        print(f"Deleted stale generated file: {stale_path}")
+
+    if dry_run:
+        return
+
+    for subdir_name in sorted(known_subdirs):
+        subdir_path = output_dir / subdir_name
+        if subdir_path.is_dir() and not any(subdir_path.iterdir()):
+            subdir_path.rmdir()
+
+
 def generate_model_support_docs(
     model_spec_path: Path,
     output_dir: Path = Path("docs/model_support"),
+    release_performance_data: Optional[Dict[str, object]] = None,
     dry_run: bool = False,
 ) -> None:
     """Generate docs/model_support pages from the given model_spec.py path."""
@@ -1252,7 +1329,14 @@ def generate_model_support_docs(
     # Note: docs/model_support/README.md is no longer generated here.
     # The model support content is maintained directly in root README.md
     # via regenerate_model_support_docs_and_update_readme().
-    release_performance_data = load_release_performance_data()
+    release_performance_data = (
+        release_performance_data or load_release_performance_data()
+    )
+    cleanup_stale_generated_files(
+        output_dir,
+        build_expected_generated_paths(templates, output_dir),
+        dry_run=dry_run,
+    )
 
     # Generate models by hardware page
     hardware_content = generate_models_by_hardware_page(
@@ -1321,6 +1405,7 @@ def regenerate_model_support_docs_and_update_readme(
     model_spec_path: Path,
     readme_path: Path = Path("README.md"),
     output_dir: Path = Path("docs/model_support"),
+    release_performance_data: Optional[Dict[str, object]] = None,
     dry_run: bool = False,
 ) -> None:
     """Regenerate docs/model_support/ and update the root README Model Support section."""
@@ -1332,6 +1417,7 @@ def regenerate_model_support_docs_and_update_readme(
     generate_model_support_docs(
         model_spec_path=Path(model_spec_path),
         output_dir=Path(output_dir),
+        release_performance_data=release_performance_data,
         dry_run=dry_run,
     )
 
