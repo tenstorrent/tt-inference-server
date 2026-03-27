@@ -63,6 +63,10 @@ try:
         load_git_release_performance_data,
         load_optional_json,
     )
+    from validate_model_spec_template_images import (
+        format_missing_template_image_validation_error,
+        validate_model_spec_template_images,
+    )
     from release_performance import (
         build_release_performance_data,
         build_release_performance_diff_data,
@@ -88,6 +92,10 @@ except ImportError:
         build_release_notes,
         load_git_release_performance_data,
         load_optional_json,
+    )
+    from scripts.release.validate_model_spec_template_images import (
+        format_missing_template_image_validation_error,
+        validate_model_spec_template_images,
     )
     from scripts.release.release_performance import (
         build_release_performance_data,
@@ -781,7 +789,9 @@ def log_summary(
 
 
 def generate_release_artifacts(
-    merged_spec: Dict[str, MergedModelRecord], dry_run: bool
+    merged_spec: Dict[str, MergedModelRecord],
+    dry_run: bool,
+    image_exists_cache: Optional[Dict[str, bool]] = None,
 ) -> Tuple[
     DefaultDict[str, List[str]],
     int,
@@ -799,7 +809,8 @@ def generate_release_artifacts(
     copied_images: Dict[str, str] = {}
     existing_with_ci_ref: Dict[str, str] = {}
     existing_without_ci_ref = defaultdict(list)
-    image_exists_cache: Dict[str, bool] = {}
+    if image_exists_cache is None:
+        image_exists_cache = {}
     grouped_records = group_models_by_target_image(merged_spec)
 
     logger.info(
@@ -1273,13 +1284,35 @@ def main():
     merged_spec = merge_specs_with_ci_data(ci_data, args.dev)
 
     logger.info("\nStep 2: Creating release artifacts...")
+    image_exists_cache: Dict[str, bool] = {}
     (
         images_to_build,
         unique_images_count,
         copied_images,
         existing_with_ci_ref,
         existing_without_ci_ref,
-    ) = generate_release_artifacts(merged_spec, args.dry_run)
+    ) = generate_release_artifacts(
+        merged_spec,
+        args.dry_run,
+        image_exists_cache=image_exists_cache,
+    )
+
+    logger.info(
+        "\nPost-promotion validation: checking ModelSpecTemplate Docker images..."
+    )
+    template_image_validation = validate_model_spec_template_images(
+        is_dev=args.dev,
+        check_image_exists=check_image_exists,
+        cache=image_exists_cache,
+    )
+    if not template_image_validation.is_valid:
+        validation_error = format_missing_template_image_validation_error(
+            template_image_validation,
+            is_dev=args.dev,
+        )
+        for line in validation_error.splitlines():
+            logger.error(line)
+        return 1
 
     acceptance_warnings: List[Dict[str, Any]] = []
     notes_path = None

@@ -8,6 +8,11 @@ from unittest.mock import patch
 
 import scripts.release.generate_release_artifacts as gra
 from scripts.release.release_diff import build_template_key
+from scripts.release.validate_model_spec_template_images import (
+    MissingTemplateImage,
+    TemplateImageReference,
+    TemplateImageValidationResult,
+)
 from workflows.perf_targets import PerfTarget, PerfTargetSet
 
 
@@ -916,13 +921,18 @@ def test_main_wires_release_flow_and_emits_summary(tmp_path):
     ) as release_notes_mock, patch.object(
         gra, "build_acceptance_warnings", return_value=[]
     ) as acceptance_mock, patch.object(
+        gra,
+        "validate_model_spec_template_images",
+        return_value=TemplateImageValidationResult(),
+    ) as validate_mock, patch.object(
         gra, "emit_markdown_summary"
     ) as emit_mock, patch.object(gra, "get_version", return_value="0.10.0"):
         assert gra.main() == 0
 
     load_ci_data_mock.assert_called_once_with(ci_artifacts_path)
     merge_mock.assert_called_once_with({"model-a": {}}, False)
-    generate_mock.assert_called_once_with(merged_spec, False)
+    generate_mock.assert_called_once_with(merged_spec, False, image_exists_cache={})
+    validate_mock.assert_called_once()
     acceptance_mock.assert_called_once_with(merged_spec)
     write_output_mock.assert_called_once()
     performance_mock.assert_called_once_with(merged_spec, output_dir, False)
@@ -998,6 +1008,10 @@ def test_main_release_run_id_reads_release_workflow(tmp_path):
         gra, "regenerate_model_support_docs_and_update_readme"
     ), patch.object(
         gra, "write_release_notes", return_value=output_dir / "release_notes.md"
+    ), patch.object(
+        gra,
+        "validate_model_spec_template_images",
+        return_value=TemplateImageValidationResult(),
     ), patch.object(gra, "emit_markdown_summary"), patch.object(
         gra, "get_version", return_value="0.10.0"
     ):
@@ -1040,6 +1054,10 @@ def test_main_dev_run_id_keeps_default_workflow(tmp_path):
         gra, "merge_specs_with_ci_data", return_value=merged_spec
     ), patch.object(
         gra, "generate_release_artifacts", return_value=result_tuple
+    ), patch.object(
+        gra,
+        "validate_model_spec_template_images",
+        return_value=TemplateImageValidationResult(),
     ), patch.object(gra, "write_output"), patch.object(gra, "emit_markdown_summary"):
         assert gra.main() == 0
 
@@ -1082,6 +1100,10 @@ def test_main_dev_flow_skips_release_only_compatibility_outputs(tmp_path):
         gra, "merge_specs_with_ci_data", return_value=merged_spec
     ), patch.object(
         gra, "generate_release_artifacts", return_value=result_tuple
+    ), patch.object(
+        gra,
+        "validate_model_spec_template_images",
+        return_value=TemplateImageValidationResult(),
     ), patch.object(gra, "write_output"), patch.object(
         gra, "write_release_model_spec_output"
     ) as export_mock, patch.object(
@@ -1094,3 +1116,73 @@ def test_main_dev_flow_skips_release_only_compatibility_outputs(tmp_path):
     export_mock.assert_not_called()
     docs_mock.assert_not_called()
     release_notes_mock.assert_not_called()
+
+
+def test_main_fails_after_promotion_when_template_images_are_missing(tmp_path):
+    ci_artifacts_path = tmp_path / "release_logs" / "v0.10.0"
+    ci_artifacts_path.mkdir(parents=True)
+    output_dir = tmp_path / "release_logs" / "v0.10.0"
+    args = Namespace(
+        ci_artifacts_path=str(ci_artifacts_path),
+        models_ci_run_id=None,
+        out_root=None,
+        dev=False,
+        release=True,
+        output_dir=str(output_dir),
+        model_spec_path=str(tmp_path / "workflows" / "model_spec.py"),
+        readme_path=str(tmp_path / "README.md"),
+        release_model_spec_path=str(tmp_path / "release_model_spec.json"),
+        dry_run=False,
+    )
+    merged_spec = {"model-a": make_record("model-a", make_image("demo"))}
+    result_tuple = (defaultdict(list), 0, {}, {}, defaultdict(list))
+    validation_result = TemplateImageValidationResult(
+        missing_images=(
+            MissingTemplateImage(
+                image="ghcr.io/tenstorrent/demo-release-image:tag",
+                references=(
+                    TemplateImageReference(
+                        template_label="demo-impl | engine=vllm | weights=demo/model | devices=N150",
+                        model_ids=("id_demo_impl_model_n150",),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    with patch.object(gra, "configure_logging"), patch.object(
+        gra, "get_versioned_release_logs_dir", return_value=output_dir
+    ), patch(
+        "argparse.ArgumentParser.parse_args",
+        return_value=args,
+    ), patch.object(
+        gra, "resolve_release_output_dir", return_value=output_dir
+    ), patch.object(gra, "check_docker_installed", return_value=True), patch.object(
+        gra, "check_crane_installed", return_value=True
+    ), patch.object(
+        gra, "load_ci_data_from_artifacts_path", return_value={"model-a": {}}
+    ), patch.object(
+        gra, "merge_specs_with_ci_data", return_value=merged_spec
+    ), patch.object(
+        gra, "generate_release_artifacts", return_value=result_tuple
+    ) as generate_mock, patch.object(
+        gra,
+        "validate_model_spec_template_images",
+        return_value=validation_result,
+    ) as validate_mock, patch.object(
+        gra,
+        "format_missing_template_image_validation_error",
+        return_value="missing template image",
+    ) as format_mock, patch.object(
+        gra, "build_acceptance_warnings"
+    ) as acceptance_mock, patch.object(
+        gra, "write_output"
+    ) as write_output_mock, patch.object(gra, "emit_markdown_summary") as emit_mock:
+        assert gra.main() == 1
+
+    generate_mock.assert_called_once_with(merged_spec, False, image_exists_cache={})
+    validate_mock.assert_called_once()
+    format_mock.assert_called_once_with(validation_result, is_dev=False)
+    acceptance_mock.assert_not_called()
+    write_output_mock.assert_not_called()
+    emit_mock.assert_not_called()
