@@ -9,7 +9,7 @@ from pathlib import Path
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
-from tests.test_config import TEST_CONFIGS
+from server_tests.test_config import TEST_CONFIGS
 from workflows.utils import ensure_readwriteable_dir, get_repo_root_path, run_command
 from workflows.workflow_config import (
     WORKFLOW_CONFIGS,
@@ -126,9 +126,7 @@ def run_single_workflow(model_spec, runtime_config, json_fpath):
 
 
 def find_test_config_by_model_and_device(model: str, device: str):
-    config_path = (
-        get_repo_root_path() / "tests" / "server_tests" / "server_tests_config.json"
-    )
+    config_path = get_repo_root_path() / "server_tests" / "server_tests_config.json"
     with Path(config_path).open("r") as handle:
         configs = json.load(handle)
 
