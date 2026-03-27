@@ -2601,76 +2601,113 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
 
 
 def generate_tests_report(args, server_mode, model_spec, report_id, metadata={}):
-    # glob on all test reports - each test category might produce its own report
-    file_name_pattern = f"test_{model_spec.model_id}_*/*"
-    file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/tests_output/{file_name_pattern}"
-    )
-    files = glob(file_path_pattern)
     output_dir = Path(args.output_path) / "tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"summary_{report_id}.md"
 
+    empty_result = (
+        "",
+        [
+            {
+                "model": getattr(args, "model", "unknown_model"),
+                "device": getattr(args, "device", "unknown_device"),
+            }
+        ],
+        None,
+        None,
+    )
+
+    # Read the test manifest written by run_tests.py
+    tests_output_dir = get_default_workflow_root_log_dir() / "tests_output"
+    manifest_path = tests_output_dir / f"test_manifest_{model_spec.model_id}.json"
+    if not manifest_path.exists():
+        logger.info(f"No test manifest found at {manifest_path}. Skipping.")
+        return empty_result
+
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        test_manifest = json.load(f)
+
     logger.info("Tests Summary")
-    logger.info(f"Processing: {len(files)} files")
-    if not files:
-        logger.info("No tests report files found. Skipping.")
-        return (
-            "",
-            [
-                {
-                    "model": getattr(args, "model", "unknown_model"),
-                    "device": getattr(args, "device", "unknown_device"),
-                }
-            ],
-            None,
-            None,
-        )
-    # When multiple test runs exist, use only the most recent result
-    files = max(files, key=lambda f: Path(f).stat().st_mtime)
-    logger.info(f"Selected most recent test report: {files}")
+    logger.info(f"Test manifest contains {len(test_manifest)} task(s)")
 
-    # generate vLLM parameter coverage report
-    markdown_str = generate_vllm_parameter_report(
-        files, output_path, report_id, metadata, model_spec=model_spec
-    )
-
-    # Look for parameter_report.json in tests_output directory
-    release_raw = None
-    test_dir_pattern = f"test_{model_spec.model_id}_*"
-    test_dir_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/tests_output/{test_dir_pattern}"
-    )
-    test_dirs = sorted(
-        glob(test_dir_path_pattern),
-        key=lambda d: Path(d).stat().st_mtime,
-        reverse=True,
-    )
-    for test_dir in test_dirs:
-        parameter_report_path = Path(test_dir) / "parameter_report.json"
+    # Collect (task_name, parameter_report.json path) from manifest entries
+    report_entries = []
+    for entry in test_manifest:
+        task_name = entry["task_name"]
+        parameter_report_path = Path(entry["output_dir"]) / "parameter_report.json"
         if parameter_report_path.exists():
-            try:
-                with open(parameter_report_path, "r", encoding="utf-8") as f:
-                    release_raw = json.load(f)
-                logger.info(f"Loaded parameter report from: {parameter_report_path}")
-                break
-            except Exception as e:
-                logger.warning(
-                    f"Could not read parameter report {parameter_report_path}: {e}"
-                )
+            report_entries.append((task_name, str(parameter_report_path)))
+            logger.info(
+                f"  Found report for task '{task_name}': {parameter_report_path}"
+            )
+        else:
+            logger.warning(
+                f"  No parameter_report.json for task '{task_name}' "
+                f"at {parameter_report_path}"
+            )
 
-    if release_raw is None:
-        logger.info("No parameter_report.json found in tests_output directory.")
+    if not report_entries:
+        logger.info("No parameter_report.json found in test output directories.")
+        return empty_result
+
+    logger.info(f"Processing {len(report_entries)} parameter report(s)")
+
+    # Generate vLLM parameter coverage report from all report files
+    # Pass (task_name, file_path) tuples for per-task sections when multiple tasks
+    if len(report_entries) == 1:
+        report_file_arg = report_entries[0][1]
+    else:
+        report_file_arg = report_entries
+    markdown_str = generate_vllm_parameter_report(
+        report_file_arg,
+        output_path,
+        report_id,
+        metadata,
+        model_spec=model_spec,
+    )
+
+    # Merge all parameter_report.json data into combined release_raw
+    release_raw_list = []
+    for _task_name, report_file in report_entries:
+        try:
+            with open(report_file, "r", encoding="utf-8") as f:
+                release_raw_list.append(json.load(f))
+            logger.info(f"Loaded parameter report from: {report_file}")
+        except Exception as e:
+            logger.warning(f"Could not read parameter report {report_file}: {e}")
+
+    if not release_raw_list:
         release_raw = [
             {
                 "model": getattr(args, "model", "unknown_model"),
                 "device": getattr(args, "device", "unknown_device"),
             }
         ]
+    elif len(release_raw_list) == 1:
+        release_raw = release_raw_list[0]
+    else:
+        # Merge results from multiple reports
+        release_raw = {
+            "endpoint_url": ", ".join(
+                r.get("endpoint_url", "N/A") for r in release_raw_list
+            ),
+            "model_name": release_raw_list[0].get("model_name", "unknown-model"),
+            "model_impl": release_raw_list[0].get("model_impl", "unknown-impl"),
+            "results": {},
+        }
+        for report_data in release_raw_list:
+            for test_case, tests in report_data.get("results", {}).items():
+                if test_case in release_raw["results"]:
+                    release_raw["results"][test_case].extend(tests)
+                else:
+                    release_raw["results"][test_case] = list(tests)
 
-    release_str = f"### Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
+    release_str = (
+        f"### Test Results for {model_spec.model_name} on {args.device}"
+        f"\n\n{markdown_str}"
+    )
 
     # Write markdown report to file
     with output_path.open("w", encoding="utf-8") as f:

@@ -60,10 +60,15 @@ def analyze_report(report_data):
     return summary
 
 
-def format_metadata(report_data):
+def format_metadata(report_data, task_name=None):
     """Creates a Markdown table for the report metadata."""
+    title = (
+        f"### LLM API Test Metadata — {task_name}"
+        if task_name
+        else "### LLM API Test Metadata"
+    )
     lines = [
-        "### LLM API Test Metadata",
+        title,
         "",
         "| Attribute | Value |",
         "| --- | --- |",
@@ -84,10 +89,15 @@ def format_metadata(report_data):
     return "\n".join(lines)
 
 
-def format_summary_table(summary):
+def format_summary_table(summary, task_name=None):
     """Creates the main summary results table."""
+    title = (
+        f"### Parameter Conformance Summary — {task_name}"
+        if task_name
+        else "### Parameter Conformance Summary"
+    )
     lines = [
-        "### Parameter Conformance Summary",
+        title,
         "",
         "| Test Case | Status | Summary |",
         "| --- | :---: | --- |",
@@ -109,10 +119,15 @@ def format_summary_table(summary):
     return "\n".join(lines)
 
 
-def format_detailed_results_table(summary):
+def format_detailed_results_table(summary, task_name=None):
     """Creates a single Markdown table for all detailed test results."""
+    title = (
+        f"### Detailed Test Results — {task_name}"
+        if task_name
+        else "### Detailed Test Results"
+    )
     lines = [
-        "### Detailed Test Results",
+        title,
         "",
         "| Test Case | Parametrization | Status | Message |",
         "| --- | --- | :---: | --- |",
@@ -155,24 +170,45 @@ def format_detailed_results_table(summary):
     return "\n".join(lines)
 
 
-def main(report_file, *args, **kwargs):
+def _load_report(report_file):
     try:
         with open(report_file, "r") as f:
-            report_data = json.load(f)
+            return json.load(f)
     except FileNotFoundError:
         raise FileNotFoundError(f"Error: Input file not found at {report_file}")
     except json.JSONDecodeError:
         raise json.JSONDecodeError(f"Error: Could not decode JSON from {report_file}")
 
-    # Analyze and format
-    summary = analyze_report(report_data)
-    metadata_md = format_metadata(report_data)
-    summary_md = format_summary_table(summary)
-    # Call the new table-based formatter
-    details_md = format_detailed_results_table(summary)
 
-    report_str = f"{metadata_md}\n{summary_md}{details_md}"
-    return report_str
+def _generate_single_report(report_data, task_name=None):
+    """Generate markdown sections for a single report's data."""
+    summary = analyze_report(report_data)
+    metadata_md = format_metadata(report_data, task_name=task_name)
+    summary_md = format_summary_table(summary, task_name=task_name)
+    details_md = format_detailed_results_table(summary, task_name=task_name)
+    return f"{metadata_md}\n{summary_md}{details_md}"
+
+
+def main(report_file, *args, **kwargs):
+    # Accept a list of (task_name, file_path) tuples for multi-task reports
+    if (
+        isinstance(report_file, list)
+        and len(report_file) > 0
+        and isinstance(report_file[0], tuple)
+    ):
+        sections = []
+        for task_name, file_path in report_file:
+            report_data = _load_report(file_path)
+            sections.append(_generate_single_report(report_data, task_name=task_name))
+        return "\n---\n\n".join(sections)
+
+    # Accept a single file path (backwards compatible)
+    if isinstance(report_file, list):
+        # list of file paths without task names — fall back to single merged report
+        report_file = report_file[0] if len(report_file) == 1 else report_file[0]
+
+    report_data = _load_report(report_file)
+    return _generate_single_report(report_data)
 
 
 if __name__ == "__main__":

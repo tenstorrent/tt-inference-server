@@ -38,10 +38,12 @@ def build_test_command(
     device,
     output_path,
     service_port,
-) -> List[str]:
+):
     """
     Build the command for tests by templating command-line arguments using properties
     from the given task and model configuration.
+
+    Returns (cmd, output_dir_path) tuple.
     """
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
@@ -77,7 +79,7 @@ def build_test_command(
     cmd.extend(test_kwargs_list)
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
-    return cmd
+    return cmd, str(output_dir_path)
 
 
 def parse_args():
@@ -178,13 +180,14 @@ def main():
     # Execute pytest for each task.
     logger.info("Running test client ...")
     return_codes = []
+    test_manifest = []
     for task in test_config.tasks:
         logger.info(
             f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
         )
 
         logger.info(f"Running tests for:\n {task}")
-        cmd = build_test_command(
+        cmd, output_dir_path = build_test_command(
             task,
             model_spec,
             device_str,
@@ -193,6 +196,15 @@ def main():
         )
         return_code = run_command(command=cmd, logger=logger, env=env_vars)
         return_codes.append(return_code)
+        test_manifest.append(
+            {"task_name": task.task_name, "output_dir": output_dir_path}
+        )
+
+    # Write manifest of test output directories for report generation
+    manifest_path = Path(args.output_path) / f"test_manifest_{model_spec.model_id}.json"
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(test_manifest, f, indent=2)
+    logger.info(f"Test manifest saved to: {manifest_path}")
 
     if all(return_code == 0 for return_code in return_codes):
         logger.info("✅ Completed tests")
