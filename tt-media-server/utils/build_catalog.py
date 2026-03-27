@@ -4,6 +4,7 @@
 from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
+    ModelDisplayNames,
     ModelServices,
     SupportedModels,
     TrainingOptimizers,
@@ -42,10 +43,14 @@ def _build_models_catalog():
                 model_config = SupportedModels[model_name.name].value
             except KeyError:
                 model_config = model_name.value
+            try:
+                display_name = ModelDisplayNames[model_name.name].value
+            except KeyError:
+                display_name = model_name.value
             models.append(
                 {
                     "id": model_name.value,
-                    "display_name": model_name.value,
+                    "display_name": display_name,
                     "supported": True,
                     "model_config": model_config,
                 }

@@ -274,6 +274,10 @@ class TrainingTrainers(Enum):
     GRPO = "grpo"
 
 
+class ModelDisplayNames(Enum):
+    GEMMA_1_1_2B_IT = "Gemma 1.1 2B Instruct"
+
+
 class TrainingOptimizers(Enum):
     ADAMW = "adamw"
 
