@@ -126,8 +126,10 @@ def make_raw_ci_entry(
     }
 
 
-def make_release_report(*, functional_status="target", parameter_status="passed"):
-    return {
+def make_release_report(
+    *, functional_status="target", parameter_status="passed", spec_test_success=None
+):
+    report = {
         "metadata": {"model_name": "DemoModel", "device": "n150"},
         "benchmarks_summary": [
             {
@@ -165,6 +167,17 @@ def make_release_report(*, functional_status="target", parameter_status="passed"
             "errors": [],
         },
     }
+    if spec_test_success is not None:
+        report["spec_tests"] = {
+            "results": [
+                {
+                    "test_name": "device_liveness",
+                    "success": spec_test_success,
+                    "error": "" if spec_test_success else "worker timed out",
+                }
+            ]
+        }
+    return report
 
 
 def test_merge_specs_with_ci_data_derives_dev_image_without_mutating_model_specs():
@@ -218,6 +231,24 @@ def test_build_acceptance_warnings_logs_warning_only():
     assert len(warnings) == 1
     assert warnings[0]["model_id"] == "demo_model"
     assert "Acceptance status: `FAIL`" in warnings[0]["summary_markdown"]
+
+
+def test_build_acceptance_warnings_includes_failed_spec_tests():
+    target_image = make_image("demo")
+    failing_report = make_release_report(spec_test_success=False)
+    merged_spec = {
+        "demo_model": gra.MergedModelRecord(
+            model_id="demo_model",
+            model_spec=make_model_spec(target_image),
+            ci_data={"release_report": failing_report},
+            target_docker_image=target_image,
+        )
+    }
+
+    warnings = gra.build_acceptance_warnings(merged_spec)
+
+    assert len(warnings) == 1
+    assert "spec_tests.device_liveness.0" in warnings[0]["summary_markdown"]
 
 
 def test_extract_commits_from_tag_requires_expected_format():

@@ -6,15 +6,17 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
+from enum import Enum, IntEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple, Union
 
 from workflows.utils import (
     get_version,
     parse_commits_from_docker_image,
 )
 from workflows.perf_targets import (
+    DEFAULT_PERF_TARGETS_MAP,
     BenchmarkTaskParams,
     PerfTarget,
     get_perf_reference_for_device,
@@ -62,9 +64,15 @@ def generate_default_docker_link(
 
 
 def get_perf_reference_map(
-    model_name: str, perf_targets_map: Dict[str, float]
+    model_name: str,
+    perf_targets_map: Optional[Dict[str, float]] = None,
+    acceptance_criteria: Optional["AcceptanceCriteria"] = None,
 ) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
-    return build_perf_reference_map(model_name, perf_targets_map)
+    return build_perf_reference_map(
+        model_name,
+        perf_targets_map=perf_targets_map,
+        acceptance_criteria=acceptance_criteria,
+    )
 
 
 def get_perf_reference(device_model_spec, perf_reference_map):
@@ -104,6 +112,217 @@ class ImplSpec:
     impl_name: str
     repo_url: str
     code_path: str
+
+
+class AcceptancePerfTarget(str, Enum):
+    FUNCTIONAL = "functional"
+    COMPLETE = "complete"
+    TARGET = "target"
+    REGRESSION = "regression"
+
+
+class AcceptanceCheckGroup(str, Enum):
+    EVALS = "evals"
+    TESTS = "tests"
+    SPEC_TESTS = "spec_tests"
+
+
+class AcceptanceSupportTier(IntEnum):
+    TIER_1 = 1
+    TIER_2 = 2
+    TIER_3 = 3
+    TIER_4 = 4
+
+
+@dataclass(frozen=True)
+class AcceptanceCheckOverride:
+    required: Optional[bool] = None
+    tolerance: Optional[float] = None
+
+
+@dataclass(frozen=True)
+class AcceptanceSectionCriteria:
+    required: bool = True
+
+
+@dataclass(frozen=True)
+class AcceptanceBenchmarkCheck:
+    task_type: str = "text"
+    isl: Optional[int] = None
+    osl: Optional[int] = None
+    max_concurrency: Optional[int] = None
+    num_eval_runs: Optional[int] = None
+    num_inference_steps: Optional[int] = None
+    image_height: Optional[int] = None
+    image_width: Optional[int] = None
+    images_per_prompt: Optional[int] = None
+    target_names: Tuple[AcceptancePerfTarget, ...] = field(default_factory=tuple)
+    override: AcceptanceCheckOverride = field(default_factory=AcceptanceCheckOverride)
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            "target_names",
+            tuple(
+                _normalize_acceptance_perf_target(name) for name in self.target_names
+            ),
+        )
+        if not isinstance(self.override, AcceptanceCheckOverride):
+            object.__setattr__(
+                self, "override", AcceptanceCheckOverride(**self.override)
+            )
+
+    def resolved_target_names(
+        self, default_target_names: Iterable[AcceptancePerfTarget]
+    ) -> Tuple[str, ...]:
+        target_names = self.target_names or tuple(default_target_names)
+        return tuple(
+            target_name.value
+            if isinstance(target_name, AcceptancePerfTarget)
+            else str(target_name)
+            for target_name in target_names
+        )
+
+    def matches_perf_target(self, perf_target: PerfTarget) -> bool:
+        return all(
+            _acceptance_field_matches(
+                getattr(self, field_name), getattr(perf_target, field_name)
+            )
+            for field_name in (
+                "task_type",
+                "isl",
+                "osl",
+                "max_concurrency",
+                "num_eval_runs",
+                "num_inference_steps",
+                "image_height",
+                "image_width",
+                "images_per_prompt",
+            )
+        )
+
+
+@dataclass(frozen=True)
+class AcceptanceCriteria:
+    perf_targets_map: Optional[Dict[str, float]] = None
+    support_tier: Optional[Union[int, AcceptanceSupportTier]] = None
+    required_perf_targets: Tuple[AcceptancePerfTarget, ...] = field(
+        default_factory=lambda: (AcceptancePerfTarget.FUNCTIONAL,)
+    )
+    regression_check: AcceptanceCheckOverride = field(
+        default_factory=AcceptanceCheckOverride
+    )
+    perf_checks: Tuple[AcceptanceBenchmarkCheck, ...] = field(default_factory=tuple)
+    eval_checks: AcceptanceSectionCriteria = field(
+        default_factory=AcceptanceSectionCriteria
+    )
+    tests_checks: AcceptanceSectionCriteria = field(
+        default_factory=lambda: AcceptanceSectionCriteria(required=False)
+    )
+    spec_tests_checks: AcceptanceSectionCriteria = field(
+        default_factory=lambda: AcceptanceSectionCriteria(required=False)
+    )
+
+    def __post_init__(self):
+        support_tier = self.support_tier
+        if isinstance(support_tier, AcceptanceSupportTier):
+            support_tier = int(support_tier)
+        elif support_tier is not None:
+            support_tier = int(support_tier)
+        object.__setattr__(self, "support_tier", support_tier)
+
+        perf_targets_map = (
+            dict(self.perf_targets_map) if self.perf_targets_map is not None else None
+        )
+        object.__setattr__(self, "perf_targets_map", perf_targets_map)
+        object.__setattr__(
+            self,
+            "required_perf_targets",
+            tuple(
+                _normalize_acceptance_perf_target(target_name)
+                for target_name in self.required_perf_targets
+            )
+            or (AcceptancePerfTarget.FUNCTIONAL,),
+        )
+        object.__setattr__(
+            self,
+            "perf_checks",
+            tuple(
+                check
+                if isinstance(check, AcceptanceBenchmarkCheck)
+                else AcceptanceBenchmarkCheck(**check)
+                for check in self.perf_checks
+            ),
+        )
+
+        regression_check = self.regression_check
+        if not isinstance(regression_check, AcceptanceCheckOverride):
+            regression_check = AcceptanceCheckOverride(**regression_check)
+        if regression_check.required is None:
+            regression_check = replace(regression_check, required=True)
+        if regression_check.tolerance is None:
+            regression_check = replace(
+                regression_check,
+                tolerance=_default_regression_tolerance_for_support_tier(support_tier),
+            )
+        object.__setattr__(self, "regression_check", regression_check)
+
+        for field_name in ("eval_checks", "tests_checks", "spec_tests_checks"):
+            section_criteria = getattr(self, field_name)
+            if not isinstance(section_criteria, AcceptanceSectionCriteria):
+                section_criteria = AcceptanceSectionCriteria(**section_criteria)
+                object.__setattr__(self, field_name, section_criteria)
+
+    def resolved_perf_targets_map(
+        self, default_map: Optional[Dict[str, float]] = None
+    ) -> Dict[str, float]:
+        return dict(self.perf_targets_map or default_map or DEFAULT_PERF_TARGETS_MAP)
+
+    def resolved_required_perf_targets(self) -> Tuple[str, ...]:
+        return tuple(target_name.value for target_name in self.required_perf_targets)
+
+
+def _normalize_acceptance_perf_target(
+    target_name: Union[str, AcceptancePerfTarget],
+) -> AcceptancePerfTarget:
+    if isinstance(target_name, AcceptancePerfTarget):
+        return target_name
+    return AcceptancePerfTarget(str(target_name).lower())
+
+
+def _default_regression_tolerance_for_support_tier(
+    support_tier: Optional[int],
+) -> float:
+    if support_tier is None or support_tier <= AcceptanceSupportTier.TIER_1:
+        return 0.05
+    if support_tier == AcceptanceSupportTier.TIER_2:
+        return 0.10
+    return 0.30
+
+
+def _acceptance_field_matches(expected: Any, actual: Any) -> bool:
+    if expected is None:
+        return True
+    return expected == actual
+
+
+def resolve_acceptance_criteria(
+    acceptance_criteria: Optional[Union["AcceptanceCriteria", Dict[str, Any]]] = None,
+    perf_targets_map: Optional[Dict[str, float]] = None,
+) -> AcceptanceCriteria:
+    if acceptance_criteria is None:
+        return AcceptanceCriteria(
+            perf_targets_map=dict(perf_targets_map or DEFAULT_PERF_TARGETS_MAP)
+        )
+
+    criteria = (
+        acceptance_criteria
+        if isinstance(acceptance_criteria, AcceptanceCriteria)
+        else AcceptanceCriteria(**acceptance_criteria)
+    )
+    if criteria.perf_targets_map is None and perf_targets_map:
+        return replace(criteria, perf_targets_map=dict(perf_targets_map))
+    return criteria
 
 
 tt_transformers_impl = ImplSpec(
@@ -188,6 +407,7 @@ class DeviceModelSpec:
     max_concurrency: int
     max_context: int
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
+    acceptance_criteria: Optional[AcceptanceCriteria] = None
     default_impl: bool = False
     perf_reference: List[BenchmarkTaskParams] = field(default_factory=list)
     vllm_args: Dict[str, str] = field(default_factory=dict)
@@ -217,6 +437,15 @@ class DeviceModelSpec:
             max_concurrency = max_concurrency // data_parallel_size
             max_tokens_all_users = max_tokens_all_users * data_parallel_size
         object.__setattr__(self, "max_tokens_all_users", max_tokens_all_users)
+        if self.acceptance_criteria is not None:
+            resolved_acceptance = resolve_acceptance_criteria(self.acceptance_criteria)
+            object.__setattr__(self, "acceptance_criteria", resolved_acceptance)
+            if not self.perf_targets_map and resolved_acceptance.perf_targets_map:
+                object.__setattr__(
+                    self,
+                    "perf_targets_map",
+                    resolved_acceptance.resolved_perf_targets_map(),
+                )
         # TODO: we should get max_num_batched_tokens from DeviceModelSpec in the future
         default_vllm_args = {
             "block_size": "64",
@@ -268,6 +497,7 @@ class ModelSpec:
     device_type: DeviceTypes  # Single device, not a set
     tt_metal_commit: str
     device_model_spec: DeviceModelSpec
+    acceptance_criteria: Optional[AcceptanceCriteria] = None
 
     # Optional specification fields (WITH DEFAULTS)
     system_requirements: Optional[SystemRequirements] = None
@@ -394,6 +624,16 @@ class ModelSpec:
                 self.device_type.get_data_parallel_subdevice(data_parallel),
             )
 
+        if self.acceptance_criteria is None:
+            object.__setattr__(
+                self,
+                "acceptance_criteria",
+                resolve_acceptance_criteria(
+                    self.device_model_spec.acceptance_criteria,
+                    perf_targets_map=self.device_model_spec.perf_targets_map,
+                ),
+            )
+
     def _validate_data(self):
         """Validate that required specification is present."""
         assert self.hf_model_repo, "hf_model_repo must be set"
@@ -428,7 +668,7 @@ class ModelSpec:
                 return None
         return None
 
-    def get_serialized_dict(self) -> str:
+    def get_serialized_dict(self) -> Dict[str, Any]:
         """
         Get the serialized representation of this model specification.
         """
@@ -436,6 +676,8 @@ class ModelSpec:
         def serialize_value(obj):
             """Recursively serialize complex objects for JSON export."""
             # Handle enums first (they have __dict__ but aren't dataclasses)
+            if isinstance(obj, (AcceptancePerfTarget, AcceptanceCheckGroup)):
+                return obj.value
             if hasattr(obj, "name") and hasattr(obj, "value"):  # Enum
                 return obj.name
             elif isinstance(obj, ModelType):  # Explicit ModelType handling
@@ -537,6 +779,52 @@ class ModelSpec:
             # Handle specific dataclass types
             if field_type == ImplSpec and isinstance(value, dict):
                 return ImplSpec(**value)
+            elif field_type == AcceptanceCheckOverride and isinstance(value, dict):
+                return AcceptanceCheckOverride(**value)
+            elif field_type == AcceptanceSectionCriteria and isinstance(value, dict):
+                return AcceptanceSectionCriteria(**value)
+            elif field_type == AcceptanceBenchmarkCheck and isinstance(value, dict):
+                target_names = tuple(
+                    _normalize_acceptance_perf_target(target_name)
+                    for target_name in value.get("target_names", [])
+                )
+                return AcceptanceBenchmarkCheck(
+                    **{
+                        **value,
+                        "target_names": target_names,
+                        "override": deserialize_dataclass_field(
+                            AcceptanceCheckOverride, value.get("override", {})
+                        ),
+                    }
+                )
+            elif field_type == AcceptanceCriteria and isinstance(value, dict):
+                return AcceptanceCriteria(
+                    perf_targets_map=value.get("perf_targets_map"),
+                    support_tier=value.get("support_tier"),
+                    required_perf_targets=tuple(
+                        _normalize_acceptance_perf_target(target_name)
+                        for target_name in value.get("required_perf_targets", [])
+                    ),
+                    regression_check=deserialize_dataclass_field(
+                        AcceptanceCheckOverride, value.get("regression_check", {})
+                    ),
+                    perf_checks=tuple(
+                        deserialize_dataclass_field(AcceptanceBenchmarkCheck, check)
+                        for check in value.get("perf_checks", [])
+                    ),
+                    eval_checks=deserialize_dataclass_field(
+                        AcceptanceSectionCriteria,
+                        value.get("eval_checks", {"required": True}),
+                    ),
+                    tests_checks=deserialize_dataclass_field(
+                        AcceptanceSectionCriteria,
+                        value.get("tests_checks", {"required": False}),
+                    ),
+                    spec_tests_checks=deserialize_dataclass_field(
+                        AcceptanceSectionCriteria,
+                        value.get("spec_tests_checks", {"required": False}),
+                    ),
+                )
             elif field_type == DeviceModelSpec and isinstance(value, dict):
                 # Handle nested BenchmarkTaskParams in perf_reference
                 perf_reference = value.get("perf_reference", [])
@@ -561,6 +849,10 @@ class ModelSpec:
                         else:
                             deserialized_perf_ref.append(task_data)
                     value["perf_reference"] = deserialized_perf_ref
+                if "acceptance_criteria" in value:
+                    value["acceptance_criteria"] = deserialize_dataclass_field(
+                        AcceptanceCriteria, value["acceptance_criteria"]
+                    )
                 return DeviceModelSpec(**value)
             elif field_type == SystemRequirements and isinstance(value, dict):
                 for requirement_name, requirement_spec in value.items():
@@ -594,6 +886,10 @@ class ModelSpec:
         if "device_model_spec" in data:
             data["device_model_spec"]["device"] = deserialize_enum(
                 DeviceTypes, data["device_model_spec"]["device"]
+            )
+        if "acceptance_criteria" in data and data["acceptance_criteria"] is not None:
+            data["acceptance_criteria"] = deserialize_dataclass_field(
+                AcceptanceCriteria, data["acceptance_criteria"]
             )
 
         # Handle nested dataclass fields
@@ -746,12 +1042,31 @@ class ModelSpecTemplate:
 
         # Generate performance reference map
         main_model_name = model_weights_to_model_name(self.weights[0])
-        perf_reference_map = get_perf_reference_map(
-            main_model_name, self.perf_targets_map
-        )
+        perf_reference_map_cache: Dict[
+            str, Dict[DeviceTypes, List[BenchmarkTaskParams]]
+        ] = {}
 
         for weight in self.weights:
             for device_model_spec in self.device_model_specs:
+                resolved_acceptance = resolve_acceptance_criteria(
+                    device_model_spec.acceptance_criteria,
+                    perf_targets_map=device_model_spec.perf_targets_map
+                    or self.perf_targets_map,
+                )
+                cache_key = json.dumps(
+                    {
+                        "perf_targets_map": resolved_acceptance.resolved_perf_targets_map(),
+                        "regression_check": asdict(
+                            resolved_acceptance.regression_check
+                        ),
+                    },
+                    sort_keys=True,
+                )
+                if cache_key not in perf_reference_map_cache:
+                    perf_reference_map_cache[cache_key] = get_perf_reference_map(
+                        main_model_name,
+                        acceptance_criteria=resolved_acceptance,
+                    )
                 device_type = device_model_spec.device
                 model_name = Path(weight).name
                 model_id = get_model_id(
@@ -761,7 +1076,7 @@ class ModelSpecTemplate:
                 # Perf reference for this device accounting for impl features
                 # e.g. data parallelism factor
                 perf_reference = get_perf_reference(
-                    device_model_spec, perf_reference_map
+                    device_model_spec, perf_reference_map_cache[cache_key]
                 )
 
                 # Create a new device_model_spec with performance reference data
@@ -769,7 +1084,8 @@ class ModelSpecTemplate:
                     device=device_model_spec.device,
                     max_concurrency=device_model_spec.max_concurrency,
                     max_context=device_model_spec.max_context,
-                    perf_targets_map=device_model_spec.perf_targets_map,
+                    perf_targets_map=resolved_acceptance.resolved_perf_targets_map(),
+                    acceptance_criteria=resolved_acceptance,
                     default_impl=device_model_spec.default_impl,
                     perf_reference=perf_reference,
                     vllm_args=device_model_spec.vllm_args,
@@ -787,6 +1103,7 @@ class ModelSpecTemplate:
                     model_name=model_name,
                     inference_engine=self.inference_engine,
                     device_model_spec=device_model_spec_with_perf,
+                    acceptance_criteria=resolved_acceptance,
                     # Version control
                     system_requirements=device_model_spec.system_requirements
                     if device_model_spec.system_requirements
@@ -1661,6 +1978,7 @@ llm_templates = [
         release_version="0.12.0",
         tt_metal_commit="2f70ab27",
         vllm_commit="1908628",
+        docker_image="ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.11.0-2f70ab272dc38806e9cdd5482818a046ae9814ea-7c6685a-67975288903",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(

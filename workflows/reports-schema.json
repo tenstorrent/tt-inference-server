@@ -141,6 +141,10 @@
         }
       ]
     },
+    "spec_tests": {
+      "type": "object",
+      "additionalProperties": true
+    },
     "benchmark_target_evaluation": {
       "type": "object",
       "additionalProperties": true
@@ -167,6 +171,7 @@
     "benchmarks",
     "aiperf_benchmarks_detailed",
     "parameter_support_tests",
+    "spec_tests",
     "benchmark_target_evaluation",
     "acceptance_criteria",
     "acceptance_blockers",

@@ -10,10 +10,13 @@ import logging
 import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Union
 
 from workflows.utils import get_repo_root_path
 from workflows.workflow_types import DeviceTypes
+
+if TYPE_CHECKING:
+    from workflows.model_spec import AcceptanceCriteria
 
 logger = logging.getLogger(__name__)
 RELEASE_PERFORMANCE_SCHEMA_VERSION = "0.1.0"
@@ -48,6 +51,33 @@ _STRICT_VLM_IDENTITY_FIELDS = (
 _OPTIONAL_IMAGE_IDENTITY_FIELDS = ("max_concurrency", "num_inference_steps")
 _OPTIONAL_AUDIO_IDENTITY_FIELDS = ("max_concurrency", "num_eval_runs")
 _OPTIONAL_EMBEDDING_IDENTITY_FIELDS = ("max_concurrency",)
+
+
+def _resolve_perf_targets_map(
+    perf_targets_map: Optional[Dict[str, float]],
+    acceptance_criteria: Optional["AcceptanceCriteria"] = None,
+) -> Dict[str, float]:
+    if acceptance_criteria is not None and hasattr(
+        acceptance_criteria, "resolved_perf_targets_map"
+    ):
+        return acceptance_criteria.resolved_perf_targets_map(perf_targets_map)
+    return dict(perf_targets_map or DEFAULT_PERF_TARGETS_MAP)
+
+
+def _resolve_regression_tolerance(
+    acceptance_criteria: Optional["AcceptanceCriteria"] = None,
+) -> float:
+    regression_check = (
+        getattr(acceptance_criteria, "regression_check", None)
+        if acceptance_criteria is not None
+        else None
+    )
+    tolerance = (
+        getattr(regression_check, "tolerance", None)
+        if regression_check is not None
+        else None
+    )
+    return float(tolerance) if tolerance is not None else DEFAULT_REGRESSION_TOLERANCE
 
 
 def _normalize_identity_value(field_name: str, value: Any) -> Any:
@@ -384,7 +414,7 @@ class PerfTarget:
         )
 
     def build_threshold_targets(
-        self, perf_targets_map: Dict[str, float]
+        self, perf_targets_map: Dict[str, float], tolerance: Optional[float] = None
     ) -> Dict[str, "PerfTarget"]:
         targets: Dict[str, PerfTarget] = {}
         latency_metrics = ("ttft_ms", "ttft_streaming_ms", "e2el_ms")
@@ -402,7 +432,7 @@ class PerfTarget:
                 "images_per_prompt": self.images_per_prompt,
                 "num_eval_runs": self.num_eval_runs,
                 "num_inference_steps": self.num_inference_steps,
-                "tolerance": self.tolerance,
+                "tolerance": self.tolerance if tolerance is None else tolerance,
                 "target_name": target_name,
                 "is_derived": True,
                 "is_summary": False,
@@ -421,7 +451,9 @@ class PerfTarget:
         return targets
 
     def to_benchmark_task_params(
-        self, perf_targets_map: Dict[str, float]
+        self,
+        perf_targets_map: Dict[str, float],
+        tolerance: Optional[float] = None,
     ) -> BenchmarkTaskParams:
         return BenchmarkTaskParams(
             isl=self.isl,
@@ -433,7 +465,7 @@ class PerfTarget:
             image_height=self.image_height,
             image_width=self.image_width,
             images_per_prompt=self.images_per_prompt,
-            targets=self.build_threshold_targets(perf_targets_map),
+            targets=self.build_threshold_targets(perf_targets_map, tolerance=tolerance),
             num_inference_steps=self.num_inference_steps,
         )
 
@@ -520,14 +552,16 @@ class PerfTargetSet:
 
     def to_benchmark_task_params(
         self,
-        perf_targets_map: Dict[str, float],
+        perf_targets_map: Optional[Dict[str, float]] = None,
         regression_perf_target_set: Optional["PerfTargetSet"] = None,
+        acceptance_criteria: Optional["AcceptanceCriteria"] = None,
     ) -> List[BenchmarkTaskParams]:
         return [
             self._build_benchmark_task_params(
                 perf_target=perf_target,
                 perf_targets_map=perf_targets_map,
                 regression_perf_target_set=regression_perf_target_set,
+                acceptance_criteria=acceptance_criteria,
             )
             for perf_target in self.perf_targets
         ]
@@ -535,10 +569,13 @@ class PerfTargetSet:
     def _build_benchmark_task_params(
         self,
         perf_target: PerfTarget,
-        perf_targets_map: Dict[str, float],
+        perf_targets_map: Optional[Dict[str, float]],
         regression_perf_target_set: Optional["PerfTargetSet"],
+        acceptance_criteria: Optional["AcceptanceCriteria"],
     ) -> BenchmarkTaskParams:
-        task_params = perf_target.to_benchmark_task_params(perf_targets_map)
+        task_params = perf_target.to_benchmark_task_params(
+            _resolve_perf_targets_map(perf_targets_map, acceptance_criteria)
+        )
         regression_target = None
         if regression_perf_target_set is not None:
             regression_target = regression_perf_target_set.find_matching_perf_target(
@@ -551,9 +588,13 @@ class PerfTargetSet:
             regression_target,
             target_name=REGRESSION_TARGET_NAME,
             is_derived=True,
-            tolerance=regression_target.tolerance
-            if regression_target.tolerance is not None
-            else DEFAULT_REGRESSION_TOLERANCE,
+            tolerance=(
+                _resolve_regression_tolerance(acceptance_criteria)
+                if acceptance_criteria is not None
+                else regression_target.tolerance
+                if regression_target.tolerance is not None
+                else DEFAULT_REGRESSION_TOLERANCE
+            ),
         )
         return task_params
 
@@ -820,12 +861,17 @@ def get_performance_targets(
 
 
 def get_perf_reference_map(
-    model_name: str, perf_targets_map: Dict[str, float]
+    model_name: str,
+    perf_targets_map: Optional[Dict[str, float]] = None,
+    acceptance_criteria: Optional["AcceptanceCriteria"] = None,
 ) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     return {
         device: perf_target_set.to_benchmark_task_params(
-            perf_targets_map=perf_targets_map,
+            perf_targets_map=_resolve_perf_targets_map(
+                perf_targets_map, acceptance_criteria
+            ),
             regression_perf_target_set=get_regression_perf_target(model_name, device),
+            acceptance_criteria=acceptance_criteria,
         )
         for device, perf_target_set in get_perf_target_map(model_name).items()
     }
@@ -835,14 +881,18 @@ def get_named_perf_reference(
     model_name: str,
     device: Union[str, DeviceTypes],
     perf_targets_map: Optional[Dict[str, float]] = None,
+    acceptance_criteria: Optional["AcceptanceCriteria"] = None,
 ) -> List[BenchmarkTaskParams]:
     perf_target_set = get_perf_target(model_name, device)
     if perf_target_set is None:
         return []
 
     return perf_target_set.to_benchmark_task_params(
-        perf_targets_map=perf_targets_map or DEFAULT_PERF_TARGETS_MAP,
+        perf_targets_map=_resolve_perf_targets_map(
+            perf_targets_map, acceptance_criteria
+        ),
         regression_perf_target_set=get_regression_perf_target(model_name, device),
+        acceptance_criteria=acceptance_criteria,
     )
 
 

@@ -85,6 +85,29 @@ def make_report_data():
                 ]
             }
         },
+        "spec_tests": {
+            "reports": [
+                {
+                    "summary": {"failed": 0},
+                    "tests": [
+                        {
+                            "test_name": "device_liveness",
+                            "success": True,
+                            "duration": 1.2,
+                        }
+                    ],
+                }
+            ],
+            "results": [
+                {
+                    "test_name": "device_liveness",
+                    "success": True,
+                    "duration": 1.2,
+                    "report_index": 0,
+                    "test_index": 0,
+                }
+            ],
+        },
         "benchmark_target_evaluation": make_benchmark_target_evaluation(),
         "acceptance_criteria": True,
         "acceptance_blockers": {},
@@ -177,7 +200,7 @@ def _install_main_monkeypatches(
     monkeypatch.setattr(
         run_reports,
         "server_tests_generate_report",
-        lambda *_, **__: ("", []),
+        lambda *_, **__: ("", make_report_data()["spec_tests"]["reports"]),
     )
     monkeypatch.setattr(
         run_reports,

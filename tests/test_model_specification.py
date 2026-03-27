@@ -9,6 +9,12 @@ import re
 import pytest
 
 from workflows.model_spec import (
+    AcceptanceBenchmarkCheck,
+    AcceptanceCheckOverride,
+    AcceptanceCriteria,
+    AcceptancePerfTarget,
+    AcceptanceSectionCriteria,
+    AcceptanceSupportTier,
     MODEL_SPECS,
     MODEL_SPECS_SCHEMA_VERSION,
     VERSION,
@@ -353,6 +359,66 @@ class TestModelSpecSystem:
             loaded_spec.device_model_spec.tensor_cache_timeout
             == original_spec.device_model_spec.tensor_cache_timeout
         )
+
+    def test_json_serialization_round_trips_acceptance_criteria(
+        self, sample_impl, tmp_path
+    ):
+        acceptance_criteria = AcceptanceCriteria(
+            perf_targets_map={"functional": 0.2, "complete": 0.6, "target": 1.0},
+            support_tier=AcceptanceSupportTier.TIER_2,
+            perf_checks=(
+                AcceptanceBenchmarkCheck(
+                    isl=128,
+                    osl=128,
+                    max_concurrency=1,
+                    target_names=(AcceptancePerfTarget.FUNCTIONAL,),
+                    override=AcceptanceCheckOverride(tolerance=0.15),
+                ),
+            ),
+            tests_checks=AcceptanceSectionCriteria(required=True),
+            spec_tests_checks=AcceptanceSectionCriteria(required=True),
+        )
+        original_spec = ModelSpec(
+            device_type=DeviceTypes.N150,
+            impl=sample_impl,
+            hf_model_repo="test/TestModel-7B",
+            model_id="test-model-acceptance",
+            model_name="TestModel-7B",
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_spec=DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=16,
+                max_context=64 * 1024,
+                acceptance_criteria=acceptance_criteria,
+            ),
+        )
+
+        serialized = original_spec.get_serialized_dict()
+        assert serialized["acceptance_criteria"]["support_tier"] == 2
+        assert serialized["acceptance_criteria"]["perf_checks"][0]["target_names"] == [
+            "functional"
+        ]
+        assert serialized["acceptance_criteria"]["tests_checks"]["required"] is True
+
+        json_file = original_spec.to_json(
+            run_id="acceptance_roundtrip", output_dir=str(tmp_path)
+        )
+        loaded_spec = ModelSpec.from_json(json_file)
+
+        assert loaded_spec.acceptance_criteria is not None
+        assert loaded_spec.acceptance_criteria.support_tier == 2
+        assert loaded_spec.acceptance_criteria.perf_targets_map == {
+            "functional": 0.2,
+            "complete": 0.6,
+            "target": 1.0,
+        }
+        assert loaded_spec.acceptance_criteria.tests_checks.required is True
+        assert loaded_spec.acceptance_criteria.spec_tests_checks.required is True
+        assert loaded_spec.acceptance_criteria.perf_checks[
+            0
+        ].override.tolerance == pytest.approx(0.15)
 
     def test_apply_overrides_commits_from_docker_image(
         self, sample_impl, sample_device_model_spec

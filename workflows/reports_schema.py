@@ -158,6 +158,9 @@ def _apply_report_schema_overrides(schema: Dict[str, Any]) -> Dict[str, Any]:
             ]
         }
 
+    if "spec_tests" in properties:
+        properties["spec_tests"] = _generic_object_schema()
+
     if "benchmark_target_evaluation" in properties:
         properties["benchmark_target_evaluation"] = _generic_object_schema()
 

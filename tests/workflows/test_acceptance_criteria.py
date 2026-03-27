@@ -7,6 +7,13 @@ import copy
 
 import pytest
 
+from workflows.model_spec import (
+    AcceptanceBenchmarkCheck,
+    AcceptanceCheckOverride,
+    AcceptanceCriteria,
+    AcceptancePerfTarget,
+    AcceptanceSectionCriteria,
+)
 from workflows.acceptance_criteria import (
     acceptance_criteria_check,
     evaluate_benchmark_targets,
@@ -447,3 +454,97 @@ def test_acceptance_criteria_check_returns_false_for_missing_benchmarks_summary(
     assert functional_blocker_keys
     assert "actual unavailable" in blockers[functional_blocker_keys[0]]
     assert "benchmarks.functional." in summary_markdown
+
+
+def test_acceptance_criteria_check_supports_perf_subset_and_tolerance_override(
+    report_data, monkeypatch
+):
+    monkeypatch.setattr(
+        "workflows.acceptance_criteria.get_named_perf_reference",
+        lambda *args, **kwargs: make_perf_reference(),
+    )
+    monkeypatch.setattr(
+        "workflows.acceptance_criteria._load_acceptance_criteria_from_report",
+        lambda *_: AcceptanceCriteria(
+            perf_checks=(
+                AcceptanceBenchmarkCheck(
+                    isl=128,
+                    osl=128,
+                    max_concurrency=1,
+                    target_names=(AcceptancePerfTarget.FUNCTIONAL,),
+                    override=AcceptanceCheckOverride(tolerance=0.20),
+                ),
+            )
+        ),
+    )
+
+    adjusted_report_data = copy.deepcopy(report_data)
+    adjusted_report_data["benchmarks_summary"][0]["mean_ttft_ms"] = 115.0
+    adjusted_report_data["benchmarks_summary"][0]["mean_tps"] = 8.5
+    adjusted_report_data["benchmarks_summary"][1]["mean_ttft_ms"] = 999.0
+    adjusted_report_data["benchmarks_summary"][1]["mean_tps"] = 1.0
+
+    benchmark_target_evaluation = evaluate_benchmark_targets(adjusted_report_data)
+    accepted, blockers = acceptance_criteria_check(
+        adjusted_report_data, benchmark_target_evaluation
+    )
+
+    assert accepted is True
+    assert blockers == {}
+    assert (
+        benchmark_target_evaluation["support_levels"]["functional"]["checked"] is True
+    )
+    assert benchmark_target_evaluation["support_levels"]["functional"]["passed"] is True
+    assert benchmark_target_evaluation["support_levels"]["complete"]["checked"] is False
+
+
+def test_acceptance_criteria_check_skips_optional_sections_when_disabled(
+    report_data, monkeypatch
+):
+    monkeypatch.setattr(
+        "workflows.acceptance_criteria.get_named_perf_reference",
+        lambda *args, **kwargs: make_perf_reference(),
+    )
+    monkeypatch.setattr(
+        "workflows.acceptance_criteria._load_acceptance_criteria_from_report",
+        lambda *_: AcceptanceCriteria(
+            eval_checks=AcceptanceSectionCriteria(required=False),
+            tests_checks=AcceptanceSectionCriteria(required=False),
+            spec_tests_checks=AcceptanceSectionCriteria(required=False),
+        ),
+    )
+
+    updated_report_data = copy.deepcopy(report_data)
+    updated_report_data.pop("evals")
+    updated_report_data.pop("parameter_support_tests")
+    updated_report_data["spec_tests"] = {"results": []}
+
+    accepted, blockers = acceptance_criteria_check(updated_report_data)
+
+    assert accepted is True
+    assert blockers == {}
+
+
+def test_acceptance_criteria_check_blocks_failed_spec_tests_when_present(
+    report_data, monkeypatch
+):
+    monkeypatch.setattr(
+        "workflows.acceptance_criteria.get_named_perf_reference",
+        lambda *args, **kwargs: make_perf_reference(),
+    )
+    updated_report_data = copy.deepcopy(report_data)
+    updated_report_data["spec_tests"] = {
+        "results": [
+            {
+                "test_name": "device_liveness",
+                "success": False,
+                "error": "worker timed out",
+            }
+        ]
+    }
+
+    accepted, blockers = acceptance_criteria_check(updated_report_data)
+
+    assert accepted is False
+    assert "spec_tests.device_liveness.0" in blockers
+    assert "worker timed out" in blockers["spec_tests.device_liveness.0"]

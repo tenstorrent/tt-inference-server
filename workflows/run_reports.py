@@ -4357,6 +4357,8 @@ def main():
                             f"Could not read server test file {json_file}: {e}"
                         )
 
+        spec_tests_data = _normalize_spec_tests_payload(server_tests_data)
+
         # Build the final JSON output
         output_data = {
             "metadata": metadata,
@@ -4375,27 +4377,27 @@ def main():
             "aiperf_benchmarks_detailed": aiperf_detailed_data
             if aiperf_detailed_data
             else [],
+            "parameter_support_tests": parameter_support_tests_data
+            if parameter_support_tests_data
+            else {},
+            "spec_tests": spec_tests_data,
         }
 
         # Add server_tests only if data exists
         if server_tests_data:
             output_data["server_tests"] = server_tests_data
 
-        # Add parameter_support_tests only if data exists
-        if parameter_support_tests_data:
-            output_data["parameter_support_tests"] = parameter_support_tests_data
-
         benchmark_target_evaluation = evaluate_benchmark_targets(output_data)
         output_data["benchmark_target_evaluation"] = benchmark_target_evaluation
-        acceptance_criteria, acceptance_blockers = acceptance_criteria_check(
+        accepted, acceptance_blockers = acceptance_criteria_check(
             output_data, benchmark_target_evaluation
         )
         acceptance_summary_markdown = format_acceptance_summary_markdown(
-            acceptance_criteria,
+            accepted,
             acceptance_blockers,
             benchmark_target_evaluation,
         )
-        output_data["acceptance_criteria"] = acceptance_criteria
+        output_data["acceptance_criteria"] = accepted
         output_data["acceptance_blockers"] = acceptance_blockers
         output_data["acceptance_summary_markdown"] = acceptance_summary_markdown
 
@@ -4507,6 +4509,25 @@ def server_tests_generate_report(args, server_mode, model_spec, report_id, metad
     logger.info(f"Server tests summary saved to: {summary_fpath}")
 
     return release_str, release_data
+
+
+def _normalize_spec_tests_payload(server_tests_data):
+    reports = server_tests_data if isinstance(server_tests_data, list) else []
+    results = []
+    for report_index, report in enumerate(reports):
+        if not isinstance(report, dict):
+            continue
+        for test_index, test_result in enumerate(report.get("tests", [])):
+            if not isinstance(test_result, dict):
+                continue
+            results.append(
+                {
+                    **test_result,
+                    "report_index": report_index,
+                    "test_index": test_index,
+                }
+            )
+    return {"reports": reports, "results": results}
 
 
 if __name__ == "__main__":

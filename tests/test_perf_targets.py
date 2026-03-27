@@ -1,5 +1,6 @@
 import pytest
 
+from workflows.model_spec import AcceptanceCriteria, AcceptanceSupportTier
 from workflows.perf_targets import (
     DeviceTypes,
     PerfTarget,
@@ -424,3 +425,50 @@ def test_get_named_perf_reference_merges_regression_targets(monkeypatch):
     assert perf_reference[0].targets["regression"].ttft_ms == pytest.approx(28.0)
     assert perf_reference[0].targets["regression"].tput_user == pytest.approx(18.0)
     assert perf_reference[0].targets["regression"].tolerance == pytest.approx(0.02)
+
+
+def test_get_named_perf_reference_uses_acceptance_regression_tolerance(monkeypatch):
+    monkeypatch.setattr(
+        "workflows.perf_targets.release_performance_reference",
+        {
+            "schema_version": "0.1.0",
+            "models": {
+                "Qwen3-32B": {
+                    "galaxy": {
+                        "demo_impl": {
+                            "vLLM": {
+                                "perf_target_results": [
+                                    {
+                                        "is_summary_data_point": True,
+                                        "config": {
+                                            "task_type": "text",
+                                            "isl": 128,
+                                            "osl": 128,
+                                            "max_concurrency": 1,
+                                        },
+                                        "targets": {},
+                                        "measured_metrics": {
+                                            "ttft": 28.0,
+                                            "tput_user": 18.0,
+                                            "tput": 5400.0,
+                                        },
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+        },
+    )
+
+    perf_reference = get_named_perf_reference(
+        "Qwen3-32B",
+        DeviceTypes.GALAXY,
+        acceptance_criteria=AcceptanceCriteria(
+            support_tier=AcceptanceSupportTier.TIER_3
+        ),
+    )
+
+    assert perf_reference
+    assert perf_reference[0].targets["regression"].tolerance == pytest.approx(0.30)
