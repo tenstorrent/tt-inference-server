@@ -7,11 +7,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <string>
-#include <thread>
 #include <vector>
 
-#include "runners/sp_pipeline_runner/shared_memory.hpp"
 #include "runners/sp_prefill_runner/i_sp_prefill_model_runner.hpp"
+#include "runners/sp_pipeline_runner/shared_memory.hpp"
 
 namespace sp_prefill {
 
@@ -43,14 +42,11 @@ class SpPrefillModelRunner : public ISpPrefillModelRunner {
     std::string read;
   };
 
-  void readerLoop();
-
   PrefillCallback prefillCallback;
   ShmNames shmNames;
   sp_pipeline::PrefillSharedMemory deviceInput;
   sp_pipeline::DecodeSharedMemory deviceOutput;
   std::atomic<bool> stop{false};
-  std::thread readerThread;
 };
 
 }  // namespace sp_prefill

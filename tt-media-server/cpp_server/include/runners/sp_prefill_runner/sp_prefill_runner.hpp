@@ -39,7 +39,6 @@ class SpPrefillRunner : public IRunner {
   llm_engine::ITaskQueue* taskQueue;
   std::unique_ptr<sp_prefill::ISpPrefillModelRunner> modelRunner;
   sp_prefill::PrefillQueue prefillQueue;
-  std::unique_ptr<llm_engine::Sequence> activeSequence;
   std::atomic<bool> stopped{false};
 };
 

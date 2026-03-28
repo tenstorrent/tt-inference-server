@@ -20,8 +20,7 @@ SpPrefillRunner::SpPrefillRunner(const config::LLMConfig& config,
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
       taskQueue(taskQueue),
-      prefillQueue(256),  // Small queue since we only have 1 in flight
-      activeSequence(nullptr) {
+      prefillQueue(256) {  // Small queue since we only have 1 in flight
   auto prefillCb = [this](const llm_engine::TokenResult& result) {
     while (!prefillQueue.push(result)) {
       std::this_thread::yield();
@@ -47,12 +46,13 @@ void SpPrefillRunner::run() {
       continue;
     }
 
-    activeSequence.reset(seq);
+    // Use unique_ptr to ensure cleanup
+    std::unique_ptr<llm_engine::Sequence> sequence(seq);
     TT_LOG_DEBUG("SpPrefillRunner: Starting prefill for task {}",
-                 activeSequence->taskId.id);
+                 sequence->taskId.id);
 
     // Send prefill request
-    modelRunner->write(activeSequence->taskId.id, activeSequence->tokenIds);
+    modelRunner->write(sequence->taskId.id, sequence->tokenIds);
 
     // Wait synchronously for the single prefill token
     llm_engine::TokenResult result;
@@ -77,8 +77,7 @@ void SpPrefillRunner::run() {
       pushToken(result.taskId, result.tokenId, true);  // Always finished
     }
 
-    // Clear active sequence
-    activeSequence.reset();
+    // sequence automatically cleaned up at end of scope
   }
 }
 
