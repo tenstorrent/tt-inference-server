@@ -1346,7 +1346,7 @@ _eval_config_list = [
                     "model": "deepseek-ai/DeepSeek-R1-0528",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_length": 65536,  # Enable up to 32K generated tokens + prompt
+                    "max_length": (32*1024 - 4*1024),  # Enable up to 4K prompt size
                 },
                 gen_kwargs={"stream": "false"},
                 seed=42,
@@ -1375,7 +1375,7 @@ _eval_config_list = [
                     "model": "deepseek-ai/DeepSeek-R1-0528",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_length": 65536,  # Enable up to 32K generated tokens + prompt
+                    "max_length": (32*1024 - 4*1024),  # Enable up to 4K prompt size
                 },
                 gen_kwargs={"stream": "false"},
                 seed=42,
