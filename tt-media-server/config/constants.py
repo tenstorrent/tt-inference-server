@@ -87,6 +87,7 @@ class ModelRunners(Enum):
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
+    TRAINING_LLAMA_LORA = "training-llama-lora"
     MOCK = "mock"
     LLM_TEST = "llm_test"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
@@ -143,6 +144,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.TRAINING: {
         ModelRunners.TRAINING_GEMMA_LORA,
+        ModelRunners.TRAINING_LLAMA_LORA,
     },
     ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
@@ -255,6 +257,7 @@ class JobTypes(Enum):
 
 class DatasetLoaders(Enum):
     SST2 = "sst2"
+    ALPACA = "alpaca"
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
