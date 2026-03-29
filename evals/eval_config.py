@@ -925,6 +925,95 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="allenai/Molmo2-8B",
+        tasks=[
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="chartqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=85.7,
+                    published_score_ref="https://huggingface.co/allenai/Molmo2-8B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "chartqa_relaxed_overall,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_tokens": 512,
+                    "temperature": 0.0,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.50,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="docvqa_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=88.7,
+                    published_score_ref="https://huggingface.co/allenai/Molmo2-8B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "docvqa_anls,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_tokens": 512,
+                    "temperature": 0.0,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.50,
+                    EvalLimitMode.SMOKE_TEST: 0.001,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="mmmu_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=51.0,
+                    published_score_ref="https://huggingface.co/allenai/Molmo2-8B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "mmmu_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_tokens": 512,
+                    "temperature": 0.0,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.50,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/Qwen3-8B",
         tasks=[
             EvalTask(

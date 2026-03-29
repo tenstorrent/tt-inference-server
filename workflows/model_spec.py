@@ -2337,8 +2337,8 @@ vlm_templates = [
             "allenai/Molmo2-8B",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="1a4cd53",
-        vllm_commit="b2894d3",
+        tt_metal_commit="3035237ebd",
+        vllm_commit="ba84dbf0",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         device_model_specs=[
