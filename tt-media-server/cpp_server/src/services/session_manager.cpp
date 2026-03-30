@@ -117,7 +117,8 @@ void SessionManager::evictOldSessions() {
   }
 }
 
-std::vector<std::string> SessionManager::findOldestSessions(size_t count) const {
+std::vector<std::string> SessionManager::findOldestSessions(
+    size_t count) const {
   // Note: mutex_ is already locked by the caller
 
   if (sessions_.empty()) {
@@ -125,7 +126,8 @@ std::vector<std::string> SessionManager::findOldestSessions(size_t count) const 
   }
 
   // Create a vector of (sessionId, activityTime) pairs
-  std::vector<std::pair<std::string, std::chrono::system_clock::time_point>> sessionTimes;
+  std::vector<std::pair<std::string, std::chrono::system_clock::time_point>>
+      sessionTimes;
   sessionTimes.reserve(sessions_.size());
 
   for (const auto& [sessionId, session] : sessions_) {
@@ -133,13 +135,11 @@ std::vector<std::string> SessionManager::findOldestSessions(size_t count) const 
   }
 
   // Sort by activity time (oldest first)
-  std::partial_sort(
-      sessionTimes.begin(),
-      sessionTimes.begin() + std::min(count, sessionTimes.size()),
-      sessionTimes.end(),
-      [](const auto& a, const auto& b) {
-        return a.second < b.second;
-      });
+  std::partial_sort(sessionTimes.begin(),
+                    sessionTimes.begin() + std::min(count, sessionTimes.size()),
+                    sessionTimes.end(), [](const auto& a, const auto& b) {
+                      return a.second < b.second;
+                    });
 
   // Extract session IDs
   std::vector<std::string> result;
