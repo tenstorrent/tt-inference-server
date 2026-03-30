@@ -507,6 +507,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN_SERVICE_ACCOUNT }}
 
       - name: Init tt-blaze submodule (without tt-metal)
         working-directory: .
@@ -545,6 +547,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN_SERVICE_ACCOUNT }}
 
       - name: Init tt-blaze submodule (without tt-metal)
         working-directory: .
