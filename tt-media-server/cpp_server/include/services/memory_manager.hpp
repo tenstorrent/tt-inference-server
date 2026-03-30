@@ -23,7 +23,7 @@ class MemoryManager {
   MemoryManager(MemoryManager&&) = delete;
   MemoryManager& operator=(MemoryManager&&) = delete;
 
-  domain::ManageMemoryResult handle_task(const domain::ManageMemoryTask& task);
+  domain::ManageMemoryResult handleTask(const domain::ManageMemoryTask& task);
 
  private:
   domain::ManageMemoryStatus allocateKv(const domain::ManageMemoryTask& task,

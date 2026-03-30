@@ -24,46 +24,45 @@ enum class KvMemoryLayout : std::uint8_t {
 };
 
 struct ManageMemoryTask {
-  TaskID task_id;
+  TaskID taskId;
   MemoryManagementAction action{MemoryManagementAction::ALLOCATE};
-  std::uint32_t input_seq_len{0};
-  KvMemoryLayout memory_layout{KvMemoryLayout::Paged};
-  std::vector<std::int32_t> slot_ids;
+  std::uint32_t inputSeqLen{0};
+  KvMemoryLayout memoryLayout{KvMemoryLayout::Paged};
+  std::vector<std::int32_t> slotIds;
 
   void serialize(std::ostream& os) const {
-    auto tid_buf = task_id.ipcSerialize();
-    os.write(tid_buf.data(), static_cast<std::streamsize>(tid_buf.size()));
+    auto tidBuf = taskId.ipcSerialize();
+    os.write(tidBuf.data(), static_cast<std::streamsize>(tidBuf.size()));
     auto a = static_cast<std::uint8_t>(action);
     os.write(reinterpret_cast<const char*>(&a), sizeof(a));
-    os.write(reinterpret_cast<const char*>(&input_seq_len),
-             sizeof(input_seq_len));
-    auto ml = static_cast<std::uint8_t>(memory_layout);
+    os.write(reinterpret_cast<const char*>(&inputSeqLen), sizeof(inputSeqLen));
+    auto ml = static_cast<std::uint8_t>(memoryLayout);
     os.write(reinterpret_cast<const char*>(&ml), sizeof(ml));
-    std::uint32_t n = static_cast<std::uint32_t>(slot_ids.size());
+    std::uint32_t n = static_cast<std::uint32_t>(slotIds.size());
     os.write(reinterpret_cast<const char*>(&n), sizeof(n));
-    for (std::int32_t id : slot_ids) {
+    for (std::int32_t id : slotIds) {
       os.write(reinterpret_cast<const char*>(&id), sizeof(id));
     }
   }
 
   static ManageMemoryTask deserialize(std::istream& is) {
     ManageMemoryTask task;
-    char tid_buf[TaskID::K_SERIALIZED_SIZE];
-    is.read(tid_buf, TaskID::K_SERIALIZED_SIZE);
-    task.task_id = TaskID::ipcDeserialize(tid_buf, TaskID::K_SERIALIZED_SIZE);
+    char tidBuf[TaskID::K_SERIALIZED_SIZE];
+    is.read(tidBuf, TaskID::K_SERIALIZED_SIZE);
+    task.taskId = TaskID::ipcDeserialize(tidBuf, TaskID::K_SERIALIZED_SIZE);
     std::uint8_t a = 0;
     is.read(reinterpret_cast<char*>(&a), sizeof(a));
     task.action = static_cast<MemoryManagementAction>(a);
-    is.read(reinterpret_cast<char*>(&task.input_seq_len),
-            sizeof(task.input_seq_len));
+    is.read(reinterpret_cast<char*>(&task.inputSeqLen),
+            sizeof(task.inputSeqLen));
     std::uint8_t ml = 0;
     is.read(reinterpret_cast<char*>(&ml), sizeof(ml));
-    task.memory_layout = static_cast<KvMemoryLayout>(ml);
+    task.memoryLayout = static_cast<KvMemoryLayout>(ml);
     std::uint32_t n = 0;
     is.read(reinterpret_cast<char*>(&n), sizeof(n));
-    task.slot_ids.resize(n);
+    task.slotIds.resize(n);
     for (std::uint32_t i = 0; i < n; ++i) {
-      is.read(reinterpret_cast<char*>(&task.slot_ids[i]), sizeof(std::int32_t));
+      is.read(reinterpret_cast<char*>(&task.slotIds[i]), sizeof(std::int32_t));
     }
     return task;
   }
@@ -76,35 +75,35 @@ enum class ManageMemoryStatus : std::uint8_t {
 };
 
 struct ManageMemoryResult {
-  TaskID task_id;
+  TaskID taskId;
   ManageMemoryStatus status{ManageMemoryStatus::FAILURE};
-  std::vector<std::int32_t> slot_ids;
+  std::vector<std::int32_t> slotIds;
 
   void serialize(std::ostream& os) const {
-    auto tid_buf = task_id.ipcSerialize();
-    os.write(tid_buf.data(), static_cast<std::streamsize>(tid_buf.size()));
+    auto tidBuf = taskId.ipcSerialize();
+    os.write(tidBuf.data(), static_cast<std::streamsize>(tidBuf.size()));
     auto s = static_cast<std::uint8_t>(status);
     os.write(reinterpret_cast<const char*>(&s), sizeof(s));
-    std::uint32_t n = static_cast<std::uint32_t>(slot_ids.size());
+    std::uint32_t n = static_cast<std::uint32_t>(slotIds.size());
     os.write(reinterpret_cast<const char*>(&n), sizeof(n));
-    for (std::int32_t id : slot_ids) {
+    for (std::int32_t id : slotIds) {
       os.write(reinterpret_cast<const char*>(&id), sizeof(id));
     }
   }
 
   static ManageMemoryResult deserialize(std::istream& is) {
     ManageMemoryResult result;
-    char tid_buf[TaskID::K_SERIALIZED_SIZE];
-    is.read(tid_buf, TaskID::K_SERIALIZED_SIZE);
-    result.task_id = TaskID::ipcDeserialize(tid_buf, TaskID::K_SERIALIZED_SIZE);
+    char tidBuf[TaskID::K_SERIALIZED_SIZE];
+    is.read(tidBuf, TaskID::K_SERIALIZED_SIZE);
+    result.taskId = TaskID::ipcDeserialize(tidBuf, TaskID::K_SERIALIZED_SIZE);
     std::uint8_t s = 0;
     is.read(reinterpret_cast<char*>(&s), sizeof(s));
     result.status = static_cast<ManageMemoryStatus>(s);
     std::uint32_t n = 0;
     is.read(reinterpret_cast<char*>(&n), sizeof(n));
-    result.slot_ids.resize(n);
+    result.slotIds.resize(n);
     for (std::uint32_t i = 0; i < n; ++i) {
-      is.read(reinterpret_cast<char*>(&result.slot_ids[i]),
+      is.read(reinterpret_cast<char*>(&result.slotIds[i]),
               sizeof(std::int32_t));
     }
     return result;

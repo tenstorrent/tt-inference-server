@@ -118,7 +118,7 @@ void SpPipelineRunner::memoryLoop() {
 
   while (!stopped.load(std::memory_order_relaxed)) {
     if (memoryRequests->tryPop(task)) {
-      auto result = memoryManager->handle_task(task);
+      auto result = memoryManager->handleTask(task);
       if (result.status == domain::ManageMemoryStatus::WAITING) {
         memoryRequests->push(task, /*priority=*/1);
       } else {

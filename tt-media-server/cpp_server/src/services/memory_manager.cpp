@@ -20,9 +20,8 @@ namespace {
 ManageMemoryResult makeResult(const ManageMemoryTask& task,
                               ManageMemoryStatus status,
                               std::vector<std::int32_t> slotIds = {}) {
-  return ManageMemoryResult{.task_id = task.task_id,
-                            .status = status,
-                            .slot_ids = std::move(slotIds)};
+  return ManageMemoryResult{
+      .taskId = task.taskId, .status = status, .slotIds = std::move(slotIds)};
 }
 
 }  // namespace
@@ -36,9 +35,9 @@ ManageMemoryStatus MemoryManager::allocateKv(const ManageMemoryTask& task,
     return ManageMemoryStatus::SUCCESS;
   }
 
-  std::vector<int64_t> placeholderTokens(
-      static_cast<size_t>(task.input_seq_len), 0);
-  llm_engine::Sequence seq(task.task_id, blockManager->blockSize(),
+  std::vector<int64_t> placeholderTokens(static_cast<size_t>(task.inputSeqLen),
+                                         0);
+  llm_engine::Sequence seq(task.taskId, blockManager->blockSize(),
                            std::move(placeholderTokens));
 
   if (!blockManager->allocate(seq)) {
@@ -59,7 +58,7 @@ void MemoryManager::deallocateKv(const domain::TaskID& taskId,
   blockManager->deallocate(seq);
 }
 
-ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
+ManageMemoryResult MemoryManager::handleTask(const ManageMemoryTask& task) {
   if (task.action == MemoryManagementAction::MOVE) {
     return makeResult(task, ManageMemoryStatus::FAILURE);
   }
@@ -77,8 +76,8 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
                         std::move(resultIds));
     }
     case MemoryManagementAction::DEALLOCATE: {
-      std::vector<int> slotIds(task.slot_ids.begin(), task.slot_ids.end());
-      deallocateKv(task.task_id, std::move(slotIds));
+      std::vector<int> slotIds(task.slotIds.begin(), task.slotIds.end());
+      deallocateKv(task.taskId, std::move(slotIds));
       return makeResult(task, ManageMemoryStatus::SUCCESS);
     }
     default:
