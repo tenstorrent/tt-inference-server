@@ -5,11 +5,11 @@
 
 #include <boost/interprocess/ipc/message_queue.hpp>
 #include <boost/interprocess/streams/bufferstream.hpp>
+#include <concepts>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
-#include <concepts>
 
 #include "domain/manage_memory.hpp"
 
@@ -18,10 +18,11 @@ namespace tt::ipc {
 namespace bi_ipc = boost::interprocess;
 
 template <typename T>
-concept Serializable = requires(const T& t, std::ostream& os, std::istream& is) {
-  { t.serialize(os) } -> std::same_as<void>;
-  { T::deserialize(is) } -> std::convertible_to<T>;
-};
+concept Serializable =
+    requires(const T& t, std::ostream& os, std::istream& is) {
+      { t.serialize(os) } -> std::same_as<void>;
+      { T::deserialize(is) } -> std::convertible_to<T>;
+    };
 
 /**
  * Boost.Interprocess message queue for domain types that implement
