@@ -215,47 +215,16 @@ std::unique_ptr<llm_engine::Sequence> SpPipelineRunner::getRequest() {
   return std::unique_ptr<llm_engine::Sequence>(requestRaw);
 }
 
-std::optional<tt::domain::ManageMemoryTask> SpPipelineRunner::getMemoryRequest() {
-  tt::domain::ManageMemoryTask request;
-  if (memoryRequests.tryPop(request)) {
-    return request;
-  }
-  return std::nullopt;
+inline void SpPipelineRunner::handleMemoryRequest(const tt::domain::ManageMemoryTask& request) {
+  memoryManager.handleRequest(request);
 }
 
-void SpPipelineRunner::handleMemoryRequest(const tt::domain::ManageMemoryTask& request) {
-  switch (request.action) {
-    case tt::domain::MemoryManagementAction::ALLOCATE: {
-      throw std::runtime_error("SpPipelineRunner: Allocate memory request not implemented");
-    }
-    case tt::domain::MemoryManagementAction::DEALLOCATE: {
-      evictSlot(request.slotId);
-      break;
-    }
-    case tt::domain::MemoryManagementAction::MOVE: {
-      throw std::runtime_error("SpPipelineRunner: Move memory action not implemented");
-    }
-  }
+inline void SpPipelineRunner::handleResponse(const pm::PMResponse& response) {
+  memoryManager.handleResponse(response.slot_id);
 }
 
-void SpPipelineRunner::handleResponse(const pm::PMResponse& response) {
-  auto it = allocating.find(response.request_id);
-  if (it == allocating.end()) {
-    TT_LOG_ERROR("SpPipelineRunner: Response for unknown request");
-    return;
-  }
-  auto seq = std::move(it->second);
-  allocating.erase(it);
-  if (response.error_code != 0) {
-    TT_LOG_ERROR(
-        "SpPipelineRunner: Response for request {} returned error code {}",
-        response.request_id, response.error_code);
-    pushErrorToken(seq->taskId);
-    return;
-  }
-  pipelineManager->push_request(makeSubmitRequest(response.slot_id, *seq));
-  seq->setKVCacheAddress(response.slot_id);
-  running[response.slot_id] = std::move(seq);
+inline std::optional<tt::domain::ManageMemoryTask> SpPipelineRunner::getMemoryRequest() {
+  return memoryManager.getRequest();
 }
 
 void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
@@ -277,15 +246,21 @@ void SpPipelineRunner::evictSlot(uint32_t slotId) {
 
 void SpPipelineRunner::handleRequest(
     std::unique_ptr<llm_engine::Sequence> request) {
-  if (auto slotId = request->getKVCacheAddress();
-      slotId != llm_engine::INVALID_KV_CACHE_ADDRESS) {
+    auto slotId = request->getKVCacheAddress();
+    assert(slotId != llm_engine::INVALID_KV_CACHE_ADDRESS);
     auto slot = static_cast<uint32_t>(slotId);
+    if(running.find(slot) == running.end()) {
+      pipelineManager->push_request(makeSubmitRequest(slotId, *request));
+      running[slot] = std::move(request);
+      return;
+    }
     pipelineManager->push_request(makeContinueRequest(slot, *request));
     running[slot] = std::move(request);
     return;
-  }
-  pipelineManager->push_request(makeAllocateRequest(nextRequestID));
-  allocating[nextRequestID++] = std::move(request);
 }
 
 }  // namespace tt::runners
+
+
+
+

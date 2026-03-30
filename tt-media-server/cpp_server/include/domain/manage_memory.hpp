@@ -30,14 +30,12 @@ struct KvDestination {
 };
 
 struct ManageMemoryTask {
-  uint32_t slotId = std::numeric_limits<uint32_t>::max();
   TaskID task_id;
   MemoryManagementAction action{MemoryManagementAction::ALLOCATE};
   std::int32_t input_seq_len{0};
   KvMemoryLayout memory_layout{KvMemoryLayout::Paged};
 
   void serialize(std::ostream& os) const {
-    os.write(reinterpret_cast<const char*>(this->slotId), sizeof(this->slotId));
     auto tid_buf = task_id.ipcSerialize();
     os.write(tid_buf.data(), static_cast<std::streamsize>(tid_buf.size()));
     auto a = static_cast<std::uint8_t>(action);
