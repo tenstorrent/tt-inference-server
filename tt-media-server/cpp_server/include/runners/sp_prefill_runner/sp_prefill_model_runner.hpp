@@ -22,7 +22,7 @@ class SpPrefillModelRunner : public ISpPrefillModelRunner {
   SpPrefillModelRunner(const SpPrefillModelRunner&) = delete;
   SpPrefillModelRunner& operator=(const SpPrefillModelRunner&) = delete;
 
-  std::optional<llm_engine::TokenResult> write(
+  std::optional<llm_engine::TokenResult> forward(
       const std::string& taskId,
       const std::vector<int64_t>& tokenIds) override;
   void exit() override;

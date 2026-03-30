@@ -17,7 +17,7 @@ SpPrefillModelRunner::SpPrefillModelRunner()
 
 SpPrefillModelRunner::~SpPrefillModelRunner() { exit(); }
 
-std::optional<llm_engine::TokenResult> SpPrefillModelRunner::write(
+std::optional<llm_engine::TokenResult> SpPrefillModelRunner::forward(
     const std::string& taskId, const std::vector<int64_t>& tokenIds) {
   deviceInput.write(taskId, tokenIds, 1);
 

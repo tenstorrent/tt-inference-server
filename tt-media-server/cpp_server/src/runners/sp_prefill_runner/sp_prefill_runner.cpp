@@ -35,7 +35,7 @@ void SpPrefillRunner::run() {
     TT_LOG_DEBUG("SpPrefillRunner: Starting prefill for task {}",
                  sequence->taskId.id);
 
-    auto result = modelRunner->write(sequence->taskId.id, sequence->tokenIds);
+    auto result = modelRunner->forward(sequence->taskId.id, sequence->tokenIds);
 
     if (!result) {
       break;  // stopped
@@ -59,7 +59,7 @@ bool SpPrefillRunner::warmup() {
   std::vector<int64_t> warmupTokens = {1};
   llm_engine::TaskID warmupTaskId("warmup_task");
 
-  auto result = modelRunner->write(warmupTaskId.id, warmupTokens);
+  auto result = modelRunner->forward(warmupTaskId.id, warmupTokens);
   if (!result || result->isError) {
     TT_LOG_ERROR("SpPrefillRunner: Warmup failed");
     return false;
