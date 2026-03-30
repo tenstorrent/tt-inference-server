@@ -9,7 +9,6 @@ import jwt
 import logging
 import sys
 from pathlib import Path
-from typing import List
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -36,28 +35,20 @@ def build_test_command(
     task: TestTask,
     model_spec,
     device,
-    output_path,
+    output_dir_path,
     service_port,
 ):
     """
     Build the command for tests by templating command-line arguments using properties
     from the given task and model configuration.
 
-    Returns (cmd, output_dir_path) tuple.
+    Returns cmd list.
     """
-    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
 
     test_exec = task_venv_config.venv_path / "bin" / "pytest"
 
     test_kwargs_list = [f"-{arg}" for arg in task.test_args]
-
-    # set output_dir
-    # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
-    output_dir_path = (
-        Path(output_path)
-        / f"test_{model_spec.model_id}__{run_timestamp}_{task.task_name}"
-    )
 
     if task.task_name == "vllm_responses":
         # vLLM responses test needs the service port to connect to the server
@@ -73,13 +64,15 @@ def build_test_command(
         model_spec.impl.impl_name,
         "--output-path",
         output_dir_path,
+        "--task-name",
+        task.task_name,
         "--max-context",
         str(model_spec.device_model_spec.max_context),
     ]
     cmd.extend(test_kwargs_list)
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
-    return cmd, str(output_dir_path)
+    return cmd
 
 
 def parse_args():
@@ -177,34 +170,32 @@ def main():
     env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
+    # Create a single shared output directory for all tasks in this run
+    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_dir_path = (
+        Path(args.output_path) / f"test_{model_spec.model_id}__{run_timestamp}"
+    )
+    output_dir_path.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Test output directory: {output_dir_path}")
+
     # Execute pytest for each task.
     logger.info("Running test client ...")
     return_codes = []
-    test_manifest = []
     for task in test_config.tasks:
         logger.info(
             f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
         )
 
         logger.info(f"Running tests for:\n {task}")
-        cmd, output_dir_path = build_test_command(
+        cmd = build_test_command(
             task,
             model_spec,
             device_str,
-            args.output_path,
+            str(output_dir_path),
             runtime_config.service_port,
         )
         return_code = run_command(command=cmd, logger=logger, env=env_vars)
         return_codes.append(return_code)
-        test_manifest.append(
-            {"task_name": task.task_name, "output_dir": output_dir_path}
-        )
-
-    # Write manifest of test output directories for report generation
-    manifest_path = Path(args.output_path) / f"test_manifest_{model_spec.model_id}.json"
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        json.dump(test_manifest, f, indent=2)
-    logger.info(f"Test manifest saved to: {manifest_path}")
 
     if all(return_code == 0 for return_code in return_codes):
         logger.info("✅ Completed tests")
