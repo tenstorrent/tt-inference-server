@@ -3,7 +3,6 @@
 
 #include "runners/sp_prefill_runner/sp_prefill_model_runner.hpp"
 
-#include "runners/llm_runner/debug.hpp"
 #include "utils/logger.hpp"
 
 namespace sp_prefill {
@@ -25,7 +24,7 @@ void SpPrefillModelRunner::write(const std::string& taskId,
   deviceInput.write(taskId, tokenIds, 1);
 
   // Synchronously wait for the single prefill token
-  sp_pipeline::ReadResult readBuf;
+  tt::ipc::ReadResult readBuf;
   while (!stop.load(std::memory_order_relaxed)) {
     if (deviceOutput.tryRead(readBuf)) {
       llm_engine::TaskID tid = llm_engine::TaskID::ipcDeserialize(

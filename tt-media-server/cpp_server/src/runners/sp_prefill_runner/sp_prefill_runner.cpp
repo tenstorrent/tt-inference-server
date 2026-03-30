@@ -3,12 +3,6 @@
 
 #include "runners/sp_prefill_runner/sp_prefill_runner.hpp"
 
-#include <cassert>
-#include <chrono>
-#include <cstring>
-
-#include "ipc/shared_memory.hpp"
-#include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
