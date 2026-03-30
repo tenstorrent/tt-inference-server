@@ -2,10 +2,12 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 import os
+import io
+import zipfile
 from config.constants import JobTypes
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
@@ -152,10 +154,19 @@ async def get_job_checkpoints(
     checkpoint_path = service.get_job_checkpoints(job_id)
     if not checkpoint_path:
         raise HTTPException(404, "No checkpoint available for this job")
-    return FileResponse(
-        path=checkpoint_path,
-        filename=os.path.basename(checkpoint_path),
-        media_type="application/octet-stream",
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _, files in os.walk(checkpoint_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, checkpoint_path)
+                zf.write(file_path, arcname)
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=adapter_{job_id}.zip"},
     )
 
 @router.get("/jobs/{job_id}/logs")

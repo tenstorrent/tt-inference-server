@@ -5,7 +5,7 @@ import os
 from multiprocessing import Manager
 
 from model_services.base_job_service import BaseJobService
-from config.constants import JobTypes, ModelNames
+from config.constants import JobTypes, ModelNames, TRAINING_STORE_ADAPTERS_DIR
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
 from typing import Optional
@@ -18,8 +18,9 @@ class TrainingService(BaseJobService):
         super().__init__()
 
     async def create_job(self, job_type: JobTypes, request: TrainingRequest) -> dict:
-        os.makedirs("models_save", exist_ok=True)
-        request._output_model_path = f"models_save/{request._task_id}.pt"
+        adapter_path = os.path.join(TRAINING_STORE_ADAPTERS_DIR, request._task_id)
+        os.makedirs(adapter_path, exist_ok=True)
+        request._output_model_path = adapter_path
         self.logger.info(f"Generated output path: {request._output_model_path}")
 
         request._start_event = self._manager.Event()
@@ -54,6 +55,6 @@ class TrainingService(BaseJobService):
     
     def get_job_checkpoints(self, job_id: str) -> Optional[str]:
         result_path = self._job_manager.get_job_result_path(job_id)
-        if result_path and os.path.isfile(result_path):
+        if result_path and os.path.isdir(result_path):
             return result_path
         return None
