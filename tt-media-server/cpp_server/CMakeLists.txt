@@ -223,6 +223,9 @@ set(LLM_ENGINE_SOURCES
     src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
     src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
     src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
+    src/runners/sp_prefill_runner/sp_prefill_runner.cpp
+    src/runners/sp_prefill_runner/i_sp_prefill_model_runner.cpp
+    src/runners/sp_prefill_runner/sp_prefill_model_runner.cpp
     src/services/memory_manager.cpp
 )
 # Add socket backend when tt-metal is available
