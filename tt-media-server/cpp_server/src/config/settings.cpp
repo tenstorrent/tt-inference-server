@@ -60,10 +60,10 @@ std::vector<std::string> parseDeviceIds(const std::string& raw) {
                   // all).
   }
   std::vector<std::string> out;
-  const std::string SEP = "),(";
+  const std::string sep = "),(";
   size_t pos = 0;
   for (;;) {
-    size_t next = s.find(SEP, pos);
+    size_t next = s.find(sep, pos);
     std::string segment =
         (next == std::string::npos) ? s.substr(pos) : s.substr(pos, next - pos);
     if (!segment.empty()) {
@@ -72,7 +72,7 @@ std::vector<std::string> parseDeviceIds(const std::string& raw) {
     }
     out.push_back(std::move(segment));
     if (next == std::string::npos) break;
-    pos = next + SEP.size();
+    pos = next + sep.size();
   }
   return out;
 }

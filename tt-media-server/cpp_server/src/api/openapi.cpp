@@ -122,6 +122,10 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     healthTag["name"] = "Health";
     healthTag["description"] = "Server health and liveness endpoints";
     tags.append(healthTag);
+    Json::Value monitoringTag;
+    monitoringTag["name"] = "Monitoring";
+    monitoringTag["description"] = "Prometheus metrics scrape endpoint";
+    tags.append(monitoringTag);
     spec["tags"] = tags;
 
     // Paths
@@ -138,6 +142,9 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
 
     // GET /tt-liveness
     paths["/tt-liveness"]["get"] = buildLivenessEndpoint();
+
+    // GET /metrics
+    paths["/metrics"]["get"] = buildMetricsEndpoint();
 
     spec["paths"] = paths;
 
@@ -329,6 +336,31 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
         "#/components/schemas/ReadyResponse";
     responses["500"] = resp500;
 
+    endpoint["responses"] = responses;
+
+    return endpoint;
+  }
+
+  Json::Value buildMetricsEndpoint() {
+    Json::Value endpoint;
+    endpoint["tags"].append("Monitoring");
+    endpoint["summary"] = "Prometheus metrics";
+    endpoint["description"] =
+        "Exposes all server metrics in Prometheus text exposition format "
+        "(version 0.0.4). No authentication required. Intended to be scraped "
+        "by a Prometheus server every few seconds.";
+    endpoint["operationId"] = "getMetrics";
+
+    Json::Value responses;
+    Json::Value resp200;
+    resp200["description"] = "Prometheus text format metrics";
+    resp200["content"]["text/plain; version=0.0.4"]["schema"]["type"] =
+        "string";
+    resp200["content"]["text/plain; version=0.0.4"]["schema"]["example"] =
+        "# HELP tt_generation_tokens_total Total number of generation tokens "
+        "produced\n# TYPE tt_generation_tokens_total counter\n"
+        "tt_generation_tokens_total{model_name=\"llm\"} 42\n";
+    responses["200"] = resp200;
     endpoint["responses"] = responses;
 
     return endpoint;
