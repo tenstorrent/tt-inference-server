@@ -74,7 +74,6 @@ int BlockManager::numFreeBlocks() const {
   return static_cast<int>(free_block_ids_.size());
 }
 
-
 bool BlockManager::allocate(Sequence& seq) {
   ZoneScopedN("BlockManager::allocate");
   std::lock_guard<std::mutex> lock(mutex);

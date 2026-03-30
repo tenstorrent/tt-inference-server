@@ -63,8 +63,7 @@ struct ManageMemoryTask {
     is.read(reinterpret_cast<char*>(&n), sizeof(n));
     task.slot_ids.resize(n);
     for (std::uint32_t i = 0; i < n; ++i) {
-      is.read(reinterpret_cast<char*>(&task.slot_ids[i]),
-              sizeof(std::int32_t));
+      is.read(reinterpret_cast<char*>(&task.slot_ids[i]), sizeof(std::int32_t));
     }
     return task;
   }
