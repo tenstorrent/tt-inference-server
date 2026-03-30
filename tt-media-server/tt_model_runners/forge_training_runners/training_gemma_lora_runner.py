@@ -21,8 +21,12 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
-from config.constants import SupportedModels
+from config.constants import SupportedModels, TrainingOptimizers
 
+
+OPTIMIZER_MAP = {
+  TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
+}
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
@@ -125,7 +129,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             },
         )
 
-        self.optimizer = torch.optim.AdamW(
+        self.optimizer = OPTIMIZER_MAP[request.optimizer](
             self.model.parameters(), lr=request.learning_rate
         )
         self.loss_fn = torch.nn.CrossEntropyLoss(ignore_index=request.ignored_index)

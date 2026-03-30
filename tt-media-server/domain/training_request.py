@@ -4,7 +4,7 @@
 
 
 from domain.base_request import BaseRequest
-from config.constants import DatasetLoaders
+from config.constants import DatasetLoaders, DeviceTypes, TrainingOptimizers
 from pydantic import PrivateAttr
 from multiprocessing import Event
 
@@ -27,6 +27,10 @@ class TrainingRequest(BaseRequest):
     lora_task_type: str = "CAUSAL_LM"
 
     ignored_index: int = -100
+
+    device_type: str = DeviceTypes.P150.value
+    optimizer: str = TrainingOptimizers.ADAMW.value
+
 
     _output_model_path: str = PrivateAttr(default=None)
     _start_event: Event = PrivateAttr(default=None)

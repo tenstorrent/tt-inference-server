@@ -9,6 +9,7 @@ from config.constants import (
     SupportedModels,
     TrainingOptimizers,
     TrainingTrainers,
+    DeviceTypes,
 )
 from utils.dataset_loaders.dataset_resolver import AVAILABLE_DATASET_LOADERS
 
@@ -22,7 +23,7 @@ TRAINING_CATALOG_DATA = {
     },
     "clusters": [
         {
-            "id": "1xp150",
+            "id": DeviceTypes.P150.value,
             "display_name": "1× P150",
             "supported": True,
             "partition": None,
