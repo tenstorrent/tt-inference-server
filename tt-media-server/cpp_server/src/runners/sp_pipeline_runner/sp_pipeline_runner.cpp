@@ -115,19 +115,12 @@ void SpPipelineRunner::stop() {
 
 void SpPipelineRunner::memoryLoop() {
   tt::domain::ManageMemoryTask task{};
-  std::vector<tt::domain::ManageMemoryTask> retryQueue;
 
   while (!stopped.load(std::memory_order_relaxed)) {
-    if (!retryQueue.empty()) {
-      auto result = memoryManager->handle_task(retryQueue.front());
-      if (result.status != domain::ManageMemoryStatus::WAITING) {
-        memoryResults->push(result);
-        retryQueue.erase(retryQueue.begin());
-      }
-    } else if (memoryRequests->tryPop(task)) {
+    if (memoryRequests->tryPop(task)) {
       auto result = memoryManager->handle_task(task);
       if (result.status == domain::ManageMemoryStatus::WAITING) {
-        retryQueue.push_back(task);
+        memoryRequests->push(task, /*priority=*/1);
       } else {
         memoryResults->push(result);
       }
