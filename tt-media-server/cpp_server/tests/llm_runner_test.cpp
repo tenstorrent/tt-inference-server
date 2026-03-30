@@ -86,21 +86,21 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
 
   // 1st published token in the mocked prefill is always whitespace token id=223
   // The followed tokens using the mocked runner are increments of 223
-  const std::vector<int64_t> EXPECTED_SEQ0 = {
+  const std::vector<int64_t> expectedSeq0 = {
       223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237,
       238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252,
   };
-  const std::vector<int64_t> EXPECTED_SEQ1 = {
+  const std::vector<int64_t> expectedSeq1 = {
       223, 224, 225, 226, 227, 228, 229, 230, 231, 232,
   };
-  const std::vector<int64_t> EXPECTED_SEQ2 = {
+  const std::vector<int64_t> expectedSeq2 = {
       223, 224, 225, 226, 227, 228, 229, 230, 231, 232,
       233, 234, 235, 236, 237, 238, 239, 240, 241, 242,
   };
 
-  EXPECT_EQ(receivedTokens[taskIds[0]], EXPECTED_SEQ0);
-  EXPECT_EQ(receivedTokens[taskIds[1]], EXPECTED_SEQ1);
-  EXPECT_EQ(receivedTokens[taskIds[2]], EXPECTED_SEQ2);
+  EXPECT_EQ(receivedTokens[taskIds[0]], expectedSeq0);
+  EXPECT_EQ(receivedTokens[taskIds[1]], expectedSeq1);
+  EXPECT_EQ(receivedTokens[taskIds[2]], expectedSeq2);
 
   resultQueue.shutdown();
 }
