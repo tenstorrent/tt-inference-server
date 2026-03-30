@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
-#include "ipc/shared_memory.hpp"
+#include "ipc/token_ring_buffer.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 #include "runners/llm_runner/sequence.hpp"
 namespace llm_engine {
