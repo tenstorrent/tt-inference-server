@@ -8,6 +8,7 @@
 
 `Motif-Image-6B-Preview` is also supported on hardware:
 
+- [BH QuietBox GE (2xP300)](Motif-Image-6B-Preview_p300x2.md)
 - [BH LoudBox](Motif-Image-6B-Preview_p150x8.md)
 - [WH LoudBox/QuietBox](Motif-Image-6B-Preview_t3k.md)
 

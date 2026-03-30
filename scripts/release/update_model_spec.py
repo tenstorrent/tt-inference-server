@@ -38,10 +38,21 @@ from pathlib import Path
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from workflows.model_spec import (
-    export_model_specs_json,
     spec_templates,
     ModelSpecTemplate,
 )
+
+
+def load_module_from_path(module_name: str, module_path: Path):
+    """Load a module from a file path and register it in sys.modules."""
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not create import spec for {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def map_perf_status_to_model_status(perf_status):
@@ -444,12 +455,9 @@ def generate_release_diff_markdown(update_records, output_path):
     print(f"\nGenerated release diff markdown: {output_path}")
 
 
-def reload_and_export_model_specs_json(model_spec_path, output_json_path):
+def export_model_specs_json(model_spec_path, output_json_path):
     """
-    Dynamically reimport MODEL_SPECS from updated model_spec.py and export to JSON.
-
-    This reimports the module to pick up any in-place edits made by this script,
-    then delegates to the shared export_model_specs_json utility.
+    Dynamically import MODEL_SPECS from updated model_spec.py and export to JSON.
 
     Args:
         model_spec_path: Path to the model_spec.py file
@@ -461,14 +469,21 @@ def reload_and_export_model_specs_json(model_spec_path, output_json_path):
         sys.path.insert(0, str(repo_root))
 
     # Dynamically import the updated model_spec module
-    spec = importlib.util.spec_from_file_location("model_spec", model_spec_path)
-    model_spec_module = importlib.util.module_from_spec(spec)
-    sys.modules["model_spec"] = model_spec_module
-    spec.loader.exec_module(model_spec_module)
+    model_spec_module = load_module_from_path("model_spec", model_spec_path)
 
+    # Get MODEL_SPECS dictionary from the module
     model_specs = model_spec_module.MODEL_SPECS
-    num_specs = export_model_specs_json(model_specs, Path(output_json_path))
-    print(f"\nExported {num_specs} model specs to {output_json_path}")
+
+    # Serialize all ModelSpec instances
+    serialized_specs = {}
+    for model_id, model_spec in model_specs.items():
+        serialized_specs[model_id] = model_spec.get_serialized_dict()
+
+    # Write to JSON file
+    with open(output_json_path, "w") as f:
+        json.dump(serialized_specs, f, indent=2)
+
+    print(f"\nExported {len(serialized_specs)} model specs to {output_json_path}")
 
 
 def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"):
@@ -498,10 +513,7 @@ def generate_model_support_docs(model_spec_path, output_dir="docs/model_support"
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
-    spec = importlib.util.spec_from_file_location("model_spec_docs", model_spec_path)
-    model_spec_module = importlib.util.module_from_spec(spec)
-    sys.modules["model_spec_docs"] = model_spec_module
-    spec.loader.exec_module(model_spec_module)
+    model_spec_module = load_module_from_path("model_spec_docs", model_spec_path)
 
     templates = model_spec_module.spec_templates
     output_path = Path(output_dir)
@@ -585,10 +597,7 @@ def update_readme_model_support(model_spec_path, readme_path="README.md"):
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
-    spec = importlib.util.spec_from_file_location("model_spec_readme", model_spec_path)
-    model_spec_module = importlib.util.module_from_spec(spec)
-    sys.modules["model_spec_readme"] = model_spec_module
-    spec.loader.exec_module(model_spec_module)
+    model_spec_module = load_module_from_path("model_spec_readme", model_spec_path)
     templates = model_spec_module.spec_templates
 
     # Generate the model support content directly (no intermediate file)
@@ -681,13 +690,13 @@ def main():
     )
     parser.add_argument(
         "--output-json",
-        default="model_spec.json",
-        help="Path to output JSON file with all model specs (default: model_spec.json)",
+        default="model_specs_output.json",
+        help="Path to output JSON file with all model specs (default: model_specs_output.json)",
     )
     parser.add_argument(
         "--output-only",
         action="store_true",
-        help="Read model_spec.py and generate outputs (README.md table and model_spec.json) without modifying model_spec.py",
+        help="Read model_spec.py and generate outputs (README.md table and model_specs_output.json) without modifying model_spec.py",
     )
     parser.add_argument(
         "--readme-path",
@@ -717,7 +726,7 @@ def main():
 
         # Export MODEL_SPECS to JSON
         output_json_path = Path(args.output_json)
-        reload_and_export_model_specs_json(model_spec_path, output_json_path)
+        export_model_specs_json(model_spec_path, output_json_path)
 
         return
 
@@ -875,7 +884,7 @@ def main():
 
             # Export MODEL_SPECS to JSON
             output_json_path = Path(args.output_json)
-            reload_and_export_model_specs_json(model_spec_path, output_json_path)
+            export_model_specs_json(model_spec_path, output_json_path)
 
             # Generate release diff markdown
             if update_records:
@@ -884,13 +893,14 @@ def main():
 
             # Update README.md Model Support section and regenerate docs/model_support/
             update_readme_model_support(model_spec_path)
+
     else:
         print("\nNo updates needed.")
 
         # Even if no updates were made, export the current MODEL_SPECS to JSON
         if not args.dry_run:
             output_json_path = Path(args.output_json)
-            reload_and_export_model_specs_json(model_spec_path, output_json_path)
+            export_model_specs_json(model_spec_path, output_json_path)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@
 `Wan2.2-T2V-A14B-Diffusers` is also supported on hardware:
 
 - [WH Galaxy](Wan2.2-T2V-A14B-Diffusers_galaxy.md)
+- [BH QuietBox GE (2xP300)](Wan2.2-T2V-A14B-Diffusers_p300x2.md)
 - [BH 4xP150](Wan2.2-T2V-A14B-Diffusers_p150x4.md)
 - [WH LoudBox/QuietBox](Wan2.2-T2V-A14B-Diffusers_t3k.md)
 

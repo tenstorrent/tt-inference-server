@@ -15,6 +15,7 @@ To use non-default weights, replace `FLUX.1-dev` in commands below.
 
 `FLUX.1-dev` is also supported on hardware:
 
+- [BH QuietBox GE (2xP300)](FLUX.1-dev_p300x2.md)
 - [BH LoudBox](FLUX.1-dev_p150x8.md)
 - [BH 4xP150](FLUX.1-dev_p150x4.md)
 - [WH LoudBox/QuietBox](FLUX.1-dev_t3k.md)

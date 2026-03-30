@@ -9,6 +9,7 @@
 `Qwen3-32B` is also supported on hardware:
 
 - [WH Galaxy](Qwen3-32B_galaxy.md)
+- [BH QuietBox GE (2xP300)](Qwen3-32B_p300x2.md)
 - [BH LoudBox](Qwen3-32B_p150x8.md)
 
 ## Quickstart - Deploy Qwen3-32B Inference Server on WH LoudBox/QuietBox

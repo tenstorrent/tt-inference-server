@@ -16,6 +16,7 @@ To use non-default weights, replace `Llama-3.1-8B` in commands below.
 `Llama-3.1-8B` is also supported on hardware:
 
 - [WH Galaxy](Llama-3.1-8B_galaxy.md)
+- [BH QuietBox GE (2xP300)](Llama-3.1-8B_p300x2.md)
 - [BH LoudBox](Llama-3.1-8B_p150x8.md)
 - [P100/P150](Llama-3.1-8B_p100.md)
 - [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
