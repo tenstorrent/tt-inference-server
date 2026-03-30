@@ -28,6 +28,7 @@ struct ManageMemoryTask {
   MemoryManagementAction action{MemoryManagementAction::ALLOCATE};
   std::int32_t input_seq_len{0};
   KvMemoryLayout memory_layout{KvMemoryLayout::Paged};
+  std::vector<std::int32_t> slot_ids;
 
   void serialize(std::ostream& os) const {
     auto tid_buf = task_id.ipcSerialize();
@@ -38,6 +39,11 @@ struct ManageMemoryTask {
              sizeof(input_seq_len));
     auto ml = static_cast<std::uint8_t>(memory_layout);
     os.write(reinterpret_cast<const char*>(&ml), sizeof(ml));
+    std::uint32_t n = static_cast<std::uint32_t>(slot_ids.size());
+    os.write(reinterpret_cast<const char*>(&n), sizeof(n));
+    for (std::int32_t id : slot_ids) {
+      os.write(reinterpret_cast<const char*>(&id), sizeof(id));
+    }
   }
 
   static ManageMemoryTask deserialize(std::istream& is) {
@@ -53,6 +59,13 @@ struct ManageMemoryTask {
     std::uint8_t ml = 0;
     is.read(reinterpret_cast<char*>(&ml), sizeof(ml));
     task.memory_layout = static_cast<KvMemoryLayout>(ml);
+    std::uint32_t n = 0;
+    is.read(reinterpret_cast<char*>(&n), sizeof(n));
+    task.slot_ids.resize(n);
+    for (std::uint32_t i = 0; i < n; ++i) {
+      is.read(reinterpret_cast<char*>(&task.slot_ids[i]),
+              sizeof(std::int32_t));
+    }
     return task;
   }
 };

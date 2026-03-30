@@ -3,11 +3,9 @@
 
 #pragma once
 
-#include <string>
 #include <vector>
 
 #include "domain/manage_memory.hpp"
-#include "utils/concurrent_map.hpp"
 
 namespace llm_engine {
 class BlockManager;
@@ -28,16 +26,11 @@ class MemoryManager {
   domain::ManageMemoryResult handle_task(const domain::ManageMemoryTask& task);
 
  private:
-  struct Reservation {
-    std::vector<int> slotIds;
-  };
-
   domain::ManageMemoryStatus allocateKv(const domain::ManageMemoryTask& task,
                                         std::vector<int>& outSlotIds);
   void deallocateKv(const domain::TaskID& taskId, std::vector<int> slotIds);
 
   llm_engine::BlockManager* blockManager = nullptr;
-  ConcurrentMap<std::string, Reservation> reservations;
 };
 
 }  // namespace tt::services

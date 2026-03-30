@@ -66,9 +66,6 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
 
   switch (task.action) {
     case MemoryManagementAction::ALLOCATE: {
-      if (reservations.contains(task.task_id.id)) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
       if (task.input_seq_len < 0) {
         return makeResult(task, ManageMemoryStatus::FAILURE);
       }
@@ -80,17 +77,12 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
       }
 
       std::vector<std::int32_t> resultIds(slotIds.begin(), slotIds.end());
-      reservations.insert(task.task_id.id, Reservation{.slotIds = slotIds});
       return makeResult(task, ManageMemoryStatus::SUCCESS,
                         std::move(resultIds));
     }
     case MemoryManagementAction::DEALLOCATE: {
-      auto reservation = reservations.take(task.task_id.id);
-      if (!reservation.has_value()) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
-
-      deallocateKv(task.task_id, std::move(reservation->slotIds));
+      std::vector<int> slotIds(task.slot_ids.begin(), task.slot_ids.end());
+      deallocateKv(task.task_id, std::move(slotIds));
       return makeResult(task, ManageMemoryStatus::SUCCESS);
     }
     default:
