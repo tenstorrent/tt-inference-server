@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <chrono>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -45,6 +46,20 @@ class Session {
   bool hasSlot() const { return slot_id_ != -1; }
 
   /**
+   * Get the last activity time.
+   */
+  std::chrono::system_clock::time_point getLastActivityTime() const {
+    return last_activity_time_;
+  }
+
+  /**
+   * Update the last activity time to now.
+   */
+  void updateActivityTime() {
+    last_activity_time_ = std::chrono::system_clock::now();
+  }
+
+  /**
    * Convert to JSON representation.
    */
   Json::Value toJson() const {
@@ -57,6 +72,7 @@ class Session {
  private:
   std::string session_id_;
   int slot_id_;
+  std::chrono::system_clock::time_point last_activity_time_;
 
   /**
    * Generate a UUID v4 string.

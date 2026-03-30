@@ -28,5 +28,7 @@ constexpr const char* LLM_DEVICE_BACKEND =
 constexpr const bool ENABLE_ACCUMULATED_STREAMING = false;
 constexpr size_t MAX_ACCUMULATED_TOKENS = 5;
 constexpr size_t MAX_IN_FLIGHT_COUNT = 32;
+constexpr size_t MAX_SESSIONS_COUNT = 64;
+constexpr unsigned SESSION_EVICTION_RATE = 90;
 
 }  // namespace tt::config::defaults

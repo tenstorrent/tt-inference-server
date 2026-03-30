@@ -67,6 +67,18 @@ class SessionManager {
   size_t getActiveSessionCount() const;
 
  private:
+  /**
+   * Evict old sessions if the eviction threshold is exceeded.
+   * Called automatically when creating new sessions.
+   */
+  void evictOldSessions();
+
+  /**
+   * Find the oldest session (by last activity time).
+   * @return Optional session ID of the oldest session
+   */
+  std::optional<std::string> findOldestSession() const;
+
   mutable std::mutex mutex_;
   std::unordered_map<std::string, domain::Session> sessions_;
 };
