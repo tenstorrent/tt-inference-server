@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+import os
 from config.constants import JobTypes
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
@@ -145,20 +146,17 @@ async def get_job_checkpoints(
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
-    """
-    List checkpoints saved during a fine-tuning job.
-
-    Returns:
-        JSONResponse: List of checkpoint entries.
-
-    Raises:
-        HTTPException: If job not found.
-    """
     job_data = service.get_job_metadata(job_id)
     if not job_data:
         raise HTTPException(404, "Job not found")
-    checkpoints = service.get_job_checkpoints(job_id)
-    return JSONResponse(content=checkpoints)
+    checkpoint_path = service.get_job_checkpoints(job_id)
+    if not checkpoint_path:
+        raise HTTPException(404, "No checkpoint available for this job")
+    return FileResponse(
+        path=checkpoint_path,
+        filename=os.path.basename(checkpoint_path),
+        media_type="application/octet-stream",
+    )
 
 @router.get("/jobs/{job_id}/logs")
 async def get_job_logs(

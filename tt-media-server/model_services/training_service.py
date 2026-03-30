@@ -8,6 +8,7 @@ from model_services.base_job_service import BaseJobService
 from config.constants import JobTypes, ModelNames
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
+from typing import Optional
 
 
 class TrainingService(BaseJobService):
@@ -50,3 +51,9 @@ class TrainingService(BaseJobService):
         if logs_list is None:
             return []
         return list(logs_list)
+    
+    def get_job_checkpoints(self, job_id: str) -> Optional[str]:
+        result_path = self._job_manager.get_job_result_path(job_id)
+        if result_path and os.path.isfile(result_path):
+            return result_path
+        return None
