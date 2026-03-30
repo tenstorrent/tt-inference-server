@@ -3,7 +3,6 @@
 
 #include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
 
-#include <array>
 #include <cassert>
 #include <chrono>
 #include <cstring>
@@ -25,17 +24,21 @@ inline pm::ISRequest makeCancelRequest(uint32_t slotId) {
   return {.type = pm::RequestType::CANCEL, .slot_id = slotId};
 }
 
+inline pm::GenerationParams makeGenerationParams(
+    const llm_engine::Sequence& seq) {
+  return {
+      .max_new_tokens =
+          static_cast<uint32_t>(seq.samplingParams->max_tokens.value_or(
+              static_cast<int>(tt::config::LLMConfig::MAX_INPUT_TOKENS))),
+      .temperature = seq.samplingParams->temperature,
+      .top_p = seq.samplingParams->top_p.value_or(1.0f),
+      .top_k = static_cast<int32_t>(seq.samplingParams->top_k.value_or(-1))};
+}
+
 inline void fillSequenceFields(pm::ISRequest& req,
                                const llm_engine::Sequence& seq) {
-  req.token_count = static_cast<uint32_t>(seq.tokenIds.size());
-  for (uint32_t i = 0; i < req.token_count && i < pm::MAX_SEQ_LEN; i++) {
-    req.tokens[i] = static_cast<uint32_t>(seq.tokenIds[i]);
-  }
-  req.max_new_tokens = seq.samplingParams->max_tokens.value_or(
-      static_cast<int>(tt::config::LLMConfig::MAX_INPUT_TOKENS));
-  req.temperature = seq.samplingParams->temperature;
-  req.top_p = seq.samplingParams->top_p.value_or(1.0f);
-  req.top_k = seq.samplingParams->top_k.value_or(-1);
+  req.tokens.assign(seq.tokenIds.begin(), seq.tokenIds.end());
+  req.gen = makeGenerationParams(seq);
 }
 
 inline pm::ISRequest makeSubmitRequest(uint32_t slotId,
@@ -66,20 +69,14 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
-      taskQueue(taskQueue),
-      maxInFlightCount(config.max_in_flight_count * 30) {
-  memoryThread = std::thread([this] { memoryLoop(); });
-  pipeline = std::make_unique<tt_blaze::pipeline_manager::MockPipeline>();
-  pipelineManager =
-      std::make_unique<tt_blaze::pipeline_manager::PipelineManager>(*pipeline);
+      taskQueue(taskQueue) {
+  pm::MockConfig mockConfig{};
+  pipelineManager = std::make_unique<pm::PipelineManager>(mockConfig);
   pipelineManager->start();
 }
 
 SpPipelineRunner::~SpPipelineRunner() {
   stop();
-  if (memoryThread.joinable()) {
-    memoryThread.join();
-  }
   if (pipelineManager) {
     pipelineManager->stop();
   }
@@ -87,7 +84,12 @@ SpPipelineRunner::~SpPipelineRunner() {
 
 void SpPipelineRunner::run() {
   while (!stopped.load(std::memory_order_relaxed)) {
-    step();
+    try {
+      step();
+    } catch (const std::exception& e) {
+      TT_LOG_ERROR("SpPipelineRunner: Exception in run: {}", e.what());
+      throw;
+    }
   }
 }
 
@@ -108,9 +110,7 @@ bool SpPipelineRunner::warmup() {
   pipelineManager->push_request(makeAllocateRequest(nextRequestID++));
 
   pm::PMResponse response{};
-  pipelineManager->tick();
   while (!pipelineManager->try_pop_response(response)) {
-    pipelineManager->tick();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
@@ -126,7 +126,6 @@ bool SpPipelineRunner::warmup() {
   int attempts = 0;
   bool receivedToken = false;
   auto output = pm::OutputMessage{};
-  pipelineManager->tick();
 
   while (attempts < MAX_ATTEMPTS && !receivedToken) {
     receivedToken = pipelineManager->try_pop_output(output);
@@ -144,7 +143,6 @@ bool SpPipelineRunner::warmup() {
 
   TT_LOG_INFO("SpPipelineRunner: Warmup successful");
   pipelineManager->push_request(makeCancelRequest(slotId));
-  pipelineManager->tick();
   return true;
 }
 
@@ -152,35 +150,15 @@ void SpPipelineRunner::stop() {
   stopped.store(true, std::memory_order_relaxed);
 }
 
-void SpPipelineRunner::memoryLoop() {
-  tt::domain::ManageMemoryTask task{};
-  std::vector<tt::domain::ManageMemoryTask> retryQueue;
-
-  while (!stopped.load(std::memory_order_relaxed)) {
-    if (!retryQueue.empty()) {
-      auto result = memoryManager.handle_task(retryQueue.front());
-      if (result.status != domain::ManageMemoryStatus::WAITING) {
-        memoryResults.push(result);
-        retryQueue.erase(retryQueue.begin());
-      }
-    } else if (memoryRequests.tryPop(task)) {
-      auto result = memoryManager.handle_task(task);
-      if (result.status == domain::ManageMemoryStatus::WAITING) {
-        retryQueue.push_back(task);
-      } else {
-        memoryResults.push(result);
-      }
-    } else {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-  }
-}
-
 void SpPipelineRunner::step() {
   // an open question: do we want to drain the task, response and output queues
   // here? or just pop each one once every iteration? I am afraid of starvation.
 
-  pipelineManager->tick();  // temporary until PM gains the API thread ?
+  auto memoryRequest = getMemoryRequest();
+  if (memoryRequest.has_value()) {
+    handleMemoryRequest(*memoryRequest);
+  }
+
   auto response = getResponse();
   if (response.has_value()) {
     handleResponse(*response);
@@ -233,20 +211,44 @@ std::optional<pm::OutputMessage> SpPipelineRunner::getOutput() {
 }
 
 std::unique_ptr<llm_engine::Sequence> SpPipelineRunner::getRequest() {
-  if (inFlightCount >= maxInFlightCount) return nullptr;
   auto requestRaw = taskQueue->tryPop();
   if (!requestRaw) return nullptr;
   return std::unique_ptr<llm_engine::Sequence>(requestRaw);
 }
 
-void SpPipelineRunner::handleResponse(pm::PMResponse& response) {
-  auto it = requestToSequence.find(response.request_id);
-  if (it == requestToSequence.end()) {
+std::optional<tt::domain::ManageMemoryTask> SpPipelineRunner::getMemoryRequest() {
+  tt::domain::ManageMemoryTask request;
+  if (memoryRequests.tryPop(request)) {
+    return request;
+  }
+  return std::nullopt;
+}
+
+void SpPipelineRunner::handleMemoryRequest(const tt::domain::ManageMemoryTask& request) {
+  switch (request.action) {
+    case tt::domain::MemoryManagementAction::ALLOCATE: {
+      pipelineManager->push_request(makeAllocateRequest(nextRequestID++));
+      break;
+    }
+    case tt::domain::MemoryManagementAction::DEALLOCATE: {
+      pipelineManager->push_request(makeCancelRequest(request.slot_id));
+      break;
+    }
+    default: {
+      TT_LOG_ERROR("SpPipelineRunner: Unknown memory management action");
+      return;
+    }
+  }
+}
+
+void SpPipelineRunner::handleResponse(const pm::PMResponse& response) {
+  auto it = allocating.find(response.request_id);
+  if (it == allocating.end()) {
     TT_LOG_ERROR("SpPipelineRunner: Response for unknown request");
     return;
   }
   auto seq = std::move(it->second);
-  requestToSequence.erase(it);
+  allocating.erase(it);
   if (response.error_code != 0) {
     TT_LOG_ERROR(
         "SpPipelineRunner: Response for request {} returned error code {}",
@@ -256,13 +258,12 @@ void SpPipelineRunner::handleResponse(pm::PMResponse& response) {
   }
   pipelineManager->push_request(makeSubmitRequest(response.slot_id, *seq));
   seq->setKVCacheAddress(response.slot_id);
-  slotToSequence[response.slot_id] = std::move(seq);
-  ++inFlightCount;
+  running[response.slot_id] = std::move(seq);
 }
 
-void SpPipelineRunner::handleOutput(pm::OutputMessage& output) {
-  auto it = slotToSequence.find(output.slot_id);
-  if (it == slotToSequence.end()) {
+void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
+  auto it = running.find(output.slot_id);
+  if (it == running.end()) {
     TT_LOG_ERROR("SpPipelineRunner: Output for unknown slot");
     return;
   }
@@ -270,14 +271,11 @@ void SpPipelineRunner::handleOutput(pm::OutputMessage& output) {
   seq.appendToken(output.token_id);
   bool finished = output.is_complete || stopTokenIds.count(output.token_id);
   pushToken(seq.taskId, output.token_id, finished);
-  if (finished) {
-    // We need a mechanism here for when to evict in the future, we dont support
-    // multi-turn conversations yet because we cancel the slot after the first
-    // prompt.
-    pipelineManager->push_request(makeCancelRequest(output.slot_id));
-    slotToSequence.erase(it);
-    --inFlightCount;
-  }
+}
+
+void SpPipelineRunner::evictSlot(uint32_t slotId) {
+  pipelineManager->push_request(makeCancelRequest(slotId));
+  running.erase(slotId);
 }
 
 void SpPipelineRunner::handleRequest(
@@ -286,11 +284,11 @@ void SpPipelineRunner::handleRequest(
       slotId != llm_engine::INVALID_KV_CACHE_ADDRESS) {
     auto slot = static_cast<uint32_t>(slotId);
     pipelineManager->push_request(makeContinueRequest(slot, *request));
-    slotToSequence[slot] = std::move(request);
+    running[slot] = std::move(request);
     return;
   }
   pipelineManager->push_request(makeAllocateRequest(nextRequestID));
-  requestToSequence[nextRequestID++] = std::move(request);
+  allocating[nextRequestID++] = std::move(request);
 }
 
 }  // namespace tt::runners

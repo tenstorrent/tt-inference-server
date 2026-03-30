@@ -30,6 +30,7 @@ struct KvDestination {
 };
 
 struct ManageMemoryTask {
+  uint32_t slotId = -1;
   TaskID task_id;
   MemoryManagementAction action{MemoryManagementAction::ALLOCATE};
   std::int32_t input_seq_len{0};
