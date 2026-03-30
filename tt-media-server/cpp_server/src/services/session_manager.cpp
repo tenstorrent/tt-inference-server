@@ -3,6 +3,8 @@
 
 #include "services/session_manager.hpp"
 
+#include <algorithm>
+
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
 
@@ -92,42 +94,63 @@ void SessionManager::evictOldSessions() {
 
   size_t maxSessions = tt::config::maxSessionsCount();
   unsigned evictionRate = tt::config::sessionEvictionRate();
+  size_t evictionCount = tt::config::sessionEvictionCount();
 
   size_t activeCount = sessions_.size();
 
   // Calculate if we've exceeded the eviction threshold
   // (activeCount / maxSessions) * 100 > evictionRate
   if (activeCount * 100 > maxSessions * evictionRate) {
-    auto oldestSessionId = findOldestSession();
-    if (oldestSessionId.has_value()) {
-      closeSession(oldestSessionId.value());
+    // Find and evict the oldest sessions
+    auto oldestSessions = findOldestSessions(evictionCount);
+
+    if (!oldestSessions.empty()) {
+      for (const auto& sessionId : oldestSessions) {
+        sessions_.erase(sessionId);
+      }
+
       TT_LOG_INFO(
-          "[SessionManager] Evicted oldest session: {} (active: {}/{}, "
+          "[SessionManager] Evicted {} oldest session(s) (active: {}/{}, "
           "threshold: {}%)",
-          oldestSessionId.value(), activeCount, maxSessions, evictionRate);
+          oldestSessions.size(), activeCount, maxSessions, evictionRate);
     }
   }
 }
 
-std::optional<std::string> SessionManager::findOldestSession() const {
+std::vector<std::string> SessionManager::findOldestSessions(size_t count) const {
   // Note: mutex_ is already locked by the caller
 
   if (sessions_.empty()) {
-    return std::nullopt;
+    return {};
   }
 
-  auto oldestIt = sessions_.begin();
-  auto oldestTime = oldestIt->second.getLastActivityTime();
+  // Create a vector of (sessionId, activityTime) pairs
+  std::vector<std::pair<std::string, std::chrono::system_clock::time_point>> sessionTimes;
+  sessionTimes.reserve(sessions_.size());
 
-  for (auto it = sessions_.begin(); it != sessions_.end(); ++it) {
-    auto activityTime = it->second.getLastActivityTime();
-    if (activityTime < oldestTime) {
-      oldestTime = activityTime;
-      oldestIt = it;
-    }
+  for (const auto& [sessionId, session] : sessions_) {
+    sessionTimes.emplace_back(sessionId, session.getLastActivityTime());
   }
 
-  return oldestIt->first;
+  // Sort by activity time (oldest first)
+  std::partial_sort(
+      sessionTimes.begin(),
+      sessionTimes.begin() + std::min(count, sessionTimes.size()),
+      sessionTimes.end(),
+      [](const auto& a, const auto& b) {
+        return a.second < b.second;
+      });
+
+  // Extract session IDs
+  std::vector<std::string> result;
+  size_t numToEvict = std::min(count, sessionTimes.size());
+  result.reserve(numToEvict);
+
+  for (size_t i = 0; i < numToEvict; ++i) {
+    result.push_back(sessionTimes[i].first);
+  }
+
+  return result;
 }
 
 }  // namespace tt::services

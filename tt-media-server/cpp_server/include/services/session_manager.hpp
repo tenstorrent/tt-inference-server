@@ -74,10 +74,11 @@ class SessionManager {
   void evictOldSessions();
 
   /**
-   * Find the oldest session (by last activity time).
-   * @return Optional session ID of the oldest session
+   * Find the N oldest sessions (by last activity time).
+   * @param count Number of oldest sessions to find
+   * @return Vector of session IDs, sorted from oldest to newest
    */
-  std::optional<std::string> findOldestSession() const;
+  std::vector<std::string> findOldestSessions(size_t count) const;
 
   mutable std::mutex mutex_;
   std::unordered_map<std::string, domain::Session> sessions_;

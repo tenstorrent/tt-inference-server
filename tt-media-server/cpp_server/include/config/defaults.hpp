@@ -30,5 +30,6 @@ constexpr size_t MAX_ACCUMULATED_TOKENS = 5;
 constexpr size_t MAX_IN_FLIGHT_COUNT = 32;
 constexpr size_t MAX_SESSIONS_COUNT = 64;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
+constexpr size_t SESSION_EVICTION_COUNT = 10;
 
 }  // namespace tt::config::defaults

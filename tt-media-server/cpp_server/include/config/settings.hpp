@@ -101,6 +101,10 @@ size_t maxSessionsCount();
  * defaults::SESSION_EVICTION_RATE. */
 unsigned sessionEvictionRate();
 
+/** Number of sessions to evict at once from SESSION_EVICTION_COUNT. Default:
+ * defaults::SESSION_EVICTION_COUNT. */
+size_t sessionEvictionCount();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();

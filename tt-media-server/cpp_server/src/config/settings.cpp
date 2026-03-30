@@ -237,4 +237,9 @@ unsigned sessionEvictionRate() {
       envUlong("SESSION_EVICTION_RATE", defaults::SESSION_EVICTION_RATE));
 }
 
+size_t sessionEvictionCount() {
+  return static_cast<size_t>(
+      envUlong("SESSION_EVICTION_COUNT", defaults::SESSION_EVICTION_COUNT));
+}
+
 }  // namespace tt::config
