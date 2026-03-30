@@ -6,8 +6,10 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <memory>
 #include <thread>
 
+#include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 
@@ -22,7 +24,14 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       taskQueue(taskQueue),
       decodeQueue(config.max_in_flight_count),
       maxInFlightCount(config.max_in_flight_count * 30) {
-  memoryThread = std::thread([this] { memoryLoop(); });
+  if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY) {
+    memoryManager = std::make_unique<services::MemoryManager>();
+    memoryRequests = std::make_unique<ipc::MemoryRequestQueue>(
+        ipc::k_memory_request_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+    memoryResults = std::make_unique<ipc::MemoryResultQueue>(
+        ipc::k_memory_result_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+    memoryThread = std::thread([this] { memoryLoop(); });
+  }
 
   auto decodeCb = [this](const llm_engine::TokenResult& result) {
     while (!decodeQueue.push(result)) {
@@ -110,17 +119,17 @@ void SpPipelineRunner::memoryLoop() {
 
   while (!stopped.load(std::memory_order_relaxed)) {
     if (!retryQueue.empty()) {
-      auto result = memoryManager.handle_task(retryQueue.front());
+      auto result = memoryManager->handle_task(retryQueue.front());
       if (result.status != domain::ManageMemoryStatus::WAITING) {
-        memoryResults.push(result);
+        memoryResults->push(result);
         retryQueue.erase(retryQueue.begin());
       }
-    } else if (memoryRequests.tryPop(task)) {
-      auto result = memoryManager.handle_task(task);
+    } else if (memoryRequests->tryPop(task)) {
+      auto result = memoryManager->handle_task(task);
       if (result.status == domain::ManageMemoryStatus::WAITING) {
         retryQueue.push_back(task);
       } else {
-        memoryResults.push(result);
+        memoryResults->push(result);
       }
     } else {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));

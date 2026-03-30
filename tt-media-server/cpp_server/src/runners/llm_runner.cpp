@@ -19,9 +19,16 @@ LLMRunner::LLMRunner(const Config& config,
     : config_(config), result_queue_(resultQueue) {
   scheduler_ =
       makeScheduler(config_, taskQueue, tt::config::maxInFlightCount());
-  memoryManager =
-      std::make_unique<services::MemoryManager>(scheduler_->blockManager());
-  memoryThread = std::thread([this] { memoryLoop(); });
+
+  if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY) {
+    memoryManager =
+        std::make_unique<services::MemoryManager>(scheduler_->blockManager());
+    memoryRequests = std::make_unique<ipc::MemoryRequestQueue>(
+        ipc::k_memory_request_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+    memoryResults = std::make_unique<ipc::MemoryResultQueue>(
+        ipc::k_memory_result_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+    memoryThread = std::thread([this] { memoryLoop(); });
+  }
 
   auto decodeCb = [this](const TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");
@@ -110,15 +117,15 @@ void LLMRunner::memoryLoop() {
     if (!retryQueue.empty()) {
       auto result = memoryManager->handle_task(retryQueue.front());
       if (result.status != domain::ManageMemoryStatus::WAITING) {
-        memoryResults.push(result);
+        memoryResults->push(result);
         retryQueue.erase(retryQueue.begin());
       }
-    } else if (memoryRequests.tryPop(task)) {
+    } else if (memoryRequests->tryPop(task)) {
       auto result = memoryManager->handle_task(task);
       if (result.status == domain::ManageMemoryStatus::WAITING) {
         retryQueue.push_back(task);
       } else {
-        memoryResults.push(result);
+        memoryResults->push(result);
       }
     } else {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));

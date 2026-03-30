@@ -40,10 +40,8 @@ class LLMRunner : public IRunner {
   std::atomic<bool> stopped_{false};
 
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
-  ipc::MemoryRequestQueue memoryRequests{ipc::k_memory_request_queue_name,
-                                         ipc::MEMORY_QUEUE_CAPACITY};
-  ipc::MemoryResultQueue memoryResults{ipc::k_memory_result_queue_name,
-                                       ipc::MEMORY_QUEUE_CAPACITY};
+  std::unique_ptr<ipc::MemoryRequestQueue> memoryRequests;
+  std::unique_ptr<ipc::MemoryResultQueue> memoryResults;
   std::thread memoryThread;
 };
 
