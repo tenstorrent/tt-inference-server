@@ -214,7 +214,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "report_files",
-        nargs="+",
+        nargs="?",
         help="Path(s) to input parameter report JSON file(s)",
     )
     parser.add_argument(
