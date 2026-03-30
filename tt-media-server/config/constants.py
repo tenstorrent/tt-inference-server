@@ -271,7 +271,6 @@ class DatasetLoaders(Enum):
 class TrainingTrainers(Enum):
     LORA = "lora"
     SFT = "sft"
-    GRPO = "grpo"
 
 
 class ModelDisplayNames(Enum):

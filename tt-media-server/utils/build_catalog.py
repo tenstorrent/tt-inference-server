@@ -16,15 +16,14 @@ TRAINING_CATALOG_DATA = {
     "trainers": {
         TrainingTrainers.LORA: {"display_name": "LoRA", "supported": True},
         TrainingTrainers.SFT: {"display_name": "SFT", "supported": False},
-        TrainingTrainers.GRPO: {"display_name": "GRPO", "supported": False},
     },
     "optimizers": {
         TrainingOptimizers.ADAMW: {"display_name": "AdamW", "supported": True},
     },
     "clusters": [
         {
-            "id": "1xn150",
-            "display_name": "1× N150",
+            "id": "1xp150",
+            "display_name": "1× P150",
             "supported": True,
             "partition": None,
             "mesh_shape": [1, 1],
@@ -64,7 +63,7 @@ def _build_training_catalog():
     datasets = [
         {
             "id": loader.value,
-            "display_name": loader.value,
+            "display_name": loader.value.upper(),
             "supported": True,
         }
         for loader in AVAILABLE_DATASET_LOADERS
