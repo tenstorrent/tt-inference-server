@@ -9,6 +9,7 @@ from multiprocessing import Event
 from typing import Optional
 
 from transformers import AutoModelForCausalLM
+from transformers import AutoTokenizer
 import torch
 from tqdm import tqdm
 import torch_xla
@@ -16,13 +17,12 @@ import torch_xla.runtime as xr
 from peft import LoraConfig, get_peft_model, PeftModel
 
 
-from domain.training_request import TrainingRequest
+from domain.training_request import TrainingRequest, InferenceOnFineTunedGemmaRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
-from config.constants import SupportedModels
-
+from config.constants import SupportedModels, FINE_TUNING_STORE_BASE_MODELS_DIR
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
@@ -37,7 +37,26 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             self.model_name, use_cache=False
         )
 
-        self.logger.info("Loaded Gemma 1.1 2B model for lora fine-tuning.")
+        self.logger.info(f"Device {self.device_id}: Setting up Gemma Lora base model...")
+
+        self.base_model_path = os.path.join(FINE_TUNING_STORE_BASE_MODELS_DIR, self.model_name.replace("/", "--"))
+
+        if os.path.exists(self.base_model_path):
+            self.logger.info(f"Loading base model from local cache: {self.base_model_path}")
+            self.hf_model = AutoModelForCausalLM.from_pretrained(
+                self.base_model_path, use_cache=False
+            )
+        else:
+            self.logger.info(f"Downloading base model: {self.model_name}")
+            self.hf_model = AutoModelForCausalLM.from_pretrained(
+                self.model_name, use_cache=False
+            )
+            self.hf_model.save_pretrained(self.base_model_path, safe_serialization=False)
+            self.logger.info(f"Base model saved to {self.base_model_path}")
+
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.tokenizer.save_pretrained(self.base_model_path, safe_serialization=False)
+
         self.logger.info(
             f"Model parameters: {sum(p.numel() for p in self.hf_model.parameters())}"
         )
@@ -51,17 +70,24 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
         self.device = torch_xla.device()
 
+        self.logger.info("Gemma Lora training base model setup completed")
+
         return True
+    
+    def run(self, requests):
+        if len(requests) > 1:
+            self.logger.warning(
+                f"Batch processing not fully implemented. Processing only first of {len(requests)} requests"
+            )
+        # Get the first request
+        request = requests[0]
+        if isinstance(request, TrainingRequest):
+            return self._run_training(request)
+        elif isinstance(request, InferenceOnFineTunedGemmaRequest):
+            return self._run_inference(request)
 
     @log_execution_time("Gemma Lora training")
-    def run(self, training_requests: TrainingRequest) -> list:
-        if len(training_requests) > 1:
-            self.logger.warning(
-                f"Batch processing not fully implemented. Processing only first of {len(training_requests)} requests"
-            )
-
-        # Get the first request
-        request = training_requests[0]
+    def _run_training(self, request: TrainingRequest) -> list:
 
         if request._start_event:
             request._start_event.set()
@@ -108,8 +134,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         self._peft_model.to(eval(request.dtype))
         self._peft_model.to(self.device)
-
-        model_path = request._output_model_path
 
         # use torch compile
         self.model = torch.compile(
@@ -206,11 +230,11 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                             )
                         running_loss = 0.0
 
-                        torch.save(self.model.state_dict(), model_path)
+                        self._peft_model.save_pretrained(request._output_model_path, safe_serialization=False)
                         self.logger.info("Model checkpoint saved.")
 
                     if do_validation:
-                        avg_val_loss = self.run_validation(
+                        avg_val_loss = self._run_validation(
                             cancel_event=request._cancel_event
                         )
                         if avg_val_loss is not None:
@@ -233,7 +257,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                     if request._cancel_event and request._cancel_event.is_set():
                         self.logger.info(
                             f"Training gemma lora runner: Cancellation requested at step {global_step}, stopping training. "
-                            f"Model checkpoint saved: {model_path}"
+                            f"Model checkpoint saved: {request._output_model_path}"
                         )
                         break
 
@@ -259,9 +283,9 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 f"Device {self.device_id}: Training completed - memory cleaned up"
             )
 
-        return [model_path]
+        return [request._output_model_path]
 
-    def run_validation(self, cancel_event: Optional[Event]):
+    def _run_validation(self, cancel_event: Optional[Event]):
         self.logger.info("\n=== Starting Validation ===")
         self.model.eval()
         total_val_loss = 0.0
@@ -301,3 +325,27 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         avg_val_loss = total_val_loss / num_val_batches if num_val_batches > 0 else 0.0
         return avg_val_loss
+    
+    def _run_inference(self, request: InferenceOnFineTunedGemmaRequest) -> list:
+        if hasattr(self, "_peft_model") and isinstance(self._peft_model, PeftModel):
+            self.hf_model = self._peft_model.unload()
+            if hasattr(self.hf_model, "peft_config"):
+                delattr(self.hf_model, "peft_config")
+
+        peft_model = PeftModel.from_pretrained(self.hf_model, request._adapter_path)
+        peft_model.to(eval(request.dtype))
+        peft_model.to(self.device)
+        peft_model.eval()
+
+        inputs = self.tokenizer(request.prompt, return_tensors="pt").to(self.device)
+
+        with torch.no_grad():
+            outputs = peft_model.generate(
+                **inputs,
+                max_new_tokens=request.max_new_tokens,
+                temperature=request.temperature,
+                top_k=request.top_k,
+            )
+
+        generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        return [generated_text]

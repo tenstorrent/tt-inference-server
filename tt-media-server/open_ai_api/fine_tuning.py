@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 from config.constants import JobTypes
-from domain.training_request import TrainingRequest
+from domain.training_request import TrainingRequest, InferenceOnFineTunedGemmaRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import JSONResponse
 from model_services.base_job_service import BaseJobService
@@ -162,29 +162,22 @@ async def cancel_fine_tuning_job(
     return JSONResponse(content=status)
 
 
-@router.get("/jobs/{job_id}/checkpoints")
-async def list_fine_tuning_checkpoints(
+@router.post("/jobs/{job_id}/inference")
+async def run_inference_on_fine_tuned_model(
     job_id: str,
+    request: InferenceOnFineTunedGemmaRequest,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
-    """
-    List checkpoints for a fine-tuning job.
+    # Look up the job to get the model_path
+    job_data = service.get_job_metadata(job_id)
+    if not job_data:
+        raise HTTPException(404, "Job not found")
+    if job_data.get("status") not in ["completed", "cancelled"]:
+        raise HTTPException(400, "Training job not yet completed or cancelled")
 
-    Returns:
-        JSONResponse: List of model checkpoints.
+    request._adapter_path = service.get_job_result_path(job_id)
 
-    Raises:
-        HTTPException: If job not found.
-    """
-    try:
-        # TODO: Implement file retrieval instead of result path, and discuss if we return
-        # all checkpoints or just the last model weights state which is saved to result_path
-        result_path = service.get_job_result_path(job_id)
-        return JSONResponse(
-            content={"object": "string", "data": result_path, "has_more": False}
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get checkpoints: {str(e)}"
-        )
+    # Process through the normal scheduler pipeline
+    result = await service.process_request(request)
+    return JSONResponse(content={"output": result})

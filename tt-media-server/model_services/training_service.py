@@ -8,6 +8,7 @@ from model_services.base_job_service import BaseJobService
 from config.constants import JobTypes, ModelNames
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
+from config.constants import FINE_TUNING_STORE_ADAPTERS_DIR
 
 
 class TrainingService(BaseJobService):
@@ -17,8 +18,9 @@ class TrainingService(BaseJobService):
         super().__init__()
 
     async def create_job(self, job_type: JobTypes, request: TrainingRequest) -> dict:
-        os.makedirs("models_save", exist_ok=True)
-        request._output_model_path = f"models_save/{request._task_id}.pt"
+        adapter_path = os.path.join(FINE_TUNING_STORE_ADAPTERS_DIR, request._task_id)
+        os.makedirs(adapter_path, exist_ok=True)
+        request._output_model_path = adapter_path
         self.logger.info(f"Generated output path: {request._output_model_path}")
 
         request._start_event = self._manager.Event()
