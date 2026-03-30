@@ -71,16 +71,14 @@ _test_config_list = [
         tasks=[
             TestTask(
                 task_name="vllm_chat_completions",
-                test_path=Path(
-                    "server_tests/test_cases/test_vllm_chat_completions.py"
-                ),
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
                 test_args=("s", "v"),
             ),
             TestTask(
                 task_name="vllm_responses",
                 test_path=Path("server_tests/test_cases/test_vllm_responses.py"),
                 test_args=("s", "v"),
-            )
+            ),
         ],
     ),
 ]
