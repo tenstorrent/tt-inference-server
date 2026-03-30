@@ -23,12 +23,6 @@ enum class KvMemoryLayout : std::uint8_t {
   PerLayer = 1,
 };
 
-/** One KV slot for paged decode (per KV block), not per model layer. */
-struct KvDestination {
-  std::uint64_t dram_address{};
-  std::uint64_t semaphore_address{};
-};
-
 struct ManageMemoryTask {
   TaskID task_id;
   MemoryManagementAction action{MemoryManagementAction::ALLOCATE};
@@ -72,20 +66,17 @@ enum class ManageMemoryStatus : std::uint8_t {
 struct ManageMemoryResult {
   TaskID task_id;
   ManageMemoryStatus status{ManageMemoryStatus::FAILURE};
-  std::vector<KvDestination> memory_locations;
+  std::vector<std::int32_t> slot_ids;
 
   void serialize(std::ostream& os) const {
     auto tid_buf = task_id.ipcSerialize();
     os.write(tid_buf.data(), static_cast<std::streamsize>(tid_buf.size()));
     auto s = static_cast<std::uint8_t>(status);
     os.write(reinterpret_cast<const char*>(&s), sizeof(s));
-    std::uint32_t n = static_cast<std::uint32_t>(memory_locations.size());
+    std::uint32_t n = static_cast<std::uint32_t>(slot_ids.size());
     os.write(reinterpret_cast<const char*>(&n), sizeof(n));
-    for (const auto& loc : memory_locations) {
-      os.write(reinterpret_cast<const char*>(&loc.dram_address),
-               sizeof(loc.dram_address));
-      os.write(reinterpret_cast<const char*>(&loc.semaphore_address),
-               sizeof(loc.semaphore_address));
+    for (std::int32_t id : slot_ids) {
+      os.write(reinterpret_cast<const char*>(&id), sizeof(id));
     }
   }
 
@@ -99,13 +90,10 @@ struct ManageMemoryResult {
     result.status = static_cast<ManageMemoryStatus>(s);
     std::uint32_t n = 0;
     is.read(reinterpret_cast<char*>(&n), sizeof(n));
-    result.memory_locations.resize(n);
+    result.slot_ids.resize(n);
     for (std::uint32_t i = 0; i < n; ++i) {
-      is.read(reinterpret_cast<char*>(&result.memory_locations[i].dram_address),
-              sizeof(std::uint64_t));
-      is.read(reinterpret_cast<char*>(
-                  &result.memory_locations[i].semaphore_address),
-              sizeof(std::uint64_t));
+      is.read(reinterpret_cast<char*>(&result.slot_ids[i]),
+              sizeof(std::int32_t));
     }
     return result;
   }

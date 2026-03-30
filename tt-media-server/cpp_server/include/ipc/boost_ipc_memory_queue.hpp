@@ -42,11 +42,11 @@ class BoostIpcMemoryQueue {
   BoostIpcMemoryQueue(const BoostIpcMemoryQueue&) = delete;
   BoostIpcMemoryQueue& operator=(const BoostIpcMemoryQueue&) = delete;
 
-  void push(const MsgType& msg) {
+  void push(const MsgType& msg, unsigned int priority = 0) {
     std::lock_guard<std::mutex> lock(pushMutex);
     bi_ipc::obufferstream stream(sendBuffer.data(), sendBuffer.size());
     msg.serialize(stream);
-    queue->send(sendBuffer.data(), stream.tellp(), /*priority=*/0);
+    queue->send(sendBuffer.data(), stream.tellp(), priority);
   }
 
   bool tryPop(MsgType& out) {

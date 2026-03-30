@@ -111,19 +111,12 @@ void LLMRunner::stop() { stopped_.store(true, std::memory_order_relaxed); }
 
 void LLMRunner::memoryLoop() {
   domain::ManageMemoryTask task{};
-  std::vector<domain::ManageMemoryTask> retryQueue;
 
   while (!stopped_.load(std::memory_order_relaxed)) {
-    if (!retryQueue.empty()) {
-      auto result = memoryManager->handle_task(retryQueue.front());
-      if (result.status != domain::ManageMemoryStatus::WAITING) {
-        memoryResults->push(result);
-        retryQueue.erase(retryQueue.begin());
-      }
-    } else if (memoryRequests->tryPop(task)) {
+    if (memoryRequests->tryPop(task)) {
       auto result = memoryManager->handle_task(task);
       if (result.status == domain::ManageMemoryStatus::WAITING) {
-        retryQueue.push_back(task);
+        memoryRequests->push(task, /*priority=*/1);
       } else {
         memoryResults->push(result);
       }

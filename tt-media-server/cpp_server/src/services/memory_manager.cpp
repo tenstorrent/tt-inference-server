@@ -6,11 +6,10 @@
 #include <utility>
 
 #include "runners/llm_runner/block_manager.hpp"
+#include "runners/llm_runner/sequence.hpp"
 
 namespace tt::services {
 
-using tt::domain::KvDestination;
-using tt::domain::KvMemoryLayout;
 using tt::domain::ManageMemoryResult;
 using tt::domain::ManageMemoryStatus;
 using tt::domain::ManageMemoryTask;
@@ -20,10 +19,10 @@ namespace {
 
 ManageMemoryResult makeResult(const ManageMemoryTask& task,
                               ManageMemoryStatus status,
-                              std::vector<KvDestination> locations = {}) {
+                              std::vector<std::int32_t> slotIds = {}) {
   return ManageMemoryResult{.task_id = task.task_id,
                             .status = status,
-                            .memory_locations = std::move(locations)};
+                            .slot_ids = std::move(slotIds)};
 }
 
 }  // namespace
@@ -31,45 +30,33 @@ ManageMemoryResult makeResult(const ManageMemoryTask& task,
 MemoryManager::MemoryManager(llm_engine::BlockManager& bm)
     : blockManager(&bm) {}
 
-ManageMemoryStatus MemoryManager::allocateKv(
-    std::int32_t inputSeqLen, std::vector<int>& outBlockIds,
-    std::vector<KvDestination>& outLocations) {
+ManageMemoryStatus MemoryManager::allocateKv(const ManageMemoryTask& task,
+                                             std::vector<int>& outSlotIds) {
   if (!blockManager) {
     return ManageMemoryStatus::SUCCESS;
   }
 
-  int blkSize = blockManager->blockSize();
-  size_t numBlocks =
-      (static_cast<size_t>(inputSeqLen) + static_cast<size_t>(blkSize) - 1) /
-      static_cast<size_t>(blkSize);
+  std::vector<int64_t> placeholderTokens(
+      static_cast<size_t>(task.input_seq_len), 0);
+  llm_engine::Sequence seq(task.task_id, blockManager->blockSize(),
+                           std::move(placeholderTokens));
 
-  if (static_cast<size_t>(blockManager->numFreeBlocks()) < numBlocks) {
+  if (!blockManager->allocate(seq)) {
     return ManageMemoryStatus::WAITING;
   }
 
-  const auto& freeIds = blockManager->freeBlockIds();
-  std::vector<int> picked(
-      freeIds.begin(),
-      freeIds.begin() + static_cast<std::ptrdiff_t>(numBlocks));
-
-  outBlockIds.reserve(numBlocks);
-  outLocations.reserve(numBlocks);
-  for (int blockId : picked) {
-    blockManager->claimBlock(blockId);
-    outBlockIds.push_back(blockId);
-    // TODO: map blockId to actual device DRAM address
-    outLocations.push_back(KvDestination{static_cast<uint64_t>(blockId), 0});
-  }
+  outSlotIds = std::move(seq.blockTable);
   return ManageMemoryStatus::SUCCESS;
 }
 
-void MemoryManager::deallocateKv(const std::vector<int>& ids) {
+void MemoryManager::deallocateKv(const domain::TaskID& taskId,
+                                 std::vector<int> slotIds) {
   if (!blockManager) {
     return;
   }
-  for (int blockId : ids) {
-    blockManager->releaseBlock(blockId);
-  }
+  llm_engine::Sequence seq(taskId, blockManager->blockSize(), {});
+  seq.blockTable = std::move(slotIds);
+  blockManager->deallocate(seq);
 }
 
 ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
@@ -82,38 +69,28 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
       if (reservations.contains(task.task_id.id)) {
         return makeResult(task, ManageMemoryStatus::FAILURE);
       }
-      if (task.memory_layout == KvMemoryLayout::PerLayer) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
       if (task.input_seq_len < 0) {
         return makeResult(task, ManageMemoryStatus::FAILURE);
       }
 
-      std::vector<int> blkIds;
-      std::vector<KvDestination> locations;
-      auto status = allocateKv(task.input_seq_len, blkIds, locations);
+      std::vector<int> slotIds;
+      auto status = allocateKv(task, slotIds);
       if (status != ManageMemoryStatus::SUCCESS) {
         return makeResult(task, status);
       }
 
-      reservations.insert(task.task_id.id,
-                          Reservation{.layout = KvMemoryLayout::Paged,
-                                      .blockIds = blkIds,
-                                      .locations = locations});
+      std::vector<std::int32_t> resultIds(slotIds.begin(), slotIds.end());
+      reservations.insert(task.task_id.id, Reservation{.slotIds = slotIds});
       return makeResult(task, ManageMemoryStatus::SUCCESS,
-                        std::move(locations));
+                        std::move(resultIds));
     }
     case MemoryManagementAction::DEALLOCATE: {
       auto reservation = reservations.take(task.task_id.id);
       if (!reservation.has_value()) {
         return makeResult(task, ManageMemoryStatus::FAILURE);
       }
-      if (reservation->layout != task.memory_layout) {
-        reservations.insert(task.task_id.id, std::move(*reservation));
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
 
-      deallocateKv(reservation->blockIds);
+      deallocateKv(task.task_id, std::move(reservation->slotIds));
       return makeResult(task, ManageMemoryStatus::SUCCESS);
     }
     default:

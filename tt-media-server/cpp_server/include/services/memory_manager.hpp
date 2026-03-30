@@ -29,15 +29,12 @@ class MemoryManager {
 
  private:
   struct Reservation {
-    domain::KvMemoryLayout layout{domain::KvMemoryLayout::Paged};
-    std::vector<int> blockIds;
-    std::vector<domain::KvDestination> locations;
+    std::vector<int> slotIds;
   };
 
-  domain::ManageMemoryStatus allocateKv(
-      std::int32_t inputSeqLen, std::vector<int>& outBlockIds,
-      std::vector<domain::KvDestination>& outLocations);
-  void deallocateKv(const std::vector<int>& blockIds);
+  domain::ManageMemoryStatus allocateKv(const domain::ManageMemoryTask& task,
+                                        std::vector<int>& outSlotIds);
+  void deallocateKv(const domain::TaskID& taskId, std::vector<int> slotIds);
 
   llm_engine::BlockManager* blockManager = nullptr;
   ConcurrentMap<std::string, Reservation> reservations;
