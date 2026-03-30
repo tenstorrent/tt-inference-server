@@ -8,7 +8,7 @@
 
 namespace tt::domain {
 
-Session::Session(int slotId)
+Session::Session(uint32_t slotId)
     : slot_id_(slotId), last_activity_time_(std::chrono::system_clock::now()) {
   session_id_ = generateUuid();
 }

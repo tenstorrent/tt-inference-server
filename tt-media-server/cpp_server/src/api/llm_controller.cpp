@@ -534,7 +534,7 @@ void LLMController::createSession(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   try {
-    std::optional<int> slotId;
+    std::optional<uint32_t> slotId;
 
     // Try to parse request body for optional slot_id
     if (req->getBody().length() > 0) {
@@ -544,8 +544,9 @@ void LLMController::createSession(
       std::string errs;
 
       if (Json::parseFromStream(builder, bodyStream, &requestBody, &errs)) {
-        if (requestBody.isMember("slot_id") && requestBody["slot_id"].isInt()) {
-          slotId = requestBody["slot_id"].asInt();
+        if (requestBody.isMember("slot_id") &&
+            requestBody["slot_id"].isUInt()) {
+          slotId = requestBody["slot_id"].asUInt();
         }
       }
     }
@@ -588,9 +589,9 @@ void LLMController::getSlotId(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     const std::string& sessionId) const {
-  int slotId = sessionManager->getSlotIdBySessionId(sessionId);
+  uint32_t slotId = sessionManager->getSlotIdBySessionId(sessionId);
 
-  if (slotId == -1) {
+  if (slotId == std::numeric_limits<uint32_t>::max()) {
     // Check if session exists at all
     auto session = sessionManager->getSession(sessionId);
     if (!session.has_value()) {

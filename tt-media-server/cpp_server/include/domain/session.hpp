@@ -6,6 +6,8 @@
 #include <json/json.h>
 
 #include <chrono>
+#include <cstdint>
+#include <limits>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -20,9 +22,9 @@ class Session {
  public:
   /**
    * Create a new session with a generated UUID.
-   * @param slotId Optional slot ID (-1 means unassigned)
+   * @param slotId Optional slot ID (max uint32_t means unassigned)
    */
-  explicit Session(int slotId = -1);
+  explicit Session(uint32_t slotId = std::numeric_limits<uint32_t>::max());
 
   /**
    * Get the session ID (UUID).
@@ -31,19 +33,21 @@ class Session {
 
   /**
    * Get the assigned slot ID.
-   * @return Slot ID, or -1 if unassigned
+   * @return Slot ID, or max uint32_t if unassigned
    */
-  int getSlotId() const { return slot_id_; }
+  uint32_t getSlotId() const { return slot_id_; }
 
   /**
    * Assign a slot ID to this session.
    */
-  void setSlotId(int slotId) { slot_id_ = slotId; }
+  void setSlotId(uint32_t slotId) { slot_id_ = slotId; }
 
   /**
    * Check if a slot is assigned.
    */
-  bool hasSlot() const { return slot_id_ != -1; }
+  bool hasSlot() const {
+    return slot_id_ != std::numeric_limits<uint32_t>::max();
+  }
 
   /**
    * Get the last activity time.
@@ -71,7 +75,7 @@ class Session {
 
  private:
   std::string session_id_;
-  int slot_id_;
+  uint32_t slot_id_;
   std::chrono::system_clock::time_point last_activity_time_;
 
   /**

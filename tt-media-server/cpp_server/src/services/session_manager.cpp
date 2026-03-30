@@ -4,19 +4,20 @@
 #include "services/session_manager.hpp"
 
 #include <algorithm>
+#include <limits>
 
 #include "config/settings.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
 
-domain::Session SessionManager::createSession(std::optional<int> slotId) {
+domain::Session SessionManager::createSession(std::optional<uint32_t> slotId) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   // Check if we need to evict old sessions
   evictOldSessions();
 
-  int slot = slotId.value_or(-1);
+  uint32_t slot = slotId.value_or(std::numeric_limits<uint32_t>::max());
   domain::Session session(slot);
 
   std::string sessionId = session.getSessionId();
@@ -46,7 +47,8 @@ bool SessionManager::closeSessionLocked(const std::string& sessionId) {
   return true;
 }
 
-bool SessionManager::assignSlotId(const std::string& sessionId, int slotId) {
+bool SessionManager::assignSlotId(const std::string& sessionId,
+                                  uint32_t slotId) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   auto it = sessions_.find(sessionId);
@@ -62,12 +64,13 @@ bool SessionManager::assignSlotId(const std::string& sessionId, int slotId) {
   return true;
 }
 
-int SessionManager::getSlotIdBySessionId(const std::string& sessionId) const {
+uint32_t SessionManager::getSlotIdBySessionId(
+    const std::string& sessionId) const {
   std::lock_guard<std::mutex> lock(mutex_);
 
   auto it = sessions_.find(sessionId);
   if (it == sessions_.end()) {
-    return -1;
+    return std::numeric_limits<uint32_t>::max();
   }
 
   // Update activity time (mutable access through const_cast for this use case)

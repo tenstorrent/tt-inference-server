@@ -27,10 +27,10 @@ class SessionManager {
 
   /**
    * Create a new session.
-   * @param slotId Optional slot ID to assign (-1 means unassigned)
+   * @param slotId Optional slot ID to assign (max uint32_t means unassigned)
    * @return The created session
    */
-  domain::Session createSession(std::optional<int> slotId = std::nullopt);
+  domain::Session createSession(std::optional<uint32_t> slotId = std::nullopt);
 
   /**
    * Close a session and remove it from the manager.
@@ -45,14 +45,15 @@ class SessionManager {
    * @param slotId The slot ID to assign
    * @return true if session was found and slot assigned, false otherwise
    */
-  bool assignSlotId(const std::string& sessionId, int slotId);
+  bool assignSlotId(const std::string& sessionId, uint32_t slotId);
 
   /**
    * Get the slot ID for a session.
    * @param sessionId The session ID
-   * @return The slot ID, or -1 if session not found or no slot assigned
+   * @return The slot ID, or max uint32_t if session not found or no slot
+   * assigned
    */
-  int getSlotIdBySessionId(const std::string& sessionId) const;
+  uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
 
   /**
    * Get a session by ID.
