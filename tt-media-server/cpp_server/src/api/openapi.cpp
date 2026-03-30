@@ -118,6 +118,10 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     completionsTag["description"] =
         "OpenAI-compatible text completion endpoints";
     tags.append(completionsTag);
+    Json::Value sessionsTag;
+    sessionsTag["name"] = "Sessions";
+    sessionsTag["description"] = "Session management for slot assignments";
+    tags.append(sessionsTag);
     Json::Value healthTag;
     healthTag["name"] = "Health";
     healthTag["description"] = "Server health and liveness endpoints";
@@ -136,6 +140,15 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
 
     // POST /v1/chat/completions
     paths["/v1/chat/completions"]["post"] = buildChatCompletionsEndpoint();
+
+    // POST /v1/sessions
+    paths["/v1/sessions"]["post"] = buildCreateSessionEndpoint();
+
+    // DELETE /v1/sessions/{session_id}
+    paths["/v1/sessions/{session_id}"]["delete"] = buildCloseSessionEndpoint();
+
+    // GET /v1/sessions/{session_id}/slot
+    paths["/v1/sessions/{session_id}/slot"]["get"] = buildGetSlotIdEndpoint();
 
     // GET /health
     paths["/health"]["get"] = buildHealthEndpoint();
@@ -338,6 +351,152 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
 
     endpoint["responses"] = responses;
 
+    return endpoint;
+  }
+
+  Json::Value buildCreateSessionEndpoint() {
+    Json::Value endpoint;
+    endpoint["tags"].append("Sessions");
+    endpoint["summary"] = "Create a new session";
+    endpoint["description"] =
+        "Create a new session with optional slot assignment";
+    endpoint["operationId"] = "createSession";
+
+    // Security requirement - Bearer token
+    Json::Value security(Json::arrayValue);
+    Json::Value bearerAuth;
+    bearerAuth["BearerAuth"] = Json::Value(Json::arrayValue);
+    security.append(bearerAuth);
+    endpoint["security"] = security;
+
+    // Request body
+    Json::Value requestBody;
+    requestBody["description"] = "Optional slot ID to assign";
+    Json::Value schema;
+    schema["type"] = "object";
+    schema["properties"]["slot_id"]["type"] = "integer";
+    schema["properties"]["slot_id"]["description"] =
+        "Slot ID to assign (-1 means unassigned)";
+    requestBody["content"]["application/json"]["schema"] = schema;
+    endpoint["requestBody"] = requestBody;
+
+    // Responses
+    Json::Value responses;
+    Json::Value resp201;
+    resp201["description"] = "Session created successfully";
+    Json::Value respSchema;
+    respSchema["type"] = "object";
+    respSchema["properties"]["session_id"]["type"] = "string";
+    respSchema["properties"]["session_id"]["format"] = "uuid";
+    respSchema["properties"]["slot_id"]["type"] = "integer";
+    resp201["content"]["application/json"]["schema"] = respSchema;
+    responses["201"] = resp201;
+
+    Json::Value resp500;
+    resp500["description"] = "Internal server error";
+    resp500["content"]["application/json"]["schema"]["$ref"] =
+        "#/components/schemas/Error";
+    responses["500"] = resp500;
+
+    endpoint["responses"] = responses;
+    return endpoint;
+  }
+
+  Json::Value buildCloseSessionEndpoint() {
+    Json::Value endpoint;
+    endpoint["tags"].append("Sessions");
+    endpoint["summary"] = "Close a session";
+    endpoint["description"] = "Close an existing session by ID";
+    endpoint["operationId"] = "closeSession";
+
+    // Security requirement - Bearer token
+    Json::Value security(Json::arrayValue);
+    Json::Value bearerAuth;
+    bearerAuth["BearerAuth"] = Json::Value(Json::arrayValue);
+    security.append(bearerAuth);
+    endpoint["security"] = security;
+
+    // Path parameters
+    Json::Value parameters(Json::arrayValue);
+    Json::Value param;
+    param["name"] = "session_id";
+    param["in"] = "path";
+    param["required"] = true;
+    param["description"] = "The session ID to close";
+    param["schema"]["type"] = "string";
+    param["schema"]["format"] = "uuid";
+    parameters.append(param);
+    endpoint["parameters"] = parameters;
+
+    // Responses
+    Json::Value responses;
+    Json::Value resp200;
+    resp200["description"] = "Session closed successfully";
+    Json::Value respSchema;
+    respSchema["type"] = "object";
+    respSchema["properties"]["success"]["type"] = "boolean";
+    respSchema["properties"]["message"]["type"] = "string";
+    resp200["content"]["application/json"]["schema"] = respSchema;
+    responses["200"] = resp200;
+
+    Json::Value resp404;
+    resp404["description"] = "Session not found";
+    resp404["content"]["application/json"]["schema"]["$ref"] =
+        "#/components/schemas/Error";
+    responses["404"] = resp404;
+
+    endpoint["responses"] = responses;
+    return endpoint;
+  }
+
+  Json::Value buildGetSlotIdEndpoint() {
+    Json::Value endpoint;
+    endpoint["tags"].append("Sessions");
+    endpoint["summary"] = "Get slot ID for a session";
+    endpoint["description"] =
+        "Retrieve the slot ID assigned to a session (-1 if unassigned)";
+    endpoint["operationId"] = "getSlotId";
+
+    // Security requirement - Bearer token
+    Json::Value security(Json::arrayValue);
+    Json::Value bearerAuth;
+    bearerAuth["BearerAuth"] = Json::Value(Json::arrayValue);
+    security.append(bearerAuth);
+    endpoint["security"] = security;
+
+    // Path parameters
+    Json::Value parameters(Json::arrayValue);
+    Json::Value param;
+    param["name"] = "session_id";
+    param["in"] = "path";
+    param["required"] = true;
+    param["description"] = "The session ID";
+    param["schema"]["type"] = "string";
+    param["schema"]["format"] = "uuid";
+    parameters.append(param);
+    endpoint["parameters"] = parameters;
+
+    // Responses
+    Json::Value responses;
+    Json::Value resp200;
+    resp200["description"] = "Slot ID retrieved successfully";
+    Json::Value respSchema;
+    respSchema["type"] = "object";
+    respSchema["properties"]["session_id"]["type"] = "string";
+    respSchema["properties"]["session_id"]["format"] = "uuid";
+    respSchema["properties"]["slot_id"]["type"] = "integer";
+    respSchema["properties"]["slot_id"]["description"] =
+        "Slot ID (-1 if unassigned)";
+    resp200["content"]["application/json"]["schema"] = respSchema;
+    responses["200"] = resp200;
+
+    Json::Value resp404;
+    resp404["description"] = "Session not found";
+    resp404["content"]["application/json"]["schema"]["$ref"] =
+        "#/components/schemas/Error";
+    responses["404"] = resp404;
+
+    endpoint["responses"] = responses;
     return endpoint;
   }
 

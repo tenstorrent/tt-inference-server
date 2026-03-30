@@ -227,4 +227,19 @@ size_t maxQueueSize() {
       envUlong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));
 }
 
+size_t maxSessionsCount() {
+  return static_cast<size_t>(
+      envUlong("MAX_SESSIONS_COUNT", defaults::MAX_SESSIONS_COUNT));
+}
+
+unsigned sessionEvictionRate() {
+  return static_cast<unsigned>(
+      envUlong("SESSION_EVICTION_RATE", defaults::SESSION_EVICTION_RATE));
+}
+
+size_t sessionEvictionCount() {
+  return static_cast<size_t>(
+      envUlong("SESSION_EVICTION_COUNT", defaults::SESSION_EVICTION_COUNT));
+}
+
 }  // namespace tt::config
