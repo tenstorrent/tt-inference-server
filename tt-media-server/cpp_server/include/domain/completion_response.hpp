@@ -104,7 +104,6 @@ struct CompletionResponse : BaseResponse {
   std::string toJsonString() const {
     Json::StreamWriterBuilder writer;
     writer["indentation"] = "";
-    writer["emitUTF8"] = true;
     return Json::writeString(writer, toJson());
   }
 };
@@ -150,7 +149,6 @@ struct StreamingChunkResponse : BaseResponse {
   std::string toJsonString() const {
     Json::StreamWriterBuilder writer;
     writer["indentation"] = "";
-    writer["emitUTF8"] = true;
     return Json::writeString(writer, toJson());
   }
 
