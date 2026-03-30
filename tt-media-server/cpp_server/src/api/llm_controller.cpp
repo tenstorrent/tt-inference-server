@@ -531,14 +531,6 @@ void LLMController::handleStreaming(
 void LLMController::createSession(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
-  if (!sessionManager) {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson("Session management not available", "not_implemented"));
-    resp->setStatusCode(drogon::k501NotImplemented);
-    callback(resp);
-    return;
-  }
-
   try {
     std::optional<int> slotId;
 
@@ -574,14 +566,6 @@ void LLMController::closeSession(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     const std::string& sessionId) const {
-  if (!sessionManager) {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson("Session management not available", "not_implemented"));
-    resp->setStatusCode(drogon::k501NotImplemented);
-    callback(resp);
-    return;
-  }
-
   bool success = sessionManager->closeSession(sessionId);
 
   if (success) {
@@ -602,14 +586,6 @@ void LLMController::getSlotId(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     const std::string& sessionId) const {
-  if (!sessionManager) {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson("Session management not available", "not_implemented"));
-    resp->setStatusCode(drogon::k501NotImplemented);
-    callback(resp);
-    return;
-  }
-
   int slotId = sessionManager->getSlotIdBySessionId(sessionId);
 
   if (slotId == -1) {
