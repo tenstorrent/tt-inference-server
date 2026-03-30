@@ -2619,34 +2619,29 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
         None,
     )
 
-    # Read the test manifest written by run_tests.py
+    # Find the latest test output directory for this model
     tests_output_dir = get_default_workflow_root_log_dir() / "tests_output"
-    manifest_path = tests_output_dir / f"test_manifest_{model_spec.model_id}.json"
-    if not manifest_path.exists():
-        logger.info(f"No test manifest found at {manifest_path}. Skipping.")
+    dir_pattern = f"test_{model_spec.model_id}__*"
+    matching_dirs = sorted(tests_output_dir.glob(dir_pattern))
+    if not matching_dirs:
+        logger.info(
+            f"No test output directories matching '{dir_pattern}' "
+            f"in {tests_output_dir}. Skipping."
+        )
         return empty_result
 
-    with open(manifest_path, "r", encoding="utf-8") as f:
-        test_manifest = json.load(f)
+    latest_dir = matching_dirs[-1]
+    logger.info(f"Using latest test output directory: {latest_dir}")
 
-    logger.info("Tests Summary")
-    logger.info(f"Test manifest contains {len(test_manifest)} task(s)")
-
-    # Collect (task_name, parameter_report.json path) from manifest entries
+    # Collect (task_name, report_path) from parameter_report_*.json files
     report_entries = []
-    for entry in test_manifest:
-        task_name = entry["task_name"]
-        parameter_report_path = Path(entry["output_dir"]) / "parameter_report.json"
-        if parameter_report_path.exists():
-            report_entries.append((task_name, str(parameter_report_path)))
-            logger.info(
-                f"  Found report for task '{task_name}': {parameter_report_path}"
-            )
-        else:
-            logger.warning(
-                f"  No parameter_report.json for task '{task_name}' "
-                f"at {parameter_report_path}"
-            )
+    for report_path in sorted(latest_dir.glob("parameter_report_*.json")):
+        # Extract task_name from filename: parameter_report_{task_name}.json
+        task_name = report_path.stem.replace("parameter_report_", "")
+        report_entries.append((task_name, str(report_path)))
+        logger.info(f"  Found report for task '{task_name}': {report_path}")
+
+    logger.info(f"Found {len(report_entries)} parameter report(s)")
 
     if not report_entries:
         logger.info("No parameter_report.json found in test output directories.")
