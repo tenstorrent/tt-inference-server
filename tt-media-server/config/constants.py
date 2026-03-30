@@ -268,6 +268,8 @@ class JobTypes(Enum):
 class DatasetLoaders(Enum):
     SST2 = "sst2"
 
+FINE_TUNING_STORE_ADAPTERS_DIR = "model_store/"
+
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
 def _vllm_config(

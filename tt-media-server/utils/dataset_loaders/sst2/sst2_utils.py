@@ -4,7 +4,8 @@
 from string import Template
 
 
-PROMPT_TEMPLATE = Template("""Review: $input\nOutput:""")
+PROMPT_TEMPLATE = Template("""Review: $input
+Output:""")
 
 RESPONSE_TEMPLATE = Template('{"label": "$label"}')
 

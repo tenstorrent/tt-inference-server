@@ -6,9 +6,14 @@ import os
 import traceback
 import time
 from multiprocessing import Event
-from typing import Optional
+from typing import Optional, List
+import subprocess
 
 from transformers import AutoModelForCausalLM
+from transformers import AutoTokenizer
+from transformers import PreTrainedTokenizer
+from transformers.cache_utils import StaticCache
+from transformers.modeling_outputs import CausalLMOutputWithPast
 import torch
 from tqdm import tqdm
 import torch_xla
@@ -16,13 +21,14 @@ import torch_xla.runtime as xr
 from peft import LoraConfig, get_peft_model, PeftModel
 
 
-from domain.training_request import TrainingRequest
+from domain.training_request import TrainingRequest, InferenceOnFineTunedGemmaRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
 from config.constants import SupportedModels
 
+PEFT_MODEL_PATH = "model_store/729a85ec-4b11-4783-8942-352452d0775f"
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
@@ -33,35 +39,61 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Setting up Gemma Lora training...")
 
-        self.hf_model = AutoModelForCausalLM.from_pretrained(
-            self.model_name, use_cache=False
-        )
-
-        self.logger.info("Loaded Gemma 1.1 2B model for lora fine-tuning.")
-        self.logger.info(
-            f"Model parameters: {sum(p.numel() for p in self.hf_model.parameters())}"
-        )
-        self.logger.info(
-            f"Trainable parameters: {sum(p.numel() for p in self.hf_model.parameters() if p.requires_grad)}"
-        )
-
-        # single chip setup
         xr.set_device_type("TT")
         os.environ["PJRT_DEVICE"] = "TT"
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
         self.device = torch_xla.device()
 
+        self.hf_base_model_train = AutoModelForCausalLM.from_pretrained(
+            self.model_name, use_cache=False
+        )
+        self.hf_fine_tuned_model_inference = AutoModelForCausalLM.from_pretrained(
+            self.model_name, torch_dtype=torch.bfloat16, use_cache=True
+        )
+
+        if PEFT_MODEL_PATH is not None:
+            peft_model = PeftModel.from_pretrained(
+                self.hf_fine_tuned_model_inference, PEFT_MODEL_PATH
+            )
+            self.hf_fine_tuned_model_inference = peft_model.merge_and_unload()
+
+        self.hf_base_model_inference = AutoModelForCausalLM.from_pretrained(
+            self.model_name, torch_dtype=torch.bfloat16, use_cache=True
+        )
+
+        self.compiled_inference_model = None
+        self._compiled_mode = None
+
+        self.logger.info(f"Device {self.device_id}: Setting up Gemma Lora base model...")
+
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        self.logger.info(
+            f"Model parameters: {sum(p.numel() for p in self.hf_base_model_train.parameters())}"
+        )
+        self.logger.info(
+            f"Trainable parameters: {sum(p.numel() for p in self.hf_base_model_train.parameters() if p.requires_grad)}"
+        )
+
+        self.logger.info("Gemma Lora training base model setup completed")
+
         return True
+    
+    def run(self, requests):
+        if len(requests) > 1:
+            self.logger.warning(
+                f"Batch processing not fully implemented. Processing only first of {len(requests)} requests"
+            )
+        # Get the first request
+        request = requests[0]
+        if isinstance(request, TrainingRequest):
+            return self._run_training(request)
+        elif isinstance(request, InferenceOnFineTunedGemmaRequest):
+            return self._run_inference(request)
 
     @log_execution_time("Gemma Lora training")
-    def run(self, training_requests: TrainingRequest) -> list:
-        if len(training_requests) > 1:
-            self.logger.warning(
-                f"Batch processing not fully implemented. Processing only first of {len(training_requests)} requests"
-            )
-
-        # Get the first request
-        request = training_requests[0]
+    def _run_training(self, request: TrainingRequest) -> list:
 
         if request._start_event:
             request._start_event.set()
@@ -88,6 +120,8 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         self.train_dataloader = self.train_dataset.get_dataloader(request.batch_size)
         self.eval_dataloader = self.eval_dataset.get_dataloader(request.batch_size)
 
+        self.logger.info(f"Chosen max sequence length: {request.dataset_max_sequence_length}")
+
         lora_config = LoraConfig(
             r=request.lora_r,
             lora_alpha=request.lora_alpha,
@@ -96,24 +130,24 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         )
 
         # If we call run multiple times, we need to unload the model from the previous lora adapter
-        if hasattr(self, "_peft_model") and isinstance(self._peft_model, PeftModel):
+        if hasattr(self, "_peft_model_train") and isinstance(self._peft_model_train, PeftModel):
             self.logger.info(
                 f"Device {self.device_id}: Unloading previous lora adapter"
             )
-            self.hf_model = self._peft_model.unload()
-            if hasattr(self.hf_model, "peft_config"):
-                delattr(self.hf_model, "peft_config")
+            self.hf_base_model_train = self._peft_model_train.unload()
+            if hasattr(self.hf_base_model_train, "peft_config"):
+                delattr(self.hf_base_model_train, "peft_config")
 
-        self._peft_model = get_peft_model(self.hf_model, lora_config)
+        self._peft_model_train = get_peft_model(self.hf_base_model_train, lora_config)
 
-        self._peft_model.to(eval(request.dtype))
-        self._peft_model.to(self.device)
+        self._peft_model_train.to(eval(request.dtype))
+        self._peft_model_train.to(self.device)
 
         model_path = request._output_model_path
 
         # use torch compile
-        self.model = torch.compile(
-            self._peft_model,
+        self.compiled_model_train = torch.compile(
+            self._peft_model_train,
             backend="tt",
             options={
                 "tt_enable_torch_fx_fusion_pass": False,
@@ -122,7 +156,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         )
 
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(), lr=request.learning_rate
+            self.compiled_model_train.parameters(), lr=request.learning_rate
         )
         self.loss_fn = torch.nn.CrossEntropyLoss(ignore_index=request.ignored_index)
 
@@ -135,7 +169,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         global_step = 0
         running_loss = 0.0
-        self.model.train()
+        self.compiled_model_train.train()
         try:
             for epoch in range(request.num_epochs):
                 for batch in tqdm(self.train_dataloader):
@@ -145,7 +179,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
                     self.logger.debug(f"Device {self.device_id}: Forward pass started")
                     try:
-                        outputs = self.model(
+                        outputs = self.compiled_model_train(
                             input_ids=batch["input_ids"],
                             attention_mask=batch["attention_mask"],
                         )
@@ -162,7 +196,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                     shift_logits = logits[:, :-1, :].contiguous()
 
                     loss = self.loss_fn(
-                        shift_logits.view(-1, self.model.config.vocab_size),
+                        shift_logits.view(-1, self.compiled_model_train.config.vocab_size),
                         batch["labels"].view(-1),
                     )
                     running_loss += loss.item()
@@ -205,12 +239,15 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                                 }
                             )
                         running_loss = 0.0
-
-                        torch.save(self.model.state_dict(), model_path)
+                        
+                        self._peft_model_train.save_pretrained(
+                            model_path,
+                            state_dict={k: v.cpu() for k, v in self._peft_model_train.state_dict().items()},
+                        )
                         self.logger.info("Model checkpoint saved.")
 
                     if do_validation:
-                        avg_val_loss = self.run_validation(
+                        avg_val_loss = self._run_validation(
                             cancel_event=request._cancel_event
                         )
                         if avg_val_loss is not None:
@@ -227,13 +264,13 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                                         "timestamp": time.time(),
                                     }
                                 )
-                        self.model.train()
+                        self.compiled_model_train.train()
 
                     # Check for cancellation at the end of each training step
                     if request._cancel_event and request._cancel_event.is_set():
                         self.logger.info(
                             f"Training gemma lora runner: Cancellation requested at step {global_step}, stopping training. "
-                            f"Model checkpoint saved: {model_path}"
+                            f"Model checkpoint saved: {request._output_model_path}"
                         )
                         break
 
@@ -249,7 +286,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             raise
         finally:
             del self.optimizer
-            del self.model
+            del self.compiled_model_train
             del self.loss_fn
             del self.train_dataset
             del self.eval_dataset
@@ -259,11 +296,11 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 f"Device {self.device_id}: Training completed - memory cleaned up"
             )
 
-        return [model_path]
+        return [request._output_model_path]
 
-    def run_validation(self, cancel_event: Optional[Event]):
+    def _run_validation(self, cancel_event: Optional[Event]):
         self.logger.info("\n=== Starting Validation ===")
-        self.model.eval()
+        self.compiled_model_train.eval()
         total_val_loss = 0.0
         num_val_batches = 0
 
@@ -275,7 +312,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 batch = {k: v.to(self.device) for k, v in batch.items()}
 
                 # Forward pass + loss
-                outputs = self.model(
+                outputs = self.compiled_model_train(
                     input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
                 )
                 logits = outputs.logits
@@ -285,7 +322,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
                 # Labels are already shifted by collate_fn
                 loss = self.loss_fn(
-                    shift_logits.view(-1, self.model.config.vocab_size),
+                    shift_logits.view(-1, self.compiled_model_train.config.vocab_size),
                     batch["labels"].view(-1),
                 )
                 total_val_loss += loss.item()
@@ -301,3 +338,177 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         avg_val_loss = total_val_loss / num_val_batches if num_val_batches > 0 else 0.0
         return avg_val_loss
+    
+
+
+    @log_execution_time("Gemma Lora inference")
+    def _run_inference(self, request: InferenceOnFineTunedGemmaRequest):
+        max_cache_len: int = 128
+        batch_size: int = 1
+
+        requested_mode = "base" if request.use_base_model else "fine_tuned"
+
+        if requested_mode != self._compiled_mode:
+            if self.compiled_inference_model is not None:
+                del self.compiled_inference_model
+                self._active_model.to("cpu")
+                torch._dynamo.reset()
+
+            if request.use_base_model:
+                self._active_model = self.hf_base_model_inference
+                self.logger.info("Using base model for inference")
+            else:
+                self._active_model = self.hf_fine_tuned_model_inference
+                self.logger.info(f"Using fine-tuned model for inference from {PEFT_MODEL_PATH}")
+            
+            self._active_model.to(self.device)
+            self.compiled_inference_model = torch.compile(
+                self._active_model, backend="tt"
+            )
+            self.compiled_inference_model.eval()
+            self._compiled_mode = requested_mode
+
+        user_prompt = [request.prompt]
+
+        input_args = self.construct_inputs(
+            user_prompt, 
+            self._active_model.config, batch_size, max_cache_len,
+        )
+
+        max_tokens_to_generate: int = max_cache_len - input_args["input_ids"].shape[1]
+
+        input_args = self.transfer_inputs_to_device(input_args, self.device)
+
+        output_tokens = self.run_generate(
+            self.compiled_inference_model,
+            input_args,
+            self.device,
+            max_tokens_to_generate,
+            user_prompt,
+        )
+
+        return ["".join(output_tokens)]
+
+    def construct_inputs(
+        self, 
+        input_prompt: str,
+        model_config,
+        batch_size: int,
+        max_cache_len: int,
+    ) -> dict:
+        """
+        Construct inputs including static cache.
+
+        Args:
+            input_prompt: Input text prompt
+            model_config: Model configuration
+            batch_size: Batch size
+            max_cache_len: Maximum cache length
+
+        Returns:
+            Dictionary containing input_ids, past_key_values, cache_position, and use_cache
+        """
+        inputs = self.tokenizer(
+            input_prompt,
+            return_tensors="pt",
+            max_length=32,
+            padding="max_length",
+            padding_side="left",
+            return_attention_mask=True,
+        )
+
+        # Static cache should be initialized on CPU and separately transferred to device
+        # due to a trace/fusion issue. See https://github.com/tenstorrent/tt-xla/issues/1645
+        static_cache: StaticCache = StaticCache(
+            config=model_config,
+            max_batch_size=batch_size,
+            max_cache_len=max_cache_len,
+            device="cpu",
+            dtype=torch.bfloat16,
+        )
+        num_key_value_heads = model_config.num_key_value_heads
+        head_dim = model_config.hidden_size // model_config.num_attention_heads
+        static_cache.early_initialization(
+            batch_size=batch_size,
+            num_heads=num_key_value_heads,
+            head_dim=head_dim,
+            dtype=torch.bfloat16,
+            device="cpu",
+        )
+        cache_position: torch.Tensor = torch.arange(0, inputs.input_ids.shape[1])
+
+        # Attention mask is needed to ignore padding tokens in left-padded batches. The mask should match max_cache_len
+        # to prevent recompilation or implicit padding by transformers, which can cause degenerate output.
+        prompt_len = inputs.input_ids.shape[1]
+        full_attention_mask = torch.ones(
+            (batch_size, max_cache_len), dtype=inputs.attention_mask.dtype
+        )
+        full_attention_mask[:, :prompt_len] = inputs.attention_mask
+
+        input_args = {
+            "input_ids": inputs.input_ids,
+            "past_key_values": static_cache,
+            "cache_position": cache_position,
+            "use_cache": True,
+            "attention_mask": full_attention_mask,
+        }
+
+        return input_args
+
+
+    def transfer_inputs_to_device(
+        self, input_args: dict, device: torch.device
+    ) -> dict:
+        """Transfer inputs to device."""
+        for layer in input_args["past_key_values"].layers:
+            layer.keys = layer.keys.to(device)
+            layer.values = layer.values.to(device)
+        input_args["input_ids"] = input_args["input_ids"].to(device)
+        input_args["cache_position"] = input_args["cache_position"].to(device)
+        input_args["attention_mask"] = input_args["attention_mask"].to(device)
+
+        return input_args
+
+    def run_generate(
+        self, compiled_model: torch.nn.Module,
+        input_args: dict,
+        device: torch.device,
+        max_tokens_to_generate: int = 128,
+        input_prompt: List[str] = [""],
+    ):
+        """
+        Run the generation loop.
+
+        Args:
+            compiled_model: Compiled model instance
+            input_args: Input arguments dictionary
+            device: Device
+            max_tokens_to_generate: Maximum number of tokens to generate
+        """
+        num_users = input_args["input_ids"].shape[0]
+        output_tokens: List[List[str]] = [[] for _ in range(num_users)]
+        with torch.no_grad():
+            for step in range(max_tokens_to_generate):
+                if step == 0:
+                    self.logger.info("RUNNING PREFILL")
+
+                # Run forward pass
+                output: CausalLMOutputWithPast = compiled_model(**input_args)
+                output_logits: torch.Tensor = output.logits.to("cpu")
+                next_token_id = output_logits[:, -1].argmax(dim=-1)
+                output_text = [self.tokenizer.decode(next_token_id[i]) for i in range(num_users)]
+                for i, output_tokens_list in enumerate(output_tokens):
+                    output_tokens_list.append(output_text[i])
+
+                # Check for EOS token and early exit
+                if torch.all(next_token_id == self.tokenizer.eos_token_id):
+                    return output_tokens[0]
+
+                # Update inputs for next iteration
+                input_args["input_ids"] = next_token_id.unsqueeze(-1).to(device)
+
+                host_cache_pos = input_args["cache_position"].to("cpu")
+                host_cache_pos = torch.tensor([host_cache_pos[-1:] + 1])
+                input_args["cache_position"] = host_cache_pos.to(device)
+        return output_tokens[0]
+

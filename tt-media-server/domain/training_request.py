@@ -32,3 +32,10 @@ class TrainingRequest(BaseRequest):
     _start_event: Event = PrivateAttr(default=None)
     _cancel_event: Event = PrivateAttr(default=None)
     _training_metrics: list = PrivateAttr(default=None)
+
+class InferenceOnFineTunedGemmaRequest(BaseRequest):
+    prompt: str
+    max_new_tokens: int = 64
+    use_base_model: bool = False
+
+    _adapter_path: str = PrivateAttr(default=None)
