@@ -1393,6 +1393,10 @@ jobs:
             echo "❌ Test coverage below 50% threshold - PR blocked"
             exit 1
           fi
+          if [[ "${{ needs.cpp-format-check.result }}" == "failure" ]]; then
+            echo "❌ C++ lint & format check failed"
+            exit 1
+          fi
           if [[ "${{ needs.cpp-server-llm-streaming.result }}" == "failure" ]]; then
             echo "❌ C++ server LLM streaming test failed"
             exit 1
