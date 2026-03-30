@@ -66,10 +66,6 @@ ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
 
   switch (task.action) {
     case MemoryManagementAction::ALLOCATE: {
-      if (task.input_seq_len < 0) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
-
       std::vector<int> slotIds;
       auto status = allocateKv(task, slotIds);
       if (status != ManageMemoryStatus::SUCCESS) {

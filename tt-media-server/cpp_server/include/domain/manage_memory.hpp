@@ -26,7 +26,7 @@ enum class KvMemoryLayout : std::uint8_t {
 struct ManageMemoryTask {
   TaskID task_id;
   MemoryManagementAction action{MemoryManagementAction::ALLOCATE};
-  std::int32_t input_seq_len{0};
+  std::uint32_t input_seq_len{0};
   KvMemoryLayout memory_layout{KvMemoryLayout::Paged};
   std::vector<std::int32_t> slot_ids;
 
