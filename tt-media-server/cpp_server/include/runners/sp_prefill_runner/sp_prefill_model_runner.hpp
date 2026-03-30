@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-#include "runners/sp_prefill_runner/i_sp_prefill_model_runner.hpp"
 #include "runners/sp_pipeline_runner/shared_memory.hpp"
+#include "runners/sp_prefill_runner/i_sp_prefill_model_runner.hpp"
 
 namespace sp_prefill {
 

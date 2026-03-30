@@ -236,17 +236,17 @@ TEST_F(DeepseekTokenizerTest, ApplyChatTemplateMatchesDeepSeekR10528Format) {
   // Expected output from HuggingFace transformers
   // tokenizer.apply_chat_template(..., add_generation_prompt=True) for
   // DeepSeek-R1-0528 (add_bos_token=true, add_eos_token=false).
-  const std::string EXPECTED =
+  const std::string expected =
       "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>Hi!<｜User｜>How "
       "are you?<｜Assistant｜>";
 
   std::string actual = tokenizer().applyChatTemplate(messages, true);
 
-  EXPECT_EQ(actual, EXPECTED)
+  EXPECT_EQ(actual, expected)
 
       << "apply_chat_template output should match HuggingFace DeepSeek-R1-0528 "
          "format.\n"
-      << "  Expected length: " << EXPECTED.size() << "\n"
+      << "  Expected length: " << expected.size() << "\n"
       << "  Actual length:   " << actual.size();
 }
 
@@ -262,17 +262,17 @@ TEST_F(DeepseekTokenizerTest,
   // Expected output from HuggingFace transformers
   // tokenizer.apply_chat_template(..., add_generation_prompt=True) for
   // DeepSeek-R1-0528 (add_bos_token=true, add_eos_token=false).
-  const std::string EXPECTED =
+  const std::string expected =
       "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>Hi!<｜User｜>How "
       "are you?";
 
   std::string actual = tokenizer().applyChatTemplate(messages, false);
 
-  EXPECT_EQ(actual, EXPECTED)
+  EXPECT_EQ(actual, expected)
 
       << "apply_chat_template output should match HuggingFace DeepSeek-R1-0528 "
          "format.\n"
-      << "  Expected length: " << EXPECTED.size() << "\n"
+      << "  Expected length: " << expected.size() << "\n"
       << "  Actual length:   " << actual.size();
 }
 
@@ -388,7 +388,7 @@ TEST_F(LlamaTokenizerTest, ApplyChatTemplate) {
       {"user", "How are you?"},
   };
 
-  const std::string EXPECTED =
+  const std::string expected =
       "<|begin_of_text|>"
       "<|start_header_id|>system<|end_header_id|>\n\n"
       "Cutting Knowledge Date: December 2023\n"
@@ -404,10 +404,10 @@ TEST_F(LlamaTokenizerTest, ApplyChatTemplate) {
 
   std::string actual = tokenizer().applyChatTemplate(messages, true);
 
-  EXPECT_EQ(actual, EXPECTED)
+  EXPECT_EQ(actual, expected)
       << "apply_chat_template output should match Llama 3.1 8B Instruct "
          "format.\n"
-      << "  Expected length: " << EXPECTED.size() << "\n"
+      << "  Expected length: " << expected.size() << "\n"
       << "  Actual length:   " << actual.size();
 }
 
@@ -418,7 +418,7 @@ TEST_F(LlamaTokenizerTest, ApplyChatTemplateNoGenerationPrompt) {
       {"user", "How are you?"},
   };
 
-  const std::string EXPECTED =
+  const std::string expected =
       "<|begin_of_text|>"
       "<|start_header_id|>system<|end_header_id|>\n\n"
       "Cutting Knowledge Date: December 2023\n"
@@ -433,9 +433,9 @@ TEST_F(LlamaTokenizerTest, ApplyChatTemplateNoGenerationPrompt) {
 
   std::string actual = tokenizer().applyChatTemplate(messages, false);
 
-  EXPECT_EQ(actual, EXPECTED)
+  EXPECT_EQ(actual, expected)
       << "apply_chat_template output should match Llama 3.1 8B Instruct "
          "format.\n"
-      << "  Expected length: " << EXPECTED.size() << "\n"
+      << "  Expected length: " << expected.size() << "\n"
       << "  Actual length:   " << actual.size();
 }
