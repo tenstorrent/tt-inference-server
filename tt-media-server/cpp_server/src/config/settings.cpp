@@ -167,6 +167,9 @@ LLMConfig llmEngineConfig() {
   if (backend == "pipeline") {
     cfg.runner_type = ModelRunnerType::PIPELINE;
     cfg.max_in_flight_count = 1;
+  } else if (backend == "prefill") {
+    cfg.runner_type = ModelRunnerType::PREFILL;
+    cfg.max_in_flight_count = 1;
   } else if (backend == "llama") {
     cfg.kvcache_block_size = 32;
     cfg.max_num_batched_tokens = 16384;
