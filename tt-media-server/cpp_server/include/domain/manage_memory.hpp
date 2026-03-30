@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <istream>
+#include <limits>
 #include <ostream>
 #include <vector>
 
@@ -28,7 +29,7 @@ struct ManageMemoryTask {
   MemoryManagementAction action{MemoryManagementAction::ALLOCATE};
   std::uint32_t inputSeqLen{0};
   KvMemoryLayout memoryLayout{KvMemoryLayout::Paged};
-  std::vector<std::int32_t> slotIds;
+  std::vector<std::uint32_t> slotIds;
 
   void serialize(std::ostream& os) const {
     auto tidBuf = taskId.ipcSerialize();
@@ -40,7 +41,7 @@ struct ManageMemoryTask {
     os.write(reinterpret_cast<const char*>(&ml), sizeof(ml));
     std::uint32_t n = static_cast<std::uint32_t>(slotIds.size());
     os.write(reinterpret_cast<const char*>(&n), sizeof(n));
-    for (std::int32_t id : slotIds) {
+    for (std::uint32_t id : slotIds) {
       os.write(reinterpret_cast<const char*>(&id), sizeof(id));
     }
   }
@@ -60,9 +61,9 @@ struct ManageMemoryTask {
     task.memoryLayout = static_cast<KvMemoryLayout>(ml);
     std::uint32_t n = 0;
     is.read(reinterpret_cast<char*>(&n), sizeof(n));
-    task.slotIds.resize(n);
+    task.slotIds.resize(n, std::numeric_limits<std::uint32_t>::max());
     for (std::uint32_t i = 0; i < n; ++i) {
-      is.read(reinterpret_cast<char*>(&task.slotIds[i]), sizeof(std::int32_t));
+      is.read(reinterpret_cast<char*>(&task.slotIds[i]), sizeof(std::uint32_t));
     }
     return task;
   }
@@ -77,7 +78,7 @@ enum class ManageMemoryStatus : std::uint8_t {
 struct ManageMemoryResult {
   TaskID taskId;
   ManageMemoryStatus status{ManageMemoryStatus::FAILURE};
-  std::vector<std::int32_t> slotIds;
+  std::vector<std::uint32_t> slotIds;
 
   void serialize(std::ostream& os) const {
     auto tidBuf = taskId.ipcSerialize();
@@ -86,7 +87,7 @@ struct ManageMemoryResult {
     os.write(reinterpret_cast<const char*>(&s), sizeof(s));
     std::uint32_t n = static_cast<std::uint32_t>(slotIds.size());
     os.write(reinterpret_cast<const char*>(&n), sizeof(n));
-    for (std::int32_t id : slotIds) {
+    for (std::uint32_t id : slotIds) {
       os.write(reinterpret_cast<const char*>(&id), sizeof(id));
     }
   }
@@ -101,10 +102,10 @@ struct ManageMemoryResult {
     result.status = static_cast<ManageMemoryStatus>(s);
     std::uint32_t n = 0;
     is.read(reinterpret_cast<char*>(&n), sizeof(n));
-    result.slotIds.resize(n);
+    result.slotIds.resize(n, std::numeric_limits<std::uint32_t>::max());
     for (std::uint32_t i = 0; i < n; ++i) {
       is.read(reinterpret_cast<char*>(&result.slotIds[i]),
-              sizeof(std::int32_t));
+              sizeof(std::uint32_t));
     }
     return result;
   }

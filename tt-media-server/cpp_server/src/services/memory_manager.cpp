@@ -19,7 +19,7 @@ namespace {
 
 ManageMemoryResult makeResult(const ManageMemoryTask& task,
                               ManageMemoryStatus status,
-                              std::vector<std::int32_t> slotIds = {}) {
+                              std::vector<std::uint32_t> slotIds = {}) {
   return ManageMemoryResult{
       .taskId = task.taskId, .status = status, .slotIds = std::move(slotIds)};
 }
@@ -71,7 +71,7 @@ ManageMemoryResult MemoryManager::handleTask(const ManageMemoryTask& task) {
         return makeResult(task, status);
       }
 
-      std::vector<std::int32_t> resultIds(slotIds.begin(), slotIds.end());
+      std::vector<std::uint32_t> resultIds(slotIds.begin(), slotIds.end());
       return makeResult(task, ManageMemoryStatus::SUCCESS,
                         std::move(resultIds));
     }
