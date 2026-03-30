@@ -380,10 +380,14 @@ void LLMController::handleStreaming(
       if (isChat) {
         std::optional<domain::CompletionUsage> usage;
         if (continuousUsage) {
-          usage = domain::CompletionUsage{reqPtr->prompt_tokens_count,
-                                          currentTokens, currentTokens,
-                                          std::nullopt,
-                                          std::nullopt, std::nullopt, };
+          usage = domain::CompletionUsage{
+              reqPtr->prompt_tokens_count,
+              currentTokens,
+              currentTokens,
+              std::nullopt,
+              std::nullopt,
+              std::nullopt,
+          };
         }
         auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
             completionId, model, created, chunk.choices[0], usage);
