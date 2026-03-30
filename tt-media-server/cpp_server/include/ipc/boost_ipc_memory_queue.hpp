@@ -9,6 +9,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <concepts>
 
 #include "domain/manage_memory.hpp"
 
@@ -16,11 +17,17 @@ namespace tt::ipc {
 
 namespace bi_ipc = boost::interprocess;
 
+template <typename T>
+concept Serializable = requires(const T& t, std::ostream& os, std::istream& is) {
+  { t.serialize(os) } -> std::same_as<void>;
+  { T::deserialize(is) } -> std::convertible_to<T>;
+};
+
 /**
  * Boost.Interprocess message queue for domain types that implement
  * serialize(std::ostream&) / static deserialize(std::istream&).
  */
-template <typename MsgType, size_t MaxMsgSize>
+template <Serializable MsgType, size_t MaxMsgSize>
 class BoostIpcMemoryQueue {
  public:
   static constexpr size_t MAX_MSG_SIZE = MaxMsgSize;
