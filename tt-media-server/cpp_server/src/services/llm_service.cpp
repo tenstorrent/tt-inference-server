@@ -9,6 +9,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "config/settings.hpp"
@@ -136,6 +137,10 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   const std::unordered_set<int64_t> STOP_TOKEN_SET(STOP_IDS.begin(),
                                                    STOP_IDS.end());
 
+  std::unordered_map<std::string,
+                     std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>
+      streamDecoders;
+
   while (running_) {
     if (!worker_manager_->checkWorkerAlive(workerIdx)) {
       TT_LOG_ERROR("[Consumer-{}] Worker process died, exiting consumer",
@@ -149,14 +154,19 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     while (worker->cfg.result_queue->blockingPop(token)) {
       anyActivity = true;
 
+      std::string taskId = std::string(token.task_id);
       auto val = stream_callbacks_.get(token.task_id);
       if (!val.has_value()) {
-        throw std::runtime_error("callback not found for task_id: " +
-                                 std::string(token.task_id));
+        // Client disconnected or task was cancelled — discard remaining
+        // tokens and clean up local state for this task.
+        streamDecoders.erase(taskId);
+        if (reasoning_parser_) {
+          reasoning_parser_->finalizeTask(taskId);
+        }
+        continue;
       }
       auto callback = val.value();
 
-      std::string taskId = std::string(token.task_id);
       bool isFinal = token.isFinal();
 
       if (isFinal) {
@@ -164,16 +174,19 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         pending_tasks_.fetch_sub(1);
       }
 
-      // Process token through reasoning parser to determine content type
-      TokenParseResult parseResult{ContentType::ANSWER, "", true};
+      auto& decoder = streamDecoders[taskId];
+      if (!decoder) decoder = tokenizer_->createStreamDecoder();
+
+      std::string delta = decoder->step(static_cast<int>(token.token_id));
+      if (isFinal) delta += decoder->flush();
+
+      TokenParseResult parseResult{ContentType::ANSWER, delta, true};
       if (reasoning_parser_) {
-        std::string decodedText =
-            tokenizer_->decode({static_cast<int>(token.token_id)});
         parseResult = reasoning_parser_->processToken(
-            taskId, static_cast<int64_t>(token.token_id), decodedText);
+            taskId, static_cast<int64_t>(token.token_id), delta);
       }
 
-      if (!parseResult.should_emit && !isFinal) {
+      if ((!parseResult.should_emit || parseResult.text.empty()) && !isFinal) {
         continue;
       }
 
@@ -213,7 +226,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       callback(response, isFinal);
 
       if (isFinal) {
-        // Clean up reasoning parser state for this task
+        streamDecoders.erase(taskId);
         if (reasoning_parser_) {
           reasoning_parser_->finalizeTask(taskId);
         }

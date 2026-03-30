@@ -11,11 +11,18 @@ import time
 import aiohttp
 import numpy as np
 from PIL import Image
+
 from server_tests.base_test import BaseTest
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
+# Model-specific overrides for the "different params" payload.
+# Only the fields that differ from default_payload need to be specified.
+_MODEL_DIFF_PARAM_OVERRIDES = {
+    "FLUX.1-dev": {"seed": 0},
+    "FLUX.1-schnell": {"seed": 0},
+}
 default_payload = {
     "prompt": "A beautiful sunset over a mountain landscape with vibrant colors",
     "negative_prompt": "blurry, low quality, distorted",
@@ -42,6 +49,16 @@ headers = {
 
 DEFAULT_SAME_SEED_MIN_SSIM = 0.95
 DEFAULT_DIFF_PARAMS_MAX_SSIM = 0.98
+
+
+def _build_diff_payload(model: str) -> dict:
+    overrides = _MODEL_DIFF_PARAM_OVERRIDES.get(model)
+    if overrides is None:
+        return guidance_scale_change_payload
+
+    payload = dict(default_payload)
+    payload.update(overrides)
+    return payload
 
 
 def _decode_base64_image(image_base64):
@@ -91,14 +108,12 @@ def compute_image_ssim(response_a, response_b):
 class ImageGenerationParamTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/images/generations"
-        print(self.targets)
+        logger.info(f"Targets: {self.targets}")
 
-        # Create list of payloads (one per device)
-        payloads = []
-        # use two payloads with same params to compare
-        payloads.append(default_payload)
-        payloads.append(default_payload)
-        payloads.append(guidance_scale_change_payload)
+        model = self.targets.get("model", "")
+        diff_payload = _build_diff_payload(model)
+
+        payloads = [default_payload, default_payload, diff_payload]
 
         # Get response data from all requests
         response_data_list = await self.test_concurrent_image_generation(payloads)
@@ -116,7 +131,7 @@ class ImageGenerationParamTest(BaseTest):
         ssim_diff = compute_image_ssim(response_data_list[0], response_data_list[2])
 
         same_requests = ssim_same >= same_seed_min_ssim
-        guidance_scale_differs = ssim_diff < diff_params_max_ssim
+        diff_params_differs = ssim_diff < diff_params_max_ssim
 
         logger.info(
             "SSIM(response[0], response[1])=%.4f (threshold >= %.2f): %s",
@@ -128,7 +143,7 @@ class ImageGenerationParamTest(BaseTest):
             "SSIM(response[0], response[2])=%.4f (threshold < %.2f): %s",
             ssim_diff,
             diff_params_max_ssim,
-            guidance_scale_differs,
+            diff_params_differs,
         )
 
         return {
@@ -136,8 +151,8 @@ class ImageGenerationParamTest(BaseTest):
             "same_seed_ssim": ssim_same,
             "diff_params_ssim": ssim_diff,
             "same_requests_match": same_requests,
-            "guidance_scale_differs": guidance_scale_differs,
-            "success": same_requests and guidance_scale_differs,
+            "diff_params_differs": diff_params_differs,
+            "success": same_requests and diff_params_differs,
         }
 
     async def test_concurrent_image_generation(self, payloads):

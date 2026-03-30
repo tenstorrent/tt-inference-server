@@ -82,6 +82,7 @@ struct ChatCompletionResponse {
   std::string toJsonString() const {
     Json::StreamWriterBuilder writer;
     writer["indentation"] = "";
+    writer["emitUTF8"] = true;
     return Json::writeString(writer, toJson());
   }
 
@@ -186,6 +187,7 @@ struct ChatCompletionStreamChunk {
   std::string toJsonString() const {
     Json::StreamWriterBuilder writer;
     writer["indentation"] = "";
+    writer["emitUTF8"] = true;
     return Json::writeString(writer, toJson());
   }
 

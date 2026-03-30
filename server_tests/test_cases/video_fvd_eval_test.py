@@ -11,12 +11,12 @@ from typing import Literal
 import numpy as np
 from PIL import Image
 
-from tests.server_tests.base_test import BaseTest
-from tests.test_config import TestConfig
+from server_tests.base_test import BaseTest
+from server_tests.test_config import TestConfig
 
 logger = logging.getLogger(__name__)
 
-DATASET_DIR = "tests/server_tests/datasets/video_fvd_subset"
+DATASET_DIR = "server_tests/datasets/video_fvd_subset"
 FVD_RESULTS_FILE = "fvd_results.json"
 
 

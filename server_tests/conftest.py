@@ -37,6 +37,20 @@ def pytest_addoption(parser):
         default="unknown-impl",
         help="Implementation serving the model (e.g., tt-transformers)",
     )
+    parser.addoption(
+        "--max-context",
+        action="store",
+        type=int,
+        help="Maximum context length for the model",
+    )
+
+
+@pytest.fixture(scope="session")
+def max_context(request):
+    val = request.config.getoption("--max-context")
+    if val is None:
+        pytest.skip("--max-context not provided")
+    return val
 
 
 # 2. A fixture to make the URL available to tests
@@ -78,23 +92,29 @@ def results_report(request, output_path):
 def api_client(endpoint_url):
     """A simple client to make requests."""
 
-    def _make_request(json_payload, timeout=30):
-        env_config = EnvironmentConfig()
-        prompt_client = PromptClient(env_config)
-        authorization = prompt_client._get_authorization()
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {authorization}",
-        }
+    env_config = EnvironmentConfig()
+    prompt_client = PromptClient(env_config)
+    authorization = prompt_client._get_authorization()
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {authorization}",
+    }
+
+    def _make_request(
+        json_payload=None, timeout=30, url_suffix=None, method=None, stream=False
+    ):
+        url = f"{endpoint_url}/{url_suffix}" if url_suffix else endpoint_url
+        request_method = method or requests.post
         try:
-            # Added a timeout for robustness
-            response = requests.post(
-                endpoint_url, headers=headers, json=json_payload, timeout=timeout
-            )
+            kwargs = {"headers": headers, "timeout": timeout, "stream": stream}
+            if json_payload is not None:
+                kwargs["json"] = json_payload
+            response = request_method(url, **kwargs)
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            if stream:
+                return response
             return response.json()
         except requests.exceptions.HTTPError as e:
-            # Return the JSON body of the error if possible
             try:
                 error_json = e.response.json()
             except json.JSONDecodeError:

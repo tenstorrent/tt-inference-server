@@ -13,9 +13,9 @@ from typing import Optional, Union
 import aiohttp
 import requests
 
-from tests.server_tests.base_test import BaseTest
-from tests.server_tests.test_cases.server_helper import DEFAULT_AUTHORIZATION
-from tests.server_tests.test_classes import TestConfig
+from server_tests.base_test import BaseTest
+from server_tests.test_cases.server_helper import DEFAULT_AUTHORIZATION
+from server_tests.test_classes import TestConfig
 from utils.media_clients.test_status import ImageGenerationTestStatus
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_accuracy_check,

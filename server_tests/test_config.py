@@ -40,10 +40,8 @@ _test_config_list = [
         hf_model_repo="Qwen/Qwen3-32B",
         tasks=[
             TestTask(
-                task_name="vllm_params",
-                test_path=Path(
-                    "tests/server_tests/test_cases/test_vllm_server_parameters.py"
-                ),
+                task_name="vllm_chat_completions",
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
                 test_args=("s", "v"),
             ),
         ],
@@ -52,10 +50,8 @@ _test_config_list = [
         hf_model_repo="meta-llama/Llama-3.1-8B-Instruct",
         tasks=[
             TestTask(
-                task_name="vllm_params",
-                test_path=Path(
-                    "tests/server_tests/test_cases/test_vllm_server_parameters.py"
-                ),
+                task_name="vllm_chat_completions",
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
                 test_args=("s", "v"),
             ),
         ],
@@ -64,12 +60,28 @@ _test_config_list = [
         hf_model_repo="meta-llama/Llama-3.3-70B-Instruct",
         tasks=[
             TestTask(
-                task_name="vllm_params",
-                test_path=Path(
-                    "tests/server_tests/test_cases/test_vllm_server_parameters.py"
-                ),
+                task_name="vllm_chat_completions",
+                test_path=Path("server_tests/test_cases/test_vllm_chat_completions.py"),
                 test_args=("s", "v"),
             ),
+        ],
+    ),
+    TestConfig(
+        hf_model_repo="openai/gpt-oss-20b",
+        tasks=[
+            # TODO: re-enable multiple test tasks once we have figure out how to create multiple output jsons
+            # TestTask(
+            #     task_name="vllm_chat_completions",
+            #     test_path=Path(
+            #         "server_tests/test_cases/test_vllm_chat_completions.py"
+            #     ),
+            #     test_args=("s", "v"),
+            # ),
+            TestTask(
+                task_name="vllm_responses",
+                test_path=Path("server_tests/test_cases/test_vllm_responses.py"),
+                test_args=("s", "v"),
+            )
         ],
     ),
 ]

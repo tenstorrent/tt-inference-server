@@ -16,14 +16,8 @@ from typing import List
 logger = logging.getLogger(__name__)
 
 # Add the project root to the Python path
-project_root = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
-
-# Add the tests directory to the Python path for server_tests imports
-tests_dir = os.path.join(project_root, "tests")
-sys.path.insert(0, tests_dir)
 
 from server_tests.test_classes import TestConfig, TestReport
 from server_tests.tests_runner import ServerRunner
@@ -40,7 +34,7 @@ def configure_logging():
     )
 
     # Set specific loggers to INFO level
-    logging.getLogger("tests.server_tests").setLevel(logging.INFO)
+    logging.getLogger("server_tests").setLevel(logging.INFO)
     logging.getLogger("whisper_eval_test").setLevel(logging.INFO)
 
 

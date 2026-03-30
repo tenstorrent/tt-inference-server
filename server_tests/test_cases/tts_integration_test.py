@@ -146,8 +146,8 @@ class TTSIntegrationTest(BaseTest):
     async def _test_very_long_text(self, session: aiohttp.ClientSession) -> dict:
         """Very long text should be rejected with 422 (exceeds max_tts_text_length)."""
         try:
-            # Generate text longer than max_tts_text_length (default 600 chars)
-            long_text = "word " * 200  # ~1000 characters
+            # Generate text longer than DEFAULT_MAX_TTS_TEXT_LENGTH (20000 chars)
+            long_text = "word " * 4001  # ~20005 characters
             async with session.post(
                 self.url,
                 json={"text": long_text, "response_format": "verbose_json"},
