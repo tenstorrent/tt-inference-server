@@ -1,4 +1,4 @@
-{{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
+{{- include "tt-inference-server.validateValues" . }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,12 +7,16 @@ metadata:
   labels:
     {{- include "tt-inference-server.labels" . | nindent 4 }}
 data:
-  {{- if eq $cfg.serverType "media" }}
+  {{/*
+    The media-server backend receives model and device via environment variables.
+    The vllm backend receives them as CLI args — no env vars needed here for selection.
+  */}}
+  {{- if eq .Values.serverType "media" }}
   MODEL: {{ .Values.model | quote }}
   DEVICE: {{ .Values.device | quote }}
   CACHE_ROOT: "/home/container_app_user/cache_root"
   {{- end }}
-  {{- range $cfg.extraEnv }}
+  {{- range .Values.extraEnv }}
   {{- if .value }}
   {{ .name }}: {{ .value | quote }}
   {{- end }}

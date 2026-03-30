@@ -1,5 +1,4 @@
 {{- include "tt-inference-server.validateValues" . }}
-{{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,36 +7,33 @@ metadata:
   labels:
     {{- include "tt-inference-server.labels" . | nindent 4 }}
 spec:
-  replicas: {{ $cfg.replicaCount }}
-  progressDeadlineSeconds: {{ $cfg.progressDeadlineSeconds }}
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
       {{- include "tt-inference-server.selectorLabels" . | nindent 6 }}
-  # Must be Recreate (not RollingUpdate): hugepages mmap'd by the terminating
-  # pod are not freed until it fully exits; a replacement pod would fail to
-  # allocate hugepages (see issue #2801). Trade-off: causes brief downtime
-  # during upgrades — acceptable because the chart's hardcoded podAntiAffinity
-  # already requires the only eligible node to be free. Hardcoded here (not
-  # values-driven) so a future maintainer cannot revert it inadvertently.
   strategy:
-    type: Recreate
+    type: {{ .Values.updateStrategy.type }}
   template:
     metadata:
       labels:
         {{- include "tt-inference-server.selectorLabels" . | nindent 8 }}
       annotations:
+        {{- /*
+          Rolling restart whenever ConfigMap or Secret content changes.
+          This ensures the running pod always reflects the declared configuration.
+        */}}
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
-        {{- with $cfg.podAnnotations }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      hostIPC: true
-      {{- with $cfg.image.pullSecrets }}
+      hostIPC: {{ .Values.hostIPC }}
+      {{- with .Values.image.pullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with $cfg.podSecurityContext }}
+      {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -48,19 +44,11 @@ spec:
           volumeMounts:
             - name: cache
               mountPath: /cache
-        - name: cleanup-hugepages
-          image: busybox
-          command: ["sh", "-c", "rm -f /dev/hugepages-1G/device_*_tenstorrent /dev/hugepages-1G/tenstorrent && echo 'hugepage cleanup done'"]
-          securityContext:
-            privileged: true
-          volumeMounts:
-            - name: hugepages-1g
-              mountPath: /dev/hugepages-1G
       containers:
         - name: inference-server
           image: {{ include "tt-inference-server.image" . }}
-          imagePullPolicy: {{ $cfg.image.pullPolicy }}
-          {{- if eq $cfg.serverType "vllm" }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if eq .Values.serverType "vllm" }}
           args:
             - "--model"
             - {{ .Values.model | quote }}
@@ -69,14 +57,18 @@ spec:
           {{- end }}
           ports:
             - name: http
-              containerPort: {{ $cfg.service.targetPort }}
-              protocol: TCP
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: {{ .Values.service.protocol }}
           envFrom:
             - configMapRef:
                 name: {{ include "tt-inference-server.configmapName" . }}
             - secretRef:
                 name: {{ include "tt-inference-server.secretName" . }}
-          {{- with $cfg.extraEnv }}
+          {{- with .Values.extraEnv }}
+          {{- /*
+            Items with valueFrom (e.g. secretKeyRef) can't go into a ConfigMap,
+            so they are injected directly here.
+          */}}
           env:
             {{- range . }}
             {{- if .valueFrom }}
@@ -93,31 +85,31 @@ spec:
               mountPath: /dev/tenstorrent
             - name: hugepages-1g
               mountPath: /dev/hugepages-1G
-          {{- with $cfg.resources }}
+          {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           securityContext:
-            privileged: true
-          {{- if $cfg.probes.liveness.enabled }}
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- if .Values.probes.liveness.enabled }}
           livenessProbe:
             httpGet:
-              path: {{ $cfg.probes.liveness.path }}
+              path: {{ .Values.probes.liveness.path }}
               port: http
-            initialDelaySeconds: {{ $cfg.probes.liveness.initialDelaySeconds }}
-            periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
           {{- end }}
-          {{- if $cfg.probes.readiness.enabled }}
+          {{- if .Values.probes.readiness.enabled }}
           readinessProbe:
             httpGet:
-              path: {{ $cfg.probes.readiness.path }}
+              path: {{ .Values.probes.readiness.path }}
               port: http
-            initialDelaySeconds: {{ $cfg.probes.readiness.initialDelaySeconds }}
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
           {{- end }}
       volumes:
         - name: cache
@@ -132,16 +124,15 @@ spec:
           hostPath:
             path: /dev/hugepages-1G
             type: Directory
-      {{- with $cfg.nodeSelector }}
+      {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- $aff := include "tt-inference-server.affinity" . | fromYaml }}
-      {{- if not (empty $aff) }}
+      {{- with .Values.affinity }}
       affinity:
-        {{- toYaml $aff | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with $cfg.tolerations }}
+      {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
