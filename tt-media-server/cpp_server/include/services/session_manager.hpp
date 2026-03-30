@@ -80,6 +80,13 @@ class SessionManager {
    */
   std::vector<std::string> findOldestSessions(size_t count) const;
 
+  /**
+   * Close a session without locking (assumes mutex is already locked).
+   * @param sessionId The session ID to close
+   * @return true if session was found and closed, false otherwise
+   */
+  bool closeSessionLocked(const std::string& sessionId);
+
   mutable std::mutex mutex_;
   std::unordered_map<std::string, domain::Session> sessions_;
 };

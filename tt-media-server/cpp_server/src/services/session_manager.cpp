@@ -30,7 +30,11 @@ domain::Session SessionManager::createSession(std::optional<int> slotId) {
 
 bool SessionManager::closeSession(const std::string& sessionId) {
   std::lock_guard<std::mutex> lock(mutex_);
+  return closeSessionLocked(sessionId);
+}
 
+bool SessionManager::closeSessionLocked(const std::string& sessionId) {
+  // Note: mutex_ must already be locked by caller
   auto it = sessions_.find(sessionId);
   if (it == sessions_.end()) {
     TT_LOG_WARN("[SessionManager] Session not found: {}", sessionId);
@@ -106,7 +110,7 @@ void SessionManager::evictOldSessions() {
 
     if (!oldestSessions.empty()) {
       for (const auto& sessionId : oldestSessions) {
-        sessions_.erase(sessionId);
+        closeSessionLocked(sessionId);
       }
 
       TT_LOG_INFO(
