@@ -148,7 +148,7 @@ void MockDevicePipeline::trySchedule() {
 
 void MockDevicePipeline::pipelineLoop() {
   using clock = std::chrono::steady_clock;
-  const auto TICK_DURATION = std::chrono::microseconds(config.stageDurationUs);
+  const auto tickDuration = std::chrono::microseconds(config.stageDurationUs);
 
   while (!stop.load(std::memory_order_relaxed)) {
     auto tickStart = clock::now();
@@ -189,7 +189,7 @@ void MockDevicePipeline::pipelineLoop() {
 
     ++currentTick;
 
-    while ((clock::now() - tickStart) < TICK_DURATION) {
+    while ((clock::now() - tickStart) < tickDuration) {
     }
   }
 }
