@@ -5,81 +5,79 @@
 
 #include <utility>
 
+#include "runners/llm_runner/block_manager.hpp"
+#include "runners/llm_runner/sequence.hpp"
+
 namespace tt::services {
 
-namespace {
-
-using tt::domain::KvDestination;
-using tt::domain::KvMemoryLayout;
 using tt::domain::ManageMemoryResult;
 using tt::domain::ManageMemoryStatus;
 using tt::domain::ManageMemoryTask;
 using tt::domain::MemoryManagementAction;
 
+namespace {
+
 ManageMemoryResult makeResult(const ManageMemoryTask& task,
                               ManageMemoryStatus status,
-                              std::vector<KvDestination> locations = {}) {
-  return ManageMemoryResult{.task_id = task.task_id,
-                            .status = status,
-                            .memory_locations = std::move(locations)};
-}
-
-ManageMemoryStatus allocateKv(const ManageMemoryTask& /*task*/,
-                              std::vector<KvDestination>& /*out*/) {
-  // TODO(ttnn): Size and fill from device. Return WAITING when full.
-  return ManageMemoryStatus::SUCCESS;
-}
-
-void deallocateKv(const std::vector<KvDestination>& /*locations*/) {
-  // TODO(ttnn): Release KV via ttnn / device.
+                              std::vector<std::uint32_t> slotIds = {}) {
+  return ManageMemoryResult{
+      .taskId = task.taskId, .status = status, .slotIds = std::move(slotIds)};
 }
 
 }  // namespace
 
-ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
+MemoryManager::MemoryManager(llm_engine::BlockManager& bm)
+    : blockManager(&bm) {}
+
+ManageMemoryStatus MemoryManager::allocateKv(const ManageMemoryTask& task,
+                                             std::vector<int>& outSlotIds) {
+  if (!blockManager) {
+    return ManageMemoryStatus::SUCCESS;
+  }
+
+  std::vector<int64_t> placeholderTokens(static_cast<size_t>(task.inputSeqLen),
+                                         0);
+  llm_engine::Sequence seq(task.taskId, blockManager->blockSize(),
+                           std::move(placeholderTokens));
+
+  if (!blockManager->allocate(seq)) {
+    return ManageMemoryStatus::WAITING;
+  }
+
+  outSlotIds = std::move(seq.blockTable);
+  return ManageMemoryStatus::SUCCESS;
+}
+
+void MemoryManager::deallocateKv(const domain::TaskID& taskId,
+                                 std::vector<int> slotIds) {
+  if (!blockManager) {
+    return;
+  }
+  llm_engine::Sequence seq(taskId, blockManager->blockSize(), {});
+  seq.blockTable = std::move(slotIds);
+  blockManager->deallocate(seq);
+}
+
+ManageMemoryResult MemoryManager::handleTask(const ManageMemoryTask& task) {
   if (task.action == MemoryManagementAction::MOVE) {
     return makeResult(task, ManageMemoryStatus::FAILURE);
   }
 
   switch (task.action) {
     case MemoryManagementAction::ALLOCATE: {
-      if (reservations.contains(task.task_id.id)) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
-      if (task.memory_layout == KvMemoryLayout::PerLayer) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
-      if (task.input_seq_len < 0) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
-      reservations.insert(
-          task.task_id.id,
-          Reservation{.layout = KvMemoryLayout::Paged, .locations = {}});
-
-      std::vector<KvDestination> locations;
-      auto allocStatus = allocateKv(task, locations);
-      if (allocStatus != ManageMemoryStatus::SUCCESS) {
-        reservations.erase(task.task_id.id);
-        return makeResult(task, allocStatus);
+      std::vector<int> slotIds;
+      auto status = allocateKv(task, slotIds);
+      if (status != ManageMemoryStatus::SUCCESS) {
+        return makeResult(task, status);
       }
 
-      reservations.insert(
-          task.task_id.id,
-          Reservation{.layout = KvMemoryLayout::Paged, .locations = locations});
+      std::vector<std::uint32_t> resultIds(slotIds.begin(), slotIds.end());
       return makeResult(task, ManageMemoryStatus::SUCCESS,
-                        std::move(locations));
+                        std::move(resultIds));
     }
     case MemoryManagementAction::DEALLOCATE: {
-      auto reservation = reservations.get(task.task_id.id);
-      if (!reservation.has_value()) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
-      if (reservation->layout != task.memory_layout) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
-      reservations.erase(task.task_id.id);
-
-      deallocateKv(reservation->locations);
+      std::vector<int> slotIds(task.slotIds.begin(), task.slotIds.end());
+      deallocateKv(task.taskId, std::move(slotIds));
       return makeResult(task, ManageMemoryStatus::SUCCESS);
     }
     default:
