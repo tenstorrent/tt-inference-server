@@ -2622,7 +2622,7 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
     # Find the latest test output directory for this model
     tests_output_dir = get_default_workflow_root_log_dir() / "tests_output"
     dir_pattern = f"test_{model_spec.model_id}__*"
-    matching_dirs = sorted(tests_output_dir.glob(dir_pattern))
+    matching_dirs = list(tests_output_dir.glob(dir_pattern))
     if not matching_dirs:
         logger.info(
             f"No test output directories matching '{dir_pattern}' "
@@ -2630,7 +2630,7 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
         )
         return empty_result
 
-    latest_dir = matching_dirs[-1]
+    latest_dir = max(matching_dirs, key=lambda d: d.stat().st_mtime)
     logger.info(f"Using latest test output directory: {latest_dir}")
 
     # Collect report file paths from parameter_report_*.json files

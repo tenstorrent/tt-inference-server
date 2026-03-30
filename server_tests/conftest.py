@@ -89,7 +89,6 @@ def results_report(request, output_path):
 
     # 4. This code runs after the session finishes
     report_filename = f"parameter_report_{task_name}.json"
-    print(f"Generating {report_filename}...")
     filename = output_path / report_filename
     with open(filename, "w") as f:
         json.dump(report_data, f, indent=2)
