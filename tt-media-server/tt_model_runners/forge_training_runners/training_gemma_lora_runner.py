@@ -203,7 +203,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                             else running_loss
                         )
                         self.logger.info(
-                            f"Step {global_step} | train/loss: {avg_loss:.4f}",
+                            f"Epoch {epoch + 1} | Step {global_step} | train/loss: {avg_loss:.4f}",
                             extra={"log_type": "info", "step": global_step},
                         )
                         if request._training_metrics is not None:
