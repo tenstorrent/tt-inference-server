@@ -5,13 +5,15 @@
 #include <thread>
 
 #include "config/runner_config.hpp"
-#include "ipc/boost_ipc_memory_queue.hpp"
 #include "ipc/shared_memory.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
-#include "services/memory_manager.hpp"
+
+namespace tt::services {
+class MemoryManager;
+}
 
 namespace tt::runners {
 using namespace llm_engine;
@@ -40,8 +42,6 @@ class LLMRunner : public IRunner {
   std::atomic<bool> stopped_{false};
 
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
-  std::unique_ptr<ipc::MemoryRequestQueue> memoryRequests;
-  std::unique_ptr<ipc::MemoryResultQueue> memoryResults;
   std::thread memoryThread;
 };
 

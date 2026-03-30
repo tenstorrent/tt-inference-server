@@ -11,13 +11,15 @@
 #include <unordered_set>
 
 #include "config/runner_config.hpp"
-#include "ipc/boost_ipc_memory_queue.hpp"
 #include "ipc/shared_memory.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
-#include "services/memory_manager.hpp"
+
+namespace tt::services {
+class MemoryManager;
+}
 
 namespace tt::runners {
 
@@ -54,8 +56,6 @@ class SpPipelineRunner : public IRunner {
   int inFlightCount = 0;
 
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
-  std::unique_ptr<ipc::MemoryRequestQueue> memoryRequests;
-  std::unique_ptr<ipc::MemoryResultQueue> memoryResults;
   std::thread memoryThread;
 };
 
