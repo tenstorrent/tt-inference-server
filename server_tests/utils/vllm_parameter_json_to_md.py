@@ -180,8 +180,9 @@ def _load_report(report_file):
         raise json.JSONDecodeError(f"Error: Could not decode JSON from {report_file}")
 
 
-def _generate_single_report(report_data, task_name=None):
+def _generate_single_report(report_data):
     """Generate markdown sections for a single report's data."""
+    task_name = report_data.get("task_name")
     summary = analyze_report(report_data)
     metadata_md = format_metadata(report_data, task_name=task_name)
     summary_md = format_summary_table(summary, task_name=task_name)
@@ -189,26 +190,22 @@ def _generate_single_report(report_data, task_name=None):
     return f"{metadata_md}\n{summary_md}{details_md}"
 
 
-def main(report_file, *args, **kwargs):
-    # Accept a list of (task_name, file_path) tuples for multi-task reports
-    if (
-        isinstance(report_file, list)
-        and len(report_file) > 0
-        and isinstance(report_file[0], tuple)
-    ):
-        sections = []
-        for task_name, file_path in report_file:
-            report_data = _load_report(file_path)
-            sections.append(_generate_single_report(report_data, task_name=task_name))
-        return "\n---\n\n".join(sections)
+def main(report_files):
+    """Generate markdown report from one or more parameter report JSON files.
 
-    # Accept a single file path (backwards compatible)
-    if isinstance(report_file, list):
-        # list of file paths without task names — fall back to single merged report
-        report_file = report_file[0] if len(report_file) == 1 else report_file[0]
+    Each JSON file must contain a 'task_name' field.
 
-    report_data = _load_report(report_file)
-    return _generate_single_report(report_data)
+    Args:
+        report_files: A single file path string or a list of file path strings.
+    """
+    if isinstance(report_files, str):
+        report_files = [report_files]
+
+    sections = []
+    for file_path in report_files:
+        report_data = _load_report(file_path)
+        sections.append(_generate_single_report(report_data))
+    return "\n---\n\n".join(sections)
 
 
 if __name__ == "__main__":
@@ -216,10 +213,9 @@ if __name__ == "__main__":
         description="Convert API test report JSON to Markdown."
     )
     parser.add_argument(
-        "report_file",
-        nargs="?",
-        default="report.json",
-        help="Path to the input report.json file (default: report.json)",
+        "report_files",
+        nargs="+",
+        help="Path(s) to input parameter report JSON file(s)",
     )
     parser.add_argument(
         "-o",
@@ -228,7 +224,7 @@ if __name__ == "__main__":
         help="Path to the output report.md file (default: report.md)",
     )
     args = parser.parse_args()
-    report_str = main(**vars(args))
+    report_str = main(args.report_files)
 
     # Write to output file
     with open(args.output, "w") as f:

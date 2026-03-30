@@ -46,7 +46,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--task-name",
         action="store",
-        default="default",
+        default="unknown-task",
         help="Name of the test task, used to name the output report file",
     )
 
@@ -77,16 +77,17 @@ def output_path(request):
 # 3. Fixture for the session-wide report dictionary (now with metadata)
 @pytest.fixture(scope="session")
 def results_report(request, output_path):
+    task_name = request.config.getoption("--task-name")
     report_data = {
         "endpoint_url": request.config.getoption("--endpoint-url"),
         "model_name": request.config.getoption("--model-name"),
         "model_impl": request.config.getoption("--model-impl"),
+        "task_name": task_name,
         "results": {},
     }
     yield report_data
 
     # 4. This code runs after the session finishes
-    task_name = request.config.getoption("--task-name")
     report_filename = f"parameter_report_{task_name}.json"
     print(f"Generating {report_filename}...")
     filename = output_path / report_filename

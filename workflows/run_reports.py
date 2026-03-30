@@ -2633,39 +2633,27 @@ def generate_tests_report(args, server_mode, model_spec, report_id, metadata={})
     latest_dir = matching_dirs[-1]
     logger.info(f"Using latest test output directory: {latest_dir}")
 
-    # Collect (task_name, report_path) from parameter_report_*.json files
-    report_entries = []
+    # Collect report file paths from parameter_report_*.json files
+    report_files = []
     for report_path in sorted(latest_dir.glob("parameter_report_*.json")):
-        # Extract task_name from filename: parameter_report_{task_name}.json
-        task_name = report_path.stem.replace("parameter_report_", "")
-        report_entries.append((task_name, str(report_path)))
-        logger.info(f"  Found report for task '{task_name}': {report_path}")
+        report_files.append(str(report_path))
+        logger.info(f"  Found report: {report_path}")
 
-    logger.info(f"Found {len(report_entries)} parameter report(s)")
+    logger.info(f"Found {len(report_files)} parameter report(s)")
 
-    if not report_entries:
-        logger.info("No parameter_report.json found in test output directories.")
+    if not report_files:
+        logger.info("No parameter report files found in test output directory.")
         return empty_result
 
-    logger.info(f"Processing {len(report_entries)} parameter report(s)")
+    logger.info(f"Processing {len(report_files)} parameter report(s)")
 
     # Generate vLLM parameter coverage report from all report files
-    # Pass (task_name, file_path) tuples for per-task sections when multiple tasks
-    if len(report_entries) == 1:
-        report_file_arg = report_entries[0][1]
-    else:
-        report_file_arg = report_entries
-    markdown_str = generate_vllm_parameter_report(
-        report_file_arg,
-        output_path,
-        report_id,
-        metadata,
-        model_spec=model_spec,
-    )
+    # Each JSON contains its own task_name field
+    markdown_str = generate_vllm_parameter_report(report_files)
 
-    # Merge all parameter_report.json data into combined release_raw
+    # Merge all parameter report data into combined release_raw
     release_raw_list = []
-    for _task_name, report_file in report_entries:
+    for report_file in report_files:
         try:
             with open(report_file, "r", encoding="utf-8") as f:
                 release_raw_list.append(json.load(f))

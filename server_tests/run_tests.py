@@ -37,7 +37,7 @@ def build_test_command(
     device,
     output_dir_path,
     service_port,
-):
+) -> list[str]:
     """
     Build the command for tests by templating command-line arguments using properties
     from the given task and model configuration.
@@ -179,7 +179,9 @@ def main():
     logger.info(f"Test output directory: {output_dir_path}")
 
     # Execute pytest for each task.
-    logger.info("Running test client ...")
+    logger.info(
+        f"Running test client with {len(test_config.tasks)} task(s): {[t.task_name for t in test_config.tasks]}"
+    )
     return_codes = []
     for task in test_config.tasks:
         logger.info(
