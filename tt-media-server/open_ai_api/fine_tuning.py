@@ -138,27 +138,34 @@ async def cancel_fine_tuning_job(
         )
 
     return JSONResponse(content=status)
-    
+
+
 @router.get("/jobs/{job_id}/checkpoints")
-async def get_job_checkpoints(
+async def list_fine_tuning_checkpoints(
     job_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
     """
-    List checkpoints saved during a fine-tuning job.
+    List checkpoints for a fine-tuning job.
 
     Returns:
-        JSONResponse: List of checkpoint entries.
+        JSONResponse: List of model checkpoints.
 
     Raises:
         HTTPException: If job not found.
     """
-    job_data = service.get_job_metadata(job_id)
-    if not job_data:
-        raise HTTPException(404, "Job not found")
-    checkpoints = service.get_job_checkpoints(job_id)
-    return JSONResponse(content=checkpoints)
+    try:
+        # TODO: Implement file retrieval instead of result path, and discuss if we return
+        # all checkpoints or just the last model weights state which is saved to result_path
+        result_path = service.get_job_result_path(job_id)
+        return JSONResponse(
+            content={"object": "string", "data": result_path, "has_more": False}
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get checkpoints: {str(e)}"
+        )
 
 @router.get("/jobs/{job_id}/logs")
 async def get_job_logs(
