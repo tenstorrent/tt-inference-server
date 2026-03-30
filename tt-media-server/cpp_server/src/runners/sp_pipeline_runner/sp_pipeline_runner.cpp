@@ -76,11 +76,11 @@ bool SpPipelineRunner::warmup() {
                      sp_pipeline::RequestPhase::PREFILL);
 
   // Wait for the response token (with timeout)
-  const int MAX_ATTEMPTS = 1000;  // ~10 seconds with 10ms sleep
+  const int maxAttempts = 1000;  // ~10 seconds with 10ms sleep
   int attempts = 0;
   bool receivedToken = false;
 
-  while (attempts < MAX_ATTEMPTS && !receivedToken) {
+  while (attempts < maxAttempts && !receivedToken) {
     std::vector<llm_engine::TokenResult> results;
     decodeQueue.popMany(results, maxInFlightCount);
     for (const auto& dr : results) {
