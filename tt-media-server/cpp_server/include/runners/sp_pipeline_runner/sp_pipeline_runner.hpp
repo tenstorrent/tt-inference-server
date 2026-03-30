@@ -34,7 +34,6 @@ class SpPipelineRunner : public IRunner {
 
  private:
   void step();
-  void memoryLoop();
   void pushToken(const llm_engine::TaskID& taskId, uint64_t tokenId,
                  bool finished);
   void pushErrorToken(const llm_engine::TaskID& taskId);
@@ -53,7 +52,6 @@ class SpPipelineRunner : public IRunner {
   std::unordered_set<int64_t> stopTokenIds;
   ipc::TokenRingBuffer<65536>* resultQueue;
   llm_engine::ITaskQueue* taskQueue;
-  std::unique_ptr<tt_blaze::pipeline_manager::PipelineInterface> pipeline;
   std::unique_ptr<tt_blaze::pipeline_manager::PipelineManager> pipelineManager;
   std::unordered_map<uint32_t, std::unique_ptr<llm_engine::Sequence>> running;
   std::unordered_map<uint32_t, std::unique_ptr<llm_engine::Sequence>> allocating;

@@ -158,7 +158,6 @@ void SpPipelineRunner::step() {
   if (memoryRequest.has_value()) {
     handleMemoryRequest(*memoryRequest);
   }
-
   auto response = getResponse();
   if (response.has_value()) {
     handleResponse(*response);
@@ -227,16 +226,14 @@ std::optional<tt::domain::ManageMemoryTask> SpPipelineRunner::getMemoryRequest()
 void SpPipelineRunner::handleMemoryRequest(const tt::domain::ManageMemoryTask& request) {
   switch (request.action) {
     case tt::domain::MemoryManagementAction::ALLOCATE: {
-      pipelineManager->push_request(makeAllocateRequest(nextRequestID++));
-      break;
+      throw std::runtime_error("SpPipelineRunner: Allocate memory request not implemented");
     }
     case tt::domain::MemoryManagementAction::DEALLOCATE: {
-      pipelineManager->push_request(makeCancelRequest(request.slot_id));
+      evictSlot(request.slotId);
       break;
     }
-    default: {
-      TT_LOG_ERROR("SpPipelineRunner: Unknown memory management action");
-      return;
+    case tt::domain::MemoryManagementAction::MOVE: {
+      throw std::runtime_error("SpPipelineRunner: Move memory action not implemented");
     }
   }
 }
