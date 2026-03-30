@@ -69,14 +69,12 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
 
     if (numBatchedTokens + static_cast<int>(seq->size()) >
             max_num_batched_tokens_ ||
-        !block_manager_.canAllocate(*seq)) {
+        !block_manager_.allocate(*seq)) {
       prefill_queue_->push(*seq);
       delete seq;
       break;
     }
-
     numSeqs += 1;
-    block_manager_.allocate(*seq);
     numBatchedTokens += static_cast<int>(seq->size() - seq->numCachedTokens);
     auto id = seq->taskId;
     sequences_[id] = std::make_unique<Sequence>(std::move(*seq));
