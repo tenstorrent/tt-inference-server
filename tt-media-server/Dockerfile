@@ -123,6 +123,13 @@ ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
 ENV PYTHONPATH=${TT_METAL_HOME}
 COPY "tt-media-server" "${TT_METAL_HOME}/server"
+
+# Clone private tt-blaze submodule using a BuildKit secret (token never stored in image layers)
+RUN --mount=type=secret,id=gh_token \
+    git clone --depth 1 \
+    https://x-access-token:$(cat /run/secrets/gh_token)@github.com/tenstorrent/tt-blaze.git \
+    ${TT_METAL_HOME}/server/cpp_server/tt-blaze
+
 COPY "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
 COPY "tt-media-server/fix_dependencies.sh" "${TT_METAL_HOME}/fix_dependencies.sh"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
