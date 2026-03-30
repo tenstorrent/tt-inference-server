@@ -1,0 +1,123 @@
+# -- @section Model Selection
+# Required at install time:
+#   helm install my-release ./charts/tt-inference-server \
+#     --set model=Llama-3.1-8B-Instruct \
+#     --set device=galaxy
+
+# -- Required: model name as understood by the server backend (e.g. "Llama-3.1-8B-Instruct", "gpt-oss-120b")
+model: ""
+
+# -- Required: target Tenstorrent device (e.g. "galaxy", "t3k", "n150", "n300")
+device: ""
+
+# -- Server backend type. Controls how model/device are passed to the container.
+#    "vllm"  → passes --model and --tt-device as CLI args (vllm-tt-metal image)
+#    "media" → sets MODEL, DEVICE, CACHE_ROOT as environment variables (tt-media-inference-server image)
+serverType: vllm
+
+# -- @section Image
+image:
+  # -- Container image repository.
+  #    vllm:  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+  #    media: ghcr.io/tenstorrent/tt-inference-server/tt-media-inference-server
+  repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+  # -- Image tag. Defaults to chart appVersion if empty.
+  tag: ""
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Optional list of image pull secrets for private registries
+  pullSecrets: []
+
+# -- @section Deployment
+replicaCount: 1
+
+updateStrategy:
+  type: RollingUpdate
+
+nameOverride: ""
+fullnameOverride: ""
+
+podAnnotations: {}
+
+# -- @section Authentication
+# -- HuggingFace token for downloading gated model weights.
+#    Will be mounted as HF_TOKEN environment variable via a Kubernetes Secret.
+hfToken: ""
+
+# -- Additional environment variables injected into the container via the ConfigMap.
+#    Supports the full Kubernetes env var spec (value or valueFrom).
+# extraEnv:
+#   - name: VLLM_WORKER_MULTIPROC_METHOD
+#     value: spawn
+#   - name: MY_SECRET
+#     valueFrom:
+#       secretKeyRef:
+#         name: my-secret
+#         key: my-key
+extraEnv: []
+
+# -- @section Networking
+service:
+  # -- Kubernetes Service type: ClusterIP, NodePort, LoadBalancer
+  type: ClusterIP
+  # -- Service port exposed to the cluster
+  port: 8000
+  # -- Container port the server listens on
+  targetPort: 8000
+  protocol: TCP
+  # -- Optional Service annotations (e.g. for cloud load balancer config)
+  annotations: {}
+
+# -- @section Resources
+# Sized conservatively; tune per model/device combination.
+resources:
+  limits:
+    cpu: "8"
+    memory: 128Gi
+  requests:
+    cpu: "6"
+    memory: 64Gi
+
+# -- @section Storage
+cache:
+  # -- Host path for the model weight cache volume.
+  #    Defaults to /opt/cache/<model>-<device> if not set.
+  hostPath: ""
+
+# -- @section Health Probes
+probes:
+  liveness:
+    enabled: true
+    # -- HTTP path for liveness check.
+    #    vllm: /v1/models  |  media-server: /tt-liveness
+    path: /v1/models
+    initialDelaySeconds: 120
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    enabled: true
+    # -- HTTP path for readiness check (same for both server types)
+    path: /health
+    initialDelaySeconds: 300
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# -- @section Security
+# Container-level security context. Privileged mode is required for direct
+# /dev/tenstorrent access without a device plugin.
+securityContext:
+  privileged: true
+
+# -- Pod-level security context (fsGroup, runAsUser, etc.)
+podSecurityContext: {}
+
+# -- @section Hardware
+# hostIPC is required by the Tenstorrent runtime for shared memory access.
+hostIPC: true
+
+# -- @section Scheduling
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,16 @@
+apiVersion: v2
+name: tt-inference-server
+description: Helm chart for deploying tt-inference-server on Tenstorrent hardware
+type: application
+version: 0.1.0
+appVersion: "0.12.0"
+keywords:
+  - tenstorrent
+  - inference
+  - llm
+  - vllm
+home: https://github.com/tenstorrent/tt-inference-server
+sources:
+  - https://github.com/tenstorrent/tt-inference-server
+maintainers:
+  - name: Tenstorrent
