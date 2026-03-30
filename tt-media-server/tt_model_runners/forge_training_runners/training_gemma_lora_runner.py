@@ -25,8 +25,9 @@ from config.constants import SupportedModels, TrainingOptimizers
 
 
 OPTIMIZER_MAP = {
-  TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
+    TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
 }
+
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):

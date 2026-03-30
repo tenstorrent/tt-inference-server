@@ -167,6 +167,7 @@ async def list_fine_tuning_checkpoints(
             status_code=500, detail=f"Failed to get checkpoints: {str(e)}"
         )
 
+
 @router.get("/jobs/{job_id}/logs")
 async def get_job_logs(
     job_id: str,
