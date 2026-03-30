@@ -31,7 +31,6 @@ class TrainingRequest(BaseRequest):
     device_type: str = DeviceTypes.P150.value
     optimizer: str = TrainingOptimizers.ADAMW.value
 
-
     _output_model_path: str = PrivateAttr(default=None)
     _start_event: Event = PrivateAttr(default=None)
     _cancel_event: Event = PrivateAttr(default=None)
