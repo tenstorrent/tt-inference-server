@@ -11,6 +11,7 @@
 
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
+#include "services/contiguous_memory_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
@@ -25,11 +26,7 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       decodeQueue(config.max_in_flight_count),
       maxInFlightCount(config.max_in_flight_count * 30) {
   if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY) {
-    memoryManager = std::make_unique<services::MemoryManager>();
-    memoryRequests = std::make_unique<ipc::MemoryRequestQueue>(
-        ipc::k_memory_request_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
-    memoryResults = std::make_unique<ipc::MemoryResultQueue>(
-        ipc::k_memory_result_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+    memoryManager = std::make_unique<services::ContiguousMemoryManager>();
     memoryThread = std::thread([this] { memoryLoop(); });
   }
 
@@ -114,16 +111,10 @@ void SpPipelineRunner::stop() {
 }
 
 void SpPipelineRunner::memoryLoop() {
-  tt::domain::ManageMemoryTask task{};
-
   while (!stopped.load(std::memory_order_relaxed)) {
-    if (memoryRequests->tryPop(task)) {
-      auto result = memoryManager->handleTask(task);
-      if (result.status == domain::ManageMemoryStatus::WAITING) {
-        memoryRequests->push(task, /*priority=*/1);
-      } else {
-        memoryResults->push(result);
-      }
+    auto task = memoryManager->getRequest();
+    if (task) {
+      memoryManager->handleRequest(*task);
     } else {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }

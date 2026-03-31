@@ -3,34 +3,30 @@
 
 #pragma once
 
-#include <vector>
+#include <optional>
 
 #include "domain/manage_memory.hpp"
-
-namespace llm_engine {
-class BlockManager;
-}
+#include "ipc/boost_ipc_memory_queue.hpp"
 
 namespace tt::services {
 
 class MemoryManager {
  public:
-  MemoryManager() = default;
-  explicit MemoryManager(llm_engine::BlockManager& blockManager);
+  MemoryManager();
+  virtual ~MemoryManager();
 
   MemoryManager(const MemoryManager&) = delete;
   MemoryManager& operator=(const MemoryManager&) = delete;
   MemoryManager(MemoryManager&&) = delete;
   MemoryManager& operator=(MemoryManager&&) = delete;
 
-  domain::ManageMemoryResult handleTask(const domain::ManageMemoryTask& task);
+  std::optional<domain::ManageMemoryTask> getRequest();
+  virtual void handleRequest(const domain::ManageMemoryTask& request) = 0;
+  void handleResponse(int slotId);
 
- private:
-  domain::ManageMemoryStatus allocateKv(const domain::ManageMemoryTask& task,
-                                        std::vector<int>& outSlotIds);
-  void deallocateKv(const domain::TaskID& taskId, std::vector<int> slotIds);
-
-  llm_engine::BlockManager* blockManager = nullptr;
+ protected:
+  ipc::MemoryRequestQueue requestQueue;
+  ipc::MemoryResultQueue resultQueue;
 };
 
 }  // namespace tt::services
