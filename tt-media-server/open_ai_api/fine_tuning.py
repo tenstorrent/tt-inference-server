@@ -95,30 +95,6 @@ async def get_fine_tuning_job_metadata(
 
     return JSONResponse(content=job_data)
 
-
-@router.get("/jobs/{job_id}/metrics")
-async def get_training_metrics(
-    job_id: str,
-    service: BaseJobService = Depends(service_resolver),
-    api_key: str = Security(get_api_key),
-):
-    """
-    Retrieve training metrics for a fine-tuning job.
-
-    Returns:
-        JSONResponse: List of metric points recorded during training.
-
-    Raises:
-        HTTPException: If job not found.
-    """
-    job_data = service.get_job_metadata(job_id)
-    if not job_data:
-        raise HTTPException(404, "Job not found")
-
-    metrics = service.get_job_metrics(job_id)
-    return JSONResponse(content=metrics)
-
-
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_fine_tuning_job(
     job_id: str,
@@ -141,33 +117,32 @@ async def cancel_fine_tuning_job(
         )
 
     return JSONResponse(content=status)
-    
+
+@router.get("/jobs/{job_id}/metrics")
+async def get_training_metrics(
+    job_id: str,
+    service: BaseJobService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    try:
+        metrics = service.get_job_metrics(job_id)
+    except ValueError:
+        raise HTTPException(404, "Job not found")
+    return JSONResponse(content=metrics)
+
+
 @router.get("/jobs/{job_id}/checkpoints")
 async def get_job_checkpoints(
     job_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
-    job_data = service.get_job_metadata(job_id)
-    if not job_data:
+    try:
+        checkpoints = service.get_job_checkpoints(job_id)
+    except ValueError:
         raise HTTPException(404, "Job not found")
-    checkpoint_path = service.get_job_checkpoints(job_id)
-    if not checkpoint_path:
-        raise HTTPException(404, "No checkpoint available for this job")
+    return JSONResponse(content={"checkpoints": checkpoints})
 
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for root, _, files in os.walk(checkpoint_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                arcname = os.path.relpath(file_path, checkpoint_path)
-                zf.write(file_path, arcname)
-    zip_buffer.seek(0)
-    return StreamingResponse(
-        zip_buffer,
-        media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=adapter_{job_id}.zip"},
-    )
 
 @router.get("/jobs/{job_id}/logs")
 async def get_job_logs(
@@ -175,17 +150,8 @@ async def get_job_logs(
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
-    """
-    Retrieve log entries for a fine-tuning job.
-
-    Returns:
-        JSONResponse: List of log entries.
-
-    Raises:
-        HTTPException: If job not found.
-    """
-    job_data = service.get_job_metadata(job_id)
-    if not job_data:
+    try:
+        logs = service.get_job_logs(job_id)
+    except ValueError:
         raise HTTPException(404, "Job not found")
-    logs = service.get_job_logs(job_id)
     return JSONResponse(content=logs)

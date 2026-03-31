@@ -44,6 +44,7 @@ class Job:
     cancel_event: Optional[Event] = None
     job_metrics: list = field(default_factory=list)
     job_logs: list = field(default_factory=list)
+    job_checkpoints: list = field(default_factory=list)
 
     def __post_init__(self):
         if self.created_at is None:
@@ -131,6 +132,7 @@ class JobManager:
         cancel_event: Optional[Event] = None,
         job_metrics: list = None,
         job_logs: list = None,
+        job_checkpoints: list = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
@@ -153,7 +155,9 @@ class JobManager:
                 job.job_metrics = job_metrics
             if job_logs is not None:
                 job.job_logs = job_logs
-
+            if job_checkpoints is not None:
+                job.job_checkpoints = job_checkpoints
+            
             if self.db:
                 try:
                     self.db.insert_job(
@@ -220,6 +224,13 @@ class JobManager:
             job = self._jobs.get(job_id)
             if job:
                 return job.job_logs
+        return None
+    
+    def get_job_checkpoints(self, job_id: str) -> Optional[list]:
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+            if job:
+                return job.job_checkpoints
         return None
 
     def cancel_job(self, job_id: str) -> bool:
@@ -288,43 +299,6 @@ class JobManager:
             await asyncio.gather(*running_tasks, return_exceptions=True)
         self._logger.info("Job manager shutdown complete")
 
-    async def _persist_job_metrics_to_db(self, job: Job):
-        # Only persist metrics for training jobs for now.
-        if job.job_type != JobTypes.TRAINING.value:
-            return
-
-        metrics_list = self.get_job_metrics(job.id)
-        if metrics_list is None:
-            return
-        last_seen = 0
-        while True:
-            current_len = len(metrics_list)
-            for i in range(last_seen, current_len):
-                metric = metrics_list[i]
-                try:
-                    self.db.insert_metric(
-                        job_id=job.id,
-                        global_step=metric["global_step"],
-                        epoch=metric["epoch"],
-                        metric_name=metric["metric_name"],
-                        value=metric["value"],
-                        timestamp=metric["timestamp"],
-                    )
-                except IntegrityError:
-                    self._logger.warning(
-                        f"Duplicate metric for job {job.id} at step {metric['global_step']}, skipping"
-                    )
-                except Exception as e:
-                    self._logger.error(
-                        f"Failed to persist metric for job {job.id}: {e}"
-                    )
-                    break  # we break the loop to avoid increasing last_seen and potentially losing the metric
-            else:
-                last_seen = current_len
-            if job.is_terminal():
-                break
-            await asyncio.sleep(1.0)
-
     async def _mark_job_in_progress(self, job: Job):
         if job.start_event:
             while not job.start_event.is_set():
@@ -339,8 +313,8 @@ class JobManager:
             progress_monitor = asyncio.create_task(self._mark_job_in_progress(job))
 
             if self.db:
-                metrics_persister = asyncio.create_task(
-                    self._persist_job_metrics_to_db(job)
+                data_persister = asyncio.create_task(
+                    self._persist_job_data_to_db(job)
                 )
 
             result_path = await task_function(request)
@@ -379,8 +353,8 @@ class JobManager:
         finally:
             if not progress_monitor.done():
                 progress_monitor.cancel()
-            if metrics_persister and not metrics_persister.done():
-                await metrics_persister
+            if data_persister and not data_persister.done():
+                await data_persister
             job._task = None
 
     def _start_cleanup_task(self):
@@ -478,6 +452,114 @@ class JobManager:
             self._logger.error(
                 f"DB sync failed for job {job.id} to '{job.status.value}': {e}"
             )
+    
+    async def _persist_job_data_to_db(self, job: Job):
+        if job.job_type != JobTypes.TRAINING.value:
+            return
+
+        metrics_list = self.get_job_metrics(job.id)
+        checkpoints_list = self.get_job_checkpoints(job.id)
+        logs_list = self.get_job_logs(job.id)
+
+        metrics_last_seen = 0
+        checkpoints_last_seen = 0
+        logs_last_seen = 0
+
+        metrics_failed = metrics_list is None
+        checkpoints_failed = checkpoints_list is None
+        logs_failed = logs_list is None
+
+        while True:
+            if not metrics_failed:
+                metrics_last_seen = self._persist_new_metrics(
+                    job, metrics_list, metrics_last_seen
+                )
+                if metrics_last_seen < 0:
+                    metrics_failed = True
+
+            if not checkpoints_failed:
+                checkpoints_last_seen = self._persist_new_checkpoints(
+                    job, checkpoints_list, checkpoints_last_seen
+                )
+                if checkpoints_last_seen < 0:
+                    checkpoints_failed = True
+
+            if not logs_failed:
+                logs_last_seen = self._persist_new_logs(
+                    job, logs_list, logs_last_seen
+                )
+                if logs_last_seen < 0:
+                    logs_failed = True
+
+            if job.is_terminal():
+                break
+            await asyncio.sleep(1.0)
+    
+    def _persist_new_metrics(self, job: Job, metrics_list: list, last_seen: int) -> int:
+        current_len = len(metrics_list)
+        for i in range(last_seen, current_len):
+            metric = metrics_list[i]
+            try:
+                self.db.insert_metric(
+                    job_id=job.id,
+                    global_step=metric["global_step"],
+                    epoch=metric["epoch"],
+                    metric_name=metric["metric_name"],
+                    value=metric["value"],
+                    timestamp=metric["timestamp"],
+                )
+            except IntegrityError:
+                self._logger.warning(
+                    f"Duplicate metric for job {job.id} at step {metric['global_step']}, skipping"
+                )
+            except Exception as e:
+                self._logger.error(f"Failed to persist metric for job {job.id}: {e}")
+                return -1
+        return current_len
+
+    def _persist_new_checkpoints(self, job: Job, checkpoints_list: list, last_seen: int) -> int:
+        current_len = len(checkpoints_list)
+        for i in range(last_seen, current_len):
+            ckpt = checkpoints_list[i]
+            try:
+                self.db.insert_checkpoint(
+                    job_id=job.id,
+                    checkpoint_id=ckpt["id"],
+                    step=ckpt["step"],
+                    epoch=ckpt["epoch"],
+                    metrics=ckpt.get("metrics", {}),
+                    created_at=ckpt["created_at"],
+                )
+            except IntegrityError:
+                self._logger.warning(
+                    f"Duplicate checkpoint for job {job.id} at step {ckpt['step']}, skipping"
+                )
+            except Exception as e:
+                self._logger.error(f"Failed to persist checkpoint for job {job.id}: {e}")
+                return -1
+        return current_len
+
+    def _persist_new_logs(self, job: Job, logs_list: list, last_seen: int) -> int:
+        current_len = len(logs_list)
+        for i in range(last_seen, current_len):
+            log_entry = logs_list[i]
+            try:
+                self.db.insert_log(
+                    job_id=job.id,
+                    log_index=i,
+                    timestamp=log_entry["timestamp"],
+                    log_type=log_entry["type"],
+                    step=log_entry.get("step"),
+                    message=log_entry["message"],
+                )
+            except IntegrityError:
+                self._logger.warning(
+                    f"Duplicate log for job {job.id} at index {i}, skipping"
+                )
+            except Exception as e:
+                self._logger.error(f"Failed to persist log for job {job.id}: {e}")
+                return -1
+        return current_len
 
     def _restore_jobs_from_db(self):
         """
@@ -513,6 +595,22 @@ class JobManager:
                     except Exception as e:
                         self._logger.error(
                             f"Failed to restore metrics for job {job.id}: {e}"
+                        )
+                    try:
+                        checkpoints = self.db.get_checkpoints(job.id)
+                        if checkpoints:
+                            job.job_checkpoints = checkpoints
+                    except Exception as e:
+                        self._logger.error(
+                            f"Failed to restore checkpoints for job {job.id}: {e}"
+                        )
+                    try:
+                        logs = self.db.get_logs(job.id)
+                        if logs:
+                            job.job_logs = logs
+                    except Exception as e:
+                        self._logger.error(
+                            f"Failed to restore logs for job {job.id}: {e}"
                         )
 
                 # If job was stuck, mark it as failed or cancelled and sync to database

@@ -69,6 +69,32 @@ class JobDatabase:
                     FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
                 );
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS checkpoints (
+                    job_id TEXT NOT NULL,
+                    checkpoint_id TEXT NOT NULL,
+                    step INTEGER NOT NULL,
+                    epoch INTEGER NOT NULL,
+                    metrics TEXT,
+                    created_at REAL NOT NULL,
+
+                    PRIMARY KEY (job_id, checkpoint_id),
+                    FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+                );
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS logs (
+                    job_id TEXT NOT NULL,
+                    log_index INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    step INTEGER,
+                    message TEXT NOT NULL,
+
+                    PRIMARY KEY (job_id, log_index),
+                    FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+                );
+            """)
 
     def insert_job(
         self,
@@ -210,6 +236,72 @@ class JobDatabase:
                     "metric_name": r["metric_name"],
                     "value": r["value"],
                     "timestamp": r["timestamp"],
+                }
+                for r in cursor.fetchall()
+            ]
+    
+    # ------------- CHECKPOINTS -------------
+    def insert_checkpoint(
+        self,
+        job_id: str,
+        checkpoint_id: str,
+        step: int,
+        epoch: int,
+        metrics: dict,
+        created_at: float,
+    ) -> None:
+        with self._get_cursor(commit=True) as cursor:
+            cursor.execute(
+                "INSERT INTO checkpoints (job_id, checkpoint_id, step, epoch, metrics, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (job_id, checkpoint_id, step, epoch, json.dumps(metrics), created_at),
+            )
+
+    def get_checkpoints(self, job_id: str) -> List[Dict[str, Any]]:
+        with self._get_cursor(commit=False) as cursor:
+            cursor.execute(
+                "SELECT checkpoint_id, step, epoch, metrics, created_atFROM checkpoints WHERE job_id = ? ORDER BY step ASC",
+                (job_id,),
+            )
+            return [
+                {
+                    "id": r["checkpoint_id"],
+                    "step": r["step"],
+                    "epoch": r["epoch"],
+                    "metrics": json.loads(r["metrics"]) if r["metrics"] else {},
+                    "created_at": r["created_at"],
+                }
+                for r in cursor.fetchall()
+            ]
+    
+    # ------------- LOGS -------------
+    def insert_log(
+        self,
+        job_id: str,
+        log_index: str,
+        timestamp: str,
+        log_type: str,
+        step: int,
+        message: str,
+    ) -> None:
+        with self._get_cursor(commit=True) as cursor:
+            cursor.execute(
+                "INSERT INTO logs (job_id, log_index, timestamp, type, step, message) VALUES (?, ?, ?, ?, ?, ?)",
+                (job_id, log_index, timestamp, log_type, step, message),
+            )
+
+    def get_logs(self, job_id: str) -> List[Dict[str, Any]]:
+        with self._get_cursor(commit=False) as cursor:
+            cursor.execute(
+                "SELECT log_index, timestamp, type, step, message FROM logs WHERE job_id = ? ORDER BY log_index ASC",
+                (job_id,),
+            )
+            return [
+                {
+                    "id": r["log_index"],
+                    "timestamp": r["timestamp"],
+                    "type": r["type"],
+                    "step": r["step"],
+                    "message": r["message"],
                 }
                 for r in cursor.fetchall()
             ]

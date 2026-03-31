@@ -191,9 +191,8 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                     self.logger.debug(
                         f"Device {self.device_id}: Optimizer step finished"
                     )
-
-                    do_validation = global_step % request.val_steps_freq == 0
-
+                    
+                    # Training metrics
                     if global_step % request.steps_freq == 0:
                         avg_loss = (
                             running_loss / request.steps_freq
@@ -215,17 +214,37 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                                 }
                             )
                         running_loss = 0.0
-
-                        self._peft_model.save_pretrained(
-                            request._output_model_path,
-                            state_dict={k: v.cpu() for k, v in self._peft_model.state_dict().items()},
+                    
+                    # Checkpoint saving
+                    if global_step > 0 and global_step % request.save_interval == 0:
+                        checkpoint_path = os.path.join(
+                            request._output_model_path, f"ckpt-step-{global_step}"
                         )
-                        self.logger.info(
-                            f"Model checkpoint saved.",
-                            extra={"log_type": "checkpoint", "step": global_step},
-                        )
+                        try:
+                            self._peft_model.save_pretrained(
+                                checkpoint_path,
+                                state_dict={k: v.cpu() for k, v in self._peft_model.state_dict().items()},
+                            )
+                            last_checkpoint_path = checkpoint_path
+                            self.logger.info(
+                                f"Model checkpoint saved to {checkpoint_path}.",
+                                extra={"log_type": "checkpoint", "step": global_step},
+                            )
+                            if request._training_checkpoints is not None:
+                                request._training_checkpoints.append({
+                                    "id": f"ckpt-step-{global_step}",
+                                    "step": global_step,
+                                    "epoch": epoch,
+                                    "metrics": {"train_loss": round(avg_loss, 4)},
+                                    "created_at": time.time(),
+                                })
+                        except Exception as e:
+                            self.logger.error(
+                                f"Failed to save checkpoint at step {global_step}: {e}"
+                            )
 
-                    if do_validation:
+                    # Validation
+                    if global_step % request.val_steps_freq == 0:
                         avg_val_loss = self.run_validation(
                             cancel_event=request._cancel_event
                         )

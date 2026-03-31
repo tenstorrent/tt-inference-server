@@ -27,6 +27,7 @@ class TrainingService(BaseJobService):
         request._cancel_event = self._manager.Event()
         request._training_metrics = self._manager.list()
         request._training_logs = self._manager.list()
+        request._training_checkpoints = self._manager.list()
 
         return await self._job_manager.create_job(
             job_id=request._task_id,
@@ -39,22 +40,23 @@ class TrainingService(BaseJobService):
             cancel_event=request._cancel_event,
             job_metrics=request._training_metrics,
             job_logs=request._training_logs,
+            job_checkpoints=request._training_checkpoints,
         )
 
     def get_job_metrics(self, job_id: str, after: int = 0) -> list:
-        metrics_list = super().get_job_metrics(job_id)
+        metrics_list = self._job_manager.get_job_metrics(job_id)
         if metrics_list is None:
-            return []
+            raise ValueError(f"Job {job_id} not found")
         return list(metrics_list[after:])
 
     def get_job_logs(self, job_id: str) -> list:
-        logs_list = super().get_job_logs(job_id)
+        logs_list = self._job_manager.get_job_logs(job_id)
         if logs_list is None:
-            return []
+            raise ValueError(f"Job {job_id} not found")
         return list(logs_list)
-    
-    def get_job_checkpoints(self, job_id: str) -> Optional[str]:
-        result_path = self._job_manager.get_job_result_path(job_id)
-        if result_path and os.path.isdir(result_path):
-            return result_path
-        return None
+
+    def get_job_checkpoints(self, job_id: str) -> list:
+        checkpoints_list = self._job_manager.get_job_checkpoints(job_id)
+        if checkpoints_list is None:
+            raise ValueError(f"Job {job_id} not found")
+        return list(checkpoints_list)
