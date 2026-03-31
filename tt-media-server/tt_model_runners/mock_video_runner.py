@@ -215,9 +215,7 @@ def _run_shm_bridge() -> None:
 
             logger.info(f"Request {req.task_id} completed")
     finally:
-        input_shm.unlink()
         input_shm.close()
-        output_shm.unlink()
         output_shm.close()
         removed = cleanup_orphaned_video_files()
         if removed:

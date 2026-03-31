@@ -774,6 +774,20 @@ class TestCleanupOrphanedVideoFiles:
     def test_returns_zero_when_no_files(self):
         assert cleanup_orphaned_video_files() == 0
 
+    def test_oserror_on_unlink_is_ignored(self, monkeypatch):
+        """Per-file unlink failures are swallowed (lines 85–86 in video_shm)."""
+        import ipc.video_shm as video_shm_mod
+
+        (self._tmp / "tt_video_stale.pkl").write_bytes(b"x")
+
+        def unlink_raises(_path):
+            raise OSError("permission denied")
+
+        # Patch the same os object cleanup_orphaned_video_files uses (covers except OSError).
+        monkeypatch.setattr(video_shm_mod.os, "unlink", unlink_raises)
+        assert cleanup_orphaned_video_files() == 0
+        assert (self._tmp / "tt_video_stale.pkl").exists()
+
 
 # ── End-to-end file-based IPC roundtrip ──
 

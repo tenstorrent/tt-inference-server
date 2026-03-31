@@ -5,10 +5,11 @@
 """Mock video runner: pipeline output shape and export hook (conftest mocks torch/diffusers)."""
 
 import os
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
+from ipc.video_shm import VideoRequest, VideoStatus
 from tt_model_runners import mock_video_runner as mvr
 
 
@@ -51,3 +52,146 @@ def test_mock_video_runner_run_invokes_export_to_mp4(no_sleep, monkeypatch, tmp_
     assert out == [str(tmp_path / "mock.mp4")]
     assert captured["shape"] == (1, 81, 480, 832, 3)
     assert os.path.isfile(out[0])
+
+
+def test_handle_signal_sets_shutdown():
+    import signal
+
+    mvr._shutdown = False
+    mvr._handle_signal(signal.SIGTERM, None)
+    assert mvr._shutdown is True
+    mvr._shutdown = False
+
+
+def test_run_shm_bridge_processes_one_request(monkeypatch, tmp_path):
+    import numpy as np
+
+    mvr._shutdown = False
+    req = VideoRequest(
+        task_id="abcdef12-3456-7890-abcd-ef1234567890",
+        prompt="p",
+        negative_prompt="",
+        num_inference_steps=12,
+        seed=0,
+        height=480,
+        width=832,
+        num_frames=4,
+        guidance_scale=3.0,
+        guidance_scale_2=4.0,
+    )
+    mock_in = MagicMock()
+    mock_out = MagicMock()
+    mock_in.read_request = Mock(side_effect=[req, None])
+
+    mp4 = tmp_path / "out.mp4"
+    mp4.write_bytes(b"x")
+
+    class FastPipeline:
+        def __call__(self, **kwargs):
+            return np.zeros((1, 2, 8, 8, 3), dtype=np.uint8)
+
+    monkeypatch.setattr(mvr, "MockVideoPipeline", FastPipeline)
+
+    with patch("ipc.video_shm.VideoShm", side_effect=[mock_in, mock_out]):
+        with patch("utils.video_manager.VideoManager") as VM:
+            VM.return_value.export_to_mp4.return_value = str(mp4)
+            with patch("ipc.video_shm.cleanup_orphaned_video_files", return_value=0):
+                mvr._run_shm_bridge()
+
+    mock_out.write_response.assert_called()
+    mock_in.close.assert_called_once()
+    mock_out.close.assert_called_once()
+
+
+def test_module_main_invokes_bridge(monkeypatch):
+    called = []
+    monkeypatch.setattr(mvr, "_run_shm_bridge", lambda: called.append(1))
+    monkeypatch.setattr(mvr.signal, "signal", lambda *a, **k: None)
+
+    import runpy
+
+    runpy.run_module("tt_model_runners.mock_video_runner", run_name="__main__")
+    assert called == [1]
+
+
+def test_run_shm_bridge_error_path_writes_error_response(monkeypatch, tmp_path):
+    """Pipeline/export failure -> ERROR VideoResponse and continue loop."""
+    mvr._shutdown = False
+    req = VideoRequest(
+        task_id="abcdef12-3456-7890-abcd-ef1234567890",
+        prompt="p",
+        negative_prompt="",
+        num_inference_steps=12,
+        seed=0,
+        height=480,
+        width=832,
+        num_frames=4,
+        guidance_scale=3.0,
+        guidance_scale_2=4.0,
+    )
+    mock_in = MagicMock()
+    mock_out = MagicMock()
+    mock_in.read_request = Mock(side_effect=[req, None])
+
+    class BoomPipeline:
+        def __call__(self, **kwargs):
+            raise RuntimeError("simulated inference failure")
+
+    monkeypatch.setattr(mvr, "MockVideoPipeline", BoomPipeline)
+
+    with patch("ipc.video_shm.VideoShm", side_effect=[mock_in, mock_out]):
+        with patch("utils.video_manager.VideoManager"):
+            with patch("ipc.video_shm.cleanup_orphaned_video_files", return_value=0):
+                mvr._run_shm_bridge()
+
+    err_resps = [
+        c[0][0]
+        for c in mock_out.write_response.call_args_list
+        if c[0][0].status == VideoStatus.ERROR
+    ]
+    assert len(err_resps) == 1
+    assert "simulated inference failure" in err_resps[0].error_message
+
+
+def test_run_shm_bridge_logs_when_orphans_removed(monkeypatch, tmp_path):
+    import numpy as np
+
+    mvr._shutdown = False
+    req = VideoRequest(
+        task_id="abcdef12-3456-7890-abcd-ef1234567890",
+        prompt="p",
+        negative_prompt="",
+        num_inference_steps=12,
+        seed=0,
+        height=480,
+        width=832,
+        num_frames=4,
+        guidance_scale=3.0,
+        guidance_scale_2=4.0,
+    )
+    mock_in = MagicMock()
+    mock_out = MagicMock()
+    mock_in.read_request = Mock(side_effect=[req, None])
+    mp4 = tmp_path / "x.mp4"
+    mp4.write_bytes(b"x")
+
+    class FastPipeline:
+        def __call__(self, **kwargs):
+            return np.zeros((1, 2, 8, 8, 3), dtype=np.uint8)
+
+    monkeypatch.setattr(mvr, "MockVideoPipeline", FastPipeline)
+
+    mock_log = MagicMock()
+    with patch("utils.logger.TTLogger", return_value=mock_log):
+        with patch("ipc.video_shm.VideoShm", side_effect=[mock_in, mock_out]):
+            with patch("utils.video_manager.VideoManager") as VM:
+                VM.return_value.export_to_mp4.return_value = str(mp4)
+                with patch(
+                    "ipc.video_shm.cleanup_orphaned_video_files", return_value=3
+                ):
+                    mvr._run_shm_bridge()
+
+    assert any(
+        "3" in str(call) and "orphan" in str(call).lower()
+        for call in mock_log.info.call_args_list
+    )
