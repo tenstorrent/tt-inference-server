@@ -214,6 +214,7 @@ class DeviceIds(Enum):
     DEVICE_IDS_1 = "(0)"
     DEVICE_IDS_2 = "(0),(1)"
     DEVICE_IDS_2_GROUP = "(0,1)"
+    DEVICE_IDS_2X2_GROUP = "(0,1),(2,3)"
     DEVICE_IDS_4 = "(0),(1),(2),(3)"
     DEVICE_IDS_4_GROUP = "(0,1,2,3)"
     DEVICE_IDS_8_GROUP = "(0,1,2,3,4,5,6,7)"
@@ -851,9 +852,9 @@ ModelConfigs[(ModelRunners.TT_XLA_SDXL, DeviceTypes.P150X4)] = {
 }
 
 ModelConfigs[(ModelRunners.TT_XLA_SDXL, DeviceTypes.P300X2)] = {
-    "device_mesh_shape": (1, 1),
+    "device_mesh_shape": (1, 2),
     "is_galaxy": False,
-    "device_ids": DeviceIds.DEVICE_IDS_4.value,
+    "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
     "max_batch_size": 1,
 }
 
