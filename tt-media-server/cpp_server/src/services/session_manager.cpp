@@ -197,10 +197,10 @@ uint32_t SessionManager::requestSlotIdFromMemoryManager(
                  sessionId);
 
     // Wait for response with timeout
-    const int MAX_ATTEMPTS = 100;  // ~1 second with 10ms sleep
+    const int maxAttempts = 100;  // ~1 second with 10ms sleep
     int attempts = 0;
 
-    while (attempts < MAX_ATTEMPTS) {
+    while (attempts < maxAttempts) {
       domain::ManageMemoryResult result;
       if (memoryResultQueue_->tryPop(result)) {
         // Check if this is our result
