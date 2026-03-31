@@ -176,13 +176,14 @@ void LLMController::completions(
   } else {
     try {
       // Create session if not provided
-      if (!request->session_id.has_value() && sessionManager) {
+      if (!request->sessionId.has_value() && sessionManager) {
         auto session = sessionManager->createSession(std::nullopt);
-        request->session_id = session.getSessionId();
+        request->sessionId = session.getSessionId();
       }
 
-      // Save session_id before moving request
-      auto sessionId = request->session_id;
+      // Save sessionId before moving request
+      auto sessionId = request->sessionId;
+      request->slotId = sessionManager->getSlotIdBySessionId(request->sessionId.value());
 
       auto startTime = std::chrono::high_resolution_clock::now();
       auto response = service->submitRequest(std::move(*request));
@@ -202,9 +203,9 @@ void LLMController::completions(
         }
       }
 
-      // Include session_id in response if present
+      // Include sessionId in response if present
       if (sessionId.has_value()) {
-        response.usage.session_id = sessionId;
+        response.usage.sessionId = sessionId;
       }
 
       auto resp = drogon::HttpResponse::newHttpResponse();
@@ -277,13 +278,13 @@ void LLMController::chatCompletions(
   } else {
     try {
       // Create session if not provided
-      if (!request->session_id.has_value() && sessionManager) {
+      if (!request->sessionId.has_value() && sessionManager) {
         auto session = sessionManager->createSession(std::nullopt);
-        request->session_id = session.getSessionId();
+        request->sessionId = session.getSessionId();
       }
 
-      // Save session_id before moving request
-      auto sessionId = request->session_id;
+      // Save sessionId before moving request
+      auto sessionId = request->sessionId;
 
       auto startTime = std::chrono::high_resolution_clock::now();
       auto completion = service->submitRequest(std::move(*request));
@@ -303,9 +304,9 @@ void LLMController::chatCompletions(
         }
       }
 
-      // Include session_id in response if present
+      // Include sessionId in response if present
       if (sessionId.has_value()) {
-        completion.usage.session_id = sessionId;
+        completion.usage.sessionId = sessionId;
       }
 
       auto chatResponse =
@@ -330,9 +331,9 @@ void LLMController::handleStreaming(
   ZoneScopedN("API::handleStreaming");
 
   // Create session if not provided
-  if (!reqPtr->session_id.has_value() && sessionManager) {
+  if (!reqPtr->sessionId.has_value() && sessionManager) {
     auto session = sessionManager->createSession(std::nullopt);
-    reqPtr->session_id = session.getSessionId();
+    reqPtr->sessionId = session.getSessionId();
   }
 
   const std::string completionId =
@@ -498,9 +499,9 @@ void LLMController::handleStreaming(
               }
             }
 
-            // Include session_id in usage if present
-            if (reqPtr->session_id.has_value()) {
-              usage.session_id = reqPtr->session_id;
+            // Include sessionId in usage if present
+            if (reqPtr->sessionId.has_value()) {
+              usage.sessionId = reqPtr->sessionId;
             }
 
             if (isChat) {
@@ -568,7 +569,7 @@ void LLMController::createSession(
   try {
     std::optional<uint32_t> slotId;
 
-    // Try to parse request body for optional slot_id
+    // Try to parse request body for optional slotId
     if (req->getBody().length() > 0) {
       Json::Value requestBody;
       Json::CharReaderBuilder builder;
