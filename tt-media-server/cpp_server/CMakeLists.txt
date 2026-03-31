@@ -124,6 +124,20 @@ if(ENABLE_TRACY)
     )
 endif()
 
+# Prometheus metrics (core only — no embedded HTTP server, no push gateway)
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(ENABLE_PUSH OFF CACHE BOOL "" FORCE)
+set(ENABLE_PULL OFF CACHE BOOL "" FORCE)
+set(ENABLE_COMPRESSION OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    prometheus-cpp
+    GIT_REPOSITORY https://github.com/jupp0r/prometheus-cpp.git
+    GIT_TAG        v1.2.4
+    GIT_SHALLOW    ON
+    GIT_SUBMODULES ""
+)
+FetchContent_MakeAvailable(prometheus-cpp)
+
 # Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
 set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
@@ -138,7 +152,7 @@ FetchContent_MakeAvailable(tokenizers_cpp)
 if(CLANG_TIDY)
   find_program(CLANG_TIDY_EXE NAMES clang-tidy-20 clang-tidy-19 clang-tidy)
   if(CLANG_TIDY_EXE)
-    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};--warnings-as-errors=*" CACHE STRING "clang-tidy command" FORCE)
+    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};--warnings-as-errors=*")
   else()
     message(FATAL_ERROR "CLANG_TIDY=ON but no clang-tidy found. Install clang-tidy-20 or run install_dependencies.sh")
   endif()
@@ -214,7 +228,13 @@ set(LLM_ENGINE_SOURCES
     src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
     src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
     src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
+    src/runners/sp_prefill_runner/sp_prefill_runner.cpp
+    src/runners/sp_prefill_runner/i_sp_prefill_model_runner.cpp
+    src/runners/sp_prefill_runner/sp_prefill_model_runner.cpp
     src/services/memory_manager.cpp
+    src/services/paged_memory_manager.cpp
+    src/services/contiguous_memory_manager.cpp
+    src/services/sp_pipeline_memory_manager.cpp
 )
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
@@ -361,7 +381,11 @@ set(SOURCES
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
     src/services/memory_manager.cpp
+    src/services/paged_memory_manager.cpp
+    src/services/contiguous_memory_manager.cpp
     src/services/reasoning_parser.cpp
+    src/services/session_manager.cpp
+    src/domain/session.cpp
     src/utils/tokenizer.cpp
     src/utils/logger.cpp
     src/utils/deepseek_tokenizer.cpp
@@ -379,6 +403,8 @@ set(SOURCES
     src/services/disaggregation_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/inter_server_service.cpp
+    src/metrics/metrics.cpp
+    src/api/metrics_controller.cpp
 )
 
 # Create executable
@@ -390,16 +416,17 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${rapidjson_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
+    ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
 # Compile definitions for performance optimization
 target_compile_definitions(${PROJECT_NAME} PRIVATE)
 
-# Link Drogon and llm_engine (used by LLMService)
+# Link Drogon, llm_engine, and prometheus-cpp core
 if(USE_EXTERNAL_FMT)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog fmt::fmt)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog fmt::fmt prometheus-cpp::core)
 else()
-    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog prometheus-cpp::core)
 endif()
 if(ENABLE_TRACY)
     target_sources(${PROJECT_NAME} PRIVATE src/profiling/tracy_alloc.cpp)

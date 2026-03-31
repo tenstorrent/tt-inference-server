@@ -80,7 +80,8 @@ enum class ModelRunnerType {
   PIPELINE,
   LLAMA,
   MOCK_PIPELINE,
-  PIPELINE_MANAGER
+  PIPELINE_MANAGER,
+  PREFILL
 };
 
 enum class SchedulingPolicy {

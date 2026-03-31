@@ -1,0 +1,98 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
+#include "runners/sp_prefill_runner/sp_prefill_runner.hpp"
+
+#include "utils/logger.hpp"
+
+namespace tt::runners {
+
+SpPrefillRunner::SpPrefillRunner(const config::LLMConfig& config,
+                                 ipc::TokenRingBuffer<65536>* resultQueue,
+                                 llm_engine::ITaskQueue* taskQueue)
+    : config(config), resultQueue(resultQueue), taskQueue(taskQueue) {
+  modelRunner = sp_prefill::makeModelRunner(config);
+}
+
+SpPrefillRunner::~SpPrefillRunner() {
+  stop();
+  if (modelRunner) {
+    modelRunner->exit();
+  }
+}
+
+void SpPrefillRunner::run() {
+  while (!stopped.load(std::memory_order_relaxed)) {
+    // Get next sequence from task queue
+    auto* seq = taskQueue->tryPop();
+    if (!seq) {
+      std::this_thread::yield();
+      continue;
+    }
+
+    // Use unique_ptr to ensure cleanup
+    std::unique_ptr<llm_engine::Sequence> sequence(seq);
+    TT_LOG_DEBUG("SpPrefillRunner: Starting prefill for task {}",
+                 sequence->taskId.id);
+
+    auto result = modelRunner->forward(sequence->taskId.id, sequence->tokenIds);
+
+    if (!result) {
+      break;  // stopped
+    }
+
+    if (result->isError) {
+      TT_LOG_WARN("SpPrefillRunner: Error token for task {}",
+                  result->taskId.id);
+      pushErrorToken(result->taskId);
+    } else {
+      TT_LOG_DEBUG("SpPrefillRunner: Received prefill token {} for task {}",
+                   result->tokenId, result->taskId.id);
+      pushToken(result->taskId, result->tokenId, true);  // Always finished
+    }
+
+    // sequence automatically cleaned up at end of scope
+  }
+}
+
+bool SpPrefillRunner::warmup() {
+  std::vector<int64_t> warmupTokens = {1};
+  llm_engine::TaskID warmupTaskId("warmup_task");
+
+  auto result = modelRunner->forward(warmupTaskId.id, warmupTokens);
+  if (!result || result->isError) {
+    TT_LOG_ERROR("SpPrefillRunner: Warmup failed");
+    return false;
+  }
+
+  TT_LOG_INFO("SpPrefillRunner: Warmup successful");
+  return true;
+}
+
+void SpPrefillRunner::stop() {
+  TT_LOG_INFO("SpPrefillRunner: Stopping");
+  stopped.store(true, std::memory_order_relaxed);
+}
+
+void SpPrefillRunner::pushToken(const llm_engine::TaskID& taskId,
+                                uint64_t tokenId, bool finished) {
+  ipc::SharedToken shared{};
+  shared.token_index = 0;
+  shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;
+  shared.token_id = tokenId;
+  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
+  shared.task_id[sizeof(shared.task_id) - 1] = '\0';
+  resultQueue->push(shared);
+}
+
+void SpPrefillRunner::pushErrorToken(const llm_engine::TaskID& taskId) {
+  ipc::SharedToken shared{};
+  shared.token_index = 0;
+  shared.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR;
+  shared.token_id = 0;
+  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
+  shared.task_id[sizeof(shared.task_id) - 1] = '\0';
+  resultQueue->push(shared);
+}
+
+}  // namespace tt::runners

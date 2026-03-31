@@ -22,8 +22,6 @@ SpPipelineRunnerDemo::SpPipelineRunnerDemo(
       taskQueue(taskQueue),
       decodeQueue(config.max_in_flight_count),
       maxInFlightCount(config.max_in_flight_count * 30) {
-  memoryThread = std::thread([this] { memoryLoop(); });
-
   auto decodeCb = [this](const llm_engine::TokenResult& result) {
     while (!decodeQueue.push(result)) {
       std::this_thread::yield();
@@ -35,9 +33,6 @@ SpPipelineRunnerDemo::SpPipelineRunnerDemo(
 
 SpPipelineRunnerDemo::~SpPipelineRunnerDemo() {
   stop();
-  if (memoryThread.joinable()) {
-    memoryThread.join();
-  }
   if (modelRunner) {
     modelRunner->exit();
   }
@@ -102,30 +97,6 @@ bool SpPipelineRunnerDemo::warmup() {
 
 void SpPipelineRunnerDemo::stop() {
   stopped.store(true, std::memory_order_relaxed);
-}
-
-void SpPipelineRunnerDemo::memoryLoop() {
-  tt::domain::ManageMemoryTask task{};
-  std::vector<tt::domain::ManageMemoryTask> retryQueue;
-
-  while (!stopped.load(std::memory_order_relaxed)) {
-    if (!retryQueue.empty()) {
-      auto result = memoryManager.handle_task(retryQueue.front());
-      if (result.status != domain::ManageMemoryStatus::WAITING) {
-        memoryResults.push(result);
-        retryQueue.erase(retryQueue.begin());
-      }
-    } else if (memoryRequests.tryPop(task)) {
-      auto result = memoryManager.handle_task(task);
-      if (result.status == domain::ManageMemoryStatus::WAITING) {
-        retryQueue.push_back(task);
-      } else {
-        memoryResults.push(result);
-      }
-    } else {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-  }
 }
 
 void SpPipelineRunnerDemo::step() {

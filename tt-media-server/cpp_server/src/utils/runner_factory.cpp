@@ -6,6 +6,7 @@
 #include "runners/embedding_runner.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
+#include "runners/sp_prefill_runner/sp_prefill_runner.hpp"
 #include "sp_pipeline_runner/sp_pipeline_runner_demo.hpp"
 #include "utils/logger.hpp"
 
@@ -33,6 +34,12 @@ std::unique_ptr<runners::IRunner> createRunner(
         TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner");
         return std::make_unique<runners::SpPipelineRunner>(cfg, resultQueue,
                                                            taskQueue);
+      }
+
+      if (cfg.runner_type == config::ModelRunnerType::PREFILL) {
+        TT_LOG_INFO("[RunnerFactory] Creating SP Prefill runner");
+        return std::make_unique<runners::SpPrefillRunner>(cfg, resultQueue,
+                                                          taskQueue);
       }
 
       TT_LOG_INFO("[RunnerFactory] Creating LLM runner (mock)");

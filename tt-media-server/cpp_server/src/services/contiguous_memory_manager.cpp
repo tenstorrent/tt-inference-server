@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
+#include "services/contiguous_memory_manager.hpp"
+
+namespace tt::services {
+
+using tt::domain::ManageMemoryResult;
+using tt::domain::ManageMemoryStatus;
+using tt::domain::ManageMemoryTask;
+
+void ContiguousMemoryManager::handleRequest(const ManageMemoryTask& task) {
+  ManageMemoryResult result{};
+  result.taskId = task.taskId;
+  result.status = ManageMemoryStatus::SUCCESS;
+  resultQueue.push(result);
+}
+
+}  // namespace tt::services

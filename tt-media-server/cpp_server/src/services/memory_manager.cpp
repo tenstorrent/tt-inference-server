@@ -3,88 +3,22 @@
 
 #include "services/memory_manager.hpp"
 
-#include <utility>
-
 namespace tt::services {
 
-namespace {
-
-using tt::domain::KvDestination;
-using tt::domain::KvMemoryLayout;
-using tt::domain::ManageMemoryResult;
-using tt::domain::ManageMemoryStatus;
-using tt::domain::ManageMemoryTask;
-using tt::domain::MemoryManagementAction;
-
-ManageMemoryResult makeResult(const ManageMemoryTask& task,
-                              ManageMemoryStatus status,
-                              std::vector<KvDestination> locations = {}) {
-  return ManageMemoryResult{.task_id = task.task_id,
-                            .status = status,
-                            .memory_locations = std::move(locations)};
+MemoryManager::MemoryManager()
+    : requestQueue(ipc::k_memory_request_queue_name,
+                   ipc::MEMORY_QUEUE_CAPACITY),
+      resultQueue(ipc::k_memory_result_queue_name, ipc::MEMORY_QUEUE_CAPACITY) {
 }
 
-ManageMemoryStatus allocateKv(const ManageMemoryTask& /*task*/,
-                              std::vector<KvDestination>& /*out*/) {
-  // TODO(ttnn): Size and fill from device. Return WAITING when full.
-  return ManageMemoryStatus::SUCCESS;
-}
+MemoryManager::~MemoryManager() = default;
 
-void deallocateKv(const std::vector<KvDestination>& /*locations*/) {
-  // TODO(ttnn): Release KV via ttnn / device.
-}
-
-}  // namespace
-
-ManageMemoryResult MemoryManager::handle_task(const ManageMemoryTask& task) {
-  if (task.action == MemoryManagementAction::MOVE) {
-    return makeResult(task, ManageMemoryStatus::FAILURE);
+std::optional<domain::ManageMemoryTask> MemoryManager::getRequest() {
+  domain::ManageMemoryTask task{};
+  if (requestQueue.tryPop(task)) {
+    return task;
   }
-
-  switch (task.action) {
-    case MemoryManagementAction::ALLOCATE: {
-      if (reservations.contains(task.task_id.id)) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
-      if (task.memory_layout == KvMemoryLayout::PerLayer) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
-      if (task.input_seq_len < 0) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
-      reservations.insert(
-          task.task_id.id,
-          Reservation{.layout = KvMemoryLayout::Paged, .locations = {}});
-
-      std::vector<KvDestination> locations;
-      auto allocStatus = allocateKv(task, locations);
-      if (allocStatus != ManageMemoryStatus::SUCCESS) {
-        reservations.erase(task.task_id.id);
-        return makeResult(task, allocStatus);
-      }
-
-      reservations.insert(
-          task.task_id.id,
-          Reservation{.layout = KvMemoryLayout::Paged, .locations = locations});
-      return makeResult(task, ManageMemoryStatus::SUCCESS,
-                        std::move(locations));
-    }
-    case MemoryManagementAction::DEALLOCATE: {
-      auto reservation = reservations.get(task.task_id.id);
-      if (!reservation.has_value()) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
-      if (reservation->layout != task.memory_layout) {
-        return makeResult(task, ManageMemoryStatus::FAILURE);
-      }
-      reservations.erase(task.task_id.id);
-
-      deallocateKv(reservation->locations);
-      return makeResult(task, ManageMemoryStatus::SUCCESS);
-    }
-    default:
-      return makeResult(task, ManageMemoryStatus::FAILURE);
-  }
+  return std::nullopt;
 }
 
 }  // namespace tt::services
