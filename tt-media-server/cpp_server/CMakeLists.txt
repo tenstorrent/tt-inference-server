@@ -378,6 +378,8 @@ set(SOURCES
     src/services/paged_memory_manager.cpp
     src/services/contiguous_memory_manager.cpp
     src/services/reasoning_parser.cpp
+    src/services/session_manager.cpp
+    src/domain/session.cpp
     src/utils/tokenizer.cpp
     src/utils/logger.cpp
     src/utils/deepseek_tokenizer.cpp

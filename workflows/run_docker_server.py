@@ -21,7 +21,7 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
-from workflows.validate_multihost import validate_multihost_args
+from workflows.validate_setup import run_multihost_validation_subprocess
 from workflows.utils import (
     default_dotenv_path,
     ensure_readwriteable_dir,
@@ -678,10 +678,10 @@ def run_multihost_server(model_spec, runtime_config, setup_config, json_fpath):
     multihost_config = setup_multihost_config(model_spec, expected_hosts)
 
     # Validate multi-host configuration (including system software versions)
-    hosts = validate_multihost_args(
+    hosts = run_multihost_validation_subprocess(
         multihost_config,
         model_spec=model_spec,
-        tt_smi_path=multihost_config.tt_smi_path,
+        json_fpath=json_fpath,
     )
     logger.info(f"Starting multi-host deployment with {len(hosts)} hosts: {hosts}")
 

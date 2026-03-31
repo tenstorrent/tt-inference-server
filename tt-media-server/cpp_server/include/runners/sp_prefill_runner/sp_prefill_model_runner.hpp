@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "runners/sp_pipeline_runner/shared_memory.hpp"
+#include "ipc/slot_ring_buffer.hpp"
 #include "runners/sp_prefill_runner/i_sp_prefill_model_runner.hpp"
 
 namespace sp_prefill {
@@ -44,8 +44,8 @@ class SpPrefillModelRunner : public ISpPrefillModelRunner {
 
   PrefillCallback prefillCallback;
   ShmNames shmNames;
-  sp_pipeline::PrefillSharedMemory deviceInput;
-  sp_pipeline::DecodeSharedMemory deviceOutput;
+  tt::ipc::PrefillSlotBuffer deviceInput;
+  tt::ipc::DecodeSlotBuffer deviceOutput;
   std::atomic<bool> stop{false};
 };
 
