@@ -25,6 +25,8 @@ class BoostIpcCancelQueue : public ICancelQueue {
   /** Open an existing queue (worker process). */
   explicit BoostIpcCancelQueue(const std::string& name);
 
+  ~BoostIpcCancelQueue() override;
+
   void push(const domain::TaskID& taskId) override;
   void tryPopAll(std::vector<domain::TaskID>& out) override;
   void remove() override;

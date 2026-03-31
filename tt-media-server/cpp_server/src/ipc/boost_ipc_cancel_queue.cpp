@@ -23,6 +23,14 @@ BoostIpcCancelQueue::BoostIpcCancelQueue(const std::string& name)
           std::make_unique<bip::message_queue>(bip::open_only, name.c_str())),
       recv_buffer_(domain::TaskID::K_SERIALIZED_SIZE) {}
 
+BoostIpcCancelQueue::~BoostIpcCancelQueue() {
+  try {
+    queue_.reset();
+  } catch (const bip::interprocess_exception& e) {
+    TT_LOG_WARN("[BoostIpcCancelQueue] Destructor: {} (ignored)", e.what());
+  }
+}
+
 void BoostIpcCancelQueue::push(const domain::TaskID& taskId) {
   auto buf = taskId.ipcSerialize();
   if (!queue_->try_send(buf.data(), buf.size(), 0)) {
