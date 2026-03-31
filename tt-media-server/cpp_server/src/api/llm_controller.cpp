@@ -336,17 +336,20 @@ void LLMController::handleStreaming(
   if (!reqPtr->sessionId.has_value() && sessionManager) {
     auto session = sessionManager->createSession(std::nullopt);
     reqPtr->sessionId = session.getSessionId();
-    TT_LOG_INFO("[LLMController] Created NEW session: {}", reqPtr->sessionId.value());
+    TT_LOG_INFO("[LLMController] Created NEW session: {}",
+                reqPtr->sessionId.value());
   } else if (reqPtr->sessionId.has_value()) {
-    TT_LOG_INFO("[LLMController] Using EXISTING sessionId: '{}'", reqPtr->sessionId.value());
+    TT_LOG_INFO("[LLMController] Using EXISTING sessionId: '{}'",
+                reqPtr->sessionId.value());
   }
 
   if (reqPtr->sessionId.has_value() && sessionManager) {
     reqPtr->slotId =
-      sessionManager->getSlotIdBySessionId(reqPtr->sessionId.value());
-    TT_LOG_DEBUG("[LLMController] Session: {}, SlotID: {}",
-                 reqPtr->sessionId.value(),
-                 reqPtr->slotId.has_value() ? std::to_string(reqPtr->slotId.value()) : "none");
+        sessionManager->getSlotIdBySessionId(reqPtr->sessionId.value());
+    TT_LOG_DEBUG(
+        "[LLMController] Session: {}, SlotID: {}", reqPtr->sessionId.value(),
+        reqPtr->slotId.has_value() ? std::to_string(reqPtr->slotId.value())
+                                   : "none");
   } else if (!sessionManager) {
     TT_LOG_WARN("[LLMController] SessionManager not available");
   }
@@ -438,12 +441,13 @@ void LLMController::handleStreaming(
         if (firstContentChunk->exchange(false)) {
           std::optional<domain::CompletionUsage> initialUsage;
           if (continuousUsage) {
-            initialUsage = domain::CompletionUsage{reqPtr->prompt_tokens_count,
-                                                   0,
-                                                   0,
-                                                   std::nullopt,
-                                                   std::nullopt,
-                                                   capturedSessionId};  // Use captured sessionId
+            initialUsage = domain::CompletionUsage{
+                reqPtr->prompt_tokens_count,
+                0,
+                0,
+                std::nullopt,
+                std::nullopt,
+                capturedSessionId};  // Use captured sessionId
           }
           auto initialChunk =
               domain::ChatCompletionStreamChunk::makeInitialChunk(
@@ -484,8 +488,11 @@ void LLMController::handleStreaming(
           if (includeUsage) {
             const int tokens = completionTokens->load();
 
-            TT_LOG_DEBUG("[LLMController] Creating final usage - capturedSessionId: {}",
-                         capturedSessionId.has_value() ? ("'" + capturedSessionId.value() + "'") : "none");
+            TT_LOG_DEBUG(
+                "[LLMController] Creating final usage - capturedSessionId: {}",
+                capturedSessionId.has_value()
+                    ? ("'" + capturedSessionId.value() + "'")
+                    : "none");
 
             domain::CompletionUsage usage{reqPtr->prompt_tokens_count,
                                           tokens,
@@ -524,9 +531,12 @@ void LLMController::handleStreaming(
             // Include sessionId in usage if present
             if (capturedSessionId.has_value()) {
               usage.sessionId = capturedSessionId;
-              TT_LOG_DEBUG("[LLMController] Set usage.sessionId to: '{}'", usage.sessionId.value());
+              TT_LOG_DEBUG("[LLMController] Set usage.sessionId to: '{}'",
+                           usage.sessionId.value());
             } else {
-              TT_LOG_WARN("[LLMController] capturedSessionId is empty, cannot set usage.sessionId");
+              TT_LOG_WARN(
+                  "[LLMController] capturedSessionId is empty, cannot set "
+                  "usage.sessionId");
             }
 
             if (isChat) {

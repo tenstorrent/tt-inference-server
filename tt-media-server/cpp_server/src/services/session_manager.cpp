@@ -232,9 +232,8 @@ uint32_t SessionManager::requestSlotIdFromMemoryManager(
     return std::numeric_limits<uint32_t>::max();
 
   } catch (const std::exception& e) {
-    TT_LOG_ERROR(
-        "[SessionManager] Error requesting slot for session {}: {}", sessionId,
-        e.what());
+    TT_LOG_ERROR("[SessionManager] Error requesting slot for session {}: {}",
+                 sessionId, e.what());
     return std::numeric_limits<uint32_t>::max();
   }
 }
