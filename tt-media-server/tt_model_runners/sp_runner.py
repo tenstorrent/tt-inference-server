@@ -20,7 +20,6 @@ Environment variables:
 from __future__ import annotations
 
 import os
-import pickle
 
 from ipc.video_shm import (
     VideoRequest,
@@ -117,30 +116,16 @@ class SPRunner(BaseDeviceRunner):
             self._try_unlink(resp.file_path)
             raise RuntimeError(f"Runner error for task {task_id}: {resp.error_message}")
 
-        file_path = resp.file_path
+        mp4_path = resp.file_path
+        exists = os.path.exists(mp4_path)
+        size_bytes = os.path.getsize(mp4_path) if exists else None
+        size_part = f"{size_bytes:,} bytes" if size_bytes is not None else "n/a"
         self.logger.info(
-            f"[SP] Received file_path from SHM output: {file_path} "
-            f"(exists={os.path.exists(file_path)}, "
-            f"size={os.path.getsize(file_path):,} bytes)"
+            f"[SP] Received mp4 path from SHM: {mp4_path} "
+            f"(exists={exists}, size={size_part})"
         )
-        try:
-            with open(file_path, "rb") as fh:
-                video = pickle.load(fh)
-            self.logger.info(
-                f"[SP] LOADED video from {file_path}, "
-                f"type={type(video).__name__}, "
-                f"shape={getattr(video, 'shape', 'N/A')}"
-            )
-        except Exception:
-            self.logger.error(f"[SP] FAILED to load video from {file_path}")
-            self._try_unlink(file_path)
-            raise
-        self._try_unlink(file_path)
-        self.logger.info(
-            f"[SP] DELETED temp file {file_path} "
-            f"(exists_after={os.path.exists(file_path)})"
-        )
-        return video
+        # List so device_worker's responses[i] matches one path per request (str[0] would be wrong).
+        return [mp4_path]
 
     @staticmethod
     def _try_unlink(path: str) -> None:
