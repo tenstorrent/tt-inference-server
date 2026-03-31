@@ -44,11 +44,13 @@ import socket
 import struct
 import sys
 import time
+from dataclasses import fields as dc_fields
 from typing import Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from config.constants import ModelRunners
+from domain.video_generate_request import VideoGenerateRequest
 from ipc.video_shm import (
     VideoRequest,
     VideoResponse,
@@ -56,6 +58,21 @@ from ipc.video_shm import (
     VideoStatus,
     cleanup_orphaned_video_files,
 )
+
+
+def video_request_to_generate_request(req: VideoRequest) -> VideoGenerateRequest:
+    """Map SHM :class:`VideoRequest` to :class:`VideoGenerateRequest` for DiT runners.
+
+    Uses the intersection of field names so we never pass SHM-only fields (e.g.
+    ``height``, ``width``) unless they exist on ``VideoGenerateRequest``. Today
+    that matches the historical explicit mapping: prompt, negative_prompt,
+    ``num_inference_steps``, seed — same as ``SPRunner`` / API usage.
+    """
+    shm_names = {f.name for f in dc_fields(VideoRequest)}
+    gen_names = set(VideoGenerateRequest.model_fields.keys())
+    common = shm_names & gen_names
+    return VideoGenerateRequest(**{name: getattr(req, name) for name in common})
+
 
 _shutdown = False
 
@@ -236,14 +253,7 @@ def run_rank0_coordinator() -> None:
                     print(f"Rank 0: Failed to send to rank {rank}: {e}")
 
             try:
-                from domain.video_generate_request import VideoGenerateRequest
-
-                video_gen_req = VideoGenerateRequest(
-                    prompt=req.prompt,
-                    negative_prompt=req.negative_prompt,
-                    num_inference_steps=req.num_inference_steps,
-                    seed=req.seed,
-                )
+                video_gen_req = video_request_to_generate_request(req)
 
                 print(f"Rank 0: Starting inference for task {req.task_id}")
                 frames = runner.run([video_gen_req])
@@ -328,14 +338,7 @@ def run_worker_rank(rank: int) -> None:
             )
 
             try:
-                from domain.video_generate_request import VideoGenerateRequest
-
-                video_gen_req = VideoGenerateRequest(
-                    prompt=req.prompt,
-                    negative_prompt=req.negative_prompt,
-                    num_inference_steps=req.num_inference_steps,
-                    seed=req.seed,
-                )
+                video_gen_req = video_request_to_generate_request(req)
 
                 print(f"Rank {rank}: Starting inference for task {req.task_id}")
                 _frames = runner.run([video_gen_req])

@@ -39,6 +39,7 @@ from tt_model_runners.video_runner import (
     _write_response_to_shm,
     _write_error_to_shm,
     create_dit_runner,
+    video_request_to_generate_request,
     RANK_CONFIG,
 )
 
@@ -219,6 +220,27 @@ class TestCreateDitRunner:
         with patch.dict(sys.modules, self._make_dit_module(mock_mochi, mock_wan)):
             with pytest.raises(ValueError, match="Unsupported MODEL_RUNNER"):
                 create_dit_runner("invalid_runner", "0")
+
+
+class TestVideoRequestToGenerateRequest:
+    def test_maps_only_fields_shared_with_video_generate_request(self):
+        req = VideoRequest(
+            task_id="t1",
+            prompt="hello",
+            negative_prompt="blurry",
+            num_inference_steps=20,
+            seed=42,
+            height=480,
+            width=832,
+            num_frames=81,
+            guidance_scale=3.0,
+            guidance_scale_2=4.0,
+        )
+        gen = video_request_to_generate_request(req)
+        assert gen.prompt == "hello"
+        assert gen.negative_prompt == "blurry"
+        assert gen.num_inference_steps == 20
+        assert gen.seed == 42
 
 
 class TestHandleSigterm:
