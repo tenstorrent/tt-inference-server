@@ -96,6 +96,35 @@ class Tokenizer {
       const std::vector<tt::domain::ChatMessage>& messages,
       bool addGenerationPrompt = true) const = 0;
 
+  /**
+   * Stream decoder for incremental token-by-token decoding.
+   * Buffers incomplete UTF-8 sequences across tokens automatically.
+   */
+  class StreamDecoder {
+   public:
+    explicit StreamDecoder(const Tokenizer& tokenizer);
+
+    /**
+     * Decodes the next token. Returns the decoded text delta, or "" if the
+     * token is part of an incomplete multi-byte UTF-8 sequence still being
+     * buffered.
+     */
+    std::string step(int tokenId);
+
+    /**
+     * Flush any remaining buffered tokens (call on final token).
+     * Returns whatever text the buffer decodes to, even if it contains
+     * replacement characters.
+     */
+    std::string flush();
+
+   private:
+    const Tokenizer& tokenizer_;
+    std::vector<int> pending_;
+  };
+
+  std::unique_ptr<StreamDecoder> createStreamDecoder() const;
+
  protected:
   std::unique_ptr<tokenizers::Tokenizer> tok_;
   TokenizerConfig cfg_;

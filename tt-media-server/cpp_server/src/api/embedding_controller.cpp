@@ -17,14 +17,14 @@
 #include "profiling/tracy.hpp"
 #include "services/base_service.hpp"
 #include "utils/logger.hpp"
-#include "utils/service_factory.hpp"
+#include "utils/service_container.hpp"
 
 namespace tt::api {
 
 namespace {
 // Generate random hex string for task IDs
 std::string randomHex(size_t length) {
-  static const char HEX_CHARS[] = "0123456789abcdef";
+  static const char hexChars[] = "0123456789abcdef";
   static std::random_device rd;
   static std::mt19937 gen(rd());
   static std::uniform_int_distribution<> dist(0, 15);
@@ -32,7 +32,7 @@ std::string randomHex(size_t length) {
   std::string result;
   result.reserve(length);
   for (size_t i = 0; i < length; ++i) {
-    result += HEX_CHARS[dist(gen)];
+    result += hexChars[dist(gen)];
   }
   return result;
 }
@@ -97,12 +97,11 @@ EmbeddingController::EmbeddingController() {
     return;
   }
 
-  service_ = tt::utils::service_factory::getServiceByType<
-      services::EmbeddingService>();
+  service_ = tt::utils::ServiceContainer::instance().embedding();
   if (!service_) {
     throw std::runtime_error(
-        "[EmbeddingController] Embedding service not found in service factory. "
-        "Ensure register_services() is called before Drogon starts.");
+        "[EmbeddingController] Embedding service not found in container. "
+        "Ensure initializeServices() is called before Drogon starts.");
   }
   TT_LOG_INFO("[EmbeddingController] Initialized (service already started)");
 }

@@ -26,7 +26,7 @@ from workflows.utils import (
     check_path_permissions_for_uid,
     get_groups_for_uid,
 )
-from workflows.validate_multihost import (
+from workflows.run_multihost_validation import (
     _run_ssh_command,
     validate_multihost_bind_mount_permissions,
 )

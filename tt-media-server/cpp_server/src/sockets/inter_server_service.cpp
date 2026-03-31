@@ -5,6 +5,7 @@
 
 #include <string>
 
+#include "config/settings.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from benchmarking.benchmark_config import BENCHMARK_CONFIGS
 from evals.eval_config import EVAL_CONFIGS
-from tests.test_config import TEST_CONFIGS
+from server_tests.test_config import TEST_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     check_path_permissions_for_uid,
@@ -192,6 +192,64 @@ def validate_local_setup(model_spec, runtime_config, json_fpath):
         _validate_local_vllm_installation(runtime_config)
 
     logger.info("✅ validating local setup completed")
+
+
+def run_multihost_validation_subprocess(
+    multihost_config, model_spec, json_fpath, dry_run=False
+):
+    """Run multihost validation via subprocess with dedicated venv.
+
+    This aligns multihost validation with single-host validation pattern:
+    - Uses SYSTEM_SOFTWARE_VALIDATION venv (with packaging library)
+    - Runs run_multihost_validation.py as subprocess
+    - Returns validated hosts list
+
+    Args:
+        multihost_config: MultiHostConfig object with hosts, paths, etc.
+        model_spec: ModelSpec for system software version validation
+        json_fpath: Path to runtime model spec JSON file
+        dry_run: If True, skip directory existence and permission checks
+
+    Returns:
+        List of validated hostnames
+
+    Raises:
+        ValueError: If validation fails
+    """
+    venv_config = VENV_CONFIGS[WorkflowVenvType.SYSTEM_SOFTWARE_VALIDATION]
+    venv_config.setup(model_spec=model_spec)
+
+    cmd = [
+        str(venv_config.venv_python),
+        str(get_repo_root_path() / "workflows" / "run_multihost_validation.py"),
+        "--hosts",
+        ",".join(multihost_config.hosts),
+        "--shared-storage-root",
+        str(multihost_config.shared_storage_root),
+        "--config-pkl-dir",
+        str(multihost_config.config_pkl_dir),
+        "--mpi-interface",
+        multihost_config.mpi_interface,
+        "--tt-smi-path",
+        multihost_config.tt_smi_path,
+    ]
+
+    if json_fpath is not None:
+        cmd.extend(["--runtime-model-spec-json", str(json_fpath)])
+
+    if dry_run:
+        cmd.append("--dry-run")
+
+    return_code = run_command(cmd, logger=logger)
+
+    if return_code != 0:
+        raise ValueError(
+            "⛔ Multi-host validation failed. See errors above.\n"
+            "To skip system software validation, use the flag: --skip-system-sw-validation"
+        )
+
+    logger.info("✅ Multi-host validation completed")
+    return multihost_config.hosts
 
 
 def _try_fix_path_permissions_for_uid(path, uid, need_write=False):

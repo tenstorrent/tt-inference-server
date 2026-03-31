@@ -937,6 +937,10 @@ llm_templates = [
                 max_concurrency=1,
                 max_context=16 * 1024,
                 default_impl=True,
+                env_vars={
+                    "VLLM_ENABLE_RESPONSES_API_STORE": 1,
+                    "VLLM_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS": 1,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
@@ -1520,13 +1524,12 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.DUAL_GALAXY,
                 max_concurrency=32 * 8,  # 32 per DP rank * 8 ranks
-                max_context=2048,
+                max_context=32768,
                 default_impl=True,
                 tensor_cache_timeout=6400.0,
                 vllm_args={
                     "data_parallel_size": 8,
                     "block_size": "32",
-                    "max_model_len": "2048",
                 },
                 override_tt_config={
                     "fabric_config": "FABRIC_1D",
@@ -1538,7 +1541,7 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.QUAD_GALAXY,
                 max_concurrency=32 * 16,  # 32 per DP rank * 16 ranks
-                max_context=2048,
+                max_context=32768,
                 default_impl=True,
                 vllm_args={
                     "data_parallel_size": 16,
@@ -1788,8 +1791,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="3f72232",
-        vllm_commit="409b1cd",
+        tt_metal_commit="25305db",
+        vllm_commit="6e67d2d",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2716,18 +2719,27 @@ audio_tts_templates = [
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P300,
                 max_concurrency=2,
                 max_context=64 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P300X2,
                 max_concurrency=4,
                 max_context=64 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
+                },
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
@@ -2770,18 +2782,27 @@ audio_tts_templates = [
                 max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P300,
                 max_concurrency=2,
                 max_context=64 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.P300X2,
                 max_concurrency=4,
                 max_context=64 * 1024,
                 default_impl=True,
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,

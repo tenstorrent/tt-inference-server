@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "ipc/boost_ipc_task_queue.hpp"
-#include "ipc/shared_memory.hpp"
+#include "ipc/token_ring_buffer.hpp"
 
 namespace tt::ipc {
 

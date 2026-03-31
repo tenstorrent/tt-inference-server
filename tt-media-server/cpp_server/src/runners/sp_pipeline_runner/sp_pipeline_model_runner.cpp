@@ -33,7 +33,7 @@ void SpPipelineModelRunner::exit() {
 }
 
 void SpPipelineModelRunner::readerLoop() {
-  ReadResult readBuf;
+  tt::ipc::ReadResult readBuf;
   while (!stop.load(std::memory_order_relaxed)) {
     if (deviceOutput.tryRead(readBuf)) {
       llm_engine::TaskID tid = llm_engine::TaskID::ipcDeserialize(

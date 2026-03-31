@@ -5,12 +5,10 @@
 
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include "config/settings.hpp"
 #include "domain/task_id.hpp"
 #include "sockets/socket_manager.hpp"
 #include "sockets/socket_messages.hpp"
