@@ -14,18 +14,16 @@
 
 namespace sp_prefill {
 
-using PrefillCallback = std::function<void(const llm_engine::TokenResult&)>;
-
 class SpPrefillModelRunner : public ISpPrefillModelRunner {
  public:
-  explicit SpPrefillModelRunner(PrefillCallback callback);
+  SpPrefillModelRunner();
   ~SpPrefillModelRunner() override;
 
   SpPrefillModelRunner(const SpPrefillModelRunner&) = delete;
   SpPrefillModelRunner& operator=(const SpPrefillModelRunner&) = delete;
 
-  void write(const std::string& taskId,
-             const std::vector<int64_t>& tokenIds) override;
+  std::optional<llm_engine::TokenResult> forward(
+      const std::string& taskId, const std::vector<int64_t>& tokenIds) override;
   void exit() override;
 
  private:
@@ -42,7 +40,6 @@ class SpPrefillModelRunner : public ISpPrefillModelRunner {
     std::string read;
   };
 
-  PrefillCallback prefillCallback;
   ShmNames shmNames;
   tt::ipc::PrefillSlotBuffer deviceInput;
   tt::ipc::DecodeSlotBuffer deviceOutput;
