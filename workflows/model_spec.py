@@ -2337,14 +2337,14 @@ vlm_templates = [
             "allenai/Molmo2-8B",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="3035237ebd",
+        tt_metal_commit="f47e93fe7d",
         vllm_commit="ba84dbf0",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
-                max_concurrency=1,
+                max_concurrency=32,  # Batched decode enabled via token reshape fix
                 max_context=4 * 1024,
                 default_impl=True,
                 vllm_args={
