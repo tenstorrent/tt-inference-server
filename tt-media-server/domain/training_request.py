@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from typing import Optional
 
 from domain.base_request import BaseRequest
 from config.constants import DatasetLoaders
@@ -27,6 +28,12 @@ class TrainingRequest(BaseRequest):
     lora_task_type: str = "CAUSAL_LM"
 
     ignored_index: int = -100
+
+    # Multichip SPMD configuration
+    mesh_shape: Optional[list[int]] = None
+    mesh_axis_names: Optional[list[str]] = None
+    input_sharding_dim: Optional[str] = None
+    model_sharding_patterns: Optional[list[list]] = None
 
     _output_model_path: str = PrivateAttr(default=None)
     _start_event: Event = PrivateAttr(default=None)

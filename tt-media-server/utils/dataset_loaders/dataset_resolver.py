@@ -13,6 +13,12 @@ AVAILABLE_DATASET_LOADERS = {
             fromlist=["SSTDataset"],
         ).SSTDataset(model_name, max_sequence_length, split, collate_fn)
     ),
+    DatasetLoaders.ALPACA: lambda model_name, max_sequence_length, split, collate_fn: (
+        __import__(
+            "utils.dataset_loaders.alpaca.alpaca_dataset",
+            fromlist=["AlpacaDataset"],
+        ).AlpacaDataset(model_name, max_sequence_length, split, collate_fn)
+    ),
 }
 
 
