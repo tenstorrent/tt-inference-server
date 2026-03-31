@@ -7,6 +7,11 @@
           "devices": [
             "DUAL_GALAXY"
           ]
+        },
+        "release": {
+          "devices": [
+            "DUAL_GALAXY"
+          ]
         }
       }
     },
@@ -28,13 +33,6 @@
         "weekly": {
           "devices": [
             "GALAXY"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
           ]
         }
       }
@@ -100,13 +98,6 @@
         "weekly": {
           "devices": [
             "GALAXY"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
           ]
         }
       }
@@ -232,13 +223,6 @@
           "devices": [
             "GALAXY"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
-          ]
         }
       }
     },
@@ -278,11 +262,6 @@
             "GALAXY",
             "N150"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
         }
       }
     },
@@ -298,13 +277,6 @@
             "P300X2",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
-          ]
         }
       }
     },
@@ -315,11 +287,6 @@
           "devices": [
             "GALAXY",
             "N150"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
           ]
         }
       }
@@ -344,12 +311,6 @@
             "P300X2",
             "P150X4",
             "T3K"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P150X8",
-            "P300X2"
           ]
         }
       }
@@ -465,11 +426,6 @@
             "P300X2",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
         }
       }
     },
@@ -551,11 +507,6 @@
               "throttle-perf": "5"
             }
           }
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
         }
       }
     },
@@ -597,11 +548,6 @@
             "GALAXY",
             "GALAXY_BH",
             "N150"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
           ]
         }
       }
