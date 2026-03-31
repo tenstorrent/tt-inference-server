@@ -16,6 +16,11 @@
 #include "runners/runner_interface.hpp"
 #include "domain/manage_memory.hpp"
 #include "pipeline_manager/pipeline_manager.hpp"
+#include "services/memory_manager.hpp"
+
+namespace tt::services {
+class MemoryManager;
+}
 
 namespace tt::runners {
 
@@ -58,5 +63,6 @@ class SpPipelineRunner : public IRunner {
   std::unordered_map<uint32_t, std::unique_ptr<llm_engine::Sequence>> allocating;
   std::atomic<bool> stopped{false};
   uint32_t nextRequestID{0};
+  std::unique_ptr<tt::services::MemoryManager> memoryManager;
 };
 }  // namespace tt::runners

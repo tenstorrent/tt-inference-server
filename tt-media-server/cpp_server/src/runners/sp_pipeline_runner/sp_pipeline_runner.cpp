@@ -216,16 +216,15 @@ std::unique_ptr<llm_engine::Sequence> SpPipelineRunner::getRequest() {
 }
 
 inline void SpPipelineRunner::handleMemoryRequest(const tt::domain::ManageMemoryTask& request) {
-  //memoryManager.handleRequest(request);
+  memoryManager->handleRequest(request);
 }
 
 inline void SpPipelineRunner::handleResponse(const pm::PMResponse& response) {
-  //memoryManager.handleResponse(response.slot_id);
+  memoryManager->handleResponse(response.slot_id);
 }
 
 inline std::optional<tt::domain::ManageMemoryTask> SpPipelineRunner::getMemoryRequest() {
-  //return memoryManager.getRequest();
-  return std::nullopt;
+  return memoryManager->getRequest();
 }
 
 void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
