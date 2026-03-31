@@ -23,8 +23,7 @@ class SpPrefillModelRunner : public ISpPrefillModelRunner {
   SpPrefillModelRunner& operator=(const SpPrefillModelRunner&) = delete;
 
   std::optional<llm_engine::TokenResult> forward(
-      const std::string& taskId,
-      const std::vector<int64_t>& tokenIds) override;
+      const std::string& taskId, const std::vector<int64_t>& tokenIds) override;
   void exit() override;
 
  private:

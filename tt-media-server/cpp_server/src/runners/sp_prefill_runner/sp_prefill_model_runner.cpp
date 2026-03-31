@@ -8,9 +8,7 @@
 namespace sp_prefill {
 
 SpPrefillModelRunner::SpPrefillModelRunner()
-    : shmNames(),
-      deviceInput(shmNames.write),
-      deviceOutput(shmNames.read) {
+    : shmNames(), deviceInput(shmNames.write), deviceOutput(shmNames.read) {
   deviceInput.open();
   deviceOutput.open();
 }
