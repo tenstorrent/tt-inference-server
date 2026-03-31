@@ -44,8 +44,8 @@ class BoostIpcMemoryQueue {
   static std::unique_ptr<BoostIpcMemoryQueue> openExisting(
       const std::string& name) {
     try {
-      auto q = std::unique_ptr<BoostIpcMemoryQueue>(
-          new BoostIpcMemoryQueue(name));
+      auto q =
+          std::unique_ptr<BoostIpcMemoryQueue>(new BoostIpcMemoryQueue(name));
       return q;
     } catch (const bi_ipc::interprocess_exception&) {
       return nullptr;
@@ -89,8 +89,8 @@ class BoostIpcMemoryQueue {
   // Private constructor for open_only mode (used by openExisting)
   explicit BoostIpcMemoryQueue(const std::string& name)
       : sendBuffer(MAX_MSG_SIZE), recvBuffer(MAX_MSG_SIZE) {
-    queue = std::make_unique<bi_ipc::message_queue>(
-        bi_ipc::open_only, name.c_str());
+    queue = std::make_unique<bi_ipc::message_queue>(bi_ipc::open_only,
+                                                    name.c_str());
   }
 
   std::unique_ptr<bi_ipc::message_queue> queue;

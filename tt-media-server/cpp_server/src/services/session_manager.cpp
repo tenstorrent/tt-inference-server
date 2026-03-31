@@ -15,8 +15,9 @@
 namespace tt::services {
 
 SessionManager::SessionManager() {
-  // Create IPC queues for communication with MemoryManager (in worker processes)
-  // If workers aren't running or in non-decode mode, these queues won't be used
+  // Create IPC queues for communication with MemoryManager (in worker
+  // processes) If workers aren't running or in non-decode mode, these queues
+  // won't be used
   try {
     memoryRequestQueue_ = std::make_unique<ipc::MemoryRequestQueue>(
         ipc::k_memory_request_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
