@@ -47,7 +47,7 @@ import sys
 import time
 import traceback
 from dataclasses import fields as dc_fields
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -61,6 +61,11 @@ from ipc.video_shm import (
     cleanup_orphaned_video_files,
 )
 from utils.logger import TTLogger
+
+if TYPE_CHECKING:
+    from tt_model_runners.dit_runners import TTMochi1Runner, TTWan22Runner
+
+    DitRunner = TTMochi1Runner | TTWan22Runner
 
 _log = TTLogger("video_runner")
 
@@ -170,7 +175,7 @@ def create_dit_runner(model_runner: str, device_id: str):
     return runner_class(device_id)
 
 
-def _bootstrap_dit_runner(rank: int, runner_device_id: str) -> Any:
+def _bootstrap_dit_runner(rank: int, runner_device_id: str) -> "DitRunner":
     """Create DiT runner from ``MODEL_RUNNER``, set device, load weights, warmup.
 
     ``runner_device_id`` is the constructor argument: use
@@ -250,7 +255,7 @@ def _connect_to_workers() -> dict[int, socket.socket]:
 
 
 def run_rank0_coordinator() -> None:
-    """Rank 0: Read from input SHM, run DiT inference, stream frames to output SHM."""
+    """Rank 0: Read from input SHM, run DiT inference, write MP4 path to output SHM."""
     input_name = os.environ.get("TT_VIDEO_SHM_INPUT", DEFAULT_TT_VIDEO_SHM_INPUT)
     output_name = os.environ.get("TT_VIDEO_SHM_OUTPUT", DEFAULT_TT_VIDEO_SHM_OUTPUT)
 
@@ -340,6 +345,7 @@ def run_worker_rank(rank: int) -> None:
 
     _log.info(f"Rank {rank}: Listening for connections...")
 
+    conn: socket.socket | None = None
     try:
         conn, addr = server_sock.accept()
         _log.info(f"Rank {rank}: Accepted connection from {addr}")
@@ -369,6 +375,8 @@ def run_worker_rank(rank: int) -> None:
     except Exception as e:
         _log.error(f"Rank {rank}: Error: {e}")
     finally:
+        if conn is not None:
+            conn.close()
         runner.close_device()
         server_sock.close()
 
