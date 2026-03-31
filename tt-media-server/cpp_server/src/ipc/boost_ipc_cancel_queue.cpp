@@ -15,13 +15,13 @@ BoostIpcCancelQueue::BoostIpcCancelQueue(const std::string& name,
       queue_(std::make_unique<bip::message_queue>(
           bip::create_only, name.c_str(), capacity,
           domain::TaskID::K_SERIALIZED_SIZE)),
-      recv_buffer_(domain::TaskID::K_SERIALIZED_SIZE) {}
+      recv_buffer_(queue_->get_max_msg_size()) {}
 
 BoostIpcCancelQueue::BoostIpcCancelQueue(const std::string& name)
     : name_(name),
       queue_(
           std::make_unique<bip::message_queue>(bip::open_only, name.c_str())),
-      recv_buffer_(domain::TaskID::K_SERIALIZED_SIZE) {}
+      recv_buffer_(queue_->get_max_msg_size()) {}
 
 BoostIpcCancelQueue::~BoostIpcCancelQueue() {
   try {
