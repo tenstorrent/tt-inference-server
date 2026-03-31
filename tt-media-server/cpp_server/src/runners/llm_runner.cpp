@@ -6,8 +6,8 @@
 #include <thread>
 
 #include "config/settings.hpp"
-#include "domain/manage_memory.hpp"
 #include "profiling/tracy.hpp"
+#include "services/paged_memory_manager.hpp"
 
 namespace tt::runners {
 using namespace llm_engine;
@@ -21,12 +21,8 @@ LLMRunner::LLMRunner(const Config& config,
       makeScheduler(config_, taskQueue, tt::config::maxInFlightCount());
 
   if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY) {
-    memoryManager =
-        std::make_unique<services::MemoryManager>(scheduler_->blockManager());
-    memoryRequests = std::make_unique<ipc::MemoryRequestQueue>(
-        ipc::k_memory_request_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
-    memoryResults = std::make_unique<ipc::MemoryResultQueue>(
-        ipc::k_memory_result_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+    memoryManager = std::make_unique<services::PagedMemoryManager>(
+        scheduler_->blockManager());
     memoryThread = std::thread([this] { memoryLoop(); });
   }
 
@@ -110,16 +106,10 @@ void LLMRunner::run() {
 void LLMRunner::stop() { stopped_.store(true, std::memory_order_relaxed); }
 
 void LLMRunner::memoryLoop() {
-  domain::ManageMemoryTask task{};
-
   while (!stopped_.load(std::memory_order_relaxed)) {
-    if (memoryRequests->tryPop(task)) {
-      auto result = memoryManager->handleTask(task);
-      if (result.status == domain::ManageMemoryStatus::WAITING) {
-        memoryRequests->push(task, /*priority=*/1);
-      } else {
-        memoryResults->push(result);
-      }
+    auto task = memoryManager->getRequest();
+    if (task) {
+      memoryManager->handleRequest(*task);
     } else {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
