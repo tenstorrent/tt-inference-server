@@ -18,6 +18,12 @@ sys.modules["ttnn"] = Mock()
 
 mock_settings = Mock()
 mock_settings.enable_telemetry = False
+mock_settings.model_runner = "sp_runner"
+mock_settings.use_dynamic_batcher = False
+mock_settings.is_galaxy = False
+mock_settings.device_mesh_shape = (1, 1)
+# Match test_video_runner: unset Mock is truthy and breaks runner_utils env setup.
+mock_settings.default_throttle_level = ""
 mock_settings_module = Mock()
 mock_settings_module.settings = mock_settings
 mock_settings_module.get_settings = Mock(return_value=mock_settings)
