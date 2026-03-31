@@ -71,8 +71,8 @@ void PagedMemoryManager::handleRequest(const ManageMemoryTask& task) {
       }
 
       std::vector<std::uint32_t> resultIds(slotIds.begin(), slotIds.end());
-      resultQueue.push(makeResult(task, ManageMemoryStatus::SUCCESS,
-                                  std::move(resultIds)));
+      resultQueue.push(
+          makeResult(task, ManageMemoryStatus::SUCCESS, std::move(resultIds)));
       return;
     }
     case MemoryManagementAction::DEALLOCATE: {
