@@ -8,20 +8,15 @@
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
-#include "ipc/token_ring_buffer.hpp"
 
 #include "config/runner_config.hpp"
+#include "domain/manage_memory.hpp"
+#include "ipc/token_ring_buffer.hpp"
+#include "pipeline_manager/pipeline_manager.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
-#include "domain/manage_memory.hpp"
-#include "pipeline_manager/pipeline_manager.hpp"
-#include "services/memory_manager.hpp"
-
-namespace tt::services {
-class MemoryManager;
-}
-
+#include "services/sp_pipeline_memory_manager.hpp"
 namespace tt::runners {
 
 namespace pm = tt_blaze::pipeline_manager;
@@ -60,9 +55,7 @@ class SpPipelineRunner : public IRunner {
   llm_engine::ITaskQueue* taskQueue;
   std::unique_ptr<pm::PipelineManager> pipelineManager;
   std::unordered_map<uint32_t, std::unique_ptr<llm_engine::Sequence>> running;
-  std::unordered_map<uint32_t, std::unique_ptr<llm_engine::Sequence>> allocating;
   std::atomic<bool> stopped{false};
-  uint32_t nextRequestID{0};
-  std::unique_ptr<tt::services::MemoryManager> memoryManager;
+  std::unique_ptr<tt::services::SpPipelineMemoryManager> memoryManager;
 };
 }  // namespace tt::runners

@@ -234,6 +234,7 @@ set(LLM_ENGINE_SOURCES
     src/services/memory_manager.cpp
     src/services/paged_memory_manager.cpp
     src/services/contiguous_memory_manager.cpp
+    src/services/sp_pipeline_memory_manager.cpp
 )
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)

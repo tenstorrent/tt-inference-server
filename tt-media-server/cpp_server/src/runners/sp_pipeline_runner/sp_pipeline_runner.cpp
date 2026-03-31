@@ -9,59 +9,13 @@
 #include <pipeline_manager/pipeline_manager_types.hpp>
 #include <thread>
 
+#include "domain/manage_memory.hpp"
 #include "llm_runner/sequence.hpp"
+#include "runners/sp_pipeline_runner/sp_pipeline_utils.hpp"
 #include "utils/logger.hpp"
 
-namespace {
-
-namespace pm = tt_blaze::pipeline_manager;
-
-inline pm::ISRequest makeAllocateRequest(uint32_t requestId) {
-  return {.type = pm::RequestType::ALLOCATE, .request_id = requestId};
-}
-
-inline pm::ISRequest makeCancelRequest(uint32_t slotId) {
-  return {.type = pm::RequestType::CANCEL, .slot_id = slotId};
-}
-
-inline pm::GenerationParams makeGenerationParams(
-    const llm_engine::Sequence& seq) {
-  return {
-      .max_new_tokens =
-          static_cast<uint32_t>(seq.samplingParams->max_tokens.value_or(
-              static_cast<int>(tt::config::LLMConfig::MAX_INPUT_TOKENS))),
-      .temperature = seq.samplingParams->temperature,
-      .top_p = seq.samplingParams->top_p.value_or(1.0f),
-      .top_k = static_cast<int32_t>(seq.samplingParams->top_k.value_or(-1))};
-}
-
-inline void fillSequenceFields(pm::ISRequest& req,
-                               const llm_engine::Sequence& seq) {
-  req.tokens.assign(seq.tokenIds.begin(), seq.tokenIds.end());
-  req.gen = makeGenerationParams(seq);
-}
-
-inline pm::ISRequest makeSubmitRequest(uint32_t slotId,
-                                       const llm_engine::Sequence& seq) {
-  pm::ISRequest req{};
-  req.type = pm::RequestType::SUBMIT;
-  req.slot_id = slotId;
-  fillSequenceFields(req, seq);
-  return req;
-}
-
-inline pm::ISRequest makeContinueRequest(uint32_t slotId,
-                                         const llm_engine::Sequence& seq) {
-  pm::ISRequest req{};
-  req.type = pm::RequestType::CONTINUE;
-  req.slot_id = slotId;
-  fillSequenceFields(req, seq);
-  return req;
-}
-
-}  // namespace
-
 namespace tt::runners {
+namespace utils = sp_pipeline_utils;
 
 SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
                                    ipc::TokenRingBuffer<65536>* resultQueue,
@@ -73,6 +27,8 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
   pm::MockConfig mockConfig{};
   pipelineManager = std::make_unique<pm::PipelineManager>(mockConfig);
   pipelineManager->start();
+  memoryManager = std::make_unique<tt::services::SpPipelineMemoryManager>(
+      *pipelineManager, [this](uint32_t slotId) { evictSlot(slotId); });
 }
 
 SpPipelineRunner::~SpPipelineRunner() {
@@ -107,7 +63,7 @@ bool SpPipelineRunner::warmup() {
       1,  // block_size (doesn't matter for warmup)
       warmupTokens, warmupParams);
 
-  pipelineManager->push_request(makeAllocateRequest(nextRequestID++));
+  pipelineManager->push_request(utils::makeAllocateRequest(0));
 
   pm::PMResponse response{};
   while (!pipelineManager->try_pop_response(response)) {
@@ -120,7 +76,7 @@ bool SpPipelineRunner::warmup() {
     return false;
   }
 
-  pipelineManager->push_request(makeSubmitRequest(slotId, *warmupSeq));
+  pipelineManager->push_request(utils::makeSubmitRequest(slotId, *warmupSeq));
   // Wait for the response token (with timeout)
   const int maxAttempts = 1000;  // ~10 seconds with 10ms sleep
   int attempts = 0;
@@ -142,7 +98,7 @@ bool SpPipelineRunner::warmup() {
   }
 
   TT_LOG_INFO("SpPipelineRunner: Warmup successful");
-  pipelineManager->push_request(makeCancelRequest(slotId));
+  pipelineManager->push_request(utils::makeCancelRequest(slotId));
   return true;
 }
 
@@ -215,15 +171,17 @@ std::unique_ptr<llm_engine::Sequence> SpPipelineRunner::getRequest() {
   return std::unique_ptr<llm_engine::Sequence>(requestRaw);
 }
 
-inline void SpPipelineRunner::handleMemoryRequest(const tt::domain::ManageMemoryTask& request) {
+inline void SpPipelineRunner::handleMemoryRequest(
+    const tt::domain::ManageMemoryTask& request) {
   memoryManager->handleRequest(request);
 }
 
 inline void SpPipelineRunner::handleResponse(const pm::PMResponse& response) {
-  memoryManager->handleResponse(response.slot_id);
+  memoryManager->handleResponse(response.request_id, response.slot_id);
 }
 
-inline std::optional<tt::domain::ManageMemoryTask> SpPipelineRunner::getMemoryRequest() {
+inline std::optional<tt::domain::ManageMemoryTask>
+SpPipelineRunner::getMemoryRequest() {
   return memoryManager->getRequest();
 }
 
@@ -239,28 +197,23 @@ void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
   pushToken(seq.taskId, output.token_id, finished);
 }
 
-void SpPipelineRunner::evictSlot(uint32_t slotId) {
-  pipelineManager->push_request(makeCancelRequest(slotId));
+inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
   running.erase(slotId);
 }
 
 void SpPipelineRunner::handleRequest(
     std::unique_ptr<llm_engine::Sequence> request) {
-    auto slotId = request->getKVCacheAddress();
-    assert(slotId != llm_engine::INVALID_KV_CACHE_ADDRESS);
-    auto slot = static_cast<uint32_t>(slotId);
-    if(running.find(slot) == running.end()) {
-      pipelineManager->push_request(makeSubmitRequest(slotId, *request));
-      running[slot] = std::move(request);
-      return;
-    }
-    pipelineManager->push_request(makeContinueRequest(slot, *request));
+  auto slotId = request->getKVCacheAddress();
+  assert(slotId != llm_engine::INVALID_KV_CACHE_ADDRESS);
+  auto slot = static_cast<uint32_t>(slotId);
+  if (running.find(slot) == running.end()) {
+    pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
     running[slot] = std::move(request);
     return;
+  }
+  pipelineManager->push_request(utils::makeContinueRequest(slot, *request));
+  running[slot] = std::move(request);
+  return;
 }
 
 }  // namespace tt::runners
-
-
-
-

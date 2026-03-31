@@ -21,11 +21,4 @@ std::optional<domain::ManageMemoryTask> MemoryManager::getRequest() {
   return std::nullopt;
 }
 
-void MemoryManager::handleResponse(int slotId) {
-  domain::ManageMemoryResult result{};
-  result.status = domain::ManageMemoryStatus::SUCCESS;
-  result.slotIds = {static_cast<std::uint32_t>(slotId)};
-  resultQueue.push(result);
-}
-
 }  // namespace tt::services
