@@ -8,8 +8,8 @@ namespace tt::services {
 MemoryManager::MemoryManager()
     : requestQueue(ipc::k_memory_request_queue_name,
                    ipc::MEMORY_QUEUE_CAPACITY),
-      resultQueue(ipc::k_memory_result_queue_name,
-                  ipc::MEMORY_QUEUE_CAPACITY) {}
+      resultQueue(ipc::k_memory_result_queue_name, ipc::MEMORY_QUEUE_CAPACITY) {
+}
 
 MemoryManager::~MemoryManager() = default;
 
