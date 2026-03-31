@@ -105,13 +105,19 @@ def test_run_shm_bridge_processes_one_request(monkeypatch, tmp_path):
 
 
 def test_module_main_invokes_bridge(monkeypatch):
+    """Mirror ``if __name__ == "__main__"`` without ``runpy.run_module``.
+
+    ``runpy.run_module`` re-executes the module body, which redefines
+    ``_run_shm_bridge`` and drops the monkeypatch — the real bridge then blocks
+    on ``read_request()`` (appears as a hung test suite).
+    """
     called = []
     monkeypatch.setattr(mvr, "_run_shm_bridge", lambda: called.append(1))
     monkeypatch.setattr(mvr.signal, "signal", lambda *a, **k: None)
 
-    import runpy
-
-    runpy.run_module("tt_model_runners.mock_video_runner", run_name="__main__")
+    mvr.signal.signal(mvr.signal.SIGTERM, mvr._handle_signal)
+    mvr.signal.signal(mvr.signal.SIGINT, mvr._handle_signal)
+    mvr._run_shm_bridge()
     assert called == [1]
 
 
