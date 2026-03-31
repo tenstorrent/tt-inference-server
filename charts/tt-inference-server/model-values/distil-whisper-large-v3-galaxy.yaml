@@ -1,0 +1,18 @@
+model: distil-large-v3
+device: galaxy
+serverType: media
+image:
+  repository: ghcr.io/tenstorrent/tt-media-inference-server
+  tag: 0.11.1-bac8b34
+resources:
+  limits:
+    memory: 32Gi
+  requests:
+    memory: 6Gi
+probes:
+  liveness:
+    initialDelaySeconds: 600
+    periodSeconds: 30
+  readiness:
+    initialDelaySeconds: 600
+    periodSeconds: 10
