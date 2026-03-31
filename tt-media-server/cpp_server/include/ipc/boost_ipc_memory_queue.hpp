@@ -40,6 +40,12 @@ class BoostIpcMemoryQueue {
         bi_ipc::create_only, name.c_str(), capacity, MAX_MSG_SIZE);
   }
 
+  BoostIpcMemoryQueue(bi_ipc::open_only_t, const std::string& name)
+      : sendBuffer(MAX_MSG_SIZE), recvBuffer(MAX_MSG_SIZE) {
+    queue = std::make_unique<bi_ipc::message_queue>(bi_ipc::open_only,
+                                                    name.c_str());
+  }
+
   ~BoostIpcMemoryQueue() {
     try {
       queue.reset();

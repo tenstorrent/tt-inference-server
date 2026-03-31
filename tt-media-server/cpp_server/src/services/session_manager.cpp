@@ -4,6 +4,7 @@
 #include "services/session_manager.hpp"
 
 #include <algorithm>
+#include <boost/interprocess/ipc/message_queue.hpp>
 #include <chrono>
 #include <limits>
 #include <thread>
@@ -14,10 +15,7 @@
 
 namespace tt::services {
 
-SessionManager::SessionManager() {
-  // Queues are created by MemoryManager in worker processes
-  // We use lazy initialization to avoid startup order dependencies
-}
+SessionManager::SessionManager() = default;
 
 domain::Session SessionManager::createSession(std::optional<uint32_t> slotId) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -31,7 +29,7 @@ domain::Session SessionManager::createSession(std::optional<uint32_t> slotId) {
   std::string sessionId = session.getSessionId();
 
   // If no slot ID was provided, request one from memory manager
-  if (!slotId.has_value() && memoryRequestQueue_ && memoryResultQueue_) {
+  if (!slotId.has_value() && ensureQueuesConnected()) {
     uint32_t allocatedSlot = requestSlotIdFromMemoryManager(sessionId);
     if (allocatedSlot != std::numeric_limits<uint32_t>::max()) {
       slot = allocatedSlot;
@@ -60,8 +58,31 @@ bool SessionManager::closeSessionLocked(const std::string& sessionId) {
     return false;
   }
 
+  uint32_t slot = it->second.getSlotId();
+  bool hasValidSlot = slot != std::numeric_limits<uint32_t>::max();
+
   sessions_.erase(it);
-  TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
+
+  if (hasValidSlot && ensureQueuesConnected()) {
+    domain::ManageMemoryTask task;
+    task.taskId = domain::TaskID(sessionId);
+    task.action = domain::MemoryManagementAction::DEALLOCATE;
+    task.slotIds = {slot};
+    try {
+      memoryRequestQueue_->push(task);
+      TT_LOG_INFO(
+          "[SessionManager] Closed session: {} and sent DEALLOCATE for slot {}",
+          sessionId, slot);
+    } catch (const std::exception& e) {
+      TT_LOG_ERROR(
+          "[SessionManager] Closed session: {} but failed to DEALLOCATE slot "
+          "{}: {}",
+          sessionId, slot, e.what());
+    }
+  } else {
+    TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
+  }
+
   return true;
 }
 
@@ -176,6 +197,24 @@ std::vector<std::string> SessionManager::findOldestSessions(
   }
 
   return result;
+}
+
+bool SessionManager::ensureQueuesConnected() {
+  if (memoryRequestQueue_ && memoryResultQueue_) {
+    return true;
+  }
+  try {
+    memoryRequestQueue_ = std::make_unique<ipc::MemoryRequestQueue>(
+        boost::interprocess::open_only, ipc::k_memory_request_queue_name);
+    memoryResultQueue_ = std::make_unique<ipc::MemoryResultQueue>(
+        boost::interprocess::open_only, ipc::k_memory_result_queue_name);
+    TT_LOG_INFO("[SessionManager] Connected to memory manager IPC queues");
+    return true;
+  } catch (const boost::interprocess::interprocess_exception&) {
+    memoryRequestQueue_.reset();
+    memoryResultQueue_.reset();
+    return false;
+  }
 }
 
 uint32_t SessionManager::requestSlotIdFromMemoryManager(
