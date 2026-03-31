@@ -24,16 +24,19 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
       taskQueue(taskQueue) {
-  TT_LOG_INFO("SpPipelineRunner: Constructing PipelineManager with SocketConfig...");
+  TT_LOG_INFO(
+      "SpPipelineRunner: Constructing PipelineManager with SocketConfig...");
   pm::SocketConfig socketConfig{
-    .h2d_socket_id = "h2d_socket",
-    .d2h_socket_id = "d2h_socket",
-    .connect_timeout_ms = 30000,
+      .h2d_socket_id = "h2d_socket",
+      .d2h_socket_id = "d2h_socket",
+      .connect_timeout_ms = 30000,
   };
   pipelineManager = std::make_unique<pm::PipelineManager>(socketConfig);
-  TT_LOG_INFO("SpPipelineRunner: PipelineManager constructed, calling start()...");
+  TT_LOG_INFO(
+      "SpPipelineRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
-  TT_LOG_INFO("SpPipelineRunner: PipelineManager started, creating MemoryManager...");
+  TT_LOG_INFO(
+      "SpPipelineRunner: PipelineManager started, creating MemoryManager...");
   memoryManager = std::make_unique<tt::services::SpPipelineMemoryManager>(
       *pipelineManager, [this](uint32_t slotId) { evictSlot(slotId); });
   TT_LOG_INFO("SpPipelineRunner: Constructor complete");
@@ -206,6 +209,11 @@ void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
   auto& seq = *it->second;
   seq.appendToken(output.token_id);
   bool finished = output.is_complete || stopTokenIds.count(output.token_id);
+  TT_LOG_INFO(
+      "SpPipelineRunner::handleOutput slot={} task_id={} token_id={} "
+      "is_complete={} finished={}",
+      output.slot_id, seq.taskId.id, output.token_id, output.is_complete,
+      finished);
   pushToken(seq.taskId, output.token_id, finished);
 }
 
@@ -215,10 +223,35 @@ inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
 
 void SpPipelineRunner::handleRequest(
     std::unique_ptr<llm_engine::Sequence> request) {
+  TT_LOG_INFO(
+      "SpPipelineRunner::handleRequest task_id={} tokenIds={} "
+      "numPromptTokens={} kvAddress={} max_tokens={}",
+      request->taskId.id, request->tokenIds.size(), request->numPromptTokens,
+      request->getKVCacheAddress(),
+      request->samplingParams ? (request->samplingParams->max_tokens.has_value()
+                                     ? std::to_string(
+                                           request->samplingParams->max_tokens
+                                               .value())
+                                     : "none")
+                              : "no_params");
   auto slotId = request->getKVCacheAddress();
   assert(slotId != llm_engine::INVALID_KV_CACHE_ADDRESS);
   auto slot = static_cast<uint32_t>(slotId);
-  if (running.find(slot) == running.end()) {
+
+  std::string tokenStr;
+  for (size_t i = 0; i < request->tokenIds.size(); ++i) {
+    if (i > 0) tokenStr += ",";
+    tokenStr += std::to_string(request->tokenIds[i]);
+  }
+
+  bool isNew = running.find(slot) == running.end();
+  TT_LOG_INFO(
+      "SpPipelineRunner::handleRequest sending {} slot={} tokens=[{}] "
+      "max_new_tokens={}",
+      isNew ? "SUBMIT" : "CONTINUE", slot, tokenStr,
+      request->samplingParams->max_tokens.value_or(-1));
+
+  if (isNew) {
     pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
     running[slot] = std::move(request);
     return;
