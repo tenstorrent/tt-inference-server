@@ -11,10 +11,10 @@
 #include "services/memory_manager.hpp"
 
 namespace tt::services {
-  
 
 class SpPipelineMemoryManager : public MemoryManager {
-using onEvictCb = std::function<void(uint32_t slotId)>;
+  using onEvictCb = std::function<void(uint32_t slotId)>;
+
  public:
   SpPipelineMemoryManager(
       tt_blaze::pipeline_manager::PipelineManager& pipelineManager,

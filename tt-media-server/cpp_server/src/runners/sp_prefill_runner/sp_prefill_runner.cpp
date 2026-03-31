@@ -10,18 +10,8 @@ namespace tt::runners {
 SpPrefillRunner::SpPrefillRunner(const config::LLMConfig& config,
                                  ipc::TokenRingBuffer<65536>* resultQueue,
                                  llm_engine::ITaskQueue* taskQueue)
-    : config(config),
-      stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
-      resultQueue(resultQueue),
-      taskQueue(taskQueue),
-      prefillQueue(256) {  // Small queue since we only have 1 in flight
-  auto prefillCb = [this](const llm_engine::TokenResult& result) {
-    while (!prefillQueue.push(result)) {
-      std::this_thread::yield();
-    }
-  };
-
-  modelRunner = sp_prefill::makeModelRunner(config, std::move(prefillCb));
+    : config(config), resultQueue(resultQueue), taskQueue(taskQueue) {
+  modelRunner = sp_prefill::makeModelRunner(config);
 }
 
 SpPrefillRunner::~SpPrefillRunner() {
@@ -45,30 +35,20 @@ void SpPrefillRunner::run() {
     TT_LOG_DEBUG("SpPrefillRunner: Starting prefill for task {}",
                  sequence->taskId.id);
 
-    // Send prefill request
-    modelRunner->write(sequence->taskId.id, sequence->tokenIds);
+    auto result = modelRunner->forward(sequence->taskId.id, sequence->tokenIds);
 
-    // Wait synchronously for the single prefill token
-    llm_engine::TokenResult result;
-    while (!stopped.load(std::memory_order_relaxed)) {
-      if (prefillQueue.pop(result)) {
-        break;
-      }
-      std::this_thread::yield();
+    if (!result) {
+      break;  // stopped
     }
 
-    if (stopped.load(std::memory_order_relaxed)) {
-      break;
-    }
-
-    // Process the result
-    if (result.isError) {
-      TT_LOG_WARN("SpPrefillRunner: Error token for task {}", result.taskId.id);
-      pushErrorToken(result.taskId);
+    if (result->isError) {
+      TT_LOG_WARN("SpPrefillRunner: Error token for task {}",
+                  result->taskId.id);
+      pushErrorToken(result->taskId);
     } else {
       TT_LOG_DEBUG("SpPrefillRunner: Received prefill token {} for task {}",
-                   result.tokenId, result.taskId.id);
-      pushToken(result.taskId, result.tokenId, true);  // Always finished
+                   result->tokenId, result->taskId.id);
+      pushToken(result->taskId, result->tokenId, true);  // Always finished
     }
 
     // sequence automatically cleaned up at end of scope
@@ -76,48 +56,12 @@ void SpPrefillRunner::run() {
 }
 
 bool SpPrefillRunner::warmup() {
-  // Create a warmup sequence with a single token
-  llm_engine::SamplingParams warmupParams;
-  warmupParams.max_tokens = 1;
-  warmupParams.ignore_eos = true;
-
-  std::vector<int64_t> warmupTokens = {1};  // Single token
+  std::vector<int64_t> warmupTokens = {1};
   llm_engine::TaskID warmupTaskId("warmup_task");
 
-  auto warmupSeq = std::make_unique<llm_engine::Sequence>(
-      warmupTaskId,
-      1,  // block_size (doesn't matter for warmup)
-      warmupTokens, warmupParams);
-
-  modelRunner->write(warmupSeq->taskId.id, warmupSeq->tokenIds);
-
-  // Wait for the response token (with timeout)
-  const int maxAttempts = 1000;  // ~10 seconds with 10ms sleep
-  int attempts = 0;
-  bool receivedToken = false;
-
-  while (attempts < maxAttempts && !receivedToken) {
-    std::vector<llm_engine::TokenResult> results;
-    prefillQueue.popMany(results, 256);
-    for (const auto& dr : results) {
-      if (dr.taskId == warmupTaskId) {
-        if (dr.isError) {
-          TT_LOG_ERROR("SpPrefillRunner: Warmup failed with error");
-          return false;
-        }
-        receivedToken = true;
-        break;
-      }
-    }
-
-    if (!receivedToken) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      attempts++;
-    }
-  }
-
-  if (!receivedToken) {
-    TT_LOG_ERROR("SpPrefillRunner: Warmup timed out waiting for token");
+  auto result = modelRunner->forward(warmupTaskId.id, warmupTokens);
+  if (!result || result->isError) {
+    TT_LOG_ERROR("SpPrefillRunner: Warmup failed");
     return false;
   }
 
