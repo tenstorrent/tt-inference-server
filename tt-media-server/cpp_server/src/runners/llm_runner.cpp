@@ -1,9 +1,12 @@
 #include "runners/llm_runner.hpp"
 
 #include <cassert>
+#include <chrono>
+#include <memory>
 #include <thread>
 
 #include "config/settings.hpp"
+#include "domain/manage_memory.hpp"
 #include "profiling/tracy.hpp"
 
 namespace tt::runners {
@@ -16,6 +19,16 @@ LLMRunner::LLMRunner(const Config& config,
     : config_(config), result_queue_(resultQueue) {
   scheduler_ =
       makeScheduler(config_, taskQueue, tt::config::maxInFlightCount());
+
+  if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY) {
+    memoryManager =
+        std::make_unique<services::MemoryManager>(scheduler_->blockManager());
+    memoryRequests = std::make_unique<ipc::MemoryRequestQueue>(
+        ipc::k_memory_request_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+    memoryResults = std::make_unique<ipc::MemoryResultQueue>(
+        ipc::k_memory_result_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+    memoryThread = std::thread([this] { memoryLoop(); });
+  }
 
   auto decodeCb = [this](const TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");
@@ -74,7 +87,13 @@ LLMRunner::LLMRunner(const Config& config,
   model_runner_ = makeModelRunner(config_, std::move(decodeCb));
 }
 
-LLMRunner::~LLMRunner() { exit(); }
+LLMRunner::~LLMRunner() {
+  stop();
+  if (memoryThread.joinable()) {
+    memoryThread.join();
+  }
+  exit();
+}
 
 void LLMRunner::exit() {
   if (model_runner_) {
@@ -89,6 +108,23 @@ void LLMRunner::run() {
 }
 
 void LLMRunner::stop() { stopped_.store(true, std::memory_order_relaxed); }
+
+void LLMRunner::memoryLoop() {
+  domain::ManageMemoryTask task{};
+
+  while (!stopped_.load(std::memory_order_relaxed)) {
+    if (memoryRequests->tryPop(task)) {
+      auto result = memoryManager->handleTask(task);
+      if (result.status == domain::ManageMemoryStatus::WAITING) {
+        memoryRequests->push(task, /*priority=*/1);
+      } else {
+        memoryResults->push(result);
+      }
+    } else {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+}
 
 void LLMRunner::step() {
   auto [seqs, is_prefill] = scheduler_->schedule();

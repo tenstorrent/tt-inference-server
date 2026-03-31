@@ -6,6 +6,7 @@
 #include <json/json.h>
 
 #include <optional>
+#include <sstream>
 #include <string>
 #include <variant>
 #include <vector>
@@ -13,6 +14,27 @@
 #include "domain/base_request.hpp"
 
 namespace tt::domain {
+
+namespace detail {
+
+constexpr size_t MAX_PROMPT_LOG_LENGTH = 200;
+
+inline std::string truncate(const std::string& s, size_t maxLen) {
+  if (s.size() <= maxLen) return s;
+  return s.substr(0, maxLen) + "...(" + std::to_string(s.size()) + " chars)";
+}
+
+template <typename T>
+std::string optStr(const std::optional<T>& opt) {
+  if (!opt.has_value()) return "none";
+  if constexpr (std::is_same_v<T, std::string>) {
+    return opt.value();
+  } else {
+    return std::to_string(opt.value());
+  }
+}
+
+}  // namespace detail
 
 /**
  * Stream options for OpenAI-compatible streaming responses.
@@ -86,6 +108,9 @@ struct CompletionRequest : BaseRequest {
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
   int prompt_tokens_count = 0;
+
+  // Session management
+  std::optional<std::string> session_id;
 
   static CompletionRequest fromJson(const Json::Value& json, TaskID taskId) {
     CompletionRequest req(std::move(taskId));
@@ -185,6 +210,30 @@ struct CompletionRequest : BaseRequest {
     }
 
     return req;
+  }
+
+  std::string toString() const {
+    std::string promptInfo;
+    if (auto* s = std::get_if<std::string>(&prompt)) {
+      promptInfo =
+          "\"" + detail::truncate(*s, detail::MAX_PROMPT_LOG_LENGTH) + "\"";
+    } else {
+      auto& tokens = std::get<std::vector<int>>(prompt);
+      promptInfo = "<" + std::to_string(tokens.size()) + " token ids>";
+    }
+
+    std::ostringstream out;
+    out << "task_id=" << task_id.id << " model=" << model.value_or("default")
+        << " stream=" << stream << " prompt=" << promptInfo
+        << " max_tokens=" << detail::optStr(max_tokens)
+        << " temperature=" << detail::optStr(temperature)
+        << " top_p=" << detail::optStr(top_p)
+        << " top_k=" << detail::optStr(top_k)
+        << " min_p=" << detail::optStr(min_p)
+        << " presence_penalty=" << presence_penalty
+        << " frequency_penalty=" << frequency_penalty << " n=" << n
+        << " stop_count=" << stop.size();
+    return out.str();
   }
 };
 

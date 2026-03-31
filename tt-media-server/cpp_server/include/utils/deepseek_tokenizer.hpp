@@ -12,7 +12,6 @@ class DeepseekTokenizer final : public Tokenizer {
   using Tokenizer::Tokenizer;
 
   std::string modelName() const { return "deepseek-ai/DeepSeek-R1-0528"; }
-  int specialTokenDecodeThreshold() const { return -1; }
   std::vector<int64_t> stopTokenIds() const { return {1}; }
 
   std::string applyChatTemplate(

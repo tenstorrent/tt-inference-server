@@ -16,7 +16,7 @@
 #include "ipc/boost_ipc_task_queue.hpp"
 #include "ipc/boost_ipc_warmup_signal_queue.hpp"
 #include "ipc/queue_manager.hpp"
-#include "ipc/shared_memory.hpp"
+#include "ipc/token_ring_buffer.hpp"
 #include "utils/logger.hpp"
 
 namespace {

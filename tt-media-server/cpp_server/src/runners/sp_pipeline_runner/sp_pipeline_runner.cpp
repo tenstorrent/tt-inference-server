@@ -6,8 +6,10 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <memory>
 #include <thread>
 
+#include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 
@@ -22,6 +24,15 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       taskQueue(taskQueue),
       decodeQueue(config.max_in_flight_count),
       maxInFlightCount(config.max_in_flight_count * 30) {
+  if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY) {
+    memoryManager = std::make_unique<services::MemoryManager>();
+    memoryRequests = std::make_unique<ipc::MemoryRequestQueue>(
+        ipc::k_memory_request_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+    memoryResults = std::make_unique<ipc::MemoryResultQueue>(
+        ipc::k_memory_result_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+    memoryThread = std::thread([this] { memoryLoop(); });
+  }
+
   auto decodeCb = [this](const llm_engine::TokenResult& result) {
     while (!decodeQueue.push(result)) {
       std::this_thread::yield();
@@ -32,6 +43,10 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
 }
 
 SpPipelineRunner::~SpPipelineRunner() {
+  stop();
+  if (memoryThread.joinable()) {
+    memoryThread.join();
+  }
   if (modelRunner) {
     modelRunner->exit();
   }
@@ -61,11 +76,11 @@ bool SpPipelineRunner::warmup() {
                      sp_pipeline::RequestPhase::PREFILL);
 
   // Wait for the response token (with timeout)
-  const int MAX_ATTEMPTS = 1000;  // ~10 seconds with 10ms sleep
+  const int maxAttempts = 1000;  // ~10 seconds with 10ms sleep
   int attempts = 0;
   bool receivedToken = false;
 
-  while (attempts < MAX_ATTEMPTS && !receivedToken) {
+  while (attempts < maxAttempts && !receivedToken) {
     std::vector<llm_engine::TokenResult> results;
     decodeQueue.popMany(results, maxInFlightCount);
     for (const auto& dr : results) {
@@ -98,6 +113,23 @@ void SpPipelineRunner::stop() {
   stopped.store(true, std::memory_order_relaxed);
 }
 
+void SpPipelineRunner::memoryLoop() {
+  tt::domain::ManageMemoryTask task{};
+
+  while (!stopped.load(std::memory_order_relaxed)) {
+    if (memoryRequests->tryPop(task)) {
+      auto result = memoryManager->handleTask(task);
+      if (result.status == domain::ManageMemoryStatus::WAITING) {
+        memoryRequests->push(task, /*priority=*/1);
+      } else {
+        memoryResults->push(result);
+      }
+    } else {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+}
+
 void SpPipelineRunner::step() {
   drainDecodeResults();
 
@@ -112,6 +144,11 @@ void SpPipelineRunner::step() {
     ZoneScopedN("SpPipelineRunner::write_to_device");
     std::unique_ptr<llm_engine::Sequence> owned(seq);
     llm_engine::TaskID taskId = seq->taskId;
+
+    if (!seq->samplingParams->max_tokens.has_value()) {
+      seq->samplingParams->max_tokens =
+          static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
+    }
 
     modelRunner->write(taskId.id, seq->tokenIds,
                        seq->samplingParams->max_tokens.value(),

@@ -70,6 +70,9 @@ struct ChatCompletionRequest : BaseRequest {
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
 
+  // Session management
+  std::optional<std::string> session_id;
+
   static ChatCompletionRequest fromJson(const Json::Value& json,
                                         TaskID taskId) {
     ChatCompletionRequest req(std::move(taskId));
@@ -164,7 +167,35 @@ struct ChatCompletionRequest : BaseRequest {
           json["spaces_between_special_tokens"].asBool();
     }
 
+    if (json.isMember("session_id") && !json["session_id"].isNull()) {
+      req.session_id = json["session_id"].asString();
+    }
+
     return req;
+  }
+
+  std::string toString() const {
+    std::string lastMsg;
+    if (!messages.empty()) {
+      const auto& m = messages.back();
+      lastMsg = m.role + ": \"" +
+                detail::truncate(m.content, detail::MAX_PROMPT_LOG_LENGTH) +
+                "\"";
+    }
+
+    std::ostringstream out;
+    out << "task_id=" << task_id.id << " model=" << model.value_or("default")
+        << " stream=" << stream << " messages=" << messages.size()
+        << " last_msg=[" << lastMsg << "]"
+        << " max_tokens=" << detail::optStr(max_tokens)
+        << " temperature=" << detail::optStr(temperature)
+        << " top_p=" << detail::optStr(top_p)
+        << " top_k=" << detail::optStr(top_k)
+        << " min_p=" << detail::optStr(min_p)
+        << " presence_penalty=" << presence_penalty
+        << " frequency_penalty=" << frequency_penalty << " n=" << n
+        << " stop_count=" << stop.size();
+    return out.str();
   }
 
   /** Convert to CompletionRequest: messages -> prompt, then same pipeline as
@@ -202,6 +233,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.allowed_token_ids = allowed_token_ids;
     out.prompt_logprobs = prompt_logprobs;
     out.truncate_prompt_tokens = truncate_prompt_tokens;
+    out.session_id = session_id;
     return out;
   }
 };

@@ -8,7 +8,7 @@
 
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
-#include "ipc/shared_memory.hpp"
+#include "ipc/token_ring_buffer.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 

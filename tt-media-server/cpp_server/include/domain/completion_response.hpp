@@ -22,6 +22,8 @@ struct CompletionUsage {
   int total_tokens = 0;
   std::optional<double> ttft_ms;  // Time to first token in milliseconds
   std::optional<double> tps;      // Tokens per second (excluding first token)
+  std::optional<std::string>
+      session_id;  // Session ID if session management is used
 
   Json::Value toJson() const {
     Json::Value json;
@@ -33,6 +35,9 @@ struct CompletionUsage {
     }
     if (tps.has_value()) {
       json["tps"] = tps.value();
+    }
+    if (session_id.has_value()) {
+      json["session_id"] = session_id.value();
     }
     return json;
   }
@@ -99,6 +104,7 @@ struct CompletionResponse : BaseResponse {
   std::string toJsonString() const {
     Json::StreamWriterBuilder writer;
     writer["indentation"] = "";
+    writer["emitUTF8"] = true;
     return Json::writeString(writer, toJson());
   }
 };
@@ -144,6 +150,7 @@ struct StreamingChunkResponse : BaseResponse {
   std::string toJsonString() const {
     Json::StreamWriterBuilder writer;
     writer["indentation"] = "";
+    writer["emitUTF8"] = true;
     return Json::writeString(writer, toJson());
   }
 

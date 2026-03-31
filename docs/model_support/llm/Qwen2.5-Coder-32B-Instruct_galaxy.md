@@ -26,7 +26,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Qwen2.5-Coder-32B-Instruct:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-17a5973-aa4ae1e \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-17a5973-aa4ae1e \
   --model Qwen2.5-Coder-32B-Instruct \
   --tt-device galaxy_t3k
 ```
@@ -49,4 +49,4 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/17a5973/models/tt_transformers) |
 | tt-metal Commit | `17a5973` |
 | vLLM Commit | `aa4ae1e` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-17a5973-aa4ae1e` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-17a5973-aa4ae1e` |
