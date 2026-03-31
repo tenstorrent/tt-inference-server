@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -16,13 +17,17 @@
 #include "runners/runner_interface.hpp"
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 
+namespace tt::services {
+class MemoryManager;
+}
+
 namespace tt::runners {
 
 class SpPipelineRunnerDemo : public IRunner {
  public:
   SpPipelineRunnerDemo(const tt::config::LLMConfig& config,
-                       ipc::TokenRingBuffer<65536>* resultQueue,
-                       llm_engine::ITaskQueue* taskQueue);
+                   ipc::TokenRingBuffer<65536>* resultQueue,
+                   llm_engine::ITaskQueue* taskQueue);
   ~SpPipelineRunnerDemo() override;
 
   void run() override;
@@ -49,6 +54,9 @@ class SpPipelineRunnerDemo : public IRunner {
   std::atomic<bool> stopped{false};
   int maxInFlightCount;
   int inFlightCount = 0;
+
+  std::unique_ptr<tt::services::MemoryManager> memoryManager;
+  std::thread memoryThread;
 };
 
 }  // namespace tt::runners
