@@ -1,0 +1,17 @@
+model: Qwen3-8B
+device: galaxy
+image:
+  repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+  tag: 0.10.0-e0e0500-409b1cd
+resources:
+  limits:
+    memory: 32Gi
+  requests:
+    memory: 20Gi
+probes:
+  liveness:
+    initialDelaySeconds: 2400
+    periodSeconds: 30
+  readiness:
+    initialDelaySeconds: 2400
+    periodSeconds: 10
