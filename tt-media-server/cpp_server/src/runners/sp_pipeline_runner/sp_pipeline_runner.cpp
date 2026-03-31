@@ -24,11 +24,19 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
       taskQueue(taskQueue) {
-  pm::MockConfig mockConfig{};
-  pipelineManager = std::make_unique<pm::PipelineManager>(mockConfig);
+  TT_LOG_INFO("SpPipelineRunner: Constructing PipelineManager with SocketConfig...");
+  pm::SocketConfig socketConfig{
+    .h2d_socket_id = "h2d_socket",
+    .d2h_socket_id = "d2h_socket",
+    .connect_timeout_ms = 30000,
+  };
+  pipelineManager = std::make_unique<pm::PipelineManager>(socketConfig);
+  TT_LOG_INFO("SpPipelineRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
+  TT_LOG_INFO("SpPipelineRunner: PipelineManager started, creating MemoryManager...");
   memoryManager = std::make_unique<tt::services::SpPipelineMemoryManager>(
       *pipelineManager, [this](uint32_t slotId) { evictSlot(slotId); });
+  TT_LOG_INFO("SpPipelineRunner: Constructor complete");
 }
 
 SpPipelineRunner::~SpPipelineRunner() {
@@ -63,19 +71,23 @@ bool SpPipelineRunner::warmup() {
       1,  // block_size (doesn't matter for warmup)
       warmupTokens, warmupParams);
 
+  TT_LOG_INFO("SpPipelineRunner: warmup - pushing ALLOCATE request...");
   pipelineManager->push_request(utils::makeAllocateRequest(0));
 
+  TT_LOG_INFO("SpPipelineRunner: warmup - waiting for ALLOCATE response...");
   pm::PMResponse response{};
   while (!pipelineManager->try_pop_response(response)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
   auto slotId = response.slot_id;
+  TT_LOG_INFO("SpPipelineRunner: warmup - got slot_id={}", slotId);
   if (slotId == pm::INVALID_SLOT) {
     TT_LOG_ERROR("SpPipelineRunner: Warmup failed with error");
     return false;
   }
 
+  TT_LOG_INFO("SpPipelineRunner: warmup - pushing SUBMIT request...");
   pipelineManager->push_request(utils::makeSubmitRequest(slotId, *warmupSeq));
   // Wait for the response token (with timeout)
   const int maxAttempts = 1000;  // ~10 seconds with 10ms sleep

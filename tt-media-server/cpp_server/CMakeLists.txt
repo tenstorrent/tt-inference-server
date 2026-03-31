@@ -85,6 +85,9 @@ else()
     message(STATUS "Using spdlog's bundled fmt library")
 endif()
 
+# Ensure static libraries are built with -fPIC (required when linking into shared libs like pipeline_manager)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 # spdlog for logging - use tt-metal's fmt library when available
 FetchContent_Declare(
     spdlog
@@ -100,8 +103,20 @@ FetchContent_MakeAvailable(spdlog)
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost REQUIRED)
 
-# tt-blaze pipeline_manager (core-only, no hardware deps)
+# tt-blaze pipeline_manager
+# Make TT-Metalium discoverable so pipeline_manager builds the Full target
+# (SocketPipeline) instead of core-only (mock pipeline).
+if(TT_METAL_HOME)
+    foreach(_build_dir build_Release build)
+        if(EXISTS "${TT_METAL_HOME}/${_build_dir}/lib/cmake/tt-metalium")
+            list(APPEND CMAKE_PREFIX_PATH "${TT_METAL_HOME}/${_build_dir}")
+            break()
+        endif()
+    endforeach()
+endif()
 set(PM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(PM_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(TT_METAL_SOURCE_DIR "${TT_METAL_HOME}" CACHE PATH "" FORCE)
 add_subdirectory(tt-blaze/pipeline_manager)
 
 # Option for Tracy support
@@ -252,7 +267,13 @@ target_include_directories(llm_engine PUBLIC
     ${TT_METAL_INCLUDE_DIRS}
 )
 # Link tokenizers_cpp and JsonCpp since settings.cpp depends on tokenizer.hpp
-target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp PipelineManager::Core)
+# Use PipelineManager::Full (with SocketPipeline + TT::Metalium) when available,
+# otherwise fall back to PipelineManager::Core (mock pipeline only).
+if(TARGET PipelineManager::Full)
+    target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp PipelineManager::Full)
+else()
+    target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp PipelineManager::Core)
+endif()
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     target_compile_definitions(llm_engine PUBLIC USE_METAL_CPP_LIB)
     # Find tt_metal library directory
