@@ -127,7 +127,7 @@ bool SpPipelineRunner::warmup() {
   bool receivedToken = false;
   auto output = pm::OutputMessage{};
 
-  while (attempts < MAX_ATTEMPTS && !receivedToken) {
+  while (attempts < maxAttempts && !receivedToken) {
     receivedToken = pipelineManager->try_pop_output(output);
     if (receivedToken) {
       break;
@@ -216,15 +216,16 @@ std::unique_ptr<llm_engine::Sequence> SpPipelineRunner::getRequest() {
 }
 
 inline void SpPipelineRunner::handleMemoryRequest(const tt::domain::ManageMemoryTask& request) {
-  memoryManager.handleRequest(request);
+  //memoryManager.handleRequest(request);
 }
 
 inline void SpPipelineRunner::handleResponse(const pm::PMResponse& response) {
-  memoryManager.handleResponse(response.slot_id);
+  //memoryManager.handleResponse(response.slot_id);
 }
 
 inline std::optional<tt::domain::ManageMemoryTask> SpPipelineRunner::getMemoryRequest() {
-  return memoryManager.getRequest();
+  //return memoryManager.getRequest();
+  return std::nullopt;
 }
 
 void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
