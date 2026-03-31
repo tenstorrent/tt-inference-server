@@ -1580,7 +1580,7 @@ llm_templates = [
             ),
         ),
         tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        vllm_commit="84b4c53 ",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
