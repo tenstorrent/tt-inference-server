@@ -9,16 +9,16 @@
 #include <memory>
 #include <thread>
 
-#include "services/contiguous_memory_manager.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
+#include "services/contiguous_memory_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
 
-SpPipelineRunnerDemo::SpPipelineRunnerDemo(const config::LLMConfig& config,
-                                   ipc::TokenRingBuffer<65536>* resultQueue,
-                                   llm_engine::ITaskQueue* taskQueue)
+SpPipelineRunnerDemo::SpPipelineRunnerDemo(
+    const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* resultQueue,
+    llm_engine::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
@@ -193,7 +193,7 @@ void SpPipelineRunnerDemo::drainDecodeResults() {
 }
 
 void SpPipelineRunnerDemo::pushToken(const llm_engine::TaskID& taskId,
-                                 uint64_t tokenId, bool finished) {
+                                     uint64_t tokenId, bool finished) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;
