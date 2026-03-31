@@ -1,0 +1,18 @@
+model: Wan2.2-T2V-A14B-Diffusers
+device: galaxy
+serverType: media
+image:
+  repository: ghcr.io/tenstorrent/tt-media-inference-server
+  tag: 0.10.0-555f240
+resources:
+  limits:
+    memory: 64Gi
+  requests:
+    memory: 32Gi
+probes:
+  liveness:
+    initialDelaySeconds: 600    # ~10 min, no builtin warmup
+    periodSeconds: 30
+  readiness:
+    initialDelaySeconds: 600
+    periodSeconds: 10
