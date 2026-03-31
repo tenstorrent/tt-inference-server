@@ -5,6 +5,7 @@
 """Mock video runner: pipeline output shape and export hook (conftest mocks torch/diffusers)."""
 
 import os
+import sys
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -153,6 +154,59 @@ def test_run_shm_bridge_error_path_writes_error_response(monkeypatch, tmp_path):
     assert "simulated inference failure" in err_resps[0].error_message
 
 
+def test_run_shm_bridge_success_path_logs_inference_and_encoded_size(
+    monkeypatch, tmp_path
+):
+    """Covers [MOCK] inference logs, getsize log, and Request ... completed (bridge body)."""
+    import numpy as np
+
+    mvr._shutdown = False
+    req = VideoRequest(
+        task_id="abcdef12-3456-7890-abcd-ef1234567890",
+        prompt="p",
+        negative_prompt="",
+        num_inference_steps=12,
+        seed=0,
+        height=480,
+        width=832,
+        num_frames=4,
+        guidance_scale=3.0,
+        guidance_scale_2=4.0,
+    )
+    mock_in = MagicMock()
+    mock_out = MagicMock()
+    mock_in.read_request = Mock(side_effect=[req, None])
+    mp4 = tmp_path / "out.mp4"
+    mp4.write_bytes(b"x" * 120)
+
+    class FastPipeline:
+        def __call__(self, **kwargs):
+            return np.zeros((1, 2, 8, 8, 3), dtype=np.uint8)
+
+    monkeypatch.setattr(mvr, "MockVideoPipeline", FastPipeline)
+
+    mock_log = MagicMock()
+    _ul = sys.modules["utils.logger"]
+    _saved_tt = _ul.TTLogger
+    _ul.TTLogger = lambda: mock_log
+    try:
+        with patch("ipc.video_shm.VideoShm", side_effect=[mock_in, mock_out]):
+            with patch("utils.video_manager.VideoManager") as VM:
+                VM.return_value.export_to_mp4.return_value = str(mp4)
+                with patch(
+                    "ipc.video_shm.cleanup_orphaned_video_files", return_value=0
+                ):
+                    mvr._run_shm_bridge()
+    finally:
+        _ul.TTLogger = _saved_tt
+
+    joined = " ".join(str(c) for c in mock_log.info.call_args_list).lower()
+    assert "[mock] running inference" in joined
+    assert "encoded mp4" in joined
+    assert "bytes" in joined
+    assert "completed" in joined
+
+
 def test_run_shm_bridge_logs_when_orphans_removed(monkeypatch, tmp_path):
     import numpy as np
 
@@ -182,7 +236,10 @@ def test_run_shm_bridge_logs_when_orphans_removed(monkeypatch, tmp_path):
     monkeypatch.setattr(mvr, "MockVideoPipeline", FastPipeline)
 
     mock_log = MagicMock()
-    with patch("utils.logger.TTLogger", return_value=mock_log):
+    _ul = sys.modules["utils.logger"]
+    _saved_tt = _ul.TTLogger
+    _ul.TTLogger = lambda: mock_log
+    try:
         with patch("ipc.video_shm.VideoShm", side_effect=[mock_in, mock_out]):
             with patch("utils.video_manager.VideoManager") as VM:
                 VM.return_value.export_to_mp4.return_value = str(mp4)
@@ -190,6 +247,8 @@ def test_run_shm_bridge_logs_when_orphans_removed(monkeypatch, tmp_path):
                     "ipc.video_shm.cleanup_orphaned_video_files", return_value=3
                 ):
                     mvr._run_shm_bridge()
+    finally:
+        _ul.TTLogger = _saved_tt
 
     assert any(
         "3" in str(call) and "orphan" in str(call).lower()

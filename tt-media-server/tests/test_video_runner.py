@@ -679,6 +679,73 @@ class TestVideoRunnerCoverage:
                 vr.main()
                 rw.assert_called_once_with(2)
 
+    def test_recv_via_socket_unpickling_error_returns_none(self):
+        """Invalid pickle body hits except Exception in _recv_via_socket (lines 153–155)."""
+        import struct
+
+        import tt_model_runners.video_runner as vr
+
+        conn = MagicMock()
+        payload = b"\xffnot-valid-pickle"
+        conn.recv = Mock(side_effect=[struct.pack("<I", len(payload)), payload])
+        with patch.object(vr._log, "warning") as w:
+            assert vr._recv_via_socket(conn) is None
+        w.assert_called_once()
+
+    def test_bootstrap_dit_runner_logs_model_and_visible_devices(self):
+        """Covers Rank N: model=..., device=... (lines 190–191)."""
+        import tt_model_runners.video_runner as vr
+
+        mock_runner = MagicMock()
+        mock_runner.warmup = AsyncMock(return_value=True)
+        with patch.dict(
+            os.environ,
+            {
+                "MODEL_RUNNER": "tt-mochi-1",
+                "TT_VISIBLE_DEVICES": "0,1",
+            },
+            clear=False,
+        ):
+            with patch(
+                "tt_model_runners.video_runner.create_dit_runner",
+                return_value=mock_runner,
+            ):
+                with patch.object(vr._log, "info") as log_info:
+                    vr._bootstrap_dit_runner(2, "dev-x")
+        texts = [str(c) for c in log_info.call_args_list]
+        assert any("model=tt-mochi-1" in t and "device=0,1" in t for t in texts)
+
+    def test_run_worker_rank_outer_exception_on_accept(self):
+        """accept() raises → outer except logs (lines 375–376)."""
+        import tt_model_runners.video_runner as vr
+
+        mock_listen = MagicMock()
+        mock_listen.accept.side_effect = RuntimeError("accept failed")
+        mock_listen.bind = MagicMock()
+        mock_listen.listen = MagicMock()
+        mock_listen.setsockopt = MagicMock()
+        mock_listen.close = MagicMock()
+
+        with patch.object(vr.socket, "socket", return_value=mock_listen):
+            with patch.object(vr, "_bootstrap_dit_runner", return_value=MagicMock()):
+                with patch.object(vr._log, "error") as err:
+                    vr.run_worker_rank(1)
+        err.assert_called()
+        assert any("accept failed" in str(c) for c in err.call_args_list)
+
+    def test_main_logs_starting_rank(self):
+        """Covers Starting video runner with rank=... (line 391)."""
+        import tt_model_runners.video_runner as vr
+
+        with patch.object(vr, "_rank", return_value=0):
+            with patch.object(vr, "run_rank0_coordinator"):
+                with patch.object(vr._log, "info") as log_info:
+                    vr.main()
+        assert any(
+            "Starting video runner" in str(c) and "rank=" in str(c)
+            for c in log_info.call_args_list
+        )
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

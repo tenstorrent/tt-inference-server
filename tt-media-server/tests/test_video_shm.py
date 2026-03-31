@@ -12,7 +12,7 @@ import uuid
 import pytest
 
 import sys
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 sys.modules["ttnn"] = Mock()
 
@@ -787,6 +787,16 @@ class TestCleanupOrphanedVideoFiles:
         monkeypatch.setattr(video_shm_mod.os, "unlink", unlink_raises)
         assert cleanup_orphaned_video_files() == 0
         assert (self._tmp / "tt_video_stale.pkl").exists()
+
+    def test_oserror_on_unlink_via_patch(self):
+        """Same as test_oserror_on_unlink_is_ignored using patch (diff-cover reliability)."""
+        import ipc.video_shm as video_shm_mod
+
+        p = self._tmp / "tt_video_patch.pkl"
+        p.write_bytes(b"x")
+        with patch.object(video_shm_mod.os, "unlink", side_effect=OSError("busy")):
+            assert cleanup_orphaned_video_files() == 0
+        assert p.exists()
 
 
 # ── End-to-end file-based IPC roundtrip ──
