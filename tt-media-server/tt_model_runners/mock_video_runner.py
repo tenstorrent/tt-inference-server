@@ -5,9 +5,9 @@
 """Mock video runner for testing the SHM IPC path without TTNN devices.
 
 Inherits from BaseDeviceRunner and provides a MockVideoPipeline that
-sleeps 5-10s per frame to simulate Wan/Mochi inference. When run as a
-standalone script, it acts as the external runner process that reads
-requests from input SHM and streams frames to output SHM.
+sleeps 5-10s per frame to simulate Wan/Mochi inference. When run as a standalone script, it acts as the external runner process
+that reads requests from input SHM, encodes mock frames to mp4 (same as
+``video_runner`` rank-0), and sends the mp4 path through output SHM.
 
 Usage as standalone process (the "runner side" of the SHM bridge)::
 
@@ -109,7 +109,11 @@ class MockVideoRunner(BaseDeviceRunner):
             seed=int(request.seed or 0),
         )
         self.logger.info(f"MockVideoRunner inference completed, shape={frames.shape}")
-        return frames
+        from utils.video_manager import VideoManager
+
+        mp4_path = VideoManager().export_to_mp4(frames)
+        self.logger.info(f"MockVideoRunner encoded mp4: {mp4_path}")
+        return [mp4_path]
 
 
 # ---------------------------------------------------------------------------
@@ -128,16 +132,15 @@ def _handle_signal(signum, frame):
 
 def _run_shm_bridge() -> None:
     import os
-    import pickle
 
     from ipc.video_shm import (
         VideoResponse,
         VideoShm,
         VideoStatus,
         cleanup_orphaned_video_files,
-        video_result_path,
     )
     from utils.logger import TTLogger
+    from utils.video_manager import VideoManager
 
     logger = TTLogger()
 
@@ -184,25 +187,17 @@ def _run_shm_bridge() -> None:
                     f"frames shape={frames.shape}, dtype={frames.dtype}"
                 )
 
-                file_path = video_result_path(req.task_id)
-                logger.info(f"[MOCK] SAVING video to filesystem: {file_path}")
-                with open(file_path, "wb") as fh:
-                    pickle.dump(frames, fh)
-                file_size = os.path.getsize(file_path)
+                mp4_path = VideoManager().export_to_mp4(frames)
                 logger.info(
-                    f"[MOCK] SAVED {file_size:,} bytes to {file_path} "
-                    f"(exists={os.path.exists(file_path)})"
+                    f"[MOCK] Encoded mp4 at {mp4_path} "
+                    f"({os.path.getsize(mp4_path):,} bytes)"
                 )
 
-                logger.info(
-                    f"[MOCK] Sending file_path through SHM output "
-                    f"(only ~{len(file_path)} bytes in SHM, not {file_size:,})"
-                )
                 output_shm.write_response(
                     VideoResponse(
                         task_id=req.task_id,
                         status=VideoStatus.SUCCESS,
-                        file_path=file_path,
+                        file_path=mp4_path,
                         error_message="",
                     )
                 )

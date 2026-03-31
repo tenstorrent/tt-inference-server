@@ -3,13 +3,11 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 import os
-import pickle
 import socket
 import sys
 import threading
 from unittest.mock import Mock, MagicMock, patch
 
-import numpy as np
 import pytest
 
 sys.modules["ttnn"] = Mock()
@@ -154,59 +152,28 @@ class TestSocketHelpers:
 
 
 class TestWriteResponseToShm:
-    @pytest.fixture(autouse=True)
-    def _use_tmpdir(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("ipc.video_shm.VIDEO_FILE_DIR", str(tmp_path))
-        self._tmp = tmp_path
-
-    def test_writes_pickled_video(self):
+    def test_writes_mp4_path_to_shm(self, tmp_path):
         mock_shm = MagicMock()
-        frames = np.random.randint(0, 256, (1, 3, 4, 6, 3), dtype=np.uint8)
+        mp4_path = str(tmp_path / "out.mp4")
+        open(mp4_path, "wb").close()
 
-        _write_response_to_shm(mock_shm, "task-1", frames)
+        _write_response_to_shm(mock_shm, "task-1", mp4_path)
 
         mock_shm.write_response.assert_called_once()
         resp = mock_shm.write_response.call_args[0][0]
         assert resp.status == VideoStatus.SUCCESS
         assert resp.task_id == "task-1"
-        assert resp.file_path.endswith("tt_video_task-1.pkl")
-        with open(resp.file_path, "rb") as fh:
-            recovered = pickle.load(fh)
-        np.testing.assert_array_equal(recovered, frames)
+        assert resp.file_path == mp4_path
+        assert resp.error_message == ""
 
-    def test_handles_4d_input(self):
+    def test_accepts_any_string_path(self):
         mock_shm = MagicMock()
-        frames = np.zeros((2, 4, 6, 3), dtype=np.uint8)
+        path = "/tmp/videos/coordinator-output.mp4"
 
-        _write_response_to_shm(mock_shm, "task-2", frames)
-
-        mock_shm.write_response.assert_called_once()
-        resp = mock_shm.write_response.call_args[0][0]
-        with open(resp.file_path, "rb") as fh:
-            recovered = pickle.load(fh)
-        np.testing.assert_array_equal(recovered, frames)
-
-    def test_preserves_float_data(self):
-        mock_shm = MagicMock()
-        frames = np.ones((1, 1, 2, 2, 3), dtype=np.float32) * 0.5
-
-        _write_response_to_shm(mock_shm, "task-3", frames)
+        _write_response_to_shm(mock_shm, "task-2", path)
 
         resp = mock_shm.write_response.call_args[0][0]
-        with open(resp.file_path, "rb") as fh:
-            recovered = pickle.load(fh)
-        np.testing.assert_array_almost_equal(recovered, frames)
-
-    def test_preserves_extreme_float_values(self):
-        mock_shm = MagicMock()
-        frames = np.array([[[[[2.0, -1.0, 0.5]]]]]).astype(np.float32)
-
-        _write_response_to_shm(mock_shm, "task-4", frames)
-
-        resp = mock_shm.write_response.call_args[0][0]
-        with open(resp.file_path, "rb") as fh:
-            recovered = pickle.load(fh)
-        np.testing.assert_array_almost_equal(recovered, frames)
+        assert resp.file_path == path
 
 
 class TestWriteErrorToShm:
