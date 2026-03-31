@@ -37,6 +37,7 @@ Usage:
     python -m tt_model_runners.video_runner
 """
 
+import asyncio
 import os
 import pickle
 import signal
@@ -44,8 +45,9 @@ import socket
 import struct
 import sys
 import time
+import traceback
 from dataclasses import fields as dc_fields
-from typing import Optional
+from typing import Any, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -147,6 +149,31 @@ def create_dit_runner(model_runner: str, device_id: str):
     return runner_class(device_id)
 
 
+def _bootstrap_dit_runner(rank: int, runner_device_id: str) -> Any:
+    """Create DiT runner from ``MODEL_RUNNER``, set device, load weights, warmup.
+
+    ``runner_device_id`` is the constructor argument: use ``""`` for rank 0
+    coordinator; workers pass ``TT_VISIBLE_DEVICES``.
+    """
+    model_runner = os.environ.get("MODEL_RUNNER", "")
+    if not model_runner:
+        print(f"Rank {rank}: MODEL_RUNNER environment variable not set")
+        sys.exit(1)
+
+    visible = os.environ.get("TT_VISIBLE_DEVICES", "")
+    print(f"Rank {rank}: model={model_runner}, device={visible}")
+
+    runner = create_dit_runner(model_runner, runner_device_id)
+    print(f"Rank {rank}: Setting up device...")
+    runner.set_device()
+    print(f"Rank {rank}: Loading weights...")
+    runner.load_weights()
+    print(f"Rank {rank}: Running warmup...")
+    asyncio.run(runner.warmup())
+    print(f"Rank {rank}: Model ready for inference")
+    return runner
+
+
 def _write_response_to_shm(
     output_shm: VideoShm,
     task_id: str,
@@ -200,28 +227,11 @@ def _connect_to_workers() -> dict[int, socket.socket]:
 
 def run_rank0_coordinator() -> None:
     """Rank 0: Read from input SHM, run DiT inference, stream frames to output SHM."""
-    model_runner = os.environ.get("MODEL_RUNNER", "")
-    device_id = os.environ.get("TT_VISIBLE_DEVICES", "")
     input_name = os.environ.get("TT_VIDEO_SHM_INPUT", "tt_video_in")
     output_name = os.environ.get("TT_VIDEO_SHM_OUTPUT", "tt_video_out")
 
-    if not model_runner:
-        print("MODEL_RUNNER environment variable not set")
-        sys.exit(1)
-
-    print(f"Rank 0: model={model_runner}, device={device_id}")
+    runner = _bootstrap_dit_runner(rank=0, runner_device_id="")
     print(f"Rank 0: SHM in={input_name}, out={output_name}")
-
-    runner = create_dit_runner(model_runner, "")
-    print("Rank 0: Setting up device...")
-    runner.set_device()
-    print("Rank 0: Loading weights...")
-    runner.load_weights()
-    print("Rank 0: Running warmup...")
-    import asyncio
-
-    asyncio.run(runner.warmup())
-    print("Rank 0: Model ready for inference")
 
     input_shm = VideoShm(input_name, mode="input", is_shutdown=_is_shutdown)
     output_shm = VideoShm(output_name, mode="output", is_shutdown=_is_shutdown)
@@ -268,8 +278,6 @@ def run_rank0_coordinator() -> None:
                 print(f"Rank 0: Response written for task {req.task_id}")
 
             except Exception as e:
-                import traceback
-
                 print(
                     f"Rank 0: ERROR - Inference/write failed for task {req.task_id}: {e}"
                 )
@@ -293,26 +301,10 @@ def run_rank0_coordinator() -> None:
 
 def run_worker_rank(rank: int) -> None:
     """Ranks 1-3: Listen on socket, receive requests from rank 0, and run DiT inference."""
-    model_runner = os.environ.get("MODEL_RUNNER", "")
-    device_id = os.environ.get("TT_VISIBLE_DEVICES", "")
     config = RANK_CONFIG[rank]
+    device_id = os.environ.get("TT_VISIBLE_DEVICES", "")
 
-    if not model_runner:
-        print(f"Rank {rank}: MODEL_RUNNER environment variable not set")
-        sys.exit(1)
-
-    print(f"Rank {rank}: model={model_runner}, device={device_id}")
-
-    runner = create_dit_runner(model_runner, device_id)
-    print(f"Rank {rank}: Setting up device...")
-    runner.set_device()
-    print(f"Rank {rank}: Loading weights...")
-    runner.load_weights()
-    print(f"Rank {rank}: Running warmup...")
-    import asyncio
-
-    asyncio.run(runner.warmup())
-    print(f"Rank {rank}: Model ready for inference")
+    runner = _bootstrap_dit_runner(rank=rank, runner_device_id=device_id)
 
     print(f"Rank {rank}: Starting worker on {config['ip']}:{config['port']}")
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
