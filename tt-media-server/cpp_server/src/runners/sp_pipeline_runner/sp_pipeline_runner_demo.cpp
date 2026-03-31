@@ -6,22 +6,31 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <memory>
 #include <thread>
 
+#include "services/contiguous_memory_manager.hpp"
+#include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
 
-SpPipelineRunnerDemo::SpPipelineRunnerDemo(
-    const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* resultQueue,
-    llm_engine::ITaskQueue* taskQueue)
+SpPipelineRunnerDemo::SpPipelineRunnerDemo(const config::LLMConfig& config,
+                                   ipc::TokenRingBuffer<65536>* resultQueue,
+                                   llm_engine::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
       taskQueue(taskQueue),
       decodeQueue(config.max_in_flight_count),
       maxInFlightCount(config.max_in_flight_count * 30) {
+  if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY ||
+      tt::config::llmMode() == config::LLMMode::REGULAR) {
+    memoryManager = std::make_unique<services::ContiguousMemoryManager>();
+    memoryThread = std::thread([this] { memoryLoop(); });
+  }
+
   auto decodeCb = [this](const llm_engine::TokenResult& result) {
     while (!decodeQueue.push(result)) {
       std::this_thread::yield();
@@ -33,6 +42,9 @@ SpPipelineRunnerDemo::SpPipelineRunnerDemo(
 
 SpPipelineRunnerDemo::~SpPipelineRunnerDemo() {
   stop();
+  if (memoryThread.joinable()) {
+    memoryThread.join();
+  }
   if (modelRunner) {
     modelRunner->exit();
   }
@@ -62,11 +74,11 @@ bool SpPipelineRunnerDemo::warmup() {
                      sp_pipeline::RequestPhase::PREFILL);
 
   // Wait for the response token (with timeout)
-  const int MAX_ATTEMPTS = 1000;  // ~10 seconds with 10ms sleep
+  const int maxAttempts = 1000;  // ~10 seconds with 10ms sleep
   int attempts = 0;
   bool receivedToken = false;
 
-  while (attempts < MAX_ATTEMPTS && !receivedToken) {
+  while (attempts < maxAttempts && !receivedToken) {
     std::vector<llm_engine::TokenResult> results;
     decodeQueue.popMany(results, maxInFlightCount);
     for (const auto& dr : results) {
@@ -97,6 +109,17 @@ bool SpPipelineRunnerDemo::warmup() {
 
 void SpPipelineRunnerDemo::stop() {
   stopped.store(true, std::memory_order_relaxed);
+}
+
+void SpPipelineRunnerDemo::memoryLoop() {
+  while (!stopped.load(std::memory_order_relaxed)) {
+    auto task = memoryManager->getRequest();
+    if (task) {
+      memoryManager->handleRequest(*task);
+    } else {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
 }
 
 void SpPipelineRunnerDemo::step() {
@@ -170,7 +193,7 @@ void SpPipelineRunnerDemo::drainDecodeResults() {
 }
 
 void SpPipelineRunnerDemo::pushToken(const llm_engine::TaskID& taskId,
-                                     uint64_t tokenId, bool finished) {
+                                 uint64_t tokenId, bool finished) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;
