@@ -15,6 +15,7 @@ def create_video_worker_context():
 
 
 def video_worker_function(video_manager, video_frames, should_discard_file=True):
+    # str: already-exported video on disk (filesystem path), not raw frame tensors.
     if isinstance(video_frames, str):
         path = video_frames
         if should_discard_file:

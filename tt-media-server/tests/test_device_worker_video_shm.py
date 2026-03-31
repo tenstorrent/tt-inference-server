@@ -54,7 +54,11 @@ def _touch_mp4_file() -> str:
 
 
 def _write_video_file(video) -> str:
-    """Pickle *video* to a temp file and return the path (legacy / error-path tests)."""
+    """Pickle *video* to a file and return the path (legacy / error-path tests).
+
+    Uses :func:`tempfile.mkstemp` (short-lived OS temp). Production video IPC uses
+    RAM-backed paths under ``TT_VIDEO_FILE_DIR`` with a separate TTL policy — not this helper.
+    """
     fd, path = tempfile.mkstemp(suffix=".pkl", prefix="tt_video_test_")
     with os.fdopen(fd, "wb") as fh:
         pickle.dump(video, fh)
