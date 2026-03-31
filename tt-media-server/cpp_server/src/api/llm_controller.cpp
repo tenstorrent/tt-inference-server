@@ -183,7 +183,8 @@ void LLMController::completions(
 
       // Save sessionId before moving request
       auto sessionId = request->sessionId;
-      request->slotId = sessionManager->getSlotIdBySessionId(request->sessionId.value());
+      request->slotId =
+          sessionManager->getSlotIdBySessionId(request->sessionId.value());
 
       auto startTime = std::chrono::high_resolution_clock::now();
       auto response = service->submitRequest(std::move(*request));
