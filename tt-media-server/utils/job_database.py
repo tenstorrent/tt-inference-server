@@ -259,7 +259,7 @@ class JobDatabase:
     def get_checkpoints(self, job_id: str) -> List[Dict[str, Any]]:
         with self._get_cursor(commit=False) as cursor:
             cursor.execute(
-                "SELECT checkpoint_id, step, epoch, metrics, created_atFROM checkpoints WHERE job_id = ? ORDER BY step ASC",
+                "SELECT checkpoint_id, step, epoch, metrics, created_at FROM checkpoints WHERE job_id = ? ORDER BY step ASC",
                 (job_id,),
             )
             return [

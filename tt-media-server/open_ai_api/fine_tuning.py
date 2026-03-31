@@ -155,3 +155,30 @@ async def get_job_logs(
     except ValueError:
         raise HTTPException(404, "Job not found")
     return JSONResponse(content=logs)
+
+@router.get("/jobs/{job_id}/checkpoints/{checkpoint_id}")
+async def download_checkpoint(
+    job_id: str,
+    checkpoint_id: str,
+    service: BaseJobService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    try:
+        checkpoint_path = service.get_checkpoint_download_path(job_id, checkpoint_id)
+    except ValueError:
+        raise HTTPException(404, "Job not found")
+    if not checkpoint_path:
+        raise HTTPException(404, "Checkpoint not found or no longer available for download")
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _, files in os.walk(checkpoint_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, checkpoint_path)
+                zf.write(file_path, arcname)
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=adapter_{checkpoint_id}.zip"},
+    )
