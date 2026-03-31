@@ -15,8 +15,22 @@
 namespace tt::services {
 
 SessionManager::SessionManager() {
-  // Queues are created by MemoryManager in worker processes
-  // We use lazy initialization to avoid startup order dependencies
+  // Create IPC queues for communication with MemoryManager (in worker processes)
+  // If workers aren't running or in non-decode mode, these queues won't be used
+  try {
+    memoryRequestQueue_ = std::make_unique<ipc::MemoryRequestQueue>(
+        ipc::k_memory_request_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+    memoryResultQueue_ = std::make_unique<ipc::MemoryResultQueue>(
+        ipc::k_memory_result_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+    TT_LOG_INFO("[SessionManager] Created memory management IPC queues");
+  } catch (const std::exception& e) {
+    TT_LOG_WARN(
+        "[SessionManager] Failed to create memory queues: {}. Slot allocation "
+        "will not be available.",
+        e.what());
+    memoryRequestQueue_.reset();
+    memoryResultQueue_.reset();
+  }
 }
 
 domain::Session SessionManager::createSession(std::optional<uint32_t> slotId) {
