@@ -24,6 +24,7 @@ class SupportedModels(Enum):
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
+    BGE_M3 = "BAAI/bge-m3"
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
     LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B"
     LLAMA_3_2_3B_INSTRUCT = "meta-llama/Llama-3.2-3B-Instruct"
@@ -63,6 +64,7 @@ class ModelNames(Enum):
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
+    BGE_M3 = "bge-m3"
     LLAMA_3_2_3B = "Llama-3.2-3B"
     LLAMA_3_1_8B = "Llama-3.1-8B"
     LLAMA_3_2_3B_INSTRUCT = "Llama-3.2-3B-Instruct"
@@ -93,6 +95,7 @@ class ModelRunners(Enum):
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
     BGELargeEN_V1_5 = "bge_large_en_v1_5"
+    BGEM3 = "bge_m3"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
@@ -144,6 +147,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
         ModelRunners.QWEN_EMBEDDING_8B,
         ModelRunners.BGELargeEN_V1_5,
+        ModelRunners.BGEM3,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
@@ -201,6 +205,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
+    ModelRunners.BGEM3: {ModelNames.BGE_M3},
     ModelRunners.VLLMForge: {
         ModelNames.LLAMA_3_2_3B,
         ModelNames.LLAMA_3_2_3B_INSTRUCT,
@@ -975,7 +980,71 @@ ModelConfigs = {
         "default_throttle_level": 0,
         "use_queue_per_worker": True,
     },
-    (ModelRunners.VLLMForge, DeviceTypes.N150): {
+    (ModelRunners.BGEM3, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 32,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192 * 32,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.BGEM3, DeviceTypes.N300): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 32,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192 * 32,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.BGEM3, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192 * 32,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+        "max_batch_size": 32,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.BGEM3, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192 * 32,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+        "max_batch_size": 32,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.VLLM, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,

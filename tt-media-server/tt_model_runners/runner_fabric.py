@@ -52,6 +52,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.BGELargeEN_V1_5: lambda wid: __import__(
         "tt_model_runners.embedding_runner", fromlist=["BGELargeENRunner"]
     ).BGELargeENRunner(wid),
+    ModelRunners.BGEM3: lambda wid: __import__(
+        "tt_model_runners.embedding_runner", fromlist=["BGEM3Runner"]
+    ).BGEM3Runner(wid),
     ModelRunners.LLM_TEST: lambda wid: __import__(
         "tt_model_runners.llm_test_runner", fromlist=["LLMTestRunner"]
     ).LLMTestRunner(wid),
