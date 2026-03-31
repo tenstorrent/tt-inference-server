@@ -55,7 +55,6 @@ from ipc.video_shm import (
     VideoShm,
     VideoStatus,
     cleanup_orphaned_video_files,
-    video_result_path,
 )
 
 _shutdown = False
@@ -134,24 +133,15 @@ def create_dit_runner(model_runner: str, device_id: str):
 def _write_response_to_shm(
     output_shm: VideoShm,
     task_id: str,
-    video,  # WanPipelineOutput or similar
+    mp4_path: str,
 ) -> None:
-    """Pickle *video* to a file on /dev/shm and send the path through SHM."""
-    file_path = video_result_path(task_id)
-    print(f"Rank 0: Pickling video ({type(video)}) to {file_path}")
-    try:
-        with open(file_path, "wb") as fh:
-            pickle.dump(video, fh)
-        print(f"Rank 0: Wrote {os.path.getsize(file_path)} bytes to {file_path}")
-    except Exception as e:
-        print(f"Rank 0: ERROR writing video file: {e}")
-        raise
-
+    """Send the final mp4 path through SHM (rank 0 encodes before calling this)."""
+    print(f"Rank 0: Writing mp4 path to SHM: {mp4_path}")
     output_shm.write_response(
         VideoResponse(
             task_id=task_id,
             status=VideoStatus.SUCCESS,
-            file_path=file_path,
+            file_path=mp4_path,
             error_message="",
         )
     )
@@ -256,12 +246,15 @@ def run_rank0_coordinator() -> None:
                 )
 
                 print(f"Rank 0: Starting inference for task {req.task_id}")
-                video = runner.run([video_gen_req])
+                frames = runner.run([video_gen_req])
                 print("Rank 0: Inference done")
 
-                _write_response_to_shm(
-                    output_shm, req.task_id, video
-                )  # Changed: pass video directly
+                from utils.video_manager import VideoManager
+
+                mp4_path = VideoManager().export_to_mp4(frames)
+                print(f"Rank 0: Encoded mp4 at {mp4_path}")
+
+                _write_response_to_shm(output_shm, req.task_id, mp4_path)
                 print(f"Rank 0: Response written for task {req.task_id}")
 
             except Exception as e:
