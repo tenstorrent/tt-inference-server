@@ -11,9 +11,7 @@ from config.constants import SupportedModels
 from domain.embedding_response import EmbeddingResponse
 from domain.text_embedding_request import TextEmbeddingRequest
 from models.demos.wormhole.bge_large_en.demo.generator_vllm import BGEForEmbedding
-from models.demos.wormhole.qwen3_embedding_8b.demo.generator_vllm import (
-    Qwen3ForEmbedding,
-)
+from models.demos.wormhole.bge_m3.demo.generator_vllm import BgeM3ForEmbedding
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
 from utils.embedding_tokenizer import EmbeddingTokenizer
@@ -112,6 +110,80 @@ class BGELargeENRunner(EmbeddingRunner):
         self.logger.info(f"Device {self.device_id}: Model loaded successfully")
 
 
+class BGEM3Runner(EmbeddingRunner):
+    """Dense-only BGE-M3 embedding runner."""
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.max_model_len = self.settings.vllm.max_model_length
+        self.max_num_seqs = self.settings.vllm.max_num_seqs
+        self.model_name = SupportedModels.BGE_M3.value
+        self.tokenizer = EmbeddingTokenizer(self.model_name)
+
+    def get_pipeline_device_params(self):
+        return {
+            "num_command_queues": 2,
+            "trace_region_size": self.settings.trace_region_size,
+        }
+
+    def _pool_bgem3_embeddings(
+        self,
+        result: torch.Tensor,
+        attention_mask: torch.Tensor | None,
+        num_requests: int,
+        token_counts: list[int] | None = None,
+    ) -> torch.Tensor | list[torch.Tensor]:
+        embeddings = result[:num_requests]
+        if embeddings.dim() <= 2:
+            return embeddings
+        if attention_mask is None:
+            return embeddings.mean(dim=1)
+
+        if attention_mask.shape[1] != embeddings.shape[1]:
+            counts = (token_counts or [embeddings.shape[1]] * num_requests)[:num_requests]
+            return [
+                embeddings[idx, : max(int(count), 1)].mean(dim=0)
+                for idx, count in enumerate(counts)
+            ]
+
+        valid_mask = attention_mask[:num_requests, : embeddings.shape[1]].unsqueeze(-1)
+        valid_mask = valid_mask.to(embeddings.dtype)
+        summed = (embeddings * valid_mask).sum(dim=1)
+        counts = valid_mask.sum(dim=1).clamp(min=1)
+        return summed / counts
+
+    def run(self, requests: list[TextEmbeddingRequest]):
+        self._validate_requests(requests)
+        text_inputs = [req.input for req in requests]
+        num_requests = len(requests)
+        tokenized = self.tokenizer.tokenize(text_inputs, self.max_model_len)
+        token_counts = self.tokenizer.calculate_token_counts(tokenized, num_requests)
+        attention_mask = tokenized.get("attention_mask")
+        result = self.model.forward(
+            tokenized["input_ids"],
+            attention_mask=attention_mask,
+        )
+        ttnn.synchronize_device(self.ttnn_device)
+        pooled_result = self._pool_bgem3_embeddings(
+            result,
+            attention_mask,
+            num_requests,
+            token_counts,
+        )
+        return super()._process_result(pooled_result, requests, token_counts)
+
+    def _load_model(self):
+        self.logger.info(f"Device {self.device_id}: Loading model...")
+        self.model = BgeM3ForEmbedding(
+            device=self.ttnn_device,
+            max_batch_size=self.settings.max_batch_size,
+            max_seq_len=self.max_model_len,
+            dtype=ttnn.bfloat16,
+            model_name=self.model_name,
+        )
+        self.logger.info(f"Device {self.device_id}: Model loaded successfully")
+
+
 class Qwen3Embedding8BRunner(EmbeddingRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -127,6 +199,10 @@ class Qwen3Embedding8BRunner(EmbeddingRunner):
 
     def _load_model(self):
         self.logger.info(f"Device {self.device_id}: Loading model...")
+        from models.demos.wormhole.qwen3_embedding_8b.demo.generator_vllm import (
+            Qwen3ForEmbedding,
+        )
+
         self.model = Qwen3ForEmbedding(
             device=self.ttnn_device,
             model_location_generator=_model_location_generator,
