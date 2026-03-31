@@ -34,6 +34,10 @@ replicaCount: 1
 updateStrategy:
   type: RollingUpdate
 
+# -- Seconds Kubernetes waits for the deployment to progress before marking it as failed.
+# Model warmup (trace compilation) can take 20-40+ minutes on first run.
+progressDeadlineSeconds: 3600
+
 nameOverride: ""
 fullnameOverride: ""
 
@@ -91,16 +95,18 @@ probes:
     # -- HTTP path for liveness check.
     #    vllm: /v1/models  |  media-server: /tt-liveness
     path: /v1/models
-    initialDelaySeconds: 120
-    periodSeconds: 10
+    # -- Must be longer than model warmup (trace compilation across all sequence lengths).
+    # First-run warmup on Galaxy can take 30-40+ minutes.
+    initialDelaySeconds: 2400
+    periodSeconds: 30
     timeoutSeconds: 5
     failureThreshold: 3
   readiness:
     enabled: true
     # -- HTTP path for readiness check (same for both server types)
     path: /health
-    initialDelaySeconds: 300
-    periodSeconds: 5
+    initialDelaySeconds: 2400
+    periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 3
 
