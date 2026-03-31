@@ -12,6 +12,9 @@ from domain.embedding_response import EmbeddingResponse
 from domain.text_embedding_request import TextEmbeddingRequest
 from models.demos.wormhole.bge_large_en.demo.generator_vllm import BGEForEmbedding
 from models.demos.wormhole.bge_m3.demo.generator_vllm import BgeM3ForEmbedding
+from models.demos.wormhole.qwen3_embedding_8b.demo.generator_vllm import (
+    Qwen3ForEmbedding,
+)
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
 from utils.embedding_tokenizer import EmbeddingTokenizer
@@ -199,10 +202,6 @@ class Qwen3Embedding8BRunner(EmbeddingRunner):
 
     def _load_model(self):
         self.logger.info(f"Device {self.device_id}: Loading model...")
-        from models.demos.wormhole.qwen3_embedding_8b.demo.generator_vllm import (
-            Qwen3ForEmbedding,
-        )
-
         self.model = Qwen3ForEmbedding(
             device=self.ttnn_device,
             model_location_generator=_model_location_generator,
