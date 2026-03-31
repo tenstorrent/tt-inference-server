@@ -80,10 +80,7 @@ void MockDevicePipeline::drainInput() {
 }
 
 void MockDevicePipeline::emitToken(RequestPtr& req) {
-  uint64_t tokenId =
-      req->tokensGenerated < req->tokenIds.size()
-          ? static_cast<uint64_t>(req->tokenIds[req->tokensGenerated])
-          : FALLBACK_TOKEN_ID;
+  uint64_t tokenId = FALLBACK_TOKEN_ID;
   ++req->tokensGenerated;
 
   {
