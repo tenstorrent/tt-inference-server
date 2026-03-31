@@ -56,7 +56,7 @@ def _cross_entropy_loss(shift_logits, expected_output, labels_mask):
     return total_loss / num_valid_total
 
 
-def _training_step_inner(batch, model, vocab_size, ignored_index):
+def _training_step_inner(batch, model):
     """Scoped training step to keep large vocab-sized tensors local.
 
     Prevents logits from propagating beyond the step via the computation
@@ -68,10 +68,9 @@ def _training_step_inner(batch, model, vocab_size, ignored_index):
     logits = output.logits
     shift_logits = logits[:, :-1, :].contiguous()
 
-    expected_output, labels_mask = _transform_labels(
-        batch["labels"], ignored_index, vocab_size
+    loss = _cross_entropy_loss(
+        shift_logits, batch["expected_output"], batch["labels_mask"]
     )
-    loss = _cross_entropy_loss(shift_logits, expected_output, labels_mask)
     loss.backward()
     return loss.detach()
 
@@ -112,6 +111,11 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
         xr.use_spmd()
 
         self.device = torch_xla.device()
+
+        torch_xla.set_custom_compile_options(
+            {"fp32_dest_acc_en": True, "math_fidelity": "hifi4"}
+        )
+
         self.logger.info(
             f"Device {self.device_id}: SPMD environment configured"
         )
@@ -240,7 +244,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
         model = torch.compile(
             self._peft_model,
             backend="tt",
-            options={"tt_enable_torch_fx_fusion_pass": False},
+            options={"tt_enable_torch_fx_fusion_pass": False, "tt_legacy_compile": True},
         )
 
         vocab_size = model.config.vocab_size
@@ -255,6 +259,9 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             f"Device {self.device_id}: Llama Lora multichip training setup completed"
         )
 
+        if request.model_sharding_patterns:
+            self._shard_model(model, mesh, request.model_sharding_patterns)
+
         global_step = 0
         running_loss = 0.0
         model.train()
@@ -263,20 +270,25 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             for epoch in range(request.num_epochs):
                 for batch in tqdm(train_dataloader, desc="Training"):
                     optimizer.zero_grad()
-                    torch_xla.sync(wait=True)
+
+                    # Compute one-hot labels on CPU before device transfer to
+                    # avoid OOM from large vocab-sized tensors on device.
+                    # See https://github.com/tenstorrent/tt-blacksmith/issues/455.
+                    expected_output, labels_mask = _transform_labels(
+                        batch["labels"], request.ignored_index, vocab_size
+                    )
+                    batch = {
+                        "input_ids": batch["input_ids"],
+                        "attention_mask": batch["attention_mask"],
+                        "expected_output": expected_output,
+                        "labels_mask": labels_mask,
+                    }
 
                     batch = self._prepare_batch(
                         batch, mesh, request.input_sharding_dim
                     )
 
-                    if request.model_sharding_patterns:
-                        self._shard_model(
-                            model, mesh, request.model_sharding_patterns
-                        )
-
-                    loss = _training_step_inner(
-                        batch, model, vocab_size, request.ignored_index
-                    )
+                    loss = _training_step_inner(batch, model)
                     torch_xla.sync(wait=True)
 
                     xm.optimizer_step(optimizer, barrier=True)
@@ -300,7 +312,6 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                         self.logger.info("Model checkpoint saved.")
                         torch_xla.sync(wait=True)
 
-                    # Check for cancellation at the end of each training step
                     if request._cancel_event and request._cancel_event.is_set():
                         self.logger.info(
                             f"Training llama lora runner: Cancellation requested at step {global_step}, stopping training. "
@@ -318,6 +329,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                         )
                         model.train()
                         torch_xla.sync(wait=True)
+                        xr.clear_computation_cache()
 
                     global_step += 1
 
@@ -357,14 +369,20 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
         with torch.no_grad():
             for batch in tqdm(eval_dataloader, desc="Validation"):
+                # Compute one-hot labels on CPU before device transfer.
+                expected_output, labels_mask = _transform_labels(
+                    batch["labels"], request.ignored_index, vocab_size
+                )
+                batch = {
+                    "input_ids": batch["input_ids"],
+                    "attention_mask": batch["attention_mask"],
+                    "expected_output": expected_output,
+                    "labels_mask": labels_mask,
+                }
+
                 batch = self._prepare_batch(
                     batch, mesh, request.input_sharding_dim
                 )
-
-                if request.model_sharding_patterns:
-                    self._shard_model(
-                        model, mesh, request.model_sharding_patterns
-                    )
 
                 outputs = model(
                     input_ids=batch["input_ids"],
@@ -372,11 +390,8 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                 )
                 shift_logits = outputs.logits[:, :-1, :].contiguous()
 
-                expected_output, labels_mask = _transform_labels(
-                    batch["labels"], request.ignored_index, vocab_size
-                )
                 loss = _cross_entropy_loss(
-                    shift_logits, expected_output, labels_mask
+                    shift_logits, batch["expected_output"], batch["labels_mask"]
                 )
 
                 torch_xla.sync(wait=True)
