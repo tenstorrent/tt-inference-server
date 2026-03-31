@@ -72,6 +72,8 @@ class Scheduler {
     return stop_token_ids_.count(tokenId) > 0;
   }
 
+  BlockManager& blockManager() { return block_manager_; }
+
  protected:
   /**
    * @param decode_count  number of sequences currently in the decode_queue.

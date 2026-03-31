@@ -122,7 +122,7 @@ bool SpPipelineRunner::warmup() {
 
   pipelineManager->push_request(makeSubmitRequest(slotId, *warmupSeq));
   // Wait for the response token (with timeout)
-  const int MAX_ATTEMPTS = 1000;  // ~10 seconds with 10ms sleep
+  const int maxAttempts = 1000;  // ~10 seconds with 10ms sleep
   int attempts = 0;
   bool receivedToken = false;
   auto output = pm::OutputMessage{};

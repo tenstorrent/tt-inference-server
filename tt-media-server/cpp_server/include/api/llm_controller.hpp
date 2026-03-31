@@ -10,6 +10,7 @@
 
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
+#include "services/session_manager.hpp"
 
 namespace tt::api {
 
@@ -23,6 +24,11 @@ class LLMController : public drogon::HttpController<LLMController> {
   ADD_METHOD_TO(LLMController::completions, "/v1/completions", drogon::Post);
   ADD_METHOD_TO(LLMController::chatCompletions, "/v1/chat/completions",
                 drogon::Post);
+  ADD_METHOD_TO(LLMController::createSession, "/v1/sessions", drogon::Post);
+  ADD_METHOD_TO(LLMController::closeSession, "/v1/sessions/{session_id}",
+                drogon::Delete);
+  ADD_METHOD_TO(LLMController::getSlotId, "/v1/sessions/{session_id}/slot",
+                drogon::Get);
   METHOD_LIST_END
 
   LLMController();
@@ -43,9 +49,35 @@ class LLMController : public drogon::HttpController<LLMController> {
       const drogon::HttpRequestPtr& req,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
+  /**
+   * POST /v1/sessions
+   * Create a new session with optional slot assignment.
+   */
+  void createSession(
+      const drogon::HttpRequestPtr& req,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+
+  /**
+   * DELETE /v1/sessions/{session_id}
+   * Close an existing session.
+   */
+  void closeSession(
+      const drogon::HttpRequestPtr& req,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+      const std::string& sessionId) const;
+
+  /**
+   * GET /v1/sessions/{session_id}/slot
+   * Get the slot ID for a session.
+   */
+  void getSlotId(const drogon::HttpRequestPtr& req,
+                 std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+                 const std::string& sessionId) const;
+
  private:
   std::shared_ptr<services::LLMService> service;
   std::shared_ptr<services::DisaggregationService> disaggregationService;
+  std::shared_ptr<services::SessionManager> sessionManager;
 
   /**
    * Handle streaming completion (SSE). When is_chat is true, emits

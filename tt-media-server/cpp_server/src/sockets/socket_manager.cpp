@@ -332,7 +332,7 @@ std::vector<uint8_t> SocketManager::receiveRawData() {
   std::vector<uint8_t> data(size);
   size_t totalReceived = 0;
   int retryCount = 0;
-  const int MAX_RETRIES = 1000;  // 1 second timeout (1000 * 1ms)
+  const int maxRetries = 1000;  // 1 second timeout (1000 * 1ms)
 
   while (totalReceived < size) {
     received = recv(peer_socket_, data.data() + totalReceived,
@@ -348,7 +348,7 @@ std::vector<uint8_t> SocketManager::receiveRawData() {
       // received < 0: check if it's a temporary error
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
         // Non-blocking socket has no data yet, wait briefly and retry
-        if (++retryCount > MAX_RETRIES) {
+        if (++retryCount > maxRetries) {
           TT_LOG_ERROR("[SocketManager] Timeout waiting for message data");
           connected_ = false;
           return {};

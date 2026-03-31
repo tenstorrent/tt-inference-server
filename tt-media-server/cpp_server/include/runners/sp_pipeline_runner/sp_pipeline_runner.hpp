@@ -13,6 +13,11 @@
 #include "ipc/shared_memory.hpp"
 
 #include "config/runner_config.hpp"
+<<<<<<< HEAD
+=======
+#include "ipc/boost_ipc_memory_queue.hpp"
+#include "ipc/token_ring_buffer.hpp"
+>>>>>>> dev
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"

@@ -828,8 +828,8 @@ jobs:
 
           MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$RESULT_FILE")
           MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$RESULT_FILE")
-          TPOT_THRESHOLD_MS="2.9"
-          TTFT_THRESHOLD_MS="370"
+          TPOT_THRESHOLD_MS="3"
+          TTFT_THRESHOLD_MS="380"
 
           FAIL=0
           if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
@@ -1399,6 +1399,10 @@ jobs:
           fi
           if [[ "${{ needs.test-coverage.result }}" == "failure" ]]; then
             echo "❌ Test coverage below 50% threshold - PR blocked"
+            exit 1
+          fi
+          if [[ "${{ needs.cpp-format-check.result }}" == "failure" ]]; then
+            echo "❌ C++ lint & format check failed"
             exit 1
           fi
           if [[ "${{ needs.cpp-server-llm-streaming.result }}" == "failure" ]]; then

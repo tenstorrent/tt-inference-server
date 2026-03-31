@@ -109,6 +109,9 @@ struct CompletionRequest : BaseRequest {
   std::optional<int> truncate_prompt_tokens;
   int prompt_tokens_count = 0;
 
+  // Session management
+  std::optional<std::string> session_id;
+
   static CompletionRequest fromJson(const Json::Value& json, TaskID taskId) {
     CompletionRequest req(std::move(taskId));
 
