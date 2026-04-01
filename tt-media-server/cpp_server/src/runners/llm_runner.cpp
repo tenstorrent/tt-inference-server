@@ -116,7 +116,7 @@ void LLMRunner::step() {
   // Drain cancel queue before scheduling so aborted sequences are excluded
   // from the next batch.
   if (cancel_queue_) {
-    std::vector<TaskID> cancelled;
+    std::vector<uint32_t> cancelled;
     cancel_queue_->tryPopAll(cancelled);
     for (const auto& taskId : cancelled) {
       scheduler_->abortRequest(taskId);

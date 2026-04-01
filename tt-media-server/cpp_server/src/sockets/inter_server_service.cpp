@@ -75,7 +75,7 @@ void InterServerService::stop() {
 bool InterServerService::isEnabled() const { return enabled_; }
 
 bool InterServerService::sendPrefillRequest(
-    const tt::domain::TaskID& taskId, const std::string& prompt,
+    uint32_t taskId, const std::string& prompt,
     const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
     std::optional<uint32_t> slotId) {
   if (!enabled_) {

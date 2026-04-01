@@ -113,7 +113,7 @@ struct CompletionRequest : BaseRequest {
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
 
-  static CompletionRequest fromJson(const Json::Value& json, TaskID taskId) {
+  static CompletionRequest fromJson(const Json::Value& json, uint32_t taskId) {
     CompletionRequest req(std::move(taskId));
 
     if (json.isMember("model") && !json["model"].isNull()) {

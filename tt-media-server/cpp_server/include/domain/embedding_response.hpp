@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "domain/base_response.hpp"
+#include "utils/id_generator.hpp"
 
 namespace tt::domain {
 
@@ -70,10 +71,10 @@ struct EmbeddingResponse : BaseResponse {
    * new UUID.
    */
   static EmbeddingResponse fromJson(const Json::Value& json) {
-    TaskID tid = json.isMember("task_id") && json["task_id"].isUInt()
-                     ? json["task_id"].asUInt()
-                     : TaskIDGenerator::generate();
-    EmbeddingResponse resp(std::move(tid));
+    uint32_t tid = json.isMember("task_id") && json["task_id"].isUInt()
+                       ? json["task_id"].asUInt()
+                       : tt::utils::TaskIDGenerator::generate();
+    EmbeddingResponse resp(tid);
 
     if (json.isMember("embedding") && json["embedding"].isArray()) {
       const Json::Value& embArray = json["embedding"];

@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 
-#include "domain/task_id.hpp"
 #include "sockets/socket_manager.hpp"
 #include "sockets/socket_messages.hpp"
 
@@ -76,7 +75,7 @@ class InterServerService {
    * @param slot_id KV cache slot allocated by decode server's memory manager
    * @return true if sent successfully
    */
-  bool sendPrefillRequest(const tt::domain::TaskID& taskId,
+  bool sendPrefillRequest(uint32_t taskId,
                           const std::string& prompt,
                           const std::vector<int64_t>& tokenIds,
                           std::optional<int> maxTokens = std::nullopt,

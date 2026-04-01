@@ -4,7 +4,6 @@
 #include "services/disaggregation_service.hpp"
 
 #include "domain/completion_request.hpp"
-#include "domain/task_id.hpp"
 #include "services/llm_service.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"

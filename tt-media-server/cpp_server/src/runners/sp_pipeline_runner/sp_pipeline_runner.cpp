@@ -62,7 +62,7 @@ bool SpPipelineRunner::warmup() {
   warmupParams.ignore_eos = true;
 
   std::vector<int64_t> warmupTokens = {1};  // Single token
-  llm_engine::TaskID warmupTaskId = 0;  // Use 0 for warmup task
+  uint32_t warmupTaskId = 0;  // Use 0 for warmup task
 
   auto warmupSeq = std::make_unique<llm_engine::Sequence>(
       warmupTaskId,
@@ -134,7 +134,7 @@ void SpPipelineRunner::step() {
   {
     ZoneScopedN("SpPipelineRunner::write_to_device");
     std::unique_ptr<llm_engine::Sequence> owned(seq);
-    llm_engine::TaskID taskId = seq->taskId;
+    uint32_t taskId = seq->taskId;
 
     if (!seq->samplingParams->max_tokens.has_value()) {
       seq->samplingParams->max_tokens =
@@ -191,7 +191,7 @@ void SpPipelineRunner::drainDecodeResults() {
   }
 }
 
-void SpPipelineRunner::pushToken(const llm_engine::TaskID& taskId,
+void SpPipelineRunner::pushToken(const uint32_t& taskId,
                                  uint64_t tokenId, bool finished) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
@@ -201,7 +201,7 @@ void SpPipelineRunner::pushToken(const llm_engine::TaskID& taskId,
   resultQueue->push(shared);
 }
 
-void SpPipelineRunner::pushErrorToken(const llm_engine::TaskID& taskId) {
+void SpPipelineRunner::pushErrorToken(const uint32_t& taskId) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR;

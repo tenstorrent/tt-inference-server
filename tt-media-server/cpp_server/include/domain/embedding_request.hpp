@@ -31,7 +31,7 @@ struct EmbeddingRequest : BaseRequest {
   /**
    * Parse from JSON. task_id must be provided (e.g. from controller).
    */
-  static EmbeddingRequest fromJson(const Json::Value& json, TaskID taskId) {
+  static EmbeddingRequest fromJson(const Json::Value& json, uint32_t taskId) {
     EmbeddingRequest req(std::move(taskId));
     if (json.isMember("model")) {
       req.model = json["model"].asString();

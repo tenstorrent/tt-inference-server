@@ -20,7 +20,7 @@ class PagedMemoryManager : public MemoryManager {
  private:
   domain::ManageMemoryStatus allocateKv(const domain::ManageMemoryTask& task,
                                         std::vector<int>& outSlotIds);
-  void deallocateKv(const domain::TaskID& taskId, std::vector<int> slotIds);
+  void deallocateKv(const uint32_t& taskId, std::vector<int> slotIds);
 
   llm_engine::BlockManager* blockManager;
 };

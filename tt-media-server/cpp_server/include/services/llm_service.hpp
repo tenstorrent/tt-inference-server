@@ -49,7 +49,7 @@ class LLMService
    * synchronous waiters, and broadcasts cancel to all worker queues.
    * Idempotent and thread-safe.
    */
-  void abortRequest(const domain::TaskID& taskId);
+  void abortRequest(const uint32_t& taskId);
 
  protected:
   void postProcess(domain::CompletionResponse& response) const override;

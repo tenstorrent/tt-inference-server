@@ -11,22 +11,20 @@
 #include <string>
 #include <vector>
 
-#include "domain/task_id.hpp"
-
 namespace tt::sockets {
 
 /**
  * @brief Prefill request message - sent from decode server to prefill server
  */
 struct PrefillRequestMessage {
-  tt::domain::TaskID task_id;
+  uint32_t task_id;
   std::string prompt;
   std::vector<int64_t> token_ids;
   std::optional<int> max_tokens;
   std::optional<uint32_t> slot_id;
 
-  explicit PrefillRequestMessage(tt::domain::TaskID taskId)
-      : task_id(std::move(taskId)) {}
+  explicit PrefillRequestMessage(uint32_t taskId)
+      : task_id(taskId) {}
 
   template <class Archive>
   void write(Archive& ar) const {
@@ -62,7 +60,7 @@ struct PrefillRequestMessage {
  * generation.
  */
 struct PrefillResultMessage {
-  tt::domain::TaskID task_id;
+  uint32_t task_id;
   std::string generated_text;
   bool finished = false;
   int tokens_generated = 0;
@@ -71,8 +69,8 @@ struct PrefillResultMessage {
   std::optional<int> remaining_tokens;
   std::optional<uint32_t> slot_id;
 
-  explicit PrefillResultMessage(tt::domain::TaskID taskId)
-      : task_id(std::move(taskId)) {}
+  explicit PrefillResultMessage(uint32_t taskId)
+      : task_id(taskId) {}
 
   template <class Archive>
   void write(Archive& ar) const {

@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-#include "domain/task_id.hpp"
 #include "ipc/boost_ipc_cancel_queue.hpp"
 
 namespace {
@@ -34,12 +33,12 @@ class BoostIpcCancelQueueTest : public ::testing::Test {
 TEST_F(BoostIpcCancelQueueTest, PushAndPopRoundTrip) {
   tt::ipc::BoostIpcCancelQueue queue(queueName, 16);
 
-  tt::domain::TaskID id1 = 123;
-  tt::domain::TaskID id2 = 456;
+  uint32_t id1 = 123;
+  uint32_t id2 = 456;
   queue.push(id1);
   queue.push(id2);
 
-  std::vector<tt::domain::TaskID> out;
+  std::vector<uint32_t> out;
   queue.tryPopAll(out);
 
   ASSERT_EQ(out.size(), 2u);
@@ -50,7 +49,7 @@ TEST_F(BoostIpcCancelQueueTest, PushAndPopRoundTrip) {
 TEST_F(BoostIpcCancelQueueTest, PopEmptyReturnsNothing) {
   tt::ipc::BoostIpcCancelQueue queue(queueName, 16);
 
-  std::vector<tt::domain::TaskID> out;
+  std::vector<uint32_t> out;
   queue.tryPopAll(out);
 
   EXPECT_TRUE(out.empty());
@@ -64,7 +63,7 @@ TEST_F(BoostIpcCancelQueueTest, PushWhenFullDropsWithoutThrow) {
   // Queue is full — this should not throw, just log a warning and drop.
   EXPECT_NO_THROW(queue.push(3));
 
-  std::vector<tt::domain::TaskID> out;
+  std::vector<uint32_t> out;
   queue.tryPopAll(out);
   ASSERT_EQ(out.size(), 2u);
   EXPECT_EQ(out[0], 1u);
@@ -78,7 +77,7 @@ TEST_F(BoostIpcCancelQueueTest, MultiplePushDrainInOrder) {
     queue.push(static_cast<uint32_t>(i + 100));
   }
 
-  std::vector<tt::domain::TaskID> out;
+  std::vector<uint32_t> out;
   queue.tryPopAll(out);
   ASSERT_EQ(out.size(), 10u);
   for (int i = 0; i < 10; i++) {
@@ -91,7 +90,7 @@ TEST_F(BoostIpcCancelQueueTest, PopAllThenPopAgainIsEmpty) {
 
   queue.push(999);
 
-  std::vector<tt::domain::TaskID> out;
+  std::vector<uint32_t> out;
   queue.tryPopAll(out);
   ASSERT_EQ(out.size(), 1u);
 
@@ -103,12 +102,12 @@ TEST_F(BoostIpcCancelQueueTest, PopAllThenPopAgainIsEmpty) {
 TEST_F(BoostIpcCancelQueueTest, OpenExistingQueue) {
   // Create queue (simulates main process).
   tt::ipc::BoostIpcCancelQueue creator(queueName, 16);
-  creator.push(12345);  // TaskID is now uint32_t
+  creator.push(12345);  // uint32_t is now uint32_t
 
   // Open existing queue (simulates worker process).
   tt::ipc::BoostIpcCancelQueue opener(queueName);
 
-  std::vector<tt::domain::TaskID> out;
+  std::vector<uint32_t> out;
   opener.tryPopAll(out);
   ASSERT_EQ(out.size(), 1u);
   EXPECT_EQ(out[0], 12345u);

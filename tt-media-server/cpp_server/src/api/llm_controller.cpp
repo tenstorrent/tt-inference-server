@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "api/llm_controller.hpp"
@@ -126,7 +127,7 @@ void LLMController::completions(
 
   std::shared_ptr<domain::CompletionRequest> request;
   try {
-    domain::TaskID taskId = domain::TaskIDGenerator::generate();
+    uint32_t taskId = tt::utils::TaskIDGenerator::generate();
     request = std::make_shared<domain::CompletionRequest>(
         domain::CompletionRequest::fromJson(*json, std::move(taskId)));
   } catch (const std::exception& e) {
@@ -213,7 +214,7 @@ void LLMController::chatCompletions(
 
   std::optional<domain::ChatCompletionRequest> chatReqOpt;
   try {
-    domain::TaskID taskId = domain::TaskIDGenerator::generate();
+    uint32_t taskId = tt::utils::TaskIDGenerator::generate();
     chatReqOpt =
         domain::ChatCompletionRequest::fromJson(*json, std::move(taskId));
   } catch (const std::exception& e) {
@@ -357,7 +358,7 @@ void LLMController::handleStreaming(
   // Abort callback: fires when the TCP connection drops mid-stream.
   // Captured by value so it stays alive for the duration of the streaming
   // session. Called on the IO thread from inside sseSend().
-  const domain::TaskID taskId = reqPtr->task_id;
+  const uint32_t taskId = reqPtr->task_id;
   auto onDisconnect = [taskId, service = this->service, done]() {
     if (!done->exchange(true)) {
       TT_LOG_INFO("[LLMController] Client disconnected, aborting task {}",

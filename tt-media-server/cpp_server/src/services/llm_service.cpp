@@ -326,7 +326,7 @@ domain::CompletionResponse LLMService::processRequest(
       std::holds_alternative<std::vector<int>>(request.prompt)
           ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
           : 0;
-  const domain::TaskID taskId = request.task_id;
+  const uint32_t taskId = request.task_id;
   const std::string taskIdStr = std::to_string(taskId);
   const std::string model = request.model.value_or("default");
 
@@ -387,7 +387,7 @@ void LLMService::processStreamingRequest(
   if (request.task_id == 0) {
     throw std::runtime_error("task_id must be set before submitting request");
   }
-  domain::TaskID taskId = request.task_id;
+  uint32_t taskId = request.task_id;
   std::string taskIdStr = std::to_string(taskId);
 
   pending_tasks_.fetch_add(1);
@@ -430,7 +430,7 @@ void LLMService::postProcess(domain::CompletionResponse& response) const {
     }
   }
 }
-void LLMService::abortRequest(const domain::TaskID& taskId) {
+void LLMService::abortRequest(const uint32_t& taskId) {
   std::string taskKey = std::to_string(taskId);
 
   // Atomically remove the stream callback and decrement pending_tasks_.

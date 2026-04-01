@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "runners/sp_prefill_runner/sp_prefill_model_runner.hpp"
@@ -22,8 +23,8 @@ std::optional<llm_engine::TokenResult> SpPrefillModelRunner::forward(
   tt::ipc::ReadResult readBuf;
   while (!stop.load(std::memory_order_relaxed)) {
     if (deviceOutput.tryRead(readBuf)) {
-      llm_engine::TaskID tid = tt::domain::TaskIDGenerator::deserialize(
-          readBuf.taskId.data(), tt::domain::TaskIDGenerator::K_SERIALIZED_SIZE);
+      uint32_t tid = tt::utils::TaskIDGenerator::deserialize(
+          readBuf.taskId.data(), tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE);
       uint64_t tokenId = readBuf.tokenIds.empty() ? 0 : readBuf.tokenIds[0];
       return llm_engine::TokenResult(std::move(tid), tokenId);
     }

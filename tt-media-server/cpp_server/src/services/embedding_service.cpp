@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "services/embedding_service.hpp"
@@ -270,11 +271,11 @@ struct EmbeddingService::Impl {
 
       // Build batch of requests
       std::vector<domain::EmbeddingRequest> batch;
-      auto taskIdFromJson = [](const Json::Value& j) -> domain::TaskID {
+      auto taskIdFromJson = [](const Json::Value& j) -> uint32_t {
         if (j.isMember("task_id") && j["task_id"].isUInt()) {
           return j["task_id"].asUInt();
         }
-        return domain::TaskIDGenerator::generate();
+        return tt::utils::TaskIDGenerator::generate();
       };
       if (reqJson.isArray()) {
         for (const auto& item : reqJson) {

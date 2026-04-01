@@ -11,7 +11,7 @@ namespace llm_engine {
 
 using Config = tt::config::LLMConfig;
 
-Sequence::Sequence(TaskID taskId, int blockSize, std::vector<int64_t> tokenIds,
+Sequence::Sequence(uint32_t taskId, int blockSize, std::vector<int64_t> tokenIds,
                    const SamplingParams& samplingParams)
     : taskId(std::move(taskId)),
       status(SequenceStatus::WAITING),
@@ -19,7 +19,7 @@ Sequence::Sequence(TaskID taskId, int blockSize, std::vector<int64_t> tokenIds,
       numPromptTokens(this->tokenIds.size()),
       samplingParams(std::make_unique<SamplingParams>(samplingParams)),
       blockSize(blockSize) {
-  // TaskID is now uint32_t, all values are valid
+  // uint32_t is now uint32_t, all values are valid
   if (!this->tokenIds.empty()) {
     lastToken = this->tokenIds.back();
   }
@@ -71,7 +71,7 @@ void Sequence::serialize(std::ostream& os) const {
 }
 
 Sequence* Sequence::deserialize(std::istream& is) {
-  TaskID taskId;
+  uint32_t taskId;
   is.read(reinterpret_cast<char*>(&taskId), sizeof(taskId));
 
   Config defaultConfig;

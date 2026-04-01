@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "runners/llm_runner.hpp"
@@ -52,23 +53,23 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
 
   tt::runners::LLMRunner engine{config, &resultQueue, taskQueue.get()};
 
-  std::vector<TaskID> taskIds;
+  std::vector<uint32_t> taskIds;
   int idCounter = 0;
   for (const auto& req : requests) {
     Sequence& seq = engine.scheduler().addRequest(
-        tt::domain::TaskIDGenerator::generate(), req.prompt,
+        tt::utils::TaskIDGenerator::generate(), req.prompt,
         {.max_tokens = req.max_tokens});
     taskIds.push_back(seq.taskId);
   }
 
-  std::unordered_map<TaskID, std::vector<int64_t>> receivedTokens;
+  std::unordered_map<uint32_t, std::vector<int64_t>> receivedTokens;
   std::atomic<int> finishedCount{0};
 
   std::thread consumer([&]() {
     tt::ipc::SharedToken token;
     while (finishedCount.load() < totalRequests) {
       if (resultQueue.pop(token)) {
-        TaskID tid = token.task_id;
+        uint32_t tid = token.task_id;
         receivedTokens[tid].push_back(static_cast<int64_t>(token.token_id));
         if (token.isFinal()) {
           finishedCount.fetch_add(1);

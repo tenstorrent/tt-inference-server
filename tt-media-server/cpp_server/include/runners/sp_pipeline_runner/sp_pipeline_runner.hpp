@@ -40,9 +40,9 @@ class SpPipelineRunner : public IRunner {
   void step();
   void drainDecodeResults();
   void memoryLoop();
-  void pushToken(const llm_engine::TaskID& taskId, uint64_t tokenId,
+  void pushToken(const uint32_t& taskId, uint64_t tokenId,
                  bool finished);
-  void pushErrorToken(const llm_engine::TaskID& taskId);
+  void pushErrorToken(const uint32_t& taskId);
 
   tt::config::LLMConfig config;
   std::unordered_set<int64_t> stopTokenIds;
@@ -50,7 +50,7 @@ class SpPipelineRunner : public IRunner {
   llm_engine::ITaskQueue* taskQueue;
   std::unique_ptr<sp_pipeline::ISpPipelineModelRunner> modelRunner;
   sp_pipeline::DecodeQueue decodeQueue;
-  std::unordered_map<llm_engine::TaskID, std::unique_ptr<llm_engine::Sequence>>
+  std::unordered_map<uint32_t, std::unique_ptr<llm_engine::Sequence>>
       activeSequences;
   std::atomic<bool> stopped{false};
   int maxInFlightCount;

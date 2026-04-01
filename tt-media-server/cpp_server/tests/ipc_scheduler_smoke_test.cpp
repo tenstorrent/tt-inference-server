@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 //
 // Smoke test: two processes communicate through a Boost IPC task queue.
@@ -45,8 +46,8 @@ int main() {
                               MAX_MSG_SIZE);
 
   // Build two sequences with known values.
-  TaskID seq1Id = tt::domain::TaskIDGenerator::generate();
-  TaskID seq2Id = tt::domain::TaskIDGenerator::generate();
+  uint32_t seq1Id = tt::utils::TaskIDGenerator::generate();
+  uint32_t seq2Id = tt::utils::TaskIDGenerator::generate();
   Sequence seq1(seq1Id, 256, {1, 2, 3, 4},
                 SamplingParams{.max_tokens = 10});
   Sequence seq2(seq2Id, 256, {10, 20, 30},

@@ -74,7 +74,7 @@ struct ChatCompletionRequest : BaseRequest {
   std::optional<std::string> sessionId;
 
   static ChatCompletionRequest fromJson(const Json::Value& json,
-                                        TaskID taskId) {
+                                        uint32_t taskId) {
     ChatCompletionRequest req(std::move(taskId));
 
     if (json.isMember("model") && !json["model"].isNull()) {

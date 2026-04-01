@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include "api/embedding_controller.hpp"
@@ -120,7 +121,7 @@ void EmbeddingController::createEmbedding(
   }
 
   // Build request
-  domain::TaskID taskId = domain::TaskIDGenerator::generate();
+  uint32_t taskId = tt::utils::TaskIDGenerator::generate();
   domain::EmbeddingRequest request =
       domain::EmbeddingRequest::fromJson(*json, std::move(taskId));
 

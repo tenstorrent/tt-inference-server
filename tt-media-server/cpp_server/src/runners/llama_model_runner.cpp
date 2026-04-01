@@ -156,7 +156,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
 
       for (size_t i = 0; i < seqs.size(); ++i) {
         py::object item = results[py::int_(i)];
-        TaskID drTaskId(item.attr("task_id").cast<std::string>());
+        uint32_t drTaskId(item.attr("task_id").cast<std::string>());
         uint64_t drTokenId =
             static_cast<uint64_t>(item.attr("token_id").cast<int64_t>());
         std::string error = item.attr("error").cast<std::string>();

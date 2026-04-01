@@ -44,7 +44,7 @@ ManageMemoryStatus PagedMemoryManager::allocateKv(
   return ManageMemoryStatus::SUCCESS;
 }
 
-void PagedMemoryManager::deallocateKv(const domain::TaskID& taskId,
+void PagedMemoryManager::deallocateKv(const uint32_t& taskId,
                                       std::vector<int> slotIds) {
   llm_engine::Sequence seq(taskId, blockManager->blockSize(), {});
   seq.blockTable = std::move(slotIds);

@@ -9,7 +9,7 @@
 #include <ostream>
 #include <vector>
 
-#include "domain/task_id.hpp"
+#include "utils/id_generator.hpp"
 
 namespace tt::domain {
 
@@ -25,14 +25,14 @@ enum class KvMemoryLayout : std::uint8_t {
 };
 
 struct ManageMemoryTask {
-  TaskID taskId;
+  uint32_t taskId;
   MemoryManagementAction action{MemoryManagementAction::ALLOCATE};
   std::uint32_t inputSeqLen{0};
   KvMemoryLayout memoryLayout{KvMemoryLayout::Paged};
   std::vector<std::uint32_t> slotIds;
 
   void serialize(std::ostream& os) const {
-    auto tidBuf = TaskIDGenerator::serialize(taskId);
+    auto tidBuf = tt::utils::TaskIDGenerator::serialize(taskId);
     os.write(tidBuf.data(), static_cast<std::streamsize>(tidBuf.size()));
     auto a = static_cast<std::uint8_t>(action);
     os.write(reinterpret_cast<const char*>(&a), sizeof(a));
@@ -48,9 +48,9 @@ struct ManageMemoryTask {
 
   static ManageMemoryTask deserialize(std::istream& is) {
     ManageMemoryTask task;
-    char tidBuf[TaskIDGenerator::K_SERIALIZED_SIZE];
-    is.read(tidBuf, TaskIDGenerator::K_SERIALIZED_SIZE);
-    task.taskId = TaskIDGenerator::deserialize(tidBuf, TaskIDGenerator::K_SERIALIZED_SIZE);
+    char tidBuf[tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE];
+    is.read(tidBuf, tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE);
+    task.taskId = tt::utils::TaskIDGenerator::deserialize(tidBuf, tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE);
     std::uint8_t a = 0;
     is.read(reinterpret_cast<char*>(&a), sizeof(a));
     task.action = static_cast<MemoryManagementAction>(a);
@@ -76,12 +76,12 @@ enum class ManageMemoryStatus : std::uint8_t {
 };
 
 struct ManageMemoryResult {
-  TaskID taskId;
+  uint32_t taskId;
   ManageMemoryStatus status{ManageMemoryStatus::FAILURE};
   std::vector<std::uint32_t> slotIds;
 
   void serialize(std::ostream& os) const {
-    auto tidBuf = TaskIDGenerator::serialize(taskId);
+    auto tidBuf = tt::utils::TaskIDGenerator::serialize(taskId);
     os.write(tidBuf.data(), static_cast<std::streamsize>(tidBuf.size()));
     auto s = static_cast<std::uint8_t>(status);
     os.write(reinterpret_cast<const char*>(&s), sizeof(s));
@@ -94,9 +94,9 @@ struct ManageMemoryResult {
 
   static ManageMemoryResult deserialize(std::istream& is) {
     ManageMemoryResult result;
-    char tidBuf[TaskIDGenerator::K_SERIALIZED_SIZE];
-    is.read(tidBuf, TaskIDGenerator::K_SERIALIZED_SIZE);
-    result.taskId = TaskIDGenerator::deserialize(tidBuf, TaskIDGenerator::K_SERIALIZED_SIZE);
+    char tidBuf[tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE];
+    is.read(tidBuf, tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE);
+    result.taskId = tt::utils::TaskIDGenerator::deserialize(tidBuf, tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE);
     std::uint8_t s = 0;
     is.read(reinterpret_cast<char*>(&s), sizeof(s));
     result.status = static_cast<ManageMemoryStatus>(s);
