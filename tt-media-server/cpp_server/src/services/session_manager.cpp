@@ -10,6 +10,7 @@
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
+#include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
@@ -199,7 +200,8 @@ uint32_t SessionManager::requestSlotIdFromMemoryManager(
 
   // Create memory allocation request
   domain::ManageMemoryTask task;
-  task.taskId = domain::TaskID(sessionId);
+  uint32_t requestTaskId = tt::utils::TaskIDGenerator::generate();
+  task.taskId = requestTaskId;
   task.action = domain::MemoryManagementAction::ALLOCATE;
   task.inputSeqLen = 0;  // Not used for slot allocation
   task.memoryLayout = domain::KvMemoryLayout::Paged;
@@ -219,7 +221,7 @@ uint32_t SessionManager::requestSlotIdFromMemoryManager(
       domain::ManageMemoryResult result;
       if (memoryResultQueue_->tryPop(result)) {
         // Check if this is our result
-        if (result.taskId.id == sessionId) {
+        if (result.taskId == requestTaskId) {
           if (result.status == domain::ManageMemoryStatus::SUCCESS &&
               !result.slotIds.empty()) {
             TT_LOG_INFO(
