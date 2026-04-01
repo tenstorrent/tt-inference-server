@@ -44,13 +44,13 @@ class TrainingService(BaseJobService):
         )
 
     def get_job_metrics(self, job_id: str, after: int = 0) -> list:
-        metrics_list = self._job_manager.get_job_metrics(job_id)
+        metrics_list = super().get_job_metrics(job_id)
         if metrics_list is None:
             raise ValueError(f"Job {job_id} not found")
         return list(metrics_list[after:])
 
     def get_job_logs(self, job_id: str) -> list:
-        logs_list = self._job_manager.get_job_logs(job_id)
+        logs_list = super().get_job_logs(job_id)
         if logs_list is None:
             raise ValueError(f"Job {job_id} not found")
         return list(logs_list)
