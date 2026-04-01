@@ -273,13 +273,6 @@ class JobDatabase:
                 for r in cursor.fetchall()
             ]
     
-    def delete_checkpoint(self, job_id: str, checkpoint_id: str) -> None:
-        with self._get_cursor(commit=True) as cursor:
-            cursor.execute(
-                "DELETE FROM checkpoints WHERE job_id = ? AND checkpoint_id = ?",
-                (job_id, checkpoint_id),
-            )
-    
     # ------------- LOGS -------------
     def insert_log(
         self,

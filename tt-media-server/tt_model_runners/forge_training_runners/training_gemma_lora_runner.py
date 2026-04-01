@@ -270,7 +270,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                     if request._cancel_event and request._cancel_event.is_set():
                         self.logger.info(
                             f"Training gemma lora runner: Cancellation requested at step {global_step}, stopping training. "
-                            f"Model checkpoint saved: {request._output_model_path}"
+                            f"Directory containing checkpoints: {request._output_model_path}"
                         )
                         break
 

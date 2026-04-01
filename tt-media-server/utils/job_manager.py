@@ -659,8 +659,14 @@ class JobManager:
 
     def _validate_checkpoints_on_disk(self, job: Job) -> list:
         """Filter out checkpoints whose directories no longer exist on disk."""
-        if not job.result_path or not job.job_checkpoints:
+        if not job.job_checkpoints:
+            # no checkpoints to validate
             return job.job_checkpoints
+        if not job.result_path:
+            self._logger.warning(
+                f"Job {job.id} has checkpoints but no result_path, clearing checkpoints"
+            )
+            return []
         try:
             existing_entries = set(os.listdir(job.result_path))
         except FileNotFoundError:
