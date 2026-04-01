@@ -2066,7 +2066,7 @@ vlm_templates = [
             "Qwen/Qwen2.5-VL-7B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="7de5835cc7",
+        tt_metal_commit="f2cf1f4d9ac",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
@@ -2076,6 +2076,9 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 60000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
@@ -2083,7 +2086,7 @@ vlm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 10000000,
+                    "trace_region_size": 60000000,
                 },
             ),
             DeviceModelSpec(
@@ -2091,6 +2094,9 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 60000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -2104,8 +2110,8 @@ vlm_templates = [
                     "TT_MM_THROTTLE_PERF": 5,
                 },
                 override_tt_config={
+                    "trace_region_size": 60000000,
                     "data_parallel": 4,
-                    "trace_region_size": 50000000,
                     "sample_on_device_mode": "decode_only",
                 },
             ),
@@ -2122,7 +2128,7 @@ vlm_templates = [
             "allenai/olmOCR-2-7B-1025",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="7de5835cc7",
+        tt_metal_commit="f2cf1f4d9ac",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
@@ -3024,4 +3030,5 @@ def get_runtime_model_spec(args):
     model_spec.apply_runtime_args(args)
 
     return model_spec
+
 
