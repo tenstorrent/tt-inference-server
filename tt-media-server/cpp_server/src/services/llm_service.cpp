@@ -302,7 +302,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     }
 
     if (!anyActivity) {
-      std::this_thread::sleep_for(std::chrono::microseconds(100));
+      std::this_thread::yield();
     }
   }
 
