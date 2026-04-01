@@ -344,6 +344,13 @@ target_include_directories(cancel_queue_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(cancellation_test tests/cancellation_test.cpp)
+target_link_libraries(cancellation_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(cancellation_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -351,6 +358,7 @@ gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
 gtest_discover_tests(cancel_queue_test)
+gtest_discover_tests(cancellation_test)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -469,4 +477,6 @@ if(SANITIZE_ADDRESS)
     target_link_options(lockfree_queue_test PRIVATE -fsanitize=address)
     target_compile_options(cancel_queue_test PRIVATE ${ASAN_FLAGS})
     target_link_options(cancel_queue_test PRIVATE -fsanitize=address)
+    target_compile_options(cancellation_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(cancellation_test PRIVATE -fsanitize=address)
 endif()
