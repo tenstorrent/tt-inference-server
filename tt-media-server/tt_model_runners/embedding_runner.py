@@ -143,7 +143,9 @@ class BGEM3Runner(EmbeddingRunner):
             return embeddings.mean(dim=1)
 
         if attention_mask.shape[1] != embeddings.shape[1]:
-            counts = (token_counts or [embeddings.shape[1]] * num_requests)[:num_requests]
+            counts = (token_counts or [embeddings.shape[1]] * num_requests)[
+                :num_requests
+            ]
             return [
                 embeddings[idx, : max(int(count), 1)].mean(dim=0)
                 for idx, count in enumerate(counts)
