@@ -1397,6 +1397,36 @@ class TestJobManager:
         assert result is metrics_list
 
     @pytest.mark.asyncio
+    async def test_get_job_logs_returns_correct_list(self, job_manager, mock_request):
+        logs_list = [
+            {
+                "sample_log_entry": "Training started",
+            }
+        ]
+
+        async def task_func(req):
+            await asyncio.sleep(10)
+            return "result.pt"
+
+        await job_manager.create_job(
+            job_id="train-logs-1",
+            job_type=JobTypes.TRAINING,
+            model="m1",
+            request=mock_request,
+            task_function=task_func,
+            result_path="result.pt",
+            job_logs=logs_list,
+        )
+
+        result = job_manager.get_job_logs("train-logs-1")
+        assert result is logs_list
+
+    @pytest.mark.asyncio
+    async def test_get_job_logs_returns_none_for_unknown_job(self, job_manager):
+        result = job_manager.get_job_logs("nonexistent")
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_persist_metrics_to_db(self, job_manager, mock_request):
         """Test that persisting metrics to the database works correctly."""
         if not job_manager.db:
