@@ -6,6 +6,7 @@
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -22,6 +23,7 @@ struct PrefillRequestMessage {
   std::string prompt;
   std::vector<int64_t> token_ids;
   std::optional<int> max_tokens;
+  std::optional<uint32_t> slot_id;
 
   explicit PrefillRequestMessage(tt::domain::TaskID taskId)
       : task_id(std::move(taskId)) {}
@@ -29,7 +31,8 @@ struct PrefillRequestMessage {
   template <class Archive>
   void write(Archive& ar) const {
     int mt = max_tokens.has_value() ? max_tokens.value() : -1;
-    ar(task_id.id, prompt, token_ids, mt);
+    uint32_t sid = slot_id.value_or(std::numeric_limits<uint32_t>::max());
+    ar(task_id.id, prompt, token_ids, mt, sid);
   }
 
   template <class Archive>
@@ -38,11 +41,15 @@ struct PrefillRequestMessage {
     std::string p;
     std::vector<int64_t> tids;
     int mt;
-    ar(tid, p, tids, mt);
+    uint32_t sid;
+    ar(tid, p, tids, mt, sid);
     PrefillRequestMessage msg(tt::domain::TaskID(std::move(tid)));
     msg.prompt = std::move(p);
     msg.token_ids = std::move(tids);
     msg.max_tokens = (mt == -1) ? std::nullopt : std::optional<int>(mt);
+    msg.slot_id = (sid == std::numeric_limits<uint32_t>::max())
+                      ? std::nullopt
+                      : std::optional<uint32_t>(sid);
     return msg;
   }
 };
@@ -62,6 +69,7 @@ struct PrefillResultMessage {
   double processing_time_ms = 0.0;
   std::vector<int64_t> token_ids;
   std::optional<int> remaining_tokens;
+  std::optional<uint32_t> slot_id;
 
   explicit PrefillResultMessage(tt::domain::TaskID taskId)
       : task_id(std::move(taskId)) {}
@@ -69,8 +77,9 @@ struct PrefillResultMessage {
   template <class Archive>
   void write(Archive& ar) const {
     int rt = remaining_tokens.has_value() ? remaining_tokens.value() : -1;
+    uint32_t sid = slot_id.value_or(std::numeric_limits<uint32_t>::max());
     ar(task_id.id, generated_text, finished, tokens_generated,
-       processing_time_ms, token_ids, rt);
+       processing_time_ms, token_ids, rt, sid);
   }
 
   template <class Archive>
@@ -82,7 +91,8 @@ struct PrefillResultMessage {
     double pt;
     std::vector<int64_t> tids;
     int rt;
-    ar(tid, genText, fin, tg, pt, tids, rt);
+    uint32_t sid;
+    ar(tid, genText, fin, tg, pt, tids, rt, sid);
     PrefillResultMessage msg(tt::domain::TaskID(std::move(tid)));
     msg.generated_text = std::move(genText);
     msg.finished = fin;
@@ -90,6 +100,9 @@ struct PrefillResultMessage {
     msg.processing_time_ms = pt;
     msg.token_ids = std::move(tids);
     msg.remaining_tokens = (rt == -1) ? std::nullopt : std::optional<int>(rt);
+    msg.slot_id = (sid == std::numeric_limits<uint32_t>::max())
+                      ? std::nullopt
+                      : std::optional<uint32_t>(sid);
     return msg;
   }
 };

@@ -76,7 +76,8 @@ bool InterServerService::isEnabled() const { return enabled_; }
 
 bool InterServerService::sendPrefillRequest(
     const tt::domain::TaskID& taskId, const std::string& prompt,
-    const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens) {
+    const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
+    std::optional<uint32_t> slotId) {
   if (!enabled_) {
     return false;
   }
@@ -85,6 +86,7 @@ bool InterServerService::sendPrefillRequest(
   message.prompt = prompt;
   message.token_ids = tokenIds;
   message.max_tokens = maxTokens;
+  message.slot_id = slotId;
 
   return socket_manager_.sendObject("prefill_request", message);
 }
