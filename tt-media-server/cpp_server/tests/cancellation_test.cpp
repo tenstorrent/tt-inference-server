@@ -211,6 +211,7 @@ TEST_F(SchedulerAbortTest, AbortEnablesNewRequests) {
 // ==========================================================
 
 TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
+  setenv("LLM_MODE", "prefill", 1);
   Config config = makeConfig(128, 8, 256, 0);
 
   auto taskQueue = makeQueue();
@@ -267,6 +268,7 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
 }
 
 TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
+  setenv("LLM_MODE", "prefill", 1);
   Config config = makeConfig(128, 8, 256, 0);
 
   auto taskQueue = makeQueue();

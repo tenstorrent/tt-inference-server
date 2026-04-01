@@ -33,6 +33,7 @@ Config makeEngineConfig(int numBlocks = 128, int blockSize = 8, int eos = 32) {
 }
 
 TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
+  setenv("LLM_MODE", "prefill", 1);
   Config config = makeEngineConfig();
 
   struct Request {
