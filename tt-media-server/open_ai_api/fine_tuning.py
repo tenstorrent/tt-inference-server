@@ -169,10 +169,10 @@ async def get_job_logs(
     api_key: str = Security(get_api_key),
 ):
     """
-    Retrieve logs for a fine-tuning job.
+    Retrieve log entries for a fine-tuning job.
 
     Returns:
-        JSONResponse: Logs for the job.
+        JSONResponse: List of log entries.
 
     Raises:
         HTTPException: If job not found.

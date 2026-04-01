@@ -109,8 +109,9 @@ struct CompletionRequest : BaseRequest {
   std::optional<int> truncate_prompt_tokens;
   int prompt_tokens_count = 0;
 
-  // Session management
-  std::optional<std::string> session_id;
+  // Session management (internal use only, not parsed from JSON)
+  std::optional<std::string> sessionId;
+  std::optional<uint32_t> slotId;
 
   static CompletionRequest fromJson(const Json::Value& json, TaskID taskId) {
     CompletionRequest req(std::move(taskId));
@@ -232,7 +233,9 @@ struct CompletionRequest : BaseRequest {
         << " min_p=" << detail::optStr(min_p)
         << " presence_penalty=" << presence_penalty
         << " frequency_penalty=" << frequency_penalty << " n=" << n
-        << " stop_count=" << stop.size();
+        << " stop_count=" << stop.size()
+        << " sessionId=" << detail::optStr(sessionId)
+        << " slotId=" << detail::optStr(slotId);
     return out.str();
   }
 };

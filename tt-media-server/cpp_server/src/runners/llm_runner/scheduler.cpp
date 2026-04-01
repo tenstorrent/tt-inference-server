@@ -3,6 +3,7 @@
 
 #include "runners/llm_runner/scheduler.hpp"
 
+#include <algorithm>
 #include <cassert>
 
 #include "profiling/tracy.hpp"
@@ -66,6 +67,15 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
   while (numSeqs < seqLimit) {
     auto seq = prefill_queue_->tryPop();
     if (!seq) break;
+
+    // Skip sequences whose ID was aborted while the copy sat in the prefill
+    // queue. The copy's status field is WAITING (it's a snapshot), so we must
+    // check the pending_aborts_ set instead.
+    if (pending_aborts_.erase(seq->taskId)) {
+      sequences_.erase(seq->taskId);
+      delete seq;
+      continue;
+    }
 
     if (numBatchedTokens + static_cast<int>(seq->size()) >
             max_num_batched_tokens_ ||
@@ -134,6 +144,15 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   }
 
   tryScheduleDecode(scheduledSeqs, numSeqs);
+
+  // Trim stale pending_aborts_ entries.  When the prefill queue is empty,
+  // remaining entries can never match a dequeued sequence — they are leftovers
+  // from broadcast aborts to workers that don't own those tasks.
+  if (prefill_queue_->empty() &&
+      pending_aborts_.size() > max_in_flight_count_) {
+    pending_aborts_.clear();
+  }
+
   return {scheduledSeqs, false};
 }
 
@@ -172,4 +191,31 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
 }
 
 void Scheduler::removeSequence(TaskID taskId) { sequences_.erase(taskId); }
+
+void Scheduler::abortRequest(TaskID taskId) {
+  auto* seq = findSequence(taskId);
+
+  // If the task isn't tracked or is still waiting, it might have a stale
+  // copy in the IPC queue. Mark it for skipping.
+  bool isWaiting = seq && seq->status == SequenceStatus::WAITING;
+  if (!seq || isWaiting) {
+    if (pending_aborts_.size() < 2 * max_in_flight_count_) {
+      pending_aborts_.insert(taskId);
+    }
+  }
+
+  // If the sequence doesn't exist or is already terminal, we're done.
+  if (!seq || seq->isAborted() || seq->isFinished()) {
+    return;
+  }
+
+  // Clean up resources for active sequences
+  seq->status = SequenceStatus::ABORTED;
+  block_manager_.deallocate(*seq);
+
+  // Remove from decode_queue (O(n) but abort should be rare)
+  std::erase_if(decode_queue_,
+                [&](Sequence* s) { return s->taskId == taskId; });
+  sequences_.erase(taskId);
+}
 }  // namespace llm_engine
