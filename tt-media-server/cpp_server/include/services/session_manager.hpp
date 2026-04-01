@@ -7,10 +7,10 @@
 #include <mutex>
 #include <optional>
 #include <string>
-#include <unordered_map>
 
 #include "domain/session.hpp"
 #include "ipc/boost_ipc_memory_queue.hpp"
+#include "utils/concurrent_map.hpp"
 
 namespace tt::services {
 
@@ -49,7 +49,7 @@ class SessionManager {
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
 
   /**
-   * Get the slot ID for a session.
+   * Get the slot ID for a session, updating its activity time.
    * @param sessionId The session ID
    * @return The slot ID, or max uint32_t if session not found or no slot
    * assigned
@@ -71,23 +71,9 @@ class SessionManager {
  private:
   /**
    * Evict old sessions if the eviction threshold is exceeded.
-   * Called automatically when creating new sessions.
+   * Best-effort: uses forEach + take, so the map may change between steps.
    */
   void evictOldSessions();
-
-  /**
-   * Find the N oldest sessions (by last activity time).
-   * @param count Number of oldest sessions to find
-   * @return Vector of session IDs, sorted from oldest to newest
-   */
-  std::vector<std::string> findOldestSessions(size_t count) const;
-
-  /**
-   * Close a session without locking (assumes mutex is already locked).
-   * @param sessionId The session ID to close
-   * @return true if session was found and closed, false otherwise
-   */
-  bool closeSessionLocked(const std::string& sessionId);
 
   /**
    * Request a slot ID from the memory manager.
@@ -96,10 +82,18 @@ class SessionManager {
    */
   uint32_t requestSlotIdFromMemoryManager(const std::string& sessionId);
 
-  mutable std::mutex mutex_;
-  std::unordered_map<std::string, domain::Session> sessions_;
+  /**
+   * Send a fire-and-forget deallocation request to the memory manager.
+   * @param sessionId The session ID being deallocated
+   * @param slotId The slot ID to release
+   */
+  void sendDeallocRequest(const std::string& sessionId, uint32_t slotId);
 
-  // IPC queues for memory management
+  mutable ConcurrentMap<std::string, domain::Session> sessions_;
+
+  // Serializes the IPC request/response cycle so concurrent callers don't
+  // steal each other's results from the shared result queue.
+  std::mutex allocationMutex_;
   std::unique_ptr<ipc::MemoryRequestQueue> memoryRequestQueue_;
   std::unique_ptr<ipc::MemoryResultQueue> memoryResultQueue_;
 };
