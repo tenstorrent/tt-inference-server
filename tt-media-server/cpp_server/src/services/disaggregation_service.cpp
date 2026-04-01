@@ -54,6 +54,8 @@ void DisaggregationService::setupSocketHandlers() {
             request.prompt = std::vector<int>(message.token_ids.begin(),
                                               message.token_ids.end());
             request.max_tokens = message.remaining_tokens;
+            auto slotId = message.slot_id;
+            request.slotId = slotId;
             llmService->submitStreamingRequest(request, callback.value());
           } else {
             auto finalResponse =
@@ -92,9 +94,10 @@ void DisaggregationService::setupSocketHandlers() {
                   ? PromptVariant(message.prompt)
                   : PromptVariant(std::vector<int>(message.token_ids.begin(),
                                                    message.token_ids.end()));
+          auto slotId = message.slot_id;
 
           llmService->submitStreamingRequest(
-              request, [this, message, maxTokens](
+              request, [this, message, maxTokens, slotId](
                            const domain::StreamingChunkResponse& response,
                            bool /*isFinal*/) {
                 auto remainingTokens =
@@ -108,6 +111,7 @@ void DisaggregationService::setupSocketHandlers() {
                 prefillResult.token_ids.insert(prefillResult.token_ids.end(),
                                                message.token_ids.begin(),
                                                message.token_ids.end());
+                prefillResult.slot_id = slotId;
                 if (response.choices.back().token_id.has_value()) {
                   prefillResult.token_ids.push_back(
                       response.choices.back().token_id.value());
@@ -136,10 +140,12 @@ void DisaggregationService::handleStreamingRequest(
     streamCallbacks.insert(request.task_id.id, callback);
 
     auto maxTokens = request.max_tokens;
+    auto slotId = request.slotId;
     auto tokenIds = std::get<std::vector<int>>(request.prompt);
     auto sent = socketService->sendPrefillRequest(
         request.task_id, "",
-        std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens);
+        std::vector<int64_t>(tokenIds.begin(), tokenIds.end()), maxTokens,
+        slotId);
 
     if (!sent) {
       streamCallbacks.erase(request.task_id.id);
