@@ -72,7 +72,7 @@ class LLMService
 
   std::vector<std::thread> consumer_threads_;
 
-  ConcurrentMap<std::string,
+  ConcurrentMap<uint32_t,
                 std::function<void(domain::StreamingChunkResponse&, bool)>>
       stream_callbacks_;
 

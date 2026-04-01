@@ -22,7 +22,7 @@ MockDevicePipeline::MockDevicePipeline(MockDeviceConfig config)
 
 MockDevicePipeline::~MockDevicePipeline() { exit(); }
 
-void MockDevicePipeline::write(const std::string& taskId,
+void MockDevicePipeline::write(uint32_t taskId,
                                const std::vector<int64_t>& tokenIds,
                                uint32_t maxTokens, RequestPhase phase) {
   auto req = std::make_unique<PipelineRequest>();
@@ -88,7 +88,7 @@ void MockDevicePipeline::emitToken(RequestPtr& req) {
 
   {
     std::lock_guard lock(outputMutex);
-    outputQueue.emplace_back(std::stoul(req->taskId), tokenId);
+    outputQueue.emplace_back(req->taskId, tokenId);
   }
   outputNotEmpty.notify_one();
 }

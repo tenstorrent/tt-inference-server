@@ -138,32 +138,24 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   const std::unordered_set<int64_t> stopTokenSet(stopIds.begin(),
                                                  stopIds.end());
 
-  std::unordered_map<std::string,
+  std::unordered_map<uint32_t,
                      std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>
       streamDecoders;
 
   // Per-request state used to throttle ITL metric events.
-  //
-  // Pushing one EventITLSample per token causes a string heap-allocation
-  // (task_id is a UUID, 36 chars — above SSO) and a mutex acquisition on every
-  // generated token.  At ~120k tok/s that overhead degrades throughput by ~7%.
   //
   // Mitigation: observe ITL once every kItlSampleStride consecutive tokens.
   // The reported quantiles remain statistically representative; the absolute
   // ITL values are accurate because the caller pre-computes elapsed time
   // between the two most recent CONSECUTIVE tokens rather than relying on the
   // spacing between sampled events.
-  //
-  // TODO: Remove once task IDs become uint32 — then per-event cost is
-  // negligible (no heap allocation) and onToken() can be called for every
-  // token unconditionally.
   static constexpr int kItlSampleStride = 5;
 
   struct MetricsSamplingState {
     int token_count = 0;
     std::chrono::steady_clock::time_point prev_token_time;
   };
-  std::unordered_map<std::string, MetricsSamplingState> metricsSampling;
+  std::unordered_map<uint32_t, MetricsSamplingState> metricsSampling;
 
   while (running_) {
     if (!worker_manager_->checkWorkerAlive(workerIdx)) {
@@ -178,7 +170,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     while (worker->cfg.result_queue->blockingPop(token)) {
       anyActivity = true;
 
-      std::string taskId = std::to_string(token.task_id);
+      uint32_t taskId = token.task_id;
       bool isFinal = token.isFinal();
 
       // For final tokens, atomically take ownership of the callback so that
@@ -249,7 +241,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       }
 
       domain::StreamingChunkResponse response{token.task_id};
-      response.id = taskId;
+      response.id = std::to_string(taskId);
       response.created =
           std::chrono::duration_cast<std::chrono::seconds>(
               std::chrono::system_clock::now().time_since_epoch())
@@ -327,7 +319,6 @@ domain::CompletionResponse LLMService::processRequest(
           ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
           : 0;
   const uint32_t taskId = request.task_id;
-  const std::string taskIdStr = std::to_string(taskId);
   const std::string model = request.model.value_or("default");
 
   processStreamingRequest(
@@ -354,7 +345,7 @@ domain::CompletionResponse LLMService::processRequest(
   cv.wait(lock, [&] { return done; });
 
   domain::CompletionResponse response{taskId};
-  response.id = taskIdStr;
+  response.id = std::to_string(taskId);
   response.model = model;
   response.created = std::chrono::duration_cast<std::chrono::seconds>(
                          std::chrono::system_clock::now().time_since_epoch())
@@ -388,24 +379,23 @@ void LLMService::processStreamingRequest(
     throw std::runtime_error("task_id must be set before submitting request");
   }
   uint32_t taskId = request.task_id;
-  std::string taskIdStr = std::to_string(taskId);
 
   pending_tasks_.fetch_add(1);
   TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
   tt::metrics::ServerMetrics::instance().setQueueDepth(
       static_cast<double>(pending_tasks_.load()));
 
-  stream_callbacks_.insert(taskIdStr, std::move(callback));
+  stream_callbacks_.insert(taskId, std::move(callback));
 
   if (reasoning_parser_) {
-    reasoning_parser_->initializeTask(taskIdStr);
+    reasoning_parser_->initializeTask(taskId);
   }
 
   auto prompt = std::get<std::vector<int>>(request.prompt);
   std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
 
   tt::metrics::ServerMetrics::instance().onRequestSubmitted(
-      taskIdStr, static_cast<int>(prompt.size()));
+      taskId, static_cast<int>(prompt.size()));
 
   auto sequence = std::make_unique<llm_engine::Sequence>(
       taskId, tt::config::llmEngineConfig().kvcache_block_size,
@@ -431,10 +421,8 @@ void LLMService::postProcess(domain::CompletionResponse& response) const {
   }
 }
 void LLMService::abortRequest(uint32_t taskId) {
-  std::string taskKey = std::to_string(taskId);
-
   // Atomically remove the stream callback and decrement pending_tasks_.
-  auto cb = stream_callbacks_.take(taskKey);
+  auto cb = stream_callbacks_.take(taskId);
   if (cb.has_value()) {
     pending_tasks_.fetch_sub(1);
     tt::metrics::ServerMetrics::instance().setQueueDepth(
@@ -455,7 +443,7 @@ void LLMService::abortRequest(uint32_t taskId) {
 
   // Clean up any reasoning-parser state so task_states_ does not leak.
   if (reasoning_parser_) {
-    reasoning_parser_->finalizeTask(taskKey);
+    reasoning_parser_->finalizeTask(taskId);
   }
 
   // Broadcast the cancel signal to every per-worker cancel queue.
@@ -466,7 +454,7 @@ void LLMService::abortRequest(uint32_t taskId) {
     }
   }
 
-  TT_LOG_INFO("[LLMService] Aborted request {}", taskKey);
+  TT_LOG_INFO("[LLMService] Aborted request {}", taskId);
 }
 
 }  // namespace tt::services

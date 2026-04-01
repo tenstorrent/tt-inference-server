@@ -635,7 +635,7 @@ struct EmbeddingService::Impl {
     };
 
     // Parse responses into a map by task_id
-    std::unordered_map<std::string, domain::EmbeddingResponse> responseMap;
+    std::unordered_map<uint32_t, domain::EmbeddingResponse> responseMap;
     uint32_t numResponses = readUint32();
     responseMap.reserve(numResponses);
 
@@ -652,8 +652,7 @@ struct EmbeddingService::Impl {
         resp.model = readString();
       }
 
-      auto key = std::to_string(resp.task_id);
-      responseMap.insert_or_assign(std::move(key), std::move(resp));
+      responseMap.insert_or_assign(resp.task_id, std::move(resp));
     }
 
     auto t5 = std::chrono::steady_clock::now();
@@ -680,7 +679,7 @@ struct EmbeddingService::Impl {
 
     // Match responses to requests by task_id
     for (auto& pending : batch) {
-      auto it = responseMap.find(std::to_string(pending->request.task_id));
+      auto it = responseMap.find(pending->request.task_id);
       if (it != responseMap.end()) {
         pending->promise.set_value(std::move(it->second));
       } else {

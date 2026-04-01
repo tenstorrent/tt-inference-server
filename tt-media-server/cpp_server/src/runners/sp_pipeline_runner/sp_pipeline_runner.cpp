@@ -69,7 +69,7 @@ bool SpPipelineRunner::warmup() {
       1,  // block_size (doesn't matter for warmup)
       warmupTokens, warmupParams);
 
-  modelRunner->write(std::to_string(warmupSeq->taskId), warmupSeq->tokenIds, 1,
+  modelRunner->write(warmupSeq->taskId, warmupSeq->tokenIds, 1,
                      sp_pipeline::RequestPhase::PREFILL);
 
   // Wait for the response token (with timeout)
@@ -141,7 +141,7 @@ void SpPipelineRunner::step() {
           static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
     }
 
-    modelRunner->write(std::to_string(taskId), seq->tokenIds,
+    modelRunner->write(taskId, seq->tokenIds,
                        seq->samplingParams->max_tokens.value(),
                        sp_pipeline::RequestPhase::PREFILL);
 

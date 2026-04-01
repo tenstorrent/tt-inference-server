@@ -31,14 +31,13 @@ void DisaggregationService::setupSocketHandlers() {
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     socketService->onPrefillComplete(
         [this](const tt::sockets::PrefillResultMessage& message) {
-          std::string taskIdStr = std::to_string(message.task_id);
-          auto callback = streamCallbacks.get(taskIdStr);
+          auto callback = streamCallbacks.get(message.task_id);
           if (!callback.has_value()) {
             TT_LOG_WARN("[DisaggregationService] No callback for task_id: {}",
-                        taskIdStr);
+                        message.task_id);
             return;
           }
-          streamCallbacks.erase(taskIdStr);
+          streamCallbacks.erase(message.task_id);
 
           auto response = domain::StreamingChunkResponse(message.task_id);
           response.choices.push_back(
@@ -71,8 +70,8 @@ void DisaggregationService::setupSocketHandlers() {
 
     socketService->setConnectionLostCallback([this]() {
       streamCallbacks.forEach(
-          [](const std::string& taskId, const StreamCallback& callback) {
-            auto response = domain::StreamingChunkResponse(std::stoul(taskId));
+          [](uint32_t taskId, const StreamCallback& callback) {
+            auto response = domain::StreamingChunkResponse(taskId);
             response.choices.push_back(domain::CompletionChoice(""));
             response.choices.back().finish_reason = "error";
             callback(response, true);
@@ -137,8 +136,7 @@ void DisaggregationService::handleStreamingRequest(
     domain::CompletionRequest& request, const StreamCallback& callback) {
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     llmService->preProcess(request);
-    std::string taskIdStr = std::to_string(request.task_id);
-    streamCallbacks.insert(taskIdStr, callback);
+    streamCallbacks.insert(request.task_id, callback);
 
     auto maxTokens = request.max_tokens;
     auto slotId = request.slotId;
@@ -149,11 +147,11 @@ void DisaggregationService::handleStreamingRequest(
         slotId);
 
     if (!sent) {
-      streamCallbacks.erase(taskIdStr);
+      streamCallbacks.erase(request.task_id);
       throw std::runtime_error(
           "[DisaggregationService] Failed to send prefill request for "
           "task_id: " +
-          taskIdStr);
+          std::to_string(request.task_id));
     }
   } else {
     throw std::runtime_error(
