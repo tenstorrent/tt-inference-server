@@ -68,6 +68,13 @@ class Scheduler {
                    const std::vector<int64_t>& tokenIds);
   void removeSequence(TaskID taskId);
 
+  /**
+   * Abort a request by task ID. Frees KV cache blocks, removes the sequence
+   * from whichever queue it is currently in, and erases it from the sequences
+   * map. Idempotent: a second call for the same ID is a no-op.
+   */
+  void abortRequest(TaskID taskId);
+
   bool isStopToken(int64_t tokenId) const {
     return stop_token_ids_.count(tokenId) > 0;
   }
@@ -105,6 +112,9 @@ class Scheduler {
   ITaskQueue* prefill_queue_;
   std::unordered_map<TaskID, std::unique_ptr<Sequence>> sequences_;
   std::deque<Sequence*> decode_queue_;
+  // IDs aborted before their copy was dequeued from the prefill queue.
+  // Checked in trySchedulePrefill to skip stale copies.
+  std::unordered_set<TaskID> pending_aborts_;
 };
 
 std::unique_ptr<Scheduler> makeScheduler(const tt::config::LLMConfig& config,

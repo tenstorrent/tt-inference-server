@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -28,18 +29,17 @@ namespace {
 void sseSend(const std::string& sse, trantor::EventLoop* loop,
              const std::shared_ptr<drogon::ResponseStreamPtr>& streamPtr,
              const std::shared_ptr<ConcurrentQueue<std::string>>& accumulator,
-             const std::shared_ptr<std::atomic<bool>>& cancelled,
-             const std::string& taskId) {
-  if (cancelled->load()) return;
+             const std::shared_ptr<std::vector<std::string>>& earlyBuffer,
+             std::function<void()> onDisconnect = nullptr) {
   if (!accumulator) {
-    loop->queueInLoop([streamPtr, sse, cancelled, taskId]() {
-      if (*streamPtr && !cancelled->load()) {
-        if (!(*streamPtr)->send(sse)) {
-          cancelled->store(true);
-          TT_LOG_WARN(
-              "[LLMController] Client disconnected mid-stream task_id={}",
-              taskId);
-        }
+    loop->queueInLoop([streamPtr, earlyBuffer, sse,
+                       onDisconnect = std::move(onDisconnect)]() {
+      if (*streamPtr) {
+        bool ok = (*streamPtr)->send(sse);
+        if (!ok && onDisconnect) onDisconnect();
+      } else if (earlyBuffer) {
+        // Stream not ready yet — buffer for flush when it opens.
+        earlyBuffer->push_back(sse);
       }
     });
     return;
@@ -49,35 +49,27 @@ void sseSend(const std::string& sse, trantor::EventLoop* loop,
     auto accumulated = accumulator->drain();
     std::string batch;
     for (auto& s : accumulated) batch.append(s);
-    loop->queueInLoop(
-        [streamPtr, batch = std::move(batch), cancelled, taskId]() {
-          if (*streamPtr && !cancelled->load()) {
-            if (!(*streamPtr)->send(batch)) {
-              cancelled->store(true);
-              TT_LOG_WARN(
-                  "[LLMController] Client disconnected mid-stream task_id={}",
-                  taskId);
-            }
-          }
-        });
+    loop->queueInLoop([streamPtr, earlyBuffer, batch = std::move(batch),
+                       onDisconnect = std::move(onDisconnect)]() {
+      if (*streamPtr) {
+        bool ok = (*streamPtr)->send(batch);
+        if (!ok && onDisconnect) onDisconnect();
+      } else if (earlyBuffer) {
+        earlyBuffer->push_back(batch);
+      }
+    });
   }
 }
 
 void flushAccumulated(
     const std::shared_ptr<ConcurrentQueue<std::string>>& accumulator,
-    const std::shared_ptr<drogon::ResponseStreamPtr>& streamPtr,
-    const std::shared_ptr<std::atomic<bool>>& cancelled,
-    const std::string& taskId) {
-  if (!accumulator || cancelled->load()) return;
+    const std::shared_ptr<drogon::ResponseStreamPtr>& streamPtr) {
+  if (!accumulator) return;
   auto accumulated = accumulator->drain();
   if (!accumulated.empty()) {
     std::string batch;
     for (auto& s : accumulated) batch.append(s);
-    if (!(*streamPtr)->send(batch)) {
-      cancelled->store(true);
-      TT_LOG_WARN("[LLMController] Client disconnected mid-stream task_id={}",
-                  taskId);
-    }
+    if (*streamPtr) (*streamPtr)->send(batch);
   }
 }
 
@@ -380,7 +372,6 @@ void LLMController::handleStreaming(
   // queueInLoop, and the stream setup lambda via Drogon's async stream
   // machinery.
   auto done = std::make_shared<std::atomic<bool>>(false);
-  auto cancelled = std::make_shared<std::atomic<bool>>(false);
   // stream_ptr is null until the newAsyncStreamResponse lambda runs.
   auto streamPtr = std::make_shared<drogon::ResponseStreamPtr>();
   // Events that arrive before stream_ptr is set are buffered here.
@@ -399,18 +390,29 @@ void LLMController::handleStreaming(
 
   // Capture sessionId before submitting to service (request will be moved)
   const std::optional<std::string> capturedSessionId = reqPtr->sessionId;
+  // Abort callback: fires when the TCP connection drops mid-stream.
+  // Captured by value so it stays alive for the duration of the streaming
+  // session. Called on the IO thread from inside sseSend().
+  const std::string taskIdStr = reqPtr->task_id.id;
+  auto onDisconnect = [taskIdStr, service = this->service, done]() {
+    if (!done->exchange(true)) {
+      TT_LOG_INFO("[LLMController] Client disconnected, aborting task {}",
+                  taskIdStr);
+      service->abortRequest(domain::TaskID(taskIdStr));
+    }
+  };
 
   // Submit the streaming request before setting up the HTTP stream so that a
   // full queue throws QueueFullException here, allowing us to return a proper
   // 429.
-  auto streamingCallback = [loop, streamPtr, done, cancelled, completionId,
+  auto streamingCallback = [loop, streamPtr, earlyBuffer, done, completionId,
                             model, created, isChat, includeUsage,
                             continuousUsage, completionTokens, startTime,
                             firstTokenTime, secondTokenTime, firstContentChunk,
-                            reqPtr, capturedSessionId, accumulator](
+                            reqPtr, capturedSessionId,  accumulator, onDisconnect](
                                const domain::StreamingChunkResponse& chunk,
                                bool isFinal) {
-    if (done->load() || cancelled->load() || !*streamPtr) {
+    if (done->load()) {
       return;
     }
     if (!chunk.choices.empty()) {
@@ -468,23 +470,16 @@ void LLMController::handleStreaming(
       }
 
       if (!sse.empty()) {
-        sseSend(sse, loop, streamPtr, accumulator, cancelled, completionId);
+        sseSend(sse, loop, streamPtr, accumulator, earlyBuffer, onDisconnect);
       }
     }
     if (isFinal) {
-      loop->queueInLoop([streamPtr, done, cancelled, isChat, includeUsage,
-                         completionId, model, created, completionTokens,
-                         startTime, firstTokenTime, secondTokenTime, reqPtr,
-                         capturedSessionId, accumulator]() {
+      loop->queueInLoop([streamPtr, done, isChat, includeUsage, completionId,
+                         model, created, completionTokens, startTime,
+                         firstTokenTime, secondTokenTime, reqPtr,
+                         capturedSessionId,accumulator]() {
         if (!done->exchange(true) && *streamPtr) {
-          if (cancelled->load()) {
-            TT_LOG_WARN(
-                "[LLMController] Streaming task_id={} completed after client "
-                "disconnect, skipping final flush",
-                completionId);
-            return;
-          }
-          flushAccumulated(accumulator, streamPtr, cancelled, completionId);
+          flushAccumulated(accumulator, streamPtr);
           if (includeUsage) {
             const int tokens = completionTokens->load();
 
