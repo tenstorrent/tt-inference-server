@@ -369,6 +369,13 @@ target_include_directories(ipc_scheduler_smoke_test PRIVATE
 )
 add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
 
+# Cancellation E2E test (starts mock server, runs Python tests, stops server)
+add_test(NAME CancellationE2E
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_e2e_with_server.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 60)
+
 # Tokenizer benchmark
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/deepseek_tokenizer.cpp src/utils/llama_tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp src/utils/logger.cpp)
 target_include_directories(tokenizer_benchmark PRIVATE
