@@ -223,6 +223,7 @@ endif()
 # LLM engine (include/runners/llm_runner/, src/runners/llm_runner/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/block_manager.cpp
+    src/ipc/boost_ipc_cancel_queue.cpp
     src/ipc/boost_ipc_task_queue.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
@@ -363,12 +364,20 @@ target_include_directories(test_tokenizer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(cancel_queue_test tests/cancel_queue_test.cpp)
+target_link_libraries(cancel_queue_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(cancel_queue_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
+gtest_discover_tests(cancel_queue_test)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -485,4 +494,6 @@ if(SANITIZE_ADDRESS)
     target_link_options(ipc_scheduler_smoke_test PRIVATE -fsanitize=address)
     target_compile_options(lockfree_queue_test PRIVATE ${ASAN_FLAGS})
     target_link_options(lockfree_queue_test PRIVATE -fsanitize=address)
+    target_compile_options(cancel_queue_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(cancel_queue_test PRIVATE -fsanitize=address)
 endif()

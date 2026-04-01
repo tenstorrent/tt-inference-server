@@ -112,16 +112,6 @@ void DisaggregationService::setupSocketHandlers() {
                                                message.token_ids.begin(),
                                                message.token_ids.end());
                 prefillResult.slot_id = slotId;
-                TT_LOG_INFO(
-                    "[DisaggregationService] Prefill callback: task_id={} "
-                    "token_id={} text='{}' num_choices={}",
-                    message.task_id.id,
-                    response.choices.back().token_id.has_value()
-                        ? std::to_string(
-                              response.choices.back().token_id.value())
-                        : "NONE",
-                    response.choices.back().text,
-                    response.choices.size());
                 if (response.choices.back().token_id.has_value()) {
                   prefillResult.token_ids.push_back(
                       response.choices.back().token_id.value());
