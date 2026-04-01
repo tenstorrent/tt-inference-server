@@ -169,13 +169,14 @@ void LLMController::completions(
     try {
       if (request->sessionId.has_value() && sessionManager) {
         auto slotId =
-          sessionManager->getSlotIdBySessionId(request->sessionId.value());
+            sessionManager->getSlotIdBySessionId(request->sessionId.value());
 
         if (slotId != -1) {
           request->slotId = slotId;
-        }
-        else {
-          TT_LOG_INFO("Received request with non existing session, resetting session id");
+        } else {
+          TT_LOG_INFO(
+              "Received request with non existing session, resetting session "
+              "id");
           // reset sessionId since it's a stale session
           request->sessionId.reset();
         }
@@ -339,13 +340,13 @@ void LLMController::handleStreaming(
 
   if (reqPtr->sessionId.has_value() && sessionManager) {
     auto slotId =
-      sessionManager->getSlotIdBySessionId(reqPtr->sessionId.value());
+        sessionManager->getSlotIdBySessionId(reqPtr->sessionId.value());
 
     if (slotId != -1) {
       reqPtr->slotId = slotId;
-    }
-    else {
-      TT_LOG_INFO("Received request with non existing session, resetting session id");
+    } else {
+      TT_LOG_INFO(
+          "Received request with non existing session, resetting session id");
       // reset sessionId since it's a stale session
       reqPtr->sessionId.reset();
     }
