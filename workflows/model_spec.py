@@ -3153,7 +3153,7 @@ embedding_templates = [
     ),
     ModelSpecTemplate(
         weights=["BAAI/bge-m3"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="6c3f4ff",
         impl=tt_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=6,
