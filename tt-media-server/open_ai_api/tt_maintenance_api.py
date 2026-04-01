@@ -7,6 +7,9 @@ from typing import Any
 from config.constants import ModelServices
 from config.settings import settings
 from domain.image_generate_request import BaseImageRequest, ImageGenerateRequest
+from config.constants import ModelRunners
+from domain.image_to_image_request import ImageToImageRequest
+from domain.image_edit_request import ImageEditRequest
 from fastapi import APIRouter, Depends, HTTPException
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
@@ -14,10 +17,15 @@ from resolver.service_resolver import service_resolver
 router = APIRouter()
 
 
+SDXL_MODEL_RUNNER_TO_REQUEST_MAP = {
+    ModelRunners.TT_SDXL_TRACE.value: ImageGenerateRequest,
+    ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value: ImageToImageRequest,
+    ModelRunners.TT_SDXL_EDIT.value: ImageEditRequest,
+}
+
+
 def _resolve_image_request_model():
-    if "sdxl" in settings.model_runner:
-        return ImageGenerateRequest
-    return BaseImageRequest
+    return SDXL_MODEL_RUNNER_TO_REQUEST_MAP.get(settings.model_runner, BaseImageRequest)
 
 
 @router.get("/tt-liveness")
