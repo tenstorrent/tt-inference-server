@@ -14,8 +14,8 @@ namespace tt::utils::runner_factory {
 
 std::unique_ptr<runners::IRunner> createRunner(
     config::ModelService service, const config::RunnerConfig& config,
-    ipc::TokenRingBuffer<65536>* resultQueue,
-    llm_engine::ITaskQueue* taskQueue) {
+    ipc::TokenRingBuffer<65536>* resultQueue, llm_engine::ITaskQueue* taskQueue,
+    ipc::ICancelQueue* cancelQueue) {
   switch (service) {
     case config::ModelService::EMBEDDING: {
       TT_LOG_INFO("[RunnerFactory] Creating Embedding runner");
@@ -44,7 +44,7 @@ std::unique_ptr<runners::IRunner> createRunner(
 
       TT_LOG_INFO("[RunnerFactory] Creating LLM runner (mock)");
       return std::make_unique<tt::runners::LLMRunner>(cfg, resultQueue,
-                                                      taskQueue);
+                                                      taskQueue, cancelQueue);
     }
   }
 }

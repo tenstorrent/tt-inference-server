@@ -24,8 +24,8 @@ class MemoryManager {
   virtual void handleRequest(const domain::ManageMemoryTask& request) = 0;
 
  protected:
-  ipc::MemoryRequestQueue requestQueue;
-  ipc::MemoryResultQueue resultQueue;
+  std::unique_ptr<ipc::MemoryRequestQueue> requestQueue;
+  std::unique_ptr<ipc::MemoryResultQueue> resultQueue;
 };
 
 }  // namespace tt::services

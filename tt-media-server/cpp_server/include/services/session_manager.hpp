@@ -90,12 +90,6 @@ class SessionManager {
   bool closeSessionLocked(const std::string& sessionId);
 
   /**
-   * Try to open the IPC queues created by MemoryManager in the runner.
-   * Returns true if queues are connected (or were already connected).
-   */
-  bool ensureQueuesConnected();
-
-  /**
    * Request a slot ID from the memory manager.
    * @param sessionId The session ID requesting the slot
    * @return The allocated slot ID, or max uint32_t on failure

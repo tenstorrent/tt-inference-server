@@ -15,7 +15,7 @@ namespace llm_engine {
 
 using TaskID = tt::domain::TaskID;
 
-enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
+enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED, ABORTED };
 
 constexpr int32_t INVALID_KV_CACHE_ADDRESS = -1;
 
@@ -47,6 +47,7 @@ class Sequence {
   int64_t operator[](size_t i) const { return tokenIds[i]; }
 
   bool isFinished() const { return status == SequenceStatus::FINISHED; }
+  bool isAborted() const { return status == SequenceStatus::ABORTED; }
   size_t numCompletionTokens() const {
     return tokenIds.size() - numPromptTokens;
   }

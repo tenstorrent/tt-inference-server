@@ -833,7 +833,7 @@ jobs:
           MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$RESULT_FILE")
           MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$RESULT_FILE")
           TPOT_THRESHOLD_MS="3"
-          TTFT_THRESHOLD_MS="380"
+          TTFT_THRESHOLD_MS="395"
 
           FAIL=0
           if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then

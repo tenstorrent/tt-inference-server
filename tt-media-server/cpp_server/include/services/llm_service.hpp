@@ -43,6 +43,14 @@ class LLMService
 
   void preProcess(domain::CompletionRequest& request) const override;
 
+  /**
+   * Abort an in-flight request. Removes the streaming callback, decrements
+   * pending_tasks_, invokes the callback with finish_reason="abort" to unblock
+   * synchronous waiters, and broadcasts cancel to all worker queues.
+   * Idempotent and thread-safe.
+   */
+  void abortRequest(const domain::TaskID& taskId);
+
  protected:
   void postProcess(domain::CompletionResponse& response) const override;
   size_t currentQueueSize() const override;

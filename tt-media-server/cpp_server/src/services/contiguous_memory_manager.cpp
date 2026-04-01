@@ -15,7 +15,7 @@ void ContiguousMemoryManager::handleRequest(const ManageMemoryTask& task) {
   // TODO return a proper slot id here
   result.slotIds = {static_cast<std::uint32_t>(123)};
   result.status = ManageMemoryStatus::SUCCESS;
-  resultQueue.push(result);
+  resultQueue->push(result);
 }
 
 }  // namespace tt::services
