@@ -12,86 +12,122 @@
 #include "domain/manage_memory.hpp"
 #include "utils/logger.hpp"
 
+namespace {
+constexpr uint32_t INVALID_SLOT_ID = std::numeric_limits<uint32_t>::max();
+}
+
 namespace tt::services {
 
 SessionManager::SessionManager() {
-  // Create IPC queues for communication with MemoryManager (in worker
-  // processes) If workers aren't running or in non-decode mode, these queues
-  // won't be used
   try {
-    memoryRequestQueue_ = std::make_unique<ipc::MemoryRequestQueue>(
+    memoryRequestQueue = std::make_unique<ipc::MemoryRequestQueue>(
         ipc::k_memory_request_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
-    memoryResultQueue_ = std::make_unique<ipc::MemoryResultQueue>(
+    memoryResultQueue = std::make_unique<ipc::MemoryResultQueue>(
         ipc::k_memory_result_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
     TT_LOG_INFO("[SessionManager] Created memory management IPC queues");
+    drainThread = std::thread([this] { drainResultQueue(); });
   } catch (const std::exception& e) {
     TT_LOG_WARN(
         "[SessionManager] Failed to create memory queues: {}. Slot allocation "
         "will not be available.",
         e.what());
-    memoryRequestQueue_.reset();
-    memoryResultQueue_.reset();
+    memoryRequestQueue.reset();
+    memoryResultQueue.reset();
+  }
+}
+
+SessionManager::~SessionManager() {
+  stopped.store(true, std::memory_order_relaxed);
+  if (drainThread.joinable()) {
+    drainThread.join();
+  }
+}
+
+void SessionManager::drainResultQueue() {
+  while (!stopped.load(std::memory_order_relaxed)) {
+    domain::ManageMemoryResult result;
+    if (memoryResultQueue->tryPop(result)) {
+      auto promise = pendingAllocations.take(result.taskId.id);
+      if (promise.has_value()) {
+        if (result.status == domain::ManageMemoryStatus::SUCCESS &&
+            !result.slotIds.empty()) {
+          (*promise)->set_value(result.slotIds[0]);
+        } else {
+          (*promise)->set_value(INVALID_SLOT_ID);
+        }
+      }
+    } else {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
   }
 }
 
 domain::Session SessionManager::createSession(std::optional<uint32_t> slotId) {
-  std::lock_guard<std::mutex> lock(mutex_);
-
-  // Check if we need to evict old sessions
   evictOldSessions();
 
-  // Create session first to get the session ID
-  uint32_t slot = slotId.value_or(std::numeric_limits<uint32_t>::max());
+  uint32_t slot = slotId.value_or(INVALID_SLOT_ID);
   domain::Session session(slot);
   std::string sessionId = session.getSessionId();
 
-  // If no slot ID was provided, request one from memory manager
-  if (!slotId.has_value() && memoryRequestQueue_ && memoryResultQueue_) {
-    uint32_t allocatedSlot = requestSlotIdFromMemoryManager(sessionId);
-    if (allocatedSlot != std::numeric_limits<uint32_t>::max()) {
-      slot = allocatedSlot;
-      session.setSlotId(slot);
+  if (!slotId.has_value() && memoryRequestQueue && memoryResultQueue) {
+    auto future = requestSlotIdFromMemoryManager(sessionId);
+    auto status = future.wait_for(std::chrono::seconds(1));
+    if (status == std::future_status::ready) {
+      uint32_t allocatedSlot = future.get();
+      if (allocatedSlot != INVALID_SLOT_ID) {
+        slot = allocatedSlot;
+        session.setSlotId(slot);
+        TT_LOG_INFO(
+            "[SessionManager] Received slot {} for session {} from memory "
+            "manager",
+            slot, sessionId);
+      } else {
+        TT_LOG_WARN(
+            "[SessionManager] Memory manager failed to allocate slot for "
+            "session {}",
+            sessionId);
+      }
+    } else {
+      TT_LOG_WARN(
+          "[SessionManager] Timeout waiting for slot allocation for session {}",
+          sessionId);
     }
   }
 
-  sessions_[sessionId] = session;
+  sessions.insert(sessionId, session);
 
   TT_LOG_INFO("[SessionManager] Created session: {} with slot: {}", sessionId,
               slot);
-
   return session;
 }
 
 bool SessionManager::closeSession(const std::string& sessionId) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  return closeSessionLocked(sessionId);
-}
-
-bool SessionManager::closeSessionLocked(const std::string& sessionId) {
-  // Note: mutex_ must already be locked by caller
-  auto it = sessions_.find(sessionId);
-  if (it == sessions_.end()) {
+  auto session = sessions.take(sessionId);
+  if (!session.has_value()) {
     TT_LOG_WARN("[SessionManager] Session not found: {}", sessionId);
     return false;
   }
 
-  sessions_.erase(it);
+  uint32_t slotId = session->getSlotId();
+  if (slotId != INVALID_SLOT_ID) {
+    sendDeallocRequest(sessionId, slotId);
+  }
+
   TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
   return true;
 }
 
 bool SessionManager::assignSlotId(const std::string& sessionId,
                                   uint32_t slotId) {
-  std::lock_guard<std::mutex> lock(mutex_);
+  bool found = sessions.modify(
+      sessionId, [slotId](domain::Session& s) { s.setSlotId(slotId); });
 
-  auto it = sessions_.find(sessionId);
-  if (it == sessions_.end()) {
+  if (!found) {
     TT_LOG_WARN("[SessionManager] Session not found for slot assignment: {}",
                 sessionId);
     return false;
   }
 
-  it->second.setSlotId(slotId);
   TT_LOG_INFO("[SessionManager] Assigned slot {} to session {}", slotId,
               sessionId);
   return true;
@@ -99,157 +135,119 @@ bool SessionManager::assignSlotId(const std::string& sessionId,
 
 uint32_t SessionManager::getSlotIdBySessionId(
     const std::string& sessionId) const {
-  std::lock_guard<std::mutex> lock(mutex_);
-
-  auto it = sessions_.find(sessionId);
-  if (it == sessions_.end()) {
-    return std::numeric_limits<uint32_t>::max();
-  }
-
-  // Update activity time (mutable access through const_cast for this use case)
-  const_cast<domain::Session&>(it->second).updateActivityTime();
-
-  return it->second.getSlotId();
+  uint32_t result = INVALID_SLOT_ID;
+  sessions.modify(sessionId, [&result](domain::Session& s) {
+    s.updateActivityTime();
+    result = s.getSlotId();
+  });
+  return result;
 }
 
 std::optional<domain::Session> SessionManager::getSession(
     const std::string& sessionId) const {
-  std::lock_guard<std::mutex> lock(mutex_);
-
-  auto it = sessions_.find(sessionId);
-  if (it == sessions_.end()) {
-    return std::nullopt;
-  }
-
-  return it->second;
+  return sessions.get(sessionId);
 }
 
-size_t SessionManager::getActiveSessionCount() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  return sessions_.size();
-}
+size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
 
 void SessionManager::evictOldSessions() {
-  // Note: mutex_ is already locked by the caller (createSession)
-
   size_t maxSessions = tt::config::maxSessionsCount();
   unsigned evictionRate = tt::config::sessionEvictionRate();
   size_t evictionCount = tt::config::sessionEvictionCount();
 
-  size_t activeCount = sessions_.size();
+  size_t activeCount = sessions.size();
+  if (activeCount * 100 <= maxSessions * evictionRate) {
+    return;
+  }
 
-  // Calculate if we've exceeded the eviction threshold
-  // (activeCount / maxSessions) * 100 > evictionRate
-  if (activeCount * 100 > maxSessions * evictionRate) {
-    // Find and evict the oldest sessions
-    auto oldestSessions = findOldestSessions(evictionCount);
+  using Entry = std::pair<std::chrono::system_clock::time_point, std::string>;
+  auto newer = [](const Entry& a, const Entry& b) { return a.first < b.first; };
+  std::vector<Entry> heap;
+  heap.reserve(evictionCount + 1);
 
-    if (!oldestSessions.empty()) {
-      for (const auto& sessionId : oldestSessions) {
-        closeSessionLocked(sessionId);
-      }
-
-      TT_LOG_INFO(
-          "[SessionManager] Evicted {} oldest session(s) (active: {}/{}, "
-          "threshold: {}%)",
-          oldestSessions.size(), activeCount, maxSessions, evictionRate);
+  sessions.forEach([&heap, &newer, evictionCount](const std::string& id,
+                                                  domain::Session& session) {
+    auto t = session.getLastActivityTime();
+    if (heap.size() < evictionCount) {
+      heap.emplace_back(t, id);
+      std::push_heap(heap.begin(), heap.end(), newer);
+    } else if (t < heap.front().first) {
+      std::pop_heap(heap.begin(), heap.end(), newer);
+      heap.back() = {t, id};
+      std::push_heap(heap.begin(), heap.end(), newer);
     }
+  });
+
+  size_t evicted = 0;
+  for (const auto& [_, sessionId] : heap) {
+    auto session = sessions.take(sessionId);
+    if (!session.has_value()) {
+      continue;
+    }
+    uint32_t slotId = session->getSlotId();
+    if (slotId != INVALID_SLOT_ID) {
+      sendDeallocRequest(sessionId, slotId);
+    }
+    ++evicted;
+  }
+
+  if (evicted > 0) {
+    TT_LOG_INFO(
+        "[SessionManager] Evicted {} oldest session(s) (active: {}/{}, "
+        "threshold: {}%)",
+        evicted, activeCount, maxSessions, evictionRate);
   }
 }
 
-std::vector<std::string> SessionManager::findOldestSessions(
-    size_t count) const {
-  // Note: mutex_ is already locked by the caller
-
-  if (sessions_.empty()) {
-    return {};
-  }
-
-  // Create a vector of (sessionId, activityTime) pairs
-  std::vector<std::pair<std::string, std::chrono::system_clock::time_point>>
-      sessionTimes;
-  sessionTimes.reserve(sessions_.size());
-
-  for (const auto& [sessionId, session] : sessions_) {
-    sessionTimes.emplace_back(sessionId, session.getLastActivityTime());
-  }
-
-  // Sort by activity time (oldest first)
-  std::partial_sort(sessionTimes.begin(),
-                    sessionTimes.begin() + std::min(count, sessionTimes.size()),
-                    sessionTimes.end(), [](const auto& a, const auto& b) {
-                      return a.second < b.second;
-                    });
-
-  // Extract session IDs
-  std::vector<std::string> result;
-  size_t numToEvict = std::min(count, sessionTimes.size());
-  result.reserve(numToEvict);
-
-  for (size_t i = 0; i < numToEvict; ++i) {
-    result.push_back(sessionTimes[i].first);
-  }
-
-  return result;
-}
-
-uint32_t SessionManager::requestSlotIdFromMemoryManager(
+std::future<uint32_t> SessionManager::requestSlotIdFromMemoryManager(
     const std::string& sessionId) {
-  // Note: mutex_ is already locked by the caller
+  auto promise = std::make_shared<std::promise<uint32_t>>();
+  auto future = promise->get_future();
 
-  // Create memory allocation request
+  pendingAllocations.insert(sessionId, promise);
+
   domain::ManageMemoryTask task;
   task.taskId = domain::TaskID(sessionId);
   task.action = domain::MemoryManagementAction::ALLOCATE;
-  task.inputSeqLen = 0;  // Not used for slot allocation
+  task.inputSeqLen = 0;
   task.memoryLayout = domain::KvMemoryLayout::Paged;
-  task.slotIds = {};  // Empty for allocation request
+  task.slotIds = {};
 
   try {
-    // Send allocation request
-    memoryRequestQueue_->push(task);
+    memoryRequestQueue->push(task);
     TT_LOG_DEBUG("[SessionManager] Sent slot allocation request for session {}",
                  sessionId);
-
-    // Wait for response with timeout
-    const int maxAttempts = 100;  // ~1 second with 10ms sleep
-    int attempts = 0;
-
-    while (attempts < maxAttempts) {
-      domain::ManageMemoryResult result;
-      if (memoryResultQueue_->tryPop(result)) {
-        // Check if this is our result
-        if (result.taskId.id == sessionId) {
-          if (result.status == domain::ManageMemoryStatus::SUCCESS &&
-              !result.slotIds.empty()) {
-            TT_LOG_INFO(
-                "[SessionManager] Received slot {} for session {} from memory "
-                "manager",
-                result.slotIds[0], sessionId);
-            return result.slotIds[0];
-          } else {
-            TT_LOG_WARN(
-                "[SessionManager] Memory manager failed to allocate slot for "
-                "session {}",
-                sessionId);
-            return std::numeric_limits<uint32_t>::max();
-          }
-        }
-      }
-
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      attempts++;
-    }
-
-    TT_LOG_WARN(
-        "[SessionManager] Timeout waiting for slot allocation for session {}",
-        sessionId);
-    return std::numeric_limits<uint32_t>::max();
-
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SessionManager] Error requesting slot for session {}: {}",
                  sessionId, e.what());
-    return std::numeric_limits<uint32_t>::max();
+    pendingAllocations.erase(sessionId);
+    promise->set_value(INVALID_SLOT_ID);
+  }
+
+  return future;
+}
+
+void SessionManager::sendDeallocRequest(const std::string& sessionId,
+                                        uint32_t slotId) {
+  if (!memoryRequestQueue) {
+    return;
+  }
+
+  domain::ManageMemoryTask task;
+  task.taskId = domain::TaskID(sessionId);
+  task.action = domain::MemoryManagementAction::DEALLOCATE;
+  task.inputSeqLen = 0;
+  task.memoryLayout = domain::KvMemoryLayout::Paged;
+  task.slotIds = {slotId};
+
+  try {
+    memoryRequestQueue->push(task);
+    TT_LOG_INFO("[SessionManager] Sent dealloc request for session {} slot {}",
+                sessionId, slotId);
+  } catch (const std::exception& e) {
+    TT_LOG_ERROR(
+        "[SessionManager] Failed to send dealloc for session {} slot {}: {}",
+        sessionId, slotId, e.what());
   }
 }
 
