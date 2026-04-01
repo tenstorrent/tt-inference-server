@@ -98,8 +98,7 @@ void ReasoningParser::initializeTask(uint32_t taskId) {
   TT_LOG_DEBUG("[ReasoningParser] Initialized task: {}", taskId);
 }
 
-TokenParseResult ReasoningParser::processToken(uint32_t taskId,
-                                               int64_t tokenId,
+TokenParseResult ReasoningParser::processToken(uint32_t taskId, int64_t tokenId,
                                                const std::string& decodedText) {
   std::lock_guard<std::mutex> lock(mutex_);
 

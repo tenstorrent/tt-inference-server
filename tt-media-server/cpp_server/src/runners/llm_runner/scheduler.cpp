@@ -161,7 +161,6 @@ void Scheduler::preempt(Sequence& seq) {
   seq.status = SequenceStatus::WAITING;
   block_manager_.deallocate(seq);
   prefill_queue_->push(seq);
-  sequences_.erase(seq.taskId);
 }
 
 void Scheduler::postprocess(std::vector<Sequence*>& seqs,

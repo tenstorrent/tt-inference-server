@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "runners/llm_runner/debug.hpp"
 #include "runners/sp_pipeline_runner/sp_pipeline_model_runner.hpp"
+
+#include "runners/llm_runner/debug.hpp"
 
 namespace sp_pipeline {
 
