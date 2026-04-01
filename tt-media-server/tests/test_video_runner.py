@@ -25,7 +25,7 @@ sys.modules["telemetry.telemetry_client"] = Mock()
 sys.modules["utils.logger"] = Mock()
 sys.modules["utils.logger"].TTLogger = Mock(return_value=Mock())
 
-from ipc.video_shm import VideoStatus
+from ipc.video_shm import VideoRequest, VideoStatus
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -37,7 +37,6 @@ from tt_model_runners.video_runner import (
     _write_response_to_shm,
     video_request_to_generate_request,
 )
-from ipc.video_shm import VideoRequest
 
 
 class TestRank:
