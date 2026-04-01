@@ -5,10 +5,12 @@ from string import Template
 from inspect import cleandoc
 
 
-PROMPT_TEMPLATE = Template(cleandoc("""
+PROMPT_TEMPLATE = Template(
+    cleandoc("""
     Review: $input
     Output:
-"""))
+""")
+)
 
 RESPONSE_TEMPLATE = Template('{"label": "$label"}')
 
