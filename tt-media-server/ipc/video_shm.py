@@ -88,7 +88,9 @@ class VideoShm:
     MAX_PROMPT_LEN = 2048
     MAX_NEG_PROMPT_LEN = 512
     MAX_ERROR_LEN = 256
-    MAX_VIDEO_SIZE = 1024 * 1024 * 1024  # 1 GB – fits 720p float32 (1280 * 720 * 3 * 81 frames)
+    MAX_VIDEO_SIZE = (
+        1024 * 1024 * 1024
+    )  # 1 GB – fits 720p float32 (1280 * 720 * 3 * 81 frames)
 
     _FREE = 0
     _TAKEN = 1
