@@ -167,6 +167,19 @@ void LLMController::completions(
     handleStreaming(request, std::move(callback), false);
   } else {
     try {
+      if (request->sessionId.has_value() && sessionManager) {
+        auto slotId =
+          sessionManager->getSlotIdBySessionId(request->sessionId.value());
+
+        if (slotId != -1) {
+          request->slotId = slotId;
+        }
+        else {
+          TT_LOG_INFO("Received request with non existing session, resetting session id");
+          // reset sessionId since it's a stale session
+          request->sessionId.reset();
+        }
+      }
       // Create session if not provided
       if (!request->sessionId.has_value() && sessionManager) {
         auto session = sessionManager->createSession(std::nullopt);
@@ -324,14 +337,25 @@ void LLMController::handleStreaming(
     bool isChat) const {
   ZoneScopedN("API::handleStreaming");
 
+  if (reqPtr->sessionId.has_value() && sessionManager) {
+    auto slotId =
+      sessionManager->getSlotIdBySessionId(reqPtr->sessionId.value());
+
+    if (slotId != -1) {
+      reqPtr->slotId = slotId;
+    }
+    else {
+      TT_LOG_INFO("Received request with non existing session, resetting session id");
+      // reset sessionId since it's a stale session
+      reqPtr->sessionId.reset();
+    }
+  }
+
   // Create session if not provided
   if (!reqPtr->sessionId.has_value() && sessionManager) {
     auto session = sessionManager->createSession(std::nullopt);
     reqPtr->sessionId = session.getSessionId();
     TT_LOG_INFO("[LLMController] Created NEW session: {}",
-                reqPtr->sessionId.value());
-  } else if (reqPtr->sessionId.has_value()) {
-    TT_LOG_INFO("[LLMController] Using EXISTING sessionId: '{}'",
                 reqPtr->sessionId.value());
   }
 
