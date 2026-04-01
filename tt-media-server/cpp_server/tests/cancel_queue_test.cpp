@@ -102,7 +102,7 @@ TEST_F(BoostIpcCancelQueueTest, PopAllThenPopAgainIsEmpty) {
 TEST_F(BoostIpcCancelQueueTest, OpenExistingQueue) {
   // Create queue (simulates main process).
   tt::ipc::BoostIpcCancelQueue creator(queueName, 16);
-  creator.push(12345);  // uint32_t is now uint32_t
+  creator.push(12345);
 
   // Open existing queue (simulates worker process).
   tt::ipc::BoostIpcCancelQueue opener(queueName);

@@ -14,7 +14,7 @@ namespace llm_engine {
 namespace {
 
 TEST(SequenceIDTest, SerializeDeserialize_RoundTrip) {
-  uint32_t orig = 12345;  // uint32_t is now uint32_t
+  uint32_t orig = 12345;
 
   std::vector<char> buf = tt::utils::TaskIDGenerator::serialize(orig);
   ASSERT_EQ(buf.size(), 4);  // uint32_t is 4 bytes

@@ -191,7 +191,7 @@ void SpPipelineRunner::drainDecodeResults() {
   }
 }
 
-void SpPipelineRunner::pushToken(const uint32_t& taskId, uint64_t tokenId,
+void SpPipelineRunner::pushToken(uint32_t taskId, uint64_t tokenId,
                                  bool finished) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
@@ -201,7 +201,7 @@ void SpPipelineRunner::pushToken(const uint32_t& taskId, uint64_t tokenId,
   resultQueue->push(shared);
 }
 
-void SpPipelineRunner::pushErrorToken(const uint32_t& taskId) {
+void SpPipelineRunner::pushErrorToken(uint32_t taskId) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR;

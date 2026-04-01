@@ -430,7 +430,7 @@ void LLMService::postProcess(domain::CompletionResponse& response) const {
     }
   }
 }
-void LLMService::abortRequest(const uint32_t& taskId) {
+void LLMService::abortRequest(uint32_t taskId) {
   std::string taskKey = std::to_string(taskId);
 
   // Atomically remove the stream callback and decrement pending_tasks_.

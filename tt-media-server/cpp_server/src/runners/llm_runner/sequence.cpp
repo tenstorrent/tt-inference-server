@@ -20,7 +20,6 @@ Sequence::Sequence(uint32_t taskId, int blockSize,
       numPromptTokens(this->tokenIds.size()),
       samplingParams(std::make_unique<SamplingParams>(samplingParams)),
       blockSize(blockSize) {
-  // uint32_t is now uint32_t, all values are valid
   if (!this->tokenIds.empty()) {
     lastToken = this->tokenIds.back();
   }

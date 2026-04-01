@@ -75,7 +75,7 @@ void SpPrefillRunner::stop() {
   stopped.store(true, std::memory_order_relaxed);
 }
 
-void SpPrefillRunner::pushToken(const uint32_t& taskId, uint64_t tokenId,
+void SpPrefillRunner::pushToken(uint32_t taskId, uint64_t tokenId,
                                 bool finished) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
@@ -85,7 +85,7 @@ void SpPrefillRunner::pushToken(const uint32_t& taskId, uint64_t tokenId,
   resultQueue->push(shared);
 }
 
-void SpPrefillRunner::pushErrorToken(const uint32_t& taskId) {
+void SpPrefillRunner::pushErrorToken(uint32_t taskId) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR;
