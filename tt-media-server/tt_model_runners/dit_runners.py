@@ -9,7 +9,7 @@ from abc import abstractmethod
 import ttnn
 from config.constants import ModelRunners, ModelServices, SupportedModels
 from config.settings import get_settings
-from domain.image_generate_request import ImageGenerateRequest
+from domain.image_generate_request import BaseImageRequest
 from domain.video_generate_request import VideoGenerateRequest
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
@@ -118,7 +118,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         if self.settings.model_service == ModelServices.IMAGE.value:
             self.run(
                 [
-                    ImageGenerateRequest.model_construct(
+                    BaseImageRequest.model_construct(
                         prompt="Sunrise on a beach",
                         negative_prompt="",
                         num_inference_steps=2,
@@ -145,7 +145,7 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run(self, requests: list[ImageGenerateRequest]):
+    def run(self, requests: list[BaseImageRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
         image = self.pipeline.run_single_prompt(

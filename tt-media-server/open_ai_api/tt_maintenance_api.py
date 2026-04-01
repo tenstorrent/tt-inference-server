@@ -4,11 +4,20 @@
 
 from typing import Any
 
+from config.constants import ModelServices
+from config.settings import settings
+from domain.image_generate_request import BaseImageRequest, ImageGenerateRequest
 from fastapi import APIRouter, Depends, HTTPException
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 
 router = APIRouter()
+
+
+def _resolve_image_request_model():
+    if "sdxl" in settings.model_runner:
+        return ImageGenerateRequest
+    return BaseImageRequest
 
 
 @router.get("/tt-liveness")
@@ -86,3 +95,23 @@ async def reset_device(
         return {"status": f"Reset of device {device_id} scheduled"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
+
+
+@router.get("/v1/models")
+def list_models():
+    """
+    OpenAI-compatible model listing with per-model request schema
+    Only supported for image services; returns 404 for other service types
+    """
+    if settings.model_service != ModelServices.IMAGE.value:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    request_model = _resolve_image_request_model()
+    return {
+        "data": [
+            {
+                "id": settings.model_runner,
+                "schema": request_model.model_json_schema(),
+            }
+        ]
+    }
