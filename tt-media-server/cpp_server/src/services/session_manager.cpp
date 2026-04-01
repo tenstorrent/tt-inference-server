@@ -71,8 +71,7 @@ domain::Session SessionManager::createSession(std::optional<uint32_t> slotId) {
 
   if (!slotId.has_value() && memoryRequestQueue && memoryResultQueue) {
     auto future = requestSlotIdFromMemoryManager(sessionId);
-    auto status =
-        future.wait_for(std::chrono::seconds(1));
+    auto status = future.wait_for(std::chrono::seconds(1));
     if (status == std::future_status::ready) {
       uint32_t allocatedSlot = future.get();
       if (allocatedSlot != INVALID_SLOT_ID) {
@@ -149,9 +148,7 @@ std::optional<domain::Session> SessionManager::getSession(
   return sessions.get(sessionId);
 }
 
-size_t SessionManager::getActiveSessionCount() const {
-  return sessions.size();
-}
+size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
 
 void SessionManager::evictOldSessions() {
   size_t maxSessions = tt::config::maxSessionsCount();
@@ -164,9 +161,7 @@ void SessionManager::evictOldSessions() {
   }
 
   using Entry = std::pair<std::chrono::system_clock::time_point, std::string>;
-  auto newer = [](const Entry& a, const Entry& b) {
-    return a.first < b.first;
-  };
+  auto newer = [](const Entry& a, const Entry& b) { return a.first < b.first; };
   std::vector<Entry> heap;
   heap.reserve(evictionCount + 1);
 

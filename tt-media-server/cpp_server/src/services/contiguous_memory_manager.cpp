@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "services/contiguous_memory_manager.hpp"
+
 #include "domain/manage_memory.hpp"
 
 namespace tt::services {
