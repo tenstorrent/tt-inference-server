@@ -25,8 +25,8 @@ class MemoryManager {
   void handleResponse(int slotId);
 
  protected:
-  ipc::MemoryRequestQueue requestQueue;
-  ipc::MemoryResultQueue resultQueue;
+  std::unique_ptr<ipc::MemoryRequestQueue> requestQueue;
+  std::unique_ptr<ipc::MemoryResultQueue> resultQueue;
 };
 
 }  // namespace tt::services

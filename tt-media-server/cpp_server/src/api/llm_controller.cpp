@@ -173,8 +173,10 @@ void LLMController::completions(
         request->sessionId = session.getSessionId();
       }
 
-      // Save session_id before moving request
+      // Save sessionId before moving request
       auto sessionId = request->sessionId;
+      request->slotId =
+          sessionManager->getSlotIdBySessionId(request->sessionId.value());
 
       auto startTime = std::chrono::high_resolution_clock::now();
       auto response = service->submitRequest(std::move(*request));
@@ -194,7 +196,7 @@ void LLMController::completions(
         }
       }
 
-      // Include session_id in response if present
+      // Include sessionId in response if present
       if (sessionId.has_value()) {
         response.usage.sessionId = sessionId;
       }
@@ -274,9 +276,10 @@ void LLMController::chatCompletions(
         request->sessionId = session.getSessionId();
       }
 
-      // Save session_id before moving request
+      // Save sessionId before moving request
       auto sessionId = request->sessionId;
-
+      request->slotId =
+          sessionManager->getSlotIdBySessionId(request->sessionId.value());
       auto startTime = std::chrono::high_resolution_clock::now();
       auto completion = service->submitRequest(std::move(*request));
       auto endTime = std::chrono::high_resolution_clock::now();
@@ -295,7 +298,7 @@ void LLMController::chatCompletions(
         }
       }
 
-      // Include session_id in response if present
+      // Include sessionId in response if present
       if (sessionId.has_value()) {
         completion.usage.sessionId = sessionId;
       }
@@ -325,6 +328,22 @@ void LLMController::handleStreaming(
   if (!reqPtr->sessionId.has_value() && sessionManager) {
     auto session = sessionManager->createSession(std::nullopt);
     reqPtr->sessionId = session.getSessionId();
+    TT_LOG_INFO("[LLMController] Created NEW session: {}",
+                reqPtr->sessionId.value());
+  } else if (reqPtr->sessionId.has_value()) {
+    TT_LOG_INFO("[LLMController] Using EXISTING sessionId: '{}'",
+                reqPtr->sessionId.value());
+  }
+
+  if (reqPtr->sessionId.has_value() && sessionManager) {
+    reqPtr->slotId =
+        sessionManager->getSlotIdBySessionId(reqPtr->sessionId.value());
+    TT_LOG_DEBUG(
+        "[LLMController] Session: {}, SlotID: {}", reqPtr->sessionId.value(),
+        reqPtr->slotId.has_value() ? std::to_string(reqPtr->slotId.value())
+                                   : "none");
+  } else if (!sessionManager) {
+    TT_LOG_WARN("[LLMController] SessionManager not available");
   }
 
   const std::string completionId =
@@ -369,6 +388,8 @@ void LLMController::handleStreaming(
       std::optional<std::chrono::high_resolution_clock::time_point>>();
   auto firstContentChunk = std::make_shared<std::atomic<bool>>(true);
 
+  // Capture sessionId before submitting to service (request will be moved)
+  const std::optional<std::string> capturedSessionId = reqPtr->sessionId;
   // Abort callback: fires when the TCP connection drops mid-stream.
   // Captured by value so it stays alive for the duration of the streaming
   // session. Called on the IO thread from inside sseSend().
@@ -388,7 +409,8 @@ void LLMController::handleStreaming(
                             model, created, isChat, includeUsage,
                             continuousUsage, completionTokens, startTime,
                             firstTokenTime, secondTokenTime, firstContentChunk,
-                            reqPtr, accumulator, onDisconnect](
+                            reqPtr, capturedSessionId, accumulator,
+                            onDisconnect](
                                const domain::StreamingChunkResponse& chunk,
                                bool isFinal) {
     if (done->load()) {
@@ -414,7 +436,7 @@ void LLMController::handleStreaming(
               currentTokens,
               std::nullopt,
               std::nullopt,
-              std::nullopt,
+              capturedSessionId,  // Use captured sessionId
           };
         }
         auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
@@ -422,12 +444,13 @@ void LLMController::handleStreaming(
         if (firstContentChunk->exchange(false)) {
           std::optional<domain::CompletionUsage> initialUsage;
           if (continuousUsage) {
-            initialUsage = domain::CompletionUsage{reqPtr->prompt_tokens_count,
-                                                   0,
-                                                   0,
-                                                   std::nullopt,
-                                                   std::nullopt,
-                                                   std::nullopt};
+            initialUsage = domain::CompletionUsage{
+                reqPtr->prompt_tokens_count,
+                0,
+                0,
+                std::nullopt,
+                std::nullopt,
+                capturedSessionId};  // Use captured sessionId
           }
           auto initialChunk =
               domain::ChatCompletionStreamChunk::makeInitialChunk(
@@ -455,11 +478,18 @@ void LLMController::handleStreaming(
       loop->queueInLoop([streamPtr, done, isChat, includeUsage, completionId,
                          model, created, completionTokens, startTime,
                          firstTokenTime, secondTokenTime, reqPtr,
-                         accumulator]() {
+                         capturedSessionId, accumulator]() {
         if (!done->exchange(true) && *streamPtr) {
           flushAccumulated(accumulator, streamPtr);
           if (includeUsage) {
             const int tokens = completionTokens->load();
+
+            TT_LOG_DEBUG(
+                "[LLMController] Creating final usage - capturedSessionId: {}",
+                capturedSessionId.has_value()
+                    ? ("'" + capturedSessionId.value() + "'")
+                    : "none");
+
             domain::CompletionUsage usage{reqPtr->prompt_tokens_count,
                                           tokens,
                                           tokens,
@@ -494,9 +524,15 @@ void LLMController::handleStreaming(
               }
             }
 
-            // Include session_id in usage if present
-            if (reqPtr->sessionId.has_value()) {
-              usage.sessionId = reqPtr->sessionId;
+            // Include sessionId in usage if present
+            if (capturedSessionId.has_value()) {
+              usage.sessionId = capturedSessionId;
+              TT_LOG_DEBUG("[LLMController] Set usage.sessionId to: '{}'",
+                           usage.sessionId.value());
+            } else {
+              TT_LOG_WARN(
+                  "[LLMController] capturedSessionId is empty, cannot set "
+                  "usage.sessionId");
             }
 
             if (isChat) {
@@ -564,7 +600,7 @@ void LLMController::createSession(
   try {
     std::optional<uint32_t> slotId;
 
-    // Try to parse request body for optional slot_id
+    // Try to parse request body for optional slotId
     if (req->getBody().length() > 0) {
       Json::Value requestBody;
       Json::CharReaderBuilder builder;
