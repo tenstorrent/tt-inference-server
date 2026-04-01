@@ -409,7 +409,8 @@ void LLMController::handleStreaming(
                             model, created, isChat, includeUsage,
                             continuousUsage, completionTokens, startTime,
                             firstTokenTime, secondTokenTime, firstContentChunk,
-                            reqPtr, capturedSessionId,  accumulator, onDisconnect](
+                            reqPtr, capturedSessionId, accumulator,
+                            onDisconnect](
                                const domain::StreamingChunkResponse& chunk,
                                bool isFinal) {
     if (done->load()) {
@@ -477,7 +478,7 @@ void LLMController::handleStreaming(
       loop->queueInLoop([streamPtr, done, isChat, includeUsage, completionId,
                          model, created, completionTokens, startTime,
                          firstTokenTime, secondTokenTime, reqPtr,
-                         capturedSessionId,accumulator]() {
+                         capturedSessionId, accumulator]() {
         if (!done->exchange(true) && *streamPtr) {
           flushAccumulated(accumulator, streamPtr);
           if (includeUsage) {
