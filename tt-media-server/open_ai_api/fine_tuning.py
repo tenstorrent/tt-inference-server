@@ -124,6 +124,15 @@ async def get_training_metrics(
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
+    """
+    Retrieve training metrics for a fine-tuning job.
+
+    Returns:
+        JSONResponse: Training metrics for the job.
+
+    Raises:
+        HTTPException: If job not found.
+    """
     try:
         metrics = service.get_job_metrics(job_id)
     except ValueError:
@@ -137,6 +146,15 @@ async def list_fine_tuning_checkpoints(
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
+    """
+    List available checkpoints for a fine-tuning job.
+
+    Returns:
+        JSONResponse: List of checkpoints for the job.
+
+    Raises:
+        HTTPException: If job not found.
+    """
     try:
         checkpoints = service.get_job_checkpoints(job_id)
     except ValueError:
@@ -150,6 +168,15 @@ async def get_job_logs(
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
+    """
+    Retrieve logs for a fine-tuning job.
+
+    Returns:
+        JSONResponse: Logs for the job.
+
+    Raises:
+        HTTPException: If job not found.
+    """
     try:
         logs = service.get_job_logs(job_id)
     except ValueError:
@@ -163,6 +190,15 @@ async def download_checkpoint(
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
+    """
+    Download a checkpoint as a zip archive.
+
+    Returns:
+        StreamingResponse: Zip file containing the checkpoint adapter weights.
+        
+    Raises:
+        HTTPException: If job or checkpoint not found.
+    """
     try:
         checkpoint_path = service.get_checkpoint_download_path(job_id, checkpoint_id)
     except ValueError:
