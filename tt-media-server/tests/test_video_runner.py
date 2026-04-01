@@ -5,7 +5,7 @@
 import os
 import pickle
 import sys
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
@@ -239,10 +239,13 @@ class TestRunInferenceLoop:
         runner.run.return_value = np.zeros((1, 2, 2, 3), dtype=np.uint8)
 
         mock_domain = Mock()
-        with patch.dict(sys.modules, {
-            "domain": Mock(),
-            "domain.video_generate_request": mock_domain,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "domain": Mock(),
+                "domain.video_generate_request": mock_domain,
+            },
+        ):
             _run_inference_loop(comm, runner, input_shm, output_shm)
 
         runner.run.assert_called_once()
@@ -271,10 +274,13 @@ class TestRunInferenceLoop:
         runner.run.side_effect = RuntimeError("inference failed")
 
         mock_domain = Mock()
-        with patch.dict(sys.modules, {
-            "domain": Mock(),
-            "domain.video_generate_request": mock_domain,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "domain": Mock(),
+                "domain.video_generate_request": mock_domain,
+            },
+        ):
             _run_inference_loop(comm, runner, input_shm, output_shm)
 
         output_shm.write_response.assert_called_once()
@@ -318,10 +324,13 @@ class TestRunInferenceLoop:
         runner.run.return_value = np.zeros((1, 2, 2, 3), dtype=np.uint8)
 
         mock_domain = Mock()
-        with patch.dict(sys.modules, {
-            "domain": Mock(),
-            "domain.video_generate_request": mock_domain,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "domain": Mock(),
+                "domain.video_generate_request": mock_domain,
+            },
+        ):
             _run_inference_loop(comm, runner, None, None)
 
         runner.run.assert_called_once()
