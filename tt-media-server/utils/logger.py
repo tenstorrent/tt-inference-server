@@ -72,13 +72,17 @@ class ListHandler(logging.Handler):
         self._counter += 1
         log_type = getattr(record, "log_type", self._level_to_type(record.levelno))
         step = getattr(record, "step", None)
-        self.log_list.append({
-            "id": f"log-{self._counter}",
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
-            "type": log_type,
-            "step": step,
-            "message": self.format(record),
-        })
+        self.log_list.append(
+            {
+                "id": f"log-{self._counter}",
+                "timestamp": datetime.fromtimestamp(
+                    record.created, tz=timezone.utc
+                ).isoformat(),
+                "type": log_type,
+                "step": step,
+                "message": self.format(record),
+            }
+        )
 
     @staticmethod
     def _level_to_type(levelno):

@@ -2,13 +2,19 @@
 
 #include <atomic>
 #include <memory>
+#include <thread>
 
 #include "config/runner_config.hpp"
-#include "ipc/shared_memory.hpp"
+#include "ipc/boost_ipc_memory_queue.hpp"
+#include "ipc/token_ring_buffer.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
+
+namespace tt::services {
+class MemoryManager;
+}
 
 namespace tt::runners {
 using namespace llm_engine;
@@ -27,6 +33,7 @@ class LLMRunner : public IRunner {
 
  private:
   void step();
+  void memoryLoop();
   void exit();
 
   config::LLMConfig config_;
@@ -34,6 +41,9 @@ class LLMRunner : public IRunner {
   std::unique_ptr<IModelRunner> model_runner_;
   std::unique_ptr<Scheduler> scheduler_;
   std::atomic<bool> stopped_{false};
+
+  std::unique_ptr<tt::services::MemoryManager> memoryManager;
+  std::thread memoryThread;
 };
 
 }  // namespace tt::runners

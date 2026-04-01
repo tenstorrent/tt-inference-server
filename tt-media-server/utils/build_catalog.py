@@ -71,20 +71,32 @@ def _build_training_catalog():
     ]
 
     trainers = [
-        {"id": t.value, "display_name": meta["display_name"], "supported": meta["supported"]}
+        {
+            "id": t.value,
+            "display_name": meta["display_name"],
+            "supported": meta["supported"],
+        }
         for t, meta in TRAINING_CATALOG_DATA["trainers"].items()
     ]
 
     optimizers = [
-        {"id": o.value, "display_name": meta["display_name"], "supported": meta["supported"]}
+        {
+            "id": o.value,
+            "display_name": meta["display_name"],
+            "supported": meta["supported"],
+        }
         for o, meta in TRAINING_CATALOG_DATA["optimizers"].items()
     ]
 
     supported_trainers = [
-        t.value for t, meta in TRAINING_CATALOG_DATA["trainers"].items() if meta["supported"]
+        t.value
+        for t, meta in TRAINING_CATALOG_DATA["trainers"].items()
+        if meta["supported"]
     ]
     supported_optimizers = [
-        o.value for o, meta in TRAINING_CATALOG_DATA["optimizers"].items() if meta["supported"]
+        o.value
+        for o, meta in TRAINING_CATALOG_DATA["optimizers"].items()
+        if meta["supported"]
     ]
 
     return {

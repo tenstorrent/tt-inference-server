@@ -1,10 +1,13 @@
 #include "runners/llm_runner.hpp"
 
 #include <cassert>
+#include <chrono>
+#include <memory>
 #include <thread>
 
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
+#include "services/paged_memory_manager.hpp"
 
 namespace tt::runners {
 using namespace llm_engine;
@@ -16,6 +19,12 @@ LLMRunner::LLMRunner(const Config& config,
     : config_(config), result_queue_(resultQueue) {
   scheduler_ =
       makeScheduler(config_, taskQueue, tt::config::maxInFlightCount());
+
+  if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY) {
+    memoryManager = std::make_unique<services::PagedMemoryManager>(
+        scheduler_->blockManager());
+    memoryThread = std::thread([this] { memoryLoop(); });
+  }
 
   auto decodeCb = [this](const TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");
@@ -74,7 +83,13 @@ LLMRunner::LLMRunner(const Config& config,
   model_runner_ = makeModelRunner(config_, std::move(decodeCb));
 }
 
-LLMRunner::~LLMRunner() { exit(); }
+LLMRunner::~LLMRunner() {
+  stop();
+  if (memoryThread.joinable()) {
+    memoryThread.join();
+  }
+  exit();
+}
 
 void LLMRunner::exit() {
   if (model_runner_) {
@@ -89,6 +104,17 @@ void LLMRunner::run() {
 }
 
 void LLMRunner::stop() { stopped_.store(true, std::memory_order_relaxed); }
+
+void LLMRunner::memoryLoop() {
+  while (!stopped_.load(std::memory_order_relaxed)) {
+    auto task = memoryManager->getRequest();
+    if (task) {
+      memoryManager->handleRequest(*task);
+    } else {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+}
 
 void LLMRunner::step() {
   auto [seqs, is_prefill] = scheduler_->schedule();

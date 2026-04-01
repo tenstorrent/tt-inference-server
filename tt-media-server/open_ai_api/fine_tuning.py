@@ -132,7 +132,7 @@ async def get_training_metrics(
 
 
 @router.get("/jobs/{job_id}/checkpoints")
-async def get_job_checkpoints(
+async def list_fine_tuning_checkpoints(
     job_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),

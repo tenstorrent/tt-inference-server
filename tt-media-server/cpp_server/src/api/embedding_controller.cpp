@@ -24,7 +24,7 @@ namespace tt::api {
 namespace {
 // Generate random hex string for task IDs
 std::string randomHex(size_t length) {
-  static const char HEX_CHARS[] = "0123456789abcdef";
+  static const char hexChars[] = "0123456789abcdef";
   static std::random_device rd;
   static std::mt19937 gen(rd());
   static std::uniform_int_distribution<> dist(0, 15);
@@ -32,7 +32,7 @@ std::string randomHex(size_t length) {
   std::string result;
   result.reserve(length);
   for (size_t i = 0; i < length; ++i) {
-    result += HEX_CHARS[dist(gen)];
+    result += hexChars[dist(gen)];
   }
   return result;
 }
