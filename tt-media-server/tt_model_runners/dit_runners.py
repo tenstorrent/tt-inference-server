@@ -59,9 +59,9 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                 "fabric_router_config", ttnn.FabricRouterConfig()
             )
             ttnn.set_fabric_config(
-                fabric_config, 
-                reliability_mode, 
-                None, 
+                fabric_config,
+                reliability_mode,
+                None,
                 fabric_tensix_config,
                 ttnn.FabricUDMMode.DISABLED,
                 ttnn.FabricManagerMode.DEFAULT,
@@ -328,7 +328,9 @@ class TTWan22Runner(TTDiTRunner):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
         # TODO: Move parameterization outside of runner class.
-        if self.pipeline.mesh_device.shape.mesh_size() >= 32: # i.e GLX: ((4, 8), (4, 32))
+        if (
+            self.pipeline.mesh_device.shape.mesh_size() >= 32
+        ):  # i.e GLX: ((4, 8), (4, 32))
             width = 1280
             height = 720
         else:
@@ -357,7 +359,9 @@ class TTWan22Runner(TTDiTRunner):
             "fabric_config": ttnn.FabricConfig.FABRIC_1D,
         }
 
-        mesh_size = self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
+        mesh_size = (
+            self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
+        )
         if mesh_size >= 32:  # i.e GLX: ((4, 8), (4, 32))
             config = ttnn.FabricRouterConfig()
             config.max_packet_payload_size_bytes = 8192

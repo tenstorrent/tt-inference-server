@@ -234,7 +234,9 @@ def _broadcast_request(comm, req: Optional[VideoRequest]) -> Optional[VideoReque
     return comm.bcast(req, root=0)
 
 
-def _run_inference_loop(comm, runner, input_shm: Optional[VideoShm], output_shm: Optional[VideoShm]) -> None:
+def _run_inference_loop(
+    comm, runner, input_shm: Optional[VideoShm], output_shm: Optional[VideoShm]
+) -> None:
     rank = comm.Get_rank()
 
     while not _shutdown:
