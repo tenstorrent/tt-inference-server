@@ -2,10 +2,13 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 from string import Template
+from inspect import cleandoc
 
 
-PROMPT_TEMPLATE = Template("""Review: $input
-Output:""")
+PROMPT_TEMPLATE = Template(cleandoc("""
+    Review: $input
+    Output:
+"""))
 
 RESPONSE_TEMPLATE = Template('{"label": "$label"}')
 
