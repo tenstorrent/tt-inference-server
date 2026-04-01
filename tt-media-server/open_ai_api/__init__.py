@@ -61,9 +61,7 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
         ServiceRoute(video.router, "/v1/videos", "/video", ["Video processing"]),
     ],
     ModelServices.TRAINING.value: [
-        ServiceRoute(
-            fine_tuning.router, "/v1/fine_tuning", "/fine_tuning", ["Fine-tuning"]
-        ),
+        ServiceRoute(fine_tuning.router, "/v1", None, ["Fine-tuning"]),
     ],
     ModelServices.EMBEDDING.value: [
         ServiceRoute(embedding.router, "/v1", None, ["Embeddings"]),
