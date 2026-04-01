@@ -1541,7 +1541,7 @@ llm_templates = [
                 mode=VersionMode.SUGGESTED,
             ),
         ),
-        tt_metal_commit="0b10c51",
+        tt_metal_commit="555f240",
         vllm_commit="3499ffa",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
