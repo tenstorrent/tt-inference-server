@@ -88,7 +88,7 @@ void MockDevicePipeline::emitToken(RequestPtr& req) {
 
   {
     std::lock_guard lock(outputMutex);
-    outputQueue.emplace_back(llm_engine::TaskID(req->taskId), tokenId);
+    outputQueue.emplace_back(std::stoul(req->taskId), tokenId);
   }
   outputNotEmpty.notify_one();
 }

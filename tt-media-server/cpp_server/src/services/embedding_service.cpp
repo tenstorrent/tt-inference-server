@@ -271,10 +271,10 @@ struct EmbeddingService::Impl {
       // Build batch of requests
       std::vector<domain::EmbeddingRequest> batch;
       auto taskIdFromJson = [](const Json::Value& j) -> domain::TaskID {
-        if (j.isMember("task_id") && !j["task_id"].asString().empty()) {
-          return domain::TaskID(j["task_id"].asString());
+        if (j.isMember("task_id") && j["task_id"].isUInt()) {
+          return j["task_id"].asUInt();
         }
-        return domain::TaskID(domain::TaskID::generate());
+        return domain::TaskIDGenerator::generate();
       };
       if (reqJson.isArray()) {
         for (const auto& item : reqJson) {
@@ -335,7 +335,7 @@ struct EmbeddingService::Impl {
       appendUint32(static_cast<uint32_t>(batch.size()));
 
       for (size_t i = 0; i < batch.size(); ++i) {
-        appendString(batch[i].task_id.id);
+        appendUint32(batch[i].task_id);
 
         if (i < responses.size() && responses[i].error.empty()) {
           responseBuffer.push_back(0);  // has_error = false
@@ -641,7 +641,7 @@ struct EmbeddingService::Impl {
 
     for (uint32_t i = 0; i < numResponses && offset < responseBuffer.size();
          ++i) {
-      domain::EmbeddingResponse resp{domain::TaskID(readString())};
+      domain::EmbeddingResponse resp{readUint32()};
       uint8_t hasError = responseBuffer[offset++];
 
       if (hasError) {
@@ -652,7 +652,7 @@ struct EmbeddingService::Impl {
         resp.model = readString();
       }
 
-      auto key = resp.task_id.id;
+      auto key = std::to_string(resp.task_id);
       responseMap.insert_or_assign(std::move(key), std::move(resp));
     }
 
@@ -680,7 +680,7 @@ struct EmbeddingService::Impl {
 
     // Match responses to requests by task_id
     for (auto& pending : batch) {
-      auto it = responseMap.find(pending->request.task_id.id);
+      auto it = responseMap.find(std::to_string(pending->request.task_id));
       if (it != responseMap.end()) {
         pending->promise.set_value(std::move(it->second));
       } else {

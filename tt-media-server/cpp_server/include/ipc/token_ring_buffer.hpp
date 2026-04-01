@@ -32,8 +32,8 @@ struct alignas(64) SharedToken {
   uint32_t token_index;  // Token index in sequence
   uint32_t flags;        // Bit flags: is_final, is_error, etc.
   uint64_t token_id;     // Token ID
-  char task_id[56];      // Task ID
-  char padding[8];       // Padding to reach 128 bytes
+  uint32_t task_id;      // Task ID (now uint32_t instead of UUID string)
+  char padding[108];     // Padding to reach 128 bytes
 
   static constexpr uint32_t FLAG_FINAL = 1;
   static constexpr uint32_t FLAG_ERROR = 2;

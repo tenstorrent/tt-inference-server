@@ -43,7 +43,7 @@ std::vector<int64_t> prompt(size_t len) {
   return p;
 }
 
-TaskID nextId() { return TaskID(TaskID::generate()); }
+TaskID nextId() { return tt::domain::TaskIDGenerator::generate(); }
 
 // --- make_scheduler factory tests ---
 

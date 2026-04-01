@@ -142,7 +142,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
             sp ? static_cast<double>(sp->frequency_penalty) : 0.0;
 
         pySeqs.append(gStepSeqClass(
-            seq->taskId.id, tokenIds, temperature, ignoreEos, blockTable,
+            std::to_string(seq->taskId), tokenIds, temperature, ignoreEos, blockTable,
             currentPos, promptLen, seed, topP, topK, minP, repetitionPenalty,
             presencePenalty, frequencyPenalty));
       }

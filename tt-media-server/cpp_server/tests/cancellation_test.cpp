@@ -44,7 +44,7 @@ std::vector<int64_t> prompt(size_t len) {
   return p;
 }
 
-TaskID nextId() { return TaskID(TaskID::generate()); }
+TaskID nextId() { return tt::domain::TaskIDGenerator::generate(); }
 
 // ---------- In-memory cancel queue for testing ----------
 
@@ -134,7 +134,7 @@ TEST_F(SchedulerAbortTest, AbortIsIdempotent) {
 }
 
 TEST_F(SchedulerAbortTest, AbortUnknownTaskId_IsNoOp) {
-  TaskID unknownId("nonexistent-task-id");
+  TaskID unknownId = 99999;  // Use a number that's unlikely to exist
   EXPECT_NO_FATAL_FAILURE(sched.abortRequest(unknownId));
 }
 
@@ -238,16 +238,16 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
     tt::ipc::SharedToken token;
     while (!keepFinished.load()) {
       if (resultQueue.pop(token)) {
-        std::string tid(token.task_id);
+        std::string tid = std::to_string(token.task_id);
         tokenCounts[tid]++;
 
         // After first token from cancelId, push cancel signal
-        if (tid == cancelId.id && !cancelledAfterFirstToken) {
+        if (token.task_id == cancelId && !cancelledAfterFirstToken) {
           cancelledAfterFirstToken = true;
           cancelQueue.push(cancelId);
         }
 
-        if (tid == keepId.id && token.isFinal()) {
+        if (token.task_id == keepId && token.isFinal()) {
           keepFinished.store(true);
         }
       }
@@ -259,11 +259,11 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
   consumer.join();
 
   // The kept request should have exactly 5 tokens
-  EXPECT_EQ(tokenCounts[keepId.id], 5);
+  EXPECT_EQ(tokenCounts[std::to_string(keepId)], 5);
 
   // The cancelled request should have significantly fewer than 100 tokens.
   // It may get a few tokens before the cancel is processed.
-  EXPECT_LT(tokenCounts[cancelId.id], 50);
+  EXPECT_LT(tokenCounts[std::to_string(cancelId)], 50);
 
   resultQueue.shutdown();
 }
@@ -297,9 +297,9 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
     tt::ipc::SharedToken token;
     while (!keepFinished.load()) {
       if (resultQueue.pop(token)) {
-        std::string tid(token.task_id);
+        std::string tid = std::to_string(token.task_id);
         tokenCounts[tid]++;
-        if (tid == keepId.id && token.isFinal()) {
+        if (token.task_id == keepId && token.isFinal()) {
           keepFinished.store(true);
         }
       }
@@ -311,10 +311,10 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   consumer.join();
 
   // keepId should complete normally
-  EXPECT_EQ(tokenCounts[keepId.id], 5);
+  EXPECT_EQ(tokenCounts[std::to_string(keepId)], 5);
 
   // cancelId should have zero tokens (cancelled before scheduling)
-  EXPECT_EQ(tokenCounts[cancelId.id], 0);
+  EXPECT_EQ(tokenCounts[std::to_string(cancelId)], 0);
 
   resultQueue.shutdown();
 }

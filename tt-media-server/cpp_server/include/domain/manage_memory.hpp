@@ -32,7 +32,7 @@ struct ManageMemoryTask {
   std::vector<std::uint32_t> slotIds;
 
   void serialize(std::ostream& os) const {
-    auto tidBuf = taskId.ipcSerialize();
+    auto tidBuf = TaskIDGenerator::serialize(taskId);
     os.write(tidBuf.data(), static_cast<std::streamsize>(tidBuf.size()));
     auto a = static_cast<std::uint8_t>(action);
     os.write(reinterpret_cast<const char*>(&a), sizeof(a));
@@ -48,9 +48,9 @@ struct ManageMemoryTask {
 
   static ManageMemoryTask deserialize(std::istream& is) {
     ManageMemoryTask task;
-    char tidBuf[TaskID::K_SERIALIZED_SIZE];
-    is.read(tidBuf, TaskID::K_SERIALIZED_SIZE);
-    task.taskId = TaskID::ipcDeserialize(tidBuf, TaskID::K_SERIALIZED_SIZE);
+    char tidBuf[TaskIDGenerator::K_SERIALIZED_SIZE];
+    is.read(tidBuf, TaskIDGenerator::K_SERIALIZED_SIZE);
+    task.taskId = TaskIDGenerator::deserialize(tidBuf, TaskIDGenerator::K_SERIALIZED_SIZE);
     std::uint8_t a = 0;
     is.read(reinterpret_cast<char*>(&a), sizeof(a));
     task.action = static_cast<MemoryManagementAction>(a);
@@ -81,7 +81,7 @@ struct ManageMemoryResult {
   std::vector<std::uint32_t> slotIds;
 
   void serialize(std::ostream& os) const {
-    auto tidBuf = taskId.ipcSerialize();
+    auto tidBuf = TaskIDGenerator::serialize(taskId);
     os.write(tidBuf.data(), static_cast<std::streamsize>(tidBuf.size()));
     auto s = static_cast<std::uint8_t>(status);
     os.write(reinterpret_cast<const char*>(&s), sizeof(s));
@@ -94,9 +94,9 @@ struct ManageMemoryResult {
 
   static ManageMemoryResult deserialize(std::istream& is) {
     ManageMemoryResult result;
-    char tidBuf[TaskID::K_SERIALIZED_SIZE];
-    is.read(tidBuf, TaskID::K_SERIALIZED_SIZE);
-    result.taskId = TaskID::ipcDeserialize(tidBuf, TaskID::K_SERIALIZED_SIZE);
+    char tidBuf[TaskIDGenerator::K_SERIALIZED_SIZE];
+    is.read(tidBuf, TaskIDGenerator::K_SERIALIZED_SIZE);
+    result.taskId = TaskIDGenerator::deserialize(tidBuf, TaskIDGenerator::K_SERIALIZED_SIZE);
     std::uint8_t s = 0;
     is.read(reinterpret_cast<char*>(&s), sizeof(s));
     result.status = static_cast<ManageMemoryStatus>(s);

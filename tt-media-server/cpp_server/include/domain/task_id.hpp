@@ -3,58 +3,44 @@
 
 #pragma once
 
-#include <algorithm>
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>
-#include <cassert>
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
-#include <functional>
-#include <iostream>
-#include <string>
 #include <vector>
 
 namespace tt::domain {
 
-struct TaskID {
-  static constexpr size_t K_SERIALIZED_SIZE = 36;
+// TaskID is now a simple uint32_t for efficiency and simplicity
+using TaskID = uint32_t;
 
-  TaskID() = default;
-  explicit TaskID(std::string taskId) : id(std::move(taskId)) {}
+// Utility class for TaskID generation and serialization
+class TaskIDGenerator {
+ public:
+  static constexpr size_t K_SERIALIZED_SIZE = 4;
 
-  std::string id;
+  // Generate a new unique TaskID using atomic counter
+  static TaskID generate() {
+    static std::atomic<uint32_t> counter{0};
+    return ++counter;
+  }
 
-  bool operator==(const TaskID& other) const { return id == other.id; }
-
-  std::vector<char> ipcSerialize() const {
-    std::vector<char> buf(K_SERIALIZED_SIZE, '\0');
-    std::copy_n(id.begin(), std::min(id.size(), K_SERIALIZED_SIZE),
-                buf.begin());
+  // Serialize TaskID to 4-byte buffer for IPC
+  static std::vector<char> serialize(TaskID taskId) {
+    std::vector<char> buf(K_SERIALIZED_SIZE);
+    std::memcpy(buf.data(), &taskId, K_SERIALIZED_SIZE);
     return buf;
   }
 
-  static TaskID ipcDeserialize(const char* data, size_t len) {
-    size_t actualLen = strnlen(data, len);
-    return TaskID(std::string(data, actualLen));
-  }
-
-  static std::string generate() {
-    return boost::uuids::to_string(boost::uuids::random_generator()());
+  // Deserialize TaskID from 4-byte buffer
+  static TaskID deserialize(const char* data, size_t len) {
+    if (len < K_SERIALIZED_SIZE) {
+      return 0;  // Invalid/default TaskID
+    }
+    TaskID taskId;
+    std::memcpy(&taskId, data, K_SERIALIZED_SIZE);
+    return taskId;
   }
 };
-
-inline std::ostream& operator<<(std::ostream& os, const TaskID& tid) {
-  return os << tid.id;
-}
 
 }  // namespace tt::domain
-
-namespace std {
-template <>
-struct hash<tt::domain::TaskID> {
-  size_t operator()(const tt::domain::TaskID& s) const {
-    return hash<string>{}(s.id);
-  }
-};
-}  // namespace std

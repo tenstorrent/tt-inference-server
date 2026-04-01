@@ -45,11 +45,11 @@ int main() {
                               MAX_MSG_SIZE);
 
   // Build two sequences with known values.
-  std::string seq1Id = TaskID::generate();
-  std::string seq2Id = TaskID::generate();
-  Sequence seq1(TaskID(seq1Id), 256, {1, 2, 3, 4},
+  TaskID seq1Id = tt::domain::TaskIDGenerator::generate();
+  TaskID seq2Id = tt::domain::TaskIDGenerator::generate();
+  Sequence seq1(seq1Id, 256, {1, 2, 3, 4},
                 SamplingParams{.max_tokens = 10});
-  Sequence seq2(TaskID(seq2Id), 256, {10, 20, 30},
+  Sequence seq2(seq2Id, 256, {10, 20, 30},
                 SamplingParams{.temperature = 0.7f, .max_tokens = 5});
 
   // Push via BoostIpcTaskQueue (opens the existing shared-memory queue).
@@ -114,7 +114,7 @@ int main() {
     if (!is_prefill) fail("expected prefill batch");
 
     if (ok) {
-      if (batch[0]->taskId.id != seq1Id) fail("seq1 task_id mismatch");
+      if (batch[0]->taskId != seq1Id) fail("seq1 task_id mismatch");
       if (batch[0]->size() != 4) fail("seq1 size mismatch");
       if (batch[0]->samplingParams->max_tokens != 10)
         fail("seq1 max_tokens mismatch");

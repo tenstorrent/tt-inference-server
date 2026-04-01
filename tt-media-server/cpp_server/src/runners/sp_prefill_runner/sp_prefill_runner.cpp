@@ -33,9 +33,9 @@ void SpPrefillRunner::run() {
     // Use unique_ptr to ensure cleanup
     std::unique_ptr<llm_engine::Sequence> sequence(seq);
     TT_LOG_DEBUG("SpPrefillRunner: Starting prefill for task {}",
-                 sequence->taskId.id);
+                 sequence->taskId);
 
-    auto result = modelRunner->forward(sequence->taskId.id, sequence->tokenIds);
+    auto result = modelRunner->forward(std::to_string(sequence->taskId), sequence->tokenIds);
 
     if (!result) {
       break;  // stopped
@@ -43,11 +43,11 @@ void SpPrefillRunner::run() {
 
     if (result->isError) {
       TT_LOG_WARN("SpPrefillRunner: Error token for task {}",
-                  result->taskId.id);
+                  result->taskId);
       pushErrorToken(result->taskId);
     } else {
       TT_LOG_DEBUG("SpPrefillRunner: Received prefill token {} for task {}",
-                   result->tokenId, result->taskId.id);
+                   result->tokenId, result->taskId);
       pushToken(result->taskId, result->tokenId, true);  // Always finished
     }
 
@@ -57,9 +57,9 @@ void SpPrefillRunner::run() {
 
 bool SpPrefillRunner::warmup() {
   std::vector<int64_t> warmupTokens = {1};
-  llm_engine::TaskID warmupTaskId("warmup_task");
+  llm_engine::TaskID warmupTaskId = 0;  // Use 0 for warmup task
 
-  auto result = modelRunner->forward(warmupTaskId.id, warmupTokens);
+  auto result = modelRunner->forward(std::to_string(warmupTaskId), warmupTokens);
   if (!result || result->isError) {
     TT_LOG_ERROR("SpPrefillRunner: Warmup failed");
     return false;
@@ -80,8 +80,7 @@ void SpPrefillRunner::pushToken(const llm_engine::TaskID& taskId,
   shared.token_index = 0;
   shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;
   shared.token_id = tokenId;
-  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
-  shared.task_id[sizeof(shared.task_id) - 1] = '\0';
+  shared.task_id = taskId;
   resultQueue->push(shared);
 }
 
@@ -90,8 +89,7 @@ void SpPrefillRunner::pushErrorToken(const llm_engine::TaskID& taskId) {
   shared.token_index = 0;
   shared.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR;
   shared.token_id = 0;
-  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
-  shared.task_id[sizeof(shared.task_id) - 1] = '\0';
+  shared.task_id = taskId;
   resultQueue->push(shared);
 }
 

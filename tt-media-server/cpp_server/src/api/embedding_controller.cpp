@@ -22,21 +22,6 @@
 namespace tt::api {
 
 namespace {
-// Generate random hex string for task IDs
-std::string randomHex(size_t length) {
-  static const char hexChars[] = "0123456789abcdef";
-  static std::random_device rd;
-  static std::mt19937 gen(rd());
-  static std::uniform_int_distribution<> dist(0, 15);
-
-  std::string result;
-  result.reserve(length);
-  for (size_t i = 0; i < length; ++i) {
-    result += hexChars[dist(gen)];
-  }
-  return result;
-}
-
 // Simple thread pool for handling response callbacks
 class CallbackThreadPool {
  public:
@@ -108,8 +93,6 @@ EmbeddingController::EmbeddingController() {
 
 EmbeddingController::~EmbeddingController() = default;
 
-std::string EmbeddingController::generateTaskId() { return randomHex(24); }
-
 void EmbeddingController::createEmbedding(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
@@ -137,7 +120,7 @@ void EmbeddingController::createEmbedding(
   }
 
   // Build request
-  domain::TaskID taskId(generateTaskId());
+  domain::TaskID taskId = domain::TaskIDGenerator::generate();
   domain::EmbeddingRequest request =
       domain::EmbeddingRequest::fromJson(*json, std::move(taskId));
 

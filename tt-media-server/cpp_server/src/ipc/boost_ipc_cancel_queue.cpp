@@ -14,7 +14,7 @@ BoostIpcCancelQueue::BoostIpcCancelQueue(const std::string& name,
     : name_(name),
       queue_(std::make_unique<bip::message_queue>(
           bip::create_only, name.c_str(), capacity,
-          domain::TaskID::K_SERIALIZED_SIZE)),
+          domain::TaskIDGenerator::K_SERIALIZED_SIZE)),
       recv_buffer_(queue_->get_max_msg_size()) {}
 
 BoostIpcCancelQueue::BoostIpcCancelQueue(const std::string& name)
@@ -32,10 +32,10 @@ BoostIpcCancelQueue::~BoostIpcCancelQueue() {
 }
 
 void BoostIpcCancelQueue::push(const domain::TaskID& taskId) {
-  auto buf = taskId.ipcSerialize();
+  auto buf = domain::TaskIDGenerator::serialize(taskId);
   if (!queue_->try_send(buf.data(), buf.size(), 0)) {
     TT_LOG_WARN("[CancelQueue] Queue '{}' full, dropping cancel for task_id={}",
-                name_, taskId.id);
+                name_, taskId);
   }
 }
 
@@ -45,7 +45,7 @@ void BoostIpcCancelQueue::tryPopAll(std::vector<domain::TaskID>& out) {
   while (queue_->try_receive(recv_buffer_.data(), recv_buffer_.size(),
                              recvdSize, priority)) {
     out.push_back(
-        domain::TaskID::ipcDeserialize(recv_buffer_.data(), recvdSize));
+        domain::TaskIDGenerator::deserialize(recv_buffer_.data(), recvdSize));
   }
 }
 

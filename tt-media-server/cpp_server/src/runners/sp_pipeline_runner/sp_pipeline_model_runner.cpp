@@ -36,8 +36,8 @@ void SpPipelineModelRunner::readerLoop() {
   tt::ipc::ReadResult readBuf;
   while (!stop.load(std::memory_order_relaxed)) {
     if (deviceOutput.tryRead(readBuf)) {
-      llm_engine::TaskID tid = llm_engine::TaskID::ipcDeserialize(
-          readBuf.taskId.data(), llm_engine::TaskID::K_SERIALIZED_SIZE);
+      llm_engine::TaskID tid = tt::domain::TaskIDGenerator::deserialize(
+          readBuf.taskId.data(), tt::domain::TaskIDGenerator::K_SERIALIZED_SIZE);
       uint64_t tokenId = readBuf.tokenIds.empty() ? 0 : readBuf.tokenIds[0];
       llm_engine::TokenResult result(std::move(tid), tokenId);
       decodeCallback(result);

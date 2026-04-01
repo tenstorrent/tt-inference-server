@@ -62,14 +62,14 @@ bool SpPipelineRunner::warmup() {
   warmupParams.ignore_eos = true;
 
   std::vector<int64_t> warmupTokens = {1};  // Single token
-  llm_engine::TaskID warmupTaskId("warmup_task");
+  llm_engine::TaskID warmupTaskId = 0;  // Use 0 for warmup task
 
   auto warmupSeq = std::make_unique<llm_engine::Sequence>(
       warmupTaskId,
       1,  // block_size (doesn't matter for warmup)
       warmupTokens, warmupParams);
 
-  modelRunner->write(warmupSeq->taskId.id, warmupSeq->tokenIds, 1,
+  modelRunner->write(std::to_string(warmupSeq->taskId), warmupSeq->tokenIds, 1,
                      sp_pipeline::RequestPhase::PREFILL);
 
   // Wait for the response token (with timeout)
@@ -141,7 +141,7 @@ void SpPipelineRunner::step() {
           static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
     }
 
-    modelRunner->write(taskId.id, seq->tokenIds,
+    modelRunner->write(std::to_string(taskId), seq->tokenIds,
                        seq->samplingParams->max_tokens.value(),
                        sp_pipeline::RequestPhase::PREFILL);
 
@@ -158,7 +158,7 @@ void SpPipelineRunner::drainDecodeResults() {
     if (it == activeSequences.end()) {  // safeguard for too many decode results
       TT_LOG_WARN(
           "SpPipelineRunner: task_id not found in active_sequences_: {}",
-          dr.taskId.id);
+          dr.taskId);
       continue;
     }
     llm_engine::Sequence* seq = it->second.get();
@@ -197,8 +197,7 @@ void SpPipelineRunner::pushToken(const llm_engine::TaskID& taskId,
   shared.token_index = 0;
   shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;
   shared.token_id = tokenId;
-  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
-  shared.task_id[sizeof(shared.task_id) - 1] = '\0';
+  shared.task_id = taskId;
   resultQueue->push(shared);
 }
 
@@ -207,8 +206,7 @@ void SpPipelineRunner::pushErrorToken(const llm_engine::TaskID& taskId) {
   shared.token_index = 0;
   shared.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR;
   shared.token_id = 0;
-  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
-  shared.task_id[sizeof(shared.task_id) - 1] = '\0';
+  shared.task_id = taskId;
   resultQueue->push(shared);
 }
 

@@ -224,7 +224,7 @@ struct CompletionRequest : BaseRequest {
     }
 
     std::ostringstream out;
-    out << "task_id=" << task_id.id << " model=" << model.value_or("default")
+    out << "task_id=" << task_id << " model=" << model.value_or("default")
         << " stream=" << stream << " prompt=" << promptInfo
         << " max_tokens=" << detail::optStr(max_tokens)
         << " temperature=" << detail::optStr(temperature)

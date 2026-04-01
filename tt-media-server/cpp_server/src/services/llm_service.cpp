@@ -178,14 +178,14 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     while (worker->cfg.result_queue->blockingPop(token)) {
       anyActivity = true;
 
-      std::string taskId = std::string(token.task_id);
+      std::string taskId = std::to_string(token.task_id);
       bool isFinal = token.isFinal();
 
       // For final tokens, atomically take ownership of the callback so that
       // only one of {consumer, abortRequest} decrements pending_tasks_.
       std::function<void(domain::StreamingChunkResponse&, bool)> callback;
       if (isFinal) {
-        auto val = stream_callbacks_.take(token.task_id);
+        auto val = stream_callbacks_.take(taskId);
         if (!val.has_value()) {
           // abortRequest already took the callback and finalized the task.
           streamDecoders.erase(taskId);
@@ -197,7 +197,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         tt::metrics::ServerMetrics::instance().setQueueDepth(
             static_cast<double>(pending_tasks_.load()));
       } else {
-        auto val = stream_callbacks_.get(token.task_id);
+        auto val = stream_callbacks_.get(taskId);
         if (!val.has_value()) {
           // Client disconnected or task was cancelled — discard token.
           // abortRequest() already finalized the reasoning parser state.
@@ -248,7 +248,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         continue;
       }
 
-      domain::StreamingChunkResponse response{domain::TaskID(taskId)};
+      domain::StreamingChunkResponse response{token.task_id};
       response.id = taskId;
       response.created =
           std::chrono::duration_cast<std::chrono::seconds>(
@@ -326,7 +326,8 @@ domain::CompletionResponse LLMService::processRequest(
       std::holds_alternative<std::vector<int>>(request.prompt)
           ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
           : 0;
-  const std::string taskId = request.task_id.id;
+  const domain::TaskID taskId = request.task_id;
+  const std::string taskIdStr = std::to_string(taskId);
   const std::string model = request.model.value_or("default");
 
   processStreamingRequest(
@@ -352,8 +353,8 @@ domain::CompletionResponse LLMService::processRequest(
   std::unique_lock<std::mutex> lock(mtx);
   cv.wait(lock, [&] { return done; });
 
-  domain::CompletionResponse response{domain::TaskID(taskId)};
-  response.id = taskId;
+  domain::CompletionResponse response{taskId};
+  response.id = taskIdStr;
   response.model = model;
   response.created = std::chrono::duration_cast<std::chrono::seconds>(
                          std::chrono::system_clock::now().time_since_epoch())
@@ -383,30 +384,31 @@ void LLMService::processStreamingRequest(
   assert(callback != nullptr);
 
   ZoneScopedN("LLMService::processStreamingRequest");
-  if (request.task_id.id.empty()) {
+  if (request.task_id == 0) {
     throw std::runtime_error("task_id must be set before submitting request");
   }
-  std::string taskId = request.task_id.id;
+  domain::TaskID taskId = request.task_id;
+  std::string taskIdStr = std::to_string(taskId);
 
   pending_tasks_.fetch_add(1);
   TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
   tt::metrics::ServerMetrics::instance().setQueueDepth(
       static_cast<double>(pending_tasks_.load()));
 
-  stream_callbacks_.insert(taskId, std::move(callback));
+  stream_callbacks_.insert(taskIdStr, std::move(callback));
 
   if (reasoning_parser_) {
-    reasoning_parser_->initializeTask(taskId);
+    reasoning_parser_->initializeTask(taskIdStr);
   }
 
   auto prompt = std::get<std::vector<int>>(request.prompt);
   std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
 
   tt::metrics::ServerMetrics::instance().onRequestSubmitted(
-      taskId, static_cast<int>(prompt.size()));
+      taskIdStr, static_cast<int>(prompt.size()));
 
   auto sequence = std::make_unique<llm_engine::Sequence>(
-      llm_engine::TaskID(taskId),
+      taskId,
       tt::config::llmEngineConfig().kvcache_block_size, std::move(tokenIds));
   sequence->numPromptTokens = prompt.size();
   if (request.slotId.has_value()) {
@@ -429,7 +431,7 @@ void LLMService::postProcess(domain::CompletionResponse& response) const {
   }
 }
 void LLMService::abortRequest(const domain::TaskID& taskId) {
-  std::string taskKey = taskId.id;
+  std::string taskKey = std::to_string(taskId);
 
   // Atomically remove the stream callback and decrement pending_tasks_.
   auto cb = stream_callbacks_.take(taskKey);

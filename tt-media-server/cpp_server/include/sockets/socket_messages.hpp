@@ -32,18 +32,18 @@ struct PrefillRequestMessage {
   void write(Archive& ar) const {
     int mt = max_tokens.has_value() ? max_tokens.value() : -1;
     uint32_t sid = slot_id.value_or(std::numeric_limits<uint32_t>::max());
-    ar(task_id.id, prompt, token_ids, mt, sid);
+    ar(task_id, prompt, token_ids, mt, sid);
   }
 
   template <class Archive>
   static PrefillRequestMessage read(Archive& ar) {
-    std::string tid;
+    uint32_t tid;
     std::string p;
     std::vector<int64_t> tids;
     int mt;
     uint32_t sid;
     ar(tid, p, tids, mt, sid);
-    PrefillRequestMessage msg(tt::domain::TaskID(std::move(tid)));
+    PrefillRequestMessage msg(tid);
     msg.prompt = std::move(p);
     msg.token_ids = std::move(tids);
     msg.max_tokens = (mt == -1) ? std::nullopt : std::optional<int>(mt);
@@ -78,13 +78,13 @@ struct PrefillResultMessage {
   void write(Archive& ar) const {
     int rt = remaining_tokens.has_value() ? remaining_tokens.value() : -1;
     uint32_t sid = slot_id.value_or(std::numeric_limits<uint32_t>::max());
-    ar(task_id.id, generated_text, finished, tokens_generated,
+    ar(task_id, generated_text, finished, tokens_generated,
        processing_time_ms, token_ids, rt, sid);
   }
 
   template <class Archive>
   static PrefillResultMessage read(Archive& ar) {
-    std::string tid;
+    uint32_t tid;
     std::string genText;
     bool fin;
     int tg;
@@ -93,7 +93,7 @@ struct PrefillResultMessage {
     int rt;
     uint32_t sid;
     ar(tid, genText, fin, tg, pt, tids, rt, sid);
-    PrefillResultMessage msg(tt::domain::TaskID(std::move(tid)));
+    PrefillResultMessage msg(tid);
     msg.generated_text = std::move(genText);
     msg.finished = fin;
     msg.tokens_generated = tg;

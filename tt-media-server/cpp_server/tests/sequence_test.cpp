@@ -14,13 +14,13 @@ namespace llm_engine {
 namespace {
 
 TEST(SequenceIDTest, SerializeDeserialize_RoundTrip) {
-  TaskID orig(TaskID("seq-id-test"));
+  TaskID orig = 12345;  // TaskID is now uint32_t
 
-  std::vector<char> buf = orig.ipcSerialize();
-  ASSERT_EQ(buf.size(), 36);
+  std::vector<char> buf = tt::domain::TaskIDGenerator::serialize(orig);
+  ASSERT_EQ(buf.size(), 4);  // uint32_t is 4 bytes
 
-  TaskID restored = TaskID::ipcDeserialize(buf.data(), buf.size());
-  EXPECT_EQ(restored.id, orig.id);
+  TaskID restored = tt::domain::TaskIDGenerator::deserialize(buf.data(), buf.size());
+  EXPECT_EQ(restored, orig);
 }
 
 TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
@@ -127,7 +127,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   params.stop_token_ids = {10, 20};
   params.allowed_token_ids = {1, 2, 3};
 
-  Sequence orig(TaskID(TaskID::generate()), 256, {1, 2, 3, 4, 5}, params);
+  Sequence orig(tt::domain::TaskIDGenerator::generate(), 256, {1, 2, 3, 4, 5}, params);
   orig.numCachedTokens = 256;
   orig.blockTable = {0, 1};
   orig.status = SequenceStatus::IN_FLIGHT;
@@ -163,8 +163,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
 }
 
 TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
-  Sequence orig(TaskID("seq-empty-tokens"), 256, {},
-                SamplingParams{.max_tokens = 10});
+  Sequence orig(12345, 256, {}, SamplingParams{.max_tokens = 10});
   orig.lastToken = 0;
 
   std::ostringstream os;
@@ -180,8 +179,7 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
 }
 
 TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
-  Sequence orig(TaskID("seq-append"), 256, {10, 20},
-                SamplingParams{.max_tokens = 5});
+  Sequence orig(12345, 256, {10, 20}, SamplingParams{.max_tokens = 5});
   orig.appendToken(30);
   orig.appendToken(40);
   orig.numCachedTokens = 256;

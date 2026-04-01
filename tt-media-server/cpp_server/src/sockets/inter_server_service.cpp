@@ -150,7 +150,7 @@ void InterServerService::setupMessageHandlers() {
       "prefill_request", [this](const PrefillRequestMessage& message) {
         TT_LOG_INFO(
             "[InterServerService] Received prefill request: {} (tokens: {})",
-            message.task_id.id, message.token_ids.size());
+            message.task_id, message.token_ids.size());
         if (prefill_requested_callback_) {
           prefill_requested_callback_(message);
         }
@@ -162,7 +162,7 @@ void InterServerService::setupMessageHandlers() {
         TT_LOG_INFO(
             "[InterServerService] Received prefill result: {} - text: '{}', "
             "remaining: {}, token_ids: {}",
-            message.task_id.id, message.generated_text.substr(0, 50),
+            message.task_id, message.generated_text.substr(0, 50),
             message.remaining_tokens.has_value()
                 ? std::to_string(message.remaining_tokens.value())
                 : "none",

@@ -52,7 +52,7 @@ struct EmbeddingRequest : BaseRequest {
     Json::Value json;
     json["model"] = model;
     json["input"] = input;
-    json["task_id"] = task_id.id;
+    json["task_id"] = task_id;
     if (user) {
       json["user"] = *user;
     }

@@ -34,8 +34,8 @@ class BoostIpcCancelQueueTest : public ::testing::Test {
 TEST_F(BoostIpcCancelQueueTest, PushAndPopRoundTrip) {
   tt::ipc::BoostIpcCancelQueue queue(queueName, 16);
 
-  tt::domain::TaskID id1("task-abc-123");
-  tt::domain::TaskID id2("task-def-456");
+  tt::domain::TaskID id1 = 123;
+  tt::domain::TaskID id2 = 456;
   queue.push(id1);
   queue.push(id2);
 
@@ -43,8 +43,8 @@ TEST_F(BoostIpcCancelQueueTest, PushAndPopRoundTrip) {
   queue.tryPopAll(out);
 
   ASSERT_EQ(out.size(), 2u);
-  EXPECT_EQ(out[0].id, "task-abc-123");
-  EXPECT_EQ(out[1].id, "task-def-456");
+  EXPECT_EQ(out[0], 123u);
+  EXPECT_EQ(out[1], 456u);
 }
 
 TEST_F(BoostIpcCancelQueueTest, PopEmptyReturnsNothing) {
@@ -59,37 +59,37 @@ TEST_F(BoostIpcCancelQueueTest, PopEmptyReturnsNothing) {
 TEST_F(BoostIpcCancelQueueTest, PushWhenFullDropsWithoutThrow) {
   tt::ipc::BoostIpcCancelQueue queue(queueName, 2);
 
-  queue.push(tt::domain::TaskID("t1"));
-  queue.push(tt::domain::TaskID("t2"));
+  queue.push(1);
+  queue.push(2);
   // Queue is full — this should not throw, just log a warning and drop.
-  EXPECT_NO_THROW(queue.push(tt::domain::TaskID("t3")));
+  EXPECT_NO_THROW(queue.push(3));
 
   std::vector<tt::domain::TaskID> out;
   queue.tryPopAll(out);
   ASSERT_EQ(out.size(), 2u);
-  EXPECT_EQ(out[0].id, "t1");
-  EXPECT_EQ(out[1].id, "t2");
+  EXPECT_EQ(out[0], 1u);
+  EXPECT_EQ(out[1], 2u);
 }
 
 TEST_F(BoostIpcCancelQueueTest, MultiplePushDrainInOrder) {
   tt::ipc::BoostIpcCancelQueue queue(queueName, 64);
 
   for (int i = 0; i < 10; i++) {
-    queue.push(tt::domain::TaskID("id-" + std::to_string(i)));
+    queue.push(static_cast<uint32_t>(i + 100));
   }
 
   std::vector<tt::domain::TaskID> out;
   queue.tryPopAll(out);
   ASSERT_EQ(out.size(), 10u);
   for (int i = 0; i < 10; i++) {
-    EXPECT_EQ(out[i].id, "id-" + std::to_string(i));
+    EXPECT_EQ(out[i], static_cast<uint32_t>(i + 100));
   }
 }
 
 TEST_F(BoostIpcCancelQueueTest, PopAllThenPopAgainIsEmpty) {
   tt::ipc::BoostIpcCancelQueue queue(queueName, 16);
 
-  queue.push(tt::domain::TaskID("x"));
+  queue.push(999);
 
   std::vector<tt::domain::TaskID> out;
   queue.tryPopAll(out);
@@ -103,7 +103,7 @@ TEST_F(BoostIpcCancelQueueTest, PopAllThenPopAgainIsEmpty) {
 TEST_F(BoostIpcCancelQueueTest, OpenExistingQueue) {
   // Create queue (simulates main process).
   tt::ipc::BoostIpcCancelQueue creator(queueName, 16);
-  creator.push(tt::domain::TaskID("from-main"));
+  creator.push(12345);  // TaskID is now uint32_t
 
   // Open existing queue (simulates worker process).
   tt::ipc::BoostIpcCancelQueue opener(queueName);
@@ -111,7 +111,7 @@ TEST_F(BoostIpcCancelQueueTest, OpenExistingQueue) {
   std::vector<tt::domain::TaskID> out;
   opener.tryPopAll(out);
   ASSERT_EQ(out.size(), 1u);
-  EXPECT_EQ(out[0].id, "from-main");
+  EXPECT_EQ(out[0], 12345u);
 }
 
 TEST_F(BoostIpcCancelQueueTest, RemoveCleansUpResource) {

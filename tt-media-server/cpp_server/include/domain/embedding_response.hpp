@@ -70,9 +70,9 @@ struct EmbeddingResponse : BaseResponse {
    * new UUID.
    */
   static EmbeddingResponse fromJson(const Json::Value& json) {
-    TaskID tid = json.isMember("task_id") && !json["task_id"].asString().empty()
-                     ? TaskID(json["task_id"].asString())
-                     : TaskID(TaskID::generate());
+    TaskID tid = json.isMember("task_id") && json["task_id"].isUInt()
+                     ? json["task_id"].asUInt()
+                     : TaskIDGenerator::generate();
     EmbeddingResponse resp(std::move(tid));
 
     if (json.isMember("embedding") && json["embedding"].isArray()) {
