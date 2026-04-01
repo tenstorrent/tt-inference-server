@@ -1524,13 +1524,12 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.DUAL_GALAXY,
                 max_concurrency=32 * 8,  # 32 per DP rank * 8 ranks
-                max_context=2048,
+                max_context=32768,
                 default_impl=True,
                 tensor_cache_timeout=6400.0,
                 vllm_args={
                     "data_parallel_size": 8,
                     "block_size": "32",
-                    "max_model_len": "2048",
                 },
                 override_tt_config={
                     "fabric_config": "FABRIC_1D",
@@ -1542,7 +1541,7 @@ llm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.QUAD_GALAXY,
                 max_concurrency=32 * 16,  # 32 per DP rank * 16 ranks
-                max_context=2048,
+                max_context=32768,
                 default_impl=True,
                 vllm_args={
                     "data_parallel_size": 16,

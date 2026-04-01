@@ -93,6 +93,18 @@ SchedulingPolicy schedulingPolicy();
  * defaults::MAX_IN_FLIGHT_COUNT. */
 size_t maxInFlightCount();
 
+/** Max sessions count from MAX_SESSIONS_COUNT. Default:
+ * defaults::MAX_SESSIONS_COUNT. */
+size_t maxSessionsCount();
+
+/** Session eviction rate percentage from SESSION_EVICTION_RATE. Default:
+ * defaults::SESSION_EVICTION_RATE. */
+unsigned sessionEvictionRate();
+
+/** Number of sessions to evict at once from SESSION_EVICTION_COUNT. Default:
+ * defaults::SESSION_EVICTION_COUNT. */
+size_t sessionEvictionCount();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();

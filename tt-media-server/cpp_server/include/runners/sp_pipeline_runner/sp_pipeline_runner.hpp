@@ -12,12 +12,15 @@
 
 #include "config/runner_config.hpp"
 #include "ipc/boost_ipc_memory_queue.hpp"
-#include "ipc/shared_memory.hpp"
+#include "ipc/token_ring_buffer.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
-#include "services/memory_manager.hpp"
+
+namespace tt::services {
+class MemoryManager;
+}
 
 namespace tt::runners {
 
@@ -53,11 +56,7 @@ class SpPipelineRunner : public IRunner {
   int maxInFlightCount;
   int inFlightCount = 0;
 
-  tt::services::MemoryManager memoryManager;
-  ipc::MemoryRequestQueue memoryRequests{ipc::k_memory_request_queue_name,
-                                         ipc::MEMORY_QUEUE_CAPACITY};
-  ipc::MemoryResultQueue memoryResults{ipc::k_memory_result_queue_name,
-                                       ipc::MEMORY_QUEUE_CAPACITY};
+  std::unique_ptr<tt::services::MemoryManager> memoryManager;
   std::thread memoryThread;
 };
 
