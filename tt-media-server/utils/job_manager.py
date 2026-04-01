@@ -600,6 +600,8 @@ class JobManager:
                         checkpoints = self.db.get_checkpoints(job.id)
                         if checkpoints:
                             job.job_checkpoints = checkpoints
+                        if job.job_checkpoints:
+                            job.job_checkpoints = self._validate_checkpoints_on_disk(job)
                     except Exception as e:
                         self._logger.error(
                             f"Failed to restore checkpoints for job {job.id}: {e}"
@@ -654,6 +656,27 @@ class JobManager:
 
         except Exception as e:
             self._logger.error(f"Failed to restore jobs from database: {e}")
+
+    def _validate_checkpoints_on_disk(self, job: Job) -> list:
+        """Filter out checkpoints whose directories no longer exist on disk."""
+        if not job.result_path or not job.job_checkpoints:
+            return job.job_checkpoints
+        try:
+            existing_entries = set(os.listdir(job.result_path))
+        except FileNotFoundError:
+            self._logger.warning(
+                f"Result path {job.result_path} for job {job.id} not found on disk, clearing all checkpoints"
+            )
+            return []
+        valid_checkpoints = []
+        for ckpt in job.job_checkpoints:
+            if ckpt["id"] in existing_entries:
+                valid_checkpoints.append(ckpt)
+            else:
+                self._logger.warning(
+                    f"Checkpoint '{ckpt['id']}' for job {job.id} not found on disk, removing from restored data"
+                )
+        return valid_checkpoints
 
 
 _job_manager_instance: Optional[JobManager] = None
