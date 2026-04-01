@@ -9,7 +9,6 @@ import jwt
 import logging
 import sys
 from pathlib import Path
-from typing import List
 
 # Add the script's directory to the Python path
 # this for 0 setup python setup script
@@ -36,26 +35,20 @@ def build_test_command(
     task: TestTask,
     model_spec,
     device,
-    output_path,
+    output_dir_path,
     service_port,
-) -> List[str]:
+) -> list[str]:
     """
     Build the command for tests by templating command-line arguments using properties
     from the given task and model configuration.
+
+    Returns cmd list.
     """
-    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
 
     test_exec = task_venv_config.venv_path / "bin" / "pytest"
 
     test_kwargs_list = [f"-{arg}" for arg in task.test_args]
-
-    # set output_dir
-    # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
-    output_dir_path = (
-        Path(output_path)
-        / f"test_{model_spec.model_id}__{run_timestamp}_{task.task_name}"
-    )
 
     if task.task_name == "vllm_responses":
         # vLLM responses test needs the service port to connect to the server
@@ -71,6 +64,8 @@ def build_test_command(
         model_spec.impl.impl_name,
         "--output-path",
         output_dir_path,
+        "--task-name",
+        task.task_name,
         "--max-context",
         str(model_spec.device_model_spec.max_context),
     ]
@@ -175,8 +170,18 @@ def main():
     env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
 
+    # Create a single shared output directory for all tasks in this run
+    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_dir_path = (
+        Path(args.output_path) / f"test_{model_spec.model_id}__{run_timestamp}"
+    )
+    output_dir_path.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Test output directory: {output_dir_path}")
+
     # Execute pytest for each task.
-    logger.info("Running test client ...")
+    logger.info(
+        f"Running test client with {len(test_config.tasks)} task(s): {[t.task_name for t in test_config.tasks]}"
+    )
     return_codes = []
     for task in test_config.tasks:
         logger.info(
@@ -188,7 +193,7 @@ def main():
             task,
             model_spec,
             device_str,
-            args.output_path,
+            str(output_dir_path),
             runtime_config.service_port,
         )
         return_code = run_command(command=cmd, logger=logger, env=env_vars)
