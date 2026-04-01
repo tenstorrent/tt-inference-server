@@ -194,37 +194,28 @@ void Scheduler::removeSequence(TaskID taskId) { sequences_.erase(taskId); }
 
 void Scheduler::abortRequest(TaskID taskId) {
   auto* seq = findSequence(taskId);
-  if (!seq || seq->isAborted() || seq->isFinished()) {
-    // Task is not (yet) in the scheduler — it may still be sitting in the
-    // prefill IPC queue as an unscheduled copy.  Record the ID so that copy
-    // is silently skipped when trySchedulePrefill dequeues it.
-    // Cap the set size to avoid unbounded growth from broadcast aborts to
-    // workers that don't own the sequence.
-    if (!seq && pending_aborts_.size() < 2 * max_in_flight_count_) {
+
+  // If the task isn't tracked or is still waiting, it might have a stale
+  // copy in the IPC queue. Mark it for skipping.
+  bool isWaiting = seq && seq->status == SequenceStatus::WAITING;
+  if (!seq || isWaiting) {
+    if (pending_aborts_.size() < 2 * max_in_flight_count_) {
       pending_aborts_.insert(taskId);
     }
-    return;  // already gone or finished — idempotent
   }
 
-  // A WAITING sequence was added to sequences_ but its copy in the prefill
-  // IPC queue has not been dequeued yet.  Record the abort so that copy is
-  // skipped when trySchedulePrefill pops it.
-  // A RUNNING/IN_FLIGHT sequence was already dequeued by trySchedulePrefill
-  // so there is no stale copy; pending_aborts_ does not need an entry.
-  if (seq->status == SequenceStatus::WAITING &&
-      pending_aborts_.size() < 2 * max_in_flight_count_) {
-    pending_aborts_.insert(taskId);
+  // If the sequence doesn't exist or is already terminal, we're done.
+  if (!seq || seq->isAborted() || seq->isFinished()) {
+    return;
   }
 
+  // Clean up resources for active sequences
   seq->status = SequenceStatus::ABORTED;
   block_manager_.deallocate(*seq);
 
-  // Remove from decode_queue (O(n) but abort is rare)
-  decode_queue_.erase(
-      std::remove_if(decode_queue_.begin(), decode_queue_.end(),
-                     [&](Sequence* s) { return s->taskId == taskId; }),
-      decode_queue_.end());
-
+  // Remove from decode_queue (O(n) but abort should be rare)
+  std::erase_if(decode_queue_,
+                [&](Sequence* s) { return s->taskId == taskId; });
   sequences_.erase(taskId);
 }
 }  // namespace llm_engine
