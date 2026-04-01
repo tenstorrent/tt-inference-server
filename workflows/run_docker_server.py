@@ -217,6 +217,9 @@ def generate_docker_run_command(
         or model_spec.inference_engine == InferenceEngine.MEDIA.value
     ):
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
+        api_key = os.getenv("API_KEY")
+        if api_key:
+            docker_env_vars["API_KEY"] = api_key
 
     user_home_path = "/home/container_app_user"
     if runtime_config.dev_mode:
