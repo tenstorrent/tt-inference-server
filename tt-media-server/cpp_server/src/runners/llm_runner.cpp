@@ -21,7 +21,7 @@ LLMRunner::LLMRunner(const Config& config,
   scheduler_ =
       makeScheduler(config_, taskQueue, tt::config::maxInFlightCount());
 
-  if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY) {
+  if (tt::config::llmMode() != config::LLMMode::PREFILL_ONLY) {
     memoryManager = std::make_unique<services::PagedMemoryManager>(
         scheduler_->blockManager());
     memoryThread = std::thread([this] { memoryLoop(); });

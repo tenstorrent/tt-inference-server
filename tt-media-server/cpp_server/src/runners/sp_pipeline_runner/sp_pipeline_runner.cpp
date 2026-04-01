@@ -25,7 +25,8 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       taskQueue(taskQueue),
       decodeQueue(config.max_in_flight_count),
       maxInFlightCount(config.max_in_flight_count * 30) {
-  if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY) {
+  if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY ||
+      tt::config::llmMode() == config::LLMMode::REGULAR) {
     memoryManager = std::make_unique<services::ContiguousMemoryManager>();
     memoryThread = std::thread([this] { memoryLoop(); });
   }
