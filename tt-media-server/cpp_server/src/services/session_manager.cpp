@@ -103,7 +103,7 @@ uint32_t SessionManager::getSlotIdBySessionId(
 
   auto it = sessions_.find(sessionId);
   if (it == sessions_.end()) {
-    return std::numeric_limits<uint32_t>::max();
+    return -1;
   }
 
   // Update activity time (mutable access through const_cast for this use case)
