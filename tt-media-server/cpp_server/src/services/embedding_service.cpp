@@ -2,8 +2,6 @@
 #include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-#include "services/embedding_service.hpp"
-
 #include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -23,6 +21,7 @@
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "runners/embedding_runner.hpp"
+#include "services/embedding_service.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {

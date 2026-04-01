@@ -2,8 +2,6 @@
 #include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-#include "runners/llm_runner/scheduler.hpp"
-
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -13,6 +11,7 @@
 #include "runners/llm_runner/max_occupancy_scheduler.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
+#include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
 namespace llm_engine {

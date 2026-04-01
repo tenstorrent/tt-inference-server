@@ -2,9 +2,8 @@
 #include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "runners/sp_pipeline_runner/sp_pipeline_model_runner.hpp"
-
 #include "runners/llm_runner/debug.hpp"
+#include "runners/sp_pipeline_runner/sp_pipeline_model_runner.hpp"
 
 namespace sp_pipeline {
 

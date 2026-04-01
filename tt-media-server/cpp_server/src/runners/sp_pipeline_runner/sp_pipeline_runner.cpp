@@ -62,7 +62,7 @@ bool SpPipelineRunner::warmup() {
   warmupParams.ignore_eos = true;
 
   std::vector<int64_t> warmupTokens = {1};  // Single token
-  uint32_t warmupTaskId = 0;  // Use 0 for warmup task
+  uint32_t warmupTaskId = 0;                // Use 0 for warmup task
 
   auto warmupSeq = std::make_unique<llm_engine::Sequence>(
       warmupTaskId,
@@ -191,8 +191,8 @@ void SpPipelineRunner::drainDecodeResults() {
   }
 }
 
-void SpPipelineRunner::pushToken(const uint32_t& taskId,
-                                 uint64_t tokenId, bool finished) {
+void SpPipelineRunner::pushToken(const uint32_t& taskId, uint64_t tokenId,
+                                 bool finished) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;

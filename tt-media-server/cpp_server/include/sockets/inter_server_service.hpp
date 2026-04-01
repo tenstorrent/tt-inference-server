@@ -75,8 +75,7 @@ class InterServerService {
    * @param slot_id KV cache slot allocated by decode server's memory manager
    * @return true if sent successfully
    */
-  bool sendPrefillRequest(uint32_t taskId,
-                          const std::string& prompt,
+  bool sendPrefillRequest(uint32_t taskId, const std::string& prompt,
                           const std::vector<int64_t>& tokenIds,
                           std::optional<int> maxTokens = std::nullopt,
                           std::optional<uint32_t> slotId = std::nullopt);

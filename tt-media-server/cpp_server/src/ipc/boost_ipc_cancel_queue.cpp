@@ -3,7 +3,6 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include "ipc/boost_ipc_cancel_queue.hpp"
-
 #include "utils/logger.hpp"
 
 namespace tt::ipc {
@@ -45,8 +44,8 @@ void BoostIpcCancelQueue::tryPopAll(std::vector<uint32_t>& out) {
   unsigned int priority;
   while (queue_->try_receive(recv_buffer_.data(), recv_buffer_.size(),
                              recvdSize, priority)) {
-    out.push_back(
-        tt::utils::TaskIDGenerator::deserialize(recv_buffer_.data(), recvdSize));
+    out.push_back(tt::utils::TaskIDGenerator::deserialize(recv_buffer_.data(),
+                                                          recvdSize));
   }
 }
 

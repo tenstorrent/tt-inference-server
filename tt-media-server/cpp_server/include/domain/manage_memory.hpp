@@ -50,7 +50,8 @@ struct ManageMemoryTask {
     ManageMemoryTask task;
     char tidBuf[tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE];
     is.read(tidBuf, tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE);
-    task.taskId = tt::utils::TaskIDGenerator::deserialize(tidBuf, tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE);
+    task.taskId = tt::utils::TaskIDGenerator::deserialize(
+        tidBuf, tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE);
     std::uint8_t a = 0;
     is.read(reinterpret_cast<char*>(&a), sizeof(a));
     task.action = static_cast<MemoryManagementAction>(a);
@@ -96,7 +97,8 @@ struct ManageMemoryResult {
     ManageMemoryResult result;
     char tidBuf[tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE];
     is.read(tidBuf, tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE);
-    result.taskId = tt::utils::TaskIDGenerator::deserialize(tidBuf, tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE);
+    result.taskId = tt::utils::TaskIDGenerator::deserialize(
+        tidBuf, tt::utils::TaskIDGenerator::K_SERIALIZED_SIZE);
     std::uint8_t s = 0;
     is.read(reinterpret_cast<char*>(&s), sizeof(s));
     result.status = static_cast<ManageMemoryStatus>(s);

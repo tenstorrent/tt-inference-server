@@ -23,8 +23,7 @@ struct PrefillRequestMessage {
   std::optional<int> max_tokens;
   std::optional<uint32_t> slot_id;
 
-  explicit PrefillRequestMessage(uint32_t taskId)
-      : task_id(taskId) {}
+  explicit PrefillRequestMessage(uint32_t taskId) : task_id(taskId) {}
 
   template <class Archive>
   void write(Archive& ar) const {
@@ -69,15 +68,14 @@ struct PrefillResultMessage {
   std::optional<int> remaining_tokens;
   std::optional<uint32_t> slot_id;
 
-  explicit PrefillResultMessage(uint32_t taskId)
-      : task_id(taskId) {}
+  explicit PrefillResultMessage(uint32_t taskId) : task_id(taskId) {}
 
   template <class Archive>
   void write(Archive& ar) const {
     int rt = remaining_tokens.has_value() ? remaining_tokens.value() : -1;
     uint32_t sid = slot_id.value_or(std::numeric_limits<uint32_t>::max());
-    ar(task_id, generated_text, finished, tokens_generated,
-       processing_time_ms, token_ids, rt, sid);
+    ar(task_id, generated_text, finished, tokens_generated, processing_time_ms,
+       token_ids, rt, sid);
   }
 
   template <class Archive>

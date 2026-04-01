@@ -142,9 +142,9 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
             sp ? static_cast<double>(sp->frequency_penalty) : 0.0;
 
         pySeqs.append(gStepSeqClass(
-            std::to_string(seq->taskId), tokenIds, temperature, ignoreEos, blockTable,
-            currentPos, promptLen, seed, topP, topK, minP, repetitionPenalty,
-            presencePenalty, frequencyPenalty));
+            std::to_string(seq->taskId), tokenIds, temperature, ignoreEos,
+            blockTable, currentPos, promptLen, seed, topP, topK, minP,
+            repetitionPenalty, presencePenalty, frequencyPenalty));
       }
 
       // First decode step after prefill must set reset_batch=true so on-device

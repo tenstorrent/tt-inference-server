@@ -2,8 +2,6 @@
 #include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-#include "api/llm_controller.hpp"
-
 #include <json/json.h>
 #include <trantor/net/EventLoop.h>
 
@@ -16,6 +14,7 @@
 #include <random>
 #include <sstream>
 
+#include "api/llm_controller.hpp"
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"

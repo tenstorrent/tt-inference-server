@@ -51,9 +51,7 @@ uint32_t nextId() { return tt::utils::TaskIDGenerator::generate(); }
 
 class InMemoryCancelQueue : public tt::ipc::ICancelQueue {
  public:
-  void push(uint32_t taskId) override {
-    items.push_back(taskId);
-  }
+  void push(uint32_t taskId) override { items.push_back(taskId); }
 
   void tryPopAll(std::vector<uint32_t>& out) override {
     out.insert(out.end(), items.begin(), items.end());

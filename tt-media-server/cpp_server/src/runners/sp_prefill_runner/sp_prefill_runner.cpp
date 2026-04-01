@@ -35,15 +35,15 @@ void SpPrefillRunner::run() {
     TT_LOG_DEBUG("SpPrefillRunner: Starting prefill for task {}",
                  sequence->taskId);
 
-    auto result = modelRunner->forward(std::to_string(sequence->taskId), sequence->tokenIds);
+    auto result = modelRunner->forward(std::to_string(sequence->taskId),
+                                       sequence->tokenIds);
 
     if (!result) {
       break;  // stopped
     }
 
     if (result->isError) {
-      TT_LOG_WARN("SpPrefillRunner: Error token for task {}",
-                  result->taskId);
+      TT_LOG_WARN("SpPrefillRunner: Error token for task {}", result->taskId);
       pushErrorToken(result->taskId);
     } else {
       TT_LOG_DEBUG("SpPrefillRunner: Received prefill token {} for task {}",
@@ -59,7 +59,8 @@ bool SpPrefillRunner::warmup() {
   std::vector<int64_t> warmupTokens = {1};
   uint32_t warmupTaskId = 0;  // Use 0 for warmup task
 
-  auto result = modelRunner->forward(std::to_string(warmupTaskId), warmupTokens);
+  auto result =
+      modelRunner->forward(std::to_string(warmupTaskId), warmupTokens);
   if (!result || result->isError) {
     TT_LOG_ERROR("SpPrefillRunner: Warmup failed");
     return false;
@@ -74,8 +75,8 @@ void SpPrefillRunner::stop() {
   stopped.store(true, std::memory_order_relaxed);
 }
 
-void SpPrefillRunner::pushToken(const uint32_t& taskId,
-                                uint64_t tokenId, bool finished) {
+void SpPrefillRunner::pushToken(const uint32_t& taskId, uint64_t tokenId,
+                                bool finished) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;

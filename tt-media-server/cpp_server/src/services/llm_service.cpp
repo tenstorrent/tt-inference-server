@@ -408,8 +408,8 @@ void LLMService::processStreamingRequest(
       taskIdStr, static_cast<int>(prompt.size()));
 
   auto sequence = std::make_unique<llm_engine::Sequence>(
-      taskId,
-      tt::config::llmEngineConfig().kvcache_block_size, std::move(tokenIds));
+      taskId, tt::config::llmEngineConfig().kvcache_block_size,
+      std::move(tokenIds));
   sequence->numPromptTokens = prompt.size();
   if (request.slotId.has_value()) {
     sequence->setKVCacheAddress(request.slotId.value());

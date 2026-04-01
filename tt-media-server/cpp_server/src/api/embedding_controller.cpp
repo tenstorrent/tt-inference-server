@@ -2,8 +2,6 @@
 #include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-#include "api/embedding_controller.hpp"
-
 #include <chrono>
 #include <condition_variable>
 #include <functional>
@@ -14,6 +12,7 @@
 #include <thread>
 #include <vector>
 
+#include "api/embedding_controller.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "services/base_service.hpp"

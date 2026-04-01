@@ -48,8 +48,7 @@ int main() {
   // Build two sequences with known values.
   uint32_t seq1Id = tt::utils::TaskIDGenerator::generate();
   uint32_t seq2Id = tt::utils::TaskIDGenerator::generate();
-  Sequence seq1(seq1Id, 256, {1, 2, 3, 4},
-                SamplingParams{.max_tokens = 10});
+  Sequence seq1(seq1Id, 256, {1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
   Sequence seq2(seq2Id, 256, {10, 20, 30},
                 SamplingParams{.temperature = 0.7f, .max_tokens = 5});
 

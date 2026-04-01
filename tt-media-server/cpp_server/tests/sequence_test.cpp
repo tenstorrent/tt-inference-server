@@ -2,14 +2,13 @@
 #include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-#include "runners/llm_runner/sequence.hpp"
-
 #include <gtest/gtest.h>
 
 #include <sstream>
 
 #include "config/runner_config.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
+#include "runners/llm_runner/sequence.hpp"
 
 namespace llm_engine {
 namespace {
@@ -20,7 +19,8 @@ TEST(SequenceIDTest, SerializeDeserialize_RoundTrip) {
   std::vector<char> buf = tt::utils::TaskIDGenerator::serialize(orig);
   ASSERT_EQ(buf.size(), 4);  // uint32_t is 4 bytes
 
-  uint32_t restored = tt::utils::TaskIDGenerator::deserialize(buf.data(), buf.size());
+  uint32_t restored =
+      tt::utils::TaskIDGenerator::deserialize(buf.data(), buf.size());
   EXPECT_EQ(restored, orig);
 }
 
@@ -128,7 +128,8 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   params.stop_token_ids = {10, 20};
   params.allowed_token_ids = {1, 2, 3};
 
-  Sequence orig(tt::utils::TaskIDGenerator::generate(), 256, {1, 2, 3, 4, 5}, params);
+  Sequence orig(tt::utils::TaskIDGenerator::generate(), 256, {1, 2, 3, 4, 5},
+                params);
   orig.numCachedTokens = 256;
   orig.blockTable = {0, 1};
   orig.status = SequenceStatus::IN_FLIGHT;

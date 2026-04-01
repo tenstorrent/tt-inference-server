@@ -70,13 +70,13 @@ void DisaggregationService::setupSocketHandlers() {
         });
 
     socketService->setConnectionLostCallback([this]() {
-      streamCallbacks.forEach([](const std::string& taskId,
-                                 const StreamCallback& callback) {
-        auto response = domain::StreamingChunkResponse(std::stoul(taskId));
-        response.choices.push_back(domain::CompletionChoice(""));
-        response.choices.back().finish_reason = "error";
-        callback(response, true);
-      });
+      streamCallbacks.forEach(
+          [](const std::string& taskId, const StreamCallback& callback) {
+            auto response = domain::StreamingChunkResponse(std::stoul(taskId));
+            response.choices.push_back(domain::CompletionChoice(""));
+            response.choices.back().finish_reason = "error";
+            callback(response, true);
+          });
       streamCallbacks.clear();
     });
   }

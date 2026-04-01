@@ -11,7 +11,8 @@ namespace llm_engine {
 
 using Config = tt::config::LLMConfig;
 
-Sequence::Sequence(uint32_t taskId, int blockSize, std::vector<int64_t> tokenIds,
+Sequence::Sequence(uint32_t taskId, int blockSize,
+                   std::vector<int64_t> tokenIds,
                    const SamplingParams& samplingParams)
     : taskId(std::move(taskId)),
       status(SequenceStatus::WAITING),
@@ -75,8 +76,8 @@ Sequence* Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(&taskId), sizeof(taskId));
 
   Config defaultConfig;
-  Sequence* seq =
-      new Sequence(taskId, defaultConfig.kvcache_block_size, std::vector<int64_t>{});
+  Sequence* seq = new Sequence(taskId, defaultConfig.kvcache_block_size,
+                               std::vector<int64_t>{});
 
   is.read(reinterpret_cast<char*>(&seq->lastToken), sizeof(seq->lastToken));
   is.read(reinterpret_cast<char*>(&seq->numPromptTokens),
