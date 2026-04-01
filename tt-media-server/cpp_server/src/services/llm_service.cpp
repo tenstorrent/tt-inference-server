@@ -187,12 +187,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       if (isFinal) {
         auto val = stream_callbacks_.take(token.task_id);
         if (!val.has_value()) {
-          // abortRequest already took the callback — clean up local state.
+          // abortRequest already took the callback and finalized the task.
           streamDecoders.erase(taskId);
           metricsSampling.erase(taskId);
-          if (reasoning_parser_) {
-            reasoning_parser_->finalizeTask(taskId);
-          }
           continue;
         }
         callback = std::move(val.value());
@@ -203,11 +200,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         auto val = stream_callbacks_.get(token.task_id);
         if (!val.has_value()) {
           // Client disconnected or task was cancelled — discard token.
+          // abortRequest() already finalized the reasoning parser state.
           streamDecoders.erase(taskId);
           metricsSampling.erase(taskId);
-          if (reasoning_parser_) {
-            reasoning_parser_->finalizeTask(taskId);
-          }
           continue;
         }
         callback = std::move(val.value());
