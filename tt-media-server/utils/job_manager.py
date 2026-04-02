@@ -332,6 +332,7 @@ class JobManager:
                     self._persist_job_metrics_to_db(job)
                 )
 
+            request._job_process_start_wall_time = time.time()
             result_path = await task_function(request)
 
             # enforcing result_path to be a string

@@ -322,11 +322,17 @@ class TestVideoGenerateRequestValidation:
             negative_prompt="blurry, low quality",
             num_inference_steps=30,
             seed=42,
+            height=480,
+            width=832,
+            num_frames=240,
         )
         assert request.prompt == "A sunset over the ocean"
         assert request.negative_prompt == "blurry, low quality"
         assert request.num_inference_steps == 30
         assert request.seed == 42
+        assert request.height == 480
+        assert request.width == 832
+        assert request.num_frames == 240
 
 
 class TestResponseContent:

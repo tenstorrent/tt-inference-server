@@ -10,8 +10,10 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
+from config.constants import MAX_VIDEO_SIZE
 from ipc.video_shm import VideoRequest, VideoStatus
 from tt_model_runners import mock_video_runner as mvr
+from utils.video_delivery_metrics import num_frames_from_video_tensor
 
 
 @pytest.fixture
@@ -19,18 +21,53 @@ def no_sleep(monkeypatch):
     monkeypatch.setattr(mvr.time, "sleep", lambda _: None)
 
 
+def test_max_video_size_fits_wan22_quad_float32():
+    n = 1280 * 720 * 3 * 81 * 4
+    assert n < MAX_VIDEO_SIZE
+
+
+def test_mock_float32_wan22_quad_tensor_under_cap(no_sleep, monkeypatch):
+    import numpy as np
+
+    monkeypatch.setenv("TT_MOCK_FLOAT32_TENSOR", "1")
+    p = mvr.MockVideoPipeline()
+    out = p(prompt="x", height=720, width=1280, num_frames=81, seed=2)
+    assert out.dtype == np.float32
+    assert out.nbytes == 1280 * 720 * 81 * 3 * 4
+    assert out.nbytes < MAX_VIDEO_SIZE
+
+
+def test_mock_float32_over_max_video_size_raises(no_sleep, monkeypatch):
+    monkeypatch.setenv("TT_MOCK_FLOAT32_TENSOR", "1")
+    p = mvr.MockVideoPipeline()
+    with pytest.raises(ValueError, match="MAX_VIDEO_SIZE"):
+        p(prompt="x", height=720, width=2560, num_frames=81, seed=0)
+
+
+def test_num_frames_from_video_tensor():
+    import numpy as np
+
+    a5 = np.zeros((1, 7, 4, 4, 3))
+    assert num_frames_from_video_tensor(a5) == 7
+    a4 = np.zeros((11, 4, 4, 3))
+    assert num_frames_from_video_tensor(a4) == 11
+
+
 def test_mock_pipeline_produces_wan_style_batch(no_sleep):
     p = mvr.MockVideoPipeline()
     frames = p(prompt="test", num_frames=4, height=16, width=16, seed=2)
     assert frames.dtype.name.startswith("uint")
     assert frames.shape == (1, 4, 16, 16, 3)
+    assert hasattr(p, "_mock_pipeline_excluding_sleep_s")
+    assert p._mock_pipeline_wall_s >= p._mock_pipeline_excluding_sleep_s >= 0
+    assert p._mock_sleep_accum_s >= 0
 
 
 def test_mock_video_runner_run_invokes_export_to_mp4(no_sleep, monkeypatch, tmp_path):
     """Same sequence as standalone bridge: frames -> VideoManager.export_to_mp4 -> path."""
     captured = {}
 
-    def fake_export(self, frames):
+    def fake_export(self, frames, fps=16, timing_out=None):
         captured["shape"] = frames.shape
         out = tmp_path / "mock.mp4"
         out.write_bytes(
@@ -51,7 +88,7 @@ def test_mock_video_runner_run_invokes_export_to_mp4(no_sleep, monkeypatch, tmp_
     out = runner.run([req])
 
     assert out == [str(tmp_path / "mock.mp4")]
-    assert captured["shape"] == (1, 81, 480, 832, 3)
+    assert captured["shape"] == (1, 81, 720, 1280, 3)
     assert os.path.isfile(out[0])
 
 
@@ -207,7 +244,11 @@ def test_run_shm_bridge_success_path_logs_inference_and_encoded_size(
         _ul.TTLogger = _saved_tt
 
     joined = " ".join(str(c) for c in mock_log.info.call_args_list).lower()
-    assert "[mock] running inference" in joined
+    assert "mock_bench" in joined
+    assert "synthetic" in joined
+    assert "video_delivery" in joined
+    assert "mock_after_bench" in joined
+    assert "bench_to_handoff_s" in joined
     assert "encoded mp4" in joined
     assert "bytes" in joined
     assert "completed" in joined

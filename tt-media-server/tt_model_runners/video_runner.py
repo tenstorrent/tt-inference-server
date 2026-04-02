@@ -298,14 +298,38 @@ def run_rank0_coordinator() -> None:
 
                 _log.info(f"Rank 0: Starting inference for task {req.task_id}")
                 frames = runner.run([video_gen_req])
-                _log.info("Rank 0: Inference done")
+                _log.info(
+                    f"Rank 0: Model inference done for task {req.task_id}; "
+                    f"delivery phase (encode + SHM) follows"
+                )
 
+                from utils.video_delivery_metrics import (
+                    log_video_delivery_phase,
+                    num_frames_from_video_tensor,
+                )
                 from utils.video_manager import VideoManager
 
-                mp4_path = VideoManager().export_to_mp4(frames)
+                export_timing = {}
+                t_tensor_ready = time.perf_counter()
+                mp4_path = VideoManager().export_to_mp4(
+                    frames, timing_out=export_timing
+                )
+                t_after_export = time.perf_counter()
                 _log.info(f"Rank 0: Encoded mp4 at {mp4_path}")
 
+                t_shm0 = time.perf_counter()
                 _write_response_to_shm(output_shm, req.task_id, mp4_path)
+                shm_write_s = time.perf_counter() - t_shm0
+                log_video_delivery_phase(
+                    _log,
+                    task_id=req.task_id,
+                    t_tensor_ready_monotonic=t_tensor_ready,
+                    export_timing=export_timing,
+                    t_after_export_monotonic=t_after_export,
+                    mp4_path=mp4_path,
+                    num_frames=num_frames_from_video_tensor(frames),
+                    shm_write_s=shm_write_s,
+                )
                 _log.info(f"Rank 0: Response written for task {req.task_id}")
 
             except Exception as e:

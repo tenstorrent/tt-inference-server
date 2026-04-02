@@ -82,6 +82,7 @@ class Scheduler:
 
             # Non-blocking put with timeout
             try:
+                request._queue_wall_time = time.time()
                 self.task_queue.put(request, timeout=1.0)
             except Exception:
                 raise HTTPException(

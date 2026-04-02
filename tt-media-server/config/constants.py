@@ -4,6 +4,10 @@
 
 from enum import Enum
 
+# In-RAM video tensor budget (e.g. float32 DiT output before uint8 encode).
+# WAN22 quad max 1280×720×3×81×4 ≈ 0.83 GiB — fits below this cap.
+MAX_VIDEO_SIZE = 1024 * 1024 * 1024  # 1 GiB
+
 
 class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"

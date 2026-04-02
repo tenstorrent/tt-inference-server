@@ -4,40 +4,189 @@
 
 """Mock video runner for testing the SHM IPC path without TTNN devices.
 
-Inherits from BaseDeviceRunner and provides a MockVideoPipeline that
-sleeps 5-10s per frame to simulate Wan/Mochi inference. When run as a standalone script, it acts as the external runner process
-that reads requests from input SHM, encodes mock frames to mp4 (same as
-``video_runner`` rank-0), and sends the mp4 path through output SHM.
+**Two phases (for metrics):**
 
-Usage as standalone process (the "runner side" of the SHM bridge)::
+1. **Bench / synthetic generation** — SHM read + ``MockVideoPipeline`` (sleeps, RNG, ``np.stack``).
+   This is *not* device inference; use only for IPC and scheduling tests.
 
-    TT_VIDEO_SHM_INPUT=video_in TT_VIDEO_SHM_OUTPUT=video_out \
+2. **Delivery phase** (production-relevant) — immediately **after** the ``[MOCK_BENCH] … full tensor in RAM``
+   log: ``VideoManager.export_to_mp4``, then ``output_shm.write_response`` (SHM bridge). A summary line
+   ``[MOCK_AFTER_BENCH] bench_to_handoff_s=…`` measures that slice. ``[VIDEO_DELIVERY]`` adds TTFT-style
+   timing (see ``utils/video_delivery_metrics``).
+
+When run as a standalone script, reads ``VideoRequest`` from input SHM, runs the
+synthetic pipeline, encodes to mp4 (same as ``video_runner`` rank-0), and sends the path on
+output SHM.
+
+Env (optional)::
+
+    TT_MOCK_VIDEO_TARGET_SECONDS   Spread ~uniformly across frames (±5% jitter per frame).
+    TT_MOCK_OUTPUT_NUM_FRAMES      Override frame count (and divisor for target-seconds).
+    TT_MOCK_OUTPUT_HEIGHT / WIDTH  Per-axis overrides.
+    TT_MOCK_SIMULATE_30S_1080P     1 → 1920×1080 × 480 frames (heavy).
+    TT_MOCK_FRAME_DELAY_MIN / MAX  Legacy per-frame bounds when target seconds unset.
+    TT_MOCK_WARN_NON_SLEEP_PIPELINE_S  If set to a float (seconds), log WARNING when
+        pipeline wall time minus accumulated mock sleep exceeds it (detects heavy
+        RNG/stack cost vs. export_to_mp4).
+    TT_MOCK_FLOAT32_TENSOR  If 1/true: stacked tensor is float32 [0,1) per pixel
+        (like many DiT outputs). Size is capped by config.constants.MAX_VIDEO_SIZE
+        (~1 GiB; WAN22 quad 720p×81 fits).
+
+Usage::
+
+    TT_VIDEO_SHM_INPUT=video_in TT_VIDEO_SHM_OUTPUT=video_out \\
         python -m tt_model_runners.mock_video_runner
 """
 
 from __future__ import annotations
 
+import os
 import random
 import signal
 import time
 from typing import Generator
 
 import numpy as np
+from config.constants import MAX_VIDEO_SIZE
 from tt_model_runners.base_device_runner import BaseDeviceRunner
+from utils.video_delivery_metrics import (
+    log_video_delivery_phase,
+    num_frames_from_video_tensor,
+)
 
-DEFAULT_HEIGHT = 480
-DEFAULT_WIDTH = 832
-DEFAULT_NUM_FRAMES = 81
+# Match TTWan22Runner.run() when mesh_device.shape == (4, 8) (quad / large mesh).
+# Smaller mesh in dit_runners uses 480×832×81; mock defaults follow max supported res.
+WAN22_QUAD_MESH_HEIGHT = 720
+WAN22_QUAD_MESH_WIDTH = 1280
+WAN22_QUAD_MESH_NUM_FRAMES = 81
+
+DEFAULT_HEIGHT = WAN22_QUAD_MESH_HEIGHT
+DEFAULT_WIDTH = WAN22_QUAD_MESH_WIDTH
+DEFAULT_NUM_FRAMES = WAN22_QUAD_MESH_NUM_FRAMES
 DEFAULT_CHANNELS = 3
 MOCK_FRAME_DELAY_MIN = 0.05
 MOCK_FRAME_DELAY_MAX = 0.15
 
+_MOCK_PRESET_30S_1080P_HEIGHT = 1080
+_MOCK_PRESET_30S_1080P_WIDTH = 1920
+_MOCK_PRESET_30S_1080P_NUM_FRAMES = 480
+
+
+def _parse_dim_override(env_key: str, fallback: int) -> int:
+    raw = os.environ.get(env_key)
+    if raw is None or not str(raw).strip():
+        return fallback
+    return max(1, int(raw))
+
+
+def _simulate_30s_1080p_enabled() -> bool:
+    v = os.environ.get("TT_MOCK_SIMULATE_30S_1080P", "").strip().lower()
+    return v in ("1", "true", "yes")
+
+
+def _mock_float32_tensor_enabled() -> bool:
+    v = os.environ.get("TT_MOCK_FLOAT32_TENSOR", "").strip().lower()
+    return v in ("1", "true", "yes")
+
+
+def _mock_tensor_nbytes(
+    height: int, width: int, num_frames: int, item_size: int
+) -> int:
+    return height * width * num_frames * DEFAULT_CHANNELS * item_size
+
+
+def _mock_tensor_size_log_fragment(frames: np.ndarray) -> str:
+    if frames.dtype != np.float32:
+        return f"dtype={frames.dtype}"
+    return (
+        f"dtype={frames.dtype} nbytes={frames.nbytes} "
+        f"max_video_size_cap={MAX_VIDEO_SIZE}"
+    )
+
+
+def _ensure_mock_tensor_within_cap(height: int, width: int, num_frames: int) -> None:
+    """Reject float32 mock tensors that would exceed MAX_VIDEO_SIZE (uint8 is uncapped)."""
+    if not _mock_float32_tensor_enabled():
+        return
+    n = _mock_tensor_nbytes(height, width, num_frames, np.dtype(np.float32).itemsize)
+    if n > MAX_VIDEO_SIZE:
+        raise ValueError(
+            f"Mock float32 video tensor would be {n} bytes (MAX_VIDEO_SIZE={MAX_VIDEO_SIZE}); "
+            "reduce TT_MOCK_OUTPUT_* / request dims or unset TT_MOCK_FLOAT32_TENSOR."
+        )
+
+
+def effective_output_dims(
+    height: int, width: int, num_frames: int
+) -> tuple[int, int, int]:
+    """SHM request dimensions, optionally replaced by preset or per-axis env overrides."""
+    if _simulate_30s_1080p_enabled():
+        height = _MOCK_PRESET_30S_1080P_HEIGHT
+        width = _MOCK_PRESET_30S_1080P_WIDTH
+        num_frames = _MOCK_PRESET_30S_1080P_NUM_FRAMES
+    height = _parse_dim_override("TT_MOCK_OUTPUT_HEIGHT", height)
+    width = _parse_dim_override("TT_MOCK_OUTPUT_WIDTH", width)
+    num_frames = _parse_dim_override("TT_MOCK_OUTPUT_NUM_FRAMES", num_frames)
+    return height, width, num_frames
+
+
+def _mock_frame_delay_bounds(num_frames: int) -> tuple[float, float]:
+    """Per-frame sleep bounds; ``TT_MOCK_VIDEO_TARGET_SECONDS`` spreads across ``num_frames``."""
+    target = os.environ.get("TT_MOCK_VIDEO_TARGET_SECONDS")
+    if target is not None and str(target).strip():
+        sec = float(target)
+        n = max(int(num_frames), 1)
+        per = sec / n
+        return (per * 0.95, per * 1.05)
+    lo = os.environ.get("TT_MOCK_FRAME_DELAY_MIN")
+    hi = os.environ.get("TT_MOCK_FRAME_DELAY_MAX")
+    if lo is not None and hi is not None and str(lo).strip() and str(hi).strip():
+        return (float(lo), float(hi))
+    return (MOCK_FRAME_DELAY_MIN, MOCK_FRAME_DELAY_MAX)
+
+
+def _request_int(request, name: str, default: int) -> int:
+    """Avoid MagicMock non-int attributes in unit tests."""
+    v = getattr(request, name, None)
+    return v if isinstance(v, int) else default
+
+
+def _task_id_for_delivery_log(request, fallback: str) -> str:
+    tid = getattr(request, "task_id", None)
+    if isinstance(tid, str) and tid.strip():
+        return tid
+    return fallback
+
+
+def _log_mock_pipeline_timing(pipeline, log) -> None:
+    """Log mock pipeline wall vs sleep vs work excluding sleep (still excludes export_to_mp4)."""
+    wall = getattr(pipeline, "_mock_pipeline_wall_s", None)
+    if wall is None:
+        return
+    sleep_s = float(getattr(pipeline, "_mock_sleep_accum_s", 0.0))
+    excl = getattr(pipeline, "_mock_pipeline_excluding_sleep_s", None)
+    stack_s = getattr(pipeline, "_mock_stack_s", None)
+    log.info(
+        f"[MOCK] non_sleep_pipeline: pipeline_wall_s={wall:.4f} mock_sleep_s={sleep_s:.4f} "
+        f"excluding_sleep_s={excl:.4f} stack_s={stack_s:.4f} "
+        f"(RNG+list+np.stack; excludes export_to_mp4)"
+    )
+    warn_raw = os.environ.get("TT_MOCK_WARN_NON_SLEEP_PIPELINE_S", "").strip()
+    if not warn_raw or excl is None:
+        return
+    try:
+        limit = float(warn_raw)
+    except ValueError:
+        return
+    if excl > limit:
+        log.warning(
+            f"[MOCK] excluding_sleep_s={excl:.4f}s exceeds "
+            f"TT_MOCK_WARN_NON_SLEEP_PIPELINE_S={limit}"
+        )
+
 
 class MockVideoPipeline:
-    """Fake pipeline matching the WanPipeline / MochiPipeline callable interface.
-
-    Sleeps 5-10s per frame to simulate inference, returns dummy uint8 data.
-    """
+    """Fake pipeline matching the WanPipeline / MochiPipeline callable interface."""
 
     def generate_frames(
         self,
@@ -46,11 +195,19 @@ class MockVideoPipeline:
         num_frames: int,
         seed: int = 0,
     ) -> Generator[np.ndarray, None, None]:
-        """Yield individual frames with a simulated delay per frame."""
         rng = np.random.RandomState(seed)
+        lo, hi = _mock_frame_delay_bounds(num_frames)
+        use_f32 = _mock_float32_tensor_enabled()
         for _ in range(num_frames):
-            time.sleep(random.uniform(MOCK_FRAME_DELAY_MIN, MOCK_FRAME_DELAY_MAX))
-            yield rng.randint(0, 256, (height, width, DEFAULT_CHANNELS), dtype=np.uint8)
+            sleep_started = time.perf_counter()
+            time.sleep(random.uniform(lo, hi))
+            self._mock_sleep_accum_s += time.perf_counter() - sleep_started
+            if use_f32:
+                yield rng.rand(height, width, DEFAULT_CHANNELS).astype(np.float32)
+            else:
+                yield rng.randint(
+                    0, 256, (height, width, DEFAULT_CHANNELS), dtype=np.uint8
+                )
 
     def __call__(
         self,
@@ -65,16 +222,22 @@ class MockVideoPipeline:
         seed: int = 0,
         **kwargs,
     ) -> np.ndarray:
+        _ensure_mock_tensor_within_cap(height, width, num_frames)
+        wall_started = time.perf_counter()
+        self._mock_sleep_accum_s = 0.0
         frames = list(self.generate_frames(height, width, num_frames, seed))
-        return np.stack(frames)[np.newaxis]
+        stack_started = time.perf_counter()
+        stacked = np.stack(frames)[np.newaxis]
+        stack_s = time.perf_counter() - stack_started
+        wall_s = time.perf_counter() - wall_started
+        self._mock_pipeline_wall_s = wall_s
+        self._mock_stack_s = stack_s
+        self._mock_pipeline_excluding_sleep_s = wall_s - self._mock_sleep_accum_s
+        return stacked
 
 
 class MockVideoRunner(BaseDeviceRunner):
-    """Mock video runner that simulates Wan/Mochi inference without devices.
-
-    Exercises the same BaseDeviceRunner interface used by the device_worker
-    so it can be registered in AVAILABLE_RUNNERS for integration testing.
-    """
+    """Mock video runner that simulates Wan/Mochi inference without devices."""
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -102,24 +265,58 @@ class MockVideoRunner(BaseDeviceRunner):
         self.logger.info(
             f"MockVideoRunner running inference for prompt: {request.prompt!r}"
         )
+        h, w, nf = effective_output_dims(
+            _request_int(request, "height", DEFAULT_HEIGHT),
+            _request_int(request, "width", DEFAULT_WIDTH),
+            _request_int(request, "num_frames", DEFAULT_NUM_FRAMES),
+        )
+        self.logger.info(
+            f"[MOCK_BENCH] device={self.device_id} synthetic generation starting "
+            "(not device inference)"
+        )
         frames = self.pipeline(
             prompt=request.prompt,
             negative_prompt=request.negative_prompt,
+            height=h,
+            width=w,
+            num_frames=nf,
             num_inference_steps=request.num_inference_steps,
             seed=int(request.seed or 0),
         )
-        self.logger.info(f"MockVideoRunner inference completed, shape={frames.shape}")
+        _log_mock_pipeline_timing(self.pipeline, self.logger)
+        tb = _mock_tensor_size_log_fragment(frames)
+        self.logger.info(
+            f"[MOCK_BENCH] device={self.device_id} full tensor in RAM shape={frames.shape} {tb}; "
+            f"delivery phase (encode only — no SHM in in-proc runner)"
+        )
+        t_after_mock_bench = time.perf_counter()
         from utils.video_manager import VideoManager
 
-        mp4_path = VideoManager().export_to_mp4(frames)
+        export_timing = {}
+        mp4_path = VideoManager().export_to_mp4(frames, timing_out=export_timing)
+        t_after_export = time.perf_counter()
         self.logger.info(f"MockVideoRunner encoded mp4: {mp4_path}")
+        log_video_delivery_phase(
+            self.logger,
+            task_id=_task_id_for_delivery_log(request, self.device_id),
+            t_tensor_ready_monotonic=t_after_mock_bench,
+            export_timing=export_timing,
+            t_after_export_monotonic=t_after_export,
+            mp4_path=mp4_path,
+            num_frames=num_frames_from_video_tensor(frames),
+            shm_write_s=None,
+        )
+        bench_to_handoff_s = time.perf_counter() - t_after_mock_bench
+        self.logger.info(
+            f"[MOCK_AFTER_BENCH] task_id={_task_id_for_delivery_log(request, self.device_id)} "
+            f"bench_to_handoff_s={bench_to_handoff_s:.4f} "
+            f"(in-proc: after MOCK_BENCH full-tensor line → VIDEO_DELIVERY logged; no SHM)"
+        )
         return [mp4_path]
 
 
 # ---------------------------------------------------------------------------
-# Standalone SHM bridge: reads from input SHM, runs mock pipeline, writes
-# frames one-by-one to output SHM. This is the external process that pairs
-# with device_worker and sp_runner on the server side.
+# Standalone SHM bridge
 # ---------------------------------------------------------------------------
 
 _shutdown = False
@@ -170,29 +367,47 @@ def _run_shm_bridge() -> None:
             )
 
             try:
-                logger.info(f"[MOCK] Running inference for task {req.task_id}")
+                h, w, nf = effective_output_dims(req.height, req.width, req.num_frames)
+                if (h, w, nf) != (req.height, req.width, req.num_frames):
+                    logger.info(
+                        f"[MOCK] Effective output dims (env overrides): "
+                        f"{nf}×{h}×{w} (was request {req.num_frames}×{req.height}×{req.width})"
+                    )
+                logger.info(
+                    f"[MOCK_BENCH] task_id={req.task_id} synthetic generation starting "
+                    f"(sleep/RNG/stack only — not device inference)"
+                )
                 frames = pipeline(
                     prompt=req.prompt,
                     negative_prompt=req.negative_prompt,
-                    height=req.height,
-                    width=req.width,
-                    num_frames=req.num_frames,
+                    height=h,
+                    width=w,
+                    num_frames=nf,
                     num_inference_steps=req.num_inference_steps,
                     guidance_scale=req.guidance_scale,
                     guidance_scale_2=req.guidance_scale_2,
                     seed=req.seed,
                 )
+                _log_mock_pipeline_timing(pipeline, logger)
+                tb = _mock_tensor_size_log_fragment(frames)
                 logger.info(
-                    f"[MOCK] Inference done for task {req.task_id}, "
-                    f"frames shape={frames.shape}, dtype={frames.dtype}"
+                    f"[MOCK_BENCH] task_id={req.task_id} full tensor in RAM "
+                    f"shape={frames.shape} {tb}; "
+                    f"delivery phase next (encode+SHM — same tail as prod rank-0)"
                 )
+                t_after_mock_bench = time.perf_counter()
 
-                mp4_path = VideoManager().export_to_mp4(frames)
+                export_timing = {}
+                mp4_path = VideoManager().export_to_mp4(
+                    frames, timing_out=export_timing
+                )
+                t_after_export = time.perf_counter()
                 logger.info(
                     f"[MOCK] Encoded mp4 at {mp4_path} "
                     f"({os.path.getsize(mp4_path):,} bytes)"
                 )
 
+                t_shm0 = time.perf_counter()
                 output_shm.write_response(
                     VideoResponse(
                         task_id=req.task_id,
@@ -200,6 +415,23 @@ def _run_shm_bridge() -> None:
                         file_path=mp4_path,
                         error_message="",
                     )
+                )
+                shm_write_s = time.perf_counter() - t_shm0
+                bench_to_handoff_s = time.perf_counter() - t_after_mock_bench
+                log_video_delivery_phase(
+                    logger,
+                    task_id=req.task_id,
+                    t_tensor_ready_monotonic=t_after_mock_bench,
+                    export_timing=export_timing,
+                    t_after_export_monotonic=t_after_export,
+                    mp4_path=mp4_path,
+                    num_frames=num_frames_from_video_tensor(frames),
+                    shm_write_s=shm_write_s,
+                )
+                logger.info(
+                    f"[MOCK_AFTER_BENCH] task_id={req.task_id} bench_to_handoff_s={bench_to_handoff_s:.4f} "
+                    f"(wall from after MOCK_BENCH full-tensor line → SHM success response written; "
+                    f"then server + client still follow)"
                 )
             except Exception as e:
                 logger.error(f"Error generating frames for {req.task_id}: {e}")
