@@ -198,16 +198,20 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
         request: TrainingRequest = training_requests[0]
 
-        if request.device_type not in SUPPORTED_DEVICES:
-            raise ValueError(
-                f"Llama Lora training requires a multichip device, "
-                f"got '{request.device_type}'. Supported: {sorted(SUPPORTED_DEVICES)}"
-            )
-
         log_handler = None
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
 
+        if request.device_type not in SUPPORTED_DEVICES:
+            self.logger.error(
+                f"Llama Lora training requires a multichip device, "
+                f"got '{request.device_type}'. Supported: {sorted(SUPPORTED_DEVICES)}"
+            )
+            raise ValueError(
+                f"Llama Lora training requires a multichip device, "
+                f"got '{request.device_type}'. Supported: {sorted(SUPPORTED_DEVICES)}"
+            )
+        
         if request._start_event:
             request._start_event.set()
             self.logger.info(f"Device {self.device_id}: Start event set")
