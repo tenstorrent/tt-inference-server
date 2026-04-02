@@ -96,6 +96,13 @@ class LLMController : public drogon::HttpController<LLMController> {
                                const std::string& type,
                                const Json::Value& param = Json::nullValue,
                                const Json::Value& code = Json::nullValue);
+
+  /**
+   * Determine if disaggregated prefill should be used for this request.
+   */
+  bool shouldDoPrefillOnDecode(
+      const domain::CompletionRequest& request,
+      bool validSessionFound) const;
 };
 
 }  // namespace tt::api
