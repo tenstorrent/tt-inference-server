@@ -4,7 +4,9 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <future>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,6 +17,9 @@
 #include "utils/concurrent_map.hpp"
 
 namespace tt::services {
+
+// Invalid slot ID constant
+constexpr uint32_t INVALID_SLOT_ID = std::numeric_limits<uint32_t>::max();
 
 class SessionManager {
  public:
@@ -44,7 +49,7 @@ class SessionManager {
   std::unique_ptr<ipc::MemoryResultQueue> memoryResultQueue;
 
   using PromisePtr = std::shared_ptr<std::promise<uint32_t>>;
-  ConcurrentMap<std::string, PromisePtr> pendingAllocations;
+  ConcurrentMap<uint32_t, PromisePtr> pendingAllocations;
   std::atomic<bool> stopped{false};
   std::thread drainThread;
 };

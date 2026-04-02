@@ -43,7 +43,7 @@ void SpPipelineMemoryManager::handleResponse(uint32_t requestId,
   result.taskId = taskId;
   result.status = domain::ManageMemoryStatus::SUCCESS;
   result.slotIds = {slotId};
-  resultQueue.push(result);
+  resultQueue->push(result);
 }
 
 }  // namespace tt::services

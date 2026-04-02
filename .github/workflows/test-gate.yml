@@ -699,7 +699,7 @@ jobs:
           echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
 
           {
-            echo "## 🚀 C++ Server vLLM Bench (Completions)"
+            echo "## 🚀 C++ Server vLLM Bench (Chat Completions)"
             echo ""
             echo "| Metric | Value | Threshold |"
             echo "|--------|-------|-----------|"

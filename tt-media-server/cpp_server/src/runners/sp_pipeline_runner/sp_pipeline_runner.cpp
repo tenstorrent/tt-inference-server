@@ -67,7 +67,7 @@ bool SpPipelineRunner::warmup() {
   warmupParams.ignore_eos = true;
 
   std::vector<int64_t> warmupTokens = {1};  // Single token
-  llm_engine::TaskID warmupTaskId("warmup_task");
+  uint32_t warmupTaskId = 0;                // Use 0 for warmup task
 
   auto warmupSeq = std::make_unique<llm_engine::Sequence>(
       warmupTaskId,
@@ -143,24 +143,22 @@ void SpPipelineRunner::step() {
   }
 }
 
-void SpPipelineRunner::pushToken(const llm_engine::TaskID& taskId,
-                                 uint64_t tokenId, bool finished) {
+void SpPipelineRunner::pushToken(uint32_t taskId, uint64_t tokenId,
+                                 bool finished) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;
   shared.token_id = tokenId;
-  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
-  shared.task_id[sizeof(shared.task_id) - 1] = '\0';
+  shared.task_id = taskId;
   resultQueue->push(shared);
 }
 
-void SpPipelineRunner::pushErrorToken(const llm_engine::TaskID& taskId) {
+void SpPipelineRunner::pushErrorToken(uint32_t taskId) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR;
   shared.token_id = 0;
-  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
-  shared.task_id[sizeof(shared.task_id) - 1] = '\0';
+  shared.task_id = taskId;
   resultQueue->push(shared);
 }
 
@@ -212,7 +210,7 @@ void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
   TT_LOG_INFO(
       "SpPipelineRunner::handleOutput slot={} task_id={} token_id={} "
       "is_complete={} finished={}",
-      output.slot_id, seq.taskId.id, output.token_id, output.is_complete,
+      output.slot_id, seq.taskId, output.token_id, output.is_complete,
       finished);
   pushToken(seq.taskId, output.token_id, finished);
 }
@@ -221,35 +219,12 @@ inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
   running.erase(slotId);
 }
 
-void SpPipelineRunner::handleRequest(
-    std::unique_ptr<llm_engine::Sequence> request) {
-  TT_LOG_INFO(
-      "SpPipelineRunner::handleRequest task_id={} tokenIds={} "
-      "numPromptTokens={} kvAddress={} max_tokens={}",
-      request->taskId.id, request->tokenIds.size(), request->numPromptTokens,
-      request->getKVCacheAddress(),
-      request->samplingParams ? (request->samplingParams->max_tokens.has_value()
-                                     ? std::to_string(
-                                           request->samplingParams->max_tokens
-                                               .value())
-                                     : "none")
-                              : "no_params");
+void SpPipelineRunner::handleRequest(std::unique_ptr<llm_engine::Sequence> request) {
   auto slotId = request->getKVCacheAddress();
   assert(slotId != llm_engine::INVALID_KV_CACHE_ADDRESS);
   auto slot = static_cast<uint32_t>(slotId);
 
-  std::string tokenStr;
-  for (size_t i = 0; i < request->tokenIds.size(); ++i) {
-    if (i > 0) tokenStr += ",";
-    tokenStr += std::to_string(request->tokenIds[i]);
-  }
-
   bool isNew = running.find(slot) == running.end();
-  TT_LOG_INFO(
-      "SpPipelineRunner::handleRequest sending {} slot={} tokens=[{}] "
-      "max_new_tokens={}",
-      isNew ? "SUBMIT" : "CONTINUE", slot, tokenStr,
-      request->samplingParams->max_tokens.value_or(-1));
 
   if (isNew) {
     pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));

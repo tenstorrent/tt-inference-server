@@ -87,7 +87,7 @@ ReasoningParseResult ReasoningParser::parseComplete(
   return result;
 }
 
-void ReasoningParser::initializeTask(const std::string& taskId) {
+void ReasoningParser::initializeTask(uint32_t taskId) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   // Initialize or reset task state
@@ -98,8 +98,7 @@ void ReasoningParser::initializeTask(const std::string& taskId) {
   TT_LOG_DEBUG("[ReasoningParser] Initialized task: {}", taskId);
 }
 
-TokenParseResult ReasoningParser::processToken(const std::string& taskId,
-                                               int64_t tokenId,
+TokenParseResult ReasoningParser::processToken(uint32_t taskId, int64_t tokenId,
                                                const std::string& decodedText) {
   std::lock_guard<std::mutex> lock(mutex_);
 
@@ -142,7 +141,7 @@ TokenParseResult ReasoningParser::processToken(const std::string& taskId,
   }
 }
 
-void ReasoningParser::finalizeTask(const std::string& taskId) {
+void ReasoningParser::finalizeTask(uint32_t taskId) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   auto it = task_states_.find(taskId);
@@ -166,7 +165,7 @@ void ReasoningParser::finalizeTask(const std::string& taskId) {
   TT_LOG_DEBUG("[ReasoningParser] Finalized task: {}", taskId);
 }
 
-bool ReasoningParser::isInReasoning(const std::string& taskId) const {
+bool ReasoningParser::isInReasoning(uint32_t taskId) const {
   std::lock_guard<std::mutex> lock(mutex_);
 
   auto it = task_states_.find(taskId);

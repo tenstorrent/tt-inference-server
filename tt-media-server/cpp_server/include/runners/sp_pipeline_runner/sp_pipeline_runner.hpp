@@ -35,9 +35,9 @@ class SpPipelineRunner : public IRunner {
 
  private:
   void step();
-  void pushToken(const llm_engine::TaskID& taskId, uint64_t tokenId,
+  void pushToken(uint32_t taskId, uint64_t tokenId,
                  bool finished);
-  void pushErrorToken(const llm_engine::TaskID& taskId);
+  void pushErrorToken(uint32_t taskId);
 
   std::optional<pm::PMResponse> getResponse();
   std::optional<pm::OutputMessage> getOutput();

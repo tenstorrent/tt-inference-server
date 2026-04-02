@@ -130,28 +130,27 @@ ServerMetrics::~ServerMetrics() {
 // Zero prometheus work on the calling thread.
 // -----------------------------------------------------------------------------
 
-void ServerMetrics::onRequestSubmitted(const std::string& taskId,
-                                       int promptTokens) {
+void ServerMetrics::onRequestSubmitted(uint32_t taskId, int promptTokens) {
   if (!tryPushEvent(EventRequestSubmitted{
           taskId, std::chrono::steady_clock::now(), promptTokens})) {
     TT_LOG_WARN("[ServerMetrics] event queue full, dropping RequestSubmitted");
   }
 }
 
-void ServerMetrics::onToken(const std::string& taskId) {
+void ServerMetrics::onToken(uint32_t taskId) {
   if (!tryPushEvent(
           EventFirstToken{taskId, std::chrono::steady_clock::now()})) {
     TT_LOG_WARN("[ServerMetrics] event queue full, dropping FirstToken");
   }
 }
 
-void ServerMetrics::onITLSample(const std::string& taskId, double itlSeconds) {
+void ServerMetrics::onITLSample(uint32_t taskId, double itlSeconds) {
   if (!tryPushEvent(EventITLSample{taskId, itlSeconds})) {
     TT_LOG_WARN("[ServerMetrics] event queue full, dropping ITLSample");
   }
 }
 
-void ServerMetrics::onRequestCompleted(const std::string& taskId,
+void ServerMetrics::onRequestCompleted(uint32_t taskId,
                                        const std::string& finishReason,
                                        int generationTokens) {
   if (!tryPushEvent(EventRequestCompleted{taskId,

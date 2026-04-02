@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <unordered_map>
 
-#include "domain/task_id.hpp"
 #include "pipeline_manager/pipeline_manager.hpp"
 #include "services/memory_manager.hpp"
 
@@ -27,7 +26,7 @@ class SpPipelineMemoryManager : public MemoryManager {
 
  private:
   tt_blaze::pipeline_manager::PipelineManager& pipelineManager;
-  std::unordered_map<uint32_t, domain::TaskID> allocating;
+  std::unordered_map<uint32_t, uint32_t> allocating;
   uint32_t nextRequestID{0};
   onEvictCb onEvict;
 };

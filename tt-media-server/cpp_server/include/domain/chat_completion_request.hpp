@@ -74,7 +74,7 @@ struct ChatCompletionRequest : BaseRequest {
   std::optional<std::string> sessionId;
 
   static ChatCompletionRequest fromJson(const Json::Value& json,
-                                        TaskID taskId) {
+                                        uint32_t taskId) {
     ChatCompletionRequest req(std::move(taskId));
 
     if (json.isMember("model") && !json["model"].isNull()) {
@@ -184,7 +184,7 @@ struct ChatCompletionRequest : BaseRequest {
     }
 
     std::ostringstream out;
-    out << "task_id=" << task_id.id << " model=" << model.value_or("default")
+    out << "task_id=" << task_id << " model=" << model.value_or("default")
         << " stream=" << stream << " messages=" << messages.size()
         << " last_msg=[" << lastMsg << "]"
         << " max_tokens=" << detail::optStr(max_tokens)
@@ -199,7 +199,7 @@ struct ChatCompletionRequest : BaseRequest {
   }
 
   /** Convert to CompletionRequest: messages -> prompt, then same pipeline as
-   * /completions. */
+   * /chat/completions. */
   CompletionRequest toCompletionRequest() const {
     CompletionRequest out(task_id);
     out.model = model;
