@@ -978,6 +978,12 @@ llm_templates = [
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
         },
+        metadata={
+            "openai/gpt-oss-20b": {
+                "reasoning_parser_name": "openai_gptoss",
+                "tool_call_parser_name": "openai",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["openai/gpt-oss-120b"],
@@ -1490,6 +1496,14 @@ llm_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
             "MAX_PREFILL_CHUNK_SIZE": "16",
         },
+        metadata={
+            "Qwen/Qwen2.5-72B": {
+                "tool_call_parser_name": "hermes",
+            },
+            "Qwen/Qwen2.5-72B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
@@ -1514,6 +1528,14 @@ llm_templates = [
         status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        metadata={
+            "Qwen/Qwen2.5-7B": {
+                "tool_call_parser_name": "hermes",
+            },
+            "Qwen/Qwen2.5-7B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
         },
     ),
     ModelSpecTemplate(
@@ -2230,6 +2252,11 @@ llm_templates = [
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
+        metadata={
+            "Qwen/Qwen2.5-Coder-32B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
 ]
 
@@ -2404,6 +2431,11 @@ vlm_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
+        metadata={
+            "Qwen/Qwen2.5-VL-3B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -2436,6 +2468,11 @@ vlm_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
+        metadata={
+            "Qwen/Qwen2.5-VL-7B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -2459,6 +2496,11 @@ vlm_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
+        metadata={
+            "Qwen/Qwen2.5-VL-32B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -2485,6 +2527,11 @@ vlm_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
+        metadata={
+            "Qwen/Qwen2.5-VL-72B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=[
