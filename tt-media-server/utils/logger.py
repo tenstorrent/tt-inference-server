@@ -65,6 +65,7 @@ class TTLogger:
         log_file = os.getenv("LOG_FILE") or None
 
         self.logger = logging.getLogger(name)
+        self.logger.propagate = False
         self.logger.setLevel(level)
 
         # Avoid adding duplicate handlers if the logger is reused.
