@@ -76,16 +76,16 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
 
-        supported = {
+        supported_device_types = {
             dt.value
             for dt in TRAINING_RUNNER_SUPPORTED_DEVICES[
                 ModelRunners.TRAINING_GEMMA_LORA
             ]
         }
-        if request.device_type not in supported:
+        if request.device_type not in supported_device_types:
             raise ValueError(
                 f"Gemma Lora training requires a single chip device, "
-                f"got '{request.device_type}'. Supported: {sorted(supported)}"
+                f"got '{request.device_type}'. Supported: {sorted(supported_device_types)}"
             )
 
         if request._start_event:
