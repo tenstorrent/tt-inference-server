@@ -580,12 +580,13 @@ void LLMController::handleStreaming(
             "[LLMController] Using prefill on decode for sessionId: {}",
             reqPtr->sessionId.value_or("none"));
         service->submitStreamingRequest(*reqPtr, streamingCallback);
-      }
-      else {
+      } else {
         TT_LOG_DEBUG(
-            "[LLMController] Using disaggregated prefill for request with sessionId: {}",
+            "[LLMController] Using disaggregated prefill for request with "
+            "sessionId: {}",
             reqPtr->sessionId.value_or("none"));
-        disaggregationService->handleStreamingRequest(*reqPtr, streamingCallback);
+        disaggregationService->handleStreamingRequest(*reqPtr,
+                                                      streamingCallback);
       }
     } else {
       throw std::runtime_error(
@@ -621,8 +622,7 @@ void LLMController::handleStreaming(
 }
 
 bool LLMController::shouldDoPrefillOnDecode(
-    const domain::CompletionRequest& request,
-    bool validSessionFound) const {
+    const domain::CompletionRequest& request, bool validSessionFound) const {
   // for valid sessions always do prefill on decode
   if (validSessionFound) {
     return true;

@@ -243,8 +243,9 @@ size_t sessionEvictionCount() {
 }
 
 size_t maxTokensToPrefillOnDecode() {
-  return static_cast<size_t>(envUlong("MAX_TOKENS_TO_PREFILL_ON_DECODE",
-                                      defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
+  return static_cast<size_t>(
+      envUlong("MAX_TOKENS_TO_PREFILL_ON_DECODE",
+               defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
 }
 
 }  // namespace tt::config
