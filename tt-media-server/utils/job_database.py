@@ -63,6 +63,7 @@ class JobDatabase:
                     epoch INTEGER NOT NULL,
                     metric_name TEXT NOT NULL,
                     value FLOAT NOT NULL,
+                    learning_rate FLOAT,
                     timestamp REAL NOT NULL,
                     
                     PRIMARY KEY (job_id, global_step, metric_name), 
@@ -214,19 +215,28 @@ class JobDatabase:
         metric_name: str,
         value: float,
         timestamp: float,
+        learning_rate: Optional[float] = None,
     ) -> None:
         """Insert a new metric into the database."""
         with self._get_cursor(commit=True) as cursor:
             cursor.execute(
-                "INSERT INTO metrics (job_id, global_step, epoch, metric_name, value, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-                (job_id, global_step, epoch, metric_name, value, timestamp),
+                "INSERT INTO metrics (job_id, global_step, epoch, metric_name, value, learning_rate, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    job_id,
+                    global_step,
+                    epoch,
+                    metric_name,
+                    value,
+                    learning_rate,
+                    timestamp,
+                ),
             )
 
     def get_metrics_flat(self, job_id: str) -> List[Dict[str, Any]]:
         """Returns metrics as a flat list."""
         with self._get_cursor(commit=False) as cursor:
             cursor.execute(
-                "SELECT global_step, epoch, metric_name, value, timestamp FROM metrics WHERE job_id = ? ORDER BY metric_name ASC, global_step ASC",
+                "SELECT global_step, epoch, metric_name, value, learning_rate, timestamp FROM metrics WHERE job_id = ? ORDER BY metric_name ASC, global_step ASC",
                 (job_id,),
             )
             return [
@@ -235,6 +245,7 @@ class JobDatabase:
                     "epoch": r["epoch"],
                     "metric_name": r["metric_name"],
                     "value": r["value"],
+                    "learning_rate": r["learning_rate"],
                     "timestamp": r["timestamp"],
                 }
                 for r in cursor.fetchall()

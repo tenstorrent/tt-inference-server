@@ -1405,10 +1405,10 @@ class TestJobManager:
         async def task_func(req):
             # fmt: off
             metrics_list.append(
-                {"global_step": 1, "epoch": 1, "metric_name": "loss", "value": 0.5, "timestamp": 1000}
+                {"global_step": 1, "epoch": 1, "metric_name": "loss", "value": 0.5, "learning_rate": 0.001, "timestamp": 1000}
             )
             metrics_list.append(
-                {"global_step": 2, "epoch": 1, "metric_name": "loss", "value": 0.4, "timestamp": 1001}
+                {"global_step": 2, "epoch": 1, "metric_name": "loss", "value": 0.4, "learning_rate": 0.001, "timestamp": 1001}
             )
             checkpoints_list.append(
                 {"id": "ckpt-step-100", "step": 100, "epoch": 1, "metrics": {"train_loss": 0.5}, "created_at": 1000.0}
@@ -1451,6 +1451,7 @@ class TestJobManager:
         assert len(db_metrics) == 2
         assert db_metrics[0]["value"] == 0.5
         assert db_metrics[1]["value"] == 0.4
+        assert db_metrics[0]["learning_rate"] == 0.001
 
         db_ckpts = job_manager.db.get_checkpoints("train-persist")
         assert len(db_ckpts) == 2
@@ -1488,7 +1489,7 @@ class TestJobManager:
         # fmt: off
         job_manager.db.insert_metric(job_id="train-1", global_step=20, epoch=2, metric_name="loss", value=0.3, timestamp=1002)
         job_manager.db.insert_metric(job_id="train-1", global_step=10, epoch=1, metric_name="loss", value=0.5, timestamp=1000)
-        job_manager.db.insert_metric(job_id="train-1", global_step=10, epoch=1, metric_name="accuracy", value=0.8, timestamp=1001)
+        job_manager.db.insert_metric(job_id="train-1", global_step=10, epoch=1, metric_name="accuracy", value=0.8, learning_rate=0.001, timestamp=1001)
         job_manager.db.insert_checkpoint("train-1", "ckpt-step-100", 100, 1, {"loss": 0.5}, 1001.0)
         job_manager.db.insert_checkpoint("train-1", "ckpt-step-200", 200, 2, {"loss": 0.3}, 1002.0)
         job_manager.db.insert_log("train-1", 0, "ts1", "info", 1, "Started")
@@ -1510,6 +1511,7 @@ class TestJobManager:
                 assert len(metrics) == 3
                 assert metrics[0]["metric_name"] == "accuracy"
                 assert metrics[1]["global_step"] == 10
+                assert metrics[1]["learning_rate"] == 0.001
                 assert metrics[2]["timestamp"] == 1002
 
                 # Checkpoints: only ckpt-step-100 survives disk validation

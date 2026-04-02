@@ -502,6 +502,7 @@ class JobManager:
                     epoch=metric["epoch"],
                     metric_name=metric["metric_name"],
                     value=metric["value"],
+                    learning_rate=metric.get("learning_rate"),
                     timestamp=metric["timestamp"],
                 )
             except IntegrityError:

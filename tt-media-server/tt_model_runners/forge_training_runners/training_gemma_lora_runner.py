@@ -211,6 +211,9 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                                     "epoch": epoch,
                                     "metric_name": "train_loss",
                                     "value": round(avg_loss, 4),
+                                    "learning_rate": self.optimizer.param_groups[0][
+                                        "lr"
+                                    ],
                                     "timestamp": time.time(),
                                 }
                             )
@@ -265,6 +268,9 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                                         "epoch": epoch,
                                         "metric_name": "val_loss",
                                         "value": round(avg_val_loss, 4),
+                                        "learning_rate": self.optimizer.param_groups[0][
+                                            "lr"
+                                        ],
                                         "timestamp": time.time(),
                                     }
                                 )
