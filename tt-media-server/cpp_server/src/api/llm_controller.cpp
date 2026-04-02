@@ -143,7 +143,7 @@ void LLMController::chatCompletions(
 
   if (chatReq.messages.empty()) {
     auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson("messages is required and must be a non-empty array test",
+        errorJson("messages is required and must be a non-empty array",
                   "invalid_request_error", Json::Value("messages")));
     resp->setStatusCode(drogon::k400BadRequest);
     callback(resp);
