@@ -390,6 +390,7 @@ class ModelSpec:
     )
     uses_tensor_model_cache: bool = True
     has_builtin_warmup: bool = False
+    metadata: Dict = field(default_factory=dict)
 
     # DEPRECATED - only used by tt-media-server, kept for backwards compatibility
     cli_args: Dict[str, str] = field(default_factory=dict)
@@ -808,6 +809,7 @@ class ModelSpecTemplate:
         None  # HF repo to download weights from (shared across all weights)
     )
     has_builtin_warmup: bool = False
+    metadata: Dict[str, Dict] = field(default_factory=dict)
 
     def __post_init__(self):
         self._validate_data()
@@ -821,6 +823,12 @@ class ModelSpecTemplate:
             f"inference_engine must be a valid InferenceEngine! \
             Available: {[engine for engine in InferenceEngine]}"
         )
+        # check that metadata keys are a subset of weights
+        if self.metadata:
+            invalid_keys = set(self.metadata.keys()) - set(self.weights)
+            assert not invalid_keys, (
+                f"These keys do not exist as weights: {invalid_keys}, valid weights: {self.weights}"
+            )
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
@@ -903,6 +911,7 @@ class ModelSpecTemplate:
                     model_type=self.model_type,
                     uses_tensor_model_cache=self.uses_tensor_model_cache,
                     has_builtin_warmup=self.has_builtin_warmup,
+                    metadata=self.metadata.get(weight, {}),
                 )
 
                 specs.append(spec)

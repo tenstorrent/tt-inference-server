@@ -5,7 +5,7 @@
 from typing import Optional
 
 from domain.base_request import BaseRequest
-from config.constants import DatasetLoaders
+from config.constants import DatasetLoaders, DeviceTypes, TrainingOptimizers
 from pydantic import PrivateAttr
 from multiprocessing import Event
 
@@ -35,7 +35,11 @@ class TrainingRequest(BaseRequest):
     input_sharding_dim: Optional[str] = None
     model_sharding_patterns: Optional[list[list]] = None
 
+    device_type: str = DeviceTypes.P150.value
+    optimizer: str = TrainingOptimizers.ADAMW.value
+
     _output_model_path: str = PrivateAttr(default=None)
     _start_event: Event = PrivateAttr(default=None)
     _cancel_event: Event = PrivateAttr(default=None)
     _training_metrics: list = PrivateAttr(default=None)
+    _training_logs: list = PrivateAttr(default=None)
