@@ -6,9 +6,9 @@ image:
   tag: 0.11.1-bac8b34
 resources:
   limits:
-    memory: 200Gi
+    memory: 500Gi
   requests:
-    memory: 60Gi
+    memory: 300Gi
 probes:
   liveness:
     enabled: false
