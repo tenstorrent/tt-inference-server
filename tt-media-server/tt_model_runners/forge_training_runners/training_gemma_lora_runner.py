@@ -21,15 +21,17 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
-from config.constants import DeviceTypes, SupportedModels, TrainingOptimizers
+from config.constants import (
+    ModelRunners,
+    TrainingOptimizers,
+    TRAINING_RUNNER_SUPPORTED_DEVICES,
+    SupportedModels,
+)
 
 
 OPTIMIZER_MAP = {
     TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
 }
-
-
-SUPPORTED_DEVICES = {DeviceTypes.P150.value}
 
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
@@ -74,14 +76,16 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
 
-        if request.device_type not in SUPPORTED_DEVICES:
-            self.logger.error(
-                f"Gemma Lora training requires a single chip device, "
-                f"got '{request.device_type}'. Supported: {sorted(SUPPORTED_DEVICES)}"
-            )
+        supported = {
+            dt.value
+            for dt in TRAINING_RUNNER_SUPPORTED_DEVICES[
+                ModelRunners.TRAINING_GEMMA_LORA
+            ]
+        }
+        if request.device_type not in supported:
             raise ValueError(
                 f"Gemma Lora training requires a single chip device, "
-                f"got '{request.device_type}'. Supported: {sorted(SUPPORTED_DEVICES)}"
+                f"got '{request.device_type}'. Supported: {sorted(supported)}"
             )
 
         if request._start_event:

@@ -23,9 +23,10 @@ from utils.dataset_loaders.dataset_resolver import get_dataset_loader
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.decorators import log_execution_time
 from config.constants import (
-    DeviceTypes,
+    ModelRunners,
     TrainingMeshShapes,
     TrainingOptimizers,
+    TRAINING_RUNNER_SUPPORTED_DEVICES,
     SupportedModels,
 )
 
@@ -81,9 +82,6 @@ def _training_step_inner(batch, model):
     return loss.detach()
 
 
-SUPPORTED_DEVICES = {DeviceTypes.P300.value}
-
-
 class TrainingLlamaLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads=num_torch_threads)
@@ -123,7 +121,8 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
         return True
 
     DEVICE_MESH_SHAPES = {
-        DeviceTypes.P300.value: TrainingMeshShapes.P300.value,
+        dt.value: TrainingMeshShapes[dt.name].value
+        for dt in TRAINING_RUNNER_SUPPORTED_DEVICES[ModelRunners.TRAINING_LLAMA_LORA]
     }
     MESH_AXIS_NAMES = ("batch", "model")
     # For now we only want 1, 2 mesh shapes, so we don't need to shard input data.
@@ -202,14 +201,16 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
 
-        if request.device_type not in SUPPORTED_DEVICES:
-            self.logger.error(
-                f"Llama Lora training requires a multichip device, "
-                f"got '{request.device_type}'. Supported: {sorted(SUPPORTED_DEVICES)}"
-            )
+        supported = {
+            dt.value
+            for dt in TRAINING_RUNNER_SUPPORTED_DEVICES[
+                ModelRunners.TRAINING_LLAMA_LORA
+            ]
+        }
+        if request.device_type not in supported:
             raise ValueError(
                 f"Llama Lora training requires a multichip device, "
-                f"got '{request.device_type}'. Supported: {sorted(SUPPORTED_DEVICES)}"
+                f"got '{request.device_type}'. Supported: {sorted(supported)}"
             )
         
         if request._start_event:

@@ -216,6 +216,12 @@ class TrainingMeshShapes(Enum):
     P300 = (1, 2)
 
 
+TRAINING_RUNNER_SUPPORTED_DEVICES = {
+    ModelRunners.TRAINING_GEMMA_LORA: {DeviceTypes.P150},
+    ModelRunners.TRAINING_LLAMA_LORA: {DeviceTypes.P300},
+}
+
+
 class QueueType(Enum):
     MemoryQueue = "MemoryQueue"
     FasterFifo = "FasterFifo"
