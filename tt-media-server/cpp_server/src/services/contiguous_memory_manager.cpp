@@ -3,6 +3,8 @@
 
 #include "services/contiguous_memory_manager.hpp"
 
+#include "domain/manage_memory.hpp"
+
 namespace tt::services {
 
 using tt::domain::ManageMemoryResult;
@@ -14,7 +16,9 @@ void ContiguousMemoryManager::handleRequest(const ManageMemoryTask& task) {
   result.taskId = task.taskId;
   // TODO return a proper slot id here
   result.slotIds = {static_cast<std::uint32_t>(123)};
-  result.status = ManageMemoryStatus::SUCCESS;
+  if (task.action != domain::MemoryManagementAction::DEALLOCATE) {
+    result.status = domain::ManageMemoryStatus::SUCCESS;
+  }
   resultQueue->push(result);
 }
 
