@@ -67,7 +67,6 @@ class SDXLForgeRunner(BaseDeviceRunner):
             self.device = torch.device("cpu")
             self.logger.info(f"Device {self.device_id}: Using CPU fallback")
         else:
-            import torch_xla
             import torch_xla.core.xla_model as xm
             import torch_xla.runtime as xr
 
@@ -124,14 +123,26 @@ class SDXLForgeRunner(BaseDeviceRunner):
 
     def _load_pipeline(self):
         """Download weights, instantiate models, compile UNet for TT device."""
-        from diffusers import AutoencoderKL, EulerDiscreteScheduler, UNet2DConditionModel
-        from transformers import CLIPTextModel, CLIPTextModelWithProjection, CLIPTokenizer
+        from diffusers import (
+            AutoencoderKL,
+            EulerDiscreteScheduler,
+            UNet2DConditionModel,
+        )
+        from transformers import (
+            CLIPTextModel,
+            CLIPTextModelWithProjection,
+            CLIPTokenizer,
+        )
 
         # Select model based on resolution.
         # 512px uses hotshotco/SDXL-512, 1024px uses stabilityai/stable-diffusion-xl-base-1.0.
         if self.resolution == 512:
             model_id = SupportedModels.STABLE_DIFFUSION_XL_512.value
-            if self.settings.model_weights_path and self.settings.model_weights_path != SupportedModels.STABLE_DIFFUSION_XL_BASE.value:
+            if (
+                self.settings.model_weights_path
+                and self.settings.model_weights_path
+                != SupportedModels.STABLE_DIFFUSION_XL_BASE.value
+            ):
                 self.logger.warning(
                     f"Device {self.device_id}: model_weights_path={self.settings.model_weights_path!r} "
                     f"is set but resolution is 512 — using {model_id} instead"
@@ -143,7 +154,11 @@ class SDXLForgeRunner(BaseDeviceRunner):
             )
 
         # hotshotco/SDXL-512 doesn't ship native fp16 weights; load full precision and cast
-        variant = "fp16" if model_id == SupportedModels.STABLE_DIFFUSION_XL_BASE.value else None
+        variant = (
+            "fp16"
+            if model_id == SupportedModels.STABLE_DIFFUSION_XL_BASE.value
+            else None
+        )
 
         self.logger.info(
             f"Device {self.device_id}: Loading models from {model_id} "
@@ -237,7 +252,9 @@ class SDXLForgeRunner(BaseDeviceRunner):
             curr_hidden = torch.cat([uncond_hidden, cond_hidden], dim=0)  # (2, T, Di)
             encoder_hidden_states.append(curr_hidden)
 
-        encoder_hidden_states = torch.cat(encoder_hidden_states, dim=-1)  # (2, T, D1+D2)
+        encoder_hidden_states = torch.cat(
+            encoder_hidden_states, dim=-1
+        )  # (2, T, D1+D2)
         return encoder_hidden_states, pooled_text_embeds
 
     def _generate(
@@ -252,14 +269,18 @@ class SDXLForgeRunner(BaseDeviceRunner):
         runs_on_cpu = os.getenv("RUNS_ON_CPU", "false").lower() == "true"
 
         if runs_on_cpu:
-            tt_cast = lambda x: x.to(dtype=torch.bfloat16)
+
+            def tt_cast(x):
+                return x.to(dtype=torch.bfloat16)
         else:
-            tt_cast = lambda x: (
-                x.to(dtype=torch.bfloat16).to(device=self.device)
-                if x.device == torch.device("cpu")
-                else x.to(dtype=torch.bfloat16)
-            )
-        cpu_cast = lambda x: x.to("cpu").to(dtype=torch.float16)
+
+            def tt_cast(x):
+                if x.device == torch.device("cpu"):
+                    return x.to(dtype=torch.bfloat16).to(device=self.device)
+                return x.to(dtype=torch.bfloat16)
+
+        def cpu_cast(x):
+            return x.to("cpu").to(dtype=torch.float16)
 
         with torch.no_grad():
             # --- Text Encoding (CPU) ---

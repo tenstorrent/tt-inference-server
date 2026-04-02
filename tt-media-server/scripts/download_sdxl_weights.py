@@ -60,14 +60,18 @@ def _download_model(repo_id: str, local_dir: str, label: str):
             local_dir_use_symlinks=False,
         )
 
-        print(f"✓ {label} model downloaded successfully to: {os.path.abspath(local_dir)}")
+        print(
+            f"✓ {label} model downloaded successfully to: {os.path.abspath(local_dir)}"
+        )
 
         # Verify download
         model_index_path = os.path.join(local_dir, "model_index.json")
         if os.path.exists(model_index_path):
             print(f"✓ {label} model download verified")
         else:
-            print(f"⚠ Warning: model_index.json not found, {label} download may be incomplete")
+            print(
+                f"⚠ Warning: model_index.json not found, {label} download may be incomplete"
+            )
 
     except Exception as e:
         print(f"✗ Error downloading {label} model: {e}")
