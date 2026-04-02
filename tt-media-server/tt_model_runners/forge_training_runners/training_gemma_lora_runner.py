@@ -21,12 +21,15 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
-from config.constants import SupportedModels, TrainingOptimizers
+from config.constants import DeviceTypes, SupportedModels, TrainingOptimizers
 
 
 OPTIMIZER_MAP = {
     TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
 }
+
+
+SUPPORTED_DEVICES = {DeviceTypes.P150.value}
 
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
@@ -65,8 +68,13 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 f"Batch processing not fully implemented. Processing only first of {len(training_requests)} requests"
             )
 
-        # Get the first request
         request = training_requests[0]
+
+        if request.device_type not in SUPPORTED_DEVICES:
+            raise ValueError(
+                f"Gemma Lora training requires a single chip device, "
+                f"got '{request.device_type}'. Supported: {sorted(SUPPORTED_DEVICES)}"
+            )
 
         log_handler = None
         if request._training_logs is not None:

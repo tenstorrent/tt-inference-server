@@ -22,7 +22,7 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.decorators import log_execution_time
-from config.constants import TrainingOptimizers, SupportedModels
+from config.constants import DeviceTypes, TrainingMeshShapes, TrainingOptimizers, SupportedModels
 
 OPTIMIZER_MAP = {
     TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
@@ -77,6 +77,9 @@ def _training_step_inner(batch, model):
     return loss.detach()
 
 
+SUPPORTED_DEVICES = {DeviceTypes.P300.value}
+
+
 class TrainingLlamaLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads=num_torch_threads)
@@ -117,30 +120,35 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
         )
         return True
 
-    def _create_mesh(self, request: TrainingRequest) -> xs.Mesh:
-        assert request.mesh_shape is not None, "mesh_shape is required for multichip training"
-        assert request.mesh_axis_names is not None, "mesh_axis_names is required for multichip training"
-        assert len(request.mesh_shape) == len(request.mesh_axis_names), (
-            "mesh_shape and mesh_axis_names must have the same length"
-        )
+    DEVICE_MESH_SHAPES = {
+        DeviceTypes.P300.value: TrainingMeshShapes.P300.value,
+    }
+    MESH_AXIS_NAMES = ("batch", "model")
+    INPUT_SHARDING_DIM = None
+    # TODO(mmilosevicTT): We need to accomodate to different lora layers provided. For now it is OK to just search a pattern for all attention layers, but in the future we need to be more specific.
+    MODEL_SHARDING_PATTERNS = [
+        [r"\.model\.embed_tokens\.weight$",                              [None, None]],
+        [r"\.lm_head\.weight$",                                          ["model", None]],
+        [r"\.model\.norm\.weight$",                                      [None]],
+        [r"\.self_attn\.(q|k|v)_proj(\.base_layer|\.lora_B\.default)?$", [None, "model"]],
+        [r"\.self_attn\.o_proj(\.base_layer|\.lora_B\.default)?$",       ["model", None]],
+        [r"\.mlp\.(gate_proj|up_proj)$",                                 [None, "model"]],
+        [r"\.mlp\.down_proj$",                                           ["model", None]],
+    ]
 
-        if request.input_sharding_dim is not None:
-            assert request.input_sharding_dim in request.mesh_axis_names, (
-                f"input_sharding_dim '{request.input_sharding_dim}' "
-                f"must be present in mesh_axis_names {request.mesh_axis_names}"
-            )
-
+    def _create_mesh(self, device_type: str) -> xs.Mesh:
+        mesh_shape = self.DEVICE_MESH_SHAPES[device_type]
         num_devices = xr.global_runtime_device_count()
         device_ids = np.array(range(num_devices))
 
         mesh = xs.Mesh(
             device_ids=device_ids,
-            mesh_shape=tuple(request.mesh_shape),
-            axis_names=tuple(request.mesh_axis_names),
+            mesh_shape=mesh_shape,
+            axis_names=self.MESH_AXIS_NAMES,
         )
         self.logger.info(
-            f"Created mesh: shape={request.mesh_shape}, "
-            f"axes={request.mesh_axis_names}, num_devices={num_devices}"
+            f"Created mesh: shape={mesh_shape}, "
+            f"axes={self.MESH_AXIS_NAMES}, num_devices={num_devices}"
         )
         return mesh
 
@@ -160,14 +168,14 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
         torch_xla.sync(wait=True)
 
-    def _prepare_batch(self, batch, mesh: xs.Mesh, input_sharding_dim: str):
+    def _prepare_batch(self, batch, mesh: xs.Mesh):
         """Move batch to device and apply data-parallel sharding."""
         batch = {k: v.to(self.device) for k, v in batch.items()}
 
-        if input_sharding_dim is not None:
+        if self.INPUT_SHARDING_DIM is not None:
             for _, tensor in batch.items():
                 if tensor.dim() > 0:
-                    partition_spec = (input_sharding_dim,) + tuple(
+                    partition_spec = (self.INPUT_SHARDING_DIM,) + tuple(
                         [None] * (tensor.dim() - 1)
                     )
                     xs.mark_sharding(tensor, mesh, partition_spec)
@@ -184,6 +192,12 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
         request: TrainingRequest = training_requests[0]
 
+        if request.device_type not in SUPPORTED_DEVICES:
+            raise ValueError(
+                f"Llama Lora training requires a multichip device, "
+                f"got '{request.device_type}'. Supported: {sorted(SUPPORTED_DEVICES)}"
+            )
+
         log_handler = None
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
@@ -192,7 +206,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             request._start_event.set()
             self.logger.info(f"Device {self.device_id}: Start event set")
 
-        mesh = self._create_mesh(request)
+        mesh = self._create_mesh(request.device_type)
 
         # Load datasets.
         train_dataset = get_dataset_loader(
@@ -259,8 +273,8 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             f"Device {self.device_id}: Llama Lora multichip training setup completed"
         )
 
-        if request.model_sharding_patterns:
-            self._shard_model(model, mesh, request.model_sharding_patterns)
+        if self.MODEL_SHARDING_PATTERNS:
+            self._shard_model(model, mesh, self.MODEL_SHARDING_PATTERNS)
 
         global_step = 0
         running_loss = 0.0
@@ -292,9 +306,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                         "labels_mask": labels_mask,
                     }
 
-                    batch = self._prepare_batch(
-                        batch, mesh, request.input_sharding_dim
-                    )
+                    batch = self._prepare_batch(batch, mesh)
 
                     loss = _training_step_inner(batch, model)
                     torch_xla.sync(wait=True)
@@ -390,9 +402,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                     "labels_mask": labels_mask,
                 }
 
-                batch = self._prepare_batch(
-                    batch, mesh, request.input_sharding_dim
-                )
+                batch = self._prepare_batch(batch, mesh)
 
                 outputs = model(
                     input_ids=batch["input_ids"],

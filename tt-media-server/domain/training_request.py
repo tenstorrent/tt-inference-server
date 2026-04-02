@@ -2,8 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-from typing import Optional
-
 from domain.base_request import BaseRequest
 from config.constants import DatasetLoaders, DeviceTypes, TrainingOptimizers
 from pydantic import PrivateAttr
@@ -28,12 +26,6 @@ class TrainingRequest(BaseRequest):
     lora_task_type: str = "CAUSAL_LM"
 
     ignored_index: int = -100
-
-    # Multichip SPMD configuration
-    mesh_shape: Optional[list[int]] = None
-    mesh_axis_names: Optional[list[str]] = None
-    input_sharding_dim: Optional[str] = None
-    model_sharding_patterns: Optional[list[list]] = None
 
     device_type: str = DeviceTypes.P150.value
     optimizer: str = TrainingOptimizers.ADAMW.value
