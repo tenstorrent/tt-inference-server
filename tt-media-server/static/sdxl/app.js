@@ -52,18 +52,6 @@ $('random-seed').addEventListener('change', () => {
 // Initialize disabled state
 $('seed').disabled = $('random-seed').checked;
 
-// ─── Resolution Toggle ───────────────────────────────────────────────────────
-document.querySelectorAll('.resolution-option').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.resolution-option').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-    });
-});
-
-// ─── Guidance Rescale Slider ──────────────────────────────────────────────────
-$('guidance-rescale').addEventListener('input', () => {
-    $('guidance-rescale-label').textContent = parseFloat($('guidance-rescale').value).toFixed(2);
-});
 
 // ─── Parameter Collection & Validation ───────────────────────────────────────
 function clearErrors() {
@@ -81,10 +69,6 @@ function collectParams() {
     const guidance = parseFloat($('guidance').value);
     const useRandomSeed = $('random-seed').checked;
     const seedVal = $('seed').value.trim();
-    const prompt2 = $('prompt-2').value.trim();
-    const negativePrompt2 = $('negative-prompt-2').value.trim();
-    const guidanceRescale = parseFloat($('guidance-rescale').value);
-
     let valid = true;
 
     if (!prompt) {
@@ -111,9 +95,6 @@ function collectParams() {
     };
 
     if (negativePrompt) body.negative_prompt = negativePrompt;
-    if (prompt2) body.prompt_2 = prompt2;
-    if (negativePrompt2) body.negative_prompt_2 = negativePrompt2;
-    if (guidanceRescale !== 0.0) body.guidance_rescale = guidanceRescale;
 
     if (!useRandomSeed && seedVal !== '') {
         const seed = parseInt(seedVal, 10);
@@ -161,9 +142,7 @@ async function generateImage() {
     }, 1000);
 
     try {
-        const resolution = document.querySelector('.resolution-option.active').dataset.resolution;
-        const url = resolution === '512' ? `${API_URL}?resolution=512` : API_URL;
-        const res = await fetch(url, {
+        const res = await fetch(API_URL, {
             method: 'POST',
             headers: HEADERS,
             body: JSON.stringify(params),
@@ -204,7 +183,7 @@ async function generateImage() {
             steps: params.num_inference_steps,
             guidance: params.guidance_scale,
             seed: params.seed != null ? params.seed : 'random',
-            resolution: `${resolution}×${resolution}`,
+            resolution: '512×512',
             elapsed: `${elapsed}s`,
         };
 

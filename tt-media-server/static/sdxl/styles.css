@@ -343,40 +343,15 @@ body::before {
 }
 
 /* ─── Resolution Toggle ─────────────────────────────────────────────────── */
-.resolution-toggle {
-    display: flex;
+.resolution-display {
+    padding: 8px 12px;
     border: 1px solid var(--border-primary);
     border-radius: 6px;
-    overflow: hidden;
-    background: var(--bg-primary);
-}
-
-.resolution-option {
-    flex: 1;
-    padding: 8px 12px;
-    border: none;
     background: var(--bg-primary);
     color: var(--text-secondary);
     font-size: 13px;
     font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    transition: all 0.15s ease;
     text-align: center;
-}
-
-.resolution-option:first-child {
-    border-right: 1px solid var(--border-primary);
-}
-
-.resolution-option:hover:not(.active) {
-    background: var(--accent-primary);
-    color: var(--text-primary);
-}
-
-.resolution-option.active {
-    background: var(--brand-red);
-    color: white;
 }
 
 /* ─── Advanced Section ───────────────────────────────────────────────────── */
