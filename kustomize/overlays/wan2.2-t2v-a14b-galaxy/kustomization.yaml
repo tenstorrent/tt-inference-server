@@ -3,7 +3,6 @@ kind: Kustomization
 namePrefix: wan2.2-t2v-a14b-galaxy-
 resources:
   - ../../base/media
-  - secret.yaml
 images:
   - name: ghcr.io/tenstorrent/tt-media-inference-server
     newTag: 0.10.0-555f240
@@ -18,3 +17,9 @@ patches:
     target:
       kind: Deployment
       name: tt-inference-server
+secretGenerator:
+  - name: tt-inference-server
+    envs:
+      - ../../hf-token.env
+    options:
+      disableNameSuffixHash: true

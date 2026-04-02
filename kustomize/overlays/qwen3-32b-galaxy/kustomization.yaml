@@ -3,9 +3,14 @@ kind: Kustomization
 namePrefix: qwen3-32b-galaxy-
 resources:
   - ../../base/vllm
-  - secret.yaml
 images:
   - name: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
     newTag: 0.11.1-bac8b34-7c6685a
 patches:
   - path: patch-deployment.yaml
+secretGenerator:
+  - name: tt-inference-server
+    envs:
+      - ../../hf-token.env
+    options:
+      disableNameSuffixHash: true
