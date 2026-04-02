@@ -258,12 +258,20 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
         global_step = 0
         running_loss = 0.0
+        avg_val_loss = self._run_validation(
+            model, eval_dataloader, mesh, request, vocab_size
+        )
+        self.logger.info(
+            f"Epoch {epoch + 1} | Step {global_step} | "
+            f"val/loss: {avg_val_loss:.4f}"
+        )
         model.train()
 
         try:
             for epoch in range(request.num_epochs):
                 for batch in tqdm(train_dataloader, desc="Training"):
                     optimizer.zero_grad()
+                    torch_xla.sync(wait=True)
 
                     # Compute one-hot labels on CPU before device transfer to
                     # avoid OOM from large vocab-sized tensors on device.
@@ -288,6 +296,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                     xm.optimizer_step(optimizer, barrier=True)
 
                     running_loss += loss.item()
+                    global_step += 1
 
                     do_validation = global_step % request.val_steps_freq == 0
 
@@ -323,9 +332,6 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                         )
                         model.train()
                         torch_xla.sync(wait=True)
-                        xr.clear_computation_cache()
-
-                    global_step += 1
 
                 # Break outer epoch loop if cancelled
                 if request._cancel_event and request._cancel_event.is_set():
@@ -342,6 +348,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             del eval_dataset
             del train_dataloader
             del eval_dataloader
+            xm.clear_computation_cache()
             self.logger.info(
                 f"Device {self.device_id}: Training completed - memory cleaned up"
             )
