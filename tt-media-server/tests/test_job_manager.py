@@ -1570,7 +1570,6 @@ class TestJobManager:
             model="m",
             result_path=str(result_dir),
             job_checkpoints=[
-                # fmt: off
                 {
                     "id": "ckpt-step-100",
                     "step": 100,
@@ -1585,7 +1584,6 @@ class TestJobManager:
                     "metrics": {},
                     "created_at": 2.0,
                 },
-                # fmt: on
             ],
         )
         result = job_manager._validate_checkpoints_on_disk(job)
