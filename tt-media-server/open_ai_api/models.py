@@ -20,11 +20,8 @@ MODEL_RUNNER_TO_REQUEST_MAP = {
     ModelRunners.TT_FLUX_1_DEV.value: BaseImageRequest,
     ModelRunners.TT_FLUX_1_SCHNELL.value: BaseImageRequest,
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: BaseImageRequest,
-    ModelRunners.TT_MOCHI_1.value: BaseImageRequest,
-    ModelRunners.TT_WAN_2_2.value: BaseImageRequest,
     ModelRunners.TT_QWEN_IMAGE.value: BaseImageRequest,
     ModelRunners.TT_QWEN_IMAGE_2512.value: BaseImageRequest,
-    ModelRunners.SP_RUNNER.value: BaseImageRequest,
 }
 
 V1_MODEL_CREATED_TIMESTAMP = 1700000000
