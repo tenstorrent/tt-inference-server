@@ -218,12 +218,15 @@ void LLMController::handleStreaming(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleStreaming");
 
+  bool validSessionFound = false;
+
   if (reqPtr->sessionId.has_value() && sessionManager) {
     auto slotId =
         sessionManager->getSlotIdBySessionId(reqPtr->sessionId.value());
 
     if (slotId != tt::services::INVALID_SLOT_ID) {
       reqPtr->slotId = slotId;
+      validSessionFound = true;  // Session is valid
     } else {
       TT_LOG_INFO(
           "Received request with non existing session, resetting session id");
@@ -442,7 +445,21 @@ void LLMController::handleStreaming(
     if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
       service->submitStreamingRequest(*reqPtr, streamingCallback);
     } else if (tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY) {
-      disaggregationService->handleStreamingRequest(*reqPtr, streamingCallback);
+      // tokenize right away
+      service->preProcess(*reqPtr);
+      if (shouldDoPrefillOnDecode(*reqPtr, validSessionFound)) {
+        TT_LOG_DEBUG(
+            "[LLMController] Using prefill on decode for sessionId: {}",
+            reqPtr->sessionId.value_or("none"));
+        service->submitStreamingRequest(*reqPtr, streamingCallback);
+      } else {
+        TT_LOG_DEBUG(
+            "[LLMController] Using disaggregated prefill for request with "
+            "sessionId: {}",
+            reqPtr->sessionId.value_or("none"));
+        disaggregationService->handleStreamingRequest(*reqPtr,
+                                                      streamingCallback);
+      }
     } else {
       throw std::runtime_error(
           "[LLMController] LLM Mode must be regular or decode only to handle "
@@ -474,6 +491,21 @@ void LLMController::handleStreaming(
   resp->addHeader("X-Accel-Buffering", "no");
 
   callback(resp);
+}
+
+bool LLMController::shouldDoPrefillOnDecode(
+    const domain::CompletionRequest& request, bool validSessionFound) const {
+  // for valid sessions always do prefill on decode
+  if (validSessionFound) {
+    return true;
+  }
+
+  // Check if the number of prompt tokens exceeds the threshold
+  // If tokens are below the threshold, prefill on decode server
+  const size_t maxTokens = tt::config::maxTokensToPrefillOnDecode();
+  const size_t promptTokens = static_cast<size_t>(request.prompt_tokens_count);
+
+  return promptTokens < maxTokens;
 }
 
 void LLMController::createSession(
