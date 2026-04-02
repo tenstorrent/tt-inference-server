@@ -508,7 +508,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_TOKEN_SERVICE_ACCOUNT }}
+          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+
+      - name: Configure git for private submodules
+        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
 
       - name: Init tt-blaze submodule (without tt-metal)
         working-directory: .
@@ -548,7 +551,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_TOKEN_SERVICE_ACCOUNT }}
+          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+
+      - name: Configure git for private submodules
+        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
 
       - name: Init tt-blaze submodule (without tt-metal)
         working-directory: .
