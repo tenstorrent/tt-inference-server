@@ -1487,11 +1487,11 @@ class TestJobManager:
         job_manager.db.insert_metric(job_id="train-1", global_step=20, epoch=2, metric_name="loss", value=0.3, timestamp=1002)
         job_manager.db.insert_metric(job_id="train-1", global_step=10, epoch=1, metric_name="loss", value=0.5, timestamp=1000)
         job_manager.db.insert_metric(job_id="train-1", global_step=10, epoch=1, metric_name="accuracy", value=0.8, timestamp=1001)
-        # fmt: on
         job_manager.db.insert_checkpoint("train-1", "ckpt-step-100", 100, 1, {"loss": 0.5}, 1001.0)
         job_manager.db.insert_checkpoint("train-1", "ckpt-step-200", 200, 2, {"loss": 0.3}, 1002.0)
         job_manager.db.insert_log("train-1", 0, "ts1", "info", 1, "Started")
         job_manager.db.insert_log("train-1", 1, "ts2", "info", 10, "Step 10")
+        # fmt: on
 
         import utils.job_manager
         utils.job_manager._job_manager_instance = None
@@ -1565,8 +1565,10 @@ class TestJobManager:
             id="j1", job_type="training", model="m",
             result_path=str(result_dir),
             job_checkpoints=[
+        # fmt: off
                 {"id": "ckpt-step-100", "step": 100, "epoch": 1, "metrics": {}, "created_at": 1.0},
                 {"id": "ckpt-step-200", "step": 200, "epoch": 2, "metrics": {}, "created_at": 2.0},
+        # fmt: on
             ],
         )
         result = job_manager._validate_checkpoints_on_disk(job)
