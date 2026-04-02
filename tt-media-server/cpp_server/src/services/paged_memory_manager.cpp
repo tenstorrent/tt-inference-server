@@ -78,7 +78,6 @@ void PagedMemoryManager::handleRequest(const ManageMemoryTask& task) {
     case MemoryManagementAction::DEALLOCATE: {
       std::vector<int> slotIds(task.slotIds.begin(), task.slotIds.end());
       deallocateKv(task.taskId, std::move(slotIds));
-      resultQueue->push(makeResult(task, ManageMemoryStatus::SUCCESS));
       return;
     }
     default:
