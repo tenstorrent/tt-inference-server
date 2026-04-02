@@ -76,7 +76,6 @@ void flushAccumulated(
 
 namespace tt::api {
 
-
 LLMController::LLMController() {
   if (!tt::config::isLlmServiceEnabled()) {
     TT_LOG_INFO(
@@ -144,7 +143,7 @@ void LLMController::chatCompletions(
 
   if (chatReq.messages.empty()) {
     auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson("messages is required and must be a non-empty array",
+        errorJson("messages is required and must be a non-empty array test",
                   "invalid_request_error", Json::Value("messages")));
     resp->setStatusCode(drogon::k400BadRequest);
     callback(resp);
