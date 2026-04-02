@@ -142,9 +142,9 @@ void SpPipelineRunner::step() {
           static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
     }
 
-    modelRunner->write(
-        taskId.id, seq->tokenIds, seq->samplingParams->max_tokens.value(),
-        sp_pipeline::RequestPhase::PREFILL, seq->fastMode);
+    modelRunner->write(taskId.id, seq->tokenIds,
+                       seq->samplingParams->max_tokens.value(),
+                       sp_pipeline::RequestPhase::PREFILL, seq->fastMode);
 
     activeSequences.emplace(taskId, std::move(owned));
     ++inFlightCount;
