@@ -132,6 +132,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   orig.blockTable = {0, 1};
   orig.status = SequenceStatus::IN_FLIGHT;
   orig.lastToken = 5;
+  orig.fastMode = true;
 
   std::ostringstream os;
   orig.serialize(os);
@@ -147,6 +148,7 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   EXPECT_EQ(restored->tokenIds, orig.tokenIds);
   EXPECT_EQ(restored->blockTable, orig.blockTable);
   EXPECT_EQ(restored->status, orig.status);
+  EXPECT_EQ(restored->fastMode, true);
 
   const auto& sp = *restored->samplingParams;
   const auto& spOrig = *orig.samplingParams;
@@ -160,6 +162,19 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   EXPECT_EQ(sp.stop_token_ids, spOrig.stop_token_ids);
   ASSERT_TRUE(sp.allowed_token_ids.has_value());
   EXPECT_EQ(*sp.allowed_token_ids, *spOrig.allowed_token_ids);
+}
+
+TEST(SequenceTest, SerializeDeserialize_FastModeDefaultIsFalse) {
+  Sequence orig(TaskID("seq-fast-default"), 256, {1, 2, 3},
+                SamplingParams{.max_tokens = 10});
+
+  std::ostringstream os;
+  orig.serialize(os);
+  std::istringstream is(os.str());
+
+  std::unique_ptr<Sequence> restored(Sequence::deserialize(is));
+  ASSERT_NE(restored.get(), nullptr);
+  EXPECT_EQ(restored->fastMode, false);
 }
 
 TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
