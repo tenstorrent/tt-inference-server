@@ -1510,8 +1510,8 @@ class TestJobManager:
                 metrics = m2.get_job_metrics("train-1")
                 assert len(metrics) == 3
                 assert metrics[0]["metric_name"] == "accuracy"
+                assert metrics[0]["learning_rate"] == 0.001
                 assert metrics[1]["global_step"] == 10
-                assert metrics[1]["learning_rate"] == 0.001
                 assert metrics[2]["timestamp"] == 1002
 
                 # Checkpoints: only ckpt-step-100 survives disk validation
