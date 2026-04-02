@@ -94,12 +94,6 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             f"Model parameters: {sum(p.numel() for p in self.hf_model.parameters())}"
         )
 
-        # Clear TT_VISIBLE_DEVICES so the PJRT plugin discovers all chips.
-        # P300 cards expose 2 chips per PCIe device; the base class sets
-        # TT_VISIBLE_DEVICES from DEVICE_IDS which uses PCIe IDs, but XLA
-        # needs to see all physical chips to build the full mesh.
-        os.environ.pop("TT_VISIBLE_DEVICES", None)
-
         xr.set_device_type("TT")
         os.environ["PJRT_DEVICE"] = "TT"
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
