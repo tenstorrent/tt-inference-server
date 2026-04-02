@@ -1,2 +1,3 @@
 # Secret files contain HF_TOKEN — never commit real tokens
 overlays/*/secret.yaml
+hf-token.env
