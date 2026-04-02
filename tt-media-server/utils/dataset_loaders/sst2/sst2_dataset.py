@@ -37,7 +37,7 @@ class SSTDataset(BaseDataset):
     def _tokenize_function(self, example):
         prompt = PROMPT_TEMPLATE.substitute(input=example["sentence"])
         response = RESPONSE_TEMPLATE.substitute(label=LBL2VALUE[example["label"]])
-        full_text = prompt + response
+        full_text = prompt + response + self.tokenizer.eos_token
 
         encoding = self.tokenizer(
             full_text, truncation=False, padding=False, return_tensors="pt"

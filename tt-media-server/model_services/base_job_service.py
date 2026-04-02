@@ -41,3 +41,6 @@ class BaseJobService(BaseService):
 
     def get_job_metrics(self, job_id: str) -> list:
         return self._job_manager.get_job_metrics(job_id)
+
+    def get_job_logs(self, job_id: str) -> list:
+        return self._job_manager.get_job_logs(job_id)

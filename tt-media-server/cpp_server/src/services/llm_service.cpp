@@ -179,26 +179,33 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       anyActivity = true;
 
       std::string taskId = std::string(token.task_id);
-      auto val = stream_callbacks_.get(token.task_id);
-      if (!val.has_value()) {
-        // Client disconnected or task was cancelled — discard remaining
-        // tokens and clean up local state for this task.
-        streamDecoders.erase(taskId);
-        metricsSampling.erase(taskId);
-        if (reasoning_parser_) {
-          reasoning_parser_->finalizeTask(taskId);
-        }
-        continue;
-      }
-      auto callback = val.value();
-
       bool isFinal = token.isFinal();
 
+      // For final tokens, atomically take ownership of the callback so that
+      // only one of {consumer, abortRequest} decrements pending_tasks_.
+      std::function<void(domain::StreamingChunkResponse&, bool)> callback;
       if (isFinal) {
-        stream_callbacks_.erase(token.task_id);
+        auto val = stream_callbacks_.take(token.task_id);
+        if (!val.has_value()) {
+          // abortRequest already took the callback and finalized the task.
+          streamDecoders.erase(taskId);
+          metricsSampling.erase(taskId);
+          continue;
+        }
+        callback = std::move(val.value());
         pending_tasks_.fetch_sub(1);
         tt::metrics::ServerMetrics::instance().setQueueDepth(
             static_cast<double>(pending_tasks_.load()));
+      } else {
+        auto val = stream_callbacks_.get(token.task_id);
+        if (!val.has_value()) {
+          // Client disconnected or task was cancelled — discard token.
+          // abortRequest() already finalized the reasoning parser state.
+          streamDecoders.erase(taskId);
+          metricsSampling.erase(taskId);
+          continue;
+        }
+        callback = std::move(val.value());
       }
 
       auto& decoder = streamDecoders[taskId];
@@ -402,6 +409,9 @@ void LLMService::processStreamingRequest(
       llm_engine::TaskID(taskId),
       tt::config::llmEngineConfig().kvcache_block_size, std::move(tokenIds));
   sequence->numPromptTokens = prompt.size();
+  if (request.slotId.has_value()) {
+    sequence->setKVCacheAddress(request.slotId.value());
+  }
   sequence->samplingParams = std::make_unique<llm_engine::SamplingParams>(
       tt::utils::mapper::mapSamplingParams(request));
   queue_manager_->task_queue->push(*std::move(sequence));
@@ -418,4 +428,43 @@ void LLMService::postProcess(domain::CompletionResponse& response) const {
     }
   }
 }
+void LLMService::abortRequest(const domain::TaskID& taskId) {
+  std::string taskKey = taskId.id;
+
+  // Atomically remove the stream callback and decrement pending_tasks_.
+  auto cb = stream_callbacks_.take(taskKey);
+  if (cb.has_value()) {
+    pending_tasks_.fetch_sub(1);
+    tt::metrics::ServerMetrics::instance().setQueueDepth(
+        static_cast<double>(pending_tasks_.load()));
+  }
+
+  // Invoke the detached callback with isFinal=true so any blocking waiter
+  // (e.g. processRequest's cv.wait) is unblocked.  For streaming requests the
+  // controller sets done=true BEFORE calling abortRequest, so the callback's
+  // done->load() check returns immediately — no SSE data is sent.
+  if (cb.has_value()) {
+    domain::StreamingChunkResponse abortResponse{taskId};
+    domain::CompletionChoice choice;
+    choice.finish_reason = "abort";
+    abortResponse.choices.push_back(std::move(choice));
+    cb.value()(abortResponse, /*isFinal=*/true);
+  }
+
+  // Clean up any reasoning-parser state so task_states_ does not leak.
+  if (reasoning_parser_) {
+    reasoning_parser_->finalizeTask(taskKey);
+  }
+
+  // Broadcast the cancel signal to every per-worker cancel queue.
+  // Each worker's scheduler::abortRequest is idempotent for unknown task IDs.
+  if (queue_manager_) {
+    for (auto& cq : queue_manager_->cancel_queues) {
+      cq->push(taskId);
+    }
+  }
+
+  TT_LOG_INFO("[LLMService] Aborted request {}", taskKey);
+}
+
 }  // namespace tt::services

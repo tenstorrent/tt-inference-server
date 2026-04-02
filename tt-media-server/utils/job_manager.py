@@ -43,6 +43,7 @@ class Job:
     start_event: Optional[Event] = None
     cancel_event: Optional[Event] = None
     job_metrics: list = field(default_factory=list)
+    job_logs: list = field(default_factory=list)
 
     def __post_init__(self):
         if self.created_at is None:
@@ -129,6 +130,7 @@ class JobManager:
         start_event: Optional[Event] = None,
         cancel_event: Optional[Event] = None,
         job_metrics: list = None,
+        job_logs: list = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
@@ -149,6 +151,8 @@ class JobManager:
                 job.cancel_event = cancel_event
             if job_metrics is not None:
                 job.job_metrics = job_metrics
+            if job_logs is not None:
+                job.job_logs = job_logs
 
             if self.db:
                 try:
@@ -209,6 +213,13 @@ class JobManager:
             job = self._jobs.get(job_id)
             if job:
                 return job.job_metrics
+        return None
+
+    def get_job_logs(self, job_id: str) -> Optional[list]:
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+            if job:
+                return job.job_logs
         return None
 
     def cancel_job(self, job_id: str) -> bool:

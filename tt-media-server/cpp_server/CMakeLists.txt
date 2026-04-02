@@ -204,6 +204,7 @@ endif()
 # LLM engine (include/runners/llm_runner/, src/runners/llm_runner/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/block_manager.cpp
+    src/ipc/boost_ipc_cancel_queue.cpp
     src/ipc/boost_ipc_task_queue.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
@@ -336,12 +337,28 @@ target_include_directories(test_tokenizer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(cancel_queue_test tests/cancel_queue_test.cpp)
+target_link_libraries(cancel_queue_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(cancel_queue_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(cancellation_test tests/cancellation_test.cpp)
+target_link_libraries(cancellation_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(cancellation_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
+gtest_discover_tests(cancel_queue_test)
+gtest_discover_tests(cancellation_test)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -351,6 +368,13 @@ target_include_directories(ipc_scheduler_smoke_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
+
+# Cancellation E2E test (starts mock server, runs Python tests, stops server)
+add_test(NAME CancellationE2E
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_e2e_with_server.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 60)
 
 # Tokenizer benchmark
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/deepseek_tokenizer.cpp src/utils/llama_tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp src/utils/logger.cpp)
@@ -458,4 +482,8 @@ if(SANITIZE_ADDRESS)
     target_link_options(ipc_scheduler_smoke_test PRIVATE -fsanitize=address)
     target_compile_options(lockfree_queue_test PRIVATE ${ASAN_FLAGS})
     target_link_options(lockfree_queue_test PRIVATE -fsanitize=address)
+    target_compile_options(cancel_queue_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(cancel_queue_test PRIVATE -fsanitize=address)
+    target_compile_options(cancellation_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(cancellation_test PRIVATE -fsanitize=address)
 endif()

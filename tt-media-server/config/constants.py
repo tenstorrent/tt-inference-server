@@ -266,6 +266,19 @@ class DatasetLoaders(Enum):
     SST2 = "sst2"
 
 
+class TrainingTrainers(Enum):
+    LORA = "lora"
+    SFT = "sft"
+
+
+class ModelDisplayNames(Enum):
+    GEMMA_1_1_2B_IT = "Gemma 1.1 2B Instruct"
+
+
+class TrainingOptimizers(Enum):
+    ADAMW = "adamw"
+
+
 # Helper function to create vLLM configuration with late import to avoid circular imports
 def _vllm_config(
     model: str,
