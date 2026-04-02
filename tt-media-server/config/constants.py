@@ -209,8 +209,8 @@ class DeviceTypes(Enum):
     P300X2 = "p300x2"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
 
 class TrainingMeshShapes(Enum):
+    P150 = (1, 1)
     P300 = (1, 2)
-    P300X2 = (2, 2)
 
 class QueueType(Enum):
     MemoryQueue = "MemoryQueue"
