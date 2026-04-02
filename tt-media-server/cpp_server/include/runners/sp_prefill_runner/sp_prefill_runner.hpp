@@ -28,9 +28,8 @@ class SpPrefillRunner : public IRunner {
   const char* runnerType() const override { return "SpPrefillRunner"; }
 
  private:
-  void pushToken(const llm_engine::TaskID& taskId, uint64_t tokenId,
-                 bool finished);
-  void pushErrorToken(const llm_engine::TaskID& taskId);
+  void pushToken(uint32_t taskId, uint64_t tokenId, bool finished);
+  void pushErrorToken(uint32_t taskId);
 
   tt::config::LLMConfig config;
   ipc::TokenRingBuffer<65536>* resultQueue;

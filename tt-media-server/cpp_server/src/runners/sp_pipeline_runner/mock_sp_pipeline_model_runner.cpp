@@ -15,7 +15,7 @@ MockSpPipelineModelRunner::MockSpPipelineModelRunner(DecodeCallback callback,
 
 MockSpPipelineModelRunner::~MockSpPipelineModelRunner() { exit(); }
 
-void MockSpPipelineModelRunner::write(const std::string& taskId,
+void MockSpPipelineModelRunner::write(uint32_t taskId,
                                       const std::vector<int64_t>& tokenIds,
                                       uint32_t maxTokens, RequestPhase phase) {
   ZoneScopedN("MockModelRunner::write");

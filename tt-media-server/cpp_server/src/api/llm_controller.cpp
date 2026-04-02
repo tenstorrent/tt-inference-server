@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-
-#include "api/llm_controller.hpp"
 
 #include <json/json.h>
 #include <trantor/net/EventLoop.h>
@@ -15,6 +14,7 @@
 #include <random>
 #include <sstream>
 
+#include "api/llm_controller.hpp"
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
@@ -97,21 +97,6 @@ LLMController::LLMController() {
   TT_LOG_INFO("[LLMController] Initialized (service already started)");
 }
 
-std::string LLMController::generateCompletionId() {
-  static std::mutex genMutex;
-  static std::random_device rd;
-  static std::mt19937 gen(rd());
-  static std::uniform_int_distribution<> dis(0, 15);
-  static const char* hexChars = "0123456789abcdef";
-
-  std::lock_guard<std::mutex> lock(genMutex);
-  std::ostringstream ss;
-  for (int i = 0; i < 24; ++i) {
-    ss << hexChars[dis(gen)];
-  }
-  return ss.str();
-}
-
 Json::Value LLMController::errorJson(const std::string& message,
                                      const std::string& type,
                                      const Json::Value& param,
@@ -141,7 +126,7 @@ void LLMController::completions(
 
   std::shared_ptr<domain::CompletionRequest> request;
   try {
-    domain::TaskID taskId(generateCompletionId());
+    uint32_t taskId = tt::utils::TaskIDGenerator::generate();
     request = std::make_shared<domain::CompletionRequest>(
         domain::CompletionRequest::fromJson(*json, std::move(taskId)));
   } catch (const std::exception& e) {
@@ -244,7 +229,7 @@ void LLMController::chatCompletions(
 
   std::optional<domain::ChatCompletionRequest> chatReqOpt;
   try {
-    domain::TaskID taskId(generateCompletionId());
+    uint32_t taskId = tt::utils::TaskIDGenerator::generate();
     chatReqOpt =
         domain::ChatCompletionRequest::fromJson(*json, std::move(taskId));
   } catch (const std::exception& e) {
@@ -372,7 +357,7 @@ void LLMController::handleStreaming(
   }
 
   const std::string completionId =
-      (isChat ? "chatcmpl-" : "cmpl-") + reqPtr->task_id.id;
+      (isChat ? "chatcmpl-" : "cmpl-") + std::to_string(reqPtr->task_id);
   const std::string model = reqPtr->model.value_or("default");
   const int64_t created = static_cast<int64_t>(
       std::chrono::duration_cast<std::chrono::seconds>(
@@ -418,12 +403,12 @@ void LLMController::handleStreaming(
   // Abort callback: fires when the TCP connection drops mid-stream.
   // Captured by value so it stays alive for the duration of the streaming
   // session. Called on the IO thread from inside sseSend().
-  const std::string taskIdStr = reqPtr->task_id.id;
-  auto onDisconnect = [taskIdStr, service = this->service, done]() {
+  const uint32_t taskId = reqPtr->task_id;
+  auto onDisconnect = [taskId, service = this->service, done]() {
     if (!done->exchange(true)) {
       TT_LOG_INFO("[LLMController] Client disconnected, aborting task {}",
-                  taskIdStr);
-      service->abortRequest(domain::TaskID(taskIdStr));
+                  taskId);
+      service->abortRequest(taskId);
     }
   };
 
