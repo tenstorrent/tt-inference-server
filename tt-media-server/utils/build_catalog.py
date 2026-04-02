@@ -37,7 +37,7 @@ TRAINING_CATALOG_DATA = {
             "partition": None,
             "mesh_shape": [1, 2],
             "topology": {"mesh_shape": [1, 2], "nodes": 2, "total_devices": 2},
-        }
+        },
     ],
 }
 

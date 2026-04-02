@@ -208,9 +208,11 @@ class DeviceTypes(Enum):
     P150X8 = "p150x8"  # BH LoudBox - 8x P150 (2,4 mesh)
     P300X2 = "p300x2"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
 
+
 class TrainingMeshShapes(Enum):
     P150 = (1, 1)
     P300 = (1, 2)
+
 
 class QueueType(Enum):
     MemoryQueue = "MemoryQueue"

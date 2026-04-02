@@ -22,11 +22,17 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.decorators import log_execution_time
-from config.constants import DeviceTypes, TrainingMeshShapes, TrainingOptimizers, SupportedModels
+from config.constants import (
+    DeviceTypes,
+    TrainingMeshShapes,
+    TrainingOptimizers,
+    SupportedModels,
+)
 
 OPTIMIZER_MAP = {
     TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
 }
+
 
 def _transform_labels(labels, ignored_index, vocab_size):
     """Convert labels to one-hot encoding with a mask for ignored tokens."""
@@ -64,9 +70,7 @@ def _training_step_inner(batch, model):
     Prevents logits from propagating beyond the step via the computation
     graph, avoiding unnecessary and expensive CCLs in multi-chip setups.
     """
-    output = model(
-        input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
-    )
+    output = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
     logits = output.logits
     shift_logits = logits[:, :-1, :].contiguous()
 
@@ -115,25 +119,27 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             {"fp32_dest_acc_en": True, "math_fidelity": "hifi4"}
         )
 
-        self.logger.info(
-            f"Device {self.device_id}: SPMD environment configured"
-        )
+        self.logger.info(f"Device {self.device_id}: SPMD environment configured")
         return True
 
     DEVICE_MESH_SHAPES = {
         DeviceTypes.P300.value: TrainingMeshShapes.P300.value,
     }
     MESH_AXIS_NAMES = ("batch", "model")
+    # For now we only want 1, 2 mesh shapes, so we don't need to shard input data.
     INPUT_SHARDING_DIM = None
     # TODO(mmilosevicTT): We need to accomodate to different lora layers provided. For now it is OK to just search a pattern for all attention layers, but in the future we need to be more specific.
     MODEL_SHARDING_PATTERNS = [
-        [r"\.model\.embed_tokens\.weight$",                              [None, None]],
-        [r"\.lm_head\.weight$",                                          ["model", None]],
-        [r"\.model\.norm\.weight$",                                      [None]],
-        [r"\.self_attn\.(q|k|v)_proj(\.base_layer|\.lora_B\.default)?$", [None, "model"]],
-        [r"\.self_attn\.o_proj(\.base_layer|\.lora_B\.default)?$",       ["model", None]],
-        [r"\.mlp\.(gate_proj|up_proj)$",                                 [None, "model"]],
-        [r"\.mlp\.down_proj$",                                           ["model", None]],
+        [r"\.model\.embed_tokens\.weight$", [None, None]],
+        [r"\.lm_head\.weight$", ["model", None]],
+        [r"\.model\.norm\.weight$", [None]],
+        [
+            r"\.self_attn\.(q|k|v)_proj(\.base_layer|\.lora_B\.default)?$",
+            [None, "model"],
+        ],
+        [r"\.self_attn\.o_proj(\.base_layer|\.lora_B\.default)?$", ["model", None]],
+        [r"\.mlp\.(gate_proj|up_proj)$", [None, "model"]],
+        [r"\.mlp\.down_proj$", ["model", None]],
     ]
 
     def _create_mesh(self, device_type: str) -> xs.Mesh:
@@ -258,7 +264,10 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
         model = torch.compile(
             self._peft_model,
             backend="tt",
-            options={"tt_enable_torch_fx_fusion_pass": False, "tt_legacy_compile": True},
+            options={
+                "tt_enable_torch_fx_fusion_pass": False,
+                "tt_legacy_compile": True,
+            },
         )
 
         vocab_size = model.config.vocab_size
@@ -282,8 +291,8 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             model, eval_dataloader, mesh, request, vocab_size
         )
         self.logger.info(
-            f"Epoch 0 | Step 0 | "
-            f"val/loss: {avg_val_loss:.4f}", extra={"log_type": "info", "step": 0}
+            f"Epoch 0 | Step 0 | val/loss: {avg_val_loss:.4f}",
+            extra={"log_type": "info", "step": 0},
         )
         model.train()
 
@@ -331,13 +340,17 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                         running_loss = 0.0
 
                         torch.save(model.state_dict(), model_path)
-                        self.logger.info("Model checkpoint saved.", extra={"log_type": "checkpoint", "step": global_step})
+                        self.logger.info(
+                            "Model checkpoint saved.",
+                            extra={"log_type": "checkpoint", "step": global_step},
+                        )
                         torch_xla.sync(wait=True)
 
                     if request._cancel_event and request._cancel_event.is_set():
                         self.logger.info(
                             f"Training llama lora runner: Cancellation requested at step {global_step}, stopping training. "
-                            f"Model checkpoint saved: {model_path}", extra={"log_type": "info", "step": global_step}
+                            f"Model checkpoint saved: {model_path}",
+                            extra={"log_type": "info", "step": global_step},
                         )
                         break
 
@@ -347,7 +360,8 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                         )
                         self.logger.info(
                             f"Epoch {epoch + 1} | Step {global_step} | "
-                            f"val/loss: {avg_val_loss:.4f}", extra={"log_type": "info", "step": global_step}
+                            f"val/loss: {avg_val_loss:.4f}",
+                            extra={"log_type": "info", "step": global_step},
                         )
                         model.train()
                         torch_xla.sync(wait=True)
@@ -357,8 +371,14 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                     break
 
         except Exception as e:
-            self.logger.error(f"Training failed with error: {str(e)}", extra={"log_type": "error", "step": global_step})
-            self.logger.error(f"Full traceback: {traceback.format_exc()}", extra={"log_type": "error", "step": global_step})
+            self.logger.error(
+                f"Training failed with error: {str(e)}",
+                extra={"log_type": "error", "step": global_step},
+            )
+            self.logger.error(
+                f"Full traceback: {traceback.format_exc()}",
+                extra={"log_type": "error", "step": global_step},
+            )
             raise
         finally:
             del optimizer
@@ -369,7 +389,8 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             del eval_dataloader
             xm.clear_computation_cache()
             self.logger.info(
-                f"Device {self.device_id}: Training completed - memory cleaned up", extra={"log_type": "info", "step": global_step}
+                f"Device {self.device_id}: Training completed - memory cleaned up",
+                extra={"log_type": "info", "step": global_step},
             )
             if log_handler:
                 self.logger.remove_handler(log_handler)
