@@ -6,9 +6,9 @@ image:
   tag: 0.10.0-555f240
 resources:
   limits:
-    memory: 64Gi
+    memory: 200Gi
   requests:
-    memory: 32Gi
+    memory: 100Gi
 probes:
   liveness:
     enabled: false
