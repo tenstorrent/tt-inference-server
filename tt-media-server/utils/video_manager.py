@@ -11,38 +11,14 @@ from utils.logger import TTLogger
 
 
 class VideoManager:
-    """MP4 export via imageio/ffmpeg (see env TT_VIDEO_EXPORT_*)."""
-
     def __init__(self):
         super().__init__()
         self._logger = TTLogger()
 
-    @staticmethod
-    def _write_mp4_imageio(uint8_frames, output_path, fps, quality, x264_preset):
-        import imageio
-
-        ffmpeg_extra = ["-preset", x264_preset] if x264_preset else []
-        with imageio.get_writer(
-            output_path,
-            fps=fps,
-            quality=quality,
-            macro_block_size=16,
-            ffmpeg_params=ffmpeg_extra,
-        ) as writer:
-            for frame in uint8_frames:
-                writer.append_data(frame)
-
     @log_execution_time("Exporting video to MP4")
     def export_to_mp4(self, frames, fps=16):
         """
-        Export frames to MP4 (H.264 via ffmpeg).
-
-        Env (optional):
-            TT_VIDEO_EXPORT_QUALITY: 1–10 (imageio / libx264 CRF mapping). Default 5 —
-                same as historical diffusers ``export_to_video`` default (unchanged quality).
-            TT_VIDEO_EXPORT_X264_PRESET: e.g. ultrafast, veryfast, faster, fast, medium.
-                Default faster — faster encode at the same quality (CRF); slightly larger files.
-                Set empty to omit -preset (matches old encoder-time behavior more closely).
+        Export a list/array of frames to an MP4 video file.
         """
         self._logger.info(f"Starting video export with fps={fps}")
 
@@ -62,38 +38,13 @@ class VideoManager:
         output_path = f"{video_dir}/{video_id}.mp4"
         self._logger.info(f"Generated output path: {output_path}")
 
-        export_quality = float(os.environ.get("TT_VIDEO_EXPORT_QUALITY", "5"))
-        export_quality = max(1.0, min(10.0, export_quality))
-        x264_preset = os.environ.get("TT_VIDEO_EXPORT_X264_PRESET", "faster").strip()
-
         try:
+            self._logger.info("Attempting to use diffusers export_to_video")
+            from diffusers.utils import export_to_video
+
+            # Process frames for diffusers
             processed_frames = self._process_frames_for_export(frames)
-            uint8_frames = [(f * 255).astype("uint8") for f in processed_frames]
-
-            try:
-                import imageio
-
-                imageio.plugins.ffmpeg.get_exe()
-                self._logger.info(
-                    "Using imageio ffmpeg writer "
-                    f"(quality={export_quality}, x264_preset={x264_preset!r})"
-                )
-                self._write_mp4_imageio(
-                    uint8_frames, output_path, fps, export_quality, x264_preset
-                )
-            except (ImportError, AttributeError) as imageio_err:
-                self._logger.warning(
-                    "imageio ffmpeg unavailable (%s); using diffusers export_to_video",
-                    imageio_err,
-                )
-                from diffusers.utils import export_to_video
-
-                export_to_video(
-                    processed_frames,
-                    output_video_path=output_path,
-                    fps=fps,
-                    quality=export_quality,
-                )
+            export_to_video(processed_frames, output_video_path=output_path, fps=fps)
 
             self._logger.info(f"Video export completed successfully: {output_path}")
             return output_path
