@@ -76,6 +76,9 @@ RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     && . ${CARGO_HOME}/env \
     && rustup update"
 
+# Install uv (needed by tt-metal's create_venv.sh on newer commits)
+RUN pip install uv
+
 # Build tt-metal - clone with minimal history, build, and clean
 RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
@@ -192,6 +195,9 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "utils" "${APP_DIR}/utils"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
+
+# Install uv (needed by newer tt-metal venvs)
+RUN pip install uv
 
 # Fix venv symlinks after copy and install additional app requirements
 RUN cd ${PYTHON_ENV_DIR}/bin \
