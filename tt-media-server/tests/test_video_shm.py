@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+import os
+import pickle
 import struct
 import threading
 import time
@@ -10,19 +12,32 @@ import uuid
 import pytest
 
 import sys
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 sys.modules["ttnn"] = Mock()
 
 mock_settings = Mock()
 mock_settings.enable_telemetry = False
+mock_settings.model_runner = "sp_runner"
+mock_settings.use_dynamic_batcher = False
+mock_settings.is_galaxy = False
+mock_settings.device_mesh_shape = (1, 1)
+# Match test_video_runner: unset Mock is truthy and breaks runner_utils env setup.
+mock_settings.default_throttle_level = ""
 mock_settings_module = Mock()
 mock_settings_module.settings = mock_settings
 mock_settings_module.get_settings = Mock(return_value=mock_settings)
 sys.modules["config.settings"] = mock_settings_module
 sys.modules["telemetry.telemetry_client"] = Mock()
 
-from ipc.video_shm import VideoRequest, VideoResponse, VideoShm, VideoStatus
+from ipc.video_shm import (
+    VideoRequest,
+    VideoResponse,
+    VideoShm,
+    VideoStatus,
+    cleanup_orphaned_video_files,
+    video_result_path,
+)
 
 
 # ── Helpers ──
@@ -64,22 +79,13 @@ def _make_request(**overrides) -> VideoRequest:
 def _make_response(
     task_id: str = "abcdef12-3456-7890-abcd-ef1234567890",
     status: VideoStatus = VideoStatus.SUCCESS,
-    num_frames: int = 3,
-    height: int = 4,
-    width: int = 4,
-    channels: int = 3,
-    data_byte: int = 0xAB,
+    file_path: str = "/dev/shm/tt_video_test.pkl",
     error_message: str = "",
 ) -> VideoResponse:
-    data_len = num_frames * height * width * channels
     return VideoResponse(
         task_id=task_id,
         status=status,
-        num_frames=num_frames,
-        height=height,
-        width=width,
-        channels=channels,
-        frame_data=bytes([data_byte] * data_len),
+        file_path=file_path,
         error_message=error_message,
     )
 
@@ -362,104 +368,66 @@ class TestResponseRoundtrip:
         assert got is not None
         assert got.task_id == resp.task_id
         assert got.status == VideoStatus.SUCCESS
-        assert got.num_frames == 3
-        assert got.height == 4
-        assert got.width == 4
-        assert got.channels == 3
-        assert got.frame_data == resp.frame_data
+        assert got.file_path == resp.file_path
         assert got.error_message == ""
 
     def test_error_response(self, output_pair):
         writer, reader = output_pair
         resp = _make_response(
             status=VideoStatus.ERROR,
-            num_frames=0,
-            height=0,
-            width=0,
-            channels=0,
+            file_path="",
             error_message="pipeline exploded",
         )
         writer.write_response(resp)
         got = reader.read_response()
         assert got.status == VideoStatus.ERROR
         assert got.error_message == "pipeline exploded"
-        assert got.frame_data == b""
+        assert got.file_path == ""
 
-    def test_oversized_response_raises(self, output_pair):
-        writer, _ = output_pair
-        oversized = bytes(VideoShm.MAX_VIDEO_SIZE + 1)
-        resp = VideoResponse(
-            task_id="tid",
-            status=VideoStatus.SUCCESS,
-            num_frames=1,
-            height=1,
-            width=1,
-            channels=1,
-            frame_data=oversized,
-            error_message="",
-        )
-        with pytest.raises(ValueError, match="exceeds MAX_VIDEO_SIZE"):
-            writer.write_response(resp)
+    def test_long_file_path_truncated(self, output_pair):
+        from ipc.video_shm import MAX_FILE_PATH_LEN
 
-    def test_large_response_data(self, output_pair):
         writer, reader = output_pair
-        large_data = bytes(range(256)) * 4096
-        resp = VideoResponse(
-            task_id="abcdef12-3456-7890-abcd-ef1234567890",
-            status=VideoStatus.SUCCESS,
-            num_frames=1,
-            height=1,
-            width=len(large_data),
-            channels=1,
-            frame_data=large_data,
-            error_message="",
-        )
+        long_path = "/dev/shm/" + "x" * 300
+        resp = _make_response(file_path=long_path)
         writer.write_response(resp)
         got = reader.read_response()
-        assert got.frame_data == large_data
+        assert len(got.file_path) == MAX_FILE_PATH_LEN
 
     def test_multiple_responses_sequential(self, output_pair):
         writer, reader = output_pair
         for i in range(4):
-            resp = _make_response(num_frames=i + 1, height=2, width=2)
+            resp = _make_response(file_path=f"/dev/shm/tt_video_task_{i}.pkl")
             writer.write_response(resp)
             got = reader.read_response()
-            assert got.num_frames == i + 1
+            assert got.file_path == f"/dev/shm/tt_video_task_{i}.pkl"
 
-    def test_empty_frame_data(self, output_pair):
+    def test_empty_file_path_on_error(self, output_pair):
         writer, reader = output_pair
         resp = _make_response(
             status=VideoStatus.ERROR,
-            num_frames=0,
-            height=0,
-            width=0,
-            channels=0,
+            file_path="",
             error_message="err",
         )
         writer.write_response(resp)
         got = reader.read_response()
-        assert got.frame_data == b""
-        assert got.height == 0
+        assert got.file_path == ""
+        assert got.error_message == "err"
 
     def test_response_preserves_all_fields(self, output_pair):
         writer, reader = output_pair
         resp = VideoResponse(
             task_id="abcdef12-3456-7890-abcd-ef1234567890",
             status=VideoStatus.SUCCESS,
-            num_frames=10,
-            height=720,
-            width=1280,
-            channels=4,
-            frame_data=b"\xde\xad" * 64,
+            file_path="/dev/shm/tt_video_my_task.pkl",
             error_message="",
         )
         writer.write_response(resp)
         got = reader.read_response()
-        assert got.num_frames == 10
-        assert got.height == 720
-        assert got.width == 1280
-        assert got.channels == 4
-        assert got.frame_data == b"\xde\xad" * 64
+        assert got.task_id == resp.task_id
+        assert got.status == VideoStatus.SUCCESS
+        assert got.file_path == "/dev/shm/tt_video_my_task.pkl"
+        assert got.error_message == ""
 
 
 # ── Slot states ──
@@ -502,10 +470,10 @@ class TestRingBufferWrapping:
     def test_responses_wrap(self, output_pair):
         writer, reader = output_pair
         for i in range(VideoShm.OUTPUT_SLOTS + 1):
-            resp = _make_response(num_frames=i + 1, height=2, width=2)
+            resp = _make_response(file_path=f"/dev/shm/tt_video_wrap_{i}.pkl")
             writer.write_response(resp)
             got = reader.read_response()
-            assert got.num_frames == i + 1
+            assert got.file_path == f"/dev/shm/tt_video_wrap_{i}.pkl"
         assert writer._pos == 1
         assert reader._pos == 1
 
@@ -598,7 +566,7 @@ class TestShutdownSignaling:
 
         t = threading.Thread(target=trigger_shutdown)
         t.start()
-        shm.write_response(_make_response(height=2, width=2))
+        shm.write_response(_make_response())
         t.join()
 
         shm.close()
@@ -687,7 +655,7 @@ class TestTimeout:
     ):
         """Timeout should not fire when data is available promptly."""
         writer, reader = output_pair
-        resp = _make_response(height=2, width=2)
+        resp = _make_response()
 
         def delayed_write():
             time.sleep(0.05)
@@ -699,7 +667,7 @@ class TestTimeout:
         result = reader.read_response(timeout_s=5.0)
         t.join()
         assert result is not None
-        assert result.frame_data == resp.frame_data
+        assert result.file_path == resp.file_path
 
 
 # ── Error response protocol (end-to-end) ──
@@ -735,11 +703,7 @@ class TestErrorResponseProtocol:
                 VideoResponse(
                     task_id=req.task_id,
                     status=VideoStatus.ERROR,
-                    num_frames=0,
-                    height=0,
-                    width=0,
-                    channels=0,
-                    frame_data=b"",
+                    file_path="",
                     error_message="pipeline crashed",
                 )
             )
@@ -767,6 +731,132 @@ class TestErrorResponseProtocol:
         out_shm_creator.close()
         _force_cleanup_shm(in_name)
         _force_cleanup_shm(out_name)
+
+
+# ── File-based IPC helpers ──
+
+
+class TestVideoResultPath:
+    def test_returns_expected_path(self):
+        task_id = "abc-123"
+        path = video_result_path(task_id)
+        from ipc.video_shm import VIDEO_FILE_DIR
+
+        assert path == os.path.join(VIDEO_FILE_DIR, f"tt_video_{task_id}.pkl")
+
+    def test_unique_per_task_id(self):
+        assert video_result_path("a") != video_result_path("b")
+
+
+class TestCleanupOrphanedVideoFiles:
+    """Verify :func:`cleanup_orphaned_video_files` removes matching files."""
+
+    @pytest.fixture(autouse=True)
+    def _use_tmpdir(self, tmp_path, monkeypatch):
+        """Redirect VIDEO_FILE_DIR to a temp directory for isolation."""
+        monkeypatch.setattr("ipc.video_shm.VIDEO_FILE_DIR", str(tmp_path))
+        self._tmp = tmp_path
+
+    def test_removes_matching_files(self):
+        for i in range(3):
+            (self._tmp / f"tt_video_task{i}.pkl").write_bytes(b"x")
+        removed = cleanup_orphaned_video_files()
+        assert removed == 3
+        assert list(self._tmp.glob("tt_video_*.pkl")) == []
+
+    def test_ignores_non_matching_files(self):
+        (self._tmp / "other_file.txt").write_bytes(b"keep")
+        (self._tmp / "tt_video_only.pkl").write_bytes(b"x")
+        removed = cleanup_orphaned_video_files()
+        assert removed == 1
+        assert (self._tmp / "other_file.txt").exists()
+
+    def test_returns_zero_when_no_files(self):
+        assert cleanup_orphaned_video_files() == 0
+
+    def test_oserror_on_unlink_is_ignored(self, monkeypatch):
+        """Per-file unlink failures are swallowed (lines 85–86 in video_shm)."""
+        import ipc.video_shm as video_shm_mod
+
+        (self._tmp / "tt_video_stale.pkl").write_bytes(b"x")
+
+        def unlink_raises(_path):
+            raise OSError("permission denied")
+
+        # Patch the same os object cleanup_orphaned_video_files uses (covers except OSError).
+        monkeypatch.setattr(video_shm_mod.os, "unlink", unlink_raises)
+        assert cleanup_orphaned_video_files() == 0
+        assert (self._tmp / "tt_video_stale.pkl").exists()
+
+    def test_oserror_on_unlink_via_patch(self):
+        """Same as test_oserror_on_unlink_is_ignored using patch (diff-cover reliability)."""
+        import ipc.video_shm as video_shm_mod
+
+        p = self._tmp / "tt_video_patch.pkl"
+        p.write_bytes(b"x")
+        with patch.object(video_shm_mod.os, "unlink", side_effect=OSError("busy")):
+            assert cleanup_orphaned_video_files() == 0
+        assert p.exists()
+
+
+# ── End-to-end file-based IPC roundtrip ──
+
+
+class TestFileBasedRoundtrip:
+    """Simulate the full file-based IPC cycle: write video → SHM → read → load → cleanup."""
+
+    @pytest.fixture(autouse=True)
+    def _use_tmpdir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("ipc.video_shm.VIDEO_FILE_DIR", str(tmp_path))
+        self._tmp = tmp_path
+
+    def test_write_read_cleanup_cycle(self, output_pair):
+        writer, reader = output_pair
+        task_id = "e2e-roundtrip-task-id-0123456789ab"
+        payload = {"frames": [1, 2, 3], "meta": "test"}
+
+        file_path = video_result_path(task_id)
+        with open(file_path, "wb") as fh:
+            pickle.dump(payload, fh)
+        assert os.path.exists(file_path)
+
+        writer.write_response(
+            VideoResponse(
+                task_id=task_id,
+                status=VideoStatus.SUCCESS,
+                file_path=file_path,
+                error_message="",
+            )
+        )
+
+        resp = reader.read_response()
+        assert resp is not None
+        assert resp.file_path == file_path
+
+        with open(resp.file_path, "rb") as fh:
+            loaded = pickle.load(fh)
+        os.unlink(resp.file_path)
+
+        assert loaded == payload
+        assert not os.path.exists(file_path)
+
+    def test_error_response_no_file_created(self, output_pair):
+        writer, reader = output_pair
+        task_id = "e2e-error-task-id-0123456789abcd"
+
+        writer.write_response(
+            VideoResponse(
+                task_id=task_id,
+                status=VideoStatus.ERROR,
+                file_path="",
+                error_message="OOM during inference",
+            )
+        )
+
+        resp = reader.read_response()
+        assert resp.status == VideoStatus.ERROR
+        assert resp.file_path == ""
+        assert resp.error_message == "OOM during inference"
 
 
 if __name__ == "__main__":
