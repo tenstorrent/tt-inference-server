@@ -4,6 +4,7 @@
 
 import os
 import re
+import time
 import traceback
 
 import numpy as np
@@ -299,6 +300,16 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             f"Initial Model | val/loss: {avg_val_loss:.4f}",
             extra={"log_type": "info", "step": 0},
         )
+        if request._training_metrics is not None:
+            request._training_metrics.append(
+                {
+                    "global_step": 0,
+                    "epoch": 0,
+                    "metric_name": "val_loss",
+                    "value": round(avg_val_loss, 4),
+                    "timestamp": time.time(),
+                }
+            )
         model.train()
 
         try:
@@ -342,6 +353,16 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                             f"Epoch {epoch + 1} | Step {global_step} | train/loss: {avg_loss:.4f}",
                             extra={"log_type": "info", "step": global_step},
                         )
+                        if request._training_metrics is not None:
+                            request._training_metrics.append(
+                                {
+                                    "global_step": global_step,
+                                    "epoch": epoch,
+                                    "metric_name": "train_loss",
+                                    "value": round(avg_loss, 4),
+                                    "timestamp": time.time(),
+                                }
+                            )
                         running_loss = 0.0
 
                         torch.save(model.state_dict(), model_path)
@@ -368,6 +389,16 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                             f"val/loss: {avg_val_loss:.4f}",
                             extra={"log_type": "info", "step": global_step},
                         )
+                        if request._training_metrics is not None:
+                            request._training_metrics.append(
+                                {
+                                    "global_step": global_step,
+                                    "epoch": epoch,
+                                    "metric_name": "val_loss",
+                                    "value": round(avg_val_loss, 4),
+                                    "timestamp": time.time(),
+                                }
+                            )
                         model.train()
                         torch_xla.sync(wait=True)
 
