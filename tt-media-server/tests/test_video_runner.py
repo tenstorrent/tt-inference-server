@@ -4,10 +4,8 @@
 
 import os
 import pickle
-import socket
 import sys
-import threading
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
@@ -34,14 +32,14 @@ from ipc.video_shm import VideoRequest, VideoStatus
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from tt_model_runners.video_runner import (
+    _attach_mpi_comm,
+    _broadcast_request,
+    _create_dit_runner,
     _is_shutdown,
     _rank,
-    _send_via_socket,
-    _recv_via_socket,
-    _write_response_to_shm,
+    _run_inference_loop,
     _write_error_to_shm,
-    create_dit_runner,
-    RANK_CONFIG,
+    _write_response_to_shm,
 )
 
 
@@ -69,88 +67,6 @@ class TestIsShutdown:
         vr._shutdown = False
         assert _is_shutdown() is False
         vr._shutdown = original
-
-
-class TestRankConfig:
-    def test_has_four_ranks(self):
-        assert len(RANK_CONFIG) == 4
-        for r in [0, 1, 2, 3]:
-            assert r in RANK_CONFIG
-            assert "ip" in RANK_CONFIG[r]
-            assert "port" in RANK_CONFIG[r]
-
-
-class TestSocketHelpers:
-    def test_send_recv_roundtrip(self):
-        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_sock.bind(("127.0.0.1", 0))
-        port = server_sock.getsockname()[1]
-        server_sock.listen(1)
-
-        req = VideoRequest(
-            task_id="test-task-id",
-            prompt="hello world",
-            negative_prompt="bad",
-            num_inference_steps=20,
-            seed=42,
-            height=480,
-            width=832,
-            num_frames=81,
-            guidance_scale=3.0,
-            guidance_scale_2=4.0,
-        )
-
-        received = []
-
-        def server_fn():
-            conn, _ = server_sock.accept()
-            got = _recv_via_socket(conn)
-            received.append(got)
-            conn.close()
-
-        t = threading.Thread(target=server_fn)
-        t.start()
-
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect(("127.0.0.1", port))
-        _send_via_socket(client, req)
-        client.close()
-        t.join(timeout=5.0)
-        server_sock.close()
-
-        assert len(received) == 1
-        got = received[0]
-        assert got.task_id == req.task_id
-        assert got.prompt == req.prompt
-        assert got.num_inference_steps == 20
-        assert got.seed == 42
-
-    def test_recv_returns_none_on_closed_connection(self):
-        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_sock.bind(("127.0.0.1", 0))
-        port = server_sock.getsockname()[1]
-        server_sock.listen(1)
-
-        received = []
-
-        def server_fn():
-            conn, _ = server_sock.accept()
-            got = _recv_via_socket(conn)
-            received.append(got)
-            conn.close()
-
-        t = threading.Thread(target=server_fn)
-        t.start()
-
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect(("127.0.0.1", port))
-        client.close()
-        t.join(timeout=5.0)
-        server_sock.close()
-
-        assert received == [None]
 
 
 class TestWriteResponseToShm:
@@ -226,22 +142,199 @@ class TestCreateDitRunner:
         mock_mochi = Mock()
         mock_wan = Mock()
         with patch.dict(sys.modules, self._make_dit_module(mock_mochi, mock_wan)):
-            create_dit_runner("tt-mochi-1", "0")
-            mock_mochi.assert_called_once_with("0")
+            _create_dit_runner("tt-mochi-1", 0)
+            mock_mochi.assert_called_once_with("")
 
     def test_creates_wan_runner(self):
         mock_mochi = Mock()
         mock_wan = Mock()
         with patch.dict(sys.modules, self._make_dit_module(mock_mochi, mock_wan)):
-            create_dit_runner("tt-wan2.2", "1")
-            mock_wan.assert_called_once_with("1")
+            _create_dit_runner("tt-wan2.2", 1)
+            mock_wan.assert_called_once_with("")
 
     def test_raises_on_unsupported_runner(self):
         mock_mochi = Mock()
         mock_wan = Mock()
         with patch.dict(sys.modules, self._make_dit_module(mock_mochi, mock_wan)):
             with pytest.raises(ValueError, match="Unsupported MODEL_RUNNER"):
-                create_dit_runner("invalid_runner", "0")
+                _create_dit_runner("invalid_runner", 0)
+
+
+class TestAttachMpiComm:
+    def test_success_returns_comm_world(self):
+        mock_mpi4py = Mock()
+        with patch.dict(sys.modules, {"mpi4py": mock_mpi4py}):
+            result = _attach_mpi_comm()
+            assert mock_mpi4py.rc.initialize is False
+            assert mock_mpi4py.rc.finalize is False
+            assert result is mock_mpi4py.MPI.COMM_WORLD
+
+    def test_raises_runtime_error_when_mpi4py_unavailable(self):
+        with patch.dict(sys.modules, {"mpi4py": None}):
+            with pytest.raises(RuntimeError, match="mpi4py is required"):
+                _attach_mpi_comm()
+
+
+class TestBroadcastRequest:
+    def test_broadcasts_request_from_root(self):
+        req = VideoRequest(
+            task_id="t1",
+            prompt="p",
+            negative_prompt="",
+            num_inference_steps=1,
+            seed=0,
+            height=480,
+            width=832,
+            num_frames=81,
+            guidance_scale=1.0,
+            guidance_scale_2=1.0,
+        )
+        comm = Mock()
+        comm.bcast.return_value = req
+        result = _broadcast_request(comm, req)
+        comm.bcast.assert_called_once_with(req, root=0)
+        assert result is req
+
+    def test_returns_none_for_shutdown(self):
+        comm = Mock()
+        comm.bcast.return_value = None
+        result = _broadcast_request(comm, None)
+        assert result is None
+
+
+class TestRunInferenceLoop:
+    @staticmethod
+    def _make_request(**overrides):
+        defaults = dict(
+            task_id="task-loop",
+            prompt="test prompt for inference loop",
+            negative_prompt="neg",
+            num_inference_steps=5,
+            seed=7,
+            height=480,
+            width=832,
+            num_frames=81,
+            guidance_scale=3.0,
+            guidance_scale_2=4.0,
+        )
+        defaults.update(overrides)
+        return VideoRequest(**defaults)
+
+    def test_rank0_processes_request_and_writes_response(self):
+        import tt_model_runners.video_runner as vr
+
+        original = vr._shutdown
+        vr._shutdown = False
+
+        req = self._make_request()
+        comm = Mock()
+        comm.Get_rank.return_value = 0
+        comm.bcast = Mock(side_effect=[req, None])
+
+        input_shm = MagicMock()
+        input_shm.read_request = Mock(side_effect=[req, None])
+        output_shm = MagicMock()
+
+        runner = Mock()
+        runner.run.return_value = np.zeros((1, 2, 2, 3), dtype=np.uint8)
+
+        mock_domain = Mock()
+        with patch.dict(
+            sys.modules,
+            {
+                "domain": Mock(),
+                "domain.video_generate_request": mock_domain,
+            },
+        ):
+            _run_inference_loop(comm, runner, input_shm, output_shm)
+
+        runner.run.assert_called_once()
+        output_shm.write_response.assert_called_once()
+        resp = output_shm.write_response.call_args[0][0]
+        assert resp.status == VideoStatus.SUCCESS
+        assert resp.task_id == "task-loop"
+        vr._shutdown = original
+
+    def test_rank0_writes_error_on_inference_failure(self):
+        import tt_model_runners.video_runner as vr
+
+        original = vr._shutdown
+        vr._shutdown = False
+
+        req = self._make_request()
+        comm = Mock()
+        comm.Get_rank.return_value = 0
+        comm.bcast = Mock(side_effect=[req, None])
+
+        input_shm = MagicMock()
+        input_shm.read_request = Mock(side_effect=[req, None])
+        output_shm = MagicMock()
+
+        runner = Mock()
+        runner.run.side_effect = RuntimeError("inference failed")
+
+        mock_domain = Mock()
+        with patch.dict(
+            sys.modules,
+            {
+                "domain": Mock(),
+                "domain.video_generate_request": mock_domain,
+            },
+        ):
+            _run_inference_loop(comm, runner, input_shm, output_shm)
+
+        output_shm.write_response.assert_called_once()
+        resp = output_shm.write_response.call_args[0][0]
+        assert resp.status == VideoStatus.ERROR
+        assert "inference failed" in resp.error_message
+        vr._shutdown = original
+
+    def test_breaks_on_none_request(self):
+        import tt_model_runners.video_runner as vr
+
+        original = vr._shutdown
+        vr._shutdown = False
+
+        comm = Mock()
+        comm.Get_rank.return_value = 0
+        comm.bcast.return_value = None
+
+        input_shm = MagicMock()
+        input_shm.read_request.return_value = None
+        output_shm = MagicMock()
+
+        runner = Mock()
+        _run_inference_loop(comm, runner, input_shm, output_shm)
+
+        runner.run.assert_not_called()
+        vr._shutdown = original
+
+    def test_non_rank0_runs_inference_without_shm_io(self):
+        import tt_model_runners.video_runner as vr
+
+        original = vr._shutdown
+        vr._shutdown = False
+
+        req = self._make_request()
+        comm = Mock()
+        comm.Get_rank.return_value = 1
+        comm.bcast = Mock(side_effect=[req, None])
+
+        runner = Mock()
+        runner.run.return_value = np.zeros((1, 2, 2, 3), dtype=np.uint8)
+
+        mock_domain = Mock()
+        with patch.dict(
+            sys.modules,
+            {
+                "domain": Mock(),
+                "domain.video_generate_request": mock_domain,
+            },
+        ):
+            _run_inference_loop(comm, runner, None, None)
+
+        runner.run.assert_called_once()
+        vr._shutdown = original
 
 
 class TestHandleSigterm:
