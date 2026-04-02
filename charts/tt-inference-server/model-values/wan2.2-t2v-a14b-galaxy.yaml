@@ -11,9 +11,6 @@ resources:
     memory: 32Gi
 probes:
   liveness:
-    path: /tt-liveness
-    initialDelaySeconds: 600    # ~10 min, no builtin warmup
-    periodSeconds: 30
+    enabled: false
   readiness:
-    initialDelaySeconds: 600
-    periodSeconds: 10
+    enabled: false
