@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tt-inference-server
+spec:
+  template:
+    spec:
+      containers:
+        - name: inference-server
+          args:
+            - "--model"
+            - "Qwen3-32B"
+            - "--tt-device"
+            - "galaxy"
+          resources:
+            limits:
+              memory: 256Gi
+            requests:
+              memory: 128Gi
+          livenessProbe:
+            initialDelaySeconds: 3600
+            periodSeconds: 30
+          readinessProbe:
+            initialDelaySeconds: 3600
+            periodSeconds: 10
+      volumes:
+        - name: cache
+          hostPath:
+            path: /opt/cache/Qwen3-32B-galaxy
