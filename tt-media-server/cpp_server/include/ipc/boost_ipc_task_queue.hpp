@@ -22,8 +22,7 @@ class BoostIpcTaskQueue : public llm_engine::ITaskQueue {
       tt::config::LLMConfig::MAX_INPUT_TOKENS * sizeof(int64_t) +
       MAX_SEQUENCE_NON_TOKEN_BYTES;
 
-  using Queue =
-      BoostIpcMemoryQueue<llm_engine::Sequence, MAX_MSG_SIZE>;
+  using Queue = BoostIpcMemoryQueue<llm_engine::Sequence, MAX_MSG_SIZE>;
 
   /** Create a new queue (main process). */
   BoostIpcTaskQueue(const std::string& name, int capacity)

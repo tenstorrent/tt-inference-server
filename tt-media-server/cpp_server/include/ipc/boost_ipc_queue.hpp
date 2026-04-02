@@ -27,9 +27,8 @@ concept Serializable =
     };
 
 template <typename T>
-concept IpcSerializable =
-    Serializable<T> ||
-    (std::is_trivially_copyable_v<T> && !std::is_pointer_v<T>);
+concept IpcSerializable = Serializable<T> || (std::is_trivially_copyable_v<T> &&
+                                              !std::is_pointer_v<T>);
 
 /**
  * Generic Boost.Interprocess message queue.
@@ -141,8 +140,8 @@ class BoostIpcMemoryQueue {
       bi_ipc::ibufferstream stream(buf.data(), recv_size);
       out = MsgType::deserialize(stream);
     } else {
-      queue_->receive(reinterpret_cast<char*>(&out), sizeof(MsgType),
-                      recv_size, priority);
+      queue_->receive(reinterpret_cast<char*>(&out), sizeof(MsgType), recv_size,
+                      priority);
     }
   }
 

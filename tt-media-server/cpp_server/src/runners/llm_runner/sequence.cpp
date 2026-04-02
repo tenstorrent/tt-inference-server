@@ -76,7 +76,7 @@ Sequence Sequence::deserialize(std::istream& is) {
 
   Config defaultConfig;
   Sequence seq(taskId, defaultConfig.kvcache_block_size,
-                               std::vector<int64_t>{});
+               std::vector<int64_t>{});
 
   is.read(reinterpret_cast<char*>(&seq.lastToken), sizeof(seq.lastToken));
   is.read(reinterpret_cast<char*>(&seq.numPromptTokens),
