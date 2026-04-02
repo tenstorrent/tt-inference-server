@@ -94,8 +94,8 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     info["description"] =
         "High-performance C++ implementation of the TT Media Server using "
         "Drogon framework. "
-        "Provides OpenAI-compatible completions API for benchmarking server "
-        "overhead.";
+        "Provides OpenAI-compatible chat completions API for benchmarking "
+        "server overhead.";
     info["version"] = "1.0.0";
     info["contact"]["name"] = "Tenstorrent";
     info["contact"]["url"] = "https://tenstorrent.com";
@@ -116,7 +116,7 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     Json::Value completionsTag;
     completionsTag["name"] = "Completions";
     completionsTag["description"] =
-        "OpenAI-compatible text completion endpoints";
+        "OpenAI-compatible chat completion endpoints";
     tags.append(completionsTag);
     Json::Value sessionsTag;
     sessionsTag["name"] = "Sessions";
@@ -134,9 +134,6 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
 
     // Paths
     Json::Value paths;
-
-    // POST /v1/completions
-    paths["/v1/completions"]["post"] = buildCompletionsEndpoint();
 
     // POST /v1/chat/completions
     paths["/v1/chat/completions"]["post"] = buildChatCompletionsEndpoint();
@@ -171,80 +168,9 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     return spec;
   }
 
-  Json::Value buildCompletionsEndpoint() {
-    Json::Value endpoint;
-    endpoint["tags"].append("Completions");
-    endpoint["summary"] = "Create completion";
-    endpoint["description"] =
-        "Creates a completion for the provided prompt and parameters. "
-        "OpenAI-compatible endpoint for text completions.\n\n"
-        "**Note:** This C++ implementation uses a test runner generating "
-        "~120,000 tokens/second "
-        "for benchmarking purposes.";
-    endpoint["operationId"] = "createCompletion";
-
-    // Security requirement - Bearer token
-    Json::Value security(Json::arrayValue);
-    Json::Value bearerAuth;
-    bearerAuth["BearerAuth"] = Json::Value(Json::arrayValue);
-    security.append(bearerAuth);
-    endpoint["security"] = security;
-
-    // Request body
-    Json::Value requestBody;
-    requestBody["required"] = true;
-    requestBody["content"]["application/json"]["schema"]["$ref"] =
-        "#/components/schemas/CompletionRequest";
-    endpoint["requestBody"] = requestBody;
-
-    // Responses
-    Json::Value responses;
-
-    // 200 OK (non-streaming)
-    Json::Value resp200;
-    resp200["description"] = "Successful completion response";
-    resp200["content"]["application/json"]["schema"]["$ref"] =
-        "#/components/schemas/CompletionResponse";
-    responses["200"] = resp200;
-
-    // 200 OK (streaming)
-    Json::Value resp200Stream;
-    resp200Stream["description"] = "Streaming completion response (SSE)";
-    resp200Stream["content"]["text/event-stream"]["schema"]["type"] = "string";
-    resp200Stream["content"]["text/event-stream"]["schema"]["description"] =
-        "Server-Sent Events stream. Each event is prefixed with 'data: ' "
-        "followed by JSON, "
-        "ending with 'data: [DONE]'";
-
-    // 400 Bad Request
-    Json::Value resp400;
-    resp400["description"] = "Invalid request";
-    resp400["content"]["application/json"]["schema"]["$ref"] =
-        "#/components/schemas/Error";
-    responses["400"] = resp400;
-
-    // 401 Unauthorized
-    Json::Value resp401;
-    resp401["description"] = "Missing or invalid authentication token";
-    resp401["content"]["application/json"]["schema"]["$ref"] =
-        "#/components/schemas/Error";
-    responses["401"] = resp401;
-
-    // 503 Service Unavailable
-    Json::Value resp503;
-    resp503["description"] = "Model not ready";
-    resp503["content"]["application/json"]["schema"]["$ref"] =
-        "#/components/schemas/Error";
-    responses["503"] = resp503;
-
-    endpoint["responses"] = responses;
-
-    return endpoint;
-  }
-
   Json::Value buildChatCompletionsEndpoint() {
     Json::Value endpoint;
-    endpoint["tags"].append("Completions");
+    endpoint["tags"].append("Chat Completions");
     endpoint["summary"] = "Create chat completion";
     endpoint["description"] =
         "Creates a chat completion for the provided messages. "
@@ -273,7 +199,7 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     resp200["description"] =
         "Successful chat completion (JSON) or streaming (text/event-stream)";
     resp200["content"]["application/json"]["schema"]["$ref"] =
-        "#/components/schemas/CompletionResponse";
+        "#/components/schemas/ChatCompletionResponse";
     resp200["content"]["text/event-stream"]["schema"]["type"] = "string";
     resp200["content"]["text/event-stream"]["schema"]["description"] =
         "SSE stream; object \"chat.completion.chunk\", choices[].delta";
@@ -529,20 +455,14 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     Json::Value components;
     Json::Value schemas;
 
-    // CompletionRequest schema
-    schemas["CompletionRequest"] = buildCompletionRequestSchema();
-
     // ChatCompletionRequest schema
     schemas["ChatCompletionRequest"] = buildChatCompletionRequestSchema();
 
-    // CompletionResponse schema
-    schemas["CompletionResponse"] = buildCompletionResponseSchema();
+    // ChatCompletionResponse schema
+    schemas["ChatCompletionResponse"] = buildChatCompletionResponseSchema();
 
     // StreamOptions schema
     schemas["StreamOptions"] = buildStreamOptionsSchema();
-
-    // CompletionChoice schema
-    schemas["CompletionChoice"] = buildCompletionChoiceSchema();
 
     // CompletionUsage schema
     schemas["CompletionUsage"] = buildCompletionUsageSchema();
@@ -575,80 +495,6 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     components["securitySchemes"] = securitySchemes;
 
     return components;
-  }
-
-  Json::Value buildCompletionRequestSchema() {
-    Json::Value schema;
-    schema["type"] = "object";
-    schema["required"].append("prompt");
-
-    Json::Value props;
-
-    props["model"]["type"] = "string";
-    props["model"]["description"] = "Model identifier";
-    props["model"]["example"] = "test-model";
-
-    props["prompt"]["oneOf"][0]["type"] = "string";
-    props["prompt"]["oneOf"][1]["type"] = "array";
-    props["prompt"]["oneOf"][1]["items"]["type"] = "integer";
-    props["prompt"]["description"] =
-        "The prompt(s) to generate completions for. Can be a string or array "
-        "of token IDs.";
-    props["prompt"]["example"] = "Hello, world!";
-
-    props["max_tokens"]["type"] = "integer";
-    props["max_tokens"]["default"] = 16;
-    props["max_tokens"]["minimum"] = 1;
-    props["max_tokens"]["description"] = "Maximum number of tokens to generate";
-
-    props["stream"]["type"] = "boolean";
-    props["stream"]["default"] = false;
-    props["stream"]["description"] =
-        "Whether to stream back partial progress as SSE";
-
-    props["stream_options"]["$ref"] = "#/components/schemas/StreamOptions";
-
-    props["temperature"]["type"] = "number";
-    props["temperature"]["minimum"] = 0;
-    props["temperature"]["maximum"] = 2;
-    props["temperature"]["description"] = "Sampling temperature";
-
-    props["top_p"]["type"] = "number";
-    props["top_p"]["minimum"] = 0;
-    props["top_p"]["maximum"] = 1;
-    props["top_p"]["description"] = "Nucleus sampling probability";
-
-    props["n"]["type"] = "integer";
-    props["n"]["default"] = 1;
-    props["n"]["minimum"] = 1;
-    props["n"]["description"] = "Number of completions to generate";
-
-    props["stop"]["oneOf"][0]["type"] = "string";
-    props["stop"]["oneOf"][1]["type"] = "array";
-    props["stop"]["oneOf"][1]["items"]["type"] = "string";
-    props["stop"]["description"] = "Stop sequence(s)";
-
-    props["presence_penalty"]["type"] = "number";
-    props["presence_penalty"]["default"] = 0;
-    props["presence_penalty"]["description"] = "Presence penalty";
-
-    props["frequency_penalty"]["type"] = "number";
-    props["frequency_penalty"]["default"] = 0;
-    props["frequency_penalty"]["description"] = "Frequency penalty";
-
-    props["echo"]["type"] = "boolean";
-    props["echo"]["default"] = false;
-    props["echo"]["description"] =
-        "Echo back the prompt in addition to the completion";
-
-    props["seed"]["type"] = "integer";
-    props["seed"]["description"] = "Random seed for reproducibility";
-
-    props["user"]["type"] = "string";
-    props["user"]["description"] = "User identifier for monitoring";
-
-    schema["properties"] = props;
-    return schema;
   }
 
   Json::Value buildChatCompletionRequestSchema() {
@@ -713,17 +559,17 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     return schema;
   }
 
-  Json::Value buildCompletionResponseSchema() {
+  Json::Value buildChatCompletionResponseSchema() {
     Json::Value schema;
     schema["type"] = "object";
 
     Json::Value props;
     props["id"]["type"] = "string";
-    props["id"]["description"] = "Unique completion identifier";
-    props["id"]["example"] = "cmpl-abc123def456";
+    props["id"]["description"] = "Unique chat completion identifier";
+    props["id"]["example"] = "chatcmpl-abc123def456";
 
     props["object"]["type"] = "string";
-    props["object"]["enum"].append("text_completion");
+    props["object"]["enum"].append("chat.completion");
     props["object"]["description"] = "Object type";
 
     props["created"]["type"] = "integer";
@@ -732,8 +578,18 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     props["model"]["type"] = "string";
     props["model"]["description"] = "Model used for completion";
 
+    Json::Value choiceSchema;
+    choiceSchema["type"] = "object";
+    choiceSchema["properties"]["index"]["type"] = "integer";
+    choiceSchema["properties"]["message"]["type"] = "object";
+    choiceSchema["properties"]["message"]["properties"]["role"]["type"] =
+        "string";
+    choiceSchema["properties"]["message"]["properties"]["content"]["type"] =
+        "string";
+    choiceSchema["properties"]["finish_reason"]["type"] = "string";
+
     props["choices"]["type"] = "array";
-    props["choices"]["items"]["$ref"] = "#/components/schemas/CompletionChoice";
+    props["choices"]["items"] = choiceSchema;
 
     props["usage"]["$ref"] = "#/components/schemas/CompletionUsage";
 
@@ -759,31 +615,6 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     props["continuous_usage_stats"]["default"] = false;
     props["continuous_usage_stats"]["description"] =
         "Include usage stats in each streamed chunk";
-
-    schema["properties"] = props;
-    return schema;
-  }
-
-  Json::Value buildCompletionChoiceSchema() {
-    Json::Value schema;
-    schema["type"] = "object";
-
-    Json::Value props;
-    props["text"]["type"] = "string";
-    props["text"]["description"] = "Generated text";
-
-    props["index"]["type"] = "integer";
-    props["index"]["description"] = "Choice index";
-
-    props["logprobs"]["type"] = "object";
-    props["logprobs"]["nullable"] = true;
-    props["logprobs"]["description"] = "Log probabilities (if requested)";
-
-    props["finish_reason"]["type"] = "string";
-    props["finish_reason"]["enum"].append("stop");
-    props["finish_reason"]["enum"].append("length");
-    props["finish_reason"]["nullable"] = true;
-    props["finish_reason"]["description"] = "Reason for completion termination";
 
     schema["properties"] = props;
     return schema;
