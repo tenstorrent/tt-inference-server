@@ -12,7 +12,8 @@ class TestTrainingServiceCreateJob:
     def mock_settings(self):
         """Create mock settings with dataset configuration"""
         settings = MagicMock()
-        settings.model_runner = "training_gemma_lora"
+        settings.model_runner = "training-gemma-lora"
+        settings.device = "p150"
         settings.download_weights_from_service = False
         return settings
 
