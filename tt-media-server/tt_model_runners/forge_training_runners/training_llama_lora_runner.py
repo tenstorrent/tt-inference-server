@@ -391,7 +391,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             del eval_dataset
             del train_dataloader
             del eval_dataloader
-            xm.clear_computation_cache()
+            xr.clear_computation_cache()
             self.logger.info(
                 f"Device {self.device_id}: Training completed - memory cleaned up",
                 extra={"log_type": "info", "step": global_step},
