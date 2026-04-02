@@ -18,7 +18,6 @@
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
-#include "domain/completion_response.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/concurrent_queue.hpp"
 #include "utils/logger.hpp"
@@ -125,95 +124,6 @@ Json::Value LLMController::errorJson(const std::string& message,
   return error;
 }
 
-void LLMController::completions(
-    const drogon::HttpRequestPtr& req,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
-  ZoneScopedN("API::completions");
-
-  auto json = req->getJsonObject();
-  if (!json) {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson("Invalid JSON body", "invalid_request_error"));
-    resp->setStatusCode(drogon::k400BadRequest);
-    callback(resp);
-    return;
-  }
-
-  std::shared_ptr<domain::CompletionRequest> request;
-  try {
-    domain::TaskID taskId(generateCompletionId());
-    request = std::make_shared<domain::CompletionRequest>(
-        domain::CompletionRequest::fromJson(*json, std::move(taskId)));
-  } catch (const std::exception& e) {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson(std::string("Failed to parse request: ") + e.what(),
-                  "invalid_request_error"));
-    resp->setStatusCode(drogon::k400BadRequest);
-    callback(resp);
-    return;
-  }
-
-  if (!service->isModelReady()) {
-    TT_LOG_INFO("[LLMController] /v1/completions {}", request->toString());
-
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson("Model is not ready", "service_unavailable"));
-    resp->setStatusCode(drogon::k503ServiceUnavailable);
-    callback(resp);
-    return;
-  }
-
-  if (request->stream) {
-    handleStreaming(request, std::move(callback), false);
-  } else {
-    try {
-      // Create session if not provided
-      if (!request->sessionId.has_value() && sessionManager) {
-        auto session = sessionManager->createSession(std::nullopt);
-        request->sessionId = session.getSessionId();
-      }
-
-      // Save sessionId before moving request
-      auto sessionId = request->sessionId;
-      request->slotId =
-          sessionManager->getSlotIdBySessionId(request->sessionId.value());
-
-      auto startTime = std::chrono::high_resolution_clock::now();
-      auto response = service->submitRequest(std::move(*request));
-      auto endTime = std::chrono::high_resolution_clock::now();
-
-      response.id = "cmpl-" + response.id;
-
-      // Add timing metrics to non-streaming response
-      auto totalDuration =
-          std::chrono::duration_cast<std::chrono::milliseconds>(endTime -
-                                                                startTime);
-      if (totalDuration.count() > 0 && response.usage.completion_tokens > 0) {
-        response.usage.ttft_ms = static_cast<double>(totalDuration.count());
-        if (response.usage.completion_tokens > 1) {
-          response.usage.tps =
-              response.usage.completion_tokens * 1000.0 / totalDuration.count();
-        }
-      }
-
-      // Include sessionId in response if present
-      if (sessionId.has_value()) {
-        response.usage.sessionId = sessionId;
-      }
-
-      auto resp = drogon::HttpResponse::newHttpResponse();
-      resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-      resp->setBody(response.toJsonString());
-      callback(resp);
-    } catch (const services::QueueFullException& e) {
-      auto resp = drogon::HttpResponse::newHttpJsonResponse(
-          errorJson(e.what(), "rate_limit_exceeded"));
-      resp->setStatusCode(drogon::k429TooManyRequests);
-      callback(resp);
-    }
-  }
-}
-
 void LLMController::chatCompletions(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
@@ -267,7 +177,7 @@ void LLMController::chatCompletions(
       chatReq.toCompletionRequest());
 
   if (request->stream) {
-    handleStreaming(request, std::move(callback), true);
+    handleStreaming(request, std::move(callback));
   } else {
     try {
       // Create session if not provided
@@ -320,8 +230,7 @@ void LLMController::chatCompletions(
 
 void LLMController::handleStreaming(
     std::shared_ptr<domain::CompletionRequest> reqPtr,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-    bool isChat) const {
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleStreaming");
 
   // Create session if not provided
@@ -346,8 +255,7 @@ void LLMController::handleStreaming(
     TT_LOG_WARN("[LLMController] SessionManager not available");
   }
 
-  const std::string completionId =
-      (isChat ? "chatcmpl-" : "cmpl-") + reqPtr->task_id.id;
+  const std::string completionId = "chatcmpl-" + reqPtr->task_id.id;
   const std::string model = reqPtr->model.value_or("default");
   const int64_t created = static_cast<int64_t>(
       std::chrono::duration_cast<std::chrono::seconds>(
@@ -406,11 +314,10 @@ void LLMController::handleStreaming(
   // full queue throws QueueFullException here, allowing us to return a proper
   // 429.
   auto streamingCallback = [loop, streamPtr, earlyBuffer, done, completionId,
-                            model, created, isChat, includeUsage,
-                            continuousUsage, completionTokens, startTime,
-                            firstTokenTime, secondTokenTime, firstContentChunk,
-                            reqPtr, capturedSessionId, accumulator,
-                            onDisconnect](
+                            model, created, includeUsage, continuousUsage,
+                            completionTokens, startTime, firstTokenTime,
+                            secondTokenTime, firstContentChunk, reqPtr,
+                            capturedSessionId, accumulator, onDisconnect](
                                const domain::StreamingChunkResponse& chunk,
                                bool isFinal) {
     if (done->load()) {
@@ -426,48 +333,34 @@ void LLMController::handleStreaming(
         *secondTokenTime = now;
       }
 
+      std::optional<domain::CompletionUsage> usage;
+      if (continuousUsage) {
+        usage = domain::CompletionUsage{
+            reqPtr->prompt_tokens_count,
+            currentTokens,
+            currentTokens,
+            std::nullopt,
+            std::nullopt,
+            capturedSessionId,
+        };
+      }
+      auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
+          completionId, model, created, chunk.choices[0], usage);
+
       std::string sse;
-      if (isChat) {
-        std::optional<domain::CompletionUsage> usage;
+      if (firstContentChunk->exchange(false)) {
+        std::optional<domain::CompletionUsage> initialUsage;
         if (continuousUsage) {
-          usage = domain::CompletionUsage{
-              reqPtr->prompt_tokens_count,
-              currentTokens,
-              currentTokens,
-              std::nullopt,
-              std::nullopt,
-              capturedSessionId,  // Use captured sessionId
-          };
+          initialUsage = domain::CompletionUsage{
+              reqPtr->prompt_tokens_count, 0, 0, std::nullopt, std::nullopt,
+              capturedSessionId};
         }
-        auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
-            completionId, model, created, chunk.choices[0], usage);
-        if (firstContentChunk->exchange(false)) {
-          std::optional<domain::CompletionUsage> initialUsage;
-          if (continuousUsage) {
-            initialUsage = domain::CompletionUsage{
-                reqPtr->prompt_tokens_count,
-                0,
-                0,
-                std::nullopt,
-                std::nullopt,
-                capturedSessionId};  // Use captured sessionId
-          }
-          auto initialChunk =
-              domain::ChatCompletionStreamChunk::makeInitialChunk(
-                  completionId, model, created, initialUsage);
-          sse = initialChunk.toSSE() + streamChunk.toSSE();
-        } else {
-          sse = streamChunk.toSSE();
-        }
-      } else if (!chunk.choices[0].text.empty() ||
-                 !chunk.choices[0].finish_reason.has_value()) {
-        domain::StreamingChunkResponse out(reqPtr->task_id);
-        out.id = completionId;
-        out.object = "text_completion";
-        out.model = model;
-        out.created = created;
-        out.choices = chunk.choices;
-        sse = out.toSSE();
+        auto initialChunk =
+            domain::ChatCompletionStreamChunk::makeInitialChunk(
+                completionId, model, created, initialUsage);
+        sse = initialChunk.toSSE() + streamChunk.toSSE();
+      } else {
+        sse = streamChunk.toSSE();
       }
 
       if (!sse.empty()) {
@@ -475,10 +368,10 @@ void LLMController::handleStreaming(
       }
     }
     if (isFinal) {
-      loop->queueInLoop([streamPtr, done, isChat, includeUsage, completionId,
-                         model, created, completionTokens, startTime,
-                         firstTokenTime, secondTokenTime, reqPtr,
-                         capturedSessionId, accumulator]() {
+      loop->queueInLoop([streamPtr, done, includeUsage, completionId, model,
+                         created, completionTokens, startTime, firstTokenTime,
+                         secondTokenTime, reqPtr, capturedSessionId,
+                         accumulator]() {
         if (!done->exchange(true) && *streamPtr) {
           flushAccumulated(accumulator, streamPtr);
           if (includeUsage) {
@@ -535,20 +428,10 @@ void LLMController::handleStreaming(
                   "usage.sessionId");
             }
 
-            if (isChat) {
-              (*streamPtr)
-                  ->send(domain::ChatCompletionStreamChunk::makeUsageChunk(
-                             completionId, model, created, usage)
-                             .toSSE());
-            } else {
-              domain::StreamingChunkResponse usageChunk(reqPtr->task_id);
-              usageChunk.id = completionId;
-              usageChunk.object = "text_completion";
-              usageChunk.model = model;
-              usageChunk.created = created;
-              usageChunk.usage = usage;
-              (*streamPtr)->send(usageChunk.toSSE());
-            }
+            (*streamPtr)
+                ->send(domain::ChatCompletionStreamChunk::makeUsageChunk(
+                           completionId, model, created, usage)
+                           .toSSE());
           }
           (*streamPtr)->send("data: [DONE]\n\n");
           (*streamPtr)->close();
