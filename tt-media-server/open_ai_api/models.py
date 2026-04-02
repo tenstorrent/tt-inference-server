@@ -27,7 +27,7 @@ def _resolve_image_request_model():
 
 
 @router.get("/v1/models")
-def list_models(api_key: str = Security(get_api_key)):
+def list_models():
     """
     List current model. OpenAI-compatible endpoint.
     See: https://platform.openai.com/docs/api-reference/models/list
