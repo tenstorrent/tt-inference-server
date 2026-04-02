@@ -251,7 +251,8 @@ void LLMController::handleStreaming(
     TT_LOG_WARN("[LLMController] SessionManager not available");
   }
 
-  const std::string completionId = "chatcmpl-" + std::to_string(reqPtr->task_id);
+  const std::string completionId =
+      "chatcmpl-" + std::to_string(reqPtr->task_id);
   const std::string model = reqPtr->model.value_or("default");
   const int64_t created = static_cast<int64_t>(
       std::chrono::duration_cast<std::chrono::seconds>(
