@@ -351,13 +351,15 @@ void LLMController::handleStreaming(
       if (firstContentChunk->exchange(false)) {
         std::optional<domain::CompletionUsage> initialUsage;
         if (continuousUsage) {
-          initialUsage = domain::CompletionUsage{
-              reqPtr->prompt_tokens_count, 0, 0, std::nullopt, std::nullopt,
-              capturedSessionId};
+          initialUsage = domain::CompletionUsage{reqPtr->prompt_tokens_count,
+                                                 0,
+                                                 0,
+                                                 std::nullopt,
+                                                 std::nullopt,
+                                                 capturedSessionId};
         }
-        auto initialChunk =
-            domain::ChatCompletionStreamChunk::makeInitialChunk(
-                completionId, model, created, initialUsage);
+        auto initialChunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
+            completionId, model, created, initialUsage);
         sse = initialChunk.toSSE() + streamChunk.toSSE();
       } else {
         sse = streamChunk.toSSE();
