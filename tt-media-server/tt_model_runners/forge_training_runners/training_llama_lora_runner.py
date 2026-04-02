@@ -291,7 +291,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             model, eval_dataloader, mesh, request, vocab_size
         )
         self.logger.info(
-            f"Epoch 0 | Step 0 | val/loss: {avg_val_loss:.4f}",
+            f"Initial Model | val/loss: {avg_val_loss:.4f}",
             extra={"log_type": "info", "step": 0},
         )
         model.train()
