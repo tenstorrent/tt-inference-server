@@ -20,9 +20,13 @@ Environment variables:
 from __future__ import annotations
 
 import os
-import pickle
 
-from ipc.video_shm import VideoRequest, VideoShm, VideoStatus
+from ipc.video_shm import (
+    VideoRequest,
+    VideoShm,
+    VideoStatus,
+    cleanup_orphaned_video_files,
+)
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 DEFAULT_VIDEO_HEIGHT = 480
@@ -64,6 +68,11 @@ class SPRunner(BaseDeviceRunner):
 
     def close_device(self):
         self._shutdown = True
+        removed = cleanup_orphaned_video_files()
+        if removed:
+            self.logger.info(
+                f"SPRunner {self.device_id}: cleaned up {removed} orphaned video file(s)"
+            )
         self.logger.info(f"SPRunner {self.device_id}: SHM cleaned up")
         return True
 
@@ -96,7 +105,7 @@ class SPRunner(BaseDeviceRunner):
         )
 
         self._input_shm.write_request(video_req)
-        self.logger.info(f"SPRunner: request {task_id} sent to SHM")
+        self.logger.info(f"[SP] Request {task_id} sent to SHM input")
 
         resp = self._output_shm.read_response(timeout_s=RESPONSE_TIMEOUT_S)
         if resp is None:
@@ -104,9 +113,25 @@ class SPRunner(BaseDeviceRunner):
                 f"Response timed out after {RESPONSE_TIMEOUT_S}s for task {task_id}"
             )
         if resp.status == VideoStatus.ERROR:
+            self._try_unlink(resp.file_path)
             raise RuntimeError(f"Runner error for task {task_id}: {resp.error_message}")
 
-        # Deserialize the whole video object
-        video = pickle.loads(resp.frame_data)
+        mp4_path = resp.file_path
+        exists = os.path.exists(mp4_path)
+        size_bytes = os.path.getsize(mp4_path) if exists else None
+        size_part = f"{size_bytes:,} bytes" if size_bytes is not None else "n/a"
+        self.logger.info(
+            f"[SP] Received mp4 path from SHM: {mp4_path} "
+            f"(exists={exists}, size={size_part})"
+        )
+        # List so device_worker's responses[i] matches one path per request (str[0] would be wrong).
+        return [mp4_path]
 
-        return video
+    @staticmethod
+    def _try_unlink(path: str) -> None:
+        if not path:
+            return
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
