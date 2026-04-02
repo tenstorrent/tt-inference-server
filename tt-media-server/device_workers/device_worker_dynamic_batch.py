@@ -102,6 +102,9 @@ def device_worker(
                 lambda: task_queue.get_many(max_messages_to_get=batch_size, block=True),
             )
 
+            if len(requests) > 0:
+                logger.info(f"Worker {worker_id} processing tasks: {len(requests)}")
+
             for request in requests:
                 if request == SHUTDOWN_SIGNAL:
                     logger.info(f"Worker {worker_id} received shutdown signal")
