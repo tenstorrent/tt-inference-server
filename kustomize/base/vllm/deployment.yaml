@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tt-inference-server
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 3600
+  selector:
+    matchLabels:
+      app: tt-inference-server
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: tt-inference-server
+    spec:
+      hostIPC: true
+      initContainers:
+        - name: fix-cache-permissions
+          image: busybox
+          command: ["sh", "-c", "chown -R 1000:1000 /cache"]
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+      containers:
+        - name: inference-server
+          image: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--model"
+            - "PLACEHOLDER_MODEL"
+            - "--tt-device"
+            - "galaxy"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: tt-inference-server
+            - secretRef:
+                name: tt-inference-server
+          volumeMounts:
+            - name: cache
+              mountPath: /home/container_app_user/cache_root
+            - name: tenstorrent
+              mountPath: /dev/tenstorrent
+            - name: hugepages-1g
+              mountPath: /dev/hugepages-1G
+          resources:
+            limits:
+              cpu: "8"
+              memory: 128Gi
+            requests:
+              cpu: "6"
+              memory: 64Gi
+          securityContext:
+            privileged: true
+          livenessProbe:
+            httpGet:
+              path: /v1/models
+              port: http
+            initialDelaySeconds: 2400
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 2400
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: cache
+          hostPath:
+            path: /opt/cache/placeholder
+            type: DirectoryOrCreate
+        - name: tenstorrent
+          hostPath:
+            path: /dev/tenstorrent
+            type: Directory
+        - name: hugepages-1g
+          hostPath:
+            path: /dev/hugepages-1G
+            type: Directory

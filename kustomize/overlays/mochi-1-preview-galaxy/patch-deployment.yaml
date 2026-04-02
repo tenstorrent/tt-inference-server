@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tt-inference-server
+spec:
+  template:
+    spec:
+      containers:
+        - name: inference-server
+          resources:
+            limits:
+              memory: 64Gi
+            requests:
+              memory: 32Gi
+          livenessProbe:
+            initialDelaySeconds: 600
+            periodSeconds: 30
+          readinessProbe:
+            initialDelaySeconds: 600
+            periodSeconds: 10
+      volumes:
+        - name: cache
+          hostPath:
+            path: /opt/cache/mochi-1-preview-galaxy

@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tt-inference-server
+spec:
+  template:
+    spec:
+      containers:
+        - name: inference-server
+          args:
+            - "--model"
+            - "Llama-3.3-70B-Instruct"
+            - "--tt-device"
+            - "galaxy"
+          resources:
+            limits:
+              memory: 256Gi
+            requests:
+              memory: 175Gi
+          livenessProbe:
+            initialDelaySeconds: 5400
+            periodSeconds: 30
+          readinessProbe:
+            initialDelaySeconds: 5400
+            periodSeconds: 10
+      volumes:
+        - name: cache
+          hostPath:
+            path: /opt/cache/Llama-3.3-70B-Instruct-galaxy
