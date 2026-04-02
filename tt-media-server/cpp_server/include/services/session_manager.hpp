@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <future>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,6 +16,9 @@
 #include "utils/concurrent_map.hpp"
 
 namespace tt::services {
+
+// Invalid slot ID constant
+constexpr uint32_t INVALID_SLOT_ID = std::numeric_limits<uint32_t>::max();
 
 class SessionManager {
  public:

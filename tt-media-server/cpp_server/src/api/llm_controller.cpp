@@ -171,7 +171,7 @@ void LLMController::completions(
         auto slotId =
             sessionManager->getSlotIdBySessionId(request->sessionId.value());
 
-        if (slotId != -1) {
+        if (slotId != tt::services::INVALID_SLOT_ID) {
           request->slotId = slotId;
         } else {
           TT_LOG_INFO(
@@ -342,7 +342,7 @@ void LLMController::handleStreaming(
     auto slotId =
         sessionManager->getSlotIdBySessionId(reqPtr->sessionId.value());
 
-    if (slotId != -1) {
+    if (slotId != tt::services::INVALID_SLOT_ID) {
       reqPtr->slotId = slotId;
     } else {
       TT_LOG_INFO(
@@ -680,7 +680,7 @@ void LLMController::getSlotId(
     const std::string& sessionId) const {
   uint32_t slotId = sessionManager->getSlotIdBySessionId(sessionId);
 
-  if (slotId == std::numeric_limits<uint32_t>::max()) {
+  if (slotId == tt::services::INVALID_SLOT_ID) {
     // Check if session exists at all
     auto session = sessionManager->getSession(sessionId);
     if (!session.has_value()) {
