@@ -70,36 +70,36 @@ void Sequence::serialize(std::ostream& os) const {
   samplingParams->serialize(os);
 }
 
-Sequence* Sequence::deserialize(std::istream& is) {
+Sequence Sequence::deserialize(std::istream& is) {
   uint32_t taskId;
   is.read(reinterpret_cast<char*>(&taskId), sizeof(taskId));
 
   Config defaultConfig;
-  Sequence* seq = new Sequence(taskId, defaultConfig.kvcache_block_size,
+  Sequence seq(taskId, defaultConfig.kvcache_block_size,
                                std::vector<int64_t>{});
 
-  is.read(reinterpret_cast<char*>(&seq->lastToken), sizeof(seq->lastToken));
-  is.read(reinterpret_cast<char*>(&seq->numPromptTokens),
-          sizeof(seq->numPromptTokens));
-  is.read(reinterpret_cast<char*>(&seq->numCachedTokens),
-          sizeof(seq->numCachedTokens));
+  is.read(reinterpret_cast<char*>(&seq.lastToken), sizeof(seq.lastToken));
+  is.read(reinterpret_cast<char*>(&seq.numPromptTokens),
+          sizeof(seq.numPromptTokens));
+  is.read(reinterpret_cast<char*>(&seq.numCachedTokens),
+          sizeof(seq.numCachedTokens));
 
   size_t tokenIdsSize;
   is.read(reinterpret_cast<char*>(&tokenIdsSize), sizeof(tokenIdsSize));
-  seq->tokenIds.resize(tokenIdsSize);
-  is.read(reinterpret_cast<char*>(seq->tokenIds.data()),
+  seq.tokenIds.resize(tokenIdsSize);
+  is.read(reinterpret_cast<char*>(seq.tokenIds.data()),
           tokenIdsSize * sizeof(int64_t));
 
   size_t blockTableSize;
   is.read(reinterpret_cast<char*>(&blockTableSize), sizeof(blockTableSize));
-  seq->blockTable.resize(blockTableSize);
-  is.read(reinterpret_cast<char*>(seq->blockTable.data()),
+  seq.blockTable.resize(blockTableSize);
+  is.read(reinterpret_cast<char*>(seq.blockTable.data()),
           blockTableSize * sizeof(int));
 
-  is.read(reinterpret_cast<char*>(&seq->status), sizeof(seq->status));
-  is.read(reinterpret_cast<char*>(&seq->blockSize), sizeof(seq->blockSize));
-  is.read(reinterpret_cast<char*>(&seq->address), sizeof(seq->address));
-  seq->samplingParams.reset(SamplingParams::deserialize(is));
+  is.read(reinterpret_cast<char*>(&seq.status), sizeof(seq.status));
+  is.read(reinterpret_cast<char*>(&seq.blockSize), sizeof(seq.blockSize));
+  is.read(reinterpret_cast<char*>(&seq.address), sizeof(seq.address));
+  seq.samplingParams.reset(SamplingParams::deserialize(is));
   return seq;
 }
 

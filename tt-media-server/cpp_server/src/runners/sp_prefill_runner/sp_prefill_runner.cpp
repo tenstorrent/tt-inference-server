@@ -24,14 +24,11 @@ SpPrefillRunner::~SpPrefillRunner() {
 void SpPrefillRunner::run() {
   while (!stopped.load(std::memory_order_relaxed)) {
     // Get next sequence from task queue
-    auto* seq = taskQueue->tryPop();
-    if (!seq) {
+    auto sequence = taskQueue->tryPop();
+    if (!sequence) {
       std::this_thread::yield();
       continue;
     }
-
-    // Use unique_ptr to ensure cleanup
-    std::unique_ptr<llm_engine::Sequence> sequence(seq);
     TT_LOG_DEBUG("SpPrefillRunner: Starting prefill for task {}",
                  sequence->taskId);
 

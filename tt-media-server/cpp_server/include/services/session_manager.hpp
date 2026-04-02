@@ -13,7 +13,7 @@
 #include <thread>
 
 #include "domain/session.hpp"
-#include "ipc/boost_ipc_memory_queue.hpp"
+#include "ipc/boost_ipc_queue.hpp"
 #include "utils/concurrent_map.hpp"
 
 namespace tt::services {

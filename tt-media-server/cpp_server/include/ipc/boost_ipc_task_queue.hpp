@@ -3,45 +3,56 @@
 
 #pragma once
 
-#include <boost/interprocess/ipc/message_queue.hpp>
-#include <mutex>
+#include <memory>
 #include <string>
 
 #include "config/runner_config.hpp"
+#include "ipc/boost_ipc_queue.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 
 namespace tt::ipc {
 
 /**
- * ITaskQueue implementation backed by a Boost.Interprocess message queue.
+ * ITaskQueue implementation backed by the generic BoostIpcMemoryQueue.
  */
-
 class BoostIpcTaskQueue : public llm_engine::ITaskQueue {
  public:
-  /** Reserve for task_id, block_table, and other Sequence fields besides
-   * token_ids_. */
   static constexpr size_t MAX_SEQUENCE_NON_TOKEN_BYTES = 4096;
   static constexpr size_t MAX_MSG_SIZE =
       tt::config::LLMConfig::MAX_INPUT_TOKENS * sizeof(int64_t) +
       MAX_SEQUENCE_NON_TOKEN_BYTES;
 
-  BoostIpcTaskQueue(const std::string& name);
-  BoostIpcTaskQueue(const std::string& name, int size);
-  ~BoostIpcTaskQueue();
+  using Queue =
+      BoostIpcMemoryQueue<llm_engine::Sequence, MAX_MSG_SIZE>;
 
-  void push(const llm_engine::Sequence& seq) override;
-  llm_engine::Sequence* receive() override;
-  llm_engine::Sequence* tryPop();
-  bool empty() const override;
+  /** Create a new queue (main process). */
+  BoostIpcTaskQueue(const std::string& name, int capacity)
+      : queue_(std::make_unique<Queue>(name, capacity)) {}
 
-  /** Remove the named shared-memory queue (cleanup helper). */
-  static void remove(const std::string& name);
+  /** Open an existing queue (worker process). */
+  explicit BoostIpcTaskQueue(const std::string& name)
+      : queue_(Queue::openExisting(name)) {}
+
+  void push(const llm_engine::Sequence& seq) override { queue_->push(seq); }
+
+  std::unique_ptr<llm_engine::Sequence> tryPop() override {
+    llm_engine::Sequence seq(0, 1, {});
+    if (!queue_->tryPop(seq)) return nullptr;
+    return std::make_unique<llm_engine::Sequence>(std::move(seq));
+  }
+
+  std::unique_ptr<llm_engine::Sequence> receive() override {
+    llm_engine::Sequence seq(0, 1, {});
+    queue_->receive(seq);
+    return std::make_unique<llm_engine::Sequence>(std::move(seq));
+  }
+
+  bool empty() const override { return queue_->empty(); }
+
+  static void remove(const std::string& name) { Queue::remove(name); }
 
  private:
-  std::unique_ptr<boost::interprocess::message_queue> queue_;
-  std::mutex push_mutex_;
-  std::vector<char> send_buffer_;
-  std::vector<char> recv_buffer_;
+  std::unique_ptr<Queue> queue_;
 };
 
 }  // namespace tt::ipc

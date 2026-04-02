@@ -36,7 +36,7 @@ class Sequence {
 
   void serialize(std::ostream& os) const;
 
-  static Sequence* deserialize(std::istream& is);
+  static Sequence deserialize(std::istream& is);
 
   size_t size() const { return tokenIds.size(); }
   int64_t operator[](size_t i) const { return tokenIds[i]; }

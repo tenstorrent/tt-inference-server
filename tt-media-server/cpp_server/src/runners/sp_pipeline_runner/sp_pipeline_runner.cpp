@@ -129,12 +129,11 @@ void SpPipelineRunner::step() {
     return;
   }
 
-  llm_engine::Sequence* seq = taskQueue->tryPop();
+  auto seq = taskQueue->tryPop();
   if (!seq) return;
 
   {
     ZoneScopedN("SpPipelineRunner::write_to_device");
-    std::unique_ptr<llm_engine::Sequence> owned(seq);
     uint32_t taskId = seq->taskId;
 
     if (!seq->samplingParams->max_tokens.has_value()) {
@@ -146,7 +145,7 @@ void SpPipelineRunner::step() {
                        seq->samplingParams->max_tokens.value(),
                        sp_pipeline::RequestPhase::PREFILL);
 
-    activeSequences.emplace(taskId, std::move(owned));
+    activeSequences.emplace(taskId, std::move(seq));
     ++inFlightCount;
   }
 }
