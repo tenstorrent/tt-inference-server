@@ -44,10 +44,11 @@ export MODEL_SERVICE=llm
 "$SERVER_BIN" -p "$PORT" -h 127.0.0.1 > /dev/null 2>&1 &
 SERVER_PID=$!
 
-# Wait for server to be ready
+# Wait for server to be ready (model warmed up)
 echo "Waiting for server..."
-for i in $(seq 1 30); do
-    if curl -sf "http://127.0.0.1:$PORT/health" > /dev/null 2>&1; then
+for i in $(seq 1 60); do
+    LIVENESS=$(curl -sf "http://127.0.0.1:$PORT/tt-liveness" 2>/dev/null || true)
+    if echo "$LIVENESS" | grep -q '"model_ready":true'; then
         echo "Server ready."
         break
     fi
@@ -58,8 +59,9 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
-if ! curl -sf "http://127.0.0.1:$PORT/health" > /dev/null 2>&1; then
-    echo "ERROR: Server did not become ready within 30 seconds"
+LIVENESS=$(curl -sf "http://127.0.0.1:$PORT/tt-liveness" 2>/dev/null || true)
+if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+    echo "ERROR: Server did not become ready within 60 seconds"
     exit 1
 fi
 
