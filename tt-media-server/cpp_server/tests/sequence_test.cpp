@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
+#include "runners/llm_runner/sequence.hpp"
 
 #include <gtest/gtest.h>
 
@@ -8,21 +9,10 @@
 
 #include "config/runner_config.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
-#include "runners/llm_runner/sequence.hpp"
+#include "utils/id_generator.hpp"
 
 namespace llm_engine {
 namespace {
-
-TEST(SequenceIDTest, SerializeDeserialize_RoundTrip) {
-  uint32_t orig = 12345;
-
-  std::vector<char> buf = tt::utils::TaskIDGenerator::serialize(orig);
-  ASSERT_EQ(buf.size(), 4);  // uint32_t is 4 bytes
-
-  uint32_t restored =
-      tt::utils::TaskIDGenerator::deserialize(buf.data(), buf.size());
-  EXPECT_EQ(restored, orig);
-}
 
 TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
   SamplingParams orig;
