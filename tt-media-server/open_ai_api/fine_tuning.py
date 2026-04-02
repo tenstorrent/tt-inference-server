@@ -95,6 +95,7 @@ async def get_fine_tuning_job_metadata(
 
     return JSONResponse(content=job_data)
 
+
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_fine_tuning_job(
     job_id: str,
@@ -117,6 +118,7 @@ async def cancel_fine_tuning_job(
         )
 
     return JSONResponse(content=status)
+
 
 @router.get("/jobs/{job_id}/metrics")
 async def get_training_metrics(
@@ -183,6 +185,7 @@ async def get_job_logs(
         raise HTTPException(404, "Job not found")
     return JSONResponse(content=logs)
 
+
 @router.get("/jobs/{job_id}/checkpoints/{checkpoint_id}")
 async def download_checkpoint(
     job_id: str,
@@ -195,7 +198,7 @@ async def download_checkpoint(
 
     Returns:
         StreamingResponse: Zip file containing the checkpoint adapter weights.
-        
+
     Raises:
         HTTPException: If job or checkpoint not found.
     """
@@ -204,7 +207,9 @@ async def download_checkpoint(
     except ValueError:
         raise HTTPException(404, "Job not found")
     if not checkpoint_path:
-        raise HTTPException(404, "Checkpoint not found or no longer available for download")
+        raise HTTPException(
+            404, "Checkpoint not found or no longer available for download"
+        )
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for root, _, files in os.walk(checkpoint_path):
@@ -216,5 +221,7 @@ async def download_checkpoint(
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=adapter_{checkpoint_id}.zip"},
+        headers={
+            "Content-Disposition": f"attachment; filename=adapter_{checkpoint_id}.zip"
+        },
     )

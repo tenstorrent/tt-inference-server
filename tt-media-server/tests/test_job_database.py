@@ -1,8 +1,6 @@
 # test_job_database.py
 
 import pytest
-import json
-from pathlib import Path
 from sqlite3 import IntegrityError
 from utils.job_database import JobDatabase
 

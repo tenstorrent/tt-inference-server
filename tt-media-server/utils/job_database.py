@@ -239,7 +239,7 @@ class JobDatabase:
                 }
                 for r in cursor.fetchall()
             ]
-    
+
     # ------------- CHECKPOINTS -------------
     def insert_checkpoint(
         self,
@@ -272,7 +272,7 @@ class JobDatabase:
                 }
                 for r in cursor.fetchall()
             ]
-    
+
     # ------------- LOGS -------------
     def insert_log(
         self,

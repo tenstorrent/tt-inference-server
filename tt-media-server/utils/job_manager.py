@@ -157,7 +157,7 @@ class JobManager:
                 job.job_logs = job_logs
             if job_checkpoints is not None:
                 job.job_checkpoints = job_checkpoints
-            
+
             if self.db:
                 try:
                     self.db.insert_job(
@@ -225,7 +225,7 @@ class JobManager:
             if job:
                 return job.job_logs
         return None
-    
+
     def get_job_checkpoints(self, job_id: str) -> Optional[list]:
         with self._jobs_lock:
             job = self._jobs.get(job_id)
@@ -313,9 +313,7 @@ class JobManager:
             progress_monitor = asyncio.create_task(self._mark_job_in_progress(job))
 
             if self.db:
-                data_persister = asyncio.create_task(
-                    self._persist_job_data_to_db(job)
-                )
+                data_persister = asyncio.create_task(self._persist_job_data_to_db(job))
 
             result_path = await task_function(request)
 
@@ -452,7 +450,7 @@ class JobManager:
             self._logger.error(
                 f"DB sync failed for job {job.id} to '{job.status.value}': {e}"
             )
-    
+
     async def _persist_job_data_to_db(self, job: Job):
         if job.job_type != JobTypes.TRAINING.value:
             return
@@ -485,16 +483,14 @@ class JobManager:
                     checkpoints_failed = True
 
             if not logs_failed:
-                logs_last_seen = self._persist_new_logs(
-                    job, logs_list, logs_last_seen
-                )
+                logs_last_seen = self._persist_new_logs(job, logs_list, logs_last_seen)
                 if logs_last_seen < 0:
                     logs_failed = True
 
             if job.is_terminal():
                 break
             await asyncio.sleep(1.0)
-    
+
     def _persist_new_metrics(self, job: Job, metrics_list: list, last_seen: int) -> int:
         current_len = len(metrics_list)
         for i in range(last_seen, current_len):
@@ -517,7 +513,9 @@ class JobManager:
                 return -1
         return current_len
 
-    def _persist_new_checkpoints(self, job: Job, checkpoints_list: list, last_seen: int) -> int:
+    def _persist_new_checkpoints(
+        self, job: Job, checkpoints_list: list, last_seen: int
+    ) -> int:
         current_len = len(checkpoints_list)
         for i in range(last_seen, current_len):
             ckpt = checkpoints_list[i]
@@ -535,7 +533,9 @@ class JobManager:
                     f"Duplicate checkpoint for job {job.id} at step {ckpt['step']}, skipping"
                 )
             except Exception as e:
-                self._logger.error(f"Failed to persist checkpoint for job {job.id}: {e}")
+                self._logger.error(
+                    f"Failed to persist checkpoint for job {job.id}: {e}"
+                )
                 return -1
         return current_len
 
@@ -601,7 +601,9 @@ class JobManager:
                         if checkpoints:
                             job.job_checkpoints = checkpoints
                         if job.job_checkpoints:
-                            job.job_checkpoints = self._validate_checkpoints_on_disk(job)
+                            job.job_checkpoints = self._validate_checkpoints_on_disk(
+                                job
+                            )
                     except Exception as e:
                         self._logger.error(
                             f"Failed to restore checkpoints for job {job.id}: {e}"

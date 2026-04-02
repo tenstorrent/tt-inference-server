@@ -60,8 +60,10 @@ class TrainingService(BaseJobService):
         if checkpoints_list is None:
             raise ValueError(f"Job {job_id} not found")
         return list(checkpoints_list)
-    
-    def get_checkpoint_download_path(self, job_id: str, checkpoint_id: str) -> Optional[str]:
+
+    def get_checkpoint_download_path(
+        self, job_id: str, checkpoint_id: str
+    ) -> Optional[str]:
         checkpoints = self.get_job_checkpoints(job_id)
         if not any(ckpt["id"] == checkpoint_id for ckpt in checkpoints):
             return None
