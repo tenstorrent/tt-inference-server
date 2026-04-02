@@ -1,0 +1,132 @@
+{{- include "tt-inference-server.validateValues" . }}
+{{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tt-inference-server.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tt-inference-server.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $cfg.replicaCount }}
+  progressDeadlineSeconds: {{ $cfg.progressDeadlineSeconds }}
+  selector:
+    matchLabels:
+      {{- include "tt-inference-server.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        {{- include "tt-inference-server.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with $cfg.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      hostIPC: {{ $cfg.hostIPC }}
+      {{- with $cfg.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $cfg.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: fix-cache-permissions
+          image: busybox
+          command: ["sh", "-c", "chown -R 1000:1000 /cache"]
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+      containers:
+        - name: inference-server
+          image: {{ include "tt-inference-server.image" . }}
+          imagePullPolicy: {{ $cfg.image.pullPolicy }}
+          {{- if eq $cfg.serverType "vllm" }}
+          args:
+            - "--model"
+            - {{ .Values.model | quote }}
+            - "--tt-device"
+            - {{ .Values.device | quote }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $cfg.service.targetPort }}
+              protocol: {{ $cfg.service.protocol }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "tt-inference-server.configmapName" . }}
+            - secretRef:
+                name: {{ include "tt-inference-server.secretName" . }}
+          {{- with $cfg.extraEnv }}
+          env:
+            {{- range . }}
+            {{- if .valueFrom }}
+            - name: {{ .name }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+            {{- end }}
+            {{- end }}
+          {{- end }}
+          volumeMounts:
+            - name: cache
+              mountPath: /home/container_app_user/cache_root
+            - name: tenstorrent
+              mountPath: /dev/tenstorrent
+            - name: hugepages-1g
+              mountPath: /dev/hugepages-1G
+          {{- with $cfg.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml $cfg.securityContext | nindent 12 }}
+          {{- if $cfg.probes.liveness.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ $cfg.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ $cfg.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ $cfg.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ $cfg.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ $cfg.probes.liveness.failureThreshold }}
+          {{- end }}
+          {{- if $cfg.probes.readiness.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ $cfg.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ $cfg.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ $cfg.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ $cfg.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ $cfg.probes.readiness.failureThreshold }}
+          {{- end }}
+      volumes:
+        - name: cache
+          hostPath:
+            path: {{ include "tt-inference-server.cacheHostPath" . }}
+            type: DirectoryOrCreate
+        - name: tenstorrent
+          hostPath:
+            path: /dev/tenstorrent
+            type: Directory
+        - name: hugepages-1g
+          hostPath:
+            path: /dev/hugepages-1G
+            type: Directory
+      {{- with $cfg.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $cfg.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $cfg.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
