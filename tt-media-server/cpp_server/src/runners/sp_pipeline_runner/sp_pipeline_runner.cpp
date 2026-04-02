@@ -144,7 +144,7 @@ void SpPipelineRunner::step() {
 
     modelRunner->write(
         taskId.id, seq->tokenIds, seq->samplingParams->max_tokens.value(),
-        sp_pipeline::RequestPhase::PREFILL, seq->samplingParams->fast_mode);
+        sp_pipeline::RequestPhase::PREFILL, seq->fastMode);
 
     activeSequences.emplace(taskId, std::move(owned));
     ++inFlightCount;

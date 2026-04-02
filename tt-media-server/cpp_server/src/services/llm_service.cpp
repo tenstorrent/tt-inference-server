@@ -412,6 +412,7 @@ void LLMService::processStreamingRequest(
   if (request.slotId.has_value()) {
     sequence->setKVCacheAddress(request.slotId.value());
   }
+  sequence->fastMode = request.fast_mode;
   sequence->samplingParams = std::make_unique<llm_engine::SamplingParams>(
       tt::utils::mapper::mapSamplingParams(request));
   queue_manager_->task_queue->push(*std::move(sequence));

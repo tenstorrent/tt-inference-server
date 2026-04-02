@@ -74,6 +74,7 @@ class Sequence {
   size_t numPromptTokens = 0;
   size_t numCachedTokens = 0;
   std::vector<int> blockTable;
+  bool fastMode = false;
   std::unique_ptr<SamplingParams> samplingParams;
 
  private:
