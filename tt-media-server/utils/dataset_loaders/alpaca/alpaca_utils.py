@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+from inspect import cleandoc
 from string import Template
 
 PROMPT_INTRO = (
@@ -10,28 +11,32 @@ PROMPT_INTRO = (
 )
 
 PROMPT_TEMPLATE = Template(
-    f"""
-{PROMPT_INTRO}
+    cleandoc(
+        f"""
+        {PROMPT_INTRO}
 
-### Instruction:
-$instruction
+        ### Instruction:
+        $instruction
 
-### Input:
-$input
+        ### Input:
+        $input
 
-### Response:
-"""
+        ### Response:
+        """
+    )
 )
 
 PROMPT_TEMPLATE_NO_INPUT = Template(
-    f"""
-{PROMPT_INTRO}
+    cleandoc(
+        f"""
+        {PROMPT_INTRO}
 
-### Instruction:
-$instruction
+        ### Instruction:
+        $instruction
 
-### Response:
-"""
+        ### Response:
+        """
+    )
 )
 
 DATASET_PATH = "tatsu-lab/alpaca"
