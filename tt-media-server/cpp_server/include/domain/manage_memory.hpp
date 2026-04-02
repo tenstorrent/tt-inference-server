@@ -11,6 +11,8 @@
 
 namespace tt::domain {
 
+constexpr uint32_t INVALID_SLOT_ID = std::numeric_limits<uint32_t>::max();
+
 enum class MemoryManagementAction : std::uint8_t {
   ALLOCATE = 0,
   DEALLOCATE = 1,
@@ -56,7 +58,7 @@ struct ManageMemoryTask {
     task.memoryLayout = static_cast<KvMemoryLayout>(ml);
     std::uint32_t n = 0;
     is.read(reinterpret_cast<char*>(&n), sizeof(n));
-    task.slotIds.resize(n, std::numeric_limits<std::uint32_t>::max());
+    task.slotIds.resize(n, INVALID_SLOT_ID);
     for (std::uint32_t i = 0; i < n; ++i) {
       is.read(reinterpret_cast<char*>(&task.slotIds[i]), sizeof(std::uint32_t));
     }
@@ -94,7 +96,7 @@ struct ManageMemoryResult {
     result.status = static_cast<ManageMemoryStatus>(s);
     std::uint32_t n = 0;
     is.read(reinterpret_cast<char*>(&n), sizeof(n));
-    result.slotIds.resize(n, std::numeric_limits<std::uint32_t>::max());
+    result.slotIds.resize(n, INVALID_SLOT_ID);
     for (std::uint32_t i = 0; i < n; ++i) {
       is.read(reinterpret_cast<char*>(&result.slotIds[i]),
               sizeof(std::uint32_t));
