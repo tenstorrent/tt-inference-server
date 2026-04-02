@@ -12,10 +12,6 @@
 #include "domain/manage_memory.hpp"
 #include "utils/logger.hpp"
 
-namespace {
-constexpr uint32_t INVALID_SLOT_ID = std::numeric_limits<uint32_t>::max();
-}
-
 namespace tt::services {
 
 SessionManager::SessionManager() {

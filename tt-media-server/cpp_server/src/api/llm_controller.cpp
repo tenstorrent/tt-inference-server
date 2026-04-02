@@ -233,14 +233,25 @@ void LLMController::handleStreaming(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleStreaming");
 
+  if (reqPtr->sessionId.has_value() && sessionManager) {
+    auto slotId =
+        sessionManager->getSlotIdBySessionId(reqPtr->sessionId.value());
+
+    if (slotId != tt::services::INVALID_SLOT_ID) {
+      reqPtr->slotId = slotId;
+    } else {
+      TT_LOG_INFO(
+          "Received request with non existing session, resetting session id");
+      // reset sessionId since it's a stale session
+      reqPtr->sessionId.reset();
+    }
+  }
+
   // Create session if not provided
   if (!reqPtr->sessionId.has_value() && sessionManager) {
     auto session = sessionManager->createSession(std::nullopt);
     reqPtr->sessionId = session.getSessionId();
     TT_LOG_INFO("[LLMController] Created NEW session: {}",
-                reqPtr->sessionId.value());
-  } else if (reqPtr->sessionId.has_value()) {
-    TT_LOG_INFO("[LLMController] Using EXISTING sessionId: '{}'",
                 reqPtr->sessionId.value());
   }
 
@@ -540,7 +551,7 @@ void LLMController::getSlotId(
     const std::string& sessionId) const {
   uint32_t slotId = sessionManager->getSlotIdBySessionId(sessionId);
 
-  if (slotId == std::numeric_limits<uint32_t>::max()) {
+  if (slotId == tt::services::INVALID_SLOT_ID) {
     // Check if session exists at all
     auto session = sessionManager->getSession(sessionId);
     if (!session.has_value()) {
