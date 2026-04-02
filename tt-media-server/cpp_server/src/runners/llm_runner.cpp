@@ -41,12 +41,9 @@ LLMRunner::LLMRunner(const Config& config,
           .flags = static_cast<uint32_t>(ipc::SharedToken::FLAG_FINAL |
                                          ipc::SharedToken::FLAG_ERROR),
           .token_id = 0,
-          .task_id = {},
+          .task_id = result.taskId,
           .padding = {},
       };
-      strncpy(shared.task_id, result.taskId.id.c_str(),
-              sizeof(shared.task_id) - 1);
-      shared.task_id[sizeof(shared.task_id) - 1] = '\0';
       while (!result_queue_->push(shared)) {
         std::this_thread::yield();
       }
@@ -66,12 +63,9 @@ LLMRunner::LLMRunner(const Config& config,
           .flags = static_cast<uint32_t>(finished ? ipc::SharedToken::FLAG_FINAL
                                                   : 0),
           .token_id = result.tokenId,
-          .task_id = {},
+          .task_id = result.taskId,
           .padding = {},
       };
-      strncpy(shared.task_id, result.taskId.id.c_str(),
-              sizeof(shared.task_id) - 1);
-      shared.task_id[sizeof(shared.task_id) - 1] = '\0';
       while (!result_queue_->push(shared)) {
         std::this_thread::yield();
       }
@@ -122,7 +116,7 @@ void LLMRunner::step() {
   // Drain cancel queue before scheduling so aborted sequences are excluded
   // from the next batch.
   if (cancel_queue_) {
-    std::vector<TaskID> cancelled;
+    std::vector<uint32_t> cancelled;
     cancel_queue_->tryPopAll(cancelled);
     for (const auto& taskId : cancelled) {
       scheduler_->abortRequest(taskId);

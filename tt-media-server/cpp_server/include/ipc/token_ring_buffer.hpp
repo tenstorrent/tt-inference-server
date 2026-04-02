@@ -32,8 +32,8 @@ struct alignas(64) SharedToken {
   uint32_t token_index;  // Token index in sequence
   uint32_t flags;        // Bit flags: is_final, is_error, etc.
   uint64_t token_id;     // Token ID
-  char task_id[56];      // Task ID
-  char padding[8];       // Padding to reach 128 bytes
+  uint32_t task_id;      // Task ID
+  char padding[44];      // Padding to reach 64 bytes
 
   static constexpr uint32_t FLAG_FINAL = 1;
   static constexpr uint32_t FLAG_ERROR = 2;
@@ -44,8 +44,8 @@ struct alignas(64) SharedToken {
   bool isDone() const { return flags & FLAG_DONE; }
 };
 
-static_assert(sizeof(SharedToken) == 128,
-              "SharedToken must be 128 bytes for cache alignment");
+static_assert(sizeof(SharedToken) == 64,
+              "SharedToken must be 64 bytes for cache alignment");
 
 struct SharedEmbedding {};
 

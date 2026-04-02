@@ -44,7 +44,7 @@ bool Scheduler::isFinished() const {
   return prefill_queue_->empty() && decode_queue_.empty();
 }
 
-Sequence& Scheduler::addRequest(TaskID taskId, std::vector<int64_t> prompt,
+Sequence& Scheduler::addRequest(uint32_t taskId, std::vector<int64_t> prompt,
                                 const SamplingParams& params) {
   auto seq = std::make_unique<Sequence>(std::move(taskId), block_size_,
                                         std::move(prompt), params);
@@ -56,7 +56,7 @@ Sequence& Scheduler::addRequest(TaskID taskId, std::vector<int64_t> prompt,
 
 void Scheduler::add(Sequence& seq) { prefill_queue_->push(seq); }
 
-Sequence* Scheduler::findSequence(TaskID taskId) {
+Sequence* Scheduler::findSequence(uint32_t taskId) {
   auto it = sequences_.find(taskId);
   return it != sequences_.end() ? it->second.get() : nullptr;
 }
@@ -161,7 +161,6 @@ void Scheduler::preempt(Sequence& seq) {
   seq.status = SequenceStatus::WAITING;
   block_manager_.deallocate(seq);
   prefill_queue_->push(seq);
-  sequences_.erase(seq.taskId);
 }
 
 void Scheduler::postprocess(std::vector<Sequence*>& seqs,
@@ -190,9 +189,9 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
   }
 }
 
-void Scheduler::removeSequence(TaskID taskId) { sequences_.erase(taskId); }
+void Scheduler::removeSequence(uint32_t taskId) { sequences_.erase(taskId); }
 
-void Scheduler::abortRequest(TaskID taskId) {
+void Scheduler::abortRequest(uint32_t taskId) {
   auto* seq = findSequence(taskId);
 
   // If the task isn't tracked or is still waiting, it might have a stale

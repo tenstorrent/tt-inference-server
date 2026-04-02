@@ -27,8 +27,8 @@ class BoostIpcCancelQueue : public ICancelQueue {
 
   ~BoostIpcCancelQueue() override;
 
-  void push(const domain::TaskID& taskId) override;
-  void tryPopAll(std::vector<domain::TaskID>& out) override;
+  void push(uint32_t taskId) override;
+  void tryPopAll(std::vector<uint32_t>& out) override;
   void remove() override;
 
   /** Remove a named queue (cleanup helper). */

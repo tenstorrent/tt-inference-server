@@ -3,6 +3,8 @@
 
 #include "ipc/boost_ipc_cancel_queue.hpp"
 
+#include <cstring>
+
 #include "utils/logger.hpp"
 
 namespace tt::ipc {
@@ -13,8 +15,7 @@ BoostIpcCancelQueue::BoostIpcCancelQueue(const std::string& name,
                                          size_t capacity)
     : name_(name),
       queue_(std::make_unique<bip::message_queue>(
-          bip::create_only, name.c_str(), capacity,
-          domain::TaskID::K_SERIALIZED_SIZE)),
+          bip::create_only, name.c_str(), capacity, sizeof(uint32_t))),
       recv_buffer_(queue_->get_max_msg_size()) {}
 
 BoostIpcCancelQueue::BoostIpcCancelQueue(const std::string& name)
@@ -31,21 +32,24 @@ BoostIpcCancelQueue::~BoostIpcCancelQueue() {
   }
 }
 
-void BoostIpcCancelQueue::push(const domain::TaskID& taskId) {
-  auto buf = taskId.ipcSerialize();
-  if (!queue_->try_send(buf.data(), buf.size(), 0)) {
+void BoostIpcCancelQueue::push(uint32_t taskId) {
+  if (!queue_->try_send(reinterpret_cast<const char*>(&taskId), sizeof(taskId),
+                        0)) {
     TT_LOG_WARN("[CancelQueue] Queue '{}' full, dropping cancel for task_id={}",
-                name_, taskId.id);
+                name_, taskId);
   }
 }
 
-void BoostIpcCancelQueue::tryPopAll(std::vector<domain::TaskID>& out) {
+void BoostIpcCancelQueue::tryPopAll(std::vector<uint32_t>& out) {
   bip::message_queue::size_type recvdSize;
   unsigned int priority;
   while (queue_->try_receive(recv_buffer_.data(), recv_buffer_.size(),
                              recvdSize, priority)) {
-    out.push_back(
-        domain::TaskID::ipcDeserialize(recv_buffer_.data(), recvdSize));
+    if (recvdSize >= sizeof(uint32_t)) {
+      uint32_t taskId;
+      std::memcpy(&taskId, recv_buffer_.data(), sizeof(uint32_t));
+      out.push_back(taskId);
+    }
   }
 }
 

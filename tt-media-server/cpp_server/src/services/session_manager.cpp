@@ -10,6 +10,7 @@
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
+#include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
@@ -43,7 +44,7 @@ void SessionManager::drainResultQueue() {
   while (!stopped.load(std::memory_order_relaxed)) {
     domain::ManageMemoryResult result;
     if (memoryResultQueue->tryPop(result)) {
-      auto promise = pendingAllocations.take(result.taskId.id);
+      auto promise = pendingAllocations.take(result.taskId);
       if (promise.has_value()) {
         if (result.status == domain::ManageMemoryStatus::SUCCESS &&
             !result.slotIds.empty()) {
@@ -200,10 +201,11 @@ std::future<uint32_t> SessionManager::requestSlotIdFromMemoryManager(
   auto promise = std::make_shared<std::promise<uint32_t>>();
   auto future = promise->get_future();
 
-  pendingAllocations.insert(sessionId, promise);
-
   domain::ManageMemoryTask task;
-  task.taskId = domain::TaskID(sessionId);
+  uint32_t requestTaskId = tt::utils::TaskIDGenerator::generate();
+  task.taskId = requestTaskId;
+
+  pendingAllocations.insert(requestTaskId, promise);
   task.action = domain::MemoryManagementAction::ALLOCATE;
   task.inputSeqLen = 0;
   task.memoryLayout = domain::KvMemoryLayout::Paged;
@@ -216,7 +218,7 @@ std::future<uint32_t> SessionManager::requestSlotIdFromMemoryManager(
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SessionManager] Error requesting slot for session {}: {}",
                  sessionId, e.what());
-    pendingAllocations.erase(sessionId);
+    pendingAllocations.erase(requestTaskId);
     promise->set_value(INVALID_SLOT_ID);
   }
 
@@ -230,7 +232,7 @@ void SessionManager::sendDeallocRequest(const std::string& sessionId,
   }
 
   domain::ManageMemoryTask task;
-  task.taskId = domain::TaskID(sessionId);
+  task.taskId = utils::TaskIDGenerator::generate();
   task.action = domain::MemoryManagementAction::DEALLOCATE;
   task.inputSeqLen = 0;
   task.memoryLayout = domain::KvMemoryLayout::Paged;

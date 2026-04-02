@@ -113,7 +113,7 @@ struct CompletionRequest : BaseRequest {
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
 
-  static CompletionRequest fromJson(const Json::Value& json, TaskID taskId) {
+  static CompletionRequest fromJson(const Json::Value& json, uint32_t taskId) {
     CompletionRequest req(std::move(taskId));
 
     if (json.isMember("model") && !json["model"].isNull()) {
@@ -224,7 +224,7 @@ struct CompletionRequest : BaseRequest {
     }
 
     std::ostringstream out;
-    out << "task_id=" << task_id.id << " model=" << model.value_or("default")
+    out << "task_id=" << task_id << " model=" << model.value_or("default")
         << " stream=" << stream << " prompt=" << promptInfo
         << " max_tokens=" << detail::optStr(max_tokens)
         << " temperature=" << detail::optStr(temperature)

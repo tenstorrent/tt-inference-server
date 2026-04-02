@@ -79,11 +79,6 @@ class LLMController : public drogon::HttpController<LLMController> {
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**
-   * Generate a unique completion ID (hex string).
-   */
-  static std::string generateCompletionId();
-
-  /**
    * Build OpenAI-style error JSON (flat object/message/type/param/code).
    */
   static Json::Value errorJson(const std::string& message,

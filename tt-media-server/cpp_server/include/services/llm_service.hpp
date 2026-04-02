@@ -49,7 +49,7 @@ class LLMService
    * synchronous waiters, and broadcasts cancel to all worker queues.
    * Idempotent and thread-safe.
    */
-  void abortRequest(const domain::TaskID& taskId);
+  void abortRequest(uint32_t taskId);
 
  protected:
   void postProcess(domain::CompletionResponse& response) const override;
@@ -72,7 +72,7 @@ class LLMService
 
   std::vector<std::thread> consumer_threads_;
 
-  ConcurrentMap<std::string,
+  ConcurrentMap<uint32_t,
                 std::function<void(domain::StreamingChunkResponse&, bool)>>
       stream_callbacks_;
 
