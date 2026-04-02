@@ -4,7 +4,7 @@
 
 """MPI-based video generation runner for a unified 4x32 mesh across 4 machines.
 
-All 4 ranks are launched simultaneously by tt-run. Every rank participates in
+All ranks are launched simultaneously by tt-run. Every rank participates in
 collective inference on a single unified mesh — there is no coordinator/worker
 split and no TCP socket coordination.
 

@@ -11,6 +11,7 @@ from config.constants import ModelRunners, ModelServices, SupportedModels
 from config.settings import get_settings
 from domain.image_generate_request import ImageGenerateRequest
 from domain.video_generate_request import VideoGenerateRequest
+from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
@@ -363,8 +364,9 @@ class TTWan22Runner(TTDiTRunner):
             self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
         )
         if mesh_size >= 32:  # i.e GLX: ((4, 8), (4, 32))
-            config = ttnn.FabricRouterConfig()
-            config.max_packet_payload_size_bytes = 8192
             device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
-            device_params["fabric_router_config"] = config
+            if is_blackhole():
+                config = ttnn.FabricRouterConfig()
+                config.max_packet_payload_size_bytes = 8192
+                device_params["fabric_router_config"] = config
         return device_params
