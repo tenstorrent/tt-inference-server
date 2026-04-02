@@ -982,8 +982,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="bac8b34",
-        vllm_commit="7c6685a",
+        tt_metal_commit="805f43d",
+        vllm_commit="a45c614",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1516,8 +1516,8 @@ llm_templates = [
             "deepseek-ai/DeepSeek-R1-0528",
         ],
         impl=deepseek_r1_galaxy_impl,
-        tt_metal_commit="bac8b34",
-        vllm_commit="7c6685a",
+        tt_metal_commit="805f43d",
+        vllm_commit="a45c614",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
