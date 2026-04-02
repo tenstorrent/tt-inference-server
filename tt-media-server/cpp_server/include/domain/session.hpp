@@ -46,9 +46,7 @@ class Session {
   /**
    * Check if a slot is assigned.
    */
-  bool hasSlot() const {
-    return slot_id_ != INVALID_SLOT_ID;
-  }
+  bool hasSlot() const { return slot_id_ != INVALID_SLOT_ID; }
 
   /**
    * Get the last activity time.
