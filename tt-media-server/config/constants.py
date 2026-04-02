@@ -24,6 +24,7 @@ class SupportedModels(Enum):
     QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
+    LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B"
     LLAMA_3_1_70B = "meta-llama/Llama-3.1-70B"
     QWEN_3_4B = "Qwen/Qwen3-4B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
@@ -279,6 +280,7 @@ class TrainingTrainers(Enum):
 
 class ModelDisplayNames(Enum):
     GEMMA_1_1_2B_IT = "Gemma 1.1 2B Instruct"
+    LLAMA_3_1_8B = "Llama 3.1 8B"
 
 
 class TrainingOptimizers(Enum):
