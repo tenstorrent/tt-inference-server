@@ -34,7 +34,7 @@ class EmbeddingRunner : public IRunner {
    * Initialize Python, import modules, create BGELargeENRunner instance,
    * and call warmup().
    */
-  bool warmup();
+  bool warmup() override;
 
   /**
    * Clean up Python objects and optionally finalize interpreter.
