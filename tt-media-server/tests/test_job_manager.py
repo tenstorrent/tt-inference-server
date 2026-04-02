@@ -1461,10 +1461,12 @@ class TestJobManager:
         assert len(db_logs) == 2
         assert db_logs[0]["message"] == "Training started"
         assert db_logs[1]["message"] == "Step 10 complete"
-    
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize("job_manager", [True], indirect=True)
-    async def test_restore_training_job_restores_metrics_checkpoints_and_logs(self, job_manager, tmp_path):
+    async def test_restore_training_job_restores_metrics_checkpoints_and_logs(
+        self, job_manager, tmp_path
+    ):
         """Test full restore workflow: metrics, checkpoints (with disk validation), and logs."""
 
         db_path = job_manager.db.db_path
@@ -1494,6 +1496,7 @@ class TestJobManager:
         # fmt: on
 
         import utils.job_manager
+
         utils.job_manager._job_manager_instance = None
 
         with patch("utils.job_manager.get_settings") as mock_settings:
@@ -1555,26 +1558,40 @@ class TestJobManager:
         assert metric_names == ["accuracy", "accuracy", "accuracy", "loss", "loss", "loss"]
         assert global_steps == [10, 20, 30, 10, 20, 30]
         # fmt: on
-    
+
     def test_some_checkpoints_missing_from_disk(self, job_manager, tmp_path):
         result_dir = tmp_path / "adapters"
         result_dir.mkdir()
         (result_dir / "ckpt-step-100").mkdir()
         # ckpt-step-200 deliberately missing
         job = Job(
-            id="j1", job_type="training", model="m",
+            id="j1",
+            job_type="training",
+            model="m",
             result_path=str(result_dir),
             job_checkpoints=[
-        # fmt: off
-                {"id": "ckpt-step-100", "step": 100, "epoch": 1, "metrics": {}, "created_at": 1.0},
-                {"id": "ckpt-step-200", "step": 200, "epoch": 2, "metrics": {}, "created_at": 2.0},
-        # fmt: on
+                # fmt: off
+                {
+                    "id": "ckpt-step-100",
+                    "step": 100,
+                    "epoch": 1,
+                    "metrics": {},
+                    "created_at": 1.0,
+                },
+                {
+                    "id": "ckpt-step-200",
+                    "step": 200,
+                    "epoch": 2,
+                    "metrics": {},
+                    "created_at": 2.0,
+                },
+                # fmt: on
             ],
         )
         result = job_manager._validate_checkpoints_on_disk(job)
         assert len(result) == 1
         assert result[0]["id"] == "ckpt-step-100"
-    
+
     @pytest.mark.asyncio
     async def test_get_job_logs_returns_correct_list(self, job_manager, mock_request):
         logs_list = [
