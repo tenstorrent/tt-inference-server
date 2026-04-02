@@ -135,7 +135,6 @@ void DisaggregationService::stop() { socketService->stop(); }
 void DisaggregationService::handleStreamingRequest(
     domain::CompletionRequest& request, const StreamCallback& callback) {
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
-    llmService->preProcess(request);
     streamCallbacks.insert(request.task_id, callback);
 
     auto maxTokens = request.max_tokens;

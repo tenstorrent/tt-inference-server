@@ -105,6 +105,10 @@ unsigned sessionEvictionRate();
  * defaults::SESSION_EVICTION_COUNT. */
 size_t sessionEvictionCount();
 
+/** Max tokens to prefill on decode server from MAX_TOKENS_TO_PREFILL_ON_DECODE.
+ * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
+size_t maxTokensToPrefillOnDecode();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();

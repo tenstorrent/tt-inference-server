@@ -43,9 +43,9 @@ def _wait_for_server(base_url: str, timeout: int = 30) -> bool:
 
 
 def _streaming_request(base_url: str, max_tokens: int = 50) -> dict:
-    """Build a streaming completion request payload."""
+    """Build a streaming chat completion request payload."""
     return {
-        "prompt": "Hello world",
+        "messages": [{"role": "user", "content": "Hello world"}],
         "max_tokens": max_tokens,
         "stream": True,
     }
@@ -54,7 +54,7 @@ def _streaming_request(base_url: str, max_tokens: int = 50) -> dict:
 def _complete_streaming_request(base_url: str, max_tokens: int = 10) -> list[str]:
     """Make a streaming request and collect all SSE chunks."""
     resp = requests.post(
-        f"{base_url}/v1/completions",
+        f"{base_url}/v1/chat/completions",
         json=_streaming_request(base_url, max_tokens),
         headers=_auth_headers(),
         stream=True,
@@ -77,7 +77,7 @@ def test_server_healthy_after_disconnect(base_url: str) -> bool:
     print("\n=== Test: Server healthy after disconnect ===")
     try:
         resp = requests.post(
-            f"{base_url}/v1/completions",
+            f"{base_url}/v1/chat/completions",
             json=_streaming_request(base_url, max_tokens=200),
             headers=_auth_headers(),
             stream=True,
@@ -113,7 +113,7 @@ def test_request_completes_after_disconnect(base_url: str) -> bool:
     try:
         # First: disconnect mid-stream
         resp = requests.post(
-            f"{base_url}/v1/completions",
+            f"{base_url}/v1/chat/completions",
             json=_streaming_request(base_url, max_tokens=200),
             headers=_auth_headers(),
             stream=True,
@@ -142,7 +142,7 @@ def test_multiple_rapid_disconnects(base_url: str) -> bool:
     try:
         for i in range(5):
             resp = requests.post(
-                f"{base_url}/v1/completions",
+                f"{base_url}/v1/chat/completions",
                 json=_streaming_request(base_url, max_tokens=200),
                 headers=_auth_headers(),
                 stream=True,
@@ -177,7 +177,7 @@ def test_disconnect_at_first_token(base_url: str) -> bool:
     print("\n=== Test: Disconnect at first token ===")
     try:
         resp = requests.post(
-            f"{base_url}/v1/completions",
+            f"{base_url}/v1/chat/completions",
             json=_streaming_request(base_url, max_tokens=200),
             headers=_auth_headers(),
             stream=True,
@@ -207,7 +207,7 @@ def test_concurrent_disconnect_and_new_request(base_url: str) -> bool:
     try:
         # Start streaming
         resp1 = requests.post(
-            f"{base_url}/v1/completions",
+            f"{base_url}/v1/chat/completions",
             json=_streaming_request(base_url, max_tokens=200),
             headers=_auth_headers(),
             stream=True,

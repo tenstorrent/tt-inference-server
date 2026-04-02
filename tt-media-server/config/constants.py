@@ -90,7 +90,6 @@ class ModelRunners(Enum):
     TT_XLA_VIT = "tt-xla-vit"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     MOCK = "mock"
-    MOCK_VIDEO = "mock-video"
     SP_RUNNER = "sp_runner"
     LLM_TEST = "llm_test"
     LLAMA_RUNNER = "llama_runner"
@@ -146,7 +145,6 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.VIDEO: {
         ModelRunners.TT_MOCHI_1,
         ModelRunners.TT_WAN_2_2,
-        ModelRunners.MOCK_VIDEO,
         ModelRunners.SP_RUNNER,
     },
     ModelServices.TRAINING: {
@@ -170,7 +168,6 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
-    ModelRunners.MOCK_VIDEO: {ModelNames.WAN_2_2},
     ModelRunners.SP_RUNNER: {ModelNames.WAN_2_2, ModelNames.MOCHI_1},
     ModelRunners.TT_WHISPER: {
         ModelNames.OPENAI_WHISPER_LARGE_V3,
@@ -597,13 +594,6 @@ ModelConfigs = {
         "device_mesh_shape": (2, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-    },
-    (ModelRunners.MOCK_VIDEO, DeviceTypes.N150): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
     },

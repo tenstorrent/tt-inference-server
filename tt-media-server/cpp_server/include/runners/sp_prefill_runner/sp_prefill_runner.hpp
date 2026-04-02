@@ -24,7 +24,7 @@ class SpPrefillRunner : public IRunner {
 
   void run() override;
   void stop() override;
-  bool warmup();
+  bool warmup() override;
   const char* runnerType() const override { return "SpPrefillRunner"; }
 
  private:

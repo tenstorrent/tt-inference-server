@@ -199,7 +199,7 @@ struct ChatCompletionRequest : BaseRequest {
   }
 
   /** Convert to CompletionRequest: messages -> prompt, then same pipeline as
-   * /completions. */
+   * /chat/completions. */
   CompletionRequest toCompletionRequest() const {
     CompletionRequest out(task_id);
     out.model = model;
