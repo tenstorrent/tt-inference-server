@@ -76,6 +76,7 @@ void flushAccumulated(
 
 namespace tt::api {
 
+
 LLMController::LLMController() {
   if (!tt::config::isLlmServiceEnabled()) {
     TT_LOG_INFO(
