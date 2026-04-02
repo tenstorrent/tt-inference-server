@@ -6,10 +6,9 @@ from config.constants import ModelRunners, ModelServices
 from config.settings import settings
 from domain.base_request import BaseRequest
 from domain.image_edit_request import ImageEditRequest
-from domain.image_generate_request import ImageGenerateRequest
+from domain.image_generate_request import ImageGenerateRequest, BaseImageRequest
 from domain.image_to_image_request import ImageToImageRequest
-from fastapi import APIRouter, Security
-from security.api_key_checker import get_api_key
+from fastapi import APIRouter
 
 router = APIRouter()
 
@@ -17,7 +16,17 @@ MODEL_RUNNER_TO_REQUEST_MAP = {
     ModelRunners.TT_SDXL_TRACE.value: ImageGenerateRequest,
     ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value: ImageToImageRequest,
     ModelRunners.TT_SDXL_EDIT.value: ImageEditRequest,
+    ModelRunners.TT_SD3_5.value: BaseImageRequest,
+    ModelRunners.TT_FLUX_1_DEV.value: BaseImageRequest,
+    ModelRunners.TT_FLUX_1_SCHNELL.value: BaseImageRequest,
+    ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: BaseImageRequest,
+    ModelRunners.TT_MOCHI_1.value: BaseImageRequest,
+    ModelRunners.TT_WAN_2_2.value: BaseImageRequest,
+    ModelRunners.TT_QWEN_IMAGE.value: BaseImageRequest,
+    ModelRunners.TT_QWEN_IMAGE_2512.value: BaseImageRequest,
+    ModelRunners.SP_RUNNER.value: BaseImageRequest,
 }
+
 V1_MODEL_CREATED_TIMESTAMP = 1700000000
 V1_MODEL_OWNED_BY = "tenstorrent"
 
