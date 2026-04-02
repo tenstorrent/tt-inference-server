@@ -308,7 +308,7 @@ class JobManager:
         self._sync_status_to_db(job)
 
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
-        metrics_persister = None
+        data_persister = None
         try:
             progress_monitor = asyncio.create_task(self._mark_job_in_progress(job))
 

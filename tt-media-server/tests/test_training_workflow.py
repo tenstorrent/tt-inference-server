@@ -45,7 +45,7 @@ class TestTrainingServiceCreateJob:
             service = TrainingService()
             await service.create_job(JobTypes.TRAINING, mock_request)
 
-            assert mock_request._output_model_path == "models_save/unique_task_123.pt"
+            assert mock_request._output_model_path == "model_store/unique_task_123"
 
 
 class TestTrainingServiceGetJobMetrics:
@@ -74,3 +74,8 @@ class TestTrainingServiceGetJobMetrics:
             {"global_step": 3, "metric_name": "loss", "value": 0.3}
         ]
         assert result_after_10 == []
+    
+    def test_raises_value_error_when_job_not_found(self, service):
+        service._job_manager.get_job_metrics.return_value = None
+        with pytest.raises(ValueError, match="Job nonexistent not found"):
+            service.get_job_metrics("nonexistent")

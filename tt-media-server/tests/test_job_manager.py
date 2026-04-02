@@ -1234,11 +1234,10 @@ class TestJobManager:
     # ------------------------------------------------------------------------------------------------
     # database-only tests
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("job_manager", [True], indirect=True)
     async def test_restore_jobs_workflow(self, job_manager, mock_request):
         """Verify that multiple jobs are correctly restored upon manager restart."""
-        if not job_manager.db:
-            assert True  # skip and assert True if persistence is disabled
-            return
+
         job_ids = ["job-1", "job-2", "job-3"]
         db_path = job_manager.db.db_path
 
@@ -1282,11 +1281,9 @@ class TestJobManager:
                 await m2.shutdown()
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("job_manager", [True], indirect=True)
     async def test_restore_stuck_jobs_from_db(self, job_manager):
         """Verify stuck jobs are synced to terminal states and completed jobs stay completed."""
-        if not job_manager.db:
-            assert True  # skip and assert True if persistence is disabled
-            return
 
         db_path = job_manager.db.db_path
 
@@ -1333,12 +1330,10 @@ class TestJobManager:
                 await m2.shutdown()
 
     # ------------------------------------------------------------------------------------------------
-    # metrics-related tests
+    # metrics/logs/checkpoints-related tests
+    @pytest.mark.parametrize("job_manager", [True], indirect=True)
     def test_insert_metric_duplicate_raises_exception(self, job_manager):
         """Test that inserting a metric with the same primary key raises an exception."""
-        if not job_manager.db:
-            assert True  # skip and assert True if persistence is disabled
-            return
         job_manager.db.insert_job(
             job_id="job-1",
             job_type=JobTypes.TRAINING.value,
@@ -1397,68 +1392,39 @@ class TestJobManager:
         assert result is metrics_list
 
     @pytest.mark.asyncio
-    async def test_get_job_logs_returns_correct_list(self, job_manager, mock_request):
-        logs_list = [
-            {
-                "sample_log_entry": "Training started",
-            }
-        ]
-
-        async def task_func(req):
-            await asyncio.sleep(10)
-            return "result.pt"
-
-        await job_manager.create_job(
-            job_id="train-logs-1",
-            job_type=JobTypes.TRAINING,
-            model="m1",
-            request=mock_request,
-            task_function=task_func,
-            result_path="result.pt",
-            job_logs=logs_list,
-        )
-
-        result = job_manager.get_job_logs("train-logs-1")
-        assert result is logs_list
-
-    @pytest.mark.asyncio
-    async def test_get_job_logs_returns_none_for_unknown_job(self, job_manager):
-        result = job_manager.get_job_logs("nonexistent")
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_persist_metrics_to_db(self, job_manager, mock_request):
-        """Test that persisting metrics to the database works correctly."""
-        if not job_manager.db:
-            assert True  # skip and assert True if persistence is disabled
-            return
+    @pytest.mark.parametrize("job_manager", [True], indirect=True)
+    async def test_persist_job_data_to_db(self, job_manager, mock_request):
+        """Metrics, checkpoints, and logs appended during training are all persisted to the database."""
 
         start_event = Event()
         start_event.set()
         metrics_list = []
+        checkpoints_list = []
+        logs_list = []
 
         async def task_func(req):
-            # Simulate appending metrics during "training"
+            # fmt: off
             metrics_list.append(
-                {
-                    "global_step": 1,
-                    "epoch": 1,
-                    "metric_name": "loss",
-                    "value": 0.5,
-                    "timestamp": 1000,
-                }
+                {"global_step": 1, "epoch": 1, "metric_name": "loss", "value": 0.5, "timestamp": 1000}
             )
             metrics_list.append(
-                {
-                    "global_step": 2,
-                    "epoch": 1,
-                    "metric_name": "loss",
-                    "value": 0.4,
-                    "timestamp": 1001,
-                }
+                {"global_step": 2, "epoch": 1, "metric_name": "loss", "value": 0.4, "timestamp": 1001}
             )
-            await asyncio.sleep(1.5)  # let the persister poll at least once
-            return "result.pt"
+            checkpoints_list.append(
+                {"id": "ckpt-step-100", "step": 100, "epoch": 1, "metrics": {"train_loss": 0.5}, "created_at": 1000.0}
+            )
+            checkpoints_list.append(
+                {"id": "ckpt-step-200", "step": 200, "epoch": 2, "metrics": {"train_loss": 0.3}, "created_at": 1001.0}
+            )
+            logs_list.append(
+                {"timestamp": "2025-01-01T00:00:00", "type": "info", "step": 1, "message": "Training started"}
+            )
+            logs_list.append(
+                {"timestamp": "2025-01-01T00:01:00", "type": "info", "step": 10, "message": "Step 10 complete"}
+            )
+            # fmt: on
+            await asyncio.sleep(1.5)
+            return "result_dir"
 
         await job_manager.create_job(
             job_id="train-persist",
@@ -1466,15 +1432,18 @@ class TestJobManager:
             model="m1",
             request=mock_request,
             task_function=task_func,
-            result_path="result.pt",
+            result_path="result_dir",
             start_event=start_event,
             job_metrics=metrics_list,
+            job_checkpoints=checkpoints_list,
+            job_logs=logs_list,
         )
 
-        # Poll DB until getting both metrics
         for _ in range(20):
             db_metrics = job_manager.db.get_metrics_flat("train-persist")
-            if len(db_metrics) == 2:
+            db_ckpts = job_manager.db.get_checkpoints("train-persist")
+            db_logs = job_manager.db.get_logs("train-persist")
+            if len(db_metrics) == 2 and len(db_ckpts) == 2 and len(db_logs) == 2:
                 break
             await asyncio.sleep(0.3)
 
@@ -1483,14 +1452,26 @@ class TestJobManager:
         assert db_metrics[0]["value"] == 0.5
         assert db_metrics[1]["value"] == 0.4
 
+        db_ckpts = job_manager.db.get_checkpoints("train-persist")
+        assert len(db_ckpts) == 2
+        assert db_ckpts[0]["id"] == "ckpt-step-100"
+        assert db_ckpts[1]["id"] == "ckpt-step-200"
+
+        db_logs = job_manager.db.get_logs("train-persist")
+        assert len(db_logs) == 2
+        assert db_logs[0]["message"] == "Training started"
+        assert db_logs[1]["message"] == "Step 10 complete"
+    
     @pytest.mark.asyncio
-    async def test_restore_training_job_restores_metrics(self, job_manager):
-        """Test the full workflow from insert_metric, over restore, to get_job_metrics."""
-        if not job_manager.db:
-            assert True  # skip and assert True if persistence is disabled
-            return
+    @pytest.mark.parametrize("job_manager", [True], indirect=True)
+    async def test_restore_training_job_restores_metrics_checkpoints_and_logs(self, job_manager, tmp_path):
+        """Test full restore workflow: metrics, checkpoints (with disk validation), and logs."""
 
         db_path = job_manager.db.db_path
+        result_dir = tmp_path / "adapter_dir"
+        result_dir.mkdir()
+        (result_dir / "ckpt-step-100").mkdir()
+        # ckpt-step-200 deliberately missing from disk
 
         job_manager.db.insert_job(
             job_id="train-1",
@@ -1500,14 +1481,19 @@ class TestJobManager:
             status="completed",
             created_at=1000,
         )
+        job_manager.db.update_result_path("train-1", str(result_dir))
+
         # fmt: off
         job_manager.db.insert_metric(job_id="train-1", global_step=20, epoch=2, metric_name="loss", value=0.3, timestamp=1002)
         job_manager.db.insert_metric(job_id="train-1", global_step=10, epoch=1, metric_name="loss", value=0.5, timestamp=1000)
         job_manager.db.insert_metric(job_id="train-1", global_step=10, epoch=1, metric_name="accuracy", value=0.8, timestamp=1001)
         # fmt: on
+        job_manager.db.insert_checkpoint("train-1", "ckpt-step-100", 100, 1, {"loss": 0.5}, 1001.0)
+        job_manager.db.insert_checkpoint("train-1", "ckpt-step-200", 200, 2, {"loss": 0.3}, 1002.0)
+        job_manager.db.insert_log("train-1", 0, "ts1", "info", 1, "Started")
+        job_manager.db.insert_log("train-1", 1, "ts2", "info", 10, "Step 10")
 
         import utils.job_manager
-
         utils.job_manager._job_manager_instance = None
 
         with patch("utils.job_manager.get_settings") as mock_settings:
@@ -1516,33 +1502,29 @@ class TestJobManager:
 
             m2 = JobManager()
             try:
+                # Metrics: all restored, ordered by metric_name ASC, global_step ASC
                 metrics = m2.get_job_metrics("train-1")
-                assert metrics is not None
                 assert len(metrics) == 3
-                # Verify get_metrics_flat ordering: metric_name ASC, global_step ASC
                 assert metrics[0]["metric_name"] == "accuracy"
-                assert metrics[1] == {
-                    "global_step": 10,
-                    "epoch": 1,
-                    "metric_name": "loss",
-                    "value": 0.5,
-                    "timestamp": 1000,
-                }
-                assert metrics[2] == {
-                    "global_step": 20,
-                    "epoch": 2,
-                    "metric_name": "loss",
-                    "value": 0.3,
-                    "timestamp": 1002,
-                }
+                assert metrics[1]["global_step"] == 10
+                assert metrics[2]["timestamp"] == 1002
+
+                # Checkpoints: only ckpt-step-100 survives disk validation
+                ckpts = m2.get_job_checkpoints("train-1")
+                assert len(ckpts) == 1
+                assert ckpts[0]["id"] == "ckpt-step-100"
+
+                # Logs: both restored
+                logs = m2.get_job_logs("train-1")
+                assert len(logs) == 2
+                assert logs[0]["message"] == "Started"
+                assert logs[1]["message"] == "Step 10"
             finally:
                 await m2.shutdown()
 
+    @pytest.mark.parametrize("job_manager", [True], indirect=True)
     def test_get_metrics_flat_sorted_by_metric_name_then_global_step(self, job_manager):
         """Test that get_metrics_flat returns metrics sorted by metric_name ASC, then global_step ASC."""
-        if not job_manager.db:
-            assert True
-            return
 
         job_manager.db.insert_job(
             job_id="job-sort",
@@ -1573,3 +1555,50 @@ class TestJobManager:
         assert metric_names == ["accuracy", "accuracy", "accuracy", "loss", "loss", "loss"]
         assert global_steps == [10, 20, 30, 10, 20, 30]
         # fmt: on
+    
+    def test_some_checkpoints_missing_from_disk(self, job_manager, tmp_path):
+        result_dir = tmp_path / "adapters"
+        result_dir.mkdir()
+        (result_dir / "ckpt-step-100").mkdir()
+        # ckpt-step-200 deliberately missing
+        job = Job(
+            id="j1", job_type="training", model="m",
+            result_path=str(result_dir),
+            job_checkpoints=[
+                {"id": "ckpt-step-100", "step": 100, "epoch": 1, "metrics": {}, "created_at": 1.0},
+                {"id": "ckpt-step-200", "step": 200, "epoch": 2, "metrics": {}, "created_at": 2.0},
+            ],
+        )
+        result = job_manager._validate_checkpoints_on_disk(job)
+        assert len(result) == 1
+        assert result[0]["id"] == "ckpt-step-100"
+    
+    @pytest.mark.asyncio
+    async def test_get_job_logs_returns_correct_list(self, job_manager, mock_request):
+        logs_list = [
+            {
+                "sample_log_entry": "Training started",
+            }
+        ]
+
+        async def task_func(req):
+            await asyncio.sleep(10)
+            return "result.pt"
+
+        await job_manager.create_job(
+            job_id="train-logs-1",
+            job_type=JobTypes.TRAINING,
+            model="m1",
+            request=mock_request,
+            task_function=task_func,
+            result_path="result.pt",
+            job_logs=logs_list,
+        )
+
+        result = job_manager.get_job_logs("train-logs-1")
+        assert result is logs_list
+
+    @pytest.mark.asyncio
+    async def test_get_job_logs_returns_none_for_unknown_job(self, job_manager):
+        result = job_manager.get_job_logs("nonexistent")
+        assert result is None
