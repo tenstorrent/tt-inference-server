@@ -1,0 +1,22 @@
+{{- include "tt-inference-server.validateValues" . }}
+{{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tt-inference-server.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tt-inference-server.labels" . | nindent 4 }}
+  {{- with $cfg.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $cfg.service.type }}
+  selector:
+    {{- include "tt-inference-server.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $cfg.service.port }}
+      targetPort: http
+      protocol: {{ $cfg.service.protocol }}
