@@ -67,8 +67,9 @@ class TTModelLoader(BaseModelLoader):
             assert optimizations in [
                 "performance",
                 "accuracy",
-            ], f"""Invalid optimizations configuration `{optimizations}`, 
-            allowed values are 'performance' or 'accuracy'"""
+                "max_performance",
+            ], f"""Invalid optimizations configuration `{optimizations}`,
+            allowed values are 'performance', 'accuracy', or 'max_performance'"""
 
         data_parallel = vllm_config.parallel_config.data_parallel_size
         max_batch_size = scheduler_config.max_num_seqs * data_parallel

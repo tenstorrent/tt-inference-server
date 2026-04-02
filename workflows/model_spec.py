@@ -1289,6 +1289,10 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "sample_on_device_mode": "decode_only",
+                    "trace_region_size": 185000000,
+                },
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
