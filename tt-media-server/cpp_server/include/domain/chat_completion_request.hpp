@@ -66,6 +66,7 @@ struct ChatCompletionRequest : BaseRequest {
   int min_tokens = 0;
   bool skip_special_tokens = true;
   bool spaces_between_special_tokens = true;
+  bool fast_mode = false;
   std::optional<std::vector<int>> allowed_token_ids;
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
@@ -166,6 +167,7 @@ struct ChatCompletionRequest : BaseRequest {
       req.spaces_between_special_tokens =
           json["spaces_between_special_tokens"].asBool();
     }
+    if (json.isMember("fast_mode")) req.fast_mode = json["fast_mode"].asBool();
 
     if (json.isMember("session_id") && !json["session_id"].isNull()) {
       req.sessionId = json["session_id"].asString();
@@ -230,6 +232,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.min_tokens = min_tokens;
     out.skip_special_tokens = skip_special_tokens;
     out.spaces_between_special_tokens = spaces_between_special_tokens;
+    out.fast_mode = fast_mode;
     out.allowed_token_ids = allowed_token_ids;
     out.prompt_logprobs = prompt_logprobs;
     out.truncate_prompt_tokens = truncate_prompt_tokens;

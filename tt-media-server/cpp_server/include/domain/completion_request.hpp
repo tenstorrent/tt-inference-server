@@ -104,6 +104,7 @@ struct CompletionRequest : BaseRequest {
   int min_tokens = 0;
   bool skip_special_tokens = true;
   bool spaces_between_special_tokens = true;
+  bool fast_mode = false;
   std::optional<std::vector<int>> allowed_token_ids;
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
@@ -209,6 +210,7 @@ struct CompletionRequest : BaseRequest {
       req.spaces_between_special_tokens =
           json["spaces_between_special_tokens"].asBool();
     }
+    if (json.isMember("fast_mode")) req.fast_mode = json["fast_mode"].asBool();
 
     return req;
   }
@@ -233,7 +235,7 @@ struct CompletionRequest : BaseRequest {
         << " min_p=" << detail::optStr(min_p)
         << " presence_penalty=" << presence_penalty
         << " frequency_penalty=" << frequency_penalty << " n=" << n
-        << " stop_count=" << stop.size()
+        << " stop_count=" << stop.size() << " fast_mode=" << fast_mode
         << " sessionId=" << detail::optStr(sessionId)
         << " slotId=" << detail::optStr(slotId);
     return out.str();

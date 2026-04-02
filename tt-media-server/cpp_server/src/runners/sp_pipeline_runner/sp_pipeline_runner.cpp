@@ -71,7 +71,7 @@ bool SpPipelineRunner::warmup() {
       warmupTokens, warmupParams);
 
   modelRunner->write(warmupSeq->taskId.id, warmupSeq->tokenIds, 1,
-                     sp_pipeline::RequestPhase::PREFILL);
+                     sp_pipeline::RequestPhase::PREFILL, false);
 
   // Wait for the response token (with timeout)
   const int maxAttempts = 1000;  // ~10 seconds with 10ms sleep
@@ -142,9 +142,9 @@ void SpPipelineRunner::step() {
           static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
     }
 
-    modelRunner->write(taskId.id, seq->tokenIds,
-                       seq->samplingParams->max_tokens.value(),
-                       sp_pipeline::RequestPhase::PREFILL);
+    modelRunner->write(
+        taskId.id, seq->tokenIds, seq->samplingParams->max_tokens.value(),
+        sp_pipeline::RequestPhase::PREFILL, seq->samplingParams->fast_mode);
 
     activeSequences.emplace(taskId, std::move(owned));
     ++inFlightCount;

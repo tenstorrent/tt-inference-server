@@ -31,6 +31,7 @@ struct SamplingParams {
   int min_tokens = 0;
   bool skip_special_tokens = true;
   bool spaces_between_special_tokens = true;
+  bool fast_mode = false;
   std::optional<std::vector<int>> allowed_token_ids;
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;

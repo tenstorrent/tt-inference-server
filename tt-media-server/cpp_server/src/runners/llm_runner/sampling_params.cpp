@@ -68,6 +68,7 @@ void SamplingParams::serialize(std::ostream& os) const {
   writeScalar(os, min_tokens);
   writeScalar(os, skip_special_tokens);
   writeScalar(os, spaces_between_special_tokens);
+  writeScalar(os, fast_mode);
 
   bool hasAllowed = allowed_token_ids.has_value();
   writeScalar(os, hasAllowed);
@@ -99,6 +100,7 @@ SamplingParams* SamplingParams::deserialize(std::istream& is) {
   params->min_tokens = readScalar<int>(is);
   params->skip_special_tokens = readScalar<bool>(is);
   params->spaces_between_special_tokens = readScalar<bool>(is);
+  params->fast_mode = readScalar<bool>(is);
 
   if (readScalar<bool>(is)) {
     params->allowed_token_ids = readVector<int>(is);

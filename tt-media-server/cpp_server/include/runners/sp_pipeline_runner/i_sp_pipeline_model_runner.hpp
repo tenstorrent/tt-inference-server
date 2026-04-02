@@ -26,7 +26,7 @@ class ISpPipelineModelRunner {
 
   virtual void write(const std::string& taskId,
                      const std::vector<int64_t>& tokenIds, uint32_t maxTokens,
-                     RequestPhase phase) = 0;
+                     RequestPhase phase, bool fastMode = false) = 0;
   virtual void exit() = 0;
 };
 

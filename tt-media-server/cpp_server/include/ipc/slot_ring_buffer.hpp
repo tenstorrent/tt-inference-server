@@ -35,10 +35,12 @@ struct Message {
   std::atomic<int32_t> state;
   uint32_t maxTokens;
   uint32_t numTokenIds;
+  uint32_t fastMode;
   char taskId[36];
+  uint32_t _reserved;
   uint64_t tokenIds[MaxTokenIds];
 
-  static constexpr int K_MESSAGE_SIZE = 48 + MaxTokenIds * sizeof(uint64_t);
+  static constexpr int K_MESSAGE_SIZE = 56 + MaxTokenIds * sizeof(uint64_t);
   static constexpr int K_TOTAL_SIZE = SHM_SLOTS * K_MESSAGE_SIZE;
 
   bool stateMatches(SlotState state) {
@@ -59,6 +61,7 @@ struct ReadResult {
   std::string taskId;
   uint32_t maxTokens;
   std::vector<int64_t> tokenIds;
+  bool fastMode = false;
 };
 
 template <int MaxTokenIds>
@@ -123,7 +126,7 @@ class SlotRingBuffer {
   }
 
   void write(const std::string& uuid, const std::vector<int64_t>& tokenIds,
-             uint32_t maxTokens) {
+             uint32_t maxTokens, bool fastMode = false) {
     if (static_cast<int>(tokenIds.size()) > MaxTokenIds) {
       throw std::runtime_error("SlotRingBuffer::write: token count " +
                                std::to_string(tokenIds.size()) +
@@ -139,6 +142,7 @@ class SlotRingBuffer {
 
     msg.maxTokens = maxTokens;
     msg.numTokenIds = tokenIds.size();
+    msg.fastMode = fastMode ? 1 : 0;
     std::memcpy(msg.taskId, uuid.data(), 36);
     std::memcpy(msg.tokenIds, tokenIds.data(),
                 tokenIds.size() * sizeof(int64_t));
@@ -157,6 +161,7 @@ class SlotRingBuffer {
     out.taskId.assign(msg.taskId, 36);
     out.maxTokens = msg.maxTokens;
     out.tokenIds.assign(msg.tokenIds, msg.tokenIds + msg.numTokenIds);
+    out.fastMode = msg.fastMode != 0;
 
     msg.switchState(FREE);
     advanceCurrent();

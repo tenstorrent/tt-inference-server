@@ -21,9 +21,10 @@ SpPipelineModelRunner::~SpPipelineModelRunner() { exit(); }
 
 void SpPipelineModelRunner::write(const std::string& taskId,
                                   const std::vector<int64_t>& tokenIds,
-                                  uint32_t maxTokens, RequestPhase /*phase*/) {
+                                  uint32_t maxTokens, RequestPhase /*phase*/,
+                                  bool fastMode) {
   // TODO: propagate phase to the shared-memory protocol for disaggregated mode.
-  deviceInput.write(taskId, tokenIds, maxTokens);
+  deviceInput.write(taskId, tokenIds, maxTokens, fastMode);
 }
 
 void SpPipelineModelRunner::exit() {

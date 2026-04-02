@@ -17,7 +17,8 @@ MockSpPipelineModelRunner::~MockSpPipelineModelRunner() { exit(); }
 
 void MockSpPipelineModelRunner::write(const std::string& taskId,
                                       const std::vector<int64_t>& tokenIds,
-                                      uint32_t maxTokens, RequestPhase phase) {
+                                      uint32_t maxTokens, RequestPhase phase,
+                                      bool /*fastMode*/) {
   ZoneScopedN("MockModelRunner::write");
   device_.write(taskId, tokenIds, maxTokens, phase);
 }

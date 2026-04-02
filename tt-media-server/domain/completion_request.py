@@ -66,6 +66,7 @@ class CompletionRequest(BaseRequest):
     min_tokens: int = 0
     skip_special_tokens: bool = True
     spaces_between_special_tokens: bool = True
+    fast_mode: bool = False
     allowed_token_ids: list[int] | None = None
     prompt_logprobs: int | None = None
     truncate_prompt_tokens: Annotated[int, Field(ge=-1, le=_LONG_INFO.max)] | None = (
