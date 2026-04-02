@@ -3,9 +3,14 @@ kind: Kustomization
 namePrefix: llama-3.1-70b-galaxy-
 resources:
   - ../../base/vllm
-  - secret.yaml
 images:
   - name: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
     newTag: 0.10.0-e867533-8f36910
 patches:
   - path: patch-deployment.yaml
+secretGenerator:
+  - name: tt-inference-server
+    envs:
+      - ../../hf-token.env
+    options:
+      disableNameSuffixHash: true
