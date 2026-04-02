@@ -212,7 +212,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                 f"Llama Lora training requires a multichip device, "
                 f"got '{request.device_type}'. Supported: {sorted(supported)}"
             )
-        
+
         if request._start_event:
             request._start_event.set()
             self.logger.info(f"Device {self.device_id}: Start event set")
