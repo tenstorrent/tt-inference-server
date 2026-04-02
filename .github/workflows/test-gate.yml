@@ -602,10 +602,18 @@ jobs:
           echo $! > ../../cpp_server.pid
           cd ../..
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8000/health | grep -q '"status"' && break
+            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "Server ready."
+              break
+            fi
             sleep 1
           done
-          curl -sf http://127.0.0.1:8000/health || exit 1
+          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Server did not become ready within 30 seconds"
+            exit 1
+          fi
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -767,10 +775,18 @@ jobs:
           echo $! > ../../cpp_server.pid
           cd ../..
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8000/health | grep -q '"status"' && break
+            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "Server ready."
+              break
+            fi
             sleep 1
           done
-          curl -sf http://127.0.0.1:8000/health || exit 1
+          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Server did not become ready within 30 seconds"
+            exit 1
+          fi
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -933,11 +949,18 @@ jobs:
           echo $! > ../../decode_server.pid
           cd ../..
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8001/health | grep -q '"status"' && break
+            LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Decode server ready on port 8001"
+              break
+            fi
             sleep 1
           done
-          curl -sf http://127.0.0.1:8001/health || exit 1
-          echo "✅ Decode server started on port 8001"
+          LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Decode server did not become ready within 30 seconds"
+            exit 1
+          fi
 
       - name: Start Prefill server (connects to decode server)
         run: |
@@ -947,11 +970,18 @@ jobs:
           echo $! > ../../prefill_server.pid
           cd ../..
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8002/health | grep -q '"status"' && break
+            LIVENESS=$(curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Prefill server ready on port 8002"
+              break
+            fi
             sleep 1
           done
-          curl -sf http://127.0.0.1:8002/health || exit 1
-          echo "✅ Prefill server started on port 8002"
+          LIVENESS=$(curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Prefill server did not become ready within 30 seconds"
+            exit 1
+          fi
           sleep 2
 
       - name: Set up uv
