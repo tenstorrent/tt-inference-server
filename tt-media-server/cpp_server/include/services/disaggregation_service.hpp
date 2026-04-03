@@ -8,8 +8,8 @@
 #include <string>
 
 #include "config/types.hpp"
-#include "domain/completion_request.hpp"
-#include "domain/completion_response.hpp"
+#include "domain/llm_request.hpp"
+#include "domain/llm_response.hpp"
 #include "utils/concurrent_map.hpp"
 
 namespace tt::sockets {
@@ -22,7 +22,7 @@ class LLMService;
 
 class DisaggregationService {
   using StreamCallback =
-      std::function<void(const domain::StreamingChunkResponse&, bool)>;
+      std::function<void(const domain::LLMStreamChunk&, bool)>;
 
  public:
   DisaggregationService(
@@ -33,7 +33,7 @@ class DisaggregationService {
   void start();
   void stop();
 
-  void handleStreamingRequest(domain::CompletionRequest& request,
+  void handleStreamingRequest(domain::LLMRequest& request,
                               const StreamCallback& callback);
 
  private:
