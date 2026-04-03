@@ -13,10 +13,11 @@
 #include <string>
 
 #include "config/settings.hpp"
+#include "ipc/boost_ipc_cancel_queue.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
 #include "ipc/boost_ipc_warmup_signal_queue.hpp"
 #include "ipc/queue_manager.hpp"
-#include "ipc/shared_memory.hpp"
+#include "ipc/token_ring_buffer.hpp"
 #include "utils/logger.hpp"
 
 namespace {
@@ -60,7 +61,6 @@ WorkerManager::~WorkerManager() { stop(); }
 void WorkerManager::start() {
   startWarmupListener();
   startWorkers();
-  waitForFirstWarmup();
 }
 
 void WorkerManager::stop() {
@@ -147,6 +147,8 @@ WorkerConfig WorkerManager::makeWorkerConfig(int workerId) {
   cfg.result_queue =
       std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
           "/tt_tokens_" + std::to_string(workerId), false);
+  cfg.cancel_queue = std::make_shared<tt::ipc::BoostIpcCancelQueue>(
+      std::string(tt::ipc::CANCEL_QUEUE_PREFIX) + std::to_string(workerId));
   cfg.worker_id = workerId;
   cfg.runner_config = tt::config::llmEngineConfig();
   return cfg;
@@ -206,12 +208,6 @@ void WorkerManager::startWarmupListener() {
   });
 }
 
-void WorkerManager::waitForFirstWarmup() {
-  if (!warmupQueue) return;
-  std::unique_lock<std::mutex> lock(warmupMutex);
-  warmupCv.wait(lock, [this]() { return warmupReceived.load(); });
-}
-
 WorkerConfig makeWorkerConfigForProcess(int workerId) {
   WorkerConfig cfg;
   cfg.env_vars["TT_VISIBLE_DEVICES"] =
@@ -221,6 +217,8 @@ WorkerConfig makeWorkerConfigForProcess(int workerId) {
   cfg.result_queue =
       std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
           "/tt_tokens_" + std::to_string(workerId), false);
+  cfg.cancel_queue = std::make_shared<tt::ipc::BoostIpcCancelQueue>(
+      std::string(tt::ipc::CANCEL_QUEUE_PREFIX) + std::to_string(workerId));
   cfg.worker_id = workerId;
   cfg.runner_config = tt::config::llmEngineConfig();
   return cfg;

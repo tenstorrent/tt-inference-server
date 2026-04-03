@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-
-#include "services/embedding_service.hpp"
 
 #include <signal.h>
 #include <sys/wait.h>
@@ -22,6 +21,7 @@
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "runners/embedding_runner.hpp"
+#include "services/embedding_service.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
@@ -270,11 +270,11 @@ struct EmbeddingService::Impl {
 
       // Build batch of requests
       std::vector<domain::EmbeddingRequest> batch;
-      auto taskIdFromJson = [](const Json::Value& j) -> domain::TaskID {
-        if (j.isMember("task_id") && !j["task_id"].asString().empty()) {
-          return domain::TaskID(j["task_id"].asString());
+      auto taskIdFromJson = [](const Json::Value& j) -> uint32_t {
+        if (j.isMember("task_id") && j["task_id"].isUInt()) {
+          return j["task_id"].asUInt();
         }
-        return domain::TaskID(domain::TaskID::generate());
+        return tt::utils::TaskIDGenerator::generate();
       };
       if (reqJson.isArray()) {
         for (const auto& item : reqJson) {
@@ -335,7 +335,7 @@ struct EmbeddingService::Impl {
       appendUint32(static_cast<uint32_t>(batch.size()));
 
       for (size_t i = 0; i < batch.size(); ++i) {
-        appendString(batch[i].task_id.id);
+        appendUint32(batch[i].task_id);
 
         if (i < responses.size() && responses[i].error.empty()) {
           responseBuffer.push_back(0);  // has_error = false
@@ -635,13 +635,13 @@ struct EmbeddingService::Impl {
     };
 
     // Parse responses into a map by task_id
-    std::unordered_map<std::string, domain::EmbeddingResponse> responseMap;
+    std::unordered_map<uint32_t, domain::EmbeddingResponse> responseMap;
     uint32_t numResponses = readUint32();
     responseMap.reserve(numResponses);
 
     for (uint32_t i = 0; i < numResponses && offset < responseBuffer.size();
          ++i) {
-      domain::EmbeddingResponse resp{domain::TaskID(readString())};
+      domain::EmbeddingResponse resp{readUint32()};
       uint8_t hasError = responseBuffer[offset++];
 
       if (hasError) {
@@ -652,8 +652,7 @@ struct EmbeddingService::Impl {
         resp.model = readString();
       }
 
-      auto key = resp.task_id.id;
-      responseMap.insert_or_assign(std::move(key), std::move(resp));
+      responseMap.insert_or_assign(resp.task_id, std::move(resp));
     }
 
     auto t5 = std::chrono::steady_clock::now();
@@ -680,7 +679,7 @@ struct EmbeddingService::Impl {
 
     // Match responses to requests by task_id
     for (auto& pending : batch) {
-      auto it = responseMap.find(pending->request.task_id.id);
+      auto it = responseMap.find(pending->request.task_id);
       if (it != responseMap.end()) {
         pending->promise.set_value(std::move(it->second));
       } else {

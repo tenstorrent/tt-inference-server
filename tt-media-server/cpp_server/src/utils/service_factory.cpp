@@ -10,6 +10,7 @@
 #include "services/disaggregation_service.hpp"
 #include "services/embedding_service.hpp"
 #include "services/llm_service.hpp"
+#include "services/session_manager.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
 
@@ -24,6 +25,10 @@ void initializeServices() {
   std::shared_ptr<services::EmbeddingService> embedding;
   std::shared_ptr<sockets::InterServerService> socket;
   std::shared_ptr<services::DisaggregationService> disaggregation;
+  std::shared_ptr<services::SessionManager> sessionManager;
+
+  // Create SessionManager for all modes
+  sessionManager = std::make_shared<services::SessionManager>();
 
   // Only construct services for MODEL_SERVICE (see config::modelService()).
   // Additional modes (e.g. videogen) extend config::ModelService and add cases.
@@ -45,7 +50,7 @@ void initializeServices() {
   }
 
   c.initialize(std::move(llm), std::move(embedding), std::move(socket),
-               std::move(disaggregation));
+               std::move(disaggregation), std::move(sessionManager));
 
   if (c.llm()) {
     c.llm()->start();
@@ -58,6 +63,9 @@ void initializeServices() {
   if (c.embedding()) {
     c.embedding()->start();
     TT_LOG_INFO("[ServiceFactory] Embedding service started");
+  }
+  if (c.sessionManager()) {
+    TT_LOG_INFO("[ServiceFactory] Session manager initialized");
   }
 }
 

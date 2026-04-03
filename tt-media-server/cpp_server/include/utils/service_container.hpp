@@ -10,6 +10,7 @@ namespace tt::services {
 class LLMService;
 class EmbeddingService;
 class DisaggregationService;
+class SessionManager;
 class IService;
 }  // namespace tt::services
 
@@ -35,7 +36,8 @@ class ServiceContainer {
       std::shared_ptr<services::LLMService> llm,
       std::shared_ptr<services::EmbeddingService> embedding,
       std::shared_ptr<sockets::InterServerService> socket,
-      std::shared_ptr<services::DisaggregationService> disaggregation);
+      std::shared_ptr<services::DisaggregationService> disaggregation,
+      std::shared_ptr<services::SessionManager> sessionMgr);
 
   std::shared_ptr<services::IService> configuredService() const;
 
@@ -49,6 +51,9 @@ class ServiceContainer {
   std::shared_ptr<services::DisaggregationService> disaggregation() const {
     return disaggregation_;
   }
+  std::shared_ptr<services::SessionManager> sessionManager() const {
+    return sessionManager_;
+  }
 
  private:
   ServiceContainer() = default;
@@ -57,6 +62,7 @@ class ServiceContainer {
   std::shared_ptr<services::EmbeddingService> embedding_;
   std::shared_ptr<sockets::InterServerService> socket_;
   std::shared_ptr<services::DisaggregationService> disaggregation_;
+  std::shared_ptr<services::SessionManager> sessionManager_;
 };
 
 }  // namespace tt::utils

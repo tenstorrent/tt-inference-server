@@ -23,9 +23,22 @@ import json
 import logging
 import socket
 import subprocess
+import sys
 from pathlib import Path
 from typing import List, Tuple
 
+# Add the project root to the Python path
+# this is for running with a separate venv python
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from workflows.run_system_software_validation import (
+    enforce_version_requirement,
+    extract_board_types,
+    extract_fw_bundle_versions,
+    extract_kmd_version,
+)
 from workflows.utils import check_path_permissions_for_uid
 
 logger = logging.getLogger("run_log")
@@ -401,9 +414,10 @@ def validate_host_system_software(
     model_spec,
     tt_smi_path: str = "tt-smi",
 ) -> List[str]:
-    """Validate FW/KMD versions on all hosts via SSH.
+    """Validate FW/KMD versions and board types on all hosts via SSH.
 
     Runs 'tt-smi -s' on each host and validates:
+    - Board types are homogeneous across all devices/hosts
     - FW bundle versions match across all devices/hosts
     - KMD version meets model_spec requirements (if specified)
 
@@ -418,7 +432,9 @@ def validate_host_system_software(
     errors = []
     all_fw_versions = []
     all_kmd_versions = []
+    all_board_types = []
     host_fw_info = {}
+    host_board_info = {}
 
     for host in hosts:
         # Run tt-smi -s via SSH and parse JSON
@@ -430,34 +446,44 @@ def validate_host_system_software(
         try:
             tt_smi_data = json.loads(output)
 
-            # Extract FW bundle versions for all devices on this host
-            fw_versions_on_host = []
-            for info in tt_smi_data.get("device_info", []):
-                fw_versions = info.get("firmwares", {})
-                fw_bundle = fw_versions.get("fw_bundle_version")
-                if fw_bundle:
-                    fw_versions_on_host.append(fw_bundle)
-                    all_fw_versions.append(fw_bundle)
-
+            fw_versions_on_host = extract_fw_bundle_versions(tt_smi_data)
+            board_types_on_host = extract_board_types(tt_smi_data)
+            all_fw_versions.extend(fw_versions_on_host)
             host_fw_info[host] = fw_versions_on_host
+            all_board_types.extend(board_types_on_host)
+            host_board_info[host] = board_types_on_host
 
             # Extract KMD version
-            kmd_version = tt_smi_data.get("host_info", {}).get("Driver", "")
+            kmd_version = extract_kmd_version(tt_smi_data)
             if kmd_version:
-                # Format is "tenstorrent <version>" - extract version part
-                parts = kmd_version.split(" ", 1)
-                if len(parts) == 2:
-                    all_kmd_versions.append((host, parts[1]))
-                else:
-                    all_kmd_versions.append((host, kmd_version))
+                all_kmd_versions.append((host, kmd_version))
 
             logger.info(
-                f"✅ tt-smi on {host}: FW={fw_versions_on_host}, KMD={kmd_version}"
+                f"✅ tt-smi on {host}: FW={fw_versions_on_host}, KMD={kmd_version}, "
+                f"boards={board_types_on_host}"
             )
 
         except json.JSONDecodeError as e:
             errors.append(f"Failed to parse tt-smi JSON from {host}: {e}")
             continue
+
+    # Validate all board types are homogeneous across all hosts/devices
+    # Remove "local"/"remote" suffix for comparison
+    normalized_board_types = [bt.rsplit(" ", 1)[0] for bt in all_board_types]
+    unique_board_types = set(normalized_board_types)
+    if len(unique_board_types) > 1:
+        board_details = ", ".join(
+            f"{host}: {boards}" for host, boards in host_board_info.items()
+        )
+        errors.append(
+            f"Board types mismatch across hosts. "
+            f"All devices must have identical board types.\n"
+            f"  Found types: {board_details}"
+        )
+    elif unique_board_types:
+        logger.info(
+            f"✅ Board type consistent across all hosts: {unique_board_types.pop()}"
+        )
 
     # Validate all FW versions match across all hosts/devices
     unique_fw_versions = set(all_fw_versions)
@@ -479,51 +505,39 @@ def validate_host_system_software(
     if model_spec and hasattr(model_spec, "system_requirements"):
         system_requirements = model_spec.system_requirements
         if system_requirements:
-            try:
-                from packaging.specifiers import SpecifierSet
-                from packaging.version import Version
+            # Check firmware requirements using common function
+            if (
+                hasattr(system_requirements, "firmware")
+                and system_requirements.firmware
+            ):
+                fw_requirement = system_requirements.firmware
+                # Only check first FW version since all should match
+                if all_fw_versions:
+                    try:
+                        enforce_version_requirement(
+                            "FW bundle", all_fw_versions[0], fw_requirement
+                        )
+                    except ValueError as e:
+                        errors.append(str(e))
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not validate FW version {all_fw_versions[0]}: {e}"
+                        )
 
-                # Check firmware requirements
-                if (
-                    hasattr(system_requirements, "firmware")
-                    and system_requirements.firmware
-                ):
-                    fw_requirement = system_requirements.firmware
-                    for fw_version in all_fw_versions:
-                        try:
-                            parsed_version = Version(fw_version)
-                            specifier = SpecifierSet(fw_requirement.specifier)
-                            if parsed_version not in specifier:
-                                errors.append(
-                                    f"FW bundle version ({fw_version}) does not meet "
-                                    f"requirement {fw_requirement.specifier}"
-                                )
-                                break  # Only report once since all FW versions should match
-                        except Exception as e:
-                            logger.warning(
-                                f"Could not parse FW version {fw_version}: {e}"
-                            )
-
-                # Check KMD requirements
-                if hasattr(system_requirements, "kmd") and system_requirements.kmd:
-                    kmd_requirement = system_requirements.kmd
-                    for host, kmd_version in all_kmd_versions:
-                        try:
-                            parsed_version = Version(kmd_version)
-                            specifier = SpecifierSet(kmd_requirement.specifier)
-                            if parsed_version not in specifier:
-                                errors.append(
-                                    f"KMD version on {host} ({kmd_version}) does not meet "
-                                    f"requirement {kmd_requirement.specifier}"
-                                )
-                        except Exception as e:
-                            logger.warning(
-                                f"Could not parse KMD version {kmd_version} on {host}: {e}"
-                            )
-            except ImportError:
-                logger.warning(
-                    "packaging module not available, skipping FW/KMD version validation"
-                )
+            # Check KMD requirements using common function
+            if hasattr(system_requirements, "kmd") and system_requirements.kmd:
+                kmd_requirement = system_requirements.kmd
+                for host, kmd_version in all_kmd_versions:
+                    try:
+                        enforce_version_requirement(
+                            f"KMD on {host}", kmd_version, kmd_requirement
+                        )
+                    except ValueError as e:
+                        errors.append(str(e))
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not validate KMD version {kmd_version} on {host}: {e}"
+                        )
 
     return errors
 
@@ -688,16 +702,17 @@ def validate_multihost_args(
 
 
 def main():
-    """CLI entry point for dry-run validation of multi-host configuration.
+    """CLI entry point for multi-host validation.
 
     Usage:
-        python -m workflows.validate_multihost --hosts host1,host2 \\
+        python -m workflows.run_multihost_validation --hosts host1,host2 \\
             --shared-storage-root /mnt/shared \\
-            --mpi-interface cnx1 \\
-            --model DeepSeek-V3
+            --mpi-interface cnx1
 
-    Note: --config-pkl-dir is optional. If not specified, a temporary directory
-    will be auto-generated under shared-storage-root for validation purposes.
+    Optional:
+        --config-pkl-dir: Path to config pickle directory (auto-generated if not specified)
+        --runtime-model-spec-json: Path to model spec JSON for FW/KMD version validation
+        --dry-run: Skip directory existence and permission checks
     """
     import argparse
     import shutil
@@ -705,9 +720,7 @@ def main():
 
     from workflows.log_setup import setup_workflow_script_logger
 
-    parser = argparse.ArgumentParser(
-        description="Dry-run validation for multi-host deployment"
-    )
+    parser = argparse.ArgumentParser(description="Validation for multi-host deployment")
     parser.add_argument(
         "--hosts",
         required=True,
@@ -741,6 +754,11 @@ def main():
         "--skip-ssh-checks",
         action="store_true",
         help="Skip SSH-based remote host checks (permissions only)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Skip directory existence and permission checks",
     )
 
     args = parser.parse_args()
@@ -789,7 +807,7 @@ def main():
             sys.exit(1)
 
     logger.info("=" * 60)
-    logger.info("Multi-host Validation (Dry-Run)")
+    logger.info("Multi-host Validation")
     logger.info("=" * 60)
     logger.info(f"Hosts: {hosts}")
     logger.info(f"Shared storage root: {args.shared_storage_root}")
@@ -808,6 +826,7 @@ def main():
             model_spec=model_spec,
             skip_environment_check=args.skip_ssh_checks,
             tt_smi_path=args.tt_smi_path,
+            dry_run=args.dry_run,
         )
         logger.info("✅ All validation checks passed")
         exit_code = 0

@@ -70,8 +70,11 @@ struct ChatCompletionRequest : BaseRequest {
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
 
+  // Session management
+  std::optional<std::string> sessionId;
+
   static ChatCompletionRequest fromJson(const Json::Value& json,
-                                        TaskID taskId) {
+                                        uint32_t taskId) {
     ChatCompletionRequest req(std::move(taskId));
 
     if (json.isMember("model") && !json["model"].isNull()) {
@@ -164,6 +167,10 @@ struct ChatCompletionRequest : BaseRequest {
           json["spaces_between_special_tokens"].asBool();
     }
 
+    if (json.isMember("session_id") && !json["session_id"].isNull()) {
+      req.sessionId = json["session_id"].asString();
+    }
+
     return req;
   }
 
@@ -177,7 +184,7 @@ struct ChatCompletionRequest : BaseRequest {
     }
 
     std::ostringstream out;
-    out << "task_id=" << task_id.id << " model=" << model.value_or("default")
+    out << "task_id=" << task_id << " model=" << model.value_or("default")
         << " stream=" << stream << " messages=" << messages.size()
         << " last_msg=[" << lastMsg << "]"
         << " max_tokens=" << detail::optStr(max_tokens)
@@ -192,7 +199,7 @@ struct ChatCompletionRequest : BaseRequest {
   }
 
   /** Convert to CompletionRequest: messages -> prompt, then same pipeline as
-   * /completions. */
+   * /chat/completions. */
   CompletionRequest toCompletionRequest() const {
     CompletionRequest out(task_id);
     out.model = model;
@@ -226,6 +233,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.allowed_token_ids = allowed_token_ids;
     out.prompt_logprobs = prompt_logprobs;
     out.truncate_prompt_tokens = truncate_prompt_tokens;
+    out.sessionId = sessionId;
     return out;
   }
 };

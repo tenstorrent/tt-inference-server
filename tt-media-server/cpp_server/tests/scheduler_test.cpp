@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-
-#include "runners/llm_runner/scheduler.hpp"
 
 #include <gtest/gtest.h>
 
@@ -12,6 +11,7 @@
 #include "runners/llm_runner/max_occupancy_scheduler.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
+#include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
 namespace llm_engine {
@@ -43,7 +43,7 @@ std::vector<int64_t> prompt(size_t len) {
   return p;
 }
 
-TaskID nextId() { return TaskID(TaskID::generate()); }
+uint32_t nextId() { return tt::utils::TaskIDGenerator::generate(); }
 
 // --- make_scheduler factory tests ---
 
@@ -79,7 +79,7 @@ TEST(PrefillFirstSchedulerTest, Schedule_WithOneWaiting_ReturnsPrefillBatch) {
   auto queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID expectedId = seq.taskId;
+  uint32_t expectedId = seq.taskId;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
@@ -108,7 +108,7 @@ TEST(PrefillFirstSchedulerTest,
   auto queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID expectedId = seq.taskId;
+  uint32_t expectedId = seq.taskId;
   sched.add(seq);
   auto [prefill_batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
@@ -206,7 +206,7 @@ TEST(PrefillFirstSchedulerTest, Preempt_MovesSequenceBackToWaiting) {
   auto queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID expectedId = seq.taskId;
+  uint32_t expectedId = seq.taskId;
   sched.add(seq);
   auto [batch, is_prefill] = sched.schedule();
   ASSERT_TRUE(is_prefill);
@@ -225,7 +225,7 @@ TEST(PrefillFirstSchedulerTest, Schedule_PrefillPrioritizedOverDecode) {
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq1{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
   Sequence seq2{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID seq2TaskId = seq2.taskId;
+  uint32_t seq2TaskId = seq2.taskId;
   sched.add(seq1);
   auto [batch1, prefill1] = sched.schedule();
   ASSERT_TRUE(prefill1);
@@ -344,7 +344,7 @@ TEST(PrefillFirstSchedulerTest, PrefillsAllBeforeDecode) {
   PrefillFirstScheduler sched{config, queue.get(), 1};
   Sequence seq1{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
   Sequence seq2{nextId(), 256, prompt(4), SamplingParams{.max_tokens = 10}};
-  TaskID seq2Id = seq2.taskId;
+  uint32_t seq2Id = seq2.taskId;
   sched.add(seq1);
   sched.add(seq2);
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a high-performance C++ implementation of the TT Media Server using the Drogon web framework. It's designed as a benchmark comparison to the Python FastAPI server by providing an identical OpenAI-compatible API with minimal overhead. The server supports both LLM completions and embeddings with a sophisticated LLM engine featuring paged attention, prefix caching, and preemption.
+This is a high-performance C++ implementation of the TT Media Server using the Drogon web framework. It's designed as a benchmark comparison to the Python FastAPI server by providing an identical OpenAI-compatible API with minimal overhead. The server supports LLM chat completions and embeddings with a sophisticated LLM engine featuring paged attention, prefix caching, and preemption.
 
 ## Build and Development Commands
 
@@ -89,7 +89,7 @@ The core LLM engine (`include/runners/llm_engine/`) provides:
 ### Service Modes
 
 The server operates in two modes via `MODEL_SERVICE` environment variable:
-- **LLM Mode** (`llm`): Provides `/v1/completions` and `/v1/chat/completions`
+- **LLM Mode** (`llm`): Provides `/v1/chat/completions`
 - **Embedding Mode** (`embedding`): Provides `/v1/embeddings`
 
 ### Runner Types and Model Selection
@@ -177,7 +177,6 @@ new model, manually download tokenizer files into `tokenizers/<org>/<model>/`.
 ## API Compatibility
 
 The server provides OpenAI-compatible endpoints:
-- `POST /v1/completions` - Text completion with streaming support
 - `POST /v1/chat/completions` - Chat completion with streaming support
 - `POST /v1/embeddings` - Text embeddings (embedding mode only)
 - `GET /health` - Health check

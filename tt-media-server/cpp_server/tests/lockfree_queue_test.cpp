@@ -55,7 +55,7 @@ TEST(LockFreeQueueTest, SpscOrdering) {
 // ---- SPSC batch push/pop (power-of-two batch) ------------------------
 
 TEST(LockFreeQueueTest, SpscBatchAligned) {
-  constexpr size_t BATCH = 64;
+  constexpr size_t batchSize = 64;
   LockFreeConcurrentQueue<uint64_t> q(QUEUE_CAPACITY);
   std::vector<uint64_t> received;
   received.reserve(ITEM_COUNT);
@@ -63,11 +63,11 @@ TEST(LockFreeQueueTest, SpscBatchAligned) {
 
   std::thread producer([&] {
     std::vector<uint64_t> batch;
-    batch.reserve(BATCH);
+    batch.reserve(batchSize);
     uint64_t next = 0;
     while (next < ITEM_COUNT) {
       batch.clear();
-      for (size_t i = 0; i < BATCH && next < ITEM_COUNT; ++i, ++next)
+      for (size_t i = 0; i < batchSize && next < ITEM_COUNT; ++i, ++next)
         batch.push_back(next);
 
       size_t offset = 0;
@@ -83,7 +83,7 @@ TEST(LockFreeQueueTest, SpscBatchAligned) {
 
   std::thread consumer([&] {
     while (true) {
-      size_t popped = q.popMany(received, BATCH);
+      size_t popped = q.popMany(received, batchSize);
       if (popped == 0) {
         if (producerDone.load(std::memory_order_acquire) && q.size() == 0)
           break;
@@ -104,7 +104,7 @@ TEST(LockFreeQueueTest, SpscBatchAligned) {
 // ---- SPSC batch push/pop (odd batch, forces wrap-around mid-batch) ---
 
 TEST(LockFreeQueueTest, SpscBatchOddSize) {
-  constexpr size_t BATCH = 7;
+  constexpr size_t batchSize = 7;
   LockFreeConcurrentQueue<uint64_t> q(QUEUE_CAPACITY);
   std::vector<uint64_t> received;
   received.reserve(ITEM_COUNT);
@@ -112,11 +112,11 @@ TEST(LockFreeQueueTest, SpscBatchOddSize) {
 
   std::thread producer([&] {
     std::vector<uint64_t> batch;
-    batch.reserve(BATCH);
+    batch.reserve(batchSize);
     uint64_t next = 0;
     while (next < ITEM_COUNT) {
       batch.clear();
-      for (size_t i = 0; i < BATCH && next < ITEM_COUNT; ++i, ++next)
+      for (size_t i = 0; i < batchSize && next < ITEM_COUNT; ++i, ++next)
         batch.push_back(next);
 
       size_t offset = 0;
@@ -132,7 +132,7 @@ TEST(LockFreeQueueTest, SpscBatchOddSize) {
 
   std::thread consumer([&] {
     while (true) {
-      size_t popped = q.popMany(received, BATCH);
+      size_t popped = q.popMany(received, batchSize);
       if (popped == 0) {
         if (producerDone.load(std::memory_order_acquire) && q.size() == 0)
           break;
@@ -199,19 +199,19 @@ TEST(LockFreeQueueTest, SpscNoTornReads) {
 // ---- Capacity boundary: fill, drain, repeat ---------------------------
 
 TEST(LockFreeQueueTest, FillDrainCycles) {
-  constexpr size_t CAP = 64;
-  constexpr size_t CYCLES = 1000;
-  LockFreeConcurrentQueue<int> q(CAP);
+  constexpr size_t cap = 64;
+  constexpr size_t cycles = 1000;
+  LockFreeConcurrentQueue<int> q(cap);
 
-  // Usable slots = nextPowerOfTwo(CAP+1) - 1 (sentinel gap for SPSC).
-  const size_t EXPECTED_CAPACITY = nextPowerOfTwo(CAP + 1) - 1;
+  // Usable slots = nextPowerOfTwo(cap+1) - 1 (sentinel gap for SPSC).
+  const size_t expectedCapacity = nextPowerOfTwo(cap + 1) - 1;
 
-  for (size_t c = 0; c < CYCLES; ++c) {
+  for (size_t c = 0; c < cycles; ++c) {
     size_t pushed = 0;
-    for (size_t i = 0; i < CAP * 2; ++i) {
+    for (size_t i = 0; i < cap * 2; ++i) {
       if (q.push(static_cast<int>(i))) ++pushed;
     }
-    ASSERT_EQ(pushed, EXPECTED_CAPACITY) << "cycle " << c;
+    ASSERT_EQ(pushed, expectedCapacity) << "cycle " << c;
 
     int val;
     size_t popped = 0;

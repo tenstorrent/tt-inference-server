@@ -109,7 +109,11 @@ struct CompletionRequest : BaseRequest {
   std::optional<int> truncate_prompt_tokens;
   int prompt_tokens_count = 0;
 
-  static CompletionRequest fromJson(const Json::Value& json, TaskID taskId) {
+  // Session management (internal use only, not parsed from JSON)
+  std::optional<std::string> sessionId;
+  std::optional<uint32_t> slotId;
+
+  static CompletionRequest fromJson(const Json::Value& json, uint32_t taskId) {
     CompletionRequest req(std::move(taskId));
 
     if (json.isMember("model") && !json["model"].isNull()) {
@@ -220,7 +224,7 @@ struct CompletionRequest : BaseRequest {
     }
 
     std::ostringstream out;
-    out << "task_id=" << task_id.id << " model=" << model.value_or("default")
+    out << "task_id=" << task_id << " model=" << model.value_or("default")
         << " stream=" << stream << " prompt=" << promptInfo
         << " max_tokens=" << detail::optStr(max_tokens)
         << " temperature=" << detail::optStr(temperature)
@@ -229,7 +233,9 @@ struct CompletionRequest : BaseRequest {
         << " min_p=" << detail::optStr(min_p)
         << " presence_penalty=" << presence_penalty
         << " frequency_penalty=" << frequency_penalty << " n=" << n
-        << " stop_count=" << stop.size();
+        << " stop_count=" << stop.size()
+        << " sessionId=" << detail::optStr(sessionId)
+        << " slotId=" << detail::optStr(slotId);
     return out.str();
   }
 };

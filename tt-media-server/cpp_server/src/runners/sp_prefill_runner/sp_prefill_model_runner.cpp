@@ -3,40 +3,31 @@
 
 #include "runners/sp_prefill_runner/sp_prefill_model_runner.hpp"
 
-#include "runners/llm_runner/debug.hpp"
 #include "utils/logger.hpp"
 
 namespace sp_prefill {
 
-SpPrefillModelRunner::SpPrefillModelRunner(PrefillCallback callback)
-    : prefillCallback(std::move(callback)),
-      shmNames(),
-      deviceInput(shmNames.write),
-      deviceOutput(shmNames.read) {
+SpPrefillModelRunner::SpPrefillModelRunner()
+    : shmNames(), deviceInput(shmNames.write), deviceOutput(shmNames.read) {
   deviceInput.open();
   deviceOutput.open();
 }
 
 SpPrefillModelRunner::~SpPrefillModelRunner() { exit(); }
 
-void SpPrefillModelRunner::write(const std::string& taskId,
-                                 const std::vector<int64_t>& tokenIds) {
-  // For prefill, we send tokens and immediately read back the single result
+std::optional<llm_engine::TokenResult> SpPrefillModelRunner::forward(
+    uint32_t taskId, const std::vector<int64_t>& tokenIds) {
   deviceInput.write(taskId, tokenIds, 1);
 
-  // Synchronously wait for the single prefill token
-  sp_pipeline::ReadResult readBuf;
+  tt::ipc::ReadResult readBuf;
   while (!stop.load(std::memory_order_relaxed)) {
     if (deviceOutput.tryRead(readBuf)) {
-      llm_engine::TaskID tid = llm_engine::TaskID::ipcDeserialize(
-          readBuf.taskId.data(), llm_engine::TaskID::K_SERIALIZED_SIZE);
       uint64_t tokenId = readBuf.tokenIds.empty() ? 0 : readBuf.tokenIds[0];
-      llm_engine::TokenResult result(std::move(tid), tokenId);
-      prefillCallback(result);
-      break;  // Got the token, done
+      return llm_engine::TokenResult(readBuf.taskId, tokenId);
     }
     std::this_thread::yield();
   }
+  return std::nullopt;
 }
 
 void SpPrefillModelRunner::exit() {

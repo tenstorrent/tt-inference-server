@@ -9,9 +9,9 @@
 namespace sp_prefill {
 
 std::unique_ptr<ISpPrefillModelRunner> makeModelRunner(
-    const tt::config::LLMConfig& config, PrefillCallback callback) {
+    const tt::config::LLMConfig& config) {
   TT_LOG_INFO("Creating SpPrefillModelRunner with shared memory IPC");
-  return std::make_unique<SpPrefillModelRunner>(std::move(callback));
+  return std::make_unique<SpPrefillModelRunner>();
 }
 
 }  // namespace sp_prefill

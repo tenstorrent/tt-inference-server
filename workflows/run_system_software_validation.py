@@ -23,7 +23,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 from workflows.log_setup import setup_workflow_script_logger
-from workflows.model_spec import ModelSpec, VersionRequirement
+from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import SystemTopology, VersionMode, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
@@ -161,6 +161,67 @@ class SystemResourceService:
         return topology
 
 
+def extract_fw_bundle_versions(tt_smi_data):
+    """Extract FW bundle versions from tt-smi data."""
+    versions = []
+    for info in tt_smi_data.get("device_info", []):
+        fw = info.get("firmwares", {}).get("fw_bundle_version")
+        if fw:
+            versions.append(fw)
+    return versions
+
+
+def extract_kmd_version(tt_smi_data):
+    """Extract KMD version from tt-smi data."""
+    driver = tt_smi_data.get("host_info", {}).get("Driver", "")
+    parts = driver.split(" ", 1)
+    return parts[1] if len(parts) == 2 else driver
+
+
+def extract_board_types(tt_smi_data):
+    """Extract board types from tt-smi data."""
+    board_types = []
+    for info in tt_smi_data.get("device_info", []):
+        board_type = info.get("board_info", {}).get("board_type", "")
+        if board_type:
+            board_types.append(board_type)
+    return board_types
+
+
+def enforce_version_requirement(requirement_name, version, version_requirement):
+    """Check version against VersionRequirement.
+
+    Raises ValueError if STRICT mode and requirement not met.
+    Logs warning if SUGGESTED mode and requirement not met.
+    """
+    version_specifier = version_requirement.specifier
+    enforcement_mode = version_requirement.mode
+    parsed_version = Version(version)
+    meets_requirement = parsed_version in SpecifierSet(version_specifier)
+
+    if meets_requirement:
+        return
+
+    if parsed_version.is_prerelease:
+        message = (
+            f"{requirement_name} version '{version}' does not satisfy the "
+            f"{enforcement_mode.name} requirement '{version_specifier}', "
+            "because this is a prerelease version. "
+            "Re-run with --skip-system-sw-validation to skip this check."
+        )
+    else:
+        message = (
+            f"{requirement_name} version '{version}' does not satisfy the "
+            f"{enforcement_mode.name} requirement '{version_specifier}'. "
+            "If you want to skip this check, re-run with --skip-system-sw-validation."
+        )
+
+    if enforcement_mode == VersionMode.STRICT:
+        raise ValueError(message)
+    elif enforcement_mode == VersionMode.SUGGESTED:
+        logger.warning(message)
+
+
 def parse_args():
     """
     Parse command line arguments.
@@ -198,13 +259,9 @@ def main():
             "This is likely because Tenstorrent devices must be reset.\n\n"
             "💡 Tip: Please run 'tt-smi -r' and try again, especially if 'tt-smi' is unresponsive.\n\n"
         )
-    fw_bundle_versions = []
-    board_types = []
-    for info in tt_smi_data["device_info"]:
-        fw_versions = info["firmwares"]
-        board_info = info["board_info"]
-        fw_bundle_versions.append(fw_versions["fw_bundle_version"])
-        board_types.append(board_info["board_type"])
+
+    fw_bundle_versions = extract_fw_bundle_versions(tt_smi_data)
+    board_types = extract_board_types(tt_smi_data)
 
     # remove local and remote designations, if they exist
     filtered_board_types = [board_type.rsplit(" ", 1)[0] for board_type in board_types]
@@ -238,8 +295,7 @@ def main():
             f"FW bundle versions must match among all devices: {fw_bundle_versions}"
         )
 
-    kmd_version = tt_smi_data["host_info"]["Driver"]
-    prefix, kmd_version = kmd_version.split(" ")
+    kmd_version = extract_kmd_version(tt_smi_data)
     system_info = (
         f"System info:\n"
         f"{'=' * 80}\n"
@@ -254,48 +310,20 @@ def main():
     # enforce ModelSpec system requirements
     system_requirements = model_spec.system_requirements
     if system_requirements is not None:
-
-        def _enforce_requirement(
-            requirement_name: str, version: str, version_requirement: VersionRequirement
-        ) -> None:
-            version_specifier = version_requirement.specifier
-            enforcement_mode = version_requirement.mode
-            parsed_version = Version(version)
-            meets_requirement = parsed_version in SpecifierSet(version_specifier)
-            if meets_requirement:
-                return
-            if parsed_version.is_prerelease:
-                message = (
-                    f"{requirement_name} version '{version}' does not satisfy the "
-                    f"{enforcement_mode.name} requirement '{version_specifier}', "
-                    "because this is a prerelease version. "
-                    "Re-run with --skip-system-sw-validation to skip this check."
-                )
-            else:
-                message = (
-                    f"{requirement_name} version '{version}' does not satisfy the "
-                    f"{enforcement_mode.name} requirement '{version_specifier}'. "
-                    "If you want to skip this check, re-run with --skip-system-sw-validation."
-                )
-            if enforcement_mode == VersionMode.STRICT:
-                raise ValueError(message)
-            elif enforcement_mode == VersionMode.SUGGESTED:
-                logger.warning(message)
-
         # enforce firmware versioning
         # by default, ModelSpecs have no FW requirement
-        firmware_requirement = model_spec.system_requirements.firmware
+        firmware_requirement = system_requirements.firmware
         if firmware_requirement is not None:
             for fw_bundle_version in fw_bundle_versions:
-                _enforce_requirement(
+                enforce_version_requirement(
                     "FW bundle", fw_bundle_version, firmware_requirement
                 )
 
         # enforce KMD versioning
         # by default, ModelSpecs have no KMD requirement
-        kmd_requirement = model_spec.system_requirements.kmd
+        kmd_requirement = system_requirements.kmd
         if kmd_requirement is not None:
-            _enforce_requirement("KMD", kmd_version, kmd_requirement)
+            enforce_version_requirement("KMD", kmd_version, kmd_requirement)
 
     # enforce system-level topology
     device = model_spec.device_model_spec.device
