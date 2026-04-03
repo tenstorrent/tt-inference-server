@@ -100,8 +100,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         def distribute_block():
             self.pipeline = self.create_pipeline()
 
-        # 20 minutes to distribute the model on device
-        weights_distribution_timeout = 1200
+        # 60 minutes to distribute the model on device (first-time 4x32 cache builds can exceed 20 min)
+        weights_distribution_timeout = 3600
         try:
             await asyncio.wait_for(
                 asyncio.to_thread(distribute_block),
