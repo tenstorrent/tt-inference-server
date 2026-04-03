@@ -50,7 +50,6 @@ struct Message {
   }
 };
 
-
 struct ReadResult {
   uint32_t taskId;
   uint32_t maxTokens;
