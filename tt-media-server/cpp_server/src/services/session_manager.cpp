@@ -175,6 +175,18 @@ std::optional<domain::Session> SessionManager::getSession(
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
 
 void SessionManager::evictOldSessions() {
+  // Try to acquire eviction lock - if someone else is evicting, skip
+  bool expected = false;
+  if (!evictionInProgress.compare_exchange_strong(expected, true)) {
+    return;  // Another thread is already evicting, skip this call
+  }
+
+  // RAII guard to ensure we release the flag
+  struct EvictionGuard {
+    std::atomic<bool>& flag;
+    ~EvictionGuard() { flag.store(false, std::memory_order_release); }
+  } guard{evictionInProgress};
+
   size_t maxSessions = tt::config::maxSessionsCount();
   unsigned evictionRate = tt::config::sessionEvictionRate();
   size_t evictionCount = tt::config::sessionEvictionCount();

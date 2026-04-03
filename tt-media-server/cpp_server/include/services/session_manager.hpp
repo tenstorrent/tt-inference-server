@@ -49,6 +49,7 @@ class SessionManager {
   using PromisePtr = std::shared_ptr<std::promise<uint32_t>>;
   ConcurrentMap<uint32_t, PromisePtr> pendingAllocations;
   std::atomic<bool> stopped{false};
+  std::atomic<bool> evictionInProgress{false};
   std::thread drainThread;
 };
 
