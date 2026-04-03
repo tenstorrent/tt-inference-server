@@ -41,6 +41,10 @@ void SpPipelineMemoryManager::handleResponse(uint32_t requestId,
   allocating.erase(requestId);
   domain::ManageMemoryResult result;
   result.taskId = taskId;
+  if (slotId == tt_blaze::pipeline_manager::INVALID_SLOT) {
+    result.status = domain::ManageMemoryStatus::FAILURE;
+    return;
+  }
   result.status = domain::ManageMemoryStatus::SUCCESS;
   result.slotIds = {slotId};
   resultQueue->push(result);

@@ -207,11 +207,6 @@ void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
   auto& seq = *it->second;
   seq.appendToken(output.token_id);
   bool finished = output.is_complete || stopTokenIds.count(output.token_id);
-  TT_LOG_INFO(
-      "SpPipelineRunner::handleOutput slot={} task_id={} token_id={} "
-      "is_complete={} finished={}",
-      output.slot_id, seq.taskId, output.token_id, output.is_complete,
-      finished);
   pushToken(seq.taskId, output.token_id, finished);
 }
 
@@ -224,7 +219,18 @@ void SpPipelineRunner::handleRequest(std::unique_ptr<llm_engine::Sequence> reque
   assert(slotId != llm_engine::INVALID_KV_CACHE_ADDRESS);
   auto slot = static_cast<uint32_t>(slotId);
 
-  bool isNew = running.find(slot) == running.end();
+  auto it = running.find(slot);
+  bool isNew = (it == running.end());
+
+  if (!isNew && it->second->taskId != request->taskId) {
+    TT_LOG_INFO(
+        "SpPipelineRunner::handleRequest slot={} reused by new task {} "
+        "(was task {}), treating as new SUBMIT",
+        slot, request->taskId, it->second->taskId);
+    pipelineManager->push_request(utils::makeCancelRequest(slot));
+    running.erase(it);
+    isNew = true;
+  }
 
   if (isNew) {
     pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
@@ -233,7 +239,6 @@ void SpPipelineRunner::handleRequest(std::unique_ptr<llm_engine::Sequence> reque
   }
   pipelineManager->push_request(utils::makeContinueRequest(slot, *request));
   running[slot] = std::move(request);
-  return;
 }
 
 }  // namespace tt::runners

@@ -7,6 +7,9 @@ project(tt_media_server_cpp CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# Add a -g flag for debug info in all CMAKE build types (debug, release, etc.)
+add_compile_options(-g)
+
 
 # Allow config files (e.g. system jsoncpp) that use older cmake_minimum_required (CMake 4.x compatibility)
 if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
