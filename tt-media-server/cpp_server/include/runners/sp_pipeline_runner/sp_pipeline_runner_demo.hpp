@@ -27,8 +27,8 @@ namespace tt::runners {
 class SpPipelineRunnerDemo : public IRunner {
  public:
   SpPipelineRunnerDemo(const tt::config::LLMConfig& config,
-                   ipc::TokenRingBuffer<65536>* resultQueue,
-                   llm_engine::ITaskQueue* taskQueue);
+                       ipc::TokenRingBuffer<65536>* resultQueue,
+                       llm_engine::ITaskQueue* taskQueue);
   ~SpPipelineRunnerDemo() override;
 
   void run() override;

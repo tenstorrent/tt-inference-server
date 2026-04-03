@@ -8,7 +8,7 @@ using Config = tt::config::LLMConfig;
 
 namespace {
 
-constexpr int64_t K_WHITESPACE_TOKEN_ID = 12345;
+constexpr int64_t K_WHITESPACE_TOKEN_ID = 223;
 
 class MockModelRunner : public IModelRunner {
  public:

@@ -16,9 +16,9 @@
 
 namespace tt::runners {
 
-SpPipelineRunnerDemo::SpPipelineRunnerDemo(const config::LLMConfig& config,
-                                   ipc::TokenRingBuffer<65536>* resultQueue,
-                                   llm_engine::ITaskQueue* taskQueue)
+SpPipelineRunnerDemo::SpPipelineRunnerDemo(
+    const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* resultQueue,
+    llm_engine::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
@@ -192,7 +192,7 @@ void SpPipelineRunnerDemo::drainDecodeResults() {
 }
 
 void SpPipelineRunnerDemo::pushToken(uint32_t taskId, uint64_t tokenId,
-                                 bool finished) {
+                                     bool finished) {
   ipc::SharedToken shared{};
   shared.token_index = 0;
   shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;

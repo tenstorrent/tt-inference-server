@@ -215,7 +215,8 @@ inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
   running.erase(slotId);
 }
 
-void SpPipelineRunner::handleRequest(std::unique_ptr<llm_engine::Sequence> request) {
+void SpPipelineRunner::handleRequest(
+    std::unique_ptr<llm_engine::Sequence> request) {
   auto slotId = request->getKVCacheAddress();
   assert(slotId != llm_engine::INVALID_KV_CACHE_ADDRESS);
   auto slot = static_cast<uint32_t>(slotId);
