@@ -204,8 +204,6 @@ endif()
 # LLM engine (include/runners/llm_runner/, src/runners/llm_runner/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/block_manager.cpp
-    src/ipc/boost_ipc_cancel_queue.cpp
-    src/ipc/boost_ipc_task_queue.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
@@ -395,7 +393,6 @@ set(SOURCES
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
-    src/ipc/boost_ipc_warmup_signal_queue.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
     src/services/memory_manager.cpp

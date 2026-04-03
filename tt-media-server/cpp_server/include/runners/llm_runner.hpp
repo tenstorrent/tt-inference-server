@@ -5,7 +5,7 @@
 #include <thread>
 
 #include "config/runner_config.hpp"
-#include "ipc/boost_ipc_memory_queue.hpp"
+#include "ipc/boost_ipc_queue.hpp"
 #include "ipc/cancel_queue.hpp"
 #include "ipc/token_ring_buffer.hpp"
 #include "runners/llm_runner/model_runner.hpp"

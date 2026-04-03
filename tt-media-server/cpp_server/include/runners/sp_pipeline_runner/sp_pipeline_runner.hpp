@@ -11,7 +11,7 @@
 #include <unordered_set>
 
 #include "config/runner_config.hpp"
-#include "ipc/boost_ipc_memory_queue.hpp"
+#include "ipc/boost_ipc_queue.hpp"
 #include "ipc/token_ring_buffer.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
