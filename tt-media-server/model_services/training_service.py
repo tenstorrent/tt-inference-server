@@ -56,7 +56,7 @@ class TrainingService(BaseJobService):
         return list(logs_list)
 
     def get_job_checkpoints(self, job_id: str) -> list:
-        checkpoints_list = self._job_manager.get_job_checkpoints(job_id)
+        checkpoints_list = super().get_job_checkpoints(job_id)
         if checkpoints_list is None:
             raise ValueError(f"Job {job_id} not found")
         return list(checkpoints_list)
