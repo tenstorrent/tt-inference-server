@@ -115,9 +115,8 @@ spec:
             path: /dev/tenstorrent
             type: Directory
         - name: hugepages-1g
-          hostPath:
-            path: /dev/hugepages-1G
-            type: Directory
+          emptyDir:
+            medium: HugePages-1Gi
       {{- with $cfg.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
