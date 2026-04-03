@@ -95,7 +95,8 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
 
 void Scheduler::tryScheduleDecode(std::vector<Sequence*>& scheduledSeqs,
                                   int& numSeqs) {
-  while (!decode_queue_.empty() && numSeqs < max_in_flight_count_) {
+  while (!decode_queue_.empty() &&
+         static_cast<size_t>(numSeqs) < max_in_flight_count_) {
     Sequence* seq = decode_queue_.front();
     decode_queue_.pop_front();
     auto selfPreempt = false;
