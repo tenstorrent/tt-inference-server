@@ -56,7 +56,7 @@ def mock_audio_performance_targets():
                 "rtr": None,
                 "tolerance": 0.05,
                 "max_concurrency": 1,
-                "num_eval_runs": None,
+                "num_eval_runs": 100,
                 "task_type": "image",
             },
         ),
