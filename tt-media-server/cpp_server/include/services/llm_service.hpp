@@ -70,8 +70,7 @@ class LLMService
 
   std::vector<std::thread> consumer_threads_;
 
-  ConcurrentMap<uint32_t,
-                std::function<void(domain::LLMStreamChunk&, bool)>>
+  ConcurrentMap<uint32_t, std::function<void(domain::LLMStreamChunk&, bool)>>
       stream_callbacks_;
 
   std::atomic<uint64_t> next_worker_{0};

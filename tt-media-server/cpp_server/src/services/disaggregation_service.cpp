@@ -40,8 +40,7 @@ void DisaggregationService::setupSocketHandlers() {
           streamCallbacks.erase(message.task_id);
 
           auto response = domain::LLMStreamChunk(message.task_id);
-          response.choices.push_back(
-              domain::LLMChoice(message.generated_text));
+          response.choices.push_back(domain::LLMChoice(message.generated_text));
 
           callback.value()(response, false);
 
@@ -95,9 +94,9 @@ void DisaggregationService::setupSocketHandlers() {
           auto slotId = message.slot_id;
 
           llmService->submitStreamingRequest(
-              request, [this, message, maxTokens, slotId](
-                           const domain::LLMStreamChunk& response,
-                           bool /*isFinal*/) {
+              request,
+              [this, message, maxTokens, slotId](
+                  const domain::LLMStreamChunk& response, bool /*isFinal*/) {
                 auto remainingTokens =
                     maxTokens.has_value()
                         ? std::optional<int>(std::max(0, maxTokens.value() - 1))

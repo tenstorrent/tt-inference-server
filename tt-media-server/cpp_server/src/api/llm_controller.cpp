@@ -158,8 +158,7 @@ void LLMController::chatCompletions(
     return;
   }
 
-  auto request =
-      std::make_shared<domain::LLMRequest>(chatReq.toLLMRequest());
+  auto request = std::make_shared<domain::LLMRequest>(chatReq.toLLMRequest());
 
   if (request->stream) {
     handleStreaming(request, std::move(callback));
@@ -317,9 +316,9 @@ void LLMController::handleStreaming(
                             model, created, includeUsage, continuousUsage,
                             completionTokens, startTime, firstTokenTime,
                             secondTokenTime, firstContentChunk, reqPtr,
-                            capturedSessionId, accumulator, onDisconnect](
-                               const domain::LLMStreamChunk& chunk,
-                               bool isFinal) {
+                            capturedSessionId, accumulator,
+                            onDisconnect](const domain::LLMStreamChunk& chunk,
+                                          bool isFinal) {
     if (done->load()) {
       return;
     }
@@ -493,8 +492,8 @@ void LLMController::handleStreaming(
   callback(resp);
 }
 
-bool LLMController::shouldDoPrefillOnDecode(
-    const domain::LLMRequest& request, bool validSessionFound) const {
+bool LLMController::shouldDoPrefillOnDecode(const domain::LLMRequest& request,
+                                            bool validSessionFound) const {
   // for valid sessions always do prefill on decode
   if (validSessionFound) {
     return true;

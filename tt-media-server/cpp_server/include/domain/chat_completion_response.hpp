@@ -86,8 +86,7 @@ struct ChatCompletionResponse {
     return Json::writeString(writer, toJson());
   }
 
-  static ChatCompletionResponse fromLLMResponse(
-      const LLMResponse& completion) {
+  static ChatCompletionResponse fromLLMResponse(const LLMResponse& completion) {
     ChatCompletionResponse response;
     response.id = completion.id;
     response.created = completion.created;
