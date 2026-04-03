@@ -129,18 +129,17 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   orig.serialize(os);
   std::istringstream is(os.str());
 
-  std::unique_ptr<Sequence> restored(Sequence::deserialize(is));
-  ASSERT_NE(restored.get(), nullptr);
+  Sequence restored = Sequence::deserialize(is);
 
-  EXPECT_EQ(restored->taskId, orig.taskId);
-  EXPECT_EQ(restored->lastToken, orig.lastToken);
-  EXPECT_EQ(restored->numPromptTokens, orig.numPromptTokens);
-  EXPECT_EQ(restored->numCachedTokens, orig.numCachedTokens);
-  EXPECT_EQ(restored->tokenIds, orig.tokenIds);
-  EXPECT_EQ(restored->blockTable, orig.blockTable);
-  EXPECT_EQ(restored->status, orig.status);
+  EXPECT_EQ(restored.taskId, orig.taskId);
+  EXPECT_EQ(restored.lastToken, orig.lastToken);
+  EXPECT_EQ(restored.numPromptTokens, orig.numPromptTokens);
+  EXPECT_EQ(restored.numCachedTokens, orig.numCachedTokens);
+  EXPECT_EQ(restored.tokenIds, orig.tokenIds);
+  EXPECT_EQ(restored.blockTable, orig.blockTable);
+  EXPECT_EQ(restored.status, orig.status);
 
-  const auto& sp = *restored->samplingParams;
+  const auto& sp = *restored.samplingParams;
   const auto& spOrig = *orig.samplingParams;
   EXPECT_FLOAT_EQ(sp.temperature, spOrig.temperature);
   EXPECT_EQ(sp.max_tokens, spOrig.max_tokens);
@@ -162,12 +161,12 @@ TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
   orig.serialize(os);
   std::istringstream is(os.str());
 
-  std::unique_ptr<Sequence> restored(Sequence::deserialize(is));
-  ASSERT_NE(restored.get(), nullptr);
-  EXPECT_EQ(restored->taskId, orig.taskId);
-  EXPECT_TRUE(restored->tokenIds.empty());
-  EXPECT_EQ(restored->numPromptTokens, 0u);
-  EXPECT_EQ(restored->lastToken, 0);
+  Sequence restored = Sequence::deserialize(is);
+
+  EXPECT_EQ(restored.taskId, orig.taskId);
+  EXPECT_TRUE(restored.tokenIds.empty());
+  EXPECT_EQ(restored.numPromptTokens, 0u);
+  EXPECT_EQ(restored.lastToken, 0);
 }
 
 TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
@@ -180,16 +179,16 @@ TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
   orig.serialize(os);
   std::istringstream is(os.str());
 
-  std::unique_ptr<Sequence> restored(Sequence::deserialize(is));
-  ASSERT_NE(restored.get(), nullptr);
-  EXPECT_EQ(restored->size(), 4u);
-  EXPECT_EQ((*restored)[0], 10);
-  EXPECT_EQ((*restored)[1], 20);
-  EXPECT_EQ((*restored)[2], 30);
-  EXPECT_EQ((*restored)[3], 40);
-  EXPECT_EQ(restored->lastToken, 40);
-  EXPECT_EQ(restored->numPromptTokens, 2u);
-  EXPECT_EQ(restored->numCachedTokens, 256u);
+  Sequence restored = Sequence::deserialize(is);
+
+  EXPECT_EQ(restored.size(), 4u);
+  EXPECT_EQ(restored[0], 10);
+  EXPECT_EQ(restored[1], 20);
+  EXPECT_EQ(restored[2], 30);
+  EXPECT_EQ(restored[3], 40);
+  EXPECT_EQ(restored.lastToken, 40);
+  EXPECT_EQ(restored.numPromptTokens, 2u);
+  EXPECT_EQ(restored.numCachedTokens, 256u);
 }
 
 }  // namespace

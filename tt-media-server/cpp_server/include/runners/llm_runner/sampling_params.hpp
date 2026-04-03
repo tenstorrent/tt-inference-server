@@ -8,7 +8,7 @@ namespace llm_engine {
 
 /**
  * Sampling parameters aligned with OpenAI-compatible completion request.
- * Mirrors sampling-related fields from tt::domain::CompletionRequest.
+ * Mirrors sampling-related fields from tt::domain::LLMRequest.
  */
 struct SamplingParams {
   float temperature = 0.0f;

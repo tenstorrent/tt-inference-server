@@ -158,8 +158,7 @@ void LLMController::chatCompletions(
     return;
   }
 
-  auto request = std::make_shared<domain::CompletionRequest>(
-      chatReq.toCompletionRequest());
+  auto request = std::make_shared<domain::LLMRequest>(chatReq.toLLMRequest());
 
   if (request->stream) {
     handleStreaming(request, std::move(callback));
@@ -205,7 +204,7 @@ void LLMController::chatCompletions(
       }
 
       auto chatResponse =
-          domain::ChatCompletionResponse::fromCompletionResponse(completion);
+          domain::ChatCompletionResponse::fromLLMResponse(completion);
       auto resp = drogon::HttpResponse::newHttpResponse();
       resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
       resp->setBody(chatResponse.toJsonString());
@@ -253,7 +252,7 @@ void LLMController::chatCompletions(
 }
 
 void LLMController::handleStreaming(
-    std::shared_ptr<domain::CompletionRequest> reqPtr,
+    std::shared_ptr<domain::LLMRequest> reqPtr,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleStreaming");
 
@@ -380,7 +379,7 @@ void LLMController::handleStreaming(
                             secondTokenTime, firstContentChunk, reqPtr,
                             capturedSessionId, accumulator, onDisconnect,
                             sessionManagerPtr](
-                               const domain::StreamingChunkResponse& chunk,
+                               const domain::LLMStreamChunk& chunk,
                                bool isFinal) {
     if (done->load()) {
       return;
@@ -560,8 +559,8 @@ void LLMController::handleStreaming(
   callback(resp);
 }
 
-bool LLMController::shouldDoPrefillOnDecode(
-    const domain::CompletionRequest& request, bool validSessionFound) const {
+bool LLMController::shouldDoPrefillOnDecode(const domain::LLMRequest& request,
+                                            bool validSessionFound) const {
   // for valid sessions always do prefill on decode
   if (validSessionFound) {
     return true;
