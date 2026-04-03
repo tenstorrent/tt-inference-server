@@ -178,6 +178,21 @@ std::optional<domain::Session> SessionManager::getSession(
 
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
 
+void SessionManager::setSessionInFlight(const std::string& sessionId,
+                                        bool inFlight) {
+  bool found = sessions.modify(sessionId, [inFlight](domain::Session& s) {
+    s.setInFlight(inFlight);
+  });
+
+  if (!found) {
+    TT_LOG_WARN("[SessionManager] Session not found for in-flight update: {}",
+                sessionId);
+  } else {
+    TT_LOG_DEBUG("[SessionManager] Set session {} in-flight: {}", sessionId,
+                 inFlight);
+  }
+}
+
 void SessionManager::evictOldSessions() {
   // Try to acquire eviction lock - if someone else is evicting, skip
   bool expected = false;
@@ -207,6 +222,11 @@ void SessionManager::evictOldSessions() {
 
   sessions.forEach([&heap, &newer, evictionCount](const std::string& id,
                                                   domain::Session& session) {
+    // Skip sessions with active requests
+    if (session.isInFlight()) {
+      return;
+    }
+
     auto t = session.getLastActivityTime();
     if (heap.size() < evictionCount) {
       heap.emplace_back(t, id);
