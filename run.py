@@ -34,7 +34,7 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
-from workflows.validate_multihost import validate_multihost_args
+from workflows.validate_setup import run_multihost_validation_subprocess
 from workflows.run_workflows import run_workflows
 from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import setup_host
@@ -581,9 +581,10 @@ def main():
                 multihost_config = setup_multihost_config(
                     model_spec, expected_hosts, dry_run=True
                 )
-                hosts = validate_multihost_args(
+                hosts = run_multihost_validation_subprocess(
                     multihost_config,
-                    tt_smi_path=multihost_config.tt_smi_path,
+                    model_spec=model_spec,
+                    json_fpath=json_fpath,
                     dry_run=True,
                 )
                 orchestrator = MultiHostOrchestrator(

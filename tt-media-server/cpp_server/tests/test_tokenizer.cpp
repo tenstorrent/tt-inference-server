@@ -236,17 +236,17 @@ TEST_F(DeepseekTokenizerTest, ApplyChatTemplateMatchesDeepSeekR10528Format) {
   // Expected output from HuggingFace transformers
   // tokenizer.apply_chat_template(..., add_generation_prompt=True) for
   // DeepSeek-R1-0528 (add_bos_token=true, add_eos_token=false).
-  const std::string EXPECTED =
+  const std::string expected =
       "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>Hi!<｜User｜>How "
       "are you?<｜Assistant｜>";
 
   std::string actual = tokenizer().applyChatTemplate(messages, true);
 
-  EXPECT_EQ(actual, EXPECTED)
+  EXPECT_EQ(actual, expected)
 
       << "apply_chat_template output should match HuggingFace DeepSeek-R1-0528 "
          "format.\n"
-      << "  Expected length: " << EXPECTED.size() << "\n"
+      << "  Expected length: " << expected.size() << "\n"
       << "  Actual length:   " << actual.size();
 }
 
@@ -262,18 +262,100 @@ TEST_F(DeepseekTokenizerTest,
   // Expected output from HuggingFace transformers
   // tokenizer.apply_chat_template(..., add_generation_prompt=True) for
   // DeepSeek-R1-0528 (add_bos_token=true, add_eos_token=false).
-  const std::string EXPECTED =
+  const std::string expected =
       "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>Hi!<｜User｜>How "
       "are you?";
 
   std::string actual = tokenizer().applyChatTemplate(messages, false);
 
-  EXPECT_EQ(actual, EXPECTED)
+  EXPECT_EQ(actual, expected)
 
       << "apply_chat_template output should match HuggingFace DeepSeek-R1-0528 "
          "format.\n"
-      << "  Expected length: " << EXPECTED.size() << "\n"
+      << "  Expected length: " << expected.size() << "\n"
       << "  Actual length:   " << actual.size();
+}
+
+// ---------------------------------------------------------------------------
+// StreamDecoder tests
+// ---------------------------------------------------------------------------
+
+TEST_F(DeepseekTokenizerTest, StreamDecoderEmoji) {
+  // 🛑 encodes to 3 tokens [3574, 252, 242] in DeepSeek
+  auto ids = tokenizer().encode("\xF0\x9F\x9B\x91");  // 🛑
+  ASSERT_GE(ids.size(), 2) << "Emoji should be multiple tokens";
+
+  auto decoder = tokenizer().createStreamDecoder();
+  std::string accumulated;
+  for (size_t i = 0; i < ids.size(); ++i) {
+    std::string delta = decoder->step(ids[i]);
+    accumulated += delta;
+    if (i < ids.size() - 1) {
+      EXPECT_EQ(delta, "")
+          << "Intermediate byte-fragment tokens should be buffered";
+    }
+  }
+  accumulated += decoder->flush();
+  EXPECT_EQ(accumulated, "\xF0\x9F\x9B\x91");  // 🛑
+}
+
+TEST_F(DeepseekTokenizerTest, StreamDecoderAscii) {
+  std::string text = "Hello world";
+  auto ids = tokenizer().encode(text);
+
+  auto decoder = tokenizer().createStreamDecoder();
+  std::string accumulated;
+  for (int id : ids) {
+    accumulated += decoder->step(id);
+  }
+  accumulated += decoder->flush();
+  EXPECT_EQ(accumulated, text);
+}
+
+TEST_F(DeepseekTokenizerTest, StreamDecoderMixedMultibyte) {
+  // Mix of ASCII + CJK + emoji
+  std::string text = "Hi\xe4\xbd\xa0\xe5\xa5\xbd\xF0\x9F\x9B\x91";  // Hi你好🛑
+  auto ids = tokenizer().encode(text);
+
+  auto decoder = tokenizer().createStreamDecoder();
+  std::string accumulated;
+  for (int id : ids) {
+    accumulated += decoder->step(id);
+  }
+  accumulated += decoder->flush();
+  EXPECT_EQ(accumulated, text);
+}
+
+TEST_F(DeepseekTokenizerTest, StreamDecoderFlushIncomplete) {
+  // Simulate a single byte-fragment token that never completes.
+  // flush() should still return something (possibly with U+FFFD).
+  auto ids = tokenizer().encode("\xF0\x9F\x9B\x91");  // 🛑
+  ASSERT_GE(ids.size(), 2);
+
+  auto decoder = tokenizer().createStreamDecoder();
+  std::string delta = decoder->step(ids[0]);
+  EXPECT_EQ(delta, "");
+
+  std::string flushed = decoder->flush();
+  EXPECT_FALSE(flushed.empty()) << "flush() should emit buffered content";
+}
+
+TEST_F(DeepseekTokenizerTest, StreamDecoderMatchesBatchDecode) {
+  // For any token sequence, streaming decode should produce the same
+  // final text as a single batch decode.
+  std::string text =
+      "Roger\xe6\x89\x80\xe6\xb1\x82 fieldwork\xe6\xa0\xb8\xe8\x8b\xb7";
+  auto ids = tokenizer().encode(text);
+
+  auto decoder = tokenizer().createStreamDecoder();
+  std::string streamed;
+  for (int id : ids) {
+    streamed += decoder->step(id);
+  }
+  streamed += decoder->flush();
+
+  std::string batched = tokenizer().decode(ids);
+  EXPECT_EQ(streamed, batched);
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +388,7 @@ TEST_F(LlamaTokenizerTest, ApplyChatTemplate) {
       {"user", "How are you?"},
   };
 
-  const std::string EXPECTED =
+  const std::string expected =
       "<|begin_of_text|>"
       "<|start_header_id|>system<|end_header_id|>\n\n"
       "Cutting Knowledge Date: December 2023\n"
@@ -322,10 +404,10 @@ TEST_F(LlamaTokenizerTest, ApplyChatTemplate) {
 
   std::string actual = tokenizer().applyChatTemplate(messages, true);
 
-  EXPECT_EQ(actual, EXPECTED)
+  EXPECT_EQ(actual, expected)
       << "apply_chat_template output should match Llama 3.1 8B Instruct "
          "format.\n"
-      << "  Expected length: " << EXPECTED.size() << "\n"
+      << "  Expected length: " << expected.size() << "\n"
       << "  Actual length:   " << actual.size();
 }
 
@@ -336,7 +418,7 @@ TEST_F(LlamaTokenizerTest, ApplyChatTemplateNoGenerationPrompt) {
       {"user", "How are you?"},
   };
 
-  const std::string EXPECTED =
+  const std::string expected =
       "<|begin_of_text|>"
       "<|start_header_id|>system<|end_header_id|>\n\n"
       "Cutting Knowledge Date: December 2023\n"
@@ -351,9 +433,9 @@ TEST_F(LlamaTokenizerTest, ApplyChatTemplateNoGenerationPrompt) {
 
   std::string actual = tokenizer().applyChatTemplate(messages, false);
 
-  EXPECT_EQ(actual, EXPECTED)
+  EXPECT_EQ(actual, expected)
       << "apply_chat_template output should match Llama 3.1 8B Instruct "
          "format.\n"
-      << "  Expected length: " << EXPECTED.size() << "\n"
+      << "  Expected length: " << expected.size() << "\n"
       << "  Actual length:   " << actual.size();
 }

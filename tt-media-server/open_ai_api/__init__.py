@@ -5,10 +5,10 @@
 import logging
 from dataclasses import dataclass
 
-from fastapi import APIRouter
-
 from config.constants import ModelServices
 from config.settings import settings
+from fastapi import APIRouter
+
 from open_ai_api import (
     audio,
     cnn,
@@ -16,8 +16,9 @@ from open_ai_api import (
     fine_tuning,
     image,
     llm,
-    tokenizer,
+    models,
     text_to_speech,
+    tokenizer,
     tt_maintenance_api,
     video,
 )
@@ -61,9 +62,7 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
         ServiceRoute(video.router, "/v1/videos", "/video", ["Video processing"]),
     ],
     ModelServices.TRAINING.value: [
-        ServiceRoute(
-            fine_tuning.router, "/v1/fine_tuning", "/fine_tuning", ["Fine-tuning"]
-        ),
+        ServiceRoute(fine_tuning.router, "/v1", None, ["Fine-tuning"]),
     ],
     ModelServices.EMBEDDING.value: [
         ServiceRoute(embedding.router, "/v1", None, ["Embeddings"]),
@@ -106,4 +105,11 @@ api_router.include_router(
     tt_maintenance_api.router,
     prefix="",
     tags=["Maintenance"],
+)
+
+# Model discovery endpoints (always included, no versioning)
+api_router.include_router(
+    models.router,
+    prefix="",
+    tags=["Models"],
 )

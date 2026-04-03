@@ -60,10 +60,10 @@ std::vector<std::string> parseDeviceIds(const std::string& raw) {
                   // all).
   }
   std::vector<std::string> out;
-  const std::string SEP = "),(";
+  const std::string sep = "),(";
   size_t pos = 0;
   for (;;) {
-    size_t next = s.find(SEP, pos);
+    size_t next = s.find(sep, pos);
     std::string segment =
         (next == std::string::npos) ? s.substr(pos) : s.substr(pos, next - pos);
     if (!segment.empty()) {
@@ -72,7 +72,7 @@ std::vector<std::string> parseDeviceIds(const std::string& raw) {
     }
     out.push_back(std::move(segment));
     if (next == std::string::npos) break;
-    pos = next + SEP.size();
+    pos = next + sep.size();
   }
   return out;
 }
@@ -167,6 +167,9 @@ LLMConfig llmEngineConfig() {
   if (backend == "pipeline") {
     cfg.runner_type = ModelRunnerType::PIPELINE;
     cfg.max_in_flight_count = 1;
+  } else if (backend == "prefill") {
+    cfg.runner_type = ModelRunnerType::PREFILL;
+    cfg.max_in_flight_count = 1;
   } else if (backend == "llama") {
     cfg.kvcache_block_size = 32;
     cfg.max_num_batched_tokens = 16384;
@@ -222,6 +225,27 @@ uint16_t socketPort() {
 size_t maxQueueSize() {
   return static_cast<size_t>(
       envUlong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));
+}
+
+size_t maxSessionsCount() {
+  return static_cast<size_t>(
+      envUlong("MAX_SESSIONS_COUNT", defaults::MAX_SESSIONS_COUNT));
+}
+
+unsigned sessionEvictionRate() {
+  return static_cast<unsigned>(
+      envUlong("SESSION_EVICTION_RATE", defaults::SESSION_EVICTION_RATE));
+}
+
+size_t sessionEvictionCount() {
+  return static_cast<size_t>(
+      envUlong("SESSION_EVICTION_COUNT", defaults::SESSION_EVICTION_COUNT));
+}
+
+size_t maxTokensToPrefillOnDecode() {
+  return static_cast<size_t>(
+      envUlong("MAX_TOKENS_TO_PREFILL_ON_DECODE",
+               defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
 }
 
 }  // namespace tt::config

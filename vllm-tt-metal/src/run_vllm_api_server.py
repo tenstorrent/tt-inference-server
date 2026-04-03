@@ -8,6 +8,7 @@ import logging
 import multiprocessing
 import os
 import runpy
+import shlex
 import sys
 from pathlib import Path
 from typing import Optional
@@ -31,12 +32,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def parse_args():
-    """Parse CLI arguments before any model loading.
+DEFAULT_VLLM_SERVER_PORT = "8000"
 
-    Also removes --model and --device from sys.argv so they don't get passed
-    to vLLM's argument parser (which doesn't recognize --device).
-    """
+
+def parse_args():
+    """Parse wrapper CLI args and return remaining vLLM passthrough args."""
     parser = argparse.ArgumentParser(description="TT vLLM API Server")
     parser.add_argument(
         "--model",
@@ -79,16 +79,12 @@ def parse_args():
         "--service-port",
         type=int,
         default=None,
-        help="Service port for trace capture (defaults to vllm_args port or 8000)",
+        help="Service port for vLLM server and trace capture client",
     )
     # Parse known args to allow vLLM args to pass through
-    args, remaining = parser.parse_known_args()
+    args, remaining_args = parser.parse_known_args()
 
-    # Remove --model and --device from sys.argv so vLLM doesn't see them
-    # Keep sys.argv[0] (script name) and add remaining args
-    sys.argv = [sys.argv[0]] + remaining
-
-    return args
+    return args, remaining_args
 
 
 def normalize_device_type(device_arg: str) -> str:
@@ -559,7 +555,7 @@ def set_runtime_env_vars(model_spec_json):
 
 
 def start_trace_capture(
-    model_spec_json, disable_trace_capture=False, service_port=None
+    model_spec_json, service_port: int, disable_trace_capture: bool = False
 ):
     # Models with builtin warmup handle their own trace capture internally
     if not disable_trace_capture and model_spec_json.get("has_builtin_warmup", False):
@@ -573,8 +569,6 @@ def start_trace_capture(
         logger.info("Trace capture is disabled via --disable-trace-capture")
         return
 
-    if service_port is None:
-        service_port = int(os.getenv("SERVICE_PORT", "8000"))
     supported_modalities = model_spec_json.get("supported_modalities", ["text"])
 
     # Get max_context from device_model_spec for trace calculation
@@ -608,9 +602,124 @@ def start_trace_capture(
     )
 
 
+def _normalize_vllm_arg_name(arg_name: str) -> str:
+    return arg_name.lstrip("-").split("=", 1)[0].replace("-", "_")
+
+
+def _append_vllm_arg(argv: list[str], arg_name: str, value) -> None:
+    if value is None:
+        return
+    if isinstance(value, bool):
+        if value:
+            argv.append(arg_name)
+        return
+    argv.extend([arg_name, str(value)])
+
+
+def _extract_cli_arg_value(argv: list[str], arg_name: str) -> Optional[str]:
+    for index, token in enumerate(argv):
+        if token == arg_name:
+            if index + 1 < len(argv):
+                return argv[index + 1]
+            return None
+        if token.startswith(f"{arg_name}="):
+            return token.split("=", 1)[1]
+    return None
+
+
+def resolve_service_port() -> int:
+    port_value = _extract_cli_arg_value(sys.argv[1:], "--port")
+    if port_value is not None:
+        return int(port_value)
+    return int(DEFAULT_VLLM_SERVER_PORT)
+
+
+def format_vllm_serve_command(argv) -> str:
+    """Render the normalized argv as a multi-line bash command."""
+    command_lines = ["vllm serve"]
+    index = 1
+    while index < len(argv):
+        token = argv[index]
+        rendered_tokens = [shlex.quote(token)]
+        has_separate_value = (
+            token.startswith("--")
+            and "=" not in token
+            and index + 1 < len(argv)
+            and not argv[index + 1].startswith("--")
+        )
+        if has_separate_value:
+            rendered_tokens.append(shlex.quote(argv[index + 1]))
+            index += 1
+
+        command_lines.append(" ".join(rendered_tokens))
+        index += 1
+
+    return " \\\n  ".join(command_lines)
+
+
+def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
+    # runpy uses sys.argv, rebuild it with the merged vLLM args.
+    vllm_argv = [sys.argv[0]]
+    remaining_default_vllm_args = dict(default_vllm_args)
+    default_arg_name_by_normalized_name = {
+        _normalize_vllm_arg_name(arg_name): arg_name
+        for arg_name in remaining_default_vllm_args
+    }
+    input_vllm_argv = list(remaining_sys_argv)
+    if args.service_port is not None:
+        already_set_port = _extract_cli_arg_value(input_vllm_argv, "--port")
+        if already_set_port is not None:
+            logger.warning(
+                f"vLLM server --port={already_set_port} already set direcly, ignoring --service-port={args.service_port}"
+            )
+        else:
+            # Remap wrapper --service-port to vLLM's --port.
+            input_vllm_argv.extend(["--port", str(args.service_port)])
+
+    index = 0
+    while index < len(input_vllm_argv):
+        token = input_vllm_argv[index]
+        if not token.startswith("--"):
+            vllm_argv.append(token)
+            index += 1
+            continue
+
+        cli_arg_name, separator, inline_value = token.partition("=")
+        overridden_default_arg_name = default_arg_name_by_normalized_name.pop(
+            _normalize_vllm_arg_name(cli_arg_name), None
+        )
+        if overridden_default_arg_name is not None:
+            remaining_default_vllm_args.pop(overridden_default_arg_name, None)
+
+        if separator:
+            vllm_argv.append(f"{cli_arg_name}={inline_value}")
+            index += 1
+            continue
+
+        vllm_argv.append(cli_arg_name)
+        next_token_is_value = index + 1 < len(input_vllm_argv) and not input_vllm_argv[
+            index + 1
+        ].startswith("--")
+        if next_token_is_value:
+            value = input_vllm_argv[index + 1]
+            vllm_argv.append(value)
+            index += 2
+            continue
+
+        index += 1
+
+    for key, value in remaining_default_vllm_args.items():
+        cli_arg_name = f"--{key}"
+        _append_vllm_arg(vllm_argv, cli_arg_name, value)
+
+    # finally set sys.argv to the vllm server args
+    sys.argv = vllm_argv
+    logger.info(f"vLLM command:\n{format_vllm_serve_command(sys.argv)}")
+
+
 def main():
     # Step 1: Parse --model argument (if provided)
-    args = parse_args()
+    args, remaining_sys_argv = parse_args()
     args.device = args.tt_device or args.device
     args.engine = normalize_engine_type(args.engine)
 
@@ -643,28 +752,19 @@ def main():
     impl_id = model_spec.get("impl", {}).get("impl_id")
     register_tt_models(impl_id)
 
-    # Step 4: Set runtime environment variables and run setup
+    # Step 4: Set runtime environment variables and vLLM server args
     set_metal_timeout_env_vars()
     set_runtime_env_vars(model_spec)
     runtime_settings(model_spec, no_auth=args.no_auth)
+    default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
+    set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
+
+    # Step 5: Start trace capture if needed
     start_trace_capture(
         model_spec,
+        service_port=resolve_service_port(),
         disable_trace_capture=args.disable_trace_capture,
-        service_port=args.service_port,
     )
-
-    # Step 5: Add vLLM CLI arguments
-    logger.info(
-        f"vllm_args: {json.dumps(model_spec['device_model_spec']['vllm_args'], indent=4)}"
-    )
-    for key, value in model_spec["device_model_spec"]["vllm_args"].items():
-        if value is not None:
-            # Handle boolean flags
-            if isinstance(value, bool):
-                if value:  # Only add the flag if True
-                    sys.argv.append("--" + key)
-            else:
-                sys.argv.extend(["--" + key, str(value)])
 
     # Step 6: Launch vLLM server
     # runpy uses the same process and environment so the registered models are available

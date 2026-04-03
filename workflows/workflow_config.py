@@ -78,12 +78,12 @@ WORKFLOW_STRESS_TESTS_CONFIG = WorkflowConfig(
 )
 WORKFLOW_TESTS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.TESTS,
-    run_script_path=get_repo_root_path() / "tests" / "run_tests.py",
+    run_script_path=get_repo_root_path() / "server_tests" / "run_tests.py",
     workflow_run_script_venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
 )
 WORKFLOW_SPEC_TESTS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.SPEC_TESTS,
-    run_script_path=get_repo_root_path() / "tests" / "server_tests" / "run.py",
+    run_script_path=get_repo_root_path() / "server_tests" / "run_spec_tests.py",
     workflow_run_script_venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
 )
 WORKFLOW_SERVER_CONFIG = WorkflowConfig(

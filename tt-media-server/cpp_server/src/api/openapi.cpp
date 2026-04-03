@@ -94,8 +94,8 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     info["description"] =
         "High-performance C++ implementation of the TT Media Server using "
         "Drogon framework. "
-        "Provides OpenAI-compatible completions API for benchmarking server "
-        "overhead.";
+        "Provides OpenAI-compatible chat completions API for benchmarking "
+        "server overhead.";
     info["version"] = "1.0.0";
     info["contact"]["name"] = "Tenstorrent";
     info["contact"]["url"] = "https://tenstorrent.com";
@@ -116,28 +116,45 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     Json::Value completionsTag;
     completionsTag["name"] = "Completions";
     completionsTag["description"] =
-        "OpenAI-compatible text completion endpoints";
+        "OpenAI-compatible chat completion endpoints";
     tags.append(completionsTag);
+    Json::Value sessionsTag;
+    sessionsTag["name"] = "Sessions";
+    sessionsTag["description"] = "Session management for slot assignments";
+    tags.append(sessionsTag);
     Json::Value healthTag;
     healthTag["name"] = "Health";
     healthTag["description"] = "Server health and liveness endpoints";
     tags.append(healthTag);
+    Json::Value monitoringTag;
+    monitoringTag["name"] = "Monitoring";
+    monitoringTag["description"] = "Prometheus metrics scrape endpoint";
+    tags.append(monitoringTag);
     spec["tags"] = tags;
 
     // Paths
     Json::Value paths;
 
-    // POST /v1/completions
-    paths["/v1/completions"]["post"] = buildCompletionsEndpoint();
-
     // POST /v1/chat/completions
     paths["/v1/chat/completions"]["post"] = buildChatCompletionsEndpoint();
+
+    // POST /v1/sessions
+    paths["/v1/sessions"]["post"] = buildCreateSessionEndpoint();
+
+    // DELETE /v1/sessions/{session_id}
+    paths["/v1/sessions/{session_id}"]["delete"] = buildCloseSessionEndpoint();
+
+    // GET /v1/sessions/{session_id}/slot
+    paths["/v1/sessions/{session_id}/slot"]["get"] = buildGetSlotIdEndpoint();
 
     // GET /health
     paths["/health"]["get"] = buildHealthEndpoint();
 
     // GET /tt-liveness
     paths["/tt-liveness"]["get"] = buildLivenessEndpoint();
+
+    // GET /metrics
+    paths["/metrics"]["get"] = buildMetricsEndpoint();
 
     spec["paths"] = paths;
 
@@ -151,80 +168,9 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     return spec;
   }
 
-  Json::Value buildCompletionsEndpoint() {
-    Json::Value endpoint;
-    endpoint["tags"].append("Completions");
-    endpoint["summary"] = "Create completion";
-    endpoint["description"] =
-        "Creates a completion for the provided prompt and parameters. "
-        "OpenAI-compatible endpoint for text completions.\n\n"
-        "**Note:** This C++ implementation uses a test runner generating "
-        "~120,000 tokens/second "
-        "for benchmarking purposes.";
-    endpoint["operationId"] = "createCompletion";
-
-    // Security requirement - Bearer token
-    Json::Value security(Json::arrayValue);
-    Json::Value bearerAuth;
-    bearerAuth["BearerAuth"] = Json::Value(Json::arrayValue);
-    security.append(bearerAuth);
-    endpoint["security"] = security;
-
-    // Request body
-    Json::Value requestBody;
-    requestBody["required"] = true;
-    requestBody["content"]["application/json"]["schema"]["$ref"] =
-        "#/components/schemas/CompletionRequest";
-    endpoint["requestBody"] = requestBody;
-
-    // Responses
-    Json::Value responses;
-
-    // 200 OK (non-streaming)
-    Json::Value resp200;
-    resp200["description"] = "Successful completion response";
-    resp200["content"]["application/json"]["schema"]["$ref"] =
-        "#/components/schemas/CompletionResponse";
-    responses["200"] = resp200;
-
-    // 200 OK (streaming)
-    Json::Value resp200Stream;
-    resp200Stream["description"] = "Streaming completion response (SSE)";
-    resp200Stream["content"]["text/event-stream"]["schema"]["type"] = "string";
-    resp200Stream["content"]["text/event-stream"]["schema"]["description"] =
-        "Server-Sent Events stream. Each event is prefixed with 'data: ' "
-        "followed by JSON, "
-        "ending with 'data: [DONE]'";
-
-    // 400 Bad Request
-    Json::Value resp400;
-    resp400["description"] = "Invalid request";
-    resp400["content"]["application/json"]["schema"]["$ref"] =
-        "#/components/schemas/Error";
-    responses["400"] = resp400;
-
-    // 401 Unauthorized
-    Json::Value resp401;
-    resp401["description"] = "Missing or invalid authentication token";
-    resp401["content"]["application/json"]["schema"]["$ref"] =
-        "#/components/schemas/Error";
-    responses["401"] = resp401;
-
-    // 503 Service Unavailable
-    Json::Value resp503;
-    resp503["description"] = "Model not ready";
-    resp503["content"]["application/json"]["schema"]["$ref"] =
-        "#/components/schemas/Error";
-    responses["503"] = resp503;
-
-    endpoint["responses"] = responses;
-
-    return endpoint;
-  }
-
   Json::Value buildChatCompletionsEndpoint() {
     Json::Value endpoint;
-    endpoint["tags"].append("Completions");
+    endpoint["tags"].append("Chat Completions");
     endpoint["summary"] = "Create chat completion";
     endpoint["description"] =
         "Creates a chat completion for the provided messages. "
@@ -253,7 +199,7 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     resp200["description"] =
         "Successful chat completion (JSON) or streaming (text/event-stream)";
     resp200["content"]["application/json"]["schema"]["$ref"] =
-        "#/components/schemas/CompletionResponse";
+        "#/components/schemas/ChatCompletionResponse";
     resp200["content"]["text/event-stream"]["schema"]["type"] = "string";
     resp200["content"]["text/event-stream"]["schema"]["description"] =
         "SSE stream; object \"chat.completion.chunk\", choices[].delta";
@@ -334,24 +280,189 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     return endpoint;
   }
 
+  Json::Value buildCreateSessionEndpoint() {
+    Json::Value endpoint;
+    endpoint["tags"].append("Sessions");
+    endpoint["summary"] = "Create a new session";
+    endpoint["description"] =
+        "Create a new session with optional slot assignment";
+    endpoint["operationId"] = "createSession";
+
+    // Security requirement - Bearer token
+    Json::Value security(Json::arrayValue);
+    Json::Value bearerAuth;
+    bearerAuth["BearerAuth"] = Json::Value(Json::arrayValue);
+    security.append(bearerAuth);
+    endpoint["security"] = security;
+
+    // Request body
+    Json::Value requestBody;
+    requestBody["description"] = "Optional slot ID to assign";
+    Json::Value schema;
+    schema["type"] = "object";
+    schema["properties"]["slot_id"]["type"] = "integer";
+    schema["properties"]["slot_id"]["description"] =
+        "Slot ID to assign (-1 means unassigned)";
+    requestBody["content"]["application/json"]["schema"] = schema;
+    endpoint["requestBody"] = requestBody;
+
+    // Responses
+    Json::Value responses;
+    Json::Value resp201;
+    resp201["description"] = "Session created successfully";
+    Json::Value respSchema;
+    respSchema["type"] = "object";
+    respSchema["properties"]["session_id"]["type"] = "string";
+    respSchema["properties"]["session_id"]["format"] = "uuid";
+    respSchema["properties"]["slot_id"]["type"] = "integer";
+    resp201["content"]["application/json"]["schema"] = respSchema;
+    responses["201"] = resp201;
+
+    Json::Value resp500;
+    resp500["description"] = "Internal server error";
+    resp500["content"]["application/json"]["schema"]["$ref"] =
+        "#/components/schemas/Error";
+    responses["500"] = resp500;
+
+    endpoint["responses"] = responses;
+    return endpoint;
+  }
+
+  Json::Value buildCloseSessionEndpoint() {
+    Json::Value endpoint;
+    endpoint["tags"].append("Sessions");
+    endpoint["summary"] = "Close a session";
+    endpoint["description"] = "Close an existing session by ID";
+    endpoint["operationId"] = "closeSession";
+
+    // Security requirement - Bearer token
+    Json::Value security(Json::arrayValue);
+    Json::Value bearerAuth;
+    bearerAuth["BearerAuth"] = Json::Value(Json::arrayValue);
+    security.append(bearerAuth);
+    endpoint["security"] = security;
+
+    // Path parameters
+    Json::Value parameters(Json::arrayValue);
+    Json::Value param;
+    param["name"] = "session_id";
+    param["in"] = "path";
+    param["required"] = true;
+    param["description"] = "The session ID to close";
+    param["schema"]["type"] = "string";
+    param["schema"]["format"] = "uuid";
+    parameters.append(param);
+    endpoint["parameters"] = parameters;
+
+    // Responses
+    Json::Value responses;
+    Json::Value resp200;
+    resp200["description"] = "Session closed successfully";
+    Json::Value respSchema;
+    respSchema["type"] = "object";
+    respSchema["properties"]["success"]["type"] = "boolean";
+    respSchema["properties"]["message"]["type"] = "string";
+    resp200["content"]["application/json"]["schema"] = respSchema;
+    responses["200"] = resp200;
+
+    Json::Value resp404;
+    resp404["description"] = "Session not found";
+    resp404["content"]["application/json"]["schema"]["$ref"] =
+        "#/components/schemas/Error";
+    responses["404"] = resp404;
+
+    endpoint["responses"] = responses;
+    return endpoint;
+  }
+
+  Json::Value buildGetSlotIdEndpoint() {
+    Json::Value endpoint;
+    endpoint["tags"].append("Sessions");
+    endpoint["summary"] = "Get slot ID for a session";
+    endpoint["description"] =
+        "Retrieve the slot ID assigned to a session (-1 if unassigned)";
+    endpoint["operationId"] = "getSlotId";
+
+    // Security requirement - Bearer token
+    Json::Value security(Json::arrayValue);
+    Json::Value bearerAuth;
+    bearerAuth["BearerAuth"] = Json::Value(Json::arrayValue);
+    security.append(bearerAuth);
+    endpoint["security"] = security;
+
+    // Path parameters
+    Json::Value parameters(Json::arrayValue);
+    Json::Value param;
+    param["name"] = "session_id";
+    param["in"] = "path";
+    param["required"] = true;
+    param["description"] = "The session ID";
+    param["schema"]["type"] = "string";
+    param["schema"]["format"] = "uuid";
+    parameters.append(param);
+    endpoint["parameters"] = parameters;
+
+    // Responses
+    Json::Value responses;
+    Json::Value resp200;
+    resp200["description"] = "Slot ID retrieved successfully";
+    Json::Value respSchema;
+    respSchema["type"] = "object";
+    respSchema["properties"]["session_id"]["type"] = "string";
+    respSchema["properties"]["session_id"]["format"] = "uuid";
+    respSchema["properties"]["slot_id"]["type"] = "integer";
+    respSchema["properties"]["slot_id"]["description"] =
+        "Slot ID (-1 if unassigned)";
+    resp200["content"]["application/json"]["schema"] = respSchema;
+    responses["200"] = resp200;
+
+    Json::Value resp404;
+    resp404["description"] = "Session not found";
+    resp404["content"]["application/json"]["schema"]["$ref"] =
+        "#/components/schemas/Error";
+    responses["404"] = resp404;
+
+    endpoint["responses"] = responses;
+    return endpoint;
+  }
+
+  Json::Value buildMetricsEndpoint() {
+    Json::Value endpoint;
+    endpoint["tags"].append("Monitoring");
+    endpoint["summary"] = "Prometheus metrics";
+    endpoint["description"] =
+        "Exposes all server metrics in Prometheus text exposition format "
+        "(version 0.0.4). No authentication required. Intended to be scraped "
+        "by a Prometheus server every few seconds.";
+    endpoint["operationId"] = "getMetrics";
+
+    Json::Value responses;
+    Json::Value resp200;
+    resp200["description"] = "Prometheus text format metrics";
+    resp200["content"]["text/plain; version=0.0.4"]["schema"]["type"] =
+        "string";
+    resp200["content"]["text/plain; version=0.0.4"]["schema"]["example"] =
+        "# HELP tt_generation_tokens_total Total number of generation tokens "
+        "produced\n# TYPE tt_generation_tokens_total counter\n"
+        "tt_generation_tokens_total{model_name=\"llm\"} 42\n";
+    responses["200"] = resp200;
+    endpoint["responses"] = responses;
+
+    return endpoint;
+  }
+
   Json::Value buildComponents() {
     Json::Value components;
     Json::Value schemas;
 
-    // CompletionRequest schema
-    schemas["CompletionRequest"] = buildCompletionRequestSchema();
-
     // ChatCompletionRequest schema
     schemas["ChatCompletionRequest"] = buildChatCompletionRequestSchema();
 
-    // CompletionResponse schema
-    schemas["CompletionResponse"] = buildCompletionResponseSchema();
+    // ChatCompletionResponse schema
+    schemas["ChatCompletionResponse"] = buildChatCompletionResponseSchema();
 
     // StreamOptions schema
     schemas["StreamOptions"] = buildStreamOptionsSchema();
-
-    // CompletionChoice schema
-    schemas["CompletionChoice"] = buildCompletionChoiceSchema();
 
     // CompletionUsage schema
     schemas["CompletionUsage"] = buildCompletionUsageSchema();
@@ -384,80 +495,6 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     components["securitySchemes"] = securitySchemes;
 
     return components;
-  }
-
-  Json::Value buildCompletionRequestSchema() {
-    Json::Value schema;
-    schema["type"] = "object";
-    schema["required"].append("prompt");
-
-    Json::Value props;
-
-    props["model"]["type"] = "string";
-    props["model"]["description"] = "Model identifier";
-    props["model"]["example"] = "test-model";
-
-    props["prompt"]["oneOf"][0]["type"] = "string";
-    props["prompt"]["oneOf"][1]["type"] = "array";
-    props["prompt"]["oneOf"][1]["items"]["type"] = "integer";
-    props["prompt"]["description"] =
-        "The prompt(s) to generate completions for. Can be a string or array "
-        "of token IDs.";
-    props["prompt"]["example"] = "Hello, world!";
-
-    props["max_tokens"]["type"] = "integer";
-    props["max_tokens"]["default"] = 16;
-    props["max_tokens"]["minimum"] = 1;
-    props["max_tokens"]["description"] = "Maximum number of tokens to generate";
-
-    props["stream"]["type"] = "boolean";
-    props["stream"]["default"] = false;
-    props["stream"]["description"] =
-        "Whether to stream back partial progress as SSE";
-
-    props["stream_options"]["$ref"] = "#/components/schemas/StreamOptions";
-
-    props["temperature"]["type"] = "number";
-    props["temperature"]["minimum"] = 0;
-    props["temperature"]["maximum"] = 2;
-    props["temperature"]["description"] = "Sampling temperature";
-
-    props["top_p"]["type"] = "number";
-    props["top_p"]["minimum"] = 0;
-    props["top_p"]["maximum"] = 1;
-    props["top_p"]["description"] = "Nucleus sampling probability";
-
-    props["n"]["type"] = "integer";
-    props["n"]["default"] = 1;
-    props["n"]["minimum"] = 1;
-    props["n"]["description"] = "Number of completions to generate";
-
-    props["stop"]["oneOf"][0]["type"] = "string";
-    props["stop"]["oneOf"][1]["type"] = "array";
-    props["stop"]["oneOf"][1]["items"]["type"] = "string";
-    props["stop"]["description"] = "Stop sequence(s)";
-
-    props["presence_penalty"]["type"] = "number";
-    props["presence_penalty"]["default"] = 0;
-    props["presence_penalty"]["description"] = "Presence penalty";
-
-    props["frequency_penalty"]["type"] = "number";
-    props["frequency_penalty"]["default"] = 0;
-    props["frequency_penalty"]["description"] = "Frequency penalty";
-
-    props["echo"]["type"] = "boolean";
-    props["echo"]["default"] = false;
-    props["echo"]["description"] =
-        "Echo back the prompt in addition to the completion";
-
-    props["seed"]["type"] = "integer";
-    props["seed"]["description"] = "Random seed for reproducibility";
-
-    props["user"]["type"] = "string";
-    props["user"]["description"] = "User identifier for monitoring";
-
-    schema["properties"] = props;
-    return schema;
   }
 
   Json::Value buildChatCompletionRequestSchema() {
@@ -522,17 +559,17 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     return schema;
   }
 
-  Json::Value buildCompletionResponseSchema() {
+  Json::Value buildChatCompletionResponseSchema() {
     Json::Value schema;
     schema["type"] = "object";
 
     Json::Value props;
     props["id"]["type"] = "string";
-    props["id"]["description"] = "Unique completion identifier";
-    props["id"]["example"] = "cmpl-abc123def456";
+    props["id"]["description"] = "Unique chat completion identifier";
+    props["id"]["example"] = "chatcmpl-abc123def456";
 
     props["object"]["type"] = "string";
-    props["object"]["enum"].append("text_completion");
+    props["object"]["enum"].append("chat.completion");
     props["object"]["description"] = "Object type";
 
     props["created"]["type"] = "integer";
@@ -541,8 +578,18 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     props["model"]["type"] = "string";
     props["model"]["description"] = "Model used for completion";
 
+    Json::Value choiceSchema;
+    choiceSchema["type"] = "object";
+    choiceSchema["properties"]["index"]["type"] = "integer";
+    choiceSchema["properties"]["message"]["type"] = "object";
+    choiceSchema["properties"]["message"]["properties"]["role"]["type"] =
+        "string";
+    choiceSchema["properties"]["message"]["properties"]["content"]["type"] =
+        "string";
+    choiceSchema["properties"]["finish_reason"]["type"] = "string";
+
     props["choices"]["type"] = "array";
-    props["choices"]["items"]["$ref"] = "#/components/schemas/CompletionChoice";
+    props["choices"]["items"] = choiceSchema;
 
     props["usage"]["$ref"] = "#/components/schemas/CompletionUsage";
 
@@ -568,31 +615,6 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     props["continuous_usage_stats"]["default"] = false;
     props["continuous_usage_stats"]["description"] =
         "Include usage stats in each streamed chunk";
-
-    schema["properties"] = props;
-    return schema;
-  }
-
-  Json::Value buildCompletionChoiceSchema() {
-    Json::Value schema;
-    schema["type"] = "object";
-
-    Json::Value props;
-    props["text"]["type"] = "string";
-    props["text"]["description"] = "Generated text";
-
-    props["index"]["type"] = "integer";
-    props["index"]["description"] = "Choice index";
-
-    props["logprobs"]["type"] = "object";
-    props["logprobs"]["nullable"] = true;
-    props["logprobs"]["description"] = "Log probabilities (if requested)";
-
-    props["finish_reason"]["type"] = "string";
-    props["finish_reason"]["enum"].append("stop");
-    props["finish_reason"]["enum"].append("length");
-    props["finish_reason"]["nullable"] = true;
-    props["finish_reason"]["description"] = "Reason for completion termination";
 
     schema["properties"] = props;
     return schema;

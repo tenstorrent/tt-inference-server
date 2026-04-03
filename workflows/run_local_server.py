@@ -173,7 +173,6 @@ def build_local_server_env(
     env["TT_CACHE_PATH"] = str(tt_cache_path)
     env["TT_METAL_LOGS_PATH"] = str(logs_path)
     env["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(Path(json_fpath).resolve())
-    env["SERVICE_PORT"] = str(runtime_config.service_port)
 
     if setup_config.host_weights_dir:
         env["MODEL_WEIGHTS_DIR"] = str(

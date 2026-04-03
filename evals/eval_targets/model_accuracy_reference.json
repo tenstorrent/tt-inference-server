@@ -23,6 +23,20 @@
             }
         }
     },
+    "stable-diffusion-xl-base-1.0-512x512": {
+        "accuracy": {
+            "100": {
+                "fid_valid_range": [
+                    150.0,
+                    250.0
+                ],
+                "clip_valid_range": [
+                    28.0,
+                    34.0
+                ]
+            }
+        }
+    },
     "stable-diffusion-3.5-large": {
         "accuracy": {
             "5000": {

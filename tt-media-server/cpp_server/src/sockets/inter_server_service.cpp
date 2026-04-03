@@ -5,6 +5,7 @@
 
 #include <string>
 
+#include "config/settings.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::sockets {
@@ -74,8 +75,9 @@ void InterServerService::stop() {
 bool InterServerService::isEnabled() const { return enabled_; }
 
 bool InterServerService::sendPrefillRequest(
-    const tt::domain::TaskID& taskId, const std::string& prompt,
-    const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens) {
+    uint32_t taskId, const std::string& prompt,
+    const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
+    std::optional<uint32_t> slotId) {
   if (!enabled_) {
     return false;
   }
@@ -84,6 +86,7 @@ bool InterServerService::sendPrefillRequest(
   message.prompt = prompt;
   message.token_ids = tokenIds;
   message.max_tokens = maxTokens;
+  message.slot_id = slotId;
 
   return socket_manager_.sendObject("prefill_request", message);
 }
@@ -147,7 +150,7 @@ void InterServerService::setupMessageHandlers() {
       "prefill_request", [this](const PrefillRequestMessage& message) {
         TT_LOG_INFO(
             "[InterServerService] Received prefill request: {} (tokens: {})",
-            message.task_id.id, message.token_ids.size());
+            message.task_id, message.token_ids.size());
         if (prefill_requested_callback_) {
           prefill_requested_callback_(message);
         }
@@ -159,7 +162,7 @@ void InterServerService::setupMessageHandlers() {
         TT_LOG_INFO(
             "[InterServerService] Received prefill result: {} - text: '{}', "
             "remaining: {}, token_ids: {}",
-            message.task_id.id, message.generated_text.substr(0, 50),
+            message.task_id, message.generated_text.substr(0, 50),
             message.remaining_tokens.has_value()
                 ? std::to_string(message.remaining_tokens.value())
                 : "none",

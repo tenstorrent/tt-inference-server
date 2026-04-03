@@ -10,8 +10,8 @@
 #include <thread>
 #include <vector>
 
+#include "ipc/slot_ring_buffer.hpp"
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
-#include "runners/sp_pipeline_runner/shared_memory.hpp"
 
 namespace sp_pipeline {
 
@@ -25,7 +25,7 @@ class SpPipelineModelRunner : public ISpPipelineModelRunner {
   SpPipelineModelRunner(const SpPipelineModelRunner&) = delete;
   SpPipelineModelRunner& operator=(const SpPipelineModelRunner&) = delete;
 
-  void write(const std::string& taskId, const std::vector<int64_t>& tokenIds,
+  void write(uint32_t taskId, const std::vector<int64_t>& tokenIds,
              uint32_t maxTokens, RequestPhase phase) override;
   void exit() override;
 
@@ -47,8 +47,8 @@ class SpPipelineModelRunner : public ISpPipelineModelRunner {
 
   DecodeCallback decodeCallback;
   ShmNames shmNames;
-  PrefillSharedMemory deviceInput;
-  DecodeSharedMemory deviceOutput;
+  tt::ipc::PrefillSlotBuffer deviceInput;
+  tt::ipc::DecodeSlotBuffer deviceOutput;
   std::atomic<bool> stop{false};
   std::thread readerThread;
 };

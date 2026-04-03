@@ -120,6 +120,20 @@ if(ENABLE_TRACY)
     )
 endif()
 
+# Prometheus metrics (core only — no embedded HTTP server, no push gateway)
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(ENABLE_PUSH OFF CACHE BOOL "" FORCE)
+set(ENABLE_PULL OFF CACHE BOOL "" FORCE)
+set(ENABLE_COMPRESSION OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    prometheus-cpp
+    GIT_REPOSITORY https://github.com/jupp0r/prometheus-cpp.git
+    GIT_TAG        v1.2.4
+    GIT_SHALLOW    ON
+    GIT_SUBMODULES ""
+)
+FetchContent_MakeAvailable(prometheus-cpp)
+
 # Tokenizer (mlc-ai/tokenizers-cpp). Requires Rust.
 set(MLC_ENABLE_SENTENCEPIECE_TOKENIZER ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
@@ -134,7 +148,7 @@ FetchContent_MakeAvailable(tokenizers_cpp)
 if(CLANG_TIDY)
   find_program(CLANG_TIDY_EXE NAMES clang-tidy-20 clang-tidy-19 clang-tidy)
   if(CLANG_TIDY_EXE)
-    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};--warnings-as-errors=*" CACHE STRING "clang-tidy command" FORCE)
+    set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE};--warnings-as-errors=*")
   else()
     message(FATAL_ERROR "CLANG_TIDY=ON but no clang-tidy found. Install clang-tidy-20 or run install_dependencies.sh")
   endif()
@@ -190,7 +204,6 @@ endif()
 # LLM engine (include/runners/llm_runner/, src/runners/llm_runner/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/block_manager.cpp
-    src/ipc/boost_ipc_task_queue.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
@@ -209,6 +222,12 @@ set(LLM_ENGINE_SOURCES
     src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
     src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
     src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
+    src/runners/sp_prefill_runner/sp_prefill_runner.cpp
+    src/runners/sp_prefill_runner/i_sp_prefill_model_runner.cpp
+    src/runners/sp_prefill_runner/sp_prefill_model_runner.cpp
+    src/services/memory_manager.cpp
+    src/services/paged_memory_manager.cpp
+    src/services/contiguous_memory_manager.cpp
 )
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
@@ -316,12 +335,28 @@ target_include_directories(test_tokenizer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(cancel_queue_test tests/cancel_queue_test.cpp)
+target_link_libraries(cancel_queue_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(cancel_queue_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(cancellation_test tests/cancellation_test.cpp)
+target_link_libraries(cancellation_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(cancellation_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
+gtest_discover_tests(cancel_queue_test)
+gtest_discover_tests(cancellation_test)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -331,6 +366,13 @@ target_include_directories(ipc_scheduler_smoke_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
+
+# Cancellation E2E test (starts mock server, runs Python tests, stops server)
+add_test(NAME CancellationE2E
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_e2e_with_server.sh
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 60)
 
 # Tokenizer benchmark
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/deepseek_tokenizer.cpp src/utils/llama_tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp src/utils/logger.cpp)
@@ -348,14 +390,17 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
-    src/api/socket_controller.cpp
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
-    src/ipc/boost_ipc_warmup_signal_queue.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
+    src/services/memory_manager.cpp
+    src/services/paged_memory_manager.cpp
+    src/services/contiguous_memory_manager.cpp
     src/services/reasoning_parser.cpp
+    src/services/session_manager.cpp
+    src/domain/session.cpp
     src/utils/tokenizer.cpp
     src/utils/logger.cpp
     src/utils/deepseek_tokenizer.cpp
@@ -363,14 +408,18 @@ set(SOURCES
     src/worker/single_process_worker.cpp
     src/worker/worker_manager.cpp
     src/utils/service_factory.cpp
+    src/utils/service_container.cpp
     src/utils/runner_factory.cpp
     src/utils/tokenizer_config_loader.cpp
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
     src/runners/embedding_runner.cpp
     src/services/embedding_service.cpp
+    src/services/disaggregation_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/inter_server_service.cpp
+    src/metrics/metrics.cpp
+    src/api/metrics_controller.cpp
 )
 
 # Create executable
@@ -382,16 +431,17 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${rapidjson_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
+    ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
 # Compile definitions for performance optimization
 target_compile_definitions(${PROJECT_NAME} PRIVATE)
 
-# Link Drogon and llm_engine (used by LLMService)
+# Link Drogon, llm_engine, and prometheus-cpp core
 if(USE_EXTERNAL_FMT)
-    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog fmt::fmt)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog fmt::fmt prometheus-cpp::core)
 else()
-    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog prometheus-cpp::core)
 endif()
 if(ENABLE_TRACY)
     target_sources(${PROJECT_NAME} PRIVATE src/profiling/tracy_alloc.cpp)
@@ -429,4 +479,8 @@ if(SANITIZE_ADDRESS)
     target_link_options(ipc_scheduler_smoke_test PRIVATE -fsanitize=address)
     target_compile_options(lockfree_queue_test PRIVATE ${ASAN_FLAGS})
     target_link_options(lockfree_queue_test PRIVATE -fsanitize=address)
+    target_compile_options(cancel_queue_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(cancel_queue_test PRIVATE -fsanitize=address)
+    target_compile_options(cancellation_test PRIVATE ${ASAN_FLAGS})
+    target_link_options(cancellation_test PRIVATE -fsanitize=address)
 endif()

@@ -14,23 +14,12 @@ _FLUX_MIN_INFERENCE_STEPS = 4
 _DEFAULT_MIN_INFERENCE_STEPS = 12
 
 
-class ImageGenerateRequest(BaseRequest):
+class BaseImageRequest(BaseRequest):
     prompt: str
     negative_prompt: Optional[str] = None
     num_inference_steps: Optional[int] = Field(default=20, ge=4, le=50)
     seed: Optional[int] = None
-    guidance_scale: float = Field(..., ge=1.0, le=20.0)
     number_of_images: Optional[int] = Field(default=1, ge=1, le=4)
-    prompt_2: Optional[str] = None
-    negative_prompt_2: Optional[str] = None
-    crop_coords_top_left: Optional[Tuple[int, float]] = Field(default=(0, 0))
-    guidance_rescale: Optional[float] = Field(default=0.0, ge=0.0, le=1.0)
-    timesteps: Optional[List[Union[int, float]]] = None
-    sigmas: Optional[List[Union[int, float]]] = None
-
-    # LoRA adapter settings
-    lora_path: Optional[str] = Field(default=None)
-    lora_scale: Optional[float] = Field(default=0.5, ge=0.0, le=2.0)
 
     # Image output settings
     image_return_format: Optional[str] = Field(default="JPEG")
@@ -67,3 +56,17 @@ class ImageGenerateRequest(BaseRequest):
         for key, value in kwargs.items():
             if hasattr(self, key):
                 setattr(self, key, value)
+
+
+class ImageGenerateRequest(BaseImageRequest):
+    guidance_scale: float = Field(default=5.0, ge=1.0, le=20.0)
+    prompt_2: Optional[str] = None
+    negative_prompt_2: Optional[str] = None
+    crop_coords_top_left: Optional[Tuple[int, float]] = Field(default=(0, 0))
+    guidance_rescale: Optional[float] = Field(default=0.0, ge=0.0, le=1.0)
+    timesteps: Optional[List[Union[int, float]]] = None
+    sigmas: Optional[List[Union[int, float]]] = None
+
+    # LoRA adapter settings
+    lora_path: Optional[str] = Field(default=None)
+    lora_scale: Optional[float] = Field(default=0.5, ge=0.0, le=2.0)

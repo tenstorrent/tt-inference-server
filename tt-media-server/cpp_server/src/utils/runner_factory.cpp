@@ -6,14 +6,15 @@
 #include "runners/embedding_runner.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
+#include "runners/sp_prefill_runner/sp_prefill_runner.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::utils::runner_factory {
 
 std::unique_ptr<runners::IRunner> createRunner(
     config::ModelService service, const config::RunnerConfig& config,
-    ipc::TokenRingBuffer<65536>* resultQueue,
-    llm_engine::ITaskQueue* taskQueue) {
+    ipc::TokenRingBuffer<65536>* resultQueue, llm_engine::ITaskQueue* taskQueue,
+    ipc::ICancelQueue* cancelQueue) {
   switch (service) {
     case config::ModelService::EMBEDDING: {
       TT_LOG_INFO("[RunnerFactory] Creating Embedding runner");
@@ -30,9 +31,15 @@ std::unique_ptr<runners::IRunner> createRunner(
                                                            taskQueue);
       }
 
+      if (cfg.runner_type == config::ModelRunnerType::PREFILL) {
+        TT_LOG_INFO("[RunnerFactory] Creating SP Prefill runner");
+        return std::make_unique<runners::SpPrefillRunner>(cfg, resultQueue,
+                                                          taskQueue);
+      }
+
       TT_LOG_INFO("[RunnerFactory] Creating LLM runner (mock)");
       return std::make_unique<tt::runners::LLMRunner>(cfg, resultQueue,
-                                                      taskQueue);
+                                                      taskQueue, cancelQueue);
     }
   }
 }

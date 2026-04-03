@@ -6,22 +6,17 @@
 #include <atomic>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_set>
 #include <vector>
 
-#include "config/types.hpp"
-#include "domain/completion_request.hpp"
-#include "domain/completion_response.hpp"
-#include "domain/prefill_request.hpp"
+#include "domain/llm_request.hpp"
+#include "domain/llm_response.hpp"
 #include "ipc/queue_manager.hpp"
-#include "ipc/shared_memory.hpp"
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/streamable.hpp"
-#include "sockets/inter_server_service.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/tokenizer.hpp"
 #include "worker/worker_manager.hpp"
@@ -29,12 +24,11 @@
 namespace tt::services {
 
 class LLMService
-    : public BaseService<domain::CompletionRequest, domain::CompletionResponse>,
-      public Streamable<domain::CompletionRequest,
-                        domain::StreamingChunkResponse> {
+    : public BaseService<domain::LLMRequest, domain::LLMResponse>,
+      public Streamable<domain::LLMRequest, domain::LLMStreamChunk> {
  public:
-  using PrefillRequestCallback =
-      std::function<bool(const domain::PrefillRequest&)>;
+  using StreamCallback =
+      std::function<void(const domain::LLMStreamChunk&, bool)>;
 
   LLMService();
   ~LLMService() override;
@@ -47,54 +41,41 @@ class LLMService
 
   bool isModelReady() const override;
 
-  using StreamCallback =
-      std::function<void(domain::StreamingChunkResponse&, bool)>;
-  using TokenHandler =
-      std::function<void(const ipc::SharedToken&, bool)>;
+  void preProcess(domain::LLMRequest& request) const override;
 
-  struct TaskCallbackEntry {
-    StreamCallback stream_callback;
-    TokenHandler token_handler;
-  };
-
-  std::optional<StreamCallback> detachStreamCallback(const std::string& taskId);
-  void submitDecodeContinuation(domain::CompletionRequest request,
-                                StreamCallback callback);
-
-  void handleConnectionLost();
-
-  void setPrefillRequestCallback(PrefillRequestCallback callback);
-
-  std::shared_ptr<tt::sockets::InterServerService> getSocketService() const;
+  /**
+   * Abort an in-flight request. Removes the streaming callback, decrements
+   * pending_tasks_, invokes the callback with finish_reason="abort" to unblock
+   * synchronous waiters, and broadcasts cancel to all worker queues.
+   * Idempotent and thread-safe.
+   */
+  void abortRequest(uint32_t taskId);
 
  protected:
-  void preProcess(domain::CompletionRequest& request) const override;
-  void postProcess(domain::CompletionResponse&) const override {}
+  void postProcess(domain::LLMResponse& response) const override;
   size_t currentQueueSize() const override;
-  domain::CompletionResponse processRequest(
-      domain::CompletionRequest request) override;
+  domain::LLMResponse processRequest(domain::LLMRequest request) override;
 
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
-  void streamingPostProcess(domain::StreamingChunkResponse&) const override {}
+  void streamingPostProcess(domain::LLMStreamChunk&) const override {}
   void processStreamingRequest(
-      domain::CompletionRequest request,
-      std::function<void(domain::StreamingChunkResponse&, bool isFinal)>
-          callback) override;
+      domain::LLMRequest request,
+      std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback)
+      override;
 
  private:
+  struct StreamCallbackEntry {
+    std::function<void(domain::LLMStreamChunk&, bool)> callback;
+    bool skip_special_tokens = true;
+  };
+
   void startConsumers();
   void consumerLoopForWorker(size_t workerIdx);
 
-  domain::StreamingChunkResponse createStreamingChunkResponse(
-      const std::string& taskId, const ipc::SharedToken& token, bool isFinal,
-      bool skipSpecialTokens);
-
-  tt::config::LLMMode mode_;
-
   std::vector<std::thread> consumer_threads_;
 
-  ConcurrentMap<std::string, TaskCallbackEntry> stream_callbacks_;
+  ConcurrentMap<uint32_t, StreamCallbackEntry> stream_callbacks_;
 
   std::atomic<uint64_t> next_worker_{0};
   std::atomic<size_t> pending_tasks_{0};
@@ -104,10 +85,7 @@ class LLMService
   std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
   const tt::utils::Tokenizer* tokenizer_;
   std::unordered_set<int64_t> stop_token_set_;
-  std::shared_ptr<tt::sockets::InterServerService> socket_service_;
   std::unique_ptr<ReasoningParser> reasoning_parser_;
-
-  PrefillRequestCallback prefill_request_callback_;
 };
 
 }  // namespace tt::services

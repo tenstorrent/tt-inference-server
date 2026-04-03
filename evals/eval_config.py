@@ -1329,10 +1329,10 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_aime24",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    published_score=91.40,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-0528#deepseek-r1-0528-1",
+                    gpu_reference_score=83.33,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/357#issuecomment-3048350923",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -1346,9 +1346,12 @@ _eval_config_list = [
                     "model": "deepseek-ai/DeepSeek-R1-0528",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_length": 2048,
+                    "max_length": 32768,
                 },
-                gen_kwargs={"stream": "false", "max_gen_toks": "1536"},
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 28 * 1024,  # Allow up to 4K prompt tokens
+                },
                 seed=42,
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -1358,10 +1361,10 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    published_score=81.00,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-0528#deepseek-r1-0528-1",
+                    gpu_reference_score=81.31,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/357#issuecomment-3048350923",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -1375,9 +1378,12 @@ _eval_config_list = [
                     "model": "deepseek-ai/DeepSeek-R1-0528",
                     "base_url": "http://127.0.0.1:8000/v1/completions",
                     "tokenizer_backend": "huggingface",
-                    "max_length": 2048,
+                    "max_length": 32768,
                 },
-                gen_kwargs={"stream": "false", "max_gen_toks": "1536"},
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 28 * 1024,  # Allow up to 4K prompt tokens
+                },
                 seed=42,
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,

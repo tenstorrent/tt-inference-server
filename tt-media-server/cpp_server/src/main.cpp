@@ -16,7 +16,6 @@
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
 #include "profiling/tracy.hpp"
-#include "services/llm_service.hpp"
 #include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
 #include "worker/worker_manager.hpp"
@@ -62,7 +61,7 @@ int main(int argc, char* argv[]) {
   std::string host = "0.0.0.0";
   uint16_t port = 8000;
   int threads = std::thread::hardware_concurrency();
-  tt::utils::service_factory::registerServices();
+  tt::utils::service_factory::initializeServices();
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -121,17 +120,17 @@ int main(int argc, char* argv[]) {
 
     // Skip authentication for health, tt-liveness, docs, and openapi endpoints
     if (path == "/health" || path == "/tt-liveness" || path == "/docs" ||
-        path == "/swagger" || path == "/openapi.json") {
+        path == "/swagger" || path == "/openapi.json" || path == "/metrics") {
       chainCallback();
       return;
     }
 
     // Check for Bearer token on protected endpoints
     const std::string& authHeader = req->getHeader("Authorization");
-    constexpr std::string_view BEARER_PREFIX = "Bearer ";
+    constexpr std::string_view bearerPrefix = "Bearer ";
 
-    if (authHeader.size() <= BEARER_PREFIX.size() ||
-        authHeader.compare(0, BEARER_PREFIX.size(), BEARER_PREFIX) != 0) {
+    if (authHeader.size() <= bearerPrefix.size() ||
+        authHeader.compare(0, bearerPrefix.size(), bearerPrefix) != 0) {
       auto resp = drogon::HttpResponse::newHttpJsonResponse(Json::Value(
           "Missing or invalid Authorization header. Expected: Bearer <token>"));
       resp->setStatusCode(drogon::k401Unauthorized);
@@ -140,8 +139,8 @@ int main(int argc, char* argv[]) {
       return;
     }
 
-    std::string_view providedToken(authHeader.data() + BEARER_PREFIX.size(),
-                                   authHeader.size() - BEARER_PREFIX.size());
+    std::string_view providedToken(authHeader.data() + bearerPrefix.size(),
+                                   authHeader.size() - bearerPrefix.size());
 
     if (providedToken != SecurityFilter::getExpectedToken()) {
       auto resp = drogon::HttpResponse::newHttpJsonResponse(
@@ -182,13 +181,13 @@ int main(int argc, char* argv[]) {
     TT_LOG_INFO("  GET  /tt-liveness     - Liveness check");
   } else {
     TT_LOG_INFO("[Main] Endpoints:");
-    TT_LOG_INFO("  POST /v1/completions       - OpenAI-compatible completions");
     TT_LOG_INFO(
         "  POST /v1/chat/completions  - OpenAI-compatible chat completions");
     TT_LOG_INFO("  GET  /health               - Health check");
     TT_LOG_INFO("  GET  /tt-liveness          - Liveness check");
     TT_LOG_INFO("  GET  /docs                 - Swagger UI");
     TT_LOG_INFO("  GET  /openapi.json         - OpenAPI specification");
+    TT_LOG_INFO("  GET  /metrics              - Prometheus metrics scrape");
   }
 
   // Run the server

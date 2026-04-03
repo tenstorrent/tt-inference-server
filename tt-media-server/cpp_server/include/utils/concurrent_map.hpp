@@ -19,6 +19,11 @@ class ConcurrentMap {
     map_[key] = value;
   }
 
+  void insert(const Key& key, Value&& value) {
+    std::lock_guard lock(mutex);
+    map_[key] = std::move(value);
+  }
+
   std::optional<Value> get(const Key& key) {
     std::lock_guard lock(mutex);
     auto it = map_.find(key);
@@ -52,6 +57,20 @@ class ConcurrentMap {
   void clear() {
     std::lock_guard lock(mutex);
     map_.clear();
+  }
+
+  size_t size() {
+    std::lock_guard lock(mutex);
+    return map_.size();
+  }
+
+  template <typename Func>
+  bool modify(const Key& key, Func&& func) {
+    std::lock_guard lock(mutex);
+    auto it = map_.find(key);
+    if (it == map_.end()) return false;
+    func(it->second);
+    return true;
   }
 
   template <typename Func>

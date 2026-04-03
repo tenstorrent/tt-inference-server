@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-
-#include "api/embedding_controller.hpp"
 
 #include <chrono>
 #include <condition_variable>
@@ -13,30 +12,16 @@
 #include <thread>
 #include <vector>
 
+#include "api/embedding_controller.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "services/base_service.hpp"
 #include "utils/logger.hpp"
-#include "utils/service_factory.hpp"
+#include "utils/service_container.hpp"
 
 namespace tt::api {
 
 namespace {
-// Generate random hex string for task IDs
-std::string randomHex(size_t length) {
-  static const char HEX_CHARS[] = "0123456789abcdef";
-  static std::random_device rd;
-  static std::mt19937 gen(rd());
-  static std::uniform_int_distribution<> dist(0, 15);
-
-  std::string result;
-  result.reserve(length);
-  for (size_t i = 0; i < length; ++i) {
-    result += HEX_CHARS[dist(gen)];
-  }
-  return result;
-}
-
 // Simple thread pool for handling response callbacks
 class CallbackThreadPool {
  public:
@@ -97,19 +82,16 @@ EmbeddingController::EmbeddingController() {
     return;
   }
 
-  service_ = tt::utils::service_factory::getServiceByType<
-      services::EmbeddingService>();
+  service_ = tt::utils::ServiceContainer::instance().embedding();
   if (!service_) {
     throw std::runtime_error(
-        "[EmbeddingController] Embedding service not found in service factory. "
-        "Ensure register_services() is called before Drogon starts.");
+        "[EmbeddingController] Embedding service not found in container. "
+        "Ensure initializeServices() is called before Drogon starts.");
   }
   TT_LOG_INFO("[EmbeddingController] Initialized (service already started)");
 }
 
 EmbeddingController::~EmbeddingController() = default;
-
-std::string EmbeddingController::generateTaskId() { return randomHex(24); }
 
 void EmbeddingController::createEmbedding(
     const drogon::HttpRequestPtr& req,
@@ -138,7 +120,7 @@ void EmbeddingController::createEmbedding(
   }
 
   // Build request
-  domain::TaskID taskId(generateTaskId());
+  uint32_t taskId = tt::utils::TaskIDGenerator::generate();
   domain::EmbeddingRequest request =
       domain::EmbeddingRequest::fromJson(*json, std::move(taskId));
 

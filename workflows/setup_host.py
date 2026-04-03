@@ -263,6 +263,12 @@ class HostSetupManager:
                 "tokenizer_format": "tokenizer.json",
                 "params_format": "config.json",
             },
+            {
+                "format_name": "hf_bin",
+                "weights_format": "pytorch_model*.bin",
+                "tokenizer_format": "tokenizer_config.json",
+                "params_format": "config.json",
+            },
         ]
 
         # Check each format

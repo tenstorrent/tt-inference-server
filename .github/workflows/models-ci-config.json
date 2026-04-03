@@ -1,5 +1,15 @@
 {
   "models": {
+    "DeepSeek-R1-0528": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "DUAL_GALAXY"
+          ]
+        }
+      }
+    },
     "Llama-3.1-8B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {

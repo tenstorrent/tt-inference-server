@@ -51,7 +51,7 @@ class BenchmarkTaskTTS(BenchmarkTask):
     param_map: Dict[DeviceTypes, List[BenchmarkTaskParams]]
     task_type: BenchmarkTaskType = BenchmarkTaskType.HTTP_CLIENT_CNN_API
     workflow_venv_type: WorkflowVenvType = (
-        WorkflowVenvType.BENCHMARKS_HTTP_CLIENT_VLLM_API
+        None  # no workflow venv needed for TTS benchmarks
     )
 
 
@@ -513,6 +513,8 @@ for model_id, model_spec in MODEL_SPECS.items():
         )
     elif model_spec.model_type == ModelType.VIDEO:
         perf_ref_task = BenchmarkTaskVideo(param_map={device: capped_perf_reference})
+    elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
+        perf_ref_task = BenchmarkTaskTTS(param_map={device: capped_perf_reference})
     else:
         perf_ref_task = BenchmarkTask(param_map={device: capped_perf_reference})
 
@@ -535,6 +537,18 @@ for model_id, model_spec in MODEL_SPECS.items():
         elif model_spec.model_type == ModelType.VIDEO:
             benchmark_task_runs = BenchmarkTaskVideo(
                 param_map={device: [BenchmarkTaskParams()]}
+            )
+        elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
+            benchmark_task_runs = BenchmarkTaskTTS(
+                param_map={
+                    device: [
+                        BenchmarkTaskParams(
+                            max_concurrency=model_max_concurrency,
+                            num_prompts=8,
+                            task_type="text_to_speech",
+                        )
+                    ]
+                }
             )
         else:
             benchmark_task_runs = BenchmarkTask(

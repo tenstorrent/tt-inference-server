@@ -12,7 +12,7 @@
 
 #include "domain/base_request.hpp"
 #include "domain/chat_message.hpp"
-#include "domain/completion_request.hpp"
+#include "domain/llm_request.hpp"
 #include "utils/tokenizer.hpp"
 
 namespace tt::domain {
@@ -70,8 +70,11 @@ struct ChatCompletionRequest : BaseRequest {
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
 
+  // Session management
+  std::optional<std::string> sessionId;
+
   static ChatCompletionRequest fromJson(const Json::Value& json,
-                                        TaskID taskId) {
+                                        uint32_t taskId) {
     ChatCompletionRequest req(std::move(taskId));
 
     if (json.isMember("model") && !json["model"].isNull()) {
@@ -164,6 +167,10 @@ struct ChatCompletionRequest : BaseRequest {
           json["spaces_between_special_tokens"].asBool();
     }
 
+    if (json.isMember("session_id") && !json["session_id"].isNull()) {
+      req.sessionId = json["session_id"].asString();
+    }
+
     return req;
   }
 
@@ -177,7 +184,7 @@ struct ChatCompletionRequest : BaseRequest {
     }
 
     std::ostringstream out;
-    out << "task_id=" << task_id.id << " model=" << model.value_or("default")
+    out << "task_id=" << task_id << " model=" << model.value_or("default")
         << " stream=" << stream << " messages=" << messages.size()
         << " last_msg=[" << lastMsg << "]"
         << " max_tokens=" << detail::optStr(max_tokens)
@@ -191,10 +198,10 @@ struct ChatCompletionRequest : BaseRequest {
     return out.str();
   }
 
-  /** Convert to CompletionRequest: messages -> prompt, then same pipeline as
-   * /completions. */
-  CompletionRequest toCompletionRequest() const {
-    CompletionRequest out(task_id);
+  /** Convert to LLMRequest: applies chat template to messages, then copies
+   * sampling parameters for the LLM pipeline. */
+  LLMRequest toLLMRequest() const {
+    LLMRequest out(task_id);
     out.model = model;
     out.prompt = tt::utils::activeTokenizer().applyChatTemplate(messages);
 
@@ -226,6 +233,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.allowed_token_ids = allowed_token_ids;
     out.prompt_logprobs = prompt_logprobs;
     out.truncate_prompt_tokens = truncate_prompt_tokens;
+    out.sessionId = sessionId;
     return out;
   }
 };

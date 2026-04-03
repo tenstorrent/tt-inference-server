@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "domain/completion_response.hpp"
+#include "domain/llm_response.hpp"
 
 namespace tt::domain {
 
@@ -19,11 +19,15 @@ namespace tt::domain {
 struct ChatCompletionMessage {
   std::string role = "assistant";
   std::string content;
+  std::optional<std::string> reasoning;
 
   Json::Value toJson() const {
     Json::Value json;
     json["role"] = role;
     json["content"] = content;
+    if (reasoning.has_value()) {
+      json["reasoning"] = reasoning.value();
+    }
     return json;
   }
 };
@@ -78,11 +82,11 @@ struct ChatCompletionResponse {
   std::string toJsonString() const {
     Json::StreamWriterBuilder writer;
     writer["indentation"] = "";
+    writer["emitUTF8"] = true;
     return Json::writeString(writer, toJson());
   }
 
-  static ChatCompletionResponse fromCompletionResponse(
-      const CompletionResponse& completion) {
+  static ChatCompletionResponse fromLLMResponse(const LLMResponse& completion) {
     ChatCompletionResponse response;
     response.id = completion.id;
     response.created = completion.created;
@@ -93,6 +97,7 @@ struct ChatCompletionResponse {
       ChatCompletionChoice chatChoice;
       chatChoice.index = choice.index;
       chatChoice.message.content = choice.text;
+      chatChoice.message.reasoning = choice.reasoning;
       chatChoice.finish_reason = choice.finish_reason.value_or("stop");
       response.choices.push_back(std::move(chatChoice));
     }
@@ -181,6 +186,7 @@ struct ChatCompletionStreamChunk {
   std::string toJsonString() const {
     Json::StreamWriterBuilder writer;
     writer["indentation"] = "";
+    writer["emitUTF8"] = true;
     return Json::writeString(writer, toJson());
   }
 
@@ -216,11 +222,11 @@ struct ChatCompletionStreamChunk {
   }
 
   /**
-   * Create a content delta chunk from a CompletionChoice.
+   * Create a content delta chunk from an LLMChoice.
    */
   static ChatCompletionStreamChunk makeContentChunk(
       const std::string& id, const std::string& model, int64_t created,
-      const CompletionChoice& completionChoice,
+      const LLMChoice& completionChoice,
       const std::optional<CompletionUsage>& usage = std::nullopt) {
     ChatCompletionStreamChunk chunk;
     chunk.id = id;

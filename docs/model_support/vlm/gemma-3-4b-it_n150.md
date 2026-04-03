@@ -29,7 +29,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_gemma-3-4b-it:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-c254ee3-c4f2327 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-c254ee3-c4f2327 \
   --model gemma-3-4b-it \
   --tt-device n150
 ```
@@ -52,7 +52,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers) |
 | tt-metal Commit | `c254ee3` |
 | vLLM Commit | `c4f2327` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-c254ee3-c4f2327` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-c254ee3-c4f2327` |
 
 ---
 
@@ -70,7 +70,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_gemma-3-4b-it:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-c254ee3-c4f2327 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-c254ee3-c4f2327 \
   --model gemma-3-4b-it \
   --tt-device n300
 ```
@@ -92,4 +92,4 @@ python3 run.py --model gemma-3-4b-it --device n300 --workflow server --docker-se
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/c254ee3/models/tt_transformers) |
 | tt-metal Commit | `c254ee3` |
 | vLLM Commit | `c4f2327` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-c254ee3-c4f2327` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-c254ee3-c4f2327` |

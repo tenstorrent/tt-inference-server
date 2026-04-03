@@ -278,7 +278,7 @@ For the same model-device combination, the `release` workflow runs in sequence:
 1. `evals` workflow
 2. `benchmarks` workflow
 3. `spec_tests` workflow
-4. `tests` workflow (only for models with entries in `tests/test_config.py`)
+4. `tests` workflow (only for models with entries in `server_tests/test_config.py`)
 5. `reports` workflow
 
 This is a convenience so that a single run on device executes all workflows required to certify a model implementation on Tenstorrent hardware is working correctly and ready for release.
@@ -361,7 +361,7 @@ See [Logs](#logs) section below for example format of the report files generated
 
 > **Internal workflow.** `spec_tests` is used for release validation and CI. It requires a running inference server.
 
-The `spec_tests` workflow runs server integration tests against the inference server. Tests are defined in `tests/server_tests/server_tests_config.json` and matched by model name and device. Test classes (e.g. `DeviceLivenessTest`, `ImageGenerationLoadTest`) are loaded dynamically and executed via `tests/server_tests/run.py`.
+The `spec_tests` workflow runs server integration tests against the inference server. Tests are defined in `server_tests/server_tests_config.json` and matched by model name and device. Test classes (e.g. `DeviceLivenessTest`, `ImageGenerationLoadTest`) are loaded dynamically and executed via `server_tests/run_spec_tests.py`.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow spec_tests
@@ -379,13 +379,13 @@ Output is written as JSON and Markdown reports to `workflow_logs/spec_tests_outp
 
 > **Internal workflow.** `tests` is used for release validation and CI. It requires a running inference server. Not all models have test entries defined.
 
-The `tests` workflow runs pytest-based tests that exercise vLLM API sampling parameters (`n`, `max_tokens`, `stop`, `seed`, `logprobs`, `temperature`, `top_k`, `top_p`, and penalty parameters). Model support is defined in `tests/test_config.py` (`TEST_CONFIGS`); models not listed there will skip this workflow.
+The `tests` workflow runs pytest-based tests that exercise vLLM API sampling parameters (`n`, `max_tokens`, `stop`, `seed`, `logprobs`, `temperature`, `top_k`, `top_p`, and penalty parameters). Model support is defined in `server_tests/test_config.py` (`TEST_CONFIGS`); models not listed there will skip this workflow.
 
 ```bash
 python3 run.py --model Llama-3.1-8B-Instruct --tt-device n150 --workflow tests
 ```
 
-The run script (`tests/run_tests.py`) iterates over `TestTask` entries for the model, invoking `pytest` with `-s -v` on `tests/server_tests/test_cases/test_vllm_server_parameters.py`.
+The run script (`server_tests/run_tests.py`) iterates over `TestTask` entries for the model, invoking `pytest` with `-s -v` on `server_tests/test_cases/test_vllm_server_parameters.py`.
 
 Output is written to `workflow_logs/tests_output/`.
 

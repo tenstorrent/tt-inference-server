@@ -21,7 +21,12 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
-from config.constants import SupportedModels
+from config.constants import SupportedModels, TrainingOptimizers
+
+
+OPTIMIZER_MAP = {
+    TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
+}
 
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
@@ -62,6 +67,10 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         # Get the first request
         request = training_requests[0]
+
+        log_handler = None
+        if request._training_logs is not None:
+            log_handler = self.logger.add_list_handler(request._training_logs)
 
         if request._start_event:
             request._start_event.set()
@@ -121,7 +130,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             },
         )
 
-        self.optimizer = torch.optim.AdamW(
+        self.optimizer = OPTIMIZER_MAP[request.optimizer](
             self.model.parameters(), lr=request.learning_rate
         )
         self.loss_fn = torch.nn.CrossEntropyLoss(ignore_index=request.ignored_index)
@@ -150,7 +159,10 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                             attention_mask=batch["attention_mask"],
                         )
                     except Exception as e:
-                        self.logger.error(f"Forward pass failed: {e}")
+                        self.logger.error(
+                            f"Forward pass failed: {e}",
+                            extra={"log_type": "error", "step": global_step},
+                        )
                         self.logger.error(traceback.format_exc())
                         raise
                     self.logger.debug(f"Device {self.device_id}: Forward pass finished")
@@ -192,7 +204,8 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                             else running_loss
                         )
                         self.logger.info(
-                            f"Step {global_step} | train/loss: {avg_loss:.4f}"
+                            f"Epoch {epoch + 1} | Step {global_step} | train/loss: {avg_loss:.4f}",
+                            extra={"log_type": "info", "step": global_step},
                         )
                         if request._training_metrics is not None:
                             request._training_metrics.append(
@@ -207,7 +220,10 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         running_loss = 0.0
 
                         torch.save(self.model.state_dict(), model_path)
-                        self.logger.info("Model checkpoint saved.")
+                        self.logger.info(
+                            "Model checkpoint saved.",
+                            extra={"log_type": "checkpoint", "step": global_step},
+                        )
 
                     if do_validation:
                         avg_val_loss = self.run_validation(
@@ -215,7 +231,8 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         )
                         if avg_val_loss is not None:
                             self.logger.info(
-                                f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}"
+                                f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}",
+                                extra={"log_type": "eval", "step": global_step},
                             )
                             if request._training_metrics is not None:
                                 request._training_metrics.append(
@@ -244,7 +261,10 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                     break
 
         except Exception as e:
-            self.logger.error(f"Training failed with error: {str(e)}")
+            self.logger.error(
+                f"Training failed with error: {str(e)}",
+                extra={"log_type": "error"},
+            )
             self.logger.error(f"Full traceback: {traceback.format_exc()}")
             raise
         finally:
@@ -258,6 +278,8 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             self.logger.info(
                 f"Device {self.device_id}: Training completed - memory cleaned up"
             )
+            if log_handler:
+                self.logger.remove_handler(log_handler)
 
         return [model_path]
 
