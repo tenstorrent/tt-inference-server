@@ -6,7 +6,6 @@
 #include <atomic>
 #include <cstdint>
 #include <future>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -18,8 +17,7 @@
 
 namespace tt::services {
 
-// Invalid slot ID constant
-constexpr uint32_t INVALID_SLOT_ID = std::numeric_limits<uint32_t>::max();
+using tt::domain::INVALID_SLOT_ID;
 
 class SessionManager {
  public:

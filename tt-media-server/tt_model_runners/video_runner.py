@@ -37,6 +37,7 @@ Usage:
     python -m tt_model_runners.video_runner
 """
 
+import asyncio
 import os
 import pickle
 import signal
@@ -44,12 +45,70 @@ import socket
 import struct
 import sys
 import time
-from typing import Optional
+import traceback
+from dataclasses import fields as dc_fields
+from typing import TYPE_CHECKING, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from config.constants import ModelRunners
-from ipc.video_shm import VideoRequest, VideoResponse, VideoShm, VideoStatus
+from domain.video_generate_request import VideoGenerateRequest
+from ipc.video_shm import (
+    VideoRequest,
+    VideoResponse,
+    VideoShm,
+    VideoStatus,
+    cleanup_orphaned_video_files,
+)
+from utils.logger import TTLogger
+
+if TYPE_CHECKING:
+    from tt_model_runners.dit_runners import TTMochi1Runner, TTWan22Runner
+
+    DitRunner = TTMochi1Runner | TTWan22Runner
+
+_log = TTLogger("video_runner")
+
+# Defaults (overridden by TT_VIDEO_SHM_INPUT / TT_VIDEO_SHM_OUTPUT when set)
+DEFAULT_TT_VIDEO_SHM_INPUT = "tt_video_in"
+DEFAULT_TT_VIDEO_SHM_OUTPUT = "tt_video_out"
+
+# Rank 0 waits for worker ranks to bind listening sockets before connecting.
+WORKER_STARTUP_WAIT_SECONDS = 5
+
+# Inter-rank socket bridge (rank 0 ↔ ranks 1–3) on loopback.
+WORKER_LOOPBACK_HOST = "127.0.0.1"
+RANK_SOCKET_BASE_PORT = 9000
+
+RANK_CONFIG = {
+    rank: {"ip": WORKER_LOOPBACK_HOST, "port": RANK_SOCKET_BASE_PORT + rank}
+    for rank in range(4)
+}
+
+COORDINATOR_RANK = 0
+WORKER_RANKS = (1, 2, 3)
+MAX_RANK = 3
+
+# Rank 0 passes no device id into the DiT runner ctor (coordinator); workers use TT_VISIBLE_DEVICES.
+COORDINATOR_RUNNER_DEVICE_ID = ""
+
+SOCKET_RECV_CHUNK_BYTES = 4096
+LOG_PROMPT_PREVIEW_CHARS = 50
+
+
+def video_request_to_generate_request(req: VideoRequest) -> VideoGenerateRequest:
+    """Map SHM :class:`VideoRequest` to :class:`VideoGenerateRequest` for DiT runners.
+
+    Uses the intersection of field names so we never pass SHM-only fields (e.g.
+    ``height``, ``width``) unless they exist on ``VideoGenerateRequest``. Today
+    that matches the historical explicit mapping: prompt, negative_prompt,
+    ``num_inference_steps``, seed — same as ``SPRunner`` / API usage.
+    """
+    shm_names = {f.name for f in dc_fields(VideoRequest)}
+    gen_names = set(VideoGenerateRequest.model_fields.keys())
+    common = shm_names & gen_names
+    return VideoGenerateRequest(**{name: getattr(req, name) for name in common})
+
 
 _shutdown = False
 
@@ -66,14 +125,6 @@ def _is_shutdown() -> bool:
 def _rank() -> int:
     r = os.environ.get("OMPI_COMM_WORLD_RANK") or os.environ.get("RANK")
     return int(r) if r is not None else 0
-
-
-RANK_CONFIG = {
-    0: {"ip": "127.0.0.1", "port": 9000},
-    1: {"ip": "127.0.0.1", "port": 9001},
-    2: {"ip": "127.0.0.1", "port": 9002},
-    3: {"ip": "127.0.0.1", "port": 9003},
-}
 
 
 def _send_via_socket(sock: socket.socket, request: VideoRequest) -> None:
@@ -93,14 +144,14 @@ def _recv_via_socket(conn: socket.socket) -> Optional[VideoRequest]:
 
         data = b""
         while len(data) < length:
-            chunk = conn.recv(min(length - len(data), 4096))
+            chunk = conn.recv(min(length - len(data), SOCKET_RECV_CHUNK_BYTES))
             if not chunk:
                 return None
             data += chunk
 
         return pickle.loads(data)
     except Exception as e:
-        print(f"Error receiving request: {e}")
+        _log.warning(f"Error receiving request: {e}")
         return None
 
 
@@ -120,39 +171,52 @@ def create_dit_runner(model_runner: str, device_id: str):
             f"Supported: {list(runner_map.keys())}"
         )
 
-    print(f"Creating {runner_class.__name__} for device {device_id}")
+    _log.info(f"Creating {runner_class.__name__} for device {device_id}")
     return runner_class(device_id)
+
+
+def _bootstrap_dit_runner(rank: int, runner_device_id: str) -> "DitRunner":
+    """Create DiT runner from ``MODEL_RUNNER``, set device, load weights, warmup.
+
+    ``runner_device_id`` is the constructor argument: use
+    :data:`COORDINATOR_RUNNER_DEVICE_ID` for rank 0 coordinator; workers pass
+    ``TT_VISIBLE_DEVICES``.
+    """
+    model_runner = os.environ.get("MODEL_RUNNER", "")
+    if not model_runner:
+        _log.error(f"Rank {rank}: MODEL_RUNNER environment variable not set")
+        sys.exit(1)
+
+    visible = os.environ.get("TT_VISIBLE_DEVICES", "")
+    _log.info(f"Rank {rank}: model={model_runner}, device={visible}")
+
+    runner = create_dit_runner(model_runner, runner_device_id)
+    _log.info(f"Rank {rank}: Setting up device...")
+    runner.set_device()
+    _log.info(f"Rank {rank}: Loading weights...")
+    runner.load_weights()
+    _log.info(f"Rank {rank}: Running warmup...")
+    asyncio.run(runner.warmup())
+    _log.info(f"Rank {rank}: Model ready for inference")
+    return runner
 
 
 def _write_response_to_shm(
     output_shm: VideoShm,
     task_id: str,
-    video,  # WanPipelineOutput or similar
+    mp4_path: str,
 ) -> None:
-    """Write the whole video object into output VideoShm."""
-    print(f"Rank 0: About to pickle video object of type {type(video)}")
-    try:
-        # Serialize the entire video object using pickle
-        video_data = pickle.dumps(video)
-        print(f"Rank 0: Pickled video successfully, size={len(video_data)} bytes")
-    except Exception as e:
-        print(f"Rank 0: ERROR pickling video: {e}")
-        raise
-
-    print("Rank 0: About to write response to SHM")
+    """Send the final mp4 path through SHM (rank 0 encodes before calling this)."""
+    _log.info(f"Rank 0: Writing mp4 path to SHM: {mp4_path}")
     output_shm.write_response(
         VideoResponse(
             task_id=task_id,
             status=VideoStatus.SUCCESS,
-            num_frames=0,  # Not used when sending whole object
-            height=0,  # Not used when sending whole object
-            width=0,  # Not used when sending whole object
-            channels=0,  # Not used when sending whole object
-            frame_data=video_data,
+            file_path=mp4_path,
             error_message="",
         )
     )
-    print("Rank 0: Response written to SHM successfully")
+    _log.info("Rank 0: Response written to SHM successfully")
 
 
 def _write_error_to_shm(output_shm: VideoShm, task_id: str, error: str = "") -> None:
@@ -160,12 +224,8 @@ def _write_error_to_shm(output_shm: VideoShm, task_id: str, error: str = "") -> 
         VideoResponse(
             task_id=task_id,
             status=VideoStatus.ERROR,
-            num_frames=0,
-            height=0,
-            width=0,
-            channels=0,
-            frame_data=b"",
-            error_message=error[:256],
+            file_path="",
+            error_message=error[: VideoShm.MAX_ERROR_LEN],
         )
     )
 
@@ -173,60 +233,47 @@ def _write_error_to_shm(output_shm: VideoShm, task_id: str, error: str = "") -> 
 def _connect_to_workers() -> dict[int, socket.socket]:
     """Connect to worker ranks 1-3, returning sockets for those that accepted."""
     worker_sockets: dict[int, socket.socket] = {}
-    for rank in [1, 2, 3]:
+    for rank in WORKER_RANKS:
         config = RANK_CONFIG[rank]
-        print(f"Rank 0: Connecting to rank {rank} at {config['ip']}:{config['port']}")
+        _log.info(
+            f"Rank 0: Connecting to rank {rank} at {config['ip']}:{config['port']}"
+        )
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             sock.connect((config["ip"], config["port"]))
             worker_sockets[rank] = sock
-            print(f"Rank 0: Connected to rank {rank}")
+            _log.info(f"Rank 0: Connected to rank {rank}")
         except Exception as e:
-            print(f"Rank 0: Failed to connect to rank {rank}: {e}")
+            _log.warning(f"Rank 0: Failed to connect to rank {rank}: {e}")
             sock.close()
 
     if worker_sockets:
-        print(f"Rank 0: Connected to {len(worker_sockets)} workers")
+        _log.info(f"Rank 0: Connected to {len(worker_sockets)} workers")
     else:
-        print("Rank 0: No workers connected, running in standalone mode")
+        _log.info("Rank 0: No workers connected, running in standalone mode")
     return worker_sockets
 
 
 def run_rank0_coordinator() -> None:
-    """Rank 0: Read from input SHM, run DiT inference, stream frames to output SHM."""
-    model_runner = os.environ.get("MODEL_RUNNER", "")
-    device_id = os.environ.get("TT_VISIBLE_DEVICES", "")
-    input_name = os.environ.get("TT_VIDEO_SHM_INPUT", "tt_video_in")
-    output_name = os.environ.get("TT_VIDEO_SHM_OUTPUT", "tt_video_out")
+    """Rank 0: Read from input SHM, run DiT inference, write MP4 path to output SHM."""
+    input_name = os.environ.get("TT_VIDEO_SHM_INPUT", DEFAULT_TT_VIDEO_SHM_INPUT)
+    output_name = os.environ.get("TT_VIDEO_SHM_OUTPUT", DEFAULT_TT_VIDEO_SHM_OUTPUT)
 
-    if not model_runner:
-        print("MODEL_RUNNER environment variable not set")
-        sys.exit(1)
-
-    print(f"Rank 0: model={model_runner}, device={device_id}")
-    print(f"Rank 0: SHM in={input_name}, out={output_name}")
-
-    runner = create_dit_runner(model_runner, "")
-    print("Rank 0: Setting up device...")
-    runner.set_device()
-    print("Rank 0: Loading weights...")
-    runner.load_weights()
-    print("Rank 0: Running warmup...")
-    import asyncio
-
-    asyncio.run(runner.warmup())
-    print("Rank 0: Model ready for inference")
+    runner = _bootstrap_dit_runner(
+        rank=COORDINATOR_RANK, runner_device_id=COORDINATOR_RUNNER_DEVICE_ID
+    )
+    _log.info(f"Rank 0: SHM in={input_name}, out={output_name}")
 
     input_shm = VideoShm(input_name, mode="input", is_shutdown=_is_shutdown)
     output_shm = VideoShm(output_name, mode="output", is_shutdown=_is_shutdown)
     input_shm.open(create=True)
     output_shm.open(create=True)
 
-    print("Rank 0: Waiting 5s for workers to start...")
-    time.sleep(5)
+    _log.info(f"Rank 0: Waiting {WORKER_STARTUP_WAIT_SECONDS}s for workers to start...")
+    time.sleep(WORKER_STARTUP_WAIT_SECONDS)
     worker_sockets = _connect_to_workers()
 
-    print("Rank 0: SHM bridge started, waiting for requests...")
+    _log.info("Rank 0: SHM bridge started, waiting for requests...")
 
     try:
         while not _shutdown:
@@ -234,9 +281,9 @@ def run_rank0_coordinator() -> None:
             if req is None:
                 break
 
-            print(
+            _log.info(
                 f"Rank 0: task_id={req.task_id}, "
-                f"prompt='{req.prompt[:50]}...', "
+                f"prompt='{req.prompt[:LOG_PROMPT_PREVIEW_CHARS]}...', "
                 f"steps={req.num_inference_steps}, seed={req.seed}"
             )
 
@@ -244,119 +291,96 @@ def run_rank0_coordinator() -> None:
                 try:
                     _send_via_socket(sock, req)
                 except Exception as e:
-                    print(f"Rank 0: Failed to send to rank {rank}: {e}")
+                    _log.warning(f"Rank 0: Failed to send to rank {rank}: {e}")
 
             try:
-                from domain.video_generate_request import VideoGenerateRequest
+                video_gen_req = video_request_to_generate_request(req)
 
-                video_gen_req = VideoGenerateRequest(
-                    prompt=req.prompt,
-                    negative_prompt=req.negative_prompt,
-                    num_inference_steps=req.num_inference_steps,
-                    seed=req.seed,
-                )
+                _log.info(f"Rank 0: Starting inference for task {req.task_id}")
+                frames = runner.run([video_gen_req])
+                _log.info("Rank 0: Inference done")
 
-                print(f"Rank 0: Starting inference for task {req.task_id}")
-                video = runner.run([video_gen_req])
-                print("Rank 0: Inference done")
+                from utils.video_manager import VideoManager
 
-                _write_response_to_shm(
-                    output_shm, req.task_id, video
-                )  # Changed: pass video directly
-                print(f"Rank 0: Response written for task {req.task_id}")
+                mp4_path = VideoManager().export_to_mp4(frames)
+                _log.info(f"Rank 0: Encoded mp4 at {mp4_path}")
+
+                _write_response_to_shm(output_shm, req.task_id, mp4_path)
+                _log.info(f"Rank 0: Response written for task {req.task_id}")
 
             except Exception as e:
-                import traceback
-
-                print(
-                    f"Rank 0: ERROR - Inference/write failed for task {req.task_id}: {e}"
+                _log.error(
+                    f"Rank 0: ERROR - Inference/write failed for task {req.task_id}: {e}\n"
+                    f"{traceback.format_exc()}"
                 )
-                traceback.print_exc()
                 _write_error_to_shm(output_shm, req.task_id, str(e))
 
     except KeyboardInterrupt:
-        print("Rank 0: Interrupted by user")
+        _log.info("Rank 0: Interrupted by user")
     finally:
         for rank, sock in worker_sockets.items():
             sock.close()
         input_shm.close()
         output_shm.close()
         runner.close_device()
+        removed = cleanup_orphaned_video_files()
+        if removed:
+            _log.info(f"Rank 0: Cleaned up {removed} orphaned video file(s)")
 
-    print("Rank 0: Shutdown complete")
+    _log.info("Rank 0: Shutdown complete")
 
 
 def run_worker_rank(rank: int) -> None:
     """Ranks 1-3: Listen on socket, receive requests from rank 0, and run DiT inference."""
-    model_runner = os.environ.get("MODEL_RUNNER", "")
-    device_id = os.environ.get("TT_VISIBLE_DEVICES", "")
     config = RANK_CONFIG[rank]
+    device_id = os.environ.get("TT_VISIBLE_DEVICES", "")
 
-    if not model_runner:
-        print(f"Rank {rank}: MODEL_RUNNER environment variable not set")
-        sys.exit(1)
+    runner = _bootstrap_dit_runner(rank=rank, runner_device_id=device_id)
 
-    print(f"Rank {rank}: model={model_runner}, device={device_id}")
-
-    runner = create_dit_runner(model_runner, device_id)
-    print(f"Rank {rank}: Setting up device...")
-    runner.set_device()
-    print(f"Rank {rank}: Loading weights...")
-    runner.load_weights()
-    print(f"Rank {rank}: Running warmup...")
-    import asyncio
-
-    asyncio.run(runner.warmup())
-    print(f"Rank {rank}: Model ready for inference")
-
-    print(f"Rank {rank}: Starting worker on {config['ip']}:{config['port']}")
+    _log.info(f"Rank {rank}: Starting worker on {config['ip']}:{config['port']}")
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_sock.bind((config["ip"], config["port"]))
     server_sock.listen(1)
 
-    print(f"Rank {rank}: Listening for connections...")
+    _log.info(f"Rank {rank}: Listening for connections...")
 
+    conn: socket.socket | None = None
     try:
         conn, addr = server_sock.accept()
-        print(f"Rank {rank}: Accepted connection from {addr}")
+        _log.info(f"Rank {rank}: Accepted connection from {addr}")
 
         while not _shutdown:
             req = _recv_via_socket(conn)
             if req is None:
                 break
 
-            print(
+            _log.info(
                 f"Rank {rank}: task_id={req.task_id}, "
-                f"prompt='{req.prompt[:50]}...', "
+                f"prompt='{req.prompt[:LOG_PROMPT_PREVIEW_CHARS]}...', "
                 f"steps={req.num_inference_steps}, seed={req.seed}"
             )
 
             try:
-                from domain.video_generate_request import VideoGenerateRequest
+                video_gen_req = video_request_to_generate_request(req)
 
-                video_gen_req = VideoGenerateRequest(
-                    prompt=req.prompt,
-                    negative_prompt=req.negative_prompt,
-                    num_inference_steps=req.num_inference_steps,
-                    seed=req.seed,
-                )
-
-                print(f"Rank {rank}: Starting inference for task {req.task_id}")
+                _log.info(f"Rank {rank}: Starting inference for task {req.task_id}")
                 _frames = runner.run([video_gen_req])
-                print(f"Rank {rank}: Inference done for task {req.task_id}, ")
+                _log.info(f"Rank {rank}: Inference done for task {req.task_id}")
             except Exception as e:
-                print(f"Rank {rank}: Inference failed for task {req.task_id}: {e}")
+                _log.error(f"Rank {rank}: Inference failed for task {req.task_id}: {e}")
 
     except KeyboardInterrupt:
-        print(f"Rank {rank}: Interrupted by user")
+        _log.info(f"Rank {rank}: Interrupted by user")
     except Exception as e:
-        print(f"Rank {rank}: Error: {e}")
+        _log.error(f"Rank {rank}: Error: {e}")
     finally:
+        if conn is not None:
+            conn.close()
         runner.close_device()
         server_sock.close()
 
-    print(f"Rank {rank}: Shutdown complete")
+    _log.info(f"Rank {rank}: Shutdown complete")
 
 
 def main() -> None:
@@ -364,14 +388,14 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_sigterm)
 
     rank = _rank()
-    print(f"Starting video runner with rank={rank}")
+    _log.info(f"Starting video runner with rank={rank}")
 
-    if rank == 0:
+    if rank == COORDINATOR_RANK:
         run_rank0_coordinator()
-    elif rank in [1, 2, 3]:
+    elif rank in WORKER_RANKS:
         run_worker_rank(rank)
     else:
-        print(f"Invalid rank: {rank}. Must be 0-3")
+        _log.error(f"Invalid rank: {rank}. Must be 0-{MAX_RANK}")
         sys.exit(1)
 
 

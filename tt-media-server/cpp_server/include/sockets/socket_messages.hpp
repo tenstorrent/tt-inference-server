@@ -6,10 +6,11 @@
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include "domain/manage_memory.hpp"
 
 namespace tt::sockets {
 
@@ -28,7 +29,7 @@ struct PrefillRequestMessage {
   template <class Archive>
   void write(Archive& ar) const {
     int mt = max_tokens.has_value() ? max_tokens.value() : -1;
-    uint32_t sid = slot_id.value_or(std::numeric_limits<uint32_t>::max());
+    uint32_t sid = slot_id.value_or(tt::domain::INVALID_SLOT_ID);
     ar(task_id, prompt, token_ids, mt, sid);
   }
 
@@ -44,7 +45,7 @@ struct PrefillRequestMessage {
     msg.prompt = std::move(p);
     msg.token_ids = std::move(tids);
     msg.max_tokens = (mt == -1) ? std::nullopt : std::optional<int>(mt);
-    msg.slot_id = (sid == std::numeric_limits<uint32_t>::max())
+    msg.slot_id = (sid == tt::domain::INVALID_SLOT_ID)
                       ? std::nullopt
                       : std::optional<uint32_t>(sid);
     return msg;
@@ -73,7 +74,7 @@ struct PrefillResultMessage {
   template <class Archive>
   void write(Archive& ar) const {
     int rt = remaining_tokens.has_value() ? remaining_tokens.value() : -1;
-    uint32_t sid = slot_id.value_or(std::numeric_limits<uint32_t>::max());
+    uint32_t sid = slot_id.value_or(tt::domain::INVALID_SLOT_ID);
     ar(task_id, generated_text, finished, tokens_generated, processing_time_ms,
        token_ids, rt, sid);
   }
@@ -96,7 +97,7 @@ struct PrefillResultMessage {
     msg.processing_time_ms = pt;
     msg.token_ids = std::move(tids);
     msg.remaining_tokens = (rt == -1) ? std::nullopt : std::optional<int>(rt);
-    msg.slot_id = (sid == std::numeric_limits<uint32_t>::max())
+    msg.slot_id = (sid == tt::domain::INVALID_SLOT_ID)
                       ? std::nullopt
                       : std::optional<uint32_t>(sid);
     return msg;

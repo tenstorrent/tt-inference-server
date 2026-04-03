@@ -527,8 +527,8 @@ cpp_server/
 │   │   ├── defaults.hpp             # Default values for all env vars
 │   │   └── runner_config.hpp        # LLMConfig, EmbeddingConfig, RunnerConfig variant
 │   ├── domain/
-│   │   ├── completion_request.hpp
-│   │   ├── completion_response.hpp
+│   │   ├── llm_request.hpp
+│   │   ├── llm_response.hpp
 │   │   ├── chat_completion_*.hpp
 │   │   └── embedding_*.hpp
 │   ├── runners/
@@ -567,9 +567,9 @@ cpp_server/
 ## Components
 
 ### Domain Objects
-- `CompletionRequest` / `CompletionResponse`: OpenAI-compatible completion request and response
-- `StreamingChunkResponse`: SSE streaming chunk (completions)
-- `ChatCompletionRequest` / `ChatCompletionResponse`: Chat completions request and non-streaming response
+- `LLMRequest` / `LLMResponse`: Internal pipeline request and response types
+- `LLMStreamChunk`: Internal streaming chunk callback type used by LLMService
+- `ChatCompletionRequest` / `ChatCompletionResponse`: OpenAI-compatible chat completions request and response
 - `ChatCompletionStreamChunk`: Chat completions SSE streaming chunk
 
 ### Scheduler

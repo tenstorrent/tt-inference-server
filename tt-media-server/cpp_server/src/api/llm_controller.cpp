@@ -158,8 +158,7 @@ void LLMController::chatCompletions(
     return;
   }
 
-  auto request = std::make_shared<domain::CompletionRequest>(
-      chatReq.toCompletionRequest());
+  auto request = std::make_shared<domain::LLMRequest>(chatReq.toLLMRequest());
 
   if (request->stream) {
     handleStreaming(request, std::move(callback));
@@ -199,7 +198,7 @@ void LLMController::chatCompletions(
       }
 
       auto chatResponse =
-          domain::ChatCompletionResponse::fromCompletionResponse(completion);
+          domain::ChatCompletionResponse::fromLLMResponse(completion);
       auto resp = drogon::HttpResponse::newHttpResponse();
       resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
       resp->setBody(chatResponse.toJsonString());
@@ -214,9 +213,11 @@ void LLMController::chatCompletions(
 }
 
 void LLMController::handleStreaming(
-    std::shared_ptr<domain::CompletionRequest> reqPtr,
+    std::shared_ptr<domain::LLMRequest> reqPtr,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleStreaming");
+
+  bool validSessionFound = false;
 
   if (reqPtr->sessionId.has_value() && sessionManager) {
     auto slotId =
@@ -224,6 +225,7 @@ void LLMController::handleStreaming(
 
     if (slotId != tt::services::INVALID_SLOT_ID) {
       reqPtr->slotId = slotId;
+      validSessionFound = true;  // Session is valid
     } else {
       TT_LOG_INFO(
           "Received request with non existing session, resetting session id");
@@ -314,9 +316,9 @@ void LLMController::handleStreaming(
                             model, created, includeUsage, continuousUsage,
                             completionTokens, startTime, firstTokenTime,
                             secondTokenTime, firstContentChunk, reqPtr,
-                            capturedSessionId, accumulator, onDisconnect](
-                               const domain::StreamingChunkResponse& chunk,
-                               bool isFinal) {
+                            capturedSessionId, accumulator,
+                            onDisconnect](const domain::LLMStreamChunk& chunk,
+                                          bool isFinal) {
     if (done->load()) {
       return;
     }
@@ -442,7 +444,21 @@ void LLMController::handleStreaming(
     if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
       service->submitStreamingRequest(*reqPtr, streamingCallback);
     } else if (tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY) {
-      disaggregationService->handleStreamingRequest(*reqPtr, streamingCallback);
+      // tokenize right away
+      service->preProcess(*reqPtr);
+      if (shouldDoPrefillOnDecode(*reqPtr, validSessionFound)) {
+        TT_LOG_DEBUG(
+            "[LLMController] Using prefill on decode for sessionId: {}",
+            reqPtr->sessionId.value_or("none"));
+        service->submitStreamingRequest(*reqPtr, streamingCallback);
+      } else {
+        TT_LOG_DEBUG(
+            "[LLMController] Using disaggregated prefill for request with "
+            "sessionId: {}",
+            reqPtr->sessionId.value_or("none"));
+        disaggregationService->handleStreamingRequest(*reqPtr,
+                                                      streamingCallback);
+      }
     } else {
       throw std::runtime_error(
           "[LLMController] LLM Mode must be regular or decode only to handle "
@@ -474,6 +490,21 @@ void LLMController::handleStreaming(
   resp->addHeader("X-Accel-Buffering", "no");
 
   callback(resp);
+}
+
+bool LLMController::shouldDoPrefillOnDecode(const domain::LLMRequest& request,
+                                            bool validSessionFound) const {
+  // for valid sessions always do prefill on decode
+  if (validSessionFound) {
+    return true;
+  }
+
+  // Check if the number of prompt tokens exceeds the threshold
+  // If tokens are below the threshold, prefill on decode server
+  const size_t maxTokens = tt::config::maxTokensToPrefillOnDecode();
+  const size_t promptTokens = static_cast<size_t>(request.prompt_tokens_count);
+
+  return promptTokens < maxTokens;
 }
 
 void LLMController::createSession(

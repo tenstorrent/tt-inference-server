@@ -75,7 +75,7 @@ class LLMController : public drogon::HttpController<LLMController> {
    * objects. Automatically uses accumulated batching when enabled via config.
    */
   void handleStreaming(
-      std::shared_ptr<domain::CompletionRequest> reqPtr,
+      std::shared_ptr<domain::LLMRequest> reqPtr,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**
@@ -85,6 +85,12 @@ class LLMController : public drogon::HttpController<LLMController> {
                                const std::string& type,
                                const Json::Value& param = Json::nullValue,
                                const Json::Value& code = Json::nullValue);
+
+  /**
+   * Determine if disaggregated prefill should be used for this request.
+   */
+  bool shouldDoPrefillOnDecode(const domain::LLMRequest& request,
+                               bool validSessionFound) const;
 };
 
 }  // namespace tt::api
