@@ -4,7 +4,6 @@
 #include "runners/llm_runner/scheduler.hpp"
 
 #include <algorithm>
-#include <cassert>
 
 #include "profiling/tracy.hpp"
 #include "runners/llm_runner/debug.hpp"

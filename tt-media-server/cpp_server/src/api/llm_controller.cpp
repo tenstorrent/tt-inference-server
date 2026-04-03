@@ -611,7 +611,7 @@ void LLMController::createSession(
 }
 
 void LLMController::closeSession(
-    const drogon::HttpRequestPtr& req,
+    const drogon::HttpRequestPtr& /*req*/,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     const std::string& sessionId) const {
   bool success = sessionManager->closeSession(sessionId);
@@ -631,7 +631,7 @@ void LLMController::closeSession(
 }
 
 void LLMController::getSlotId(
-    const drogon::HttpRequestPtr& req,
+    const drogon::HttpRequestPtr& /*req*/,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     const std::string& sessionId) const {
   uint32_t slotId = sessionManager->getSlotIdBySessionId(sessionId);
