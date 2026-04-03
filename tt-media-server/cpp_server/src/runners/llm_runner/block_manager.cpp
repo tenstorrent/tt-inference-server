@@ -47,10 +47,9 @@ Block& BlockManager::allocateBlock(int blockId) {
   ZoneScopedN("BlockManager::allocate_block");
   Block& block = blocks_[static_cast<size_t>(blockId)];
   if (block.ref_count != 0) {
-    throw std::logic_error("BlockManager::allocateBlock: block " +
-                           std::to_string(blockId) +
-                           " has non-zero ref_count " +
-                           std::to_string(block.ref_count));
+    throw std::logic_error(
+        "BlockManager::allocateBlock: block " + std::to_string(blockId) +
+        " has non-zero ref_count " + std::to_string(block.ref_count));
   }
   block.reset();
   free_block_ids_.erase(
