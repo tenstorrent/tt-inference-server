@@ -176,9 +176,8 @@ size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
 
 void SessionManager::setSessionInFlight(const std::string& sessionId,
                                         bool inFlight) {
-  bool found = sessions.modify(sessionId, [inFlight](domain::Session& s) {
-    s.setInFlight(inFlight);
-  });
+  bool found = sessions.modify(
+      sessionId, [inFlight](domain::Session& s) { s.setInFlight(inFlight); });
 
   if (!found) {
     TT_LOG_WARN("[SessionManager] Session not found for in-flight update: {}",

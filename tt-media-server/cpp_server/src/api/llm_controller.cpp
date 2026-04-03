@@ -501,7 +501,8 @@ void LLMController::handleStreaming(
 
           // Mark session as no longer in-flight
           if (capturedSessionId.has_value() && sessionManagerPtr) {
-            sessionManagerPtr->setSessionInFlight(capturedSessionId.value(), false);
+            sessionManagerPtr->setSessionInFlight(capturedSessionId.value(),
+                                                  false);
           }
         }
       });
