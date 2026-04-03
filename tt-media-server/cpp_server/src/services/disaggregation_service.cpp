@@ -3,7 +3,7 @@
 
 #include "services/disaggregation_service.hpp"
 
-#include "domain/completion_request.hpp"
+#include "domain/llm_request.hpp"
 #include "services/llm_service.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
@@ -39,9 +39,9 @@ void DisaggregationService::setupSocketHandlers() {
           }
           streamCallbacks.erase(message.task_id);
 
-          auto response = domain::StreamingChunkResponse(message.task_id);
+          auto response = domain::LLMStreamChunk(message.task_id);
           response.choices.push_back(
-              domain::CompletionChoice(message.generated_text));
+              domain::LLMChoice(message.generated_text));
 
           callback.value()(response, false);
 
@@ -49,7 +49,7 @@ void DisaggregationService::setupSocketHandlers() {
                                 (!message.remaining_tokens.has_value() ||
                                  message.remaining_tokens.value() > 0);
           if (continueDecode) {
-            auto request = domain::CompletionRequest(message.task_id);
+            auto request = domain::LLMRequest(message.task_id);
             request.prompt = std::vector<int>(message.token_ids.begin(),
                                               message.token_ids.end());
             request.max_tokens = message.remaining_tokens;
@@ -57,9 +57,8 @@ void DisaggregationService::setupSocketHandlers() {
             request.slotId = slotId;
             llmService->submitStreamingRequest(request, callback.value());
           } else {
-            auto finalResponse =
-                domain::StreamingChunkResponse(message.task_id);
-            domain::CompletionChoice finalChoice;
+            auto finalResponse = domain::LLMStreamChunk(message.task_id);
+            domain::LLMChoice finalChoice;
             finalChoice.text = "";
             finalChoice.index = 0;
             finalChoice.finish_reason = "stop";
@@ -71,8 +70,8 @@ void DisaggregationService::setupSocketHandlers() {
     socketService->setConnectionLostCallback([this]() {
       streamCallbacks.forEach(
           [](uint32_t taskId, const StreamCallback& callback) {
-            auto response = domain::StreamingChunkResponse(taskId);
-            response.choices.push_back(domain::CompletionChoice(""));
+            auto response = domain::LLMStreamChunk(taskId);
+            response.choices.push_back(domain::LLMChoice(""));
             response.choices.back().finish_reason = "error";
             callback(response, true);
           });
@@ -83,7 +82,7 @@ void DisaggregationService::setupSocketHandlers() {
   if (mode == tt::config::LLMMode::PREFILL_ONLY) {
     socketService->onPrefillRequested(
         [this](const tt::sockets::PrefillRequestMessage& message) {
-          auto request = domain::CompletionRequest(message.task_id);
+          auto request = domain::LLMRequest(message.task_id);
           request.max_tokens = 1;
           auto maxTokens = message.max_tokens;
           using PromptVariant = std::variant<std::string, std::vector<int>>;
@@ -97,7 +96,7 @@ void DisaggregationService::setupSocketHandlers() {
 
           llmService->submitStreamingRequest(
               request, [this, message, maxTokens, slotId](
-                           const domain::StreamingChunkResponse& response,
+                           const domain::LLMStreamChunk& response,
                            bool /*isFinal*/) {
                 auto remainingTokens =
                     maxTokens.has_value()
@@ -133,7 +132,7 @@ void DisaggregationService::start() {
 void DisaggregationService::stop() { socketService->stop(); }
 
 void DisaggregationService::handleStreamingRequest(
-    domain::CompletionRequest& request, const StreamCallback& callback) {
+    domain::LLMRequest& request, const StreamCallback& callback) {
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     streamCallbacks.insert(request.task_id, callback);
 

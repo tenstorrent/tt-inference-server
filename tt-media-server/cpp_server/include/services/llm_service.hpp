@@ -10,8 +10,8 @@
 #include <thread>
 #include <vector>
 
-#include "domain/completion_request.hpp"
-#include "domain/completion_response.hpp"
+#include "domain/llm_request.hpp"
+#include "domain/llm_response.hpp"
 #include "ipc/queue_manager.hpp"
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
@@ -23,12 +23,11 @@
 namespace tt::services {
 
 class LLMService
-    : public BaseService<domain::CompletionRequest, domain::CompletionResponse>,
-      public Streamable<domain::CompletionRequest,
-                        domain::StreamingChunkResponse> {
+    : public BaseService<domain::LLMRequest, domain::LLMResponse>,
+      public Streamable<domain::LLMRequest, domain::LLMStreamChunk> {
  public:
   using StreamCallback =
-      std::function<void(const domain::StreamingChunkResponse&, bool)>;
+      std::function<void(const domain::LLMStreamChunk&, bool)>;
 
   LLMService();
   ~LLMService() override;
@@ -41,7 +40,7 @@ class LLMService
 
   bool isModelReady() const override;
 
-  void preProcess(domain::CompletionRequest& request) const override;
+  void preProcess(domain::LLMRequest& request) const override;
 
   /**
    * Abort an in-flight request. Removes the streaming callback, decrements
@@ -52,18 +51,17 @@ class LLMService
   void abortRequest(uint32_t taskId);
 
  protected:
-  void postProcess(domain::CompletionResponse& response) const override;
+  void postProcess(domain::LLMResponse& response) const override;
   size_t currentQueueSize() const override;
-  domain::CompletionResponse processRequest(
-      domain::CompletionRequest request) override;
+  domain::LLMResponse processRequest(domain::LLMRequest request) override;
 
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
-  void streamingPostProcess(domain::StreamingChunkResponse&) const override {}
+  void streamingPostProcess(domain::LLMStreamChunk&) const override {}
   void processStreamingRequest(
-      domain::CompletionRequest request,
-      std::function<void(domain::StreamingChunkResponse&, bool isFinal)>
-          callback) override;
+      domain::LLMRequest request,
+      std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback)
+      override;
 
  private:
   void startConsumers();
@@ -73,7 +71,7 @@ class LLMService
   std::vector<std::thread> consumer_threads_;
 
   ConcurrentMap<uint32_t,
-                std::function<void(domain::StreamingChunkResponse&, bool)>>
+                std::function<void(domain::LLMStreamChunk&, bool)>>
       stream_callbacks_;
 
   std::atomic<uint64_t> next_worker_{0};
