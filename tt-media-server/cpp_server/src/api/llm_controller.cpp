@@ -377,9 +377,10 @@ void LLMController::handleStreaming(
                             model, created, includeUsage, continuousUsage,
                             completionTokens, startTime, firstTokenTime,
                             secondTokenTime, firstContentChunk, reqPtr,
-                            capturedSessionId, accumulator,
-                            onDisconnect, sessionManagerPtr](const domain::LLMStreamChunk& chunk,
-                                          bool isFinal) {
+                            capturedSessionId, accumulator, onDisconnect,
+                            sessionManagerPtr](
+                               const domain::LLMStreamChunk& chunk,
+                               bool isFinal) {
     if (done->load()) {
       return;
     }
@@ -500,7 +501,8 @@ void LLMController::handleStreaming(
 
           // Mark session as no longer in-flight
           if (capturedSessionId.has_value() && sessionManagerPtr) {
-            sessionManagerPtr->setSessionInFlight(capturedSessionId.value(), false);
+            sessionManagerPtr->setSessionInFlight(capturedSessionId.value(),
+                                                  false);
           }
         }
       });
