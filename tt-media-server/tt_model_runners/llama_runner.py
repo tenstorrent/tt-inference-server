@@ -259,11 +259,11 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
             k_fill = k_blocks.unsqueeze(0)
             v_fill = v_blocks.unsqueeze(0)
 
-            k_fill_tt = ttnn.from_torch(k_fill, dtype=torch.bfloat16)
+            k_fill_tt = ttnn.from_torch(k_fill, dtype=ttnn.bfloat16)
             k_fill_tt = ttnn.typecast(k_fill_tt, dtype=cache_dtype)
             k_fill_tt = k_fill_tt.to(ttnn.TILE_LAYOUT).to(mesh_device)
 
-            v_fill_tt = ttnn.from_torch(v_fill, dtype=torch.bfloat16)
+            v_fill_tt = ttnn.from_torch(v_fill, dtype=ttnn.bfloat16)
             v_fill_tt = ttnn.typecast(v_fill_tt, dtype=cache_dtype)
             v_fill_tt = v_fill_tt.to(ttnn.TILE_LAYOUT).to(mesh_device)
 

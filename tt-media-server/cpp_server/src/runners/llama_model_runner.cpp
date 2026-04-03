@@ -6,6 +6,7 @@
 #include <pybind11/embed.h>
 #include <pybind11/stl.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -195,24 +196,13 @@ LlamaModelRunner::LlamaModelRunner(const Config& config,
   initialize();
 
   if (migrator_) {
-    migrator_->setReceiveCallback([](KVCacheMigrationData data) {
-      py::gil_scoped_acquire acquire;
-      try {
-        py::list pageTensors = deserializePageTables(data.payload);
-        py::list blockIds;
-        for (int id : data.block_ids) {
-          blockIds.append(id);
-        }
-        py::module_ asyncio = py::module_::import("asyncio");
-        asyncio.attr("run")(
-            gRunner.attr("write_page_table")(blockIds, pageTensors));
-        TT_LOG_INFO("[LlamaModelRunner] write_page_table completed for task {}",
-                    data.task_id);
-      } catch (const py::error_already_set& e) {
-        TT_LOG_ERROR(
-            "[LlamaModelRunner] write_page_table failed for task {}: {}",
-            data.task_id, e.what());
+    migrator_->setReceiveCallback([this](KVCacheMigrationData data) {
+      uint32_t taskId = std::stoul(data.task_id);
+      {
+        std::lock_guard<std::mutex> lock(kv_mutex_);
+        pending_kv_data_.emplace(taskId, std::move(data));
       }
+      kv_cv_.notify_all();
     });
     migrator_->start();
     TT_LOG_INFO("[LlamaModelRunner] KV cache migrator started");
@@ -221,13 +211,60 @@ LlamaModelRunner::LlamaModelRunner(const Config& config,
 
 LlamaModelRunner::~LlamaModelRunner() { exit(); }
 
+void LlamaModelRunner::writePageTable(const KVCacheMigrationData& data) {
+  py::list pageTensors = deserializePageTables(data.payload);
+  py::list blockIds;
+  for (int id : data.block_ids) {
+    blockIds.append(id);
+  }
+  py::module_ asyncio = py::module_::import("asyncio");
+  asyncio.attr("run")(
+      gRunner.attr("write_page_table")(blockIds, pageTensors));
+  TT_LOG_INFO("[LlamaModelRunner] write_page_table completed for task {}",
+              data.task_id);
+}
+
+KVCacheMigrationData LlamaModelRunner::waitForKV(uint32_t taskId) {
+  std::unique_lock<std::mutex> lock(kv_mutex_);
+  constexpr auto KV_WAIT_TIMEOUT = std::chrono::seconds(30);
+  bool ready = kv_cv_.wait_for(lock, KV_WAIT_TIMEOUT, [&] {
+    return pending_kv_data_.count(taskId) > 0;
+  });
+  if (ready) {
+    auto data = std::move(pending_kv_data_.at(taskId));
+    pending_kv_data_.erase(taskId);
+    return data;
+  }
+  TT_LOG_ERROR("[LlamaModelRunner] KV cache wait timed out for task {}",
+               taskId);
+  return {};
+}
+
 void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
   if (stop_.load() || !initialized_) return;
+
+  // Collect pending KV data before acquiring GIL (wait is lock-only, no GIL).
+  std::vector<KVCacheMigrationData> pendingWrites;
+  if (!isPrefill && migrator_) {
+    for (Sequence* seq : seqs) {
+      if (seq->numCachedTokens >= seq->numPromptTokens &&
+          seq->numPromptTokens > 0 &&
+          kv_written_tasks_.count(seq->taskId) == 0) {
+        pendingWrites.push_back(waitForKV(seq->taskId));
+      }
+    }
+  }
 
   bool hadError = false;
   {
     py::gil_scoped_acquire acquire;
     try {
+      for (auto& kvData : pendingWrites) {
+        if (!kvData.payload.empty()) {
+          writePageTable(kvData);
+          kv_written_tasks_.insert(std::stoul(kvData.task_id));
+        }
+      }
       py::list pySeqs;
       for (Sequence* seq : seqs) {
         py::list tokenIds;
@@ -301,7 +338,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
           for (size_t i = 0; i < seqs.size(); ++i) {
             auto serialized = serializePageTables(pageTables, i);
             if (!serialized.empty()) {
-              migrator_->send({seqs[i]->task_id.id, seqs[i]->block_table_,
+              migrator_->send({std::to_string(seqs[i]->taskId), seqs[i]->blockTable,
                                std::move(serialized)});
             }
           }
@@ -310,13 +347,13 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
 
       for (size_t i = 0; i < seqs.size(); ++i) {
         py::object item = results[py::int_(i)];
-        uint32_t drTaskId(item.attr("task_id").cast<std::string>());
+        uint32_t drTaskId = item.attr("task_id").cast<uint32_t>();
         uint64_t drTokenId =
             static_cast<uint64_t>(item.attr("token_id").cast<int64_t>());
         std::string error = item.attr("error").cast<std::string>();
         bool drIsError = !error.empty();
         if (drIsError) {
-          TT_LOG_ERROR("[LlamaModelRunner] sequence {} error: {}", drTaskId.id,
+          TT_LOG_ERROR("[LlamaModelRunner] sequence {} error: {}", drTaskId,
                        error);
         }
         TokenResult dr(drTaskId, drTokenId, {}, drIsError);

@@ -4,7 +4,11 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "config/runner_config.hpp"
 #include "runners/kv_cache_migrator.hpp"
@@ -31,12 +35,20 @@ class LlamaModelRunner : public IModelRunner {
   bool initialize();
   void failSequences(const std::vector<Sequence*>& seqs);
 
+  void writePageTable(const KVCacheMigrationData& data);
+  KVCacheMigrationData waitForKV(uint32_t taskId);
+
   tt::config::LLMConfig config_;
   DecodeCallback decode_callback_;
   std::unique_ptr<IKVCacheMigrator> migrator_;
   std::atomic<bool> stop_{false};
   bool initialized_ = false;
   bool lastStepWasPrefill_ = true;
+
+  std::mutex kv_mutex_;
+  std::condition_variable kv_cv_;
+  std::unordered_map<uint32_t, KVCacheMigrationData> pending_kv_data_;
+  std::unordered_set<uint32_t> kv_written_tasks_;
 };
 
 std::unique_ptr<IModelRunner> makeLlamaModelRunner(

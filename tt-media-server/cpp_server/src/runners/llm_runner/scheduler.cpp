@@ -77,6 +77,22 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
       continue;
     }
 
+    // KV cache already populated (e.g. migrated from prefill node).
+    // Allocate blocks and move directly to decode queue, skipping prefill.
+    if (seq->numCachedTokens >= seq->numPromptTokens &&
+        seq->numPromptTokens > 0) {
+      if (block_manager_.allocate(*seq)) {
+        auto id = seq->taskId;
+        seq->status = SequenceStatus::RUNNING;
+        sequences_[id] = std::make_unique<Sequence>(std::move(*seq));
+        decode_queue_.push_back(sequences_[id].get());
+      } else {
+        prefill_queue_->push(*seq);
+      }
+      delete seq;
+      continue;
+    }
+
     if (numBatchedTokens + static_cast<int>(seq->size()) >
             max_num_batched_tokens_ ||
         !block_manager_.allocate(*seq)) {

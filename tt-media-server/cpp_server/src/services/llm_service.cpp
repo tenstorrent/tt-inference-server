@@ -401,6 +401,9 @@ void LLMService::processStreamingRequest(
       taskId, tt::config::llmEngineConfig().kvcache_block_size,
       std::move(tokenIds));
   sequence->numPromptTokens = prompt.size();
+  if (tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY) {
+    sequence->numCachedTokens = prompt.size();
+  }
   if (request.slotId.has_value()) {
     sequence->setKVCacheAddress(request.slotId.value());
   }

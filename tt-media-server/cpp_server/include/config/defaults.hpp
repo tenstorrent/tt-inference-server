@@ -18,15 +18,15 @@ constexpr const char* MODEL_SERVICE = "llm";
 constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
 constexpr const char* TT_PYTHON_PATH = "..";
 constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
-constexpr const char* SOCKET_HOST = "localhost";
+constexpr const char* SOCKET_HOST = "127.0.0.1";
 constexpr uint16_t SOCKET_PORT = 9000;
-constexpr const char* KV_MIGRATION_HOST = "localhost";
+constexpr const char* KV_MIGRATION_HOST = "127.0.0.1";
 constexpr uint16_t KV_MIGRATION_PORT = 9001;
 constexpr size_t MAX_QUEUE_SIZE = 1000;
 constexpr const char* SCHEDULING_POLICY =
     "prefill_first";  // "prefill_first" or "max_occupancy"
 constexpr const char* LLM_DEVICE_BACKEND =
-    "mock_pipeline";  // "mock", "mock_pipeline", "pipeline", "llama"
+    "llama";  // "mock", "mock_pipeline", "pipeline", "llama"
 constexpr const bool ENABLE_ACCUMULATED_STREAMING = false;
 constexpr size_t MAX_ACCUMULATED_TOKENS = 5;
 constexpr size_t MAX_IN_FLIGHT_COUNT = 32;

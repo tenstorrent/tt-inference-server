@@ -4,6 +4,7 @@
 #include "runners/h2h_kv_cache_migrator.hpp"
 
 #include <fcntl.h>
+#include <netdb.h>
 #include <netinet/tcp.h>
 
 #include <cstring>
@@ -133,11 +134,16 @@ void H2HKVCacheMigrator::clientLoop() {
       continue;
     }
 
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port_);
-    if (inet_pton(AF_INET, host_.c_str(), &addr.sin_addr) <= 0) {
-      TT_LOG_ERROR("[H2HKVCacheMigrator] Invalid address: {}", host_);
+    struct addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+
+    std::string portStr = std::to_string(port_);
+    struct addrinfo* addrResult = nullptr;
+    int rc = getaddrinfo(host_.c_str(), portStr.c_str(), &hints, &addrResult);
+    if (rc != 0 || addrResult == nullptr) {
+      TT_LOG_ERROR("[H2HKVCacheMigrator] Cannot resolve '{}': {}", host_,
+                   gai_strerror(rc));
       ::close(fd);
       std::this_thread::sleep_for(std::chrono::seconds(RECONNECT_INTERVAL_S));
       continue;
@@ -145,7 +151,11 @@ void H2HKVCacheMigrator::clientLoop() {
 
     TT_LOG_INFO("[H2HKVCacheMigrator] Connecting to {}:{}...", host_, port_);
 
-    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+    int connectResult =
+        ::connect(fd, addrResult->ai_addr, addrResult->ai_addrlen);
+    freeaddrinfo(addrResult);
+
+    if (connectResult < 0) {
       TT_LOG_ERROR("[H2HKVCacheMigrator] connect(): {}", strerror(errno));
       ::close(fd);
       std::this_thread::sleep_for(std::chrono::seconds(RECONNECT_INTERVAL_S));
