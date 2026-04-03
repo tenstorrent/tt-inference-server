@@ -49,6 +49,16 @@ class Session {
   bool hasSlot() const { return slot_id_ != INVALID_SLOT_ID; }
 
   /**
+   * Check if the session is in-flight (has an active request).
+   */
+  bool isInFlight() const { return in_flight_; }
+
+  /**
+   * Set the in-flight status of the session.
+   */
+  void setInFlight(bool inFlight) { in_flight_ = inFlight; }
+
+  /**
    * Get the last activity time.
    */
   std::chrono::system_clock::time_point getLastActivityTime() const {
@@ -75,6 +85,7 @@ class Session {
  private:
   std::string session_id_;
   uint32_t slot_id_;
+  bool in_flight_{false};
   std::chrono::system_clock::time_point last_activity_time_;
 
   /**
