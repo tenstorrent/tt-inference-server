@@ -3,12 +3,12 @@
 
 #include "services/llm_service.hpp"
 
-#include <cassert>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -369,7 +369,9 @@ domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
 void LLMService::processStreamingRequest(
     domain::LLMRequest request,
     std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback) {
-  assert(callback != nullptr);
+  if (!callback) {
+    throw std::invalid_argument("streaming callback must not be null");
+  }
 
   ZoneScopedN("LLMService::processStreamingRequest");
   if (request.task_id == 0) {

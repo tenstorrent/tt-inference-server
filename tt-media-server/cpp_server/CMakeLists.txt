@@ -270,6 +270,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(llm_engine PUBLIC rt)
 endif()
 target_compile_features(llm_engine PUBLIC cxx_std_20)
+target_compile_options(llm_engine PRIVATE -Wall -Wextra -Wpedantic)
 
 if(ENABLE_TRACY)
     target_link_libraries(llm_engine PUBLIC tracy_client)
