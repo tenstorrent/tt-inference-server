@@ -40,8 +40,6 @@ class SpPipelineRunner : public IRunner {
   void step();
   void drainDecodeResults();
   void memoryLoop();
-  void pushToken(uint32_t taskId, uint64_t tokenId, bool finished);
-  void pushErrorToken(uint32_t taskId);
 
   tt::config::LLMConfig config;
   std::unordered_set<int64_t> stopTokenIds;
