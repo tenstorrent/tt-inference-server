@@ -12,7 +12,7 @@
 
 #include "domain/base_request.hpp"
 #include "domain/chat_message.hpp"
-#include "domain/completion_request.hpp"
+#include "domain/llm_request.hpp"
 #include "utils/tokenizer.hpp"
 
 namespace tt::domain {
@@ -74,7 +74,7 @@ struct ChatCompletionRequest : BaseRequest {
   std::optional<std::string> sessionId;
 
   static ChatCompletionRequest fromJson(const Json::Value& json,
-                                        TaskID taskId) {
+                                        uint32_t taskId) {
     ChatCompletionRequest req(std::move(taskId));
 
     if (json.isMember("model") && !json["model"].isNull()) {
@@ -184,7 +184,7 @@ struct ChatCompletionRequest : BaseRequest {
     }
 
     std::ostringstream out;
-    out << "task_id=" << task_id.id << " model=" << model.value_or("default")
+    out << "task_id=" << task_id << " model=" << model.value_or("default")
         << " stream=" << stream << " messages=" << messages.size()
         << " last_msg=[" << lastMsg << "]"
         << " max_tokens=" << detail::optStr(max_tokens)
@@ -198,10 +198,10 @@ struct ChatCompletionRequest : BaseRequest {
     return out.str();
   }
 
-  /** Convert to CompletionRequest: messages -> prompt, then same pipeline as
-   * /completions. */
-  CompletionRequest toCompletionRequest() const {
-    CompletionRequest out(task_id);
+  /** Convert to LLMRequest: applies chat template to messages, then copies
+   * sampling parameters for the LLM pipeline. */
+  LLMRequest toLLMRequest() const {
+    LLMRequest out(task_id);
     out.model = model;
     out.prompt = tt::utils::activeTokenizer().applyChatTemplate(messages);
 

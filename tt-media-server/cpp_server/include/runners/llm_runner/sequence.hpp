@@ -8,25 +8,22 @@
 #include <optional>
 #include <vector>
 
-#include "domain/task_id.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
 
 namespace llm_engine {
 
-using TaskID = tt::domain::TaskID;
-
-enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED };
+enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED, ABORTED };
 
 struct TokenResult {
-  TaskID taskId;
+  uint32_t taskId;
   uint64_t tokenId = 0;
   std::optional<bool> finished;
   bool isError = false;
 
   TokenResult() = default;
-  TokenResult(TaskID taskId, uint64_t tokenId,
+  TokenResult(uint32_t taskId, uint64_t tokenId,
               std::optional<bool> finished = {}, bool isError = false)
-      : taskId(std::move(taskId)),
+      : taskId(taskId),
         tokenId(tokenId),
         finished(std::move(finished)),
         isError(isError) {}
@@ -34,17 +31,18 @@ struct TokenResult {
 
 class Sequence {
  public:
-  Sequence(TaskID taskId, int blockSize, std::vector<int64_t> tokenIds,
+  Sequence(uint32_t taskId, int blockSize, std::vector<int64_t> tokenIds,
            const SamplingParams& samplingParams = SamplingParams());
 
   void serialize(std::ostream& os) const;
 
-  static Sequence* deserialize(std::istream& is);
+  static Sequence deserialize(std::istream& is);
 
   size_t size() const { return tokenIds.size(); }
   int64_t operator[](size_t i) const { return tokenIds[i]; }
 
   bool isFinished() const { return status == SequenceStatus::FINISHED; }
+  bool isAborted() const { return status == SequenceStatus::ABORTED; }
   size_t numCompletionTokens() const {
     return tokenIds.size() - numPromptTokens;
   }
@@ -66,7 +64,7 @@ class Sequence {
 
   void appendToken(int64_t tokenId);
 
-  TaskID taskId;
+  uint32_t taskId;
   SequenceStatus status = SequenceStatus::WAITING;
   std::vector<int64_t> tokenIds;
   int64_t lastToken = 0;

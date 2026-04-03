@@ -44,7 +44,7 @@ ManageMemoryStatus PagedMemoryManager::allocateKv(
   return ManageMemoryStatus::SUCCESS;
 }
 
-void PagedMemoryManager::deallocateKv(const domain::TaskID& taskId,
+void PagedMemoryManager::deallocateKv(uint32_t taskId,
                                       std::vector<int> slotIds) {
   llm_engine::Sequence seq(taskId, blockManager->blockSize(), {});
   seq.blockTable = std::move(slotIds);
@@ -53,7 +53,7 @@ void PagedMemoryManager::deallocateKv(const domain::TaskID& taskId,
 
 void PagedMemoryManager::handleRequest(const ManageMemoryTask& task) {
   if (task.action == MemoryManagementAction::MOVE) {
-    resultQueue.push(makeResult(task, ManageMemoryStatus::FAILURE));
+    resultQueue->push(makeResult(task, ManageMemoryStatus::FAILURE));
     return;
   }
 
@@ -62,27 +62,26 @@ void PagedMemoryManager::handleRequest(const ManageMemoryTask& task) {
       std::vector<int> slotIds;
       auto status = allocateKv(task, slotIds);
       if (status == ManageMemoryStatus::WAITING) {
-        requestQueue.push(task, /*priority=*/1);
+        requestQueue->push(task, /*priority=*/1);
         return;
       }
       if (status != ManageMemoryStatus::SUCCESS) {
-        resultQueue.push(makeResult(task, status));
+        resultQueue->push(makeResult(task, status));
         return;
       }
 
       std::vector<std::uint32_t> resultIds(slotIds.begin(), slotIds.end());
-      resultQueue.push(
+      resultQueue->push(
           makeResult(task, ManageMemoryStatus::SUCCESS, std::move(resultIds)));
       return;
     }
     case MemoryManagementAction::DEALLOCATE: {
       std::vector<int> slotIds(task.slotIds.begin(), task.slotIds.end());
       deallocateKv(task.taskId, std::move(slotIds));
-      resultQueue.push(makeResult(task, ManageMemoryStatus::SUCCESS));
       return;
     }
     default:
-      resultQueue.push(makeResult(task, ManageMemoryStatus::FAILURE));
+      resultQueue->push(makeResult(task, ManageMemoryStatus::FAILURE));
   }
 }
 

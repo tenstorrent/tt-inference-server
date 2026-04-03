@@ -330,10 +330,10 @@ Client HTTP Request
 
 3. **Send requests to the Decode Server**:
    ```bash
-   curl -X POST http://<decode-server>:8001/v1/completions \
+   curl -X POST http://<decode-server>:8001/v1/chat/completions \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer your-secret-key" \
-     -d '{"prompt": "Hello, how are you?", "max_tokens": 50}'
+     -d '{"messages": [{"role": "user", "content": "Hello, how are you?"}], "max_tokens": 50}'
    ```
 
 **Flow:**
@@ -398,7 +398,6 @@ pkill -9 -f tt_media_server_cpp
 
 | Endpoint | Method | Auth Required | Description |
 |----------|--------|---------------|-------------|
-| `/v1/completions` | POST | ✅ Yes | OpenAI-compatible text completion |
 | `/v1/chat/completions` | POST | ✅ Yes | OpenAI-compatible chat completion |
 | `/health` | GET | ❌ No | Health check (unchanged: always 200 with status + timestamp) |
 | `/tt-liveness` | GET | ❌ No | Liveness (like Python: 200 with status alive + model info; model_ready = any worker warmed up; 500 only on failure) |
@@ -407,14 +406,14 @@ pkill -9 -f tt_media_server_cpp
 
 ## Usage Examples
 
-### Non-streaming Completion
+### Non-streaming Chat Completion
 
 ```bash
-curl -X POST http://localhost:8001/v1/completions \
+curl -X POST http://localhost:8001/v1/chat/completions \
   -H "Authorization: Bearer your-secret-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "Hello, world!",
+    "messages": [{"role": "user", "content": "Hello, world!"}],
     "max_tokens": 100,
     "stream": false
   }'
@@ -423,14 +422,17 @@ curl -X POST http://localhost:8001/v1/completions \
 **Response:**
 ```json
 {
-  "id": "cmpl-abc123",
-  "object": "text_completion",
+  "id": "chatcmpl-abc123",
+  "object": "chat.completion",
   "created": 1234567890,
   "model": "test-model",
   "choices": [
     {
-      "text": "token_0 token_1 token_2 ...",
       "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "token_0 token_1 token_2 ..."
+      },
       "finish_reason": "stop"
     }
   ],
@@ -442,14 +444,14 @@ curl -X POST http://localhost:8001/v1/completions \
 }
 ```
 
-### Streaming Completion (SSE)
+### Streaming Chat Completion (SSE)
 
 ```bash
-curl -X POST http://localhost:8001/v1/completions \
+curl -X POST http://localhost:8001/v1/chat/completions \
   -H "Authorization: Bearer your-secret-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "Hello, world!",
+    "messages": [{"role": "user", "content": "Hello, world!"}],
     "max_tokens": 10,
     "stream": true
   }' --no-buffer
@@ -457,9 +459,9 @@ curl -X POST http://localhost:8001/v1/completions \
 
 **Response (Server-Sent Events):**
 ```
-data: {"id":"cmpl-abc123","choices":[{"text":"token_0","index":0}],...}
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant","content":""},"index":0}],...}
 
-data: {"id":"cmpl-abc123","choices":[{"text":"token_1","index":0}],...}
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"delta":{"content":"token_0"},"index":0}],...}
 
 ...
 
@@ -525,8 +527,8 @@ cpp_server/
 │   │   ├── defaults.hpp             # Default values for all env vars
 │   │   └── runner_config.hpp        # LLMConfig, EmbeddingConfig, RunnerConfig variant
 │   ├── domain/
-│   │   ├── completion_request.hpp
-│   │   ├── completion_response.hpp
+│   │   ├── llm_request.hpp
+│   │   ├── llm_response.hpp
 │   │   ├── chat_completion_*.hpp
 │   │   └── embedding_*.hpp
 │   ├── runners/
@@ -565,9 +567,9 @@ cpp_server/
 ## Components
 
 ### Domain Objects
-- `CompletionRequest` / `CompletionResponse`: OpenAI-compatible completion request and response
-- `StreamingChunkResponse`: SSE streaming chunk (completions)
-- `ChatCompletionRequest` / `ChatCompletionResponse`: Chat completions request and non-streaming response
+- `LLMRequest` / `LLMResponse`: Internal pipeline request and response types
+- `LLMStreamChunk`: Internal streaming chunk callback type used by LLMService
+- `ChatCompletionRequest` / `ChatCompletionResponse`: OpenAI-compatible chat completions request and response
 - `ChatCompletionStreamChunk`: Chat completions SSE streaming chunk
 
 ### Scheduler

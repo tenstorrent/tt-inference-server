@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1.0",
-  "release_version": "0.11.1",
+  "release_version": "0.12.0",
   "model_specs": {
     "openai/gpt-oss-20b": {
       "T3K": {
@@ -78,8 +78,11 @@
               "env_vars": {
                 "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
                 "MESH_DEVICE": "T3K",
-                "ARCH_NAME": "wormhole_b0"
+                "ARCH_NAME": "wormhole_b0",
+                "VLLM_ENABLE_RESPONSES_API_STORE": 1,
+                "VLLM_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS": 1
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -91,7 +94,9 @@
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
               "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
               "MESH_DEVICE": "T3K",
-              "ARCH_NAME": "wormhole_b0"
+              "ARCH_NAME": "wormhole_b0",
+              "VLLM_ENABLE_RESPONSES_API_STORE": 1,
+              "VLLM_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS": 1
             },
             "vllm_commit": "8f36910",
             "hf_weights_repo": "openai/gpt-oss-20b",
@@ -154,6 +159,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -267,6 +273,7 @@
                 "MESH_DEVICE": "(4, 8)",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -317,7 +324,7 @@
             "model_name": "gpt-oss-120b",
             "inference_engine": "vLLM",
             "device_type": "T3K",
-            "tt_metal_commit": "bac8b34",
+            "tt_metal_commit": "805f43d",
             "device_model_spec": {
               "device": "T3K",
               "max_concurrency": 1,
@@ -380,6 +387,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -393,17 +401,17 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
-            "vllm_commit": "7c6685a",
+            "vllm_commit": "a45c614",
             "hf_weights_repo": "openai/gpt-oss-120b",
             "param_count": 120,
             "min_disk_gb": 260,
             "min_ram_gb": 300.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a",
+            "version": "0.12.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.12.0-805f43d-a45c614",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/gpt_oss",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/805f43d/models/demos/gpt_oss",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -429,7 +437,7 @@
             "model_name": "gpt-oss-120b",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "bac8b34",
+            "tt_metal_commit": "805f43d",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 32,
@@ -495,6 +503,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "TT_MM_THROTTLE_PERF": 2
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -508,17 +517,17 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 2
             },
-            "vllm_commit": "7c6685a",
+            "vllm_commit": "a45c614",
             "hf_weights_repo": "openai/gpt-oss-120b",
             "param_count": 120,
             "min_disk_gb": 260,
             "min_ram_gb": 300.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a",
+            "version": "0.12.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.12.0-805f43d-a45c614",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/gpt_oss",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/805f43d/models/demos/gpt_oss",
             "override_tt_config": {
               "sample_on_device_mode": "all"
             },
@@ -573,6 +582,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -646,6 +656,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -722,6 +733,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -836,6 +848,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -946,6 +959,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -1057,6 +1071,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -1133,6 +1148,7 @@
                 "TT_MM_THROTTLE_PERF": 5,
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -1250,6 +1266,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "TT_MM_THROTTLE_PERF": 5
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -1323,6 +1340,7 @@
                 "MESH_DEVICE": "P300",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -1451,6 +1469,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -1577,6 +1596,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "TT_MM_THROTTLE_PERF": 5
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -1692,6 +1712,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -1769,6 +1790,7 @@
                 "TT_MM_THROTTLE_PERF": 5,
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -1847,6 +1869,7 @@
                 "MESH_DEVICE": "P150x8",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -1968,6 +1991,7 @@
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -2089,6 +2113,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -2161,6 +2186,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -2234,6 +2260,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -2348,6 +2375,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -2463,6 +2491,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "TT_MM_THROTTLE_PERF": 5
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -2543,6 +2572,7 @@
                 "TT_MM_THROTTLE_PERF": 5,
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -2701,6 +2731,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -2857,6 +2888,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "TT_MM_THROTTLE_PERF": 5
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -2939,6 +2971,7 @@
                 "TT_MM_THROTTLE_PERF": 5,
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -3099,6 +3132,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -3255,6 +3289,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "TT_MM_THROTTLE_PERF": 5
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -3337,6 +3372,7 @@
                 "TT_MM_THROTTLE_PERF": 5,
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -3457,6 +3493,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -3529,6 +3566,7 @@
                 "MESH_DEVICE": "N150x4",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -3642,6 +3680,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -3714,6 +3753,7 @@
                 "MESH_DEVICE": "N150x4",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -3871,6 +3911,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -4000,6 +4041,7 @@
                 "MAX_PREFILL_CHUNK_SIZE": "32",
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -4125,7 +4167,17 @@
                 "MESH_DEVICE": "P150x4",
                 "ARCH_NAME": "blackhole"
               },
-              "system_requirements": null
+              "tensor_cache_timeout": 5400.0,
+              "system_requirements": {
+                "firmware": {
+                  "specifier": ">=18.5.0",
+                  "mode": "STRICT"
+                },
+                "kmd": {
+                  "specifier": ">=2.3.0",
+                  "mode": "STRICT"
+                }
+              }
             },
             "system_requirements": {
               "firmware": {
@@ -4247,7 +4299,17 @@
                 "MESH_DEVICE": "P150x8",
                 "ARCH_NAME": "blackhole"
               },
-              "system_requirements": null
+              "tensor_cache_timeout": 5400.0,
+              "system_requirements": {
+                "firmware": {
+                  "specifier": ">=18.12.0",
+                  "mode": "STRICT"
+                },
+                "kmd": {
+                  "specifier": ">=2.4.1",
+                  "mode": "STRICT"
+                }
+              }
             },
             "system_requirements": {
               "firmware": {
@@ -4360,15 +4422,16 @@
                 "max_num_batched_tokens": "131072",
                 "max-log-len": "32",
                 "seed": "9472",
-                "override_tt_config": "{\"trace_region_size\": 56000000}"
+                "override_tt_config": "{\"trace_region_size\": 58000000}"
               },
               "override_tt_config": {
-                "trace_region_size": 56000000
+                "trace_region_size": 58000000
               },
               "env_vars": {
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -4401,7 +4464,7 @@
             "status": "FUNCTIONAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
             "override_tt_config": {
-              "trace_region_size": 56000000
+              "trace_region_size": 58000000
             },
             "supported_modalities": [
               "text"
@@ -4457,6 +4520,7 @@
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -4629,6 +4693,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -4758,6 +4823,7 @@
                 "MAX_PREFILL_CHUNK_SIZE": "32",
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -4883,7 +4949,17 @@
                 "MESH_DEVICE": "P150x4",
                 "ARCH_NAME": "blackhole"
               },
-              "system_requirements": null
+              "tensor_cache_timeout": 5400.0,
+              "system_requirements": {
+                "firmware": {
+                  "specifier": ">=18.5.0",
+                  "mode": "STRICT"
+                },
+                "kmd": {
+                  "specifier": ">=2.3.0",
+                  "mode": "STRICT"
+                }
+              }
             },
             "system_requirements": {
               "firmware": {
@@ -5005,7 +5081,17 @@
                 "MESH_DEVICE": "P150x8",
                 "ARCH_NAME": "blackhole"
               },
-              "system_requirements": null
+              "tensor_cache_timeout": 5400.0,
+              "system_requirements": {
+                "firmware": {
+                  "specifier": ">=18.12.0",
+                  "mode": "STRICT"
+                },
+                "kmd": {
+                  "specifier": ">=2.4.1",
+                  "mode": "STRICT"
+                }
+              }
             },
             "system_requirements": {
               "firmware": {
@@ -5118,15 +5204,16 @@
                 "max_num_batched_tokens": "131072",
                 "max-log-len": "32",
                 "seed": "9472",
-                "override_tt_config": "{\"trace_region_size\": 56000000}"
+                "override_tt_config": "{\"trace_region_size\": 58000000}"
               },
               "override_tt_config": {
-                "trace_region_size": 56000000
+                "trace_region_size": 58000000
               },
               "env_vars": {
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -5159,7 +5246,7 @@
             "status": "FUNCTIONAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
             "override_tt_config": {
-              "trace_region_size": 56000000
+              "trace_region_size": 58000000
             },
             "supported_modalities": [
               "text"
@@ -5215,6 +5302,7 @@
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -5387,6 +5475,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -5516,6 +5605,7 @@
                 "MAX_PREFILL_CHUNK_SIZE": "32",
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -5641,7 +5731,17 @@
                 "MESH_DEVICE": "P150x4",
                 "ARCH_NAME": "blackhole"
               },
-              "system_requirements": null
+              "tensor_cache_timeout": 5400.0,
+              "system_requirements": {
+                "firmware": {
+                  "specifier": ">=18.5.0",
+                  "mode": "STRICT"
+                },
+                "kmd": {
+                  "specifier": ">=2.3.0",
+                  "mode": "STRICT"
+                }
+              }
             },
             "system_requirements": {
               "firmware": {
@@ -5763,7 +5863,17 @@
                 "MESH_DEVICE": "P150x8",
                 "ARCH_NAME": "blackhole"
               },
-              "system_requirements": null
+              "tensor_cache_timeout": 5400.0,
+              "system_requirements": {
+                "firmware": {
+                  "specifier": ">=18.12.0",
+                  "mode": "STRICT"
+                },
+                "kmd": {
+                  "specifier": ">=2.4.1",
+                  "mode": "STRICT"
+                }
+              }
             },
             "system_requirements": {
               "firmware": {
@@ -5876,15 +5986,16 @@
                 "max_num_batched_tokens": "131072",
                 "max-log-len": "32",
                 "seed": "9472",
-                "override_tt_config": "{\"trace_region_size\": 56000000}"
+                "override_tt_config": "{\"trace_region_size\": 58000000}"
               },
               "override_tt_config": {
-                "trace_region_size": 56000000
+                "trace_region_size": 58000000
               },
               "env_vars": {
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -5917,7 +6028,7 @@
             "status": "FUNCTIONAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
             "override_tt_config": {
-              "trace_region_size": 56000000
+              "trace_region_size": 58000000
             },
             "supported_modalities": [
               "text"
@@ -5973,6 +6084,7 @@
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -6145,6 +6257,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -6274,6 +6387,7 @@
                 "MAX_PREFILL_CHUNK_SIZE": "32",
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -6399,7 +6513,17 @@
                 "MESH_DEVICE": "P150x4",
                 "ARCH_NAME": "blackhole"
               },
-              "system_requirements": null
+              "tensor_cache_timeout": 5400.0,
+              "system_requirements": {
+                "firmware": {
+                  "specifier": ">=18.5.0",
+                  "mode": "STRICT"
+                },
+                "kmd": {
+                  "specifier": ">=2.3.0",
+                  "mode": "STRICT"
+                }
+              }
             },
             "system_requirements": {
               "firmware": {
@@ -6521,7 +6645,17 @@
                 "MESH_DEVICE": "P150x8",
                 "ARCH_NAME": "blackhole"
               },
-              "system_requirements": null
+              "tensor_cache_timeout": 5400.0,
+              "system_requirements": {
+                "firmware": {
+                  "specifier": ">=18.12.0",
+                  "mode": "STRICT"
+                },
+                "kmd": {
+                  "specifier": ">=2.4.1",
+                  "mode": "STRICT"
+                }
+              }
             },
             "system_requirements": {
               "firmware": {
@@ -6634,15 +6768,16 @@
                 "max_num_batched_tokens": "131072",
                 "max-log-len": "32",
                 "seed": "9472",
-                "override_tt_config": "{\"trace_region_size\": 56000000}"
+                "override_tt_config": "{\"trace_region_size\": 58000000}"
               },
               "override_tt_config": {
-                "trace_region_size": 56000000
+                "trace_region_size": 58000000
               },
               "env_vars": {
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -6675,7 +6810,7 @@
             "status": "FUNCTIONAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
             "override_tt_config": {
-              "trace_region_size": 56000000
+              "trace_region_size": 58000000
             },
             "supported_modalities": [
               "text"
@@ -6731,6 +6866,7 @@
                 "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
               },
+              "tensor_cache_timeout": 5400.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -6796,7 +6932,7 @@
             "model_name": "DeepSeek-R1-0528",
             "inference_engine": "vLLM",
             "device_type": "GALAXY",
-            "tt_metal_commit": "bac8b34",
+            "tt_metal_commit": "805f43d",
             "device_model_spec": {
               "device": "GALAXY",
               "max_concurrency": 256,
@@ -6819,6 +6955,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 6400.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -6830,17 +6967,17 @@
               "MESH_DEVICE": "TG",
               "ARCH_NAME": "wormhole_b0"
             },
-            "vllm_commit": "7c6685a",
+            "vllm_commit": "a45c614",
             "hf_weights_repo": "deepseek-ai/DeepSeek-R1-0528",
             "param_count": null,
             "min_disk_gb": null,
             "min_ram_gb": null,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a",
+            "version": "0.12.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.12.0-805f43d-a45c614",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/deepseek_v3",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/805f43d/models/demos/deepseek_v3",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -6866,20 +7003,20 @@
             "model_name": "DeepSeek-R1-0528",
             "inference_engine": "vLLM",
             "device_type": "DUAL_GALAXY",
-            "tt_metal_commit": "bac8b34",
+            "tt_metal_commit": "805f43d",
             "device_model_spec": {
               "device": "DUAL_GALAXY",
               "max_concurrency": 256,
-              "max_context": 2048,
+              "max_context": 32768,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
               "vllm_args": {
                 "model": "deepseek-ai/DeepSeek-R1-0528",
                 "block_size": "32",
-                "max_model_len": "2048",
+                "max_model_len": "32768",
                 "max_num_seqs": "32",
-                "max_num_batched_tokens": "2048",
+                "max_num_batched_tokens": "32768",
                 "max-log-len": "32",
                 "seed": "9472",
                 "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\", \"fabric_reliability_mode\": \"RELAXED_INIT\", \"trace_mode\": \"none\", \"env_passthrough\": [\"DEEPSEEK_V3_CACHE\", \"DEEPSEEK_V3_HF_MODEL\"]}",
@@ -6897,6 +7034,7 @@
               "env_vars": {
                 "MESH_DEVICE": "(8,8)"
               },
+              "tensor_cache_timeout": 6400.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -6907,17 +7045,17 @@
               "TORCHDYNAMO_DISABLE": "1",
               "MESH_DEVICE": "(8,8)"
             },
-            "vllm_commit": "7c6685a",
+            "vllm_commit": "a45c614",
             "hf_weights_repo": "deepseek-ai/DeepSeek-R1-0528",
             "param_count": null,
             "min_disk_gb": null,
             "min_ram_gb": null,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a",
+            "version": "0.12.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64:0.12.0-805f43d-a45c614",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/deepseek_v3",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/805f43d/models/demos/deepseek_v3",
             "override_tt_config": {
               "fabric_config": "FABRIC_1D",
               "fabric_reliability_mode": "RELAXED_INIT",
@@ -6951,11 +7089,11 @@
             "model_name": "DeepSeek-R1-0528",
             "inference_engine": "vLLM",
             "device_type": "QUAD_GALAXY",
-            "tt_metal_commit": "bac8b34",
+            "tt_metal_commit": "805f43d",
             "device_model_spec": {
               "device": "QUAD_GALAXY",
               "max_concurrency": 512,
-              "max_context": 2048,
+              "max_context": 32768,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -6964,7 +7102,7 @@
                 "block_size": "32",
                 "max_model_len": "2048",
                 "max_num_seqs": "32",
-                "max_num_batched_tokens": "2048",
+                "max_num_batched_tokens": "32768",
                 "max-log-len": "32",
                 "seed": "9472",
                 "override_tt_config": "{\"fabric_config\": \"FABRIC_1D\", \"fabric_reliability_mode\": \"RELAXED_INIT\", \"trace_mode\": \"none\", \"env_passthrough\": [\"DEEPSEEK_V3_CACHE\", \"DEEPSEEK_V3_HF_MODEL\"]}",
@@ -6982,6 +7120,7 @@
               "env_vars": {
                 "MESH_DEVICE": "(8,16)"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -6992,17 +7131,17 @@
               "TORCHDYNAMO_DISABLE": "1",
               "MESH_DEVICE": "(8,16)"
             },
-            "vllm_commit": "7c6685a",
+            "vllm_commit": "a45c614",
             "hf_weights_repo": "deepseek-ai/DeepSeek-R1-0528",
             "param_count": null,
             "min_disk_gb": null,
             "min_ram_gb": null,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a",
+            "version": "0.12.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64:0.12.0-805f43d-a45c614",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/deepseek_v3",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/805f43d/models/demos/deepseek_v3",
             "override_tt_config": {
               "fabric_config": "FABRIC_1D",
               "fabric_reliability_mode": "RELAXED_INIT",
@@ -7100,6 +7239,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -7211,6 +7351,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -7323,6 +7464,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -7436,6 +7578,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -7547,6 +7690,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -7659,6 +7803,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -7774,6 +7919,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -7886,6 +8032,7 @@
                 "VLLM__MAX_MODEL_LENGTH": "2048",
                 "VLLM__MIN_MODEL_LENGTH": "32"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -7907,7 +8054,7 @@
             "min_ram_gb": 8,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
@@ -7999,6 +8146,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -8111,6 +8259,7 @@
                 "VLLM__MAX_MODEL_LENGTH": "2048",
                 "VLLM__MIN_MODEL_LENGTH": "32"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -8133,7 +8282,7 @@
             "min_ram_gb": 8,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
@@ -8225,6 +8374,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -8339,6 +8489,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -8451,6 +8602,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -8562,6 +8714,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -8674,6 +8827,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -8786,6 +8940,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -8939,6 +9094,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -9011,6 +9167,7 @@
               "env_vars": {
                 "MESH_DEVICE": "GPU"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -9121,6 +9278,7 @@
                 "MESH_DEVICE": "P100",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -9232,6 +9390,7 @@
                 "MESH_DEVICE": "P150",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -9345,6 +9504,7 @@
                 "MESH_DEVICE": "P150x4",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -9461,6 +9621,7 @@
                 "MESH_DEVICE": "P150x8",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -9584,6 +9745,7 @@
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -9669,6 +9831,7 @@
                 "MESH_DEVICE": "P300",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -9795,6 +9958,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "TT_MM_THROTTLE_PERF": 5
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -9884,6 +10048,7 @@
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 "TT_MM_THROTTLE_PERF": 5
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -10010,6 +10175,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -10122,6 +10288,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -10275,6 +10442,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -10347,6 +10515,7 @@
               "env_vars": {
                 "MESH_DEVICE": "GPU"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -10457,6 +10626,7 @@
                 "MESH_DEVICE": "P100",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -10568,6 +10738,7 @@
                 "MESH_DEVICE": "P150",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -10681,6 +10852,7 @@
                 "MESH_DEVICE": "P150x4",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -10797,6 +10969,7 @@
                 "MESH_DEVICE": "P150x8",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -10920,6 +11093,7 @@
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -11005,6 +11179,7 @@
                 "MESH_DEVICE": "P300",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -11131,6 +11306,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "TT_MM_THROTTLE_PERF": 5
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -11220,6 +11396,7 @@
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
                 "TT_MM_THROTTLE_PERF": 5
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": {
@@ -11347,6 +11524,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -11424,6 +11602,7 @@
                 "TT_MM_THROTTLE_PERF": 5,
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -11546,6 +11725,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -11665,6 +11845,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -11786,6 +11967,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -11905,6 +12087,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -12028,6 +12211,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -12113,6 +12297,7 @@
                 "TT_MM_THROTTLE_PERF": 5,
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -12238,6 +12423,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "TT_MM_THROTTLE_PERF": 5
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -12362,6 +12548,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -12447,6 +12634,7 @@
                 "TT_MM_THROTTLE_PERF": 5,
                 "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -12572,6 +12760,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "TT_MM_THROTTLE_PERF": 5
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -12691,6 +12880,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -12805,6 +12995,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -12917,6 +13108,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -13031,6 +13223,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -13145,6 +13338,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -13262,6 +13456,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -13379,6 +13574,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -13496,6 +13692,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -13608,6 +13805,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -13722,6 +13920,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -13834,6 +14033,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -13949,6 +14149,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "MAX_PREFILL_CHUNK_SIZE": 16
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -14065,6 +14266,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "MAX_PREFILL_CHUNK_SIZE": 16
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -14180,6 +14382,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -14290,6 +14493,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -14401,6 +14605,7 @@
                 "MESH_DEVICE": "P150x4",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -14514,6 +14719,7 @@
                 "MESH_DEVICE": "P150x8",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -14627,6 +14833,7 @@
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -14741,6 +14948,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -14851,6 +15059,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -14962,6 +15171,7 @@
                 "MESH_DEVICE": "P150x4",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -15075,6 +15285,7 @@
                 "MESH_DEVICE": "P150x8",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -15188,6 +15399,7 @@
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -15301,6 +15513,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -15411,6 +15624,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -15522,6 +15736,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -15632,6 +15847,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -15743,6 +15959,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -15853,6 +16070,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -15964,6 +16182,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -16074,6 +16293,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -16186,6 +16406,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -16296,6 +16517,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -16407,6 +16629,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -16425,7 +16648,7 @@
             "min_ram_gb": 6,
             "model_type": "IMAGE",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
             "status": "COMPLETE",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/fbbbd2d/models/tt_transformers",
@@ -16478,6 +16701,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -16497,7 +16721,7 @@
             "min_ram_gb": 6,
             "model_type": "IMAGE",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
             "status": "COMPLETE",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/fbbbd2d/models/tt_transformers",
@@ -16550,6 +16774,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -16569,7 +16794,7 @@
             "min_ram_gb": 6,
             "model_type": "IMAGE",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
             "status": "COMPLETE",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/fbbbd2d/models/tt_transformers",
@@ -16621,6 +16846,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -16639,7 +16865,7 @@
             "min_ram_gb": 6,
             "model_type": "IMAGE",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd",
             "status": "COMPLETE",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/fbbbd2d/models/tt_transformers",
@@ -16733,6 +16959,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -16843,6 +17070,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -16952,6 +17180,7 @@
                 "MESH_DEVICE": "P300",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -17061,6 +17290,7 @@
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -17170,6 +17400,7 @@
                 "MESH_DEVICE": "P150x4",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -17279,6 +17510,7 @@
                 "MESH_DEVICE": "P150x8",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -17391,6 +17623,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -17501,6 +17734,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -17610,6 +17844,7 @@
                 "MESH_DEVICE": "P300",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -17719,6 +17954,7 @@
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -17828,6 +18064,7 @@
                 "MESH_DEVICE": "P150x4",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -17937,6 +18174,7 @@
                 "MESH_DEVICE": "P150x8",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -18049,6 +18287,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -18159,6 +18398,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -18268,6 +18508,7 @@
                 "MESH_DEVICE": "P150x8",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -18338,6 +18579,7 @@
                 "MESH_DEVICE": "P300x2",
                 "ARCH_NAME": "blackhole"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -18412,6 +18654,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "TT_DIT_CACHE_DIR": "/tmp/TT_DIT_CACHE"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -18484,6 +18727,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -18558,6 +18802,7 @@
                 "ARCH_NAME": "wormhole_b0",
                 "TT_DIT_CACHE_DIR": "/tmp/TT_DIT_CACHE"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -18630,6 +18875,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -18741,6 +18987,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -18812,6 +19059,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -18922,6 +19170,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -19032,6 +19281,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -19144,6 +19394,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -19215,6 +19466,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -19325,6 +19577,7 @@
                 "MESH_DEVICE": "TG",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -19435,6 +19688,7 @@
                 "MESH_DEVICE": "T3K",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -19547,6 +19801,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -19657,6 +19912,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -19775,6 +20031,7 @@
                 "MAX_BATCH_SIZE": "8",
                 "DEFAULT_THROTTLE_LEVEL": "0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -19799,7 +20056,7 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin/tree/65718bb/tt_vllm_plugin",
@@ -19897,6 +20154,7 @@
                 "MAX_BATCH_SIZE": "16",
                 "DEFAULT_THROTTLE_LEVEL": "0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -19922,7 +20180,7 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin/tree/65718bb/tt_vllm_plugin",
@@ -20020,6 +20278,7 @@
                 "MAX_BATCH_SIZE": "16",
                 "DEFAULT_THROTTLE_LEVEL": "0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -20045,7 +20304,7 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin/tree/65718bb/tt_vllm_plugin",
@@ -20143,6 +20402,7 @@
                 "DEFAULT_THROTTLE_LEVEL": "0",
                 "TT_METAL_INSPECTOR_RPC": "0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -20168,7 +20428,7 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin/tree/65718bb/tt_vllm_plugin",
@@ -20265,6 +20525,7 @@
                 "VLLM__MIN_CONTEXT_LENGTH": "32",
                 "VLLM__MAX_NUM_SEQS": "1"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -20287,7 +20548,7 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
@@ -20383,6 +20644,7 @@
                 "VLLM__MIN_CONTEXT_LENGTH": "32",
                 "VLLM__MAX_NUM_SEQS": "2"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -20406,7 +20668,7 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
@@ -20502,6 +20764,7 @@
                 "VLLM__MIN_CONTEXT_LENGTH": "32",
                 "VLLM__MAX_NUM_SEQS": "2"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -20525,7 +20788,7 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
@@ -20620,6 +20883,7 @@
                 "VLLM__MIN_CONTEXT_LENGTH": "32",
                 "VLLM__MAX_NUM_SEQS": "1"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -20642,7 +20906,7 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers",
@@ -20741,6 +21005,7 @@
                 "MAX_BATCH_SIZE": "1",
                 "DEFAULT_THROTTLE_LEVEL": "0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -20765,7 +21030,7 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
@@ -20863,6 +21128,7 @@
                 "MAX_BATCH_SIZE": "1",
                 "DEFAULT_THROTTLE_LEVEL": "0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -20888,7 +21154,7 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
@@ -20986,6 +21252,7 @@
                 "MAX_BATCH_SIZE": "1",
                 "DEFAULT_THROTTLE_LEVEL": "0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -21011,7 +21278,7 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
@@ -21108,6 +21375,7 @@
                 "MAX_BATCH_SIZE": "1",
                 "DEFAULT_THROTTLE_LEVEL": "0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -21132,7 +21400,7 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
@@ -21228,6 +21496,7 @@
                 "VLLM__MAX_MODEL_LENGTH": "2048",
                 "VLLM__MIN_MODEL_LENGTH": "32"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -21249,7 +21518,7 @@
             "min_ram_gb": 8,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
@@ -21344,6 +21613,7 @@
                 "VLLM__MAX_MODEL_LENGTH": "2048",
                 "VLLM__MIN_MODEL_LENGTH": "32"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -21366,7 +21636,7 @@
             "min_ram_gb": 8,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
@@ -21459,6 +21729,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -21477,7 +21748,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -21569,6 +21840,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -21588,7 +21860,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -21681,6 +21953,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -21699,7 +21972,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -21791,6 +22064,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -21810,7 +22084,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -21903,6 +22177,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -21921,7 +22196,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -22013,6 +22288,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -22032,7 +22308,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -22125,6 +22401,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -22143,7 +22420,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -22235,6 +22512,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -22254,7 +22532,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -22347,6 +22625,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -22365,7 +22644,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -22457,6 +22736,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -22476,7 +22756,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -22569,6 +22849,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -22587,7 +22868,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -22679,6 +22960,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -22698,7 +22980,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -22791,6 +23073,7 @@
                 "MESH_DEVICE": "N150",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -22809,7 +23092,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",
@@ -22901,6 +23184,7 @@
                 "MESH_DEVICE": "N300",
                 "ARCH_NAME": "wormhole_b0"
               },
+              "tensor_cache_timeout": 3600.0,
               "system_requirements": null
             },
             "system_requirements": null,
@@ -22920,7 +23204,7 @@
             "min_ram_gb": 6,
             "model_type": "CNN",
             "repacked": 0,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers",

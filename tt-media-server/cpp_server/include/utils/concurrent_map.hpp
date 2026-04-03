@@ -54,6 +54,20 @@ class ConcurrentMap {
     map_.clear();
   }
 
+  size_t size() {
+    std::lock_guard lock(mutex);
+    return map_.size();
+  }
+
+  template <typename Func>
+  bool modify(const Key& key, Func&& func) {
+    std::lock_guard lock(mutex);
+    auto it = map_.find(key);
+    if (it == map_.end()) return false;
+    func(it->second);
+    return true;
+  }
+
   template <typename Func>
   void forEach(Func&& func) {
     std::lock_guard lock(mutex);

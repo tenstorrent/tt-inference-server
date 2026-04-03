@@ -3,39 +3,47 @@
 
 #pragma once
 
-#include <boost/interprocess/ipc/message_queue.hpp>
 #include <memory>
 #include <string>
 
+#include "ipc/boost_ipc_queue.hpp"
 #include "ipc/warmup_signal_queue.hpp"
 
 namespace tt::ipc {
 
 constexpr const char* WARMUP_SIGNALS_QUEUE_NAME = "tt_warmup_signals";
-constexpr size_t WARMUP_SIGNAL_MSG_SIZE = sizeof(int64_t);
 
 /**
- * IWarmupSignalQueue implementation using Boost.Interprocess message_queue.
+ * IWarmupSignalQueue implementation backed by the generic BoostIpcMemoryQueue.
  */
 class BoostIpcWarmupSignalQueue : public IWarmupSignalQueue {
  public:
-  /** Open existing queue (worker side). */
-  explicit BoostIpcWarmupSignalQueue(const std::string& name);
+  using Queue = BoostIpcMemoryQueue<int64_t, sizeof(int64_t)>;
 
   /** Create queue (main process side). */
-  BoostIpcWarmupSignalQueue(const std::string& name, size_t capacity);
+  BoostIpcWarmupSignalQueue(const std::string& name, size_t capacity)
+      : queue_(std::make_unique<Queue>(name, static_cast<int>(capacity))) {}
 
-  ~BoostIpcWarmupSignalQueue() override;
+  /** Open existing queue (worker side). */
+  explicit BoostIpcWarmupSignalQueue(const std::string& name)
+      : queue_(Queue::openExisting(name)) {}
 
-  void sendReady(int workerId) override;
-  int receive() override;
-  void remove() override;
+  void sendReady(int workerId) override {
+    queue_->push(static_cast<int64_t>(workerId));
+  }
 
-  static void remove(const std::string& name);
+  int receive() override {
+    int64_t payload = 0;
+    queue_->receive(payload);
+    return static_cast<int>(payload);
+  }
+
+  void remove() override { queue_->remove(); }
+
+  static void remove(const std::string& name) { Queue::remove(name); }
 
  private:
-  std::string name_;
-  std::unique_ptr<boost::interprocess::message_queue> queue_;
+  std::unique_ptr<Queue> queue_;
 };
 
 }  // namespace tt::ipc

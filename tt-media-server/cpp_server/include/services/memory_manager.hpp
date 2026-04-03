@@ -6,7 +6,7 @@
 #include <optional>
 
 #include "domain/manage_memory.hpp"
-#include "ipc/boost_ipc_memory_queue.hpp"
+#include "ipc/boost_ipc_queue.hpp"
 
 namespace tt::services {
 
@@ -25,8 +25,8 @@ class MemoryManager {
   void handleResponse(int slotId);
 
  protected:
-  ipc::MemoryRequestQueue requestQueue;
-  ipc::MemoryResultQueue resultQueue;
+  std::unique_ptr<ipc::MemoryRequestQueue> requestQueue;
+  std::unique_ptr<ipc::MemoryResultQueue> resultQueue;
 };
 
 }  // namespace tt::services
