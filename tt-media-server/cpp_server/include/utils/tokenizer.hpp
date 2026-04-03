@@ -78,13 +78,13 @@ class Tokenizer {
 
   /**
    * Decode token IDs to text.
-   * @param skip_special_tokens If true (default), special tokens (parsed from
+   * @param skipSpecialTokens If true (default), special tokens (parsed from
    *   the tokenizer JSON's added_tokens with "special": true) are filtered out
    *   before decoding. If false, all tokens are decoded as-is.
    * @throws std::runtime_error if tokenizer not loaded.
    */
   std::string decode(const std::vector<int>& tokenIds,
-                     bool skip_special_tokens = true) const;
+                     bool skipSpecialTokens = true) const;
 
   /** Check if tokenizer is loaded and ready. */
   bool isLoaded() const;
@@ -106,7 +106,7 @@ class Tokenizer {
   class StreamDecoder {
    public:
     explicit StreamDecoder(const Tokenizer& tokenizer,
-                           bool skip_special_tokens = true);
+                           bool skipSpecialTokens = true);
 
     /**
      * Decodes the next token. Returns the decoded text delta, or "" if the
@@ -125,16 +125,16 @@ class Tokenizer {
    private:
     const Tokenizer& tokenizer_;
     std::vector<int> pending_;
-    bool skip_special_tokens_;
+    bool skipSpecialTokens_;
   };
 
   std::unique_ptr<StreamDecoder> createStreamDecoder(
-      bool skip_special_tokens = true) const;
+      bool skipSpecialTokens = true) const;
 
  protected:
   std::unique_ptr<tokenizers::Tokenizer> tok_;
   TokenizerConfig cfg_;
-  std::unordered_set<int> special_token_ids_;
+  std::unordered_set<int> specialTokenIds_;
 };
 
 /**

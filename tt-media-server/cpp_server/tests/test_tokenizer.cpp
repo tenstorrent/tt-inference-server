@@ -405,8 +405,7 @@ TEST_F(DeepseekTokenizerTest, StreamDecoderSkipSpecialTokens) {
 
   EXPECT_NE(result.find("Hello"), std::string::npos);
   // The special token text should not appear
-  std::string eosText =
-      tokenizer().decode({1}, /*skip_special_tokens=*/false);
+  std::string eosText = tokenizer().decode({1}, /*skip_special_tokens=*/false);
   EXPECT_EQ(result.find(eosText), std::string::npos)
       << "Special token text should be absent when skip=true";
 }
@@ -421,8 +420,7 @@ TEST_F(DeepseekTokenizerTest, StreamDecoderPreserveSpecialTokens) {
   for (int id : helloIds) result += decoder->step(id);
   result += decoder->flush();
 
-  std::string eosText =
-      tokenizer().decode({1}, /*skip_special_tokens=*/false);
+  std::string eosText = tokenizer().decode({1}, /*skip_special_tokens=*/false);
   EXPECT_NE(result.find(eosText), std::string::npos)
       << "Special token text should be present when skip=false";
 }

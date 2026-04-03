@@ -61,7 +61,7 @@ Tokenizer::Tokenizer(const std::string& path) {
 
   if (path.size() >= 5 && path.compare(path.size() - 5, 5, ".json") == 0) {
     tok_ = tokenizers::Tokenizer::FromBlobJSON(blob);
-    special_token_ids_ = parseSpecialTokenIds(blob);
+    specialTokenIds_ = parseSpecialTokenIds(blob);
   } else if (path.size() >= 7 &&
              path.compare(path.size() - 7, 7, ".model") == 0) {
     tok_ = tokenizers::Tokenizer::FromBlobSentencePiece(blob);
@@ -82,7 +82,7 @@ Tokenizer::Tokenizer(const std::string& path) {
   }
 
   TT_LOG_INFO("[TokenizerUtil] Loaded tokenizer from: {} ({} special tokens)",
-              path, special_token_ids_.size());
+              path, specialTokenIds_.size());
 }
 
 bool Tokenizer::isLoaded() const { return tok_ != nullptr; }
@@ -96,7 +96,7 @@ std::vector<int> Tokenizer::encode(const std::string& text) const {
 }
 
 std::string Tokenizer::decode(const std::vector<int>& tokenIds,
-                              bool skip_special_tokens) const {
+                              bool skipSpecialTokens) const {
   if (!tok_) {
     throw std::runtime_error(
         "[TokenizerUtil] Tokenizer not loaded, cannot decode");
@@ -104,13 +104,13 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds,
   if (tokenIds.empty()) return "";
 
   // Fast path: no special tokens to filter
-  if (!skip_special_tokens || special_token_ids_.empty()) {
+  if (!skipSpecialTokens || specialTokenIds_.empty()) {
     return tok_->Decode(tokenIds);
   }
 
   // Fast path: single token, check if special
   if (tokenIds.size() == 1) {
-    if (special_token_ids_.find(tokenIds[0]) != special_token_ids_.end()) {
+    if (specialTokenIds_.find(tokenIds[0]) != specialTokenIds_.end()) {
       return "";  // Special token, skip it
     }
     return tok_->Decode(tokenIds);
@@ -120,7 +120,7 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds,
   std::vector<int> filtered;
   filtered.reserve(tokenIds.size());
   for (int id : tokenIds) {
-    if (special_token_ids_.find(id) == special_token_ids_.end()) {
+    if (specialTokenIds_.find(id) == specialTokenIds_.end()) {
       filtered.push_back(id);
     }
   }
@@ -144,12 +144,12 @@ bool endsWithReplacementChar(const std::string& s) {
 }  // namespace
 
 Tokenizer::StreamDecoder::StreamDecoder(const Tokenizer& tokenizer,
-                                       bool skip_special_tokens)
-    : tokenizer_(tokenizer), skip_special_tokens_(skip_special_tokens) {}
+                                        bool skipSpecialTokens)
+    : tokenizer_(tokenizer), skipSpecialTokens_(skipSpecialTokens) {}
 
 std::string Tokenizer::StreamDecoder::step(int tokenId) {
   if (pending_.empty()) {
-    std::string decoded = tokenizer_.decode({tokenId}, skip_special_tokens_);
+    std::string decoded = tokenizer_.decode({tokenId}, skipSpecialTokens_);
     if (!endsWithReplacementChar(decoded)) {
       return decoded;
     }
@@ -158,7 +158,7 @@ std::string Tokenizer::StreamDecoder::step(int tokenId) {
   }
 
   pending_.push_back(tokenId);
-  std::string decoded = tokenizer_.decode(pending_, skip_special_tokens_);
+  std::string decoded = tokenizer_.decode(pending_, skipSpecialTokens_);
   if (!endsWithReplacementChar(decoded)) {
     pending_.clear();
     return decoded;
@@ -168,14 +168,14 @@ std::string Tokenizer::StreamDecoder::step(int tokenId) {
 
 std::string Tokenizer::StreamDecoder::flush() {
   if (pending_.empty()) return "";
-  std::string decoded = tokenizer_.decode(pending_, skip_special_tokens_);
+  std::string decoded = tokenizer_.decode(pending_, skipSpecialTokens_);
   pending_.clear();
   return decoded;
 }
 
 std::unique_ptr<Tokenizer::StreamDecoder> Tokenizer::createStreamDecoder(
-    bool skip_special_tokens) const {
-  return std::make_unique<StreamDecoder>(*this, skip_special_tokens);
+    bool skipSpecialTokens) const {
+  return std::make_unique<StreamDecoder>(*this, skipSpecialTokens);
 }
 
 // ---------------------------------------------------------------------------

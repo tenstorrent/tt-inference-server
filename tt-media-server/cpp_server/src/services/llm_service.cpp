@@ -29,9 +29,8 @@ LLMService::LLMService() : tokenizer_(&tt::utils::activeTokenizer()) {
   size_t numWorkers = tt::config::numWorkers();
   max_queue_size_ = tt::config::maxQueueSize();
 
-  const auto STOP_IDS = tokenizer_->stopTokenIds();
-  stop_token_set_ =
-      std::unordered_set<int64_t>(STOP_IDS.begin(), STOP_IDS.end());
+  const auto stopIds = tokenizer_->stopTokenIds();
+  stop_token_set_ = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
 
   worker_manager_ = std::make_unique<tt::worker::WorkerManager>(numWorkers);
   reasoning_parser_ = std::make_unique<ReasoningParser>();
