@@ -8,5 +8,8 @@ flax # input preprocessing
 pytorchcv # for vovnet
 tabulate
 
+diffusers==0.37.1
+transformers
+
 datasets # model training
 peft # model training
