@@ -32,6 +32,7 @@ class SessionManager {
   bool closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
   uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
+  uint32_t acquireSessionSlot(const std::string& sessionId);
   std::optional<domain::Session> getSession(const std::string& sessionId) const;
   size_t getActiveSessionCount() const;
 

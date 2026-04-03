@@ -10,7 +10,6 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <random>
 #include <sstream>
 #include <thread>
 
@@ -171,11 +170,8 @@ void LLMController::chatCompletions(
       auto sessionId = request->sessionId;
 
       if (sessionId.has_value() && sessionManager) {
-        sessionManager->setSessionInFlight(sessionId.value(), true);
+        request->slotId = sessionManager->acquireSessionSlot(sessionId.value());
       }
-
-      request->slotId =
-          sessionManager->getSlotIdBySessionId(request->sessionId.value());
       auto startTime = std::chrono::high_resolution_clock::now();
       auto completion = service->submitRequest(std::move(*request));
       auto endTime = std::chrono::high_resolution_clock::now();
@@ -255,16 +251,14 @@ void LLMController::handleStreaming(
   bool validSessionFound = false;
 
   if (reqPtr->sessionId.has_value() && sessionManager) {
-    auto slotId =
-        sessionManager->getSlotIdBySessionId(reqPtr->sessionId.value());
+    auto slotId = sessionManager->acquireSessionSlot(reqPtr->sessionId.value());
 
     if (slotId != tt::services::INVALID_SLOT_ID) {
       reqPtr->slotId = slotId;
-      validSessionFound = true;  // Session is valid
+      validSessionFound = true;
     } else {
       TT_LOG_INFO(
           "Received request with non existing session, resetting session id");
-      // reset sessionId since it's a stale session
       reqPtr->sessionId.reset();
     }
   }
@@ -343,11 +337,6 @@ void LLMController::handleStreaming(
 
   // Capture sessionId before submitting to service (request will be moved)
   const std::optional<std::string> capturedSessionId = reqPtr->sessionId;
-
-  // Mark session as in-flight
-  if (capturedSessionId.has_value() && sessionManager) {
-    sessionManager->setSessionInFlight(capturedSessionId.value(), true);
-  }
 
   // Abort callback: fires when the TCP connection drops mid-stream.
   // Captured by value so it stays alive for the duration of the streaming

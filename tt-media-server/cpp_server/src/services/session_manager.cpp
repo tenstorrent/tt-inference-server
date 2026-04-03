@@ -169,6 +169,16 @@ uint32_t SessionManager::getSlotIdBySessionId(
   return result;
 }
 
+uint32_t SessionManager::acquireSessionSlot(const std::string& sessionId) {
+  uint32_t result = INVALID_SLOT_ID;
+  sessions.modify(sessionId, [&result](domain::Session& s) {
+    s.updateActivityTime();
+    s.setInFlight(true);
+    result = s.getSlotId();
+  });
+  return result;
+}
+
 std::optional<domain::Session> SessionManager::getSession(
     const std::string& sessionId) const {
   return sessions.get(sessionId);
