@@ -61,7 +61,6 @@ WorkerManager::~WorkerManager() { stop(); }
 void WorkerManager::start() {
   startWarmupListener();
   startWorkers();
-  waitForFirstWarmup();
 }
 
 void WorkerManager::stop() {
@@ -207,12 +206,6 @@ void WorkerManager::startWarmupListener() {
       TT_LOG_WARN("[WorkerManager] Warmup listener failed: unknown exception");
     }
   });
-}
-
-void WorkerManager::waitForFirstWarmup() {
-  if (!warmupQueue) return;
-  std::unique_lock<std::mutex> lock(warmupMutex);
-  warmupCv.wait(lock, [this]() { return warmupReceived.load(); });
 }
 
 WorkerConfig makeWorkerConfigForProcess(int workerId) {

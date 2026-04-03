@@ -620,10 +620,18 @@ jobs:
           echo $! > ../../cpp_server.pid
           cd ../..
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8000/health | grep -q '"status"' && break
+            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "Server ready."
+              break
+            fi
             sleep 1
           done
-          curl -sf http://127.0.0.1:8000/health || exit 1
+          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Server did not become ready within 30 seconds"
+            exit 1
+          fi
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -785,10 +793,18 @@ jobs:
           echo $! > ../../cpp_server.pid
           cd ../..
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8000/health | grep -q '"status"' && break
+            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "Server ready."
+              break
+            fi
             sleep 1
           done
-          curl -sf http://127.0.0.1:8000/health || exit 1
+          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Server did not become ready within 30 seconds"
+            exit 1
+          fi
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -951,11 +967,18 @@ jobs:
           echo $! > ../../decode_server.pid
           cd ../..
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8001/health | grep -q '"status"' && break
+            LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Decode server ready on port 8001"
+              break
+            fi
             sleep 1
           done
-          curl -sf http://127.0.0.1:8001/health || exit 1
-          echo "✅ Decode server started on port 8001"
+          LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Decode server did not become ready within 30 seconds"
+            exit 1
+          fi
 
       - name: Start Prefill server (connects to decode server)
         run: |
@@ -965,11 +988,18 @@ jobs:
           echo $! > ../../prefill_server.pid
           cd ../..
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8002/health | grep -q '"status"' && break
+            LIVENESS=$(curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Prefill server ready on port 8002"
+              break
+            fi
             sleep 1
           done
-          curl -sf http://127.0.0.1:8002/health || exit 1
-          echo "✅ Prefill server started on port 8002"
+          LIVENESS=$(curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Prefill server did not become ready within 30 seconds"
+            exit 1
+          fi
           sleep 2
 
       - name: Set up uv
@@ -1390,41 +1420,29 @@ jobs:
     steps:
       - name: Check results
         run: |
-          # Fail if any required job failed
-          if [[ "${{ needs.lint.result }}" == "failure" ]]; then
-            echo "❌ Lint check failed"
-            exit 1
-          fi
-          if [[ "${{ needs.unit-tests.result }}" == "failure" ]]; then
-            echo "❌ Unit tests failed"
-            exit 1
-          fi
-          if [[ "${{ needs.forge-runner-cpu-tests.result }}" == "failure" ]]; then
-            echo "❌ Forge runner tests failed"
-            exit 1
-          fi
-          if [[ "${{ needs.llm-streaming-performance.result }}" == "failure" ]]; then
-            echo "❌ LLM streaming performance test failed"
-            exit 1
-          fi
-          if [[ "${{ needs.test-coverage.result }}" == "failure" ]]; then
-            echo "❌ Test coverage below 50% threshold - PR blocked"
-            exit 1
-          fi
-          if [[ "${{ needs.cpp-format-check.result }}" == "failure" ]]; then
-            echo "❌ C++ lint & format check failed"
-            exit 1
-          fi
-          if [[ "${{ needs.cpp-server-llm-streaming.result }}" == "failure" ]]; then
-            echo "❌ C++ server LLM streaming test failed"
-            exit 1
-          fi
-          if [[ "${{ needs.cpp-server-llm-streaming-mock-pipeline.result }}" == "failure" ]]; then
-            echo "❌ C++ server LLM streaming (mock_pipeline) test failed"
-            exit 1
-          fi
-          if [[ "${{ needs.cpp-server-prefill-decode-split.result }}" == "failure" ]]; then
-            echo "❌ C++ server prefill/decode split test failed"
+          STATUS=0
+          declare -A JOBS=(
+            [lint]="${{ needs.lint.result }}"
+            [unit-tests]="${{ needs.unit-tests.result }}"
+            [forge-runner-cpu-tests]="${{ needs.forge-runner-cpu-tests.result }}"
+            [llm-streaming-performance]="${{ needs.llm-streaming-performance.result }}"
+            [test-coverage]="${{ needs.test-coverage.result }}"
+            [cpp-format-check]="${{ needs.cpp-format-check.result }}"
+            [cpp-server-llm-streaming]="${{ needs.cpp-server-llm-streaming.result }}"
+            [cpp-server-llm-streaming-mock-pipeline]="${{ needs.cpp-server-llm-streaming-mock-pipeline.result }}"
+            [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
+          )
+          for job in "${!JOBS[@]}"; do
+            result="${JOBS[$job]}"
+            if [[ "$result" == "success" || "$result" == "skipped" ]]; then
+              echo "✅ $job: $result"
+            else
+              echo "❌ $job: $result"
+              STATUS=1
+            fi
+          done
+          if [[ "$STATUS" -ne 0 ]]; then
+            echo "CI gate failed: one or more jobs failed or were cancelled"
             exit 1
           fi
           echo "✅ All checks passed (or were skipped)"

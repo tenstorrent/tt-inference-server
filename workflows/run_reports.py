@@ -2215,7 +2215,9 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 # do NOT extract results[t_key] here.
                 # The score_func expects the ROOT results dict so it can do results[task_name].
 
-                kwargs = task.score.score_func_kwargs
+                # Shallow-copy to avoid mutating the shared config dict: kwargs["task_name"] = t_key
+                # below would permanently alter score_func_kwargs for all subsequent tasks in this process.
+                kwargs = dict(task.score.score_func_kwargs)
                 # Update task_name so the score function looks up the specific subtask (e.g. longbench_2wikimqa)
                 kwargs["task_name"] = t_key
                 configured_keys = kwargs.get("result_keys", [])
@@ -2243,7 +2245,12 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                     )
                 except Exception as e:
                     logger.warning(f"  Could not calculate score for {t_key}: {e}")
-                    score = 0.0
+                    if kwargs.get("unit") == "WER":
+                        # WER=100 is worst-case (100% word error rate). Using score=0.0 here
+                        # would be transformed to 100-0=100 and incorrectly pass the tolerance check.
+                        score = 100.0
+                    else:
+                        score = 0.0
                 if kwargs.get("unit") == "WER":
                     score = 100 - score
 
