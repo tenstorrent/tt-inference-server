@@ -34,6 +34,9 @@ class SessionManager {
   std::optional<domain::Session> getSession(const std::string& sessionId) const;
   size_t getActiveSessionCount() const;
 
+  // In-flight session management
+  void setSessionInFlight(const std::string& sessionId, bool inFlight);
+
  private:
   void evictOldSessions();
   std::future<uint32_t> requestSlotIdFromMemoryManager(
@@ -49,6 +52,7 @@ class SessionManager {
   using PromisePtr = std::shared_ptr<std::promise<uint32_t>>;
   ConcurrentMap<uint32_t, PromisePtr> pendingAllocations;
   std::atomic<bool> stopped{false};
+  std::atomic<bool> evictionInProgress{false};
   std::thread drainThread;
 };
 

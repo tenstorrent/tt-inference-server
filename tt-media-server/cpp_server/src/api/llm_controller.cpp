@@ -172,6 +172,12 @@ void LLMController::chatCompletions(
 
       // Save sessionId before moving request
       auto sessionId = request->sessionId;
+
+      // Mark session as in-flight
+      if (sessionId.has_value() && sessionManager) {
+        sessionManager->setSessionInFlight(sessionId.value(), true);
+      }
+
       request->slotId =
           sessionManager->getSlotIdBySessionId(request->sessionId.value());
       auto startTime = std::chrono::high_resolution_clock::now();
@@ -202,12 +208,45 @@ void LLMController::chatCompletions(
       auto resp = drogon::HttpResponse::newHttpResponse();
       resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
       resp->setBody(chatResponse.toJsonString());
+
+      // Mark session as no longer in-flight
+      if (sessionId.has_value() && sessionManager) {
+        sessionManager->setSessionInFlight(sessionId.value(), false);
+      }
+
       callback(resp);
     } catch (const services::QueueFullException& e) {
+      // Mark session as no longer in-flight on error
+      auto sessionId = request->sessionId;
+      if (sessionId.has_value() && sessionManager) {
+        sessionManager->setSessionInFlight(sessionId.value(), false);
+      }
+
       auto resp = drogon::HttpResponse::newHttpJsonResponse(
           errorJson(e.what(), "rate_limit_exceeded"));
       resp->setStatusCode(drogon::k429TooManyRequests);
       callback(resp);
+    } catch (const std::runtime_error& e) {
+      // Mark session as no longer in-flight on error
+      auto sessionId = request->sessionId;
+      if (sessionId.has_value() && sessionManager) {
+        sessionManager->setSessionInFlight(sessionId.value(), false);
+      }
+
+      // Check if this is a memory allocation error
+      std::string errMsg = e.what();
+      if (errMsg.find("Failed to allocate memory slot") != std::string::npos ||
+          errMsg.find("memory resources") != std::string::npos) {
+        TT_LOG_ERROR("[LLMController] Session creation failed: {}", e.what());
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(errorJson(
+            std::string("Failed to allocate memory resources: ") + errMsg,
+            "service_unavailable"));
+        resp->setStatusCode(drogon::k503ServiceUnavailable);
+        callback(resp);
+        return;
+      }
+      // Re-throw if it's not a memory allocation error
+      throw;
     }
   }
 }
@@ -236,10 +275,20 @@ void LLMController::handleStreaming(
 
   // Create session if not provided
   if (!reqPtr->sessionId.has_value() && sessionManager) {
-    auto session = sessionManager->createSession(std::nullopt);
-    reqPtr->sessionId = session.getSessionId();
-    TT_LOG_INFO("[LLMController] Created NEW session: {}",
-                reqPtr->sessionId.value());
+    try {
+      auto session = sessionManager->createSession(std::nullopt);
+      reqPtr->sessionId = session.getSessionId();
+      TT_LOG_INFO("[LLMController] Created NEW session: {}",
+                  reqPtr->sessionId.value());
+    } catch (const std::runtime_error& e) {
+      TT_LOG_ERROR("[LLMController] Failed to create session: {}", e.what());
+      auto resp = drogon::HttpResponse::newHttpJsonResponse(errorJson(
+          std::string("Failed to allocate memory resources: ") + e.what(),
+          "service_unavailable"));
+      resp->setStatusCode(drogon::k503ServiceUnavailable);
+      callback(resp);
+      return;
+    }
   }
 
   if (reqPtr->sessionId.has_value() && sessionManager) {
@@ -297,28 +346,41 @@ void LLMController::handleStreaming(
 
   // Capture sessionId before submitting to service (request will be moved)
   const std::optional<std::string> capturedSessionId = reqPtr->sessionId;
+
+  // Mark session as in-flight
+  if (capturedSessionId.has_value() && sessionManager) {
+    sessionManager->setSessionInFlight(capturedSessionId.value(), true);
+  }
+
   // Abort callback: fires when the TCP connection drops mid-stream.
   // Captured by value so it stays alive for the duration of the streaming
   // session. Called on the IO thread from inside sseSend().
   const uint32_t taskId = reqPtr->task_id;
-  auto onDisconnect = [taskId, service = this->service, done]() {
+  auto onDisconnect = [taskId, service = this->service, done, capturedSessionId,
+                       sessionManager = this->sessionManager]() {
     if (!done->exchange(true)) {
       TT_LOG_INFO("[LLMController] Client disconnected, aborting task {}",
                   taskId);
       service->abortRequest(taskId);
+      // Mark session as no longer in-flight
+      if (capturedSessionId.has_value() && sessionManager) {
+        sessionManager->setSessionInFlight(capturedSessionId.value(), false);
+      }
     }
   };
 
   // Submit the streaming request before setting up the HTTP stream so that a
   // full queue throws QueueFullException here, allowing us to return a proper
   // 429.
+  auto sessionManagerPtr = this->sessionManager;
   auto streamingCallback = [loop, streamPtr, earlyBuffer, done, completionId,
                             model, created, includeUsage, continuousUsage,
                             completionTokens, startTime, firstTokenTime,
                             secondTokenTime, firstContentChunk, reqPtr,
-                            capturedSessionId, accumulator,
-                            onDisconnect](const domain::LLMStreamChunk& chunk,
-                                          bool isFinal) {
+                            capturedSessionId, accumulator, onDisconnect,
+                            sessionManagerPtr](
+                               const domain::LLMStreamChunk& chunk,
+                               bool isFinal) {
     if (done->load()) {
       return;
     }
@@ -372,7 +434,7 @@ void LLMController::handleStreaming(
       loop->queueInLoop([streamPtr, done, includeUsage, completionId, model,
                          created, completionTokens, startTime, firstTokenTime,
                          secondTokenTime, reqPtr, capturedSessionId,
-                         accumulator]() {
+                         accumulator, sessionManagerPtr]() {
         if (!done->exchange(true) && *streamPtr) {
           flushAccumulated(accumulator, streamPtr);
           if (includeUsage) {
@@ -436,6 +498,12 @@ void LLMController::handleStreaming(
           }
           (*streamPtr)->send("data: [DONE]\n\n");
           (*streamPtr)->close();
+
+          // Mark session as no longer in-flight
+          if (capturedSessionId.has_value() && sessionManagerPtr) {
+            sessionManagerPtr->setSessionInFlight(capturedSessionId.value(),
+                                                  false);
+          }
         }
       });
     }
