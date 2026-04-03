@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 WORKFLOW_EVALS = "evals"
 WORKFLOW_BENCHMARKS = "benchmarks"
 SDXL_SD35_BENCHMARK_NUM_PROMPTS = 20
+SDXL_BENCHMARK_NUM_PROMPTS = 100
 SDXL_SD35_INFERENCE_STEPS = 20
 IMAGE_FORMAT_FOR_EVALS = "PNG"
 IMAGE_QUALITY_FOR_EVALS = 100
@@ -215,6 +216,13 @@ class ImageClientStrategy(BaseMediaStrategy):
 
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
+
+            # Override num_calls for SDXL trace model to 100 prompts
+            if runner_in_use == "tt-sdxl-trace":
+                logger.info(
+                    f"Overriding num_calls for SDXL trace model to {SDXL_BENCHMARK_NUM_PROMPTS} prompts"
+                )
+                num_calls = SDXL_BENCHMARK_NUM_PROMPTS
 
             # Route to appropriate benchmark method using dispatch map
             benchmark_method = self.benchmark_methods.get(
