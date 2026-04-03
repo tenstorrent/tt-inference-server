@@ -77,6 +77,7 @@ void SamplingParams::serialize(std::ostream& os) const {
 
   writeOptional(os, prompt_logprobs);
   writeOptional(os, truncate_prompt_tokens);
+  writeScalar(os, fast_mode);
 }
 
 SamplingParams* SamplingParams::deserialize(std::istream& is) {
@@ -106,6 +107,7 @@ SamplingParams* SamplingParams::deserialize(std::istream& is) {
 
   params->prompt_logprobs = readOptional<int>(is);
   params->truncate_prompt_tokens = readOptional<int>(is);
+  params->fast_mode = readScalar<bool>(is);
 
   return params;
 }

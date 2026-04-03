@@ -34,6 +34,7 @@ struct SamplingParams {
   std::optional<std::vector<int>> allowed_token_ids;
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
+  bool fast_mode = false;
   void serialize(std::ostream& os) const;
   static SamplingParams* deserialize(std::istream& is);
 };
