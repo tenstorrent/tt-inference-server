@@ -9,10 +9,10 @@
 #include <cmath>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <random>
 #include <sstream>
+#include <thread>
 
 #include "api/llm_controller.hpp"
 #include "config/settings.hpp"
@@ -37,7 +37,6 @@ void sseSend(const std::string& sse, trantor::EventLoop* loop,
         bool ok = (*streamPtr)->send(sse);
         if (!ok && onDisconnect) onDisconnect();
       } else if (earlyBuffer) {
-        // Stream not ready yet — buffer for flush when it opens.
         earlyBuffer->push_back(sse);
       }
     });
@@ -164,16 +163,13 @@ void LLMController::chatCompletions(
     handleStreaming(request, std::move(callback));
   } else {
     try {
-      // Create session if not provided
       if (!request->sessionId.has_value() && sessionManager) {
-        auto session = sessionManager->createSession(std::nullopt);
+        auto session = sessionManager->createSession(std::nullopt, true);
         request->sessionId = session.getSessionId();
       }
 
-      // Save sessionId before moving request
       auto sessionId = request->sessionId;
 
-      // Mark session as in-flight
       if (sessionId.has_value() && sessionManager) {
         sessionManager->setSessionInFlight(sessionId.value(), true);
       }
@@ -276,7 +272,8 @@ void LLMController::handleStreaming(
   // Create session if not provided
   if (!reqPtr->sessionId.has_value() && sessionManager) {
     try {
-      auto session = sessionManager->createSession(std::nullopt);
+      auto session =
+          sessionManager->createSession(std::nullopt, /*inFlight=*/true);
       reqPtr->sessionId = session.getSessionId();
       TT_LOG_INFO("[LLMController] Created NEW session: {}",
                   reqPtr->sessionId.value());

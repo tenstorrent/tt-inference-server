@@ -31,8 +31,7 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       .d2h_socket_id = "d2h_socket",
       .connect_timeout_ms = 30000,
   };
-  pm::MockConfig mockConfig{};
-  pipelineManager = std::make_unique<pm::PipelineManager>(mockConfig);
+  pipelineManager = std::make_unique<pm::PipelineManager>(socketConfig);
   TT_LOG_INFO(
       "SpPipelineRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
@@ -62,18 +61,15 @@ void SpPipelineRunner::run() {
 }
 
 bool SpPipelineRunner::warmup() {
-  // Create a warmup sequence with a single token
   llm_engine::SamplingParams warmupParams;
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
-  std::vector<int64_t> warmupTokens = {1};  // Single token
-  uint32_t warmupTaskId = 0;                // Use 0 for warmup task
+  std::vector<int64_t> warmupTokens = {1};
+  uint32_t warmupTaskId = 0;
 
   auto warmupSeq = std::make_unique<llm_engine::Sequence>(
-      warmupTaskId,
-      1,  // block_size (doesn't matter for warmup)
-      warmupTokens, warmupParams);
+      warmupTaskId, 1, warmupTokens, warmupParams);
 
   TT_LOG_INFO("SpPipelineRunner: warmup - pushing ALLOCATE request...");
   pipelineManager->push_request(utils::makeAllocateRequest(0));
@@ -93,8 +89,7 @@ bool SpPipelineRunner::warmup() {
 
   TT_LOG_INFO("SpPipelineRunner: warmup - pushing SUBMIT request...");
   pipelineManager->push_request(utils::makeSubmitRequest(slotId, *warmupSeq));
-  // Wait for the response token (with timeout)
-  const int maxAttempts = 1000;  // ~10 seconds with 10ms sleep
+  const int maxAttempts = 1000;
   int attempts = 0;
   bool receivedToken = false;
   auto output = pm::OutputMessage{};
@@ -123,9 +118,6 @@ void SpPipelineRunner::stop() {
 }
 
 void SpPipelineRunner::step() {
-  // an open question: do we want to drain the task, response and output queues
-  // here? or just pop each one once every iteration? I am afraid of starvation.
-
   auto memoryRequest = getMemoryRequest();
   if (memoryRequest.has_value()) {
     handleMemoryRequest(*memoryRequest);

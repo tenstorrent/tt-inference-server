@@ -5,17 +5,12 @@
 
 #include <algorithm>
 #include <chrono>
-#include <limits>
 #include <thread>
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
-
-namespace {
-constexpr uint32_t INVALID_SLOT_ID = std::numeric_limits<uint32_t>::max();
-}
 
 namespace tt::services {
 
@@ -63,7 +58,8 @@ void SessionManager::drainResultQueue() {
   }
 }
 
-domain::Session SessionManager::createSession(std::optional<uint32_t> slotId) {
+domain::Session SessionManager::createSession(std::optional<uint32_t> slotId,
+                                              bool inFlight) {
   evictOldSessions();
 
   uint32_t slot = slotId.value_or(INVALID_SLOT_ID);
@@ -110,7 +106,6 @@ domain::Session SessionManager::createSession(std::optional<uint32_t> slotId) {
       }
     }
 
-    // If we exhausted all retries and still don't have a valid slot, throw
     if (slot == INVALID_SLOT_ID) {
       TT_LOG_ERROR(
           "[SessionManager] Failed to allocate slot for session {} after {} "
@@ -122,10 +117,13 @@ domain::Session SessionManager::createSession(std::optional<uint32_t> slotId) {
     }
   }
 
+  session.setInFlight(inFlight);
   sessions.insert(sessionId, session);
 
-  TT_LOG_INFO("[SessionManager] Created session: {} with slot: {}", sessionId,
-              slot == INVALID_SLOT_ID ? "none" : std::to_string(slot));
+  TT_LOG_INFO("[SessionManager] Created session: {} with slot: {} inFlight: {}",
+              sessionId,
+              slot == INVALID_SLOT_ID ? "none" : std::to_string(slot),
+              inFlight);
   return session;
 }
 
@@ -193,13 +191,11 @@ void SessionManager::setSessionInFlight(const std::string& sessionId,
 }
 
 void SessionManager::evictOldSessions() {
-  // Try to acquire eviction lock - if someone else is evicting, skip
   bool expected = false;
   if (!evictionInProgress.compare_exchange_strong(expected, true)) {
-    return;  // Another thread is already evicting, skip this call
+    return;
   }
 
-  // RAII guard to ensure we release the flag
   struct EvictionGuard {
     std::atomic<bool>& flag;
     ~EvictionGuard() { flag.store(false, std::memory_order_release); }
@@ -221,7 +217,6 @@ void SessionManager::evictOldSessions() {
 
   sessions.forEach([&heap, &newer, evictionCount](const std::string& id,
                                                   domain::Session& session) {
-    // Skip sessions with active requests
     if (session.isInFlight()) {
       return;
     }
