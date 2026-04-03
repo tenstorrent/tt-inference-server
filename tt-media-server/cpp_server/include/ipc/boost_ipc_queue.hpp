@@ -71,7 +71,8 @@ class BoostIpcMemoryQueue {
           new BoostIpcMemoryQueue(name));
     } catch (const bi_ipc::interprocess_exception& e) {
       TT_LOG_ERROR("[BoostIpcQueue] Failed to open existing queue: {}", name);
-      throw std::runtime_error("Failed to open existing queue: " + name + " " + std::to_string(errno) + " " + e.what());
+      throw std::runtime_error("Failed to open existing queue: " + name + " " +
+                               std::to_string(errno) + " " + e.what());
     }
   }
 
