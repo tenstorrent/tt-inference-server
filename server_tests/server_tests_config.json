@@ -1998,6 +1998,174 @@
     },
     {
         "weights": [
+            "bge-m3"
+        ],
+        "device": "n150",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false,
+                    "model": "BAAI/bge-m3"
+                },
+                "targets": {
+                    "num_of_devices": 1
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
+                "name": "EmbeddingLoadTest",
+                "module": "server_tests.test_cases.embedding_load_test",
+                "enabled": true,
+                "description": "Test embedding load performance",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false,
+                    "model": "BAAI/bge-m3"
+                },
+                "targets": {
+                    "num_of_devices": 1,
+                    "embedding_time": 0.1
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "bge-m3"
+        ],
+        "device": "t3k",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 120,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false,
+                    "model": "BAAI/bge-m3"
+                },
+                "targets": {
+                    "num_of_devices": 4
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
+                "name": "EmbeddingLoadTest",
+                "module": "server_tests.test_cases.embedding_load_test",
+                "enabled": true,
+                "description": "Test embedding load performance",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false,
+                    "model": "BAAI/bge-m3"
+                },
+                "targets": {
+                    "num_of_devices": 4,
+                    "embedding_time": 1
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
+            "bge-m3"
+        ],
+        "device": "galaxy",
+        "test_cases": [
+            {
+                "name": "DeviceLivenessTest",
+                "module": "server_tests.test_cases.device_liveness_test",
+                "enabled": true,
+                "description": "Test for device liveness checks",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 220,
+                    "retry_delay": 10,
+                    "break_on_failure": true,
+                    "mock_mode": false,
+                    "model": "BAAI/bge-m3"
+                },
+                "targets": {
+                    "num_of_devices": 32
+                }
+            },
+            {
+                "name": "LoggerForkSafetyTest",
+                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "enabled": true,
+                "description": "Test for logging fork safety to prevent deadlocks in forked processes",
+                "test_config": {
+                    "test_timeout": 60,
+                    "retry_attempts": 0,
+                    "retry_delay": 0,
+                    "break_on_failure": true,
+                    "mock_mode": false
+                }
+            },
+            {
+                "name": "EmbeddingLoadTest",
+                "module": "server_tests.test_cases.embedding_load_test",
+                "enabled": true,
+                "description": "Test embedding load performance",
+                "test_config": {
+                    "test_timeout": 3600,
+                    "retry_attempts": 1,
+                    "retry_delay": 60,
+                    "break_on_failure": false,
+                    "mock_mode": false,
+                    "model": "BAAI/bge-m3"
+                },
+                "targets": {
+                    "num_of_devices": 32,
+                    "embedding_time": 1
+                }
+            }
+        ]
+    },
+    {
+        "weights": [
             "speecht5_tts"
         ],
         "device": "n150",
