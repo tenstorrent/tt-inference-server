@@ -37,11 +37,9 @@ struct Message {
   uint32_t numTokenIds;
   uint32_t taskId;
   uint32_t fastMode;
-  uint32_t _reserved = 0;
   uint64_t tokenIds[MaxTokenIds];
 
-  static constexpr int K_MESSAGE_SIZE = 24 + MaxTokenIds * sizeof(uint64_t);
-  static constexpr int K_TOTAL_SIZE = SHM_SLOTS * K_MESSAGE_SIZE;
+  static constexpr size_t K_TOTAL_SIZE = SHM_SLOTS * sizeof(Message);
 
   bool stateMatches(SlotState state) {
     return this->state.load(std::memory_order_acquire) == state;
@@ -52,10 +50,6 @@ struct Message {
   }
 };
 
-static_assert(sizeof(Message<PREFILL_MAX_TOKEN_IDS>) ==
-              Message<PREFILL_MAX_TOKEN_IDS>::K_MESSAGE_SIZE);
-static_assert(sizeof(Message<DECODE_MAX_TOKEN_IDS>) ==
-              Message<DECODE_MAX_TOKEN_IDS>::K_MESSAGE_SIZE);
 
 struct ReadResult {
   uint32_t taskId;
