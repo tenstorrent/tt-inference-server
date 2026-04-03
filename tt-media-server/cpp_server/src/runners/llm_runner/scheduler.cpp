@@ -32,10 +32,9 @@ std::unique_ptr<Scheduler> makeScheduler(const Config& config,
 
 Scheduler::Scheduler(const Config& config, ITaskQueue* taskQueue,
                      size_t maxInFlightCount)
-    : block_size_(static_cast<size_t>(config.kvcache_block_size)),
+    : block_size_(config.kvcache_block_size),
       max_in_flight_count_(maxInFlightCount),
-      max_num_batched_tokens_(
-          static_cast<size_t>(config.max_num_batched_tokens)),
+      max_num_batched_tokens_(config.max_num_batched_tokens),
       stop_token_ids_(config.stop_token_ids.begin(),
                       config.stop_token_ids.end()),
       block_manager_(config.num_kvcache_blocks, config.kvcache_block_size),

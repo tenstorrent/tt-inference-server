@@ -52,8 +52,8 @@ class SpPipelineRunner : public IRunner {
   std::unordered_map<uint32_t, std::unique_ptr<llm_engine::Sequence>>
       activeSequences;
   std::atomic<bool> stopped{false};
-  int maxInFlightCount;
-  int inFlightCount = 0;
+  size_t maxInFlightCount;
+  size_t inFlightCount = 0;
 
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
   std::thread memoryThread;
