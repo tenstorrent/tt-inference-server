@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -30,11 +31,13 @@ class BlockManager {
   static int64_t computeHash(const std::vector<int64_t>& tokenIds,
                              int64_t prefix = -1);
 
-  bool canAllocate(const Sequence& seq) const;
-  void allocate(Sequence& seq);
+  bool allocate(Sequence& seq);
   void deallocate(Sequence& seq);
   bool canAppend(const Sequence& seq) const;
   void mayAppend(Sequence& seq);
+
+  int blockSize() const { return block_size_; }
+  int numFreeBlocks() const;
 
  private:
   Block& allocateBlock(int blockId);
@@ -45,6 +48,7 @@ class BlockManager {
   std::unordered_map<int64_t, int> hash_to_block_id_;
   std::deque<int> free_block_ids_;
   std::unordered_set<int> used_block_ids_;
+  mutable std::mutex mutex;
 };
 
 }  // namespace llm_engine

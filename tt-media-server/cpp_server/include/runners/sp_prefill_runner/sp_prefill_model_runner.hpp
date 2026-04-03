@@ -9,23 +9,21 @@
 #include <string>
 #include <vector>
 
+#include "ipc/slot_ring_buffer.hpp"
 #include "runners/sp_prefill_runner/i_sp_prefill_model_runner.hpp"
-#include "runners/sp_pipeline_runner/shared_memory.hpp"
 
 namespace sp_prefill {
 
-using PrefillCallback = std::function<void(const llm_engine::TokenResult&)>;
-
 class SpPrefillModelRunner : public ISpPrefillModelRunner {
  public:
-  explicit SpPrefillModelRunner(PrefillCallback callback);
+  SpPrefillModelRunner();
   ~SpPrefillModelRunner() override;
 
   SpPrefillModelRunner(const SpPrefillModelRunner&) = delete;
   SpPrefillModelRunner& operator=(const SpPrefillModelRunner&) = delete;
 
-  void write(const std::string& taskId,
-             const std::vector<int64_t>& tokenIds) override;
+  std::optional<llm_engine::TokenResult> forward(
+      uint32_t taskId, const std::vector<int64_t>& tokenIds) override;
   void exit() override;
 
  private:
@@ -42,10 +40,9 @@ class SpPrefillModelRunner : public ISpPrefillModelRunner {
     std::string read;
   };
 
-  PrefillCallback prefillCallback;
   ShmNames shmNames;
-  sp_pipeline::PrefillSharedMemory deviceInput;
-  sp_pipeline::DecodeSharedMemory deviceOutput;
+  tt::ipc::PrefillSlotBuffer deviceInput;
+  tt::ipc::DecodeSlotBuffer deviceOutput;
   std::atomic<bool> stop{false};
 };
 

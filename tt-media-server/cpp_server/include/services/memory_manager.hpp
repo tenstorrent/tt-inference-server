@@ -3,32 +3,30 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <optional>
 
 #include "domain/manage_memory.hpp"
-#include "utils/concurrent_map.hpp"
+#include "ipc/boost_ipc_memory_queue.hpp"
 
 namespace tt::services {
 
 class MemoryManager {
  public:
-  MemoryManager() = default;
+  MemoryManager();
+  virtual ~MemoryManager();
 
   MemoryManager(const MemoryManager&) = delete;
   MemoryManager& operator=(const MemoryManager&) = delete;
   MemoryManager(MemoryManager&&) = delete;
   MemoryManager& operator=(MemoryManager&&) = delete;
 
-  domain::ManageMemoryResult handle_task(const domain::ManageMemoryTask& task);
+  std::optional<domain::ManageMemoryTask> getRequest();
+  virtual void handleRequest(const domain::ManageMemoryTask& request) = 0;
+  void handleResponse(int slotId);
 
- private:
-  struct Reservation {
-    domain::KvMemoryLayout layout{domain::KvMemoryLayout::Paged};
-    std::vector<domain::KvDestination> locations;
-  };
-
-  ConcurrentMap<std::string, Reservation> reservations;
+ protected:
+  std::unique_ptr<ipc::MemoryRequestQueue> requestQueue;
+  std::unique_ptr<ipc::MemoryResultQueue> resultQueue;
 };
 
 }  // namespace tt::services

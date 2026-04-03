@@ -25,6 +25,8 @@ CheckOptions:
     value: UPPER_CASE
   - key: readability-identifier-naming.GlobalConstantCase
     value: UPPER_CASE
+  - key: readability-identifier-naming.LocalConstantCase
+    value: camelBack
   - key: readability-identifier-naming.PrivateMemberPrefix
     value: ''
   - key: readability-identifier-naming.ProtectedMemberPrefix

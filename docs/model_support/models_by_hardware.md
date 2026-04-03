@@ -4,6 +4,18 @@ This page lists all supported models organized by hardware type.
 
 [Search model by model type](../../README.md#models-by-model-type)
 
+## [Dual WH Galaxy](https://tenstorrent.com/hardware/galaxy)
+
+| Status | Type | Model |
+|--------|------|-------|
+| 🛠️ Experimental | LLM | [DeepSeek-R1-0528](llm/DeepSeek-R1-0528_dual_galaxy.md) |
+
+## [Quad WH Galaxy](https://tenstorrent.com/hardware/galaxy)
+
+| Status | Type | Model |
+|--------|------|-------|
+| 🛠️ Experimental | LLM | [DeepSeek-R1-0528](llm/DeepSeek-R1-0528_quad_galaxy.md) |
+
 ## [WH Galaxy](https://tenstorrent.com/hardware/galaxy)
 
 | Status | Type | Model |

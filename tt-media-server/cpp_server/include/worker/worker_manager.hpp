@@ -62,7 +62,6 @@ class WorkerManager {
 
   void startWorkers();
   void startWarmupListener();
-  void waitForFirstWarmup();
   void stopWarmupListener();
   void stopProcesses();
   WorkerConfig makeWorkerConfig(int workerId);

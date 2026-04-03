@@ -34,14 +34,14 @@ class Scheduler {
   bool isFinished() const;
 
   /** Creates a sequence, takes ownership, and enqueues it for prefill. */
-  Sequence& addRequest(TaskID taskId, std::vector<int64_t> prompt,
+  Sequence& addRequest(uint32_t taskId, std::vector<int64_t> prompt,
                        const SamplingParams& params = SamplingParams());
 
   /** Enqueues an externally-owned sequence for prefill (prefill_queue). */
   void add(Sequence& seq);
 
   /** Looks up a sequence by task_id. Returns nullptr if not found. */
-  Sequence* findSequence(TaskID taskId);
+  Sequence* findSequence(uint32_t taskId);
 
   /**
    * Produces the next batch to run.
@@ -66,11 +66,20 @@ class Scheduler {
    */
   void postprocess(std::vector<Sequence*>& seqs,
                    const std::vector<int64_t>& tokenIds);
-  void removeSequence(TaskID taskId);
+  void removeSequence(uint32_t taskId);
+
+  /**
+   * Abort a request by task ID. Frees KV cache blocks, removes the sequence
+   * from whichever queue it is currently in, and erases it from the sequences
+   * map. Idempotent: a second call for the same ID is a no-op.
+   */
+  void abortRequest(uint32_t taskId);
 
   bool isStopToken(int64_t tokenId) const {
     return stop_token_ids_.count(tokenId) > 0;
   }
+
+  BlockManager& blockManager() { return block_manager_; }
 
  protected:
   /**
@@ -101,8 +110,11 @@ class Scheduler {
   std::unordered_set<int64_t> stop_token_ids_;
   BlockManager block_manager_;
   ITaskQueue* prefill_queue_;
-  std::unordered_map<TaskID, std::unique_ptr<Sequence>> sequences_;
+  std::unordered_map<uint32_t, std::unique_ptr<Sequence>> sequences_;
   std::deque<Sequence*> decode_queue_;
+  // IDs aborted before their copy was dequeued from the prefill queue.
+  // Checked in trySchedulePrefill to skip stale copies.
+  std::unordered_set<uint32_t> pending_aborts_;
 };
 
 std::unique_ptr<Scheduler> makeScheduler(const tt::config::LLMConfig& config,

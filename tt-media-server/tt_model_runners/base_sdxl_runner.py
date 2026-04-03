@@ -11,7 +11,6 @@ from domain.image_generate_request import ImageGenerateRequest
 from models.demos.stable_diffusion_xl_base.tests.test_common import (
     SDXL_FABRIC_CONFIG,
     SDXL_L1_SMALL_SIZE,
-    SDXL_TRACE_REGION_SIZE,
 )
 from models.demos.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
     TtSDXLPipeline,
@@ -35,8 +34,6 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
     def get_pipeline_device_params(self):
         device_params = {
             "l1_small_size": SDXL_L1_SMALL_SIZE,
-            "trace_region_size": self.settings.trace_region_size
-            or SDXL_TRACE_REGION_SIZE,
         }
         if self.is_tensor_parallel:
             device_params["fabric_config"] = SDXL_FABRIC_CONFIG

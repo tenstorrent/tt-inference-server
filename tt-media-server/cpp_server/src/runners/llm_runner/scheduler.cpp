@@ -3,6 +3,7 @@
 
 #include "runners/llm_runner/scheduler.hpp"
 
+#include <algorithm>
 #include <cassert>
 
 #include "profiling/tracy.hpp"
@@ -43,7 +44,7 @@ bool Scheduler::isFinished() const {
   return prefill_queue_->empty() && decode_queue_.empty();
 }
 
-Sequence& Scheduler::addRequest(TaskID taskId, std::vector<int64_t> prompt,
+Sequence& Scheduler::addRequest(uint32_t taskId, std::vector<int64_t> prompt,
                                 const SamplingParams& params) {
   auto seq = std::make_unique<Sequence>(std::move(taskId), block_size_,
                                         std::move(prompt), params);
@@ -55,7 +56,7 @@ Sequence& Scheduler::addRequest(TaskID taskId, std::vector<int64_t> prompt,
 
 void Scheduler::add(Sequence& seq) { prefill_queue_->push(seq); }
 
-Sequence* Scheduler::findSequence(TaskID taskId) {
+Sequence* Scheduler::findSequence(uint32_t taskId) {
   auto it = sequences_.find(taskId);
   return it != sequences_.end() ? it->second.get() : nullptr;
 }
@@ -67,16 +68,23 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
     auto seq = prefill_queue_->tryPop();
     if (!seq) break;
 
+    // Skip sequences whose ID was aborted while the copy sat in the prefill
+    // queue. The copy's status field is WAITING (it's a snapshot), so we must
+    // check the pending_aborts_ set instead.
+    if (pending_aborts_.erase(seq->taskId)) {
+      sequences_.erase(seq->taskId);
+      delete seq;
+      continue;
+    }
+
     if (numBatchedTokens + static_cast<int>(seq->size()) >
             max_num_batched_tokens_ ||
-        !block_manager_.canAllocate(*seq)) {
+        !block_manager_.allocate(*seq)) {
       prefill_queue_->push(*seq);
       delete seq;
       break;
     }
-
     numSeqs += 1;
-    block_manager_.allocate(*seq);
     numBatchedTokens += static_cast<int>(seq->size() - seq->numCachedTokens);
     auto id = seq->taskId;
     sequences_[id] = std::make_unique<Sequence>(std::move(*seq));
@@ -136,6 +144,15 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   }
 
   tryScheduleDecode(scheduledSeqs, numSeqs);
+
+  // Trim stale pending_aborts_ entries.  When the prefill queue is empty,
+  // remaining entries can never match a dequeued sequence — they are leftovers
+  // from broadcast aborts to workers that don't own those tasks.
+  if (prefill_queue_->empty() &&
+      pending_aborts_.size() > max_in_flight_count_) {
+    pending_aborts_.clear();
+  }
+
   return {scheduledSeqs, false};
 }
 
@@ -144,7 +161,6 @@ void Scheduler::preempt(Sequence& seq) {
   seq.status = SequenceStatus::WAITING;
   block_manager_.deallocate(seq);
   prefill_queue_->push(seq);
-  sequences_.erase(seq.taskId);
 }
 
 void Scheduler::postprocess(std::vector<Sequence*>& seqs,
@@ -173,5 +189,32 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
   }
 }
 
-void Scheduler::removeSequence(TaskID taskId) { sequences_.erase(taskId); }
+void Scheduler::removeSequence(uint32_t taskId) { sequences_.erase(taskId); }
+
+void Scheduler::abortRequest(uint32_t taskId) {
+  auto* seq = findSequence(taskId);
+
+  // If the task isn't tracked or is still waiting, it might have a stale
+  // copy in the IPC queue. Mark it for skipping.
+  bool isWaiting = seq && seq->status == SequenceStatus::WAITING;
+  if (!seq || isWaiting) {
+    if (pending_aborts_.size() < 2 * max_in_flight_count_) {
+      pending_aborts_.insert(taskId);
+    }
+  }
+
+  // If the sequence doesn't exist or is already terminal, we're done.
+  if (!seq || seq->isAborted() || seq->isFinished()) {
+    return;
+  }
+
+  // Clean up resources for active sequences
+  seq->status = SequenceStatus::ABORTED;
+  block_manager_.deallocate(*seq);
+
+  // Remove from decode_queue (O(n) but abort should be rare)
+  std::erase_if(decode_queue_,
+                [&](Sequence* s) { return s->taskId == taskId; });
+  sequences_.erase(taskId);
+}
 }  // namespace llm_engine

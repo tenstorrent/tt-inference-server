@@ -5,6 +5,7 @@
 
 #include <boost/interprocess/ipc/message_queue.hpp>
 #include <boost/interprocess/streams/bufferstream.hpp>
+#include <concepts>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -16,11 +17,18 @@ namespace tt::ipc {
 
 namespace bi_ipc = boost::interprocess;
 
+template <typename T>
+concept Serializable =
+    requires(const T& t, std::ostream& os, std::istream& is) {
+      { t.serialize(os) } -> std::same_as<void>;
+      { T::deserialize(is) } -> std::convertible_to<T>;
+    };
+
 /**
  * Boost.Interprocess message queue for domain types that implement
  * serialize(std::ostream&) / static deserialize(std::istream&).
  */
-template <typename MsgType, size_t MaxMsgSize>
+template <Serializable MsgType, size_t MaxMsgSize>
 class BoostIpcMemoryQueue {
  public:
   static constexpr size_t MAX_MSG_SIZE = MaxMsgSize;
@@ -30,6 +38,18 @@ class BoostIpcMemoryQueue {
     bi_ipc::message_queue::remove(name.c_str());
     queue = std::make_unique<bi_ipc::message_queue>(
         bi_ipc::create_only, name.c_str(), capacity, MAX_MSG_SIZE);
+  }
+
+  // Open an existing queue (for clients)
+  static std::unique_ptr<BoostIpcMemoryQueue> openExisting(
+      const std::string& name) {
+    try {
+      auto q =
+          std::unique_ptr<BoostIpcMemoryQueue>(new BoostIpcMemoryQueue(name));
+      return q;
+    } catch (const bi_ipc::interprocess_exception&) {
+      return nullptr;
+    }
   }
 
   ~BoostIpcMemoryQueue() {
@@ -42,11 +62,11 @@ class BoostIpcMemoryQueue {
   BoostIpcMemoryQueue(const BoostIpcMemoryQueue&) = delete;
   BoostIpcMemoryQueue& operator=(const BoostIpcMemoryQueue&) = delete;
 
-  void push(const MsgType& msg) {
+  void push(const MsgType& msg, unsigned int priority = 0) {
     std::lock_guard<std::mutex> lock(pushMutex);
     bi_ipc::obufferstream stream(sendBuffer.data(), sendBuffer.size());
     msg.serialize(stream);
-    queue->send(sendBuffer.data(), stream.tellp(), /*priority=*/0);
+    queue->send(sendBuffer.data(), stream.tellp(), priority);
   }
 
   bool tryPop(MsgType& out) {
@@ -66,6 +86,13 @@ class BoostIpcMemoryQueue {
   }
 
  private:
+  // Private constructor for open_only mode (used by openExisting)
+  explicit BoostIpcMemoryQueue(const std::string& name)
+      : sendBuffer(MAX_MSG_SIZE), recvBuffer(MAX_MSG_SIZE) {
+    queue = std::make_unique<bi_ipc::message_queue>(bi_ipc::open_only,
+                                                    name.c_str());
+  }
+
   std::unique_ptr<bi_ipc::message_queue> queue;
   std::mutex pushMutex;
   std::vector<char> sendBuffer;

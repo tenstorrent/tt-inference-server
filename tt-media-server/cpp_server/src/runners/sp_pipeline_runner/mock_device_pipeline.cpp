@@ -22,7 +22,7 @@ MockDevicePipeline::MockDevicePipeline(MockDeviceConfig config)
 
 MockDevicePipeline::~MockDevicePipeline() { exit(); }
 
-void MockDevicePipeline::write(const std::string& taskId,
+void MockDevicePipeline::write(uint32_t taskId,
                                const std::vector<int64_t>& tokenIds,
                                uint32_t maxTokens, RequestPhase phase) {
   auto req = std::make_unique<PipelineRequest>();
@@ -88,7 +88,7 @@ void MockDevicePipeline::emitToken(RequestPtr& req) {
 
   {
     std::lock_guard lock(outputMutex);
-    outputQueue.emplace_back(llm_engine::TaskID(req->taskId), tokenId);
+    outputQueue.emplace_back(req->taskId, tokenId);
   }
   outputNotEmpty.notify_one();
 }
@@ -148,7 +148,7 @@ void MockDevicePipeline::trySchedule() {
 
 void MockDevicePipeline::pipelineLoop() {
   using clock = std::chrono::steady_clock;
-  const auto TICK_DURATION = std::chrono::microseconds(config.stageDurationUs);
+  const auto tickDuration = std::chrono::microseconds(config.stageDurationUs);
 
   while (!stop.load(std::memory_order_relaxed)) {
     auto tickStart = clock::now();
@@ -189,7 +189,7 @@ void MockDevicePipeline::pipelineLoop() {
 
     ++currentTick;
 
-    while ((clock::now() - tickStart) < TICK_DURATION) {
+    while ((clock::now() - tickStart) < tickDuration) {
     }
   }
 }

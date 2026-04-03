@@ -1,10 +1,14 @@
 #include "runners/llm_runner.hpp"
 
 #include <cassert>
+#include <chrono>
+#include <memory>
 #include <thread>
+#include <vector>
 
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
+#include "services/paged_memory_manager.hpp"
 
 namespace tt::runners {
 using namespace llm_engine;
@@ -12,16 +16,23 @@ using Config = tt::config::LLMConfig;
 
 LLMRunner::LLMRunner(const Config& config,
                      ipc::TokenRingBuffer<65536>* resultQueue,
-                     ITaskQueue* taskQueue)
-    : config_(config), result_queue_(resultQueue) {
+                     ITaskQueue* taskQueue, ipc::ICancelQueue* cancelQueue)
+    : config_(config), result_queue_(resultQueue), cancel_queue_(cancelQueue) {
   scheduler_ =
       makeScheduler(config_, taskQueue, tt::config::maxInFlightCount());
+
+  if (tt::config::llmMode() != config::LLMMode::PREFILL_ONLY) {
+    memoryManager = std::make_unique<services::PagedMemoryManager>(
+        scheduler_->blockManager());
+    memoryThread = std::thread([this] { memoryLoop(); });
+  }
 
   auto decodeCb = [this](const TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");
     Sequence* seq = scheduler_->findSequence(result.taskId);
 
-    assert(seq);
+    // Sequence was aborted between model run and token callback — discard.
+    if (!seq || seq->isAborted()) return;
 
     if (result.isError) {
       scheduler_->removeSequence(result.taskId);
@@ -30,12 +41,9 @@ LLMRunner::LLMRunner(const Config& config,
           .flags = static_cast<uint32_t>(ipc::SharedToken::FLAG_FINAL |
                                          ipc::SharedToken::FLAG_ERROR),
           .token_id = 0,
-          .task_id = {},
+          .task_id = result.taskId,
           .padding = {},
       };
-      strncpy(shared.task_id, result.taskId.id.c_str(),
-              sizeof(shared.task_id) - 1);
-      shared.task_id[sizeof(shared.task_id) - 1] = '\0';
       while (!result_queue_->push(shared)) {
         std::this_thread::yield();
       }
@@ -55,12 +63,9 @@ LLMRunner::LLMRunner(const Config& config,
           .flags = static_cast<uint32_t>(finished ? ipc::SharedToken::FLAG_FINAL
                                                   : 0),
           .token_id = result.tokenId,
-          .task_id = {},
+          .task_id = result.taskId,
           .padding = {},
       };
-      strncpy(shared.task_id, result.taskId.id.c_str(),
-              sizeof(shared.task_id) - 1);
-      shared.task_id[sizeof(shared.task_id) - 1] = '\0';
       while (!result_queue_->push(shared)) {
         std::this_thread::yield();
       }
@@ -74,7 +79,13 @@ LLMRunner::LLMRunner(const Config& config,
   model_runner_ = makeModelRunner(config_, std::move(decodeCb));
 }
 
-LLMRunner::~LLMRunner() { exit(); }
+LLMRunner::~LLMRunner() {
+  stop();
+  if (memoryThread.joinable()) {
+    memoryThread.join();
+  }
+  exit();
+}
 
 void LLMRunner::exit() {
   if (model_runner_) {
@@ -90,7 +101,28 @@ void LLMRunner::run() {
 
 void LLMRunner::stop() { stopped_.store(true, std::memory_order_relaxed); }
 
+void LLMRunner::memoryLoop() {
+  while (!stopped_.load(std::memory_order_relaxed)) {
+    auto task = memoryManager->getRequest();
+    if (task) {
+      memoryManager->handleRequest(*task);
+    } else {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+}
+
 void LLMRunner::step() {
+  // Drain cancel queue before scheduling so aborted sequences are excluded
+  // from the next batch.
+  if (cancel_queue_) {
+    std::vector<uint32_t> cancelled;
+    cancel_queue_->tryPopAll(cancelled);
+    for (const auto& taskId : cancelled) {
+      scheduler_->abortRequest(taskId);
+    }
+  }
+
   auto [seqs, is_prefill] = scheduler_->schedule();
   if (seqs.empty()) return;
   ZoneScopedN("LLMRunner::step");

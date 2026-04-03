@@ -2215,7 +2215,9 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 # do NOT extract results[t_key] here.
                 # The score_func expects the ROOT results dict so it can do results[task_name].
 
-                kwargs = task.score.score_func_kwargs
+                # Shallow-copy to avoid mutating the shared config dict: kwargs["task_name"] = t_key
+                # below would permanently alter score_func_kwargs for all subsequent tasks in this process.
+                kwargs = dict(task.score.score_func_kwargs)
                 # Update task_name so the score function looks up the specific subtask (e.g. longbench_2wikimqa)
                 kwargs["task_name"] = t_key
                 configured_keys = kwargs.get("result_keys", [])
@@ -2243,7 +2245,12 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                     )
                 except Exception as e:
                     logger.warning(f"  Could not calculate score for {t_key}: {e}")
-                    score = 0.0
+                    if kwargs.get("unit") == "WER":
+                        # WER=100 is worst-case (100% word error rate). Using score=0.0 here
+                        # would be transformed to 100-0=100 and incorrectly pass the tolerance check.
+                        score = 100.0
+                    else:
+                        score = 0.0
                 if kwargs.get("unit") == "WER":
                     score = 100 - score
 
@@ -2601,76 +2608,96 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
 
 
 def generate_tests_report(args, server_mode, model_spec, report_id, metadata={}):
-    # glob on all test reports - each test category might produce its own report
-    file_name_pattern = f"test_{model_spec.model_id}_*/*"
-    file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/tests_output/{file_name_pattern}"
-    )
-    files = glob(file_path_pattern)
     output_dir = Path(args.output_path) / "tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"summary_{report_id}.md"
 
-    logger.info("Tests Summary")
-    logger.info(f"Processing: {len(files)} files")
-    if not files:
-        logger.info("No tests report files found. Skipping.")
-        return (
-            "",
-            [
-                {
-                    "model": getattr(args, "model", "unknown_model"),
-                    "device": getattr(args, "device", "unknown_device"),
-                }
-            ],
-            None,
-            None,
+    empty_result = (
+        "",
+        [
+            {
+                "model": getattr(args, "model", "unknown_model"),
+                "device": getattr(args, "device", "unknown_device"),
+            }
+        ],
+        None,
+        None,
+    )
+
+    # Find the latest test output directory for this model
+    tests_output_dir = get_default_workflow_root_log_dir() / "tests_output"
+    dir_pattern = f"test_{model_spec.model_id}__*"
+    matching_dirs = list(tests_output_dir.glob(dir_pattern))
+    if not matching_dirs:
+        logger.info(
+            f"No test output directories matching '{dir_pattern}' "
+            f"in {tests_output_dir}. Skipping."
         )
-    # When multiple test runs exist, use only the most recent result
-    files = max(files, key=lambda f: Path(f).stat().st_mtime)
-    logger.info(f"Selected most recent test report: {files}")
+        return empty_result
 
-    # generate vLLM parameter coverage report
-    markdown_str = generate_vllm_parameter_report(
-        files, output_path, report_id, metadata, model_spec=model_spec
-    )
+    latest_dir = max(matching_dirs, key=lambda d: d.stat().st_mtime)
+    logger.info(f"Using latest test output directory: {latest_dir}")
 
-    # Look for parameter_report.json in tests_output directory
-    release_raw = None
-    test_dir_pattern = f"test_{model_spec.model_id}_*"
-    test_dir_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/tests_output/{test_dir_pattern}"
-    )
-    test_dirs = sorted(
-        glob(test_dir_path_pattern),
-        key=lambda d: Path(d).stat().st_mtime,
-        reverse=True,
-    )
-    for test_dir in test_dirs:
-        parameter_report_path = Path(test_dir) / "parameter_report.json"
-        if parameter_report_path.exists():
-            try:
-                with open(parameter_report_path, "r", encoding="utf-8") as f:
-                    release_raw = json.load(f)
-                logger.info(f"Loaded parameter report from: {parameter_report_path}")
-                break
-            except Exception as e:
-                logger.warning(
-                    f"Could not read parameter report {parameter_report_path}: {e}"
-                )
+    # Collect report file paths from parameter_report_*.json files
+    report_files = []
+    for report_path in sorted(latest_dir.glob("parameter_report_*.json")):
+        report_files.append(str(report_path))
+        logger.info(f"  Found report: {report_path}")
 
-    if release_raw is None:
-        logger.info("No parameter_report.json found in tests_output directory.")
+    logger.info(f"Found {len(report_files)} parameter report(s)")
+
+    if not report_files:
+        logger.info("No parameter report files found in test output directory.")
+        return empty_result
+
+    logger.info(f"Processing {len(report_files)} parameter report(s)")
+
+    # Generate vLLM parameter coverage report from all report files
+    # Each JSON contains its own task_name field
+    markdown_str = generate_vllm_parameter_report(report_files)
+
+    # Merge all parameter report data into combined release_raw
+    release_raw_list = []
+    for report_file in report_files:
+        try:
+            with open(report_file, "r", encoding="utf-8") as f:
+                release_raw_list.append(json.load(f))
+            logger.info(f"Loaded parameter report from: {report_file}")
+        except Exception as e:
+            logger.warning(f"Could not read parameter report {report_file}: {e}")
+
+    if not release_raw_list:
         release_raw = [
             {
                 "model": getattr(args, "model", "unknown_model"),
                 "device": getattr(args, "device", "unknown_device"),
             }
         ]
+    elif len(release_raw_list) == 1:
+        release_raw = release_raw_list[0]
+    else:
+        # Merge results from multiple reports
+        release_raw = {
+            "endpoint_url": ", ".join(
+                r.get("endpoint_url", "N/A") for r in release_raw_list
+            ),
+            "model_name": release_raw_list[0].get("model_name", "unknown-model"),
+            "model_impl": release_raw_list[0].get("model_impl", "unknown-impl"),
+            "results": {},
+        }
+        for report_data in release_raw_list:
+            for test_case, tests in report_data.get("results", {}).items():
+                if test_case in release_raw["results"]:
+                    release_raw["results"][test_case].extend(tests)
+                else:
+                    release_raw["results"][test_case] = list(tests)
 
-    release_str = f"### Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
+    release_str = (
+        f"### Test Results for {model_spec.model_name} on {args.device}"
+        f"\n\n{markdown_str}"
+    )
 
     # Write markdown report to file
     with output_path.open("w", encoding="utf-8") as f:

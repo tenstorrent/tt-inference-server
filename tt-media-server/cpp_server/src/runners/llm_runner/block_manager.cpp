@@ -69,14 +69,21 @@ void BlockManager::deallocateBlock(int blockId) {
       << " free=" << free_block_ids_.size() << std::endl;
 }
 
-bool BlockManager::canAllocate(const Sequence& seq) const {
-  return static_cast<int>(free_block_ids_.size()) >=
-         static_cast<int>(seq.numBlocks());
+int BlockManager::numFreeBlocks() const {
+  std::lock_guard<std::mutex> lock(mutex);
+  return static_cast<int>(free_block_ids_.size());
 }
 
-void BlockManager::allocate(Sequence& seq) {
+bool BlockManager::allocate(Sequence& seq) {
   ZoneScopedN("BlockManager::allocate");
+  std::lock_guard<std::mutex> lock(mutex);
   assert(seq.blockTable.empty());
+
+  if (static_cast<int>(free_block_ids_.size()) <
+      static_cast<int>(seq.numBlocks())) {
+    return false;
+  }
+
   LLM_ENGINE_LOG("block_manager")
       << "allocate task_id=" << seq.taskId << " num_blocks=" << seq.numBlocks()
       << " free=" << free_block_ids_.size() << std::endl;
@@ -115,10 +122,12 @@ void BlockManager::allocate(Sequence& seq) {
       seq.blockTable.push_back(blockId);
     }
   }
+  return true;
 }
 
 void BlockManager::deallocate(Sequence& seq) {
   ZoneScopedN("BlockManager::deallocate");
+  std::lock_guard<std::mutex> lock(mutex);
   LLM_ENGINE_LOG("block_manager")
       << "deallocate task_id=" << seq.taskId
       << " num_blocks=" << seq.blockTable.size() << std::endl;
@@ -135,12 +144,14 @@ void BlockManager::deallocate(Sequence& seq) {
 }
 
 bool BlockManager::canAppend(const Sequence& seq) const {
+  std::lock_guard<std::mutex> lock(mutex);
   int needOne = (seq.size() % block_size_ == 1) ? 1 : 0;
   return static_cast<int>(free_block_ids_.size()) >= needOne;
 }
 
 void BlockManager::mayAppend(Sequence& seq) {
   ZoneScopedN("BlockManager::may_append");
+  std::lock_guard<std::mutex> lock(mutex);
   std::vector<int>& blockTable = seq.blockTable;
   Block& lastBlock = blocks_[static_cast<size_t>(blockTable.back())];
   size_t len = seq.size();

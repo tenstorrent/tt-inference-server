@@ -5,6 +5,7 @@
 import logging
 import os
 import traceback
+from datetime import datetime, timezone
 
 from colorama import Fore, Style
 from colorama import init as colorama_init
@@ -55,6 +56,43 @@ class ColoredFormatter(logging.Formatter):
         return f"{color}{formatted}{Style.RESET_ALL}"
 
 
+class ListHandler(logging.Handler):
+    """Handler that appends structured log entries to a shared list.
+
+    Each entry matches the frontend TrainingLogEntry schema:
+    {"id", "timestamp", "type", "step", "message"}
+    """
+
+    def __init__(self, log_list, level=logging.DEBUG):
+        super().__init__(level)
+        self.log_list = log_list
+        self._counter = 0
+
+    def emit(self, record):
+        self._counter += 1
+        log_type = getattr(record, "log_type", self._level_to_type(record.levelno))
+        step = getattr(record, "step", None)
+        self.log_list.append(
+            {
+                "id": f"log-{self._counter}",
+                "timestamp": datetime.fromtimestamp(
+                    record.created, tz=timezone.utc
+                ).isoformat(),
+                "type": log_type,
+                "step": step,
+                "message": self.format(record),
+            }
+        )
+
+    @staticmethod
+    def _level_to_type(levelno):
+        if levelno >= logging.ERROR:
+            return "error"
+        if levelno >= logging.WARNING:
+            return "warning"
+        return "info"
+
+
 class TTLogger:
     def __init__(self, name="TTLogger"):
         # Read log level from LOG_LEVEL environment variable
@@ -82,24 +120,35 @@ class TTLogger:
                 file_handler.setFormatter(logging.Formatter(log_format))
                 self.logger.addHandler(file_handler)
 
-    def debug(self, msg):
-        self.logger.debug(msg)
+    def debug(self, msg, **kwargs):
+        self.logger.debug(msg, **kwargs)
 
-    def info(self, msg):
-        self.logger.info(msg)
+    def info(self, msg, **kwargs):
+        self.logger.info(msg, **kwargs)
 
-    def warning(self, msg):
-        self.logger.warning(msg)
+    def warning(self, msg, **kwargs):
+        self.logger.warning(msg, **kwargs)
 
-    def error(self, msg):
-        self.logger.error(msg)
+    def error(self, msg, **kwargs):
+        self.logger.error(msg, **kwargs)
 
-    def critical(self, msg):
-        self.logger.critical(msg)
+    def critical(self, msg, **kwargs):
+        self.logger.critical(msg, **kwargs)
 
     def logTime(self, start: float, end: float, message: str):
         elapsed = int((end - start) * 1000)  # milliseconds
         self.info(f"{message} {elapsed}ms")
+
+    def add_list_handler(self, log_list) -> ListHandler:
+        handler = ListHandler(log_list)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+        )
+        self.logger.addHandler(handler)
+        return handler
+
+    def remove_handler(self, handler):
+        self.logger.removeHandler(handler)
 
 
 def log_exception_chain(logger, device_id: str, context: str, exc: Exception) -> None:

@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 
-#include "domain/task_id.hpp"
 #include "sockets/socket_manager.hpp"
 #include "sockets/socket_messages.hpp"
 
@@ -73,12 +72,13 @@ class InterServerService {
    * @param prompt Task prompt (text)
    * @param token_ids Pre-tokenized prompt token IDs
    * @param max_tokens Maximum tokens to generate (nullopt = run until EOS)
+   * @param slot_id KV cache slot allocated by decode server's memory manager
    * @return true if sent successfully
    */
-  bool sendPrefillRequest(const tt::domain::TaskID& taskId,
-                          const std::string& prompt,
+  bool sendPrefillRequest(uint32_t taskId, const std::string& prompt,
                           const std::vector<int64_t>& tokenIds,
-                          std::optional<int> maxTokens = std::nullopt);
+                          std::optional<int> maxTokens = std::nullopt,
+                          std::optional<uint32_t> slotId = std::nullopt);
 
   /**
    * @brief Send prefill result back to the decode server
