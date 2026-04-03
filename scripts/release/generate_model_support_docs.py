@@ -111,7 +111,9 @@ DEVICE_HARDWARE_PAGE_GROUPS_MAPPING: Dict[DeviceTypes, HardwarePageGroup] = {
     DeviceTypes.QUAD_GALAXY: _QUAD_GALAXY_PAGE_GROUP,
     DeviceTypes.GALAXY: _GALAXY_PAGE_GROUP,
     DeviceTypes.GALAXY_T3K: _GALAXY_PAGE_GROUP,
-    DeviceTypes.BLACKHOLE_GALAXY: HardwarePageGroup.from_device_type(DeviceTypes.BLACKHOLE_GALAXY),
+    DeviceTypes.BLACKHOLE_GALAXY: HardwarePageGroup.from_device_type(
+        DeviceTypes.BLACKHOLE_GALAXY
+    ),
     DeviceTypes.P150X8: HardwarePageGroup.from_device_type(DeviceTypes.P150X8),
     DeviceTypes.P150X4: HardwarePageGroup.from_device_type(DeviceTypes.P150X4),
     DeviceTypes.P150: _BH_SINGLE_CARD_PAGE_GROUP,
