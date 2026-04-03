@@ -179,9 +179,9 @@ std::optional<pm::OutputMessage> SpPipelineRunner::getOutput() {
 }
 
 std::unique_ptr<llm_engine::Sequence> SpPipelineRunner::getRequest() {
-  auto requestRaw = taskQueue->tryPop();
-  if (!requestRaw) return nullptr;
-  return std::unique_ptr<llm_engine::Sequence>(requestRaw);
+  auto req = taskQueue->tryPop();
+  if (!req) return nullptr;
+  return req;
 }
 
 inline void SpPipelineRunner::handleMemoryRequest(

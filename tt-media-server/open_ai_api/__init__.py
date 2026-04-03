@@ -5,10 +5,10 @@
 import logging
 from dataclasses import dataclass
 
-from fastapi import APIRouter
-
 from config.constants import ModelServices
 from config.settings import settings
+from fastapi import APIRouter
+
 from open_ai_api import (
     audio,
     cnn,
@@ -16,8 +16,9 @@ from open_ai_api import (
     fine_tuning,
     image,
     llm,
-    tokenizer,
+    models,
     text_to_speech,
+    tokenizer,
     tt_maintenance_api,
     video,
 )
@@ -104,4 +105,11 @@ api_router.include_router(
     tt_maintenance_api.router,
     prefix="",
     tags=["Maintenance"],
+)
+
+# Model discovery endpoints (always included, no versioning)
+api_router.include_router(
+    models.router,
+    prefix="",
+    tags=["Models"],
 )

@@ -47,10 +47,11 @@ Use MODEL_RUNNER to select which model is run
    - TT_XLA_RESNET = "tt-xla-resnet"
    - TT_XLA_VOVNET = "tt-xla-vovnet"
    - TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
-   - TT_XLA_EFFICENNET = "tt-xla-efficientnet"
+   - TT_XLA_EFFICIENTNET = "tt-xla-efficientnet"
    - TT_XLA_SEGFORMER = "tt-xla-segformer"
    - TT_XLA_UNET = "tt-xla-unet"
    - TT_XLA_VIT = "tt-xla-vit"
+   - TT_XLA_SDXL = "tt-xla-sdxl"
 
 Set appropriate HF_TOKEN to load weights from Huggingface.
 IRD_LF_CACHE is out large file caching service, in IRD environment use http://aus2-lfcache.aus2.tenstorrent.com/
@@ -138,6 +139,10 @@ To run the forge model, select the `forge-vllm-plugin` implementation when runni
 Add the model into the options dropdown(under the model input) in on-dispatch.yml in .github/workflows/on-dispatch.yml file
 
 To add models into the on-nightly workflow, navigate to tt-shield repo, and add the model into the model matrix in .github/workflows/on-dispatch.yml , under   run-evals-on-media-inference-server-forge job
+
+### Model Specific Options
+
+- For TT_XLA_SDXL use TTXLA_SDXL_RESOLUTION [512|1024] to specify the output image resolution, default is 512.
 
 NOTES:
 - We are unable to run evaluations on Forge models that exist in metal.

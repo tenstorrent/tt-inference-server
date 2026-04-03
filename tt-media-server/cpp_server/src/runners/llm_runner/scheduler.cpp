@@ -73,7 +73,7 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
     // check the pending_aborts_ set instead.
     if (pending_aborts_.erase(seq->taskId)) {
       sequences_.erase(seq->taskId);
-      delete seq;
+      seq.reset();
       continue;
     }
 
@@ -81,15 +81,14 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
             max_num_batched_tokens_ ||
         !block_manager_.allocate(*seq)) {
       prefill_queue_->push(*seq);
-      delete seq;
+      seq.reset();
       break;
     }
     numSeqs += 1;
     numBatchedTokens += static_cast<int>(seq->size() - seq->numCachedTokens);
     auto id = seq->taskId;
-    sequences_[id] = std::make_unique<Sequence>(std::move(*seq));
+    sequences_[id] = std::move(seq);
     scheduledSeqs.push_back(sequences_[id].get());
-    delete seq;
   }
   return !scheduledSeqs.empty();
 }
@@ -124,7 +123,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
     auto seq = prefill_queue_->receive();
     if (seq) {
       prefill_queue_->push(*seq);
-      delete seq;
+      seq.reset();
     }
   }
   int numSeqs = 0;

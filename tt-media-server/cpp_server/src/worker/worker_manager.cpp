@@ -179,8 +179,6 @@ void WorkerManager::startWorkers() {
 }
 
 void WorkerManager::startWarmupListener() {
-  tt::ipc::BoostIpcWarmupSignalQueue::remove(
-      tt::ipc::WARMUP_SIGNALS_QUEUE_NAME);
   warmupQueue = std::make_unique<tt::ipc::BoostIpcWarmupSignalQueue>(
       tt::ipc::WARMUP_SIGNALS_QUEUE_NAME, workerCount);
   warmupReceived = false;
