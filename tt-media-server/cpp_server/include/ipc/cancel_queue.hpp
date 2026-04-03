@@ -3,9 +3,8 @@
 
 #pragma once
 
+#include <cstdint>
 #include <vector>
-
-#include "domain/task_id.hpp"
 
 namespace tt::ipc {
 
@@ -21,10 +20,10 @@ class ICancelQueue {
 
   /** Non-blocking push. Drops the message with a warning if the queue is full.
    */
-  virtual void push(const domain::TaskID& taskId) = 0;
+  virtual void push(uint32_t taskId) = 0;
 
   /** Drain all available cancel messages into @p out. Non-blocking. */
-  virtual void tryPopAll(std::vector<domain::TaskID>& out) = 0;
+  virtual void tryPopAll(std::vector<uint32_t>& out) = 0;
 
   /** Remove the underlying IPC resource. Default no-op. */
   virtual void remove() {}

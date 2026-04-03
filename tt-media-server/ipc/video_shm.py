@@ -9,7 +9,11 @@ exchange between the server process and an external runner process.
 
 Two modes:
   - "input"  (server -> runner): carries VideoRequest payloads
-  - "output" (runner -> server): carries VideoResponse payloads (full video blob)
+  - "output" (runner -> server): carries VideoResponse payloads (file-path reference)
+
+The video payload itself is written to a file on ``/dev/shm/`` (RAM-backed tmpfs)
+and only the file path (~100 bytes) is transmitted through the SHM output slot.
+This avoids multiple large memcpy operations for 100-200 MB video blobs.
 
 Runner side (attaches to SHM created by the device worker)::
 
@@ -19,7 +23,10 @@ Runner side (attaches to SHM created by the device worker)::
     output_shm.open(create=False)
 
     req = input_shm.read_request()
-    output_shm.write_response(VideoResponse(...))   # entire video in one shot
+    path = video_result_path(req.task_id)
+    with open(path, "wb") as f:
+        f.write(pickle.dumps(video))
+    output_shm.write_response(VideoResponse(task_id=..., file_path=path, ...))
 """
 
 from __future__ import annotations
@@ -52,15 +59,39 @@ class VideoRequest:
     guidance_scale_2: float
 
 
+VIDEO_FILE_DIR = os.environ.get("TT_VIDEO_FILE_DIR", "/dev/shm")
+VIDEO_FILE_GLOB = "tt_video_*.pkl"
+MAX_FILE_PATH_LEN = 256
+
+
+def video_result_path(task_id: str) -> str:
+    """Return the file path for a video result on the RAM-backed tmpfs."""
+    return os.path.join(VIDEO_FILE_DIR, f"tt_video_{task_id}.pkl")
+
+
+def cleanup_orphaned_video_files() -> int:
+    """Remove any leftover ``tt_video_*.pkl`` files from :data:`VIDEO_FILE_DIR`.
+
+    Returns the number of files removed.  Safe to call at any point –
+    individual unlink failures are silently ignored.
+    """
+    import glob
+
+    removed = 0
+    for path in glob.glob(os.path.join(VIDEO_FILE_DIR, VIDEO_FILE_GLOB)):
+        try:
+            os.unlink(path)
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
 @dataclass(frozen=True)
 class VideoResponse:
     task_id: str
     status: VideoStatus
-    num_frames: int
-    height: int
-    width: int
-    channels: int
-    frame_data: bytes
+    file_path: str
     error_message: str
 
 
@@ -75,11 +106,13 @@ class VideoShm:
         num_inference_steps(4) seed(8) height(4) width(4)
         num_frames(4) guidance_scale(4) guidance_scale_2(4)
 
-    Output slot (~256 MB):
+    Output slot (564 B):
         state(4) task_id(36) status(4)
         error_len(4) error_msg(256)
-        num_frames(4) height(4) width(4) channels(4) data_len(4)
-        frame_data(MAX_VIDEO_SIZE)
+        file_path_len(4) file_path(256)
+
+    The actual video payload is written to a file (see :func:`video_result_path`)
+    and only the path is transmitted through SHM.
     """
 
     INPUT_SLOTS = 8
@@ -88,7 +121,6 @@ class VideoShm:
     MAX_PROMPT_LEN = 2048
     MAX_NEG_PROMPT_LEN = 512
     MAX_ERROR_LEN = 256
-    MAX_VIDEO_SIZE = 256 * 1024 * 1024  # 256 MB – fits 168 * 848 * 480 * 3
 
     _FREE = 0
     _TAKEN = 1
@@ -111,18 +143,16 @@ class VideoShm:
     INPUT_SLOT_SIZE = 2640
 
     # ── Output slot field offsets ──
+    #   state(4) task_id(36) status(4) error_len(4) error(256)
+    #   file_path_len(4) file_path(256)  → total 564 bytes
     _OUT_STATE = 0
     _OUT_TASK_ID = 4
     _OUT_STATUS = 40
     _OUT_ERROR_LEN = 44
     _OUT_ERROR = 48
-    _OUT_NUM_FRAMES = 48 + MAX_ERROR_LEN  # 304
-    _OUT_HEIGHT = 48 + MAX_ERROR_LEN + 4  # 308
-    _OUT_WIDTH = 48 + MAX_ERROR_LEN + 8  # 312
-    _OUT_CHANNELS = 48 + MAX_ERROR_LEN + 12  # 316
-    _OUT_DATA_LEN = 48 + MAX_ERROR_LEN + 16  # 320
-    _OUT_DATA = 48 + MAX_ERROR_LEN + 20  # 324
-    OUTPUT_SLOT_SIZE = _OUT_DATA + MAX_VIDEO_SIZE
+    _OUT_FILE_PATH_LEN = 48 + MAX_ERROR_LEN  # 304
+    _OUT_FILE_PATH = 48 + MAX_ERROR_LEN + 4  # 308
+    OUTPUT_SLOT_SIZE = _OUT_FILE_PATH + MAX_FILE_PATH_LEN  # 564
 
     def __init__(
         self,
@@ -292,15 +322,10 @@ class VideoShm:
             guidance_scale_2=guidance_scale_2,
         )
 
-    # ── Output SHM: response read / write (full video blob) ──
+    # ── Output SHM: response read / write (file-path reference) ──
 
     def write_response(self, response: VideoResponse) -> None:
-        """Write a VideoResponse (entire video) into the next free output slot."""
-        if len(response.frame_data) > self.MAX_VIDEO_SIZE:
-            raise ValueError(
-                f"frame_data ({len(response.frame_data)} bytes) exceeds "
-                f"MAX_VIDEO_SIZE ({self.MAX_VIDEO_SIZE})"
-            )
+        """Write a VideoResponse into the next free output slot."""
         buf = self._buf
         off = self._pos * self._slot_size
         state_off = off + self._OUT_STATE
@@ -322,16 +347,13 @@ class VideoShm:
             response.error_message,
             self.MAX_ERROR_LEN,
         )
-
-        struct.pack_into("<I", buf, off + self._OUT_NUM_FRAMES, response.num_frames)
-        struct.pack_into("<I", buf, off + self._OUT_HEIGHT, response.height)
-        struct.pack_into("<I", buf, off + self._OUT_WIDTH, response.width)
-        struct.pack_into("<I", buf, off + self._OUT_CHANNELS, response.channels)
-
-        data_len = len(response.frame_data)
-        struct.pack_into("<I", buf, off + self._OUT_DATA_LEN, data_len)
-        data_off = off + self._OUT_DATA
-        buf[data_off : data_off + data_len] = response.frame_data
+        self._pack_string(
+            buf,
+            off + self._OUT_FILE_PATH_LEN,
+            off + self._OUT_FILE_PATH,
+            response.file_path,
+            MAX_FILE_PATH_LEN,
+        )
 
         struct.pack_into("<i", buf, state_off, self._TAKEN)
         self._pos = (self._pos + 1) % self._slots
@@ -357,16 +379,9 @@ class VideoShm:
         error_message = self._unpack_string(
             buf, off + self._OUT_ERROR_LEN, off + self._OUT_ERROR
         )
-
-        num_frames = struct.unpack_from("<I", buf, off + self._OUT_NUM_FRAMES)[0]
-        height = struct.unpack_from("<I", buf, off + self._OUT_HEIGHT)[0]
-        width = struct.unpack_from("<I", buf, off + self._OUT_WIDTH)[0]
-        channels = struct.unpack_from("<I", buf, off + self._OUT_CHANNELS)[0]
-
-        data_len = struct.unpack_from("<I", buf, off + self._OUT_DATA_LEN)[0]
-        data_len = min(data_len, self.MAX_VIDEO_SIZE)
-        data_off = off + self._OUT_DATA
-        frame_data = bytes(buf[data_off : data_off + data_len])
+        file_path = self._unpack_string(
+            buf, off + self._OUT_FILE_PATH_LEN, off + self._OUT_FILE_PATH
+        )
 
         struct.pack_into("<i", buf, state_off, self._FREE)
         self._pos = (self._pos + 1) % self._slots
@@ -374,11 +389,7 @@ class VideoShm:
         return VideoResponse(
             task_id=task_id,
             status=status,
-            num_frames=num_frames,
-            height=height,
-            width=width,
-            channels=channels,
-            frame_data=frame_data,
+            file_path=file_path,
             error_message=error_message,
         )
 

@@ -5,7 +5,8 @@
 #include <thread>
 
 #include "config/runner_config.hpp"
-#include "ipc/boost_ipc_memory_queue.hpp"
+#include "ipc/boost_ipc_queue.hpp"
+#include "ipc/cancel_queue.hpp"
 #include "ipc/token_ring_buffer.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 #include "runners/llm_runner/scheduler.hpp"
@@ -22,7 +23,8 @@ using namespace llm_engine;
 class LLMRunner : public IRunner {
  public:
   LLMRunner(const config::LLMConfig& config,
-            ipc::TokenRingBuffer<65536>* resultQueue, ITaskQueue* taskQueue);
+            ipc::TokenRingBuffer<65536>* resultQueue, ITaskQueue* taskQueue,
+            ipc::ICancelQueue* cancelQueue = nullptr);
   ~LLMRunner() override;
 
   Scheduler& scheduler() { return *scheduler_; }
@@ -38,6 +40,7 @@ class LLMRunner : public IRunner {
 
   config::LLMConfig config_;
   ipc::TokenRingBuffer<65536>* result_queue_;
+  ipc::ICancelQueue* cancel_queue_;  // nullable; owned by caller
   std::unique_ptr<IModelRunner> model_runner_;
   std::unique_ptr<Scheduler> scheduler_;
   std::atomic<bool> stopped_{false};

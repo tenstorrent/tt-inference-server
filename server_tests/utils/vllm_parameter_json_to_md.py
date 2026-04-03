@@ -60,10 +60,15 @@ def analyze_report(report_data):
     return summary
 
 
-def format_metadata(report_data):
+def format_metadata(report_data, task_name=None):
     """Creates a Markdown table for the report metadata."""
+    title = (
+        f"### LLM API Test Metadata — {task_name}"
+        if task_name
+        else "### LLM API Test Metadata"
+    )
     lines = [
-        "### LLM API Test Metadata",
+        title,
         "",
         "| Attribute | Value |",
         "| --- | --- |",
@@ -84,10 +89,15 @@ def format_metadata(report_data):
     return "\n".join(lines)
 
 
-def format_summary_table(summary):
+def format_summary_table(summary, task_name=None):
     """Creates the main summary results table."""
+    title = (
+        f"### Parameter Conformance Summary — {task_name}"
+        if task_name
+        else "### Parameter Conformance Summary"
+    )
     lines = [
-        "### Parameter Conformance Summary",
+        title,
         "",
         "| Test Case | Status | Summary |",
         "| --- | :---: | --- |",
@@ -109,10 +119,15 @@ def format_summary_table(summary):
     return "\n".join(lines)
 
 
-def format_detailed_results_table(summary):
+def format_detailed_results_table(summary, task_name=None):
     """Creates a single Markdown table for all detailed test results."""
+    title = (
+        f"### Detailed Test Results — {task_name}"
+        if task_name
+        else "### Detailed Test Results"
+    )
     lines = [
-        "### Detailed Test Results",
+        title,
         "",
         "| Test Case | Parametrization | Status | Message |",
         "| --- | --- | :---: | --- |",
@@ -155,24 +170,42 @@ def format_detailed_results_table(summary):
     return "\n".join(lines)
 
 
-def main(report_file, *args, **kwargs):
+def _load_report(report_file):
     try:
         with open(report_file, "r") as f:
-            report_data = json.load(f)
+            return json.load(f)
     except FileNotFoundError:
         raise FileNotFoundError(f"Error: Input file not found at {report_file}")
     except json.JSONDecodeError:
         raise json.JSONDecodeError(f"Error: Could not decode JSON from {report_file}")
 
-    # Analyze and format
-    summary = analyze_report(report_data)
-    metadata_md = format_metadata(report_data)
-    summary_md = format_summary_table(summary)
-    # Call the new table-based formatter
-    details_md = format_detailed_results_table(summary)
 
-    report_str = f"{metadata_md}\n{summary_md}{details_md}"
-    return report_str
+def _generate_single_report(report_data):
+    """Generate markdown sections for a single report's data."""
+    task_name = report_data.get("task_name")
+    summary = analyze_report(report_data)
+    metadata_md = format_metadata(report_data, task_name=task_name)
+    summary_md = format_summary_table(summary, task_name=task_name)
+    details_md = format_detailed_results_table(summary, task_name=task_name)
+    return f"{metadata_md}\n{summary_md}{details_md}"
+
+
+def main(report_files):
+    """Generate markdown report from one or more parameter report JSON files.
+
+    Each JSON file must contain a 'task_name' field.
+
+    Args:
+        report_files: A single file path string or a list of file path strings.
+    """
+    if isinstance(report_files, str):
+        report_files = [report_files]
+
+    sections = []
+    for file_path in report_files:
+        report_data = _load_report(file_path)
+        sections.append(_generate_single_report(report_data))
+    return "\n---\n\n".join(sections)
 
 
 if __name__ == "__main__":
@@ -180,10 +213,9 @@ if __name__ == "__main__":
         description="Convert API test report JSON to Markdown."
     )
     parser.add_argument(
-        "report_file",
+        "report_files",
         nargs="?",
-        default="report.json",
-        help="Path to the input report.json file (default: report.json)",
+        help="Path(s) to input parameter report JSON file(s)",
     )
     parser.add_argument(
         "-o",
@@ -192,7 +224,7 @@ if __name__ == "__main__":
         help="Path to the output report.md file (default: report.md)",
     )
     args = parser.parse_args()
-    report_str = main(**vars(args))
+    report_str = main(args.report_files)
 
     # Write to output file
     with open(args.output, "w") as f:
