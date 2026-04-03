@@ -34,6 +34,9 @@ class SessionManager {
   std::optional<domain::Session> getSession(const std::string& sessionId) const;
   size_t getActiveSessionCount() const;
 
+  // In-flight session management
+  void setSessionInFlight(const std::string& sessionId, bool inFlight);
+
  private:
   void evictOldSessions();
   std::future<uint32_t> requestSlotIdFromMemoryManager(
