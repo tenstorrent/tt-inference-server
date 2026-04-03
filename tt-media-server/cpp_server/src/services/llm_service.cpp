@@ -81,8 +81,8 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
 
     for (size_t i = 0; i < request.stop.size(); ++i) {
       if (request.stop[i].empty()) {
-        throw std::invalid_argument(
-            "Stop sequence at index " + std::to_string(i) + " cannot be empty");
+        throw std::invalid_argument("Stop sequence at index " +
+                                    std::to_string(i) + " cannot be empty");
       }
     }
   }
@@ -283,8 +283,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         continue;
       }
 
-      // Skip processing tokens after stop string detected (handle race condition)
-      // Only process final token to ensure clean shutdown
+      // Skip processing tokens after stop string detected (handle race
+      // condition) Only process final token to ensure clean shutdown
       if (!isFinal && stopStringHits.count(taskId) > 0) {
         continue;
       }
@@ -302,7 +302,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
       // Accumulate answer text and check for stop strings
       // Skip accumulation if we've already detected a stop string
-      if (!parseResult.text.empty() && parseResult.type == ContentType::ANSWER &&
+      if (!parseResult.text.empty() &&
+          parseResult.type == ContentType::ANSWER &&
           stopStringHits.count(taskId) == 0) {
         accumulatedText[taskId] += parseResult.text;
 
@@ -329,7 +330,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
                   "aborting sequence",
                   workerIdx, stopStr, taskId);
 
-              // Skip emitting this chunk - we'll emit the truncated text in final chunk
+              // Skip emitting this chunk - we'll emit the truncated text in
+              // final chunk
               if (!isFinal) {
                 break;  // Exit the stop string check loop, then continue below
               }
