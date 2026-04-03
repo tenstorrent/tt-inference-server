@@ -27,8 +27,14 @@ Usage (in a template):
   {{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
 */}}
 {{- define "tt-inference-server.resolvedConfig" -}}
-{{- $modelCfg := index (index .Values.models .Values.model) .Values.device }}
-{{- mergeOverwrite (deepCopy .Values.defaults) $modelCfg | toYaml }}
+{{- $modelEntry := index .Values.models .Values.model }}
+{{- $deviceCfg := index $modelEntry .Values.device }}
+{{- $cfg := mergeOverwrite (deepCopy .Values.defaults) $deviceCfg }}
+{{- /* serverType lives at model level (shared across devices), override if set there */}}
+{{- if hasKey $modelEntry "serverType" }}
+{{- $_ := set $cfg "serverType" $modelEntry.serverType }}
+{{- end }}
+{{- $cfg | toYaml }}
 {{- end }}
 
 {{/*

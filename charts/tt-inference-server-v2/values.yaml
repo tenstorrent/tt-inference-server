@@ -74,8 +74,8 @@ models:
   # ── vLLM models ────────────────────────────────────────────────────────
 
   Llama-3.1-8B-Instruct:
+    serverType: vllm
     galaxy:
-      serverType: vllm
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.11.1-bac8b34-7c6685a
@@ -91,8 +91,8 @@ models:
           initialDelaySeconds: 2400
 
   Llama-3.1-8B:
+    serverType: vllm
     galaxy:
-      serverType: vllm
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.11.1-bac8b34-7c6685a
@@ -108,8 +108,8 @@ models:
           initialDelaySeconds: 2400
 
   Qwen3-8B:
+    serverType: vllm
     galaxy:
-      serverType: vllm
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.10.0-e0e0500-409b1cd
@@ -125,8 +125,8 @@ models:
           initialDelaySeconds: 2400
 
   Qwen3-32B:
+    serverType: vllm
     galaxy:
-      serverType: vllm
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.11.1-bac8b34-7c6685a
@@ -142,8 +142,8 @@ models:
           initialDelaySeconds: 3600
 
   Llama-3.1-70B-Instruct:
+    serverType: vllm
     galaxy:
-      serverType: vllm
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.10.0-e867533-8f36910
@@ -159,8 +159,8 @@ models:
           initialDelaySeconds: 5400
 
   Llama-3.1-70B:
+    serverType: vllm
     galaxy:
-      serverType: vllm
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.10.0-e867533-8f36910
@@ -176,8 +176,8 @@ models:
           initialDelaySeconds: 5400
 
   Llama-3.3-70B-Instruct:
+    serverType: vllm
     galaxy:
-      serverType: vllm
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.10.0-e867533-8f36910
@@ -193,8 +193,8 @@ models:
           initialDelaySeconds: 5400
 
   DeepSeek-R1-Distill-Llama-70B:
+    serverType: vllm
     galaxy:
-      serverType: vllm
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.10.0-e867533-8f36910
@@ -210,8 +210,8 @@ models:
           initialDelaySeconds: 5400
 
   gpt-oss-120b:
+    serverType: vllm
     galaxy:
-      serverType: vllm
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.11.1-bac8b34-7c6685a
@@ -229,8 +229,8 @@ models:
   # ── Media models ───────────────────────────────────────────────────────
 
   whisper-large-v3:
+    serverType: media
     galaxy:
-      serverType: media
       image:
         repository: ghcr.io/tenstorrent/tt-media-inference-server
         tag: 0.11.1-bac8b34
@@ -247,8 +247,8 @@ models:
           initialDelaySeconds: 600
 
   distil-large-v3:
+    serverType: media
     galaxy:
-      serverType: media
       image:
         repository: ghcr.io/tenstorrent/tt-media-inference-server
         tag: 0.11.1-bac8b34
@@ -265,8 +265,8 @@ models:
           initialDelaySeconds: 600
 
   stable-diffusion-xl-base-1.0:
+    serverType: media
     galaxy:
-      serverType: media
       image:
         repository: ghcr.io/tenstorrent/tt-media-inference-server
         tag: 0.10.0-555f240
@@ -282,8 +282,8 @@ models:
           enabled: false
 
   stable-diffusion-xl-base-1.0-img-2-img:
+    serverType: media
     galaxy:
-      serverType: media
       image:
         repository: ghcr.io/tenstorrent/tt-media-inference-server
         tag: 0.11.1-bac8b34
@@ -300,8 +300,8 @@ models:
           initialDelaySeconds: 600
 
   FLUX.1-dev:
+    serverType: media
     galaxy:
-      serverType: media
       image:
         repository: ghcr.io/tenstorrent/tt-media-inference-server
         tag: 0.10.0-555f240
@@ -318,8 +318,8 @@ models:
           initialDelaySeconds: 600
 
   FLUX.1-schnell:
+    serverType: media
     galaxy:
-      serverType: media
       image:
         repository: ghcr.io/tenstorrent/tt-media-inference-server
         tag: 0.10.0-555f240
@@ -336,8 +336,8 @@ models:
           initialDelaySeconds: 600
 
   Wan2.2-T2V-A14B-Diffusers:
+    serverType: media
     galaxy:
-      serverType: media
       image:
         repository: ghcr.io/tenstorrent/tt-media-inference-server
         tag: 0.10.0-555f240
@@ -353,8 +353,8 @@ models:
           enabled: false
 
   mochi-1-preview:
+    serverType: media
     galaxy:
-      serverType: media
       image:
         repository: ghcr.io/tenstorrent/tt-media-inference-server
         tag: 0.10.0-555f240
