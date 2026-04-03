@@ -27,11 +27,13 @@ class MaxOccupancyScheduler : public Scheduler {
   using Scheduler::Scheduler;
 
  protected:
-  bool shouldPrefillFirst(int decodeCount, int maxInFlightCount) const {
+  bool shouldPrefillFirst(size_t decodeCount,
+                          size_t maxInFlightCount) const override {
     return decodeCount < maxInFlightCount;
   }
 
-  int maxPrefillSeqs(int decodeCount, int maxInFlightCount) const {
+  size_t maxPrefillSeqs(size_t decodeCount,
+                        size_t maxInFlightCount) const override {
     return maxInFlightCount - decodeCount;
   }
 };

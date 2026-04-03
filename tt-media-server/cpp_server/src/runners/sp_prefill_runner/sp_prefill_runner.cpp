@@ -3,6 +3,7 @@
 
 #include "runners/sp_prefill_runner/sp_prefill_runner.hpp"
 
+#include "ipc/token_push.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
@@ -40,11 +41,11 @@ void SpPrefillRunner::run() {
 
     if (result->isError) {
       TT_LOG_WARN("SpPrefillRunner: Error token for task {}", result->taskId);
-      pushErrorToken(result->taskId);
+      ipc::pushErrorToken(*resultQueue, result->taskId);
     } else {
       TT_LOG_DEBUG("SpPrefillRunner: Received prefill token {} for task {}",
                    result->tokenId, result->taskId);
-      pushToken(result->taskId, result->tokenId, true);  // Always finished
+      ipc::pushToken(*resultQueue, result->taskId, result->tokenId, true);
     }
 
     // sequence automatically cleaned up at end of scope
@@ -68,25 +69,6 @@ bool SpPrefillRunner::warmup() {
 void SpPrefillRunner::stop() {
   TT_LOG_INFO("SpPrefillRunner: Stopping");
   stopped.store(true, std::memory_order_relaxed);
-}
-
-void SpPrefillRunner::pushToken(uint32_t taskId, uint64_t tokenId,
-                                bool finished) {
-  ipc::SharedToken shared{};
-  shared.token_index = 0;
-  shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;
-  shared.token_id = tokenId;
-  shared.task_id = taskId;
-  resultQueue->push(shared);
-}
-
-void SpPrefillRunner::pushErrorToken(uint32_t taskId) {
-  ipc::SharedToken shared{};
-  shared.token_index = 0;
-  shared.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR;
-  shared.token_id = 0;
-  shared.task_id = taskId;
-  resultQueue->push(shared);
 }
 
 }  // namespace tt::runners

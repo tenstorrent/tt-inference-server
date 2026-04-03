@@ -26,7 +26,7 @@ class Block {
 
 class BlockManager {
  public:
-  BlockManager(int numBlocks, int blockSize);
+  BlockManager(size_t numBlocks, size_t blockSize);
 
   static int64_t computeHash(const std::vector<int64_t>& tokenIds,
                              int64_t prefix = -1);
@@ -36,14 +36,14 @@ class BlockManager {
   bool canAppend(const Sequence& seq) const;
   void mayAppend(Sequence& seq);
 
-  int blockSize() const { return block_size_; }
-  int numFreeBlocks() const;
+  int blockSize() const { return static_cast<int>(block_size_); }
+  size_t numFreeBlocks() const;
 
  private:
   Block& allocateBlock(int blockId);
   void deallocateBlock(int blockId);
 
-  int block_size_;
+  size_t block_size_;
   std::vector<Block> blocks_;
   std::unordered_map<int64_t, int> hash_to_block_id_;
   std::deque<int> free_block_ids_;
