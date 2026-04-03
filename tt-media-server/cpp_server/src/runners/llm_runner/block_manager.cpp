@@ -23,19 +23,17 @@ void Block::reset() {
   token_ids.clear();
 }
 
-BlockManager::BlockManager(int numBlocks, int blockSize)
+BlockManager::BlockManager(size_t numBlocks, size_t blockSize)
     : block_size_(blockSize) {
-  if (numBlocks <= 0) {
-    throw std::invalid_argument(
-        "BlockManager: num_blocks must be positive, got " +
-        std::to_string(numBlocks));
+  if (numBlocks == 0) {
+    throw std::invalid_argument("BlockManager: num_blocks must be positive");
   }
-  blocks_.reserve(static_cast<size_t>(numBlocks));
-  for (int i = 0; i < numBlocks; ++i) {
-    blocks_.emplace_back(i);
+  blocks_.reserve(numBlocks);
+  for (size_t i = 0; i < numBlocks; ++i) {
+    blocks_.emplace_back(static_cast<int>(i));
   }
-  for (int i = 0; i < numBlocks; ++i) {
-    free_block_ids_.push_back(i);
+  for (size_t i = 0; i < numBlocks; ++i) {
+    free_block_ids_.push_back(static_cast<int>(i));
   }
 }
 
@@ -69,9 +67,9 @@ void BlockManager::deallocateBlock(int blockId) {
       << " free=" << free_block_ids_.size() << std::endl;
 }
 
-int BlockManager::numFreeBlocks() const {
+size_t BlockManager::numFreeBlocks() const {
   std::lock_guard<std::mutex> lock(mutex);
-  return static_cast<int>(free_block_ids_.size());
+  return free_block_ids_.size();
 }
 
 bool BlockManager::allocate(Sequence& seq) {
@@ -79,8 +77,7 @@ bool BlockManager::allocate(Sequence& seq) {
   std::lock_guard<std::mutex> lock(mutex);
   assert(seq.blockTable.empty());
 
-  if (static_cast<int>(free_block_ids_.size()) <
-      static_cast<int>(seq.numBlocks())) {
+  if (free_block_ids_.size() < seq.numBlocks()) {
     return false;
   }
 
@@ -91,9 +88,7 @@ bool BlockManager::allocate(Sequence& seq) {
   bool cacheMiss = false;
   for (size_t i = 0; i < seq.numBlocks(); ++i) {
     std::vector<int64_t> tokenIds = seq.block(i);
-    h = (tokenIds.size() == static_cast<size_t>(block_size_))
-            ? computeHash(tokenIds, h)
-            : -1;
+    h = (tokenIds.size() == block_size_) ? computeHash(tokenIds, h) : -1;
     auto it = hash_to_block_id_.find(h);
     int blockId = (it != hash_to_block_id_.end()) ? it->second : -1;
     if (blockId == -1 ||
@@ -109,7 +104,7 @@ bool BlockManager::allocate(Sequence& seq) {
       }
       seq.blockTable.push_back(blockId);
     } else {
-      seq.numCachedTokens += static_cast<size_t>(block_size_);
+      seq.numCachedTokens += block_size_;
       if (used_block_ids_.count(blockId)) {
         blocks_[static_cast<size_t>(blockId)].ref_count += 1;
       } else {
@@ -145,8 +140,8 @@ void BlockManager::deallocate(Sequence& seq) {
 
 bool BlockManager::canAppend(const Sequence& seq) const {
   std::lock_guard<std::mutex> lock(mutex);
-  int needOne = (seq.size() % block_size_ == 1) ? 1 : 0;
-  return static_cast<int>(free_block_ids_.size()) >= needOne;
+  size_t needOne = (seq.size() % block_size_ == 1) ? 1 : 0;
+  return free_block_ids_.size() >= needOne;
 }
 
 void BlockManager::mayAppend(Sequence& seq) {
@@ -155,14 +150,14 @@ void BlockManager::mayAppend(Sequence& seq) {
   std::vector<int>& blockTable = seq.blockTable;
   Block& lastBlock = blocks_[static_cast<size_t>(blockTable.back())];
   size_t len = seq.size();
-  if (len % static_cast<size_t>(block_size_) == 1) {
+  if (len % block_size_ == 1) {
     LLM_ENGINE_LOG("block_manager") << "may_append task_id=" << seq.taskId
                                     << " new_block len=" << len << std::endl;
     assert(lastBlock.hash != -1);
     int blockId = free_block_ids_.front();
     allocateBlock(blockId);
     blockTable.push_back(blockId);
-  } else if (len % static_cast<size_t>(block_size_) == 0) {
+  } else if (len % block_size_ == 0) {
     assert(lastBlock.hash == -1);
     LLM_ENGINE_LOG("block_manager")
         << "may_append task_id=" << seq.taskId << " fill_last_block len=" << len
