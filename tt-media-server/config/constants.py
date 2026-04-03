@@ -30,7 +30,10 @@ class SupportedModels(Enum):
     LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B"
     LLAMA_3_1_8B_INSTRUCT = "meta-llama/Llama-3.1-8B-Instruct"
     LLAMA_3_1_70B = "meta-llama/Llama-3.1-70B"
+    QWEN_3_0_6B = "Qwen/Qwen3-0.6B"
+    QWEN_3_1_7B = "Qwen/Qwen3-1.7B"
     QWEN_3_4B = "Qwen/Qwen3-4B"
+    QWEN_3_8B = "Qwen/Qwen3-8B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
 
@@ -68,7 +71,10 @@ class ModelNames(Enum):
     LLAMA_3_1_8B = "Llama-3.1-8B"
     LLAMA_3_1_8B_INSTRUCT = "Llama-3.1-8B-Instruct"
     LLAMA_3_1_70B = "Llama-3.1-70B"
+    QWEN_3_0_6B = "Qwen3-0.6B"
+    QWEN_3_1_7B = "Qwen3-1.7B"
     QWEN_3_4B = "Qwen3-4B"
+    QWEN_3_8B = "Qwen3-8B"
     SPEECHT5_TTS = "speecht5_tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
 
@@ -206,9 +212,10 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.LLAMA_3_2_3B_INSTRUCT,
         ModelNames.LLAMA_3_1_8B,
         ModelNames.LLAMA_3_1_8B_INSTRUCT,
-    },
-    ModelRunners.VLLM: {
+        ModelNames.QWEN_3_0_6B,
+        ModelNames.QWEN_3_1_7B,
         ModelNames.QWEN_3_4B,
+        ModelNames.QWEN_3_8B,
     },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
@@ -945,6 +952,15 @@ for runner in [
         "device_mesh_shape": (1, 1),
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
     }
+
+
+# Per-model overrides applied after device config (keyed by ModelNames enum value)
+MODEL_NAME_OVERRIDES = {
+    ModelNames.QWEN_3_0_6B: {"chat_template_kwargs": {"enable_thinking": False}},
+    ModelNames.QWEN_3_1_7B: {"chat_template_kwargs": {"enable_thinking": False}},
+    ModelNames.QWEN_3_4B: {"chat_template_kwargs": {"enable_thinking": False}},
+    ModelNames.QWEN_3_8B: {"chat_template_kwargs": {"enable_thinking": False}},
+}
 
 
 # Default sampling parameters for vLLM inference

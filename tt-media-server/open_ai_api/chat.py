@@ -35,6 +35,7 @@ def _apply_chat_template(messages: list[dict]) -> str:
         messages,
         tokenize=False,
         add_generation_prompt=True,
+        **settings.chat_template_kwargs,
     )
 
 
