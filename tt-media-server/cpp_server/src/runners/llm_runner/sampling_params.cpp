@@ -48,6 +48,29 @@ std::vector<T> readVector(std::istream& is) {
   return vec;
 }
 
+void writeStringVector(std::ostream& os, const std::vector<std::string>& vec) {
+  size_t size = vec.size();
+  writeScalar(os, size);
+  for (const auto& str : vec) {
+    size_t len = str.size();
+    writeScalar(os, len);
+    os.write(str.data(), len);
+  }
+}
+
+std::vector<std::string> readStringVector(std::istream& is) {
+  size_t size = readScalar<size_t>(is);
+  std::vector<std::string> vec;
+  vec.reserve(size);
+  for (size_t i = 0; i < size; ++i) {
+    size_t len = readScalar<size_t>(is);
+    std::string str(len, '\0');
+    is.read(&str[0], len);
+    vec.push_back(std::move(str));
+  }
+  return vec;
+}
+
 }  // anonymous namespace
 
 void SamplingParams::serialize(std::ostream& os) const {
@@ -63,6 +86,7 @@ void SamplingParams::serialize(std::ostream& os) const {
   writeOptional(os, min_p);
   writeOptional(os, repetition_penalty);
   writeScalar(os, length_penalty);
+  writeStringVector(os, stop);
   writeVector(os, stop_token_ids);
   writeScalar(os, include_stop_str_in_output);
   writeScalar(os, min_tokens);
@@ -94,6 +118,7 @@ std::unique_ptr<SamplingParams> SamplingParams::deserialize(std::istream& is) {
   params->min_p = readOptional<float>(is);
   params->repetition_penalty = readOptional<float>(is);
   params->length_penalty = readScalar<float>(is);
+  params->stop = readStringVector(is);
   params->stop_token_ids = readVector<int>(is);
   params->include_stop_str_in_output = readScalar<bool>(is);
   params->min_tokens = readScalar<int>(is);

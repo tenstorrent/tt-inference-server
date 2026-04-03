@@ -69,6 +69,7 @@ class LLMService
   struct StreamCallbackEntry {
     std::function<void(domain::LLMStreamChunk&, bool)> callback;
     bool skip_special_tokens = true;
+    std::vector<std::string> stop_sequences;
   };
 
   void startConsumers();
