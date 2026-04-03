@@ -359,6 +359,91 @@ TEST_F(DeepseekTokenizerTest, StreamDecoderMatchesBatchDecode) {
 }
 
 // ---------------------------------------------------------------------------
+// skip_special_tokens tests
+// ---------------------------------------------------------------------------
+
+TEST_F(DeepseekTokenizerTest, DecodeSpecialTokenSkipped) {
+  // Token ID 1 is <｜end▁of▁sentence｜> — a special token in DeepSeek
+  std::string skipped = tokenizer().decode({1}, /*skip_special_tokens=*/true);
+  EXPECT_EQ(skipped, "");
+}
+
+TEST_F(DeepseekTokenizerTest, DecodeSpecialTokenPreserved) {
+  std::string kept = tokenizer().decode({1}, /*skip_special_tokens=*/false);
+  EXPECT_FALSE(kept.empty())
+      << "Decoding a special token with skip=false should produce text";
+}
+
+TEST_F(DeepseekTokenizerTest, DecodeSpecialTokenMixedWithNormal) {
+  // "Hello" tokens followed by the EOS special token
+  auto helloIds = tokenizer().encode("Hello");
+  ASSERT_FALSE(helloIds.empty());
+
+  std::vector<int> withSpecial = helloIds;
+  withSpecial.push_back(1);  // append EOS
+
+  std::string skipped =
+      tokenizer().decode(withSpecial, /*skip_special_tokens=*/true);
+  std::string kept =
+      tokenizer().decode(withSpecial, /*skip_special_tokens=*/false);
+
+  EXPECT_EQ(skipped, tokenizer().decode(helloIds))
+      << "Skipping special tokens should produce same result as without them";
+  EXPECT_GT(kept.size(), skipped.size())
+      << "Preserving special tokens should produce longer output";
+}
+
+TEST_F(DeepseekTokenizerTest, StreamDecoderSkipSpecialTokens) {
+  auto helloIds = tokenizer().encode("Hello");
+  ASSERT_FALSE(helloIds.empty());
+  helloIds.push_back(1);  // append EOS special token
+
+  auto decoder = tokenizer().createStreamDecoder(/*skip_special_tokens=*/true);
+  std::string result;
+  for (int id : helloIds) result += decoder->step(id);
+  result += decoder->flush();
+
+  EXPECT_NE(result.find("Hello"), std::string::npos);
+  // The special token text should not appear
+  std::string eosText =
+      tokenizer().decode({1}, /*skip_special_tokens=*/false);
+  EXPECT_EQ(result.find(eosText), std::string::npos)
+      << "Special token text should be absent when skip=true";
+}
+
+TEST_F(DeepseekTokenizerTest, StreamDecoderPreserveSpecialTokens) {
+  auto helloIds = tokenizer().encode("Hello");
+  ASSERT_FALSE(helloIds.empty());
+  helloIds.push_back(1);  // append EOS special token
+
+  auto decoder = tokenizer().createStreamDecoder(/*skip_special_tokens=*/false);
+  std::string result;
+  for (int id : helloIds) result += decoder->step(id);
+  result += decoder->flush();
+
+  std::string eosText =
+      tokenizer().decode({1}, /*skip_special_tokens=*/false);
+  EXPECT_NE(result.find(eosText), std::string::npos)
+      << "Special token text should be present when skip=false";
+}
+
+TEST_F(DeepseekTokenizerTest, StreamDecoderMatchesBatchDecodeWithSkipSpecial) {
+  auto helloIds = tokenizer().encode("Hello world");
+  helloIds.push_back(1);
+
+  for (bool skip : {true, false}) {
+    auto decoder = tokenizer().createStreamDecoder(skip);
+    std::string streamed;
+    for (int id : helloIds) streamed += decoder->step(id);
+    streamed += decoder->flush();
+
+    std::string batched = tokenizer().decode(helloIds, skip);
+    EXPECT_EQ(streamed, batched)
+        << "StreamDecoder should match batch decode (skip=" << skip << ")";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Fixture: Llama-specific tests (always creates a Llama tokenizer)
 // ---------------------------------------------------------------------------
 
