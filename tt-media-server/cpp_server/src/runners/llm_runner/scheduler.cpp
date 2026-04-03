@@ -46,7 +46,8 @@ bool Scheduler::isFinished() const {
 
 Sequence& Scheduler::addRequest(uint32_t taskId, std::vector<int64_t> prompt,
                                 const SamplingParams& params) {
-  auto seq = std::make_unique<Sequence>(std::move(taskId), block_size_,
+  auto seq = std::make_unique<Sequence>(std::move(taskId),
+                                        static_cast<int>(block_size_),
                                         std::move(prompt), params);
   auto id = seq->taskId;
   add(*seq);
@@ -62,30 +63,26 @@ Sequence* Scheduler::findSequence(uint32_t taskId) {
 }
 
 bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
-                                   int& numSeqs, int& numBatchedTokens,
-                                   int seqLimit) {
+                                   size_t& numSeqs, size_t& numBatchedTokens,
+                                   size_t seqLimit) {
   while (numSeqs < seqLimit) {
     auto seq = prefill_queue_->tryPop();
     if (!seq) break;
 
-    // Skip sequences whose ID was aborted while the copy sat in the prefill
-    // queue. The copy's status field is WAITING (it's a snapshot), so we must
-    // check the pending_aborts_ set instead.
     if (pending_aborts_.erase(seq->taskId)) {
       sequences_.erase(seq->taskId);
       seq.reset();
       continue;
     }
 
-    if (numBatchedTokens + static_cast<int>(seq->size()) >
-            max_num_batched_tokens_ ||
+    if (numBatchedTokens + seq->size() > max_num_batched_tokens_ ||
         !block_manager_.allocate(*seq)) {
       prefill_queue_->push(*seq);
       seq.reset();
       break;
     }
     numSeqs += 1;
-    numBatchedTokens += static_cast<int>(seq->size() - seq->numCachedTokens);
+    numBatchedTokens += seq->size() - seq->numCachedTokens;
     auto id = seq->taskId;
     sequences_[id] = std::move(seq);
     scheduledSeqs.push_back(sequences_[id].get());
@@ -94,7 +91,7 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
 }
 
 void Scheduler::tryScheduleDecode(std::vector<Sequence*>& scheduledSeqs,
-                                  int& numSeqs) {
+                                  size_t& numSeqs) {
   while (!decode_queue_.empty() && numSeqs < max_in_flight_count_) {
     Sequence* seq = decode_queue_.front();
     decode_queue_.pop_front();
@@ -126,16 +123,16 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
       seq.reset();
     }
   }
-  int numSeqs = 0;
-  int numBatchedTokens = 0;
+  size_t numSeqs = 0;
+  size_t numBatchedTokens = 0;
 
-  int decodeCount = static_cast<int>(decode_queue_.size());
+  size_t decodeCount = decode_queue_.size();
 
   bool shouldPrefill = !prefill_queue_->empty() &&
                        shouldPrefillFirst(decodeCount, max_in_flight_count_);
 
   if (shouldPrefill) {
-    int seqLimit = maxPrefillSeqs(decodeCount, max_in_flight_count_);
+    size_t seqLimit = maxPrefillSeqs(decodeCount, max_in_flight_count_);
     if (seqLimit > 0 && trySchedulePrefill(scheduledSeqs, numSeqs,
                                            numBatchedTokens, seqLimit)) {
       return {scheduledSeqs, true};

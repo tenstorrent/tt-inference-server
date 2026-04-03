@@ -19,3 +19,6 @@ logs/
 **/vllm-venv
 
 deps/
+
+# Override root-level *.json ignore
+!resources/openapi.json

@@ -1,12 +1,12 @@
 #include "runners/llm_runner.hpp"
 
-#include <cassert>
 #include <chrono>
 #include <memory>
 #include <thread>
 #include <vector>
 
 #include "config/settings.hpp"
+#include "ipc/token_push.hpp"
 #include "profiling/tracy.hpp"
 #include "services/paged_memory_manager.hpp"
 
@@ -36,17 +36,7 @@ LLMRunner::LLMRunner(const Config& config,
 
     if (result.isError) {
       scheduler_->removeSequence(result.taskId);
-      auto shared = ipc::SharedToken{
-          .token_index = 0,
-          .flags = static_cast<uint32_t>(ipc::SharedToken::FLAG_FINAL |
-                                         ipc::SharedToken::FLAG_ERROR),
-          .token_id = 0,
-          .task_id = result.taskId,
-          .padding = {},
-      };
-      while (!result_queue_->push(shared)) {
-        std::this_thread::yield();
-      }
+      ipc::pushErrorToken(*result_queue_, result.taskId);
       return;
     }
 
@@ -55,21 +45,7 @@ LLMRunner::LLMRunner(const Config& config,
     scheduler_->postprocess(seqs, tokenIds);
 
     bool finished = seq->isFinished();
-
-    {
-      ZoneScopedN("ResultQueue::push");
-      auto shared = ipc::SharedToken{
-          .token_index = 0,
-          .flags = static_cast<uint32_t>(finished ? ipc::SharedToken::FLAG_FINAL
-                                                  : 0),
-          .token_id = result.tokenId,
-          .task_id = result.taskId,
-          .padding = {},
-      };
-      while (!result_queue_->push(shared)) {
-        std::this_thread::yield();
-      }
-    }
+    ipc::pushToken(*result_queue_, result.taskId, result.tokenId, finished);
 
     if (finished) {
       scheduler_->removeSequence(result.taskId);
