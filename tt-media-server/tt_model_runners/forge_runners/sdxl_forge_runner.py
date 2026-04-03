@@ -43,7 +43,6 @@ class SDXLForgeRunner(BaseDeviceRunner):
         self.tokenizer_2 = None
         self.scheduler = None
 
-        # Config
         env_resolution = os.getenv("TTXLA_SDXL_RESOLUTION")
         if env_resolution is not None:
             assert env_resolution in ("1024", "512"), (

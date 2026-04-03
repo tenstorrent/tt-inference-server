@@ -35,6 +35,7 @@ class SupportedModels(Enum):
 # Model names should be unique
 class ModelNames(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
+    STABLE_DIFFUSION_XL_512 = "SDXL-512"
     STABLE_DIFFUSION_XL_IMG2IMG = "stable-diffusion-xl-base-1.0-img-2-img"
     STABLE_DIFFUSION_XL_INPAINTING = "stable-diffusion-xl-1.0-inpainting-0.1"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
@@ -187,7 +188,10 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
-    ModelRunners.TT_XLA_SDXL: {ModelNames.STABLE_DIFFUSION_XL_BASE},
+    ModelRunners.TT_XLA_SDXL: {
+        ModelNames.STABLE_DIFFUSION_XL_BASE,
+        ModelNames.STABLE_DIFFUSION_XL_512,
+    },
 }
 
 
