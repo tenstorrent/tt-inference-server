@@ -25,8 +25,6 @@ class SDXLForgeRunner(BaseDeviceRunner):
 
     LOAD_TIMEOUT_SECONDS = 300
     WARMUP_TIMEOUT_SECONDS = 2000
-    DEFAULT_NUM_INFERENCE_STEPS = 20
-    DEFAULT_CFG_SCALE = 7.5
     DEFAULT_RESOLUTION = 512
 
     def __init__(self, device_id: str):
@@ -209,8 +207,8 @@ class SDXLForgeRunner(BaseDeviceRunner):
         self._generate(
             prompt="a photo of a cat",
             negative_prompt="",
-            cfg_scale=self.DEFAULT_CFG_SCALE,
-            num_inference_steps=self.DEFAULT_NUM_INFERENCE_STEPS,  # minimal steps for warmup
+            cfg_scale=7.5,
+            num_inference_steps=20,
             seed=42,
         )
         self.logger.info(f"Device {self.device_id}: Warmup inference done")
@@ -375,16 +373,8 @@ class SDXLForgeRunner(BaseDeviceRunner):
 
         prompt = request.prompt
         negative_prompt = request.negative_prompt or ""
-        cfg_scale = (
-            request.guidance_scale
-            if request.guidance_scale is not None
-            else self.DEFAULT_CFG_SCALE
-        )
-        num_inference_steps = (
-            request.num_inference_steps
-            if request.num_inference_steps is not None
-            else self.DEFAULT_NUM_INFERENCE_STEPS
-        )
+        cfg_scale = request.guidance_scale
+        num_inference_steps = request.num_inference_steps
         seed = request.seed
 
         image_tensor = self._generate(
