@@ -12,7 +12,7 @@ namespace llm_engine {
  *
  * - push   --  enqueues a sequence (may block if queue is full).
  * - try_pop -- non-blocking pop; returns nullptr when empty, otherwise a
- *              heap-allocated Sequence* (caller owns the pointer).
+ *              unique_ptr<Sequence> (caller owns the pointer).
  * - empty  -- emptiness check.
  */
 class ITaskQueue {

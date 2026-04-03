@@ -70,7 +70,8 @@ class BoostIpcMemoryQueue {
       return std::unique_ptr<BoostIpcMemoryQueue>(
           new BoostIpcMemoryQueue(name));
     } catch (const bi_ipc::interprocess_exception&) {
-      return nullptr;
+      TT_LOG_ERROR("[BoostIpcQueue] Failed to open existing queue: {}", name);
+      throw std::runtime_error("Failed to open existing queue: " + name);
     }
   }
 
@@ -88,7 +89,7 @@ class BoostIpcMemoryQueue {
 
   void push(const MsgType& msg, unsigned int priority = 0) {
     if constexpr (Serializable<MsgType>) {
-      std::vector<char> buf(MAX_MSG_SIZE);
+      auto& buf = sendBuffer();
       bi_ipc::obufferstream stream(buf.data(), buf.size());
       msg.serialize(stream);
       queue_->send(buf.data(), stream.tellp(), priority);
@@ -100,7 +101,7 @@ class BoostIpcMemoryQueue {
 
   bool tryPush(const MsgType& msg, unsigned int priority = 0) {
     if constexpr (Serializable<MsgType>) {
-      std::vector<char> buf(MAX_MSG_SIZE);
+      auto& buf = sendBuffer();
       bi_ipc::obufferstream stream(buf.data(), buf.size());
       msg.serialize(stream);
       return queue_->try_send(buf.data(), stream.tellp(), priority);
@@ -116,7 +117,7 @@ class BoostIpcMemoryQueue {
     bi_ipc::message_queue::size_type recv_size = 0;
     unsigned int priority = 0;
     if constexpr (Serializable<MsgType>) {
-      std::vector<char> buf(MAX_MSG_SIZE);
+      auto& buf = recvBuffer();
       if (!queue_->try_receive(buf.data(), buf.size(), recv_size, priority))
         return false;
       bi_ipc::ibufferstream stream(buf.data(), recv_size);
@@ -135,7 +136,7 @@ class BoostIpcMemoryQueue {
     bi_ipc::message_queue::size_type recv_size = 0;
     unsigned int priority = 0;
     if constexpr (Serializable<MsgType>) {
-      std::vector<char> buf(MAX_MSG_SIZE);
+      auto& buf = recvBuffer();
       queue_->receive(buf.data(), buf.size(), recv_size, priority);
       bi_ipc::ibufferstream stream(buf.data(), recv_size);
       out = MsgType::deserialize(stream);
@@ -167,8 +168,18 @@ class BoostIpcMemoryQueue {
   }
 
  private:
+  static std::vector<char>& sendBuffer() {
+    thread_local std::vector<char> buf(MAX_MSG_SIZE);
+    return buf;
+  }
+
+  static std::vector<char>& recvBuffer() {
+    thread_local std::vector<char> buf(MAX_MSG_SIZE);
+    return buf;
+  }
+
   void drain() {
-    std::vector<char> buf(MAX_MSG_SIZE);
+    auto& buf = recvBuffer();
     bi_ipc::message_queue::size_type recv_size = 0;
     unsigned int priority = 0;
     while (queue_->try_receive(buf.data(), buf.size(), recv_size, priority)) {
