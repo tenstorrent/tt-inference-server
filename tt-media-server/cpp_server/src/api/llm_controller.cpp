@@ -209,6 +209,21 @@ void LLMController::chatCompletions(
           errorJson(e.what(), "rate_limit_exceeded"));
       resp->setStatusCode(drogon::k429TooManyRequests);
       callback(resp);
+    } catch (const std::runtime_error& e) {
+      // Check if this is a memory allocation error
+      std::string errMsg = e.what();
+      if (errMsg.find("Failed to allocate memory slot") != std::string::npos ||
+          errMsg.find("memory resources") != std::string::npos) {
+        TT_LOG_ERROR("[LLMController] Session creation failed: {}", e.what());
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(errorJson(
+            std::string("Failed to allocate memory resources: ") + errMsg,
+            "service_unavailable"));
+        resp->setStatusCode(drogon::k503ServiceUnavailable);
+        callback(resp);
+        return;
+      }
+      // Re-throw if it's not a memory allocation error
+      throw;
     }
   }
 }
@@ -237,10 +252,20 @@ void LLMController::handleStreaming(
 
   // Create session if not provided
   if (!reqPtr->sessionId.has_value() && sessionManager) {
-    auto session = sessionManager->createSession(std::nullopt);
-    reqPtr->sessionId = session.getSessionId();
-    TT_LOG_INFO("[LLMController] Created NEW session: {}",
-                reqPtr->sessionId.value());
+    try {
+      auto session = sessionManager->createSession(std::nullopt);
+      reqPtr->sessionId = session.getSessionId();
+      TT_LOG_INFO("[LLMController] Created NEW session: {}",
+                  reqPtr->sessionId.value());
+    } catch (const std::runtime_error& e) {
+      TT_LOG_ERROR("[LLMController] Failed to create session: {}", e.what());
+      auto resp = drogon::HttpResponse::newHttpJsonResponse(errorJson(
+          std::string("Failed to allocate memory resources: ") + e.what(),
+          "service_unavailable"));
+      resp->setStatusCode(drogon::k503ServiceUnavailable);
+      callback(resp);
+      return;
+    }
   }
 
   if (reqPtr->sessionId.has_value() && sessionManager) {
