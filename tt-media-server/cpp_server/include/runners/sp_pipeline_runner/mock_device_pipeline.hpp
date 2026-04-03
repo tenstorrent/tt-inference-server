@@ -29,7 +29,7 @@ struct MockDeviceConfig {
 
 /// Simulates a pipelined device where prefill feeds chunk_size tokens into
 /// stage 0 (one per tick, blocking), and decode feeds 1 token per tick.
-/// Completions fire when the last fed token exits the final pipeline stage.
+/// Chat completions fire when the last fed token exits the final pipeline stage.
 /// Between chunks the scheduler round-robins: decode first, then prefill.
 class MockDevicePipeline {
  public:

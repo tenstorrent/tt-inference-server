@@ -68,7 +68,11 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
                 docExpansion: "list",
                 filter: true,
                 showExtensions: true,
-                showCommonExtensions: true
+                showCommonExtensions: true,
+                tagsSorter: function(a, b) {
+                    var order = ["Chat Completions", "Sessions", "Health", "Monitoring"];
+                    return order.indexOf(a) - order.indexOf(b);
+                }
             });
         };
     </script>
@@ -114,7 +118,7 @@ class OpenAPIController : public drogon::HttpController<OpenAPIController> {
     // Tags
     Json::Value tags(Json::arrayValue);
     Json::Value completionsTag;
-    completionsTag["name"] = "Completions";
+    completionsTag["name"] = "Chat Completions";
     completionsTag["description"] =
         "OpenAI-compatible chat completion endpoints";
     tags.append(completionsTag);
