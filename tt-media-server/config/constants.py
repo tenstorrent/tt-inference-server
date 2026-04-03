@@ -842,20 +842,18 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
-}
-
-ModelConfigs[(ModelRunners.TT_XLA_SDXL, DeviceTypes.P150X4)] = {
-    "device_mesh_shape": (1, 1),
-    "is_galaxy": False,
-    "device_ids": DeviceIds.DEVICE_IDS_4.value,
-    "max_batch_size": 1,
-}
-
-ModelConfigs[(ModelRunners.TT_XLA_SDXL, DeviceTypes.P300X2)] = {
-    "device_mesh_shape": (1, 2),
-    "is_galaxy": False,
-    "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
-    "max_batch_size": 1,
+    (ModelRunners.TT_XLA_SDXL, DeviceTypes.P150X4): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_XLA_SDXL, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
+        "max_batch_size": 1,
+    },
 }
 
 for runner in [
