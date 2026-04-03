@@ -9,7 +9,6 @@
 #include "ipc/token_push.hpp"
 #include "profiling/tracy.hpp"
 #include "services/paged_memory_manager.hpp"
-#include "utils/logger.hpp"
 
 namespace tt::runners {
 using namespace llm_engine;
@@ -72,11 +71,7 @@ void LLMRunner::exit() {
 
 void LLMRunner::run() {
   while (!stopped_.load(std::memory_order_relaxed)) {
-    try {
-      step();
-    } catch (const std::exception& e) {
-      TT_LOG_ERROR("[LLMRunner] Exception in step(): {}", e.what());
-    }
+    step();
   }
 }
 

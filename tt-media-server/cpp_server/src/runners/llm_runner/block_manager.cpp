@@ -1,6 +1,7 @@
 #include "runners/llm_runner/block_manager.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <stdexcept>
 
 #include "profiling/tracy.hpp"
@@ -44,11 +45,7 @@ int64_t BlockManager::computeHash(const std::vector<int64_t>& tokenIds,
 Block& BlockManager::allocateBlock(int blockId) {
   ZoneScopedN("BlockManager::allocate_block");
   Block& block = blocks_[static_cast<size_t>(blockId)];
-  if (block.ref_count != 0) {
-    throw std::logic_error(
-        "BlockManager::allocateBlock: block " + std::to_string(blockId) +
-        " has non-zero ref_count " + std::to_string(block.ref_count));
-  }
+  assert(block.ref_count == 0);
   block.reset();
   free_block_ids_.erase(
       std::find(free_block_ids_.begin(), free_block_ids_.end(), blockId));
@@ -62,11 +59,7 @@ Block& BlockManager::allocateBlock(int blockId) {
 
 void BlockManager::deallocateBlock(int blockId) {
   ZoneScopedN("BlockManager::deallocate_block");
-  if (blocks_[static_cast<size_t>(blockId)].ref_count != 0) {
-    throw std::logic_error("BlockManager::deallocateBlock: block " +
-                           std::to_string(blockId) +
-                           " still has non-zero ref_count");
-  }
+  assert(blocks_[static_cast<size_t>(blockId)].ref_count == 0);
   used_block_ids_.erase(blockId);
   free_block_ids_.push_back(blockId);
   LLM_ENGINE_LOG("block_manager")
@@ -82,10 +75,7 @@ size_t BlockManager::numFreeBlocks() const {
 bool BlockManager::allocate(Sequence& seq) {
   ZoneScopedN("BlockManager::allocate");
   std::lock_guard<std::mutex> lock(mutex);
-  if (!seq.blockTable.empty()) {
-    throw std::logic_error(
-        "BlockManager::allocate: sequence already has blocks allocated");
-  }
+  assert(seq.blockTable.empty());
 
   if (free_block_ids_.size() < seq.numBlocks()) {
     return false;
@@ -163,18 +153,12 @@ void BlockManager::mayAppend(Sequence& seq) {
   if (len % block_size_ == 1) {
     LLM_ENGINE_LOG("block_manager") << "may_append task_id=" << seq.taskId
                                     << " new_block len=" << len << std::endl;
-    if (lastBlock.hash == -1) {
-      throw std::logic_error(
-          "BlockManager::mayAppend: expected last block to be hashed");
-    }
+    assert(lastBlock.hash != -1);
     int blockId = free_block_ids_.front();
     allocateBlock(blockId);
     blockTable.push_back(blockId);
   } else if (len % block_size_ == 0) {
-    if (lastBlock.hash != -1) {
-      throw std::logic_error(
-          "BlockManager::mayAppend: expected last block to be unhashed");
-    }
+    assert(lastBlock.hash == -1);
     LLM_ENGINE_LOG("block_manager")
         << "may_append task_id=" << seq.taskId << " fill_last_block len=" << len
         << std::endl;
@@ -188,10 +172,7 @@ void BlockManager::mayAppend(Sequence& seq) {
     lastBlock.update(h, tokenIds);
     hash_to_block_id_[h] = lastBlock.block_id;
   } else {
-    if (lastBlock.hash != -1) {
-      throw std::logic_error(
-          "BlockManager::mayAppend: expected last block to be unhashed");
-    }
+    assert(lastBlock.hash == -1);
   }
 }
 
