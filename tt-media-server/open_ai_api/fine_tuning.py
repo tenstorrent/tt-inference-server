@@ -96,6 +96,28 @@ async def get_fine_tuning_job_metadata(
     return JSONResponse(content=job_data)
 
 
+@router.get("/jobs/{job_id}/metrics")
+async def get_training_metrics(
+    job_id: str,
+    service: BaseJobService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """
+    Retrieve training metrics for a fine-tuning job.
+
+    Returns:
+        JSONResponse: Training metrics for the job.
+
+    Raises:
+        HTTPException: If job not found.
+    """
+    try:
+        metrics = service.get_job_metrics(job_id)
+    except ValueError:
+        raise HTTPException(404, "Job not found")
+    return JSONResponse(content=metrics)
+
+
 @router.post("/jobs/{job_id}/cancel")
 async def cancel_fine_tuning_job(
     job_id: str,
@@ -118,28 +140,6 @@ async def cancel_fine_tuning_job(
         )
 
     return JSONResponse(content=status)
-
-
-@router.get("/jobs/{job_id}/metrics")
-async def get_training_metrics(
-    job_id: str,
-    service: BaseJobService = Depends(service_resolver),
-    api_key: str = Security(get_api_key),
-):
-    """
-    Retrieve training metrics for a fine-tuning job.
-
-    Returns:
-        JSONResponse: Training metrics for the job.
-
-    Raises:
-        HTTPException: If job not found.
-    """
-    try:
-        metrics = service.get_job_metrics(job_id)
-    except ValueError:
-        raise HTTPException(404, "Job not found")
-    return JSONResponse(content=metrics)
 
 
 @router.get("/jobs/{job_id}/checkpoints")
