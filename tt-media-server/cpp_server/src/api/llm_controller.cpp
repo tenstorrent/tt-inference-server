@@ -255,8 +255,7 @@ LLMController::SessionInfo LLMController::resolveSession(
   }
 
   if (!req.sessionId.has_value() && sessionManager) {
-    auto session =
-        sessionManager->createSession(std::nullopt, true);
+    auto session = sessionManager->createSession(std::nullopt, true);
     req.sessionId = session.getSessionId();
     req.slotId = session.getSlotId();
     TT_LOG_INFO("[LLMController] Created NEW session: {}",
