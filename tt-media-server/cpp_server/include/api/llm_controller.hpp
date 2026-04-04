@@ -86,6 +86,16 @@ class LLMController : public drogon::HttpController<LLMController> {
                                const Json::Value& param = Json::nullValue,
                                const Json::Value& code = Json::nullValue);
 
+  struct SessionInfo {
+    bool validSessionFound = false;
+  };
+
+  /**
+   * Validate/create session, assign slot, populate request fields.
+   * Throws std::runtime_error if session creation fails.
+   */
+  SessionInfo resolveSession(domain::LLMRequest& req) const;
+
   /**
    * Determine if disaggregated prefill should be used for this request.
    */
