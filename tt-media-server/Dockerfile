@@ -173,6 +173,11 @@ RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/tt-metal/tt-train \
     && rm -rf ${HOME_DIR}/tt-metal/server/tests \
     && rm -rf ${HOME_DIR}/tt-metal/server/scripts \
+    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/tt-blaze \
+    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/include \
+    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/src \
+    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/tests \
+    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/benchmarks \
     && rm -rf /usr/local/rustup \
     && rm -rf /usr/include
 

@@ -3,6 +3,8 @@
 
 #include "services/session_manager.hpp"
 
+#include <trantor/net/EventLoop.h>
+
 #include <algorithm>
 #include <chrono>
 #include <thread>
@@ -41,19 +43,72 @@ SessionManager::~SessionManager() {
 
 void SessionManager::drainResultQueue() {
   while (!stopped.load(std::memory_order_relaxed)) {
+    processRetryQueue();
+    processDeallocQueue();
+
+    bool anyResult = false;
     domain::ManageMemoryResult result;
-    if (memoryResultQueue->tryPop(result)) {
-      auto promise = pendingAllocations.take(result.taskId);
-      if (promise.has_value()) {
-        if (result.status == domain::ManageMemoryStatus::SUCCESS &&
-            !result.slotIds.empty()) {
-          (*promise)->set_value(result.slotIds[0]);
-        } else {
-          (*promise)->set_value(INVALID_SLOT_ID);
-        }
-      }
-    } else {
+    while (memoryResultQueue->tryPop(result)) {
+      anyResult = true;
+      handleMemoryResult(result);
+    }
+
+    if (!anyResult) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+}
+
+void SessionManager::handleMemoryResult(
+    const domain::ManageMemoryResult& result) {
+  auto asyncPending = pendingAsyncAllocations.take(result.taskId);
+  if (asyncPending.has_value()) {
+    auto& p = *asyncPending;
+    bool success = result.status == domain::ManageMemoryStatus::SUCCESS &&
+                   !result.slotIds.empty();
+
+    if (success) {
+      uint32_t slot = result.slotIds[0];
+      p->session.setSlotId(slot);
+      p->session.setInFlight(p->inFlight);
+      sessions.insert(p->sessionId, p->session);
+
+      domain::Session session = p->session;
+      auto onSuccess = std::move(p->onSuccess);
+      p->callerLoop->queueInLoop(
+          [onSuccess = std::move(onSuccess), session]() {
+            onSuccess(session);
+          });
+    } else if (p->attemptsRemaining > 0) {
+      p->attemptsRemaining--;
+      std::lock_guard<std::mutex> lock(retryMutex);
+      retryQueue.push_back(
+          {std::chrono::steady_clock::now() +
+               std::chrono::milliseconds(500),
+           p});
+    } else {
+      TT_LOG_ERROR(
+          "[SessionManager] Async: failed to allocate slot for "
+          "session {} after all attempts",
+          p->sessionId);
+
+      auto onError = std::move(p->onError);
+      std::string sid = p->sessionId;
+      p->callerLoop->queueInLoop(
+          [onError = std::move(onError), sid = std::move(sid)]() {
+            onError("Failed to allocate memory slot for session " +
+                    sid + " after all attempts");
+          });
+    }
+  } else {
+    auto promise = pendingAllocations.take(result.taskId);
+    if (promise.has_value()) {
+      if (result.status == domain::ManageMemoryStatus::SUCCESS &&
+          !result.slotIds.empty()) {
+        (*promise)->set_value(result.slotIds[0]);
+      } else {
+        (*promise)->set_value(INVALID_SLOT_ID);
+      }
     }
   }
 }
@@ -125,6 +180,82 @@ domain::Session SessionManager::createSession(std::optional<uint32_t> slotId,
               slot == INVALID_SLOT_ID ? "none" : std::to_string(slot),
               inFlight);
   return session;
+}
+
+void SessionManager::createSessionAsync(
+    std::function<void(domain::Session)> onSuccess,
+    std::function<void(const std::string&)> onError,
+    trantor::EventLoop* callerLoop, bool inFlight) {
+  evictOldSessions();
+
+  if (!memoryRequestQueue || !memoryResultQueue) {
+    callerLoop->queueInLoop([onError = std::move(onError)]() {
+      onError("Memory management IPC not available");
+    });
+    return;
+  }
+
+  domain::Session session(INVALID_SLOT_ID);
+  std::string sessionId = session.getSessionId();
+
+  constexpr int MAX_RETRIES = 30;
+  auto pending = std::make_shared<PendingAsyncSession>(
+      std::move(session), sessionId, std::move(onSuccess), std::move(onError),
+      callerLoop, MAX_RETRIES, inFlight);
+
+  sendAsyncAllocRequest(pending);
+}
+
+void SessionManager::sendAsyncAllocRequest(
+    std::shared_ptr<PendingAsyncSession> pending) {
+  domain::ManageMemoryTask task;
+  uint32_t requestTaskId = tt::utils::TaskIDGenerator::generate();
+  task.taskId = requestTaskId;
+  task.action = domain::MemoryManagementAction::ALLOCATE;
+  task.inputSeqLen = 0;
+  task.memoryLayout = domain::KvMemoryLayout::Paged;
+  task.slotIds = {};
+
+  pendingAsyncAllocations.insert(requestTaskId, pending);
+
+  if (!memoryRequestQueue->tryPush(task)) {
+    pendingAsyncAllocations.take(requestTaskId);
+    if (pending->attemptsRemaining > 0) {
+      pending->attemptsRemaining--;
+      std::lock_guard<std::mutex> lock(retryMutex);
+      retryQueue.push_back(
+          {std::chrono::steady_clock::now() + std::chrono::milliseconds(50),
+           pending});
+    } else {
+      auto onError = std::move(pending->onError);
+      std::string sid = pending->sessionId;
+      pending->callerLoop->queueInLoop(
+          [onError = std::move(onError), sid = std::move(sid)]() {
+            onError("Failed to allocate: IPC queue full after all attempts");
+          });
+    }
+    return;
+  }
+}
+
+void SessionManager::processRetryQueue() {
+  std::vector<std::shared_ptr<PendingAsyncSession>> ready;
+  {
+    std::lock_guard<std::mutex> lock(retryMutex);
+    auto now = std::chrono::steady_clock::now();
+    auto it = retryQueue.begin();
+    while (it != retryQueue.end()) {
+      if (now >= it->retryAt) {
+        ready.push_back(std::move(it->pending));
+        it = retryQueue.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+  for (auto& p : ready) {
+    sendAsyncAllocRequest(std::move(p));
+  }
 }
 
 bool SessionManager::closeSession(const std::string& sessionId) {
@@ -305,14 +436,38 @@ void SessionManager::sendDeallocRequest(const std::string& sessionId,
   task.memoryLayout = domain::KvMemoryLayout::Paged;
   task.slotIds = {slotId};
 
-  try {
-    memoryRequestQueue->push(task);
+  if (memoryRequestQueue->tryPush(task)) {
     TT_LOG_INFO("[SessionManager] Sent dealloc request for session {} slot {}",
                 sessionId, slotId);
-  } catch (const std::exception& e) {
-    TT_LOG_ERROR(
-        "[SessionManager] Failed to send dealloc for session {} slot {}: {}",
-        sessionId, slotId, e.what());
+  } else {
+    TT_LOG_WARN(
+        "[SessionManager] Dealloc queue full, deferring session {} slot {}",
+        sessionId, slotId);
+    std::lock_guard<std::mutex> lock(deallocMutex);
+    deallocQueue.push_back({sessionId, slotId});
+  }
+}
+
+void SessionManager::processDeallocQueue() {
+  std::vector<DeferredDealloc> pending;
+  {
+    std::lock_guard<std::mutex> lock(deallocMutex);
+    if (deallocQueue.empty()) return;
+    pending.swap(deallocQueue);
+  }
+
+  for (auto& d : pending) {
+    domain::ManageMemoryTask task;
+    task.taskId = utils::TaskIDGenerator::generate();
+    task.action = domain::MemoryManagementAction::DEALLOCATE;
+    task.inputSeqLen = 0;
+    task.memoryLayout = domain::KvMemoryLayout::Paged;
+    task.slotIds = {d.slotId};
+
+    if (!memoryRequestQueue->tryPush(task)) {
+      std::lock_guard<std::mutex> lock(deallocMutex);
+      deallocQueue.push_back(std::move(d));
+    }
   }
 }
 

@@ -91,10 +91,15 @@ class LLMController : public drogon::HttpController<LLMController> {
   };
 
   /**
-   * Validate/create session, assign slot, populate request fields.
-   * Throws std::runtime_error if session creation fails.
+   * Resolve session asynchronously. For existing sessions the callback fires
+   * immediately (synchronous fast-path). For new sessions, slot allocation
+   * happens off the IO thread and the callback fires via queueInLoop once
+   * the drain thread receives the IPC result.
    */
-  SessionInfo resolveSession(domain::LLMRequest& req) const;
+  void resolveSessionAsync(
+      std::shared_ptr<domain::LLMRequest> reqPtr,
+      std::function<void(SessionInfo)> onResolved,
+      std::function<void(const std::string&)> onError) const;
 
   /**
    * Determine if disaggregated prefill should be used for this request.

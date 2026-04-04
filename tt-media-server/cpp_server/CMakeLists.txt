@@ -7,6 +7,9 @@ project(tt_media_server_cpp CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# Add a -g flag for debug info in all CMAKE build types (debug, release, etc.)
+add_compile_options(-g)
+
 
 # Allow config files (e.g. system jsoncpp) that use older cmake_minimum_required (CMake 4.x compatibility)
 if(NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
@@ -85,6 +88,9 @@ else()
     message(STATUS "Using spdlog's bundled fmt library")
 endif()
 
+# Ensure static libraries are built with -fPIC (required when linking into shared libs like pipeline_manager)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 # spdlog for logging - use tt-metal's fmt library when available
 FetchContent_Declare(
     spdlog
@@ -99,6 +105,22 @@ FetchContent_MakeAvailable(spdlog)
 
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost REQUIRED)
+
+# tt-blaze pipeline_manager
+# Make TT-Metalium discoverable so pipeline_manager builds the Full target
+# (SocketPipeline) instead of core-only (mock pipeline).
+if(TT_METAL_HOME)
+    foreach(_build_dir build_Release build)
+        if(EXISTS "${TT_METAL_HOME}/${_build_dir}/lib/cmake/tt-metalium")
+            list(APPEND CMAKE_PREFIX_PATH "${TT_METAL_HOME}/${_build_dir}")
+            break()
+        endif()
+    endforeach()
+endif()
+set(PM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(PM_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(TT_METAL_SOURCE_DIR "${TT_METAL_HOME}" CACHE PATH "" FORCE)
+add_subdirectory(tt-blaze/pipeline_manager)
 
 # Option for Tracy support
 option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
@@ -218,6 +240,7 @@ set(LLM_ENGINE_SOURCES
     src/utils/llama_tokenizer.cpp
     src/utils/tokenizer_config_loader.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
+    src/runners/sp_pipeline_runner/sp_pipeline_runner_demo.cpp
     src/runners/sp_pipeline_runner/i_sp_pipeline_model_runner.cpp
     src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
     src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
@@ -228,6 +251,7 @@ set(LLM_ENGINE_SOURCES
     src/services/memory_manager.cpp
     src/services/paged_memory_manager.cpp
     src/services/contiguous_memory_manager.cpp
+    src/services/sp_pipeline_memory_manager.cpp
 )
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
@@ -245,7 +269,13 @@ target_include_directories(llm_engine PUBLIC
     ${TT_METAL_INCLUDE_DIRS}
 )
 # Link tokenizers_cpp and JsonCpp since settings.cpp depends on tokenizer.hpp
-target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp)
+# Use PipelineManager::Full (with SocketPipeline + TT::Metalium) when available,
+# otherwise fall back to PipelineManager::Core (mock pipeline only).
+if(TARGET PipelineManager::Full)
+    target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp PipelineManager::Full)
+else()
+    target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp PipelineManager::Core)
+endif()
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     target_compile_definitions(llm_engine PUBLIC USE_METAL_CPP_LIB)
     # Find tt_metal library directory

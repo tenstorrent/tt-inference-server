@@ -173,6 +173,8 @@ LLMConfig llmEngineConfig() {
     cfg.runner_type = ModelRunnerType::MOCK;
   } else if (backend == "mock_pipeline") {
     cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
+  } else if (backend == "pipeline_manager") {
+    cfg.runner_type = ModelRunnerType::PIPELINE_MANAGER;
   } else {
     cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
   }

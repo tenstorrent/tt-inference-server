@@ -14,6 +14,8 @@ namespace llm_engine {
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED, ABORTED };
 
+constexpr int32_t INVALID_KV_CACHE_ADDRESS = -1;
+
 struct TokenResult {
   uint32_t taskId;
   uint64_t tokenId = 0;
@@ -76,7 +78,7 @@ class Sequence {
  private:
   size_t numTokens() const { return tokenIds.size(); }
   int blockSize;
-  uint64_t address = 0x0;
+  int32_t address = INVALID_KV_CACHE_ADDRESS;
 };
 
 }  // namespace llm_engine

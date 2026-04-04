@@ -507,6 +507,15 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+
+      - name: Configure git for private submodules
+        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Init tt-blaze submodule (without tt-metal)
+        working-directory: .
+        run: git submodule update --init tt-media-server/cpp_server/tt-blaze
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
@@ -541,6 +550,15 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+
+      - name: Configure git for private submodules
+        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Init tt-blaze submodule (without tt-metal)
+        working-directory: .
+        run: git submodule update --init tt-media-server/cpp_server/tt-blaze
 
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
