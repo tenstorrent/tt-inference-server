@@ -293,9 +293,11 @@ class Settings(BaseSettings):
             if supported_model:
                 self.model_weights_path = supported_model.value
 
-            # Apply all configuration values
+            # Apply all configuration values (env vars take precedence)
             for key, value in matching_config.items():
                 if hasattr(self, key):
+                    if key.upper() in os.environ:
+                        continue
                     if key == "vllm" and isinstance(value, dict):
                         value = VLLMSettings(**value)
                     setattr(self, key, value)
