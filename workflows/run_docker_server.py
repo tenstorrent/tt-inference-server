@@ -43,13 +43,16 @@ def short_uuid():
     return str(uuid.uuid4())[:8]
 
 
-def get_media_server_docker_env_vars(model_spec):
+def get_media_server_docker_env_vars(model_spec, runtime_config=None):
     """Get media server environment variables for Docker container."""
     env_vars = {
         "CACHE_ROOT": "/home/container_app_user/cache_root",  # TODO: remove this
         "MODEL": model_spec.model_name,
         "DEVICE": model_spec.device_type.name.lower(),
     }
+
+    if runtime_config and runtime_config.override_tt_config:
+        env_vars["OVERRIDE_TT_CONFIG"] = runtime_config.override_tt_config
 
     logger.info(
         f"Media server environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}"
@@ -216,7 +219,7 @@ def generate_docker_run_command(
         model_spec.inference_engine == InferenceEngine.FORGE.value
         or model_spec.inference_engine == InferenceEngine.MEDIA.value
     ):
-        docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
+        docker_env_vars.update(get_media_server_docker_env_vars(model_spec, runtime_config))
 
     user_home_path = "/home/container_app_user"
     if runtime_config.dev_mode:
