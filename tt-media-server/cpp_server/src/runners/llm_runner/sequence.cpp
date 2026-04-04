@@ -99,7 +99,7 @@ Sequence Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(&seq.status), sizeof(seq.status));
   is.read(reinterpret_cast<char*>(&seq.blockSize), sizeof(seq.blockSize));
   is.read(reinterpret_cast<char*>(&seq.address), sizeof(seq.address));
-  seq.samplingParams.reset(SamplingParams::deserialize(is));
+  seq.samplingParams = SamplingParams::deserialize(is);
   return seq;
 }
 

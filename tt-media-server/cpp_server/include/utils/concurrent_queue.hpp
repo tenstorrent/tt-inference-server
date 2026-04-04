@@ -131,9 +131,9 @@ class LockFreeConcurrentQueue {
   LockFreeConcurrentQueue& operator=(const LockFreeConcurrentQueue&) = delete;
 
  private:
+  size_t capacity;
+  size_t mask;
   std::vector<T> buffer;
   alignas(CACHE_LINE_SIZE) std::atomic<size_t> head{0};
   alignas(CACHE_LINE_SIZE) std::atomic<size_t> tail{0};
-  size_t capacity;
-  size_t mask;
 };
