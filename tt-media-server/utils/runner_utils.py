@@ -4,6 +4,7 @@
 
 import os
 
+from config.constants import ModelRunners
 from config.settings import settings
 from telemetry.telemetry_client import get_telemetry_client
 
@@ -45,14 +46,19 @@ def setup_runner_environment(
         f"{tt_metal_home}/built/{str(device_id).replace(',', '_')}"
     )
 
-    if settings.is_galaxy:
-        _logger.info("setup_runner_environment: applying galaxy mesh config")
-        _setup_galaxy_mesh_config(tt_metal_home)
-    elif (settings.device or "").lower() in _BH_DEVICE_MESH_DESCRIPTORS:
-        _logger.info(
-            f"setup_runner_environment: applying blackhole mesh config for device={settings.device!r}"
-        )
-        _setup_blackhole_mesh_config(tt_metal_home)
+    _RUNNERS_REQUIRING_MESH_DESCRIPTOR = {
+        ModelRunners.TT_WHISPER.value,
+        ModelRunners.TT_SPEECHT5_TTS.value,
+    }
+    if settings.model_runner in _RUNNERS_REQUIRING_MESH_DESCRIPTOR:
+        if settings.is_galaxy:
+            _logger.info("setup_runner_environment: applying galaxy mesh config")
+            _setup_galaxy_mesh_config(tt_metal_home)
+        elif (settings.device or "").lower() in _BH_DEVICE_MESH_DESCRIPTORS:
+            _logger.info(
+                f"setup_runner_environment: applying blackhole mesh config for device={settings.device!r}"
+            )
+            _setup_blackhole_mesh_config(tt_metal_home)
 
 
 def setup_cpu_threading_limits(cpu_threads: str, num_torch_threads: int = 1):
