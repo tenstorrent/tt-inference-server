@@ -9,9 +9,7 @@
 #include <cmath>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
-#include <random>
 #include <sstream>
 
 #include "api/llm_controller.hpp"
@@ -37,7 +35,6 @@ void sseSend(const std::string& sse, trantor::EventLoop* loop,
         bool ok = (*streamPtr)->send(sse);
         if (!ok && onDisconnect) onDisconnect();
       } else if (earlyBuffer) {
-        // Stream not ready yet — buffer for flush when it opens.
         earlyBuffer->push_back(sse);
       }
     });
@@ -246,7 +243,7 @@ LLMController::SessionInfo LLMController::resolveSession(
   SessionInfo info;
 
   if (req.sessionId.has_value() && sessionManager) {
-    auto slotId = sessionManager->getSlotIdBySessionId(req.sessionId.value());
+    auto slotId = sessionManager->acquireSessionSlot(req.sessionId.value());
     if (slotId != services::INVALID_SLOT_ID) {
       req.slotId = slotId;
       info.validSessionFound = true;
@@ -258,14 +255,14 @@ LLMController::SessionInfo LLMController::resolveSession(
   }
 
   if (!req.sessionId.has_value() && sessionManager) {
-    auto session = sessionManager->createSession(std::nullopt);
+    auto session = sessionManager->createSession(std::nullopt, true);
     req.sessionId = session.getSessionId();
+    req.slotId = session.getSlotId();
     TT_LOG_INFO("[LLMController] Created NEW session: {}",
                 req.sessionId.value());
   }
 
-  if (req.sessionId.has_value() && sessionManager) {
-    req.slotId = sessionManager->getSlotIdBySessionId(req.sessionId.value());
+  if (req.sessionId.has_value()) {
     TT_LOG_DEBUG(
         "[LLMController] Session: {}, SlotID: {}", req.sessionId.value(),
         req.slotId.has_value() ? std::to_string(req.slotId.value()) : "none");
@@ -334,10 +331,6 @@ void LLMController::chatCompletions(
       resolveSession(*request);
 
       auto sessionId = request->sessionId;
-      if (sessionId.has_value() && sessionManager) {
-        sessionManager->setSessionInFlight(sessionId.value(), true);
-      }
-
       auto startTime = std::chrono::high_resolution_clock::now();
       auto completion = service->submitRequest(std::move(*request));
       auto endTime = std::chrono::high_resolution_clock::now();
@@ -447,10 +440,6 @@ void LLMController::handleStreaming(
   ctx->taskId = reqPtr->task_id;
   ctx->service = service;
   ctx->sessionManager = sessionManager;
-
-  if (ctx->sessionId.has_value() && sessionManager) {
-    sessionManager->setSessionInFlight(ctx->sessionId.value(), true);
-  }
 
   auto onDisconnect = [ctx]() {
     if (!ctx->done.exchange(true)) {
