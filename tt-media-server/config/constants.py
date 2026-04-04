@@ -229,6 +229,7 @@ class DeviceTypes(Enum):
     GALAXY = "galaxy"
     T3K = "t3k"
     P300 = "p300"
+    P150 = "p150"  # single P150 card (1 chip)
     P150X4 = "p150x4"  # 4x P150 cards (1,4 mesh)
     P150X8 = "p150x8"  # BH LoudBox - 8x P150 (2,4 mesh)
     P300X2 = "p300x2"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
@@ -908,6 +909,12 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.VLLMForge_LLAMA_SINGLE_DEVICE, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge_LLAMA_SINGLE_DEVICE, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_ALL.value,
