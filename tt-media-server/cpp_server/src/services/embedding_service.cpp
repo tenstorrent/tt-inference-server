@@ -83,9 +83,9 @@ struct WorkerProcess {
              std::function<void(int readFd, int writeFd)> childMain) {
     worker_id = workerId;
 
-    int req_pipe[2] = {-1, -1};
-    int resp_pipe[2] = {-1, -1};
-    if (pipe(req_pipe) < 0 || pipe(resp_pipe) < 0) {
+    int reqPipe[2] = {-1, -1};
+    int respPipe[2] = {-1, -1};
+    if (pipe(reqPipe) < 0 || pipe(respPipe) < 0) {
       TT_LOG_ERROR("[EmbeddingService] Failed to create pipes for worker {}",
                    workerId);
       return false;
@@ -99,18 +99,18 @@ struct WorkerProcess {
 
     if (child == 0) {
       // Child: close parent ends, run child main.
-      close(req_pipe[1]);
-      close(resp_pipe[0]);
-      childMain(req_pipe[0], resp_pipe[1]);
+      close(reqPipe[1]);
+      close(respPipe[0]);
+      childMain(reqPipe[0], respPipe[1]);
       _exit(0);  // childMain is [[noreturn]], but just in case
     }
 
     // Parent: close child ends, record FDs.
-    close(req_pipe[0]);
-    close(resp_pipe[1]);
+    close(reqPipe[0]);
+    close(respPipe[1]);
     pid = child;
-    write_fd = req_pipe[1];
-    read_fd = resp_pipe[0];
+    write_fd = reqPipe[1];
+    read_fd = respPipe[0];
     is_ready.store(true);
     running.store(true);
 
