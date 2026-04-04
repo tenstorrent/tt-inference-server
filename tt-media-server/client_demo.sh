@@ -35,8 +35,8 @@ while True:
     time.sleep(5)
 print(f' ready!')
 
-liveness = requests.get(f'{server}/tt-liveness', headers=headers).json()
-model = liveness.get('model', 'unknown')
+models_resp = requests.get(f'{server}/v1/models', headers=headers).json()
+model = models_resp['data'][0]['id'] if models_resp.get('data') else 'unknown'
 print(f'Model: {model} | Max tokens: {max_tokens}')
 print()
 

@@ -32,7 +32,8 @@ while True:
     time.sleep(5)
 print(f' ready!')
 
-model = os.environ.get('MODEL', 'unknown')
+models_resp = requests.get(f'{server}/v1/models', headers=headers).json()
+model = models_resp['data'][0]['id'] if models_resp.get('data') else 'unknown'
 stagger_str = f' | Stagger: {stagger}s' if stagger > 0 else ''
 print(f'Model: {model} | Max tokens: {max_tokens} | Concurrent: {n}{stagger_str}')
 print()
