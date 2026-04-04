@@ -123,7 +123,7 @@ void LLMService::stop() {
 
 namespace {
 
-constexpr int kItlSampleStride = 5;
+constexpr int K_ITL_SAMPLE_STRIDE = 5;
 
 struct MetricsSamplingState {
   int token_count = 0;
@@ -143,7 +143,7 @@ std::string decodeToken(
   return delta;
 }
 
-// Observe ITL once every kItlSampleStride tokens. Reported quantiles remain
+// Observe ITL once every K_ITL_SAMPLE_STRIDE tokens. Reported quantiles remain
 // representative; actual ITL values are accurate because elapsed time is
 // divided by the stride (assumes roughly uniform decode step latency).
 void recordTokenMetrics(
@@ -153,11 +153,11 @@ void recordTokenMetrics(
   if (ms.token_count == 0) {
     tt::metrics::ServerMetrics::instance().onToken(taskId);
     ms.prev_token_time = std::chrono::steady_clock::now();
-  } else if (ms.token_count % kItlSampleStride == 0) {
+  } else if (ms.token_count % K_ITL_SAMPLE_STRIDE == 0) {
     auto now = std::chrono::steady_clock::now();
     double itl =
         std::chrono::duration<double>(now - ms.prev_token_time).count() /
-        kItlSampleStride;
+        K_ITL_SAMPLE_STRIDE;
     tt::metrics::ServerMetrics::instance().onITLSample(taskId, itl);
     ms.prev_token_time = now;
   }
