@@ -209,6 +209,7 @@ class DeviceTypes(Enum):
     P150X4 = "p150x4"  # 4x P150 cards (1,4 mesh)
     P150X8 = "p150x8"  # BH LoudBox - 8x P150 (2,4 mesh)
     P300X2 = "p300x2"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
+    BLACKHOLE_GALAXY = "bh-galaxy"
 
 
 class QueueType(Enum):
@@ -225,6 +226,7 @@ class DeviceIds(Enum):
     DEVICE_IDS_2X2_GROUP = "(0,1),(2,3)"
     DEVICE_IDS_4 = "(0),(1),(2),(3)"
     DEVICE_IDS_4_GROUP = "(0,1,2,3)"
+    DEVICE_IDS_4x2_GROUP = "(0,1),(2,3),(4,5),(6,7)"
     DEVICE_IDS_8_GROUP = "(0,1,2,3,4,5,6,7)"
     DEVICE_IDS_16 = (
         "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)"
@@ -383,6 +385,42 @@ ModelConfigs = {
         "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P300): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P150X4): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4x2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SD3_5, DeviceTypes.T3K): {
