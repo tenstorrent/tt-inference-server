@@ -110,8 +110,9 @@ struct StreamContext {
 tt::domain::CompletionUsage buildFinalUsage(const StreamContext& ctx) {
   const int tokens = ctx.completionTokens.load();
 
-  tt::domain::CompletionUsage usage{ctx.promptTokensCount, tokens, tokens,
-                                    std::nullopt, std::nullopt, std::nullopt};
+  tt::domain::CompletionUsage usage{
+      ctx.promptTokensCount, tokens,       tokens,
+      std::nullopt,          std::nullopt, std::nullopt};
 
   if (ctx.firstTokenTime.has_value()) {
     auto ttftUs = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -186,10 +187,9 @@ void handleTokenChunk(const std::shared_ptr<StreamContext>& ctx,
   if (ctx->firstContentChunk.exchange(false)) {
     std::optional<tt::domain::CompletionUsage> initialUsage;
     if (ctx->continuousUsage) {
-      initialUsage =
-          tt::domain::CompletionUsage{ctx->promptTokensCount, 0,
-                                      0,                       std::nullopt,
-                                      std::nullopt,            ctx->sessionId};
+      initialUsage = tt::domain::CompletionUsage{
+          ctx->promptTokensCount, 0, 0, std::nullopt, std::nullopt,
+          ctx->sessionId};
     }
     auto initialChunk = tt::domain::ChatCompletionStreamChunk::makeInitialChunk(
         ctx->completionId, ctx->model, ctx->created, initialUsage);
@@ -246,8 +246,7 @@ LLMController::SessionInfo LLMController::resolveSession(
   SessionInfo info;
 
   if (req.sessionId.has_value() && sessionManager) {
-    auto slotId =
-        sessionManager->getSlotIdBySessionId(req.sessionId.value());
+    auto slotId = sessionManager->getSlotIdBySessionId(req.sessionId.value());
     if (slotId != services::INVALID_SLOT_ID) {
       req.slotId = slotId;
       info.validSessionFound = true;
@@ -266,8 +265,7 @@ LLMController::SessionInfo LLMController::resolveSession(
   }
 
   if (req.sessionId.has_value() && sessionManager) {
-    req.slotId =
-        sessionManager->getSlotIdBySessionId(req.sessionId.value());
+    req.slotId = sessionManager->getSlotIdBySessionId(req.sessionId.value());
     TT_LOG_DEBUG(
         "[LLMController] Session: {}, SlotID: {}", req.sessionId.value(),
         req.slotId.has_value() ? std::to_string(req.slotId.value()) : "none");
@@ -465,13 +463,12 @@ void LLMController::handleStreaming(
     }
   };
 
-  auto streamingCallback = [ctx, onDisconnect](
-                               const domain::LLMStreamChunk& chunk,
-                               bool isFinal) {
-    if (ctx->done.load()) return;
-    if (!chunk.choices.empty()) handleTokenChunk(ctx, chunk, onDisconnect);
-    if (isFinal) finalizeStream(ctx);
-  };
+  auto streamingCallback =
+      [ctx, onDisconnect](const domain::LLMStreamChunk& chunk, bool isFinal) {
+        if (ctx->done.load()) return;
+        if (!chunk.choices.empty()) handleTokenChunk(ctx, chunk, onDisconnect);
+        if (isFinal) finalizeStream(ctx);
+      };
 
   try {
     if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
