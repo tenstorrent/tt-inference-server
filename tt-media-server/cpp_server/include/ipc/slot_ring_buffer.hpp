@@ -103,7 +103,10 @@ class SlotRingBuffer {
     fd = shm_open(name.c_str(), O_RDWR, 0);
     if (fd < 0) {
       fd = shm_open(name.c_str(), O_CREAT | O_RDWR, 0666);
-      ftruncate(fd, sizeof(SlotRingBufferState));
+      if (ftruncate(fd, sizeof(SlotRingBufferState)) < 0) {
+        ::close(fd);
+        throw std::runtime_error("SlotRingBuffer: ftruncate failed");
+      }
       auto memPointerState = mmap(nullptr, sizeof(SlotRingBufferState),
                                   PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
       memset(memPointerState, 0, sizeof(SlotRingBufferState));

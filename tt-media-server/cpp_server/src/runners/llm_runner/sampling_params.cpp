@@ -80,8 +80,8 @@ void SamplingParams::serialize(std::ostream& os) const {
   writeScalar(os, fast_mode);
 }
 
-SamplingParams* SamplingParams::deserialize(std::istream& is) {
-  auto* params = new SamplingParams();
+std::unique_ptr<SamplingParams> SamplingParams::deserialize(std::istream& is) {
+  auto params = std::make_unique<SamplingParams>();
 
   params->temperature = readScalar<float>(is);
   params->max_tokens = readOptional<int>(is);

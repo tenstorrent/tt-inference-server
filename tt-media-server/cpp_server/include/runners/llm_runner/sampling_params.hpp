@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -36,7 +37,7 @@ struct SamplingParams {
   std::optional<int> truncate_prompt_tokens;
   bool fast_mode = false;
   void serialize(std::ostream& os) const;
-  static SamplingParams* deserialize(std::istream& is);
+  static std::unique_ptr<SamplingParams> deserialize(std::istream& is);
 };
 
 }  // namespace llm_engine

@@ -11,7 +11,7 @@
 #include <unordered_set>
 
 #include "config/runner_config.hpp"
-#include "ipc/boost_ipc_memory_queue.hpp"
+#include "ipc/boost_ipc_queue.hpp"
 #include "ipc/token_ring_buffer.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
@@ -40,8 +40,6 @@ class SpPipelineRunner : public IRunner {
   void step();
   void drainDecodeResults();
   void memoryLoop();
-  void pushToken(uint32_t taskId, uint64_t tokenId, bool finished);
-  void pushErrorToken(uint32_t taskId);
 
   tt::config::LLMConfig config;
   std::unordered_set<int64_t> stopTokenIds;
@@ -52,8 +50,8 @@ class SpPipelineRunner : public IRunner {
   std::unordered_map<uint32_t, std::unique_ptr<llm_engine::Sequence>>
       activeSequences;
   std::atomic<bool> stopped{false};
-  int maxInFlightCount;
-  int inFlightCount = 0;
+  size_t maxInFlightCount;
+  size_t inFlightCount = 0;
 
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
   std::thread memoryThread;

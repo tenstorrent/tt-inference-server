@@ -5,6 +5,7 @@
 
 #include <utility>
 
+#include "config/settings.hpp"
 #include "runners/llm_runner/block_manager.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
@@ -59,6 +60,14 @@ void PagedMemoryManager::handleRequest(const ManageMemoryTask& task) {
 
   switch (task.action) {
     case MemoryManagementAction::ALLOCATE: {
+      // For mock backend, return hardcoded slot ID
+      auto llmConfig = tt::config::llmEngineConfig();
+      if (llmConfig.runner_type == tt::config::ModelRunnerType::MOCK ||
+          llmConfig.runner_type == tt::config::ModelRunnerType::MOCK_PIPELINE) {
+        resultQueue->push(makeResult(task, ManageMemoryStatus::SUCCESS, {123}));
+        return;
+      }
+
       std::vector<int> slotIds;
       auto status = allocateKv(task, slotIds);
       if (status == ManageMemoryStatus::WAITING) {

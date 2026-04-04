@@ -101,6 +101,10 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_SPEECHT5_TTS: lambda wid: __import__(
         "tt_model_runners.speecht5_runner", fromlist=["TTSpeechT5Runner"]
     ).TTSpeechT5Runner(wid),
+    ModelRunners.TT_XLA_SDXL: lambda wid: __import__(
+        "tt_model_runners.forge_runners.sdxl_forge_runner",
+        fromlist=["SDXLForgeRunner"],
+    ).SDXLForgeRunner(wid),
 }
 
 

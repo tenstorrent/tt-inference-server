@@ -20,8 +20,8 @@ class PrefillFirstScheduler : public Scheduler {
   using Scheduler::Scheduler;
 
  protected:
-  bool shouldPrefillFirst(int /*decode_count*/,
-                          int /*max_in_flight_count*/) const {
+  bool shouldPrefillFirst(size_t /*decode_count*/,
+                          size_t /*max_in_flight_count*/) const override {
     return true;
   }
 };

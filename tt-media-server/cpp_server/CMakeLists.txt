@@ -204,8 +204,6 @@ endif()
 # LLM engine (include/runners/llm_runner/, src/runners/llm_runner/)
 set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/block_manager.cpp
-    src/ipc/boost_ipc_cancel_queue.cpp
-    src/ipc/boost_ipc_task_queue.cpp
     src/runners/llm_runner/hash.cpp
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
@@ -272,6 +270,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(llm_engine PUBLIC rt)
 endif()
 target_compile_features(llm_engine PUBLIC cxx_std_20)
+target_compile_options(llm_engine PRIVATE -Wall -Wextra -Wpedantic)
 
 if(ENABLE_TRACY)
     target_link_libraries(llm_engine PUBLIC tracy_client)
@@ -395,7 +394,6 @@ set(SOURCES
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/config/settings.cpp
-    src/ipc/boost_ipc_warmup_signal_queue.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
     src/services/memory_manager.cpp
