@@ -34,4 +34,14 @@ inline std::string getString(const Json::Value& val, const char* field) {
   return val.asString();
 }
 
+inline void checkArray(const Json::Value& val, const char* field) {
+  if (!val.isArray())
+    throw std::invalid_argument(std::string(field) + " must be an array");
+}
+
+inline void checkObject(const Json::Value& val, const char* field) {
+  if (!val.isObject())
+    throw std::invalid_argument(std::string(field) + " must be an object");
+}
+
 }  // namespace tt::domain::json_field

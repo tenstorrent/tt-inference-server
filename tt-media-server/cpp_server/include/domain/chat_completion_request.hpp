@@ -84,8 +84,7 @@ struct ChatCompletionRequest : BaseRequest {
     }
 
     if (json.isMember("messages")) {
-      if (!json["messages"].isArray())
-        throw std::invalid_argument("messages must be an array");
+      checkArray(json["messages"], "messages");
       for (const auto& m : json["messages"]) {
         req.messages.push_back(ChatMessage::fromJson(m));
       }
@@ -109,8 +108,7 @@ struct ChatCompletionRequest : BaseRequest {
     }
     if (json.isMember("stream")) req.stream = getBool(json["stream"], "stream");
     if (json.isMember("stream_options") && !json["stream_options"].isNull()) {
-      if (!json["stream_options"].isObject())
-        throw std::invalid_argument("stream_options must be an object");
+      checkObject(json["stream_options"], "stream_options");
       req.stream_options = StreamOptions::fromJson(json["stream_options"]);
     }
 
