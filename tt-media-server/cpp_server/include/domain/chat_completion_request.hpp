@@ -12,6 +12,7 @@
 
 #include "domain/base_request.hpp"
 #include "domain/chat_message.hpp"
+#include "domain/json_field.hpp"
 #include "domain/llm_request.hpp"
 #include "utils/tokenizer.hpp"
 
@@ -76,100 +77,102 @@ struct ChatCompletionRequest : BaseRequest {
   static ChatCompletionRequest fromJson(const Json::Value& json,
                                         uint32_t taskId) {
     ChatCompletionRequest req(std::move(taskId));
+    using namespace json_field;
 
     if (json.isMember("model") && !json["model"].isNull()) {
-      req.model = json["model"].asString();
+      req.model = getString(json["model"], "model");
     }
 
-    if (json.isMember("messages") && json["messages"].isArray()) {
+    if (json.isMember("messages")) {
+      if (!json["messages"].isArray())
+        throw std::invalid_argument("messages must be an array");
       for (const auto& m : json["messages"]) {
         req.messages.push_back(ChatMessage::fromJson(m));
       }
     }
 
-    if (json.isMember("echo")) req.echo = json["echo"].asBool();
+    if (json.isMember("echo")) req.echo = getBool(json["echo"], "echo");
     if (json.isMember("max_tokens"))
-      req.max_tokens = json["max_tokens"].asInt();
+      req.max_tokens = getInt(json["max_tokens"], "max_tokens");
     if (json.isMember("max_completion_tokens"))
-      req.max_tokens = json["max_completion_tokens"].asInt();
-    if (json.isMember("n")) req.n = json["n"].asInt();
+      req.max_tokens =
+          getInt(json["max_completion_tokens"], "max_completion_tokens");
+    if (json.isMember("n")) req.n = getInt(json["n"], "n");
     if (json.isMember("presence_penalty"))
-      req.presence_penalty = json["presence_penalty"].asFloat();
+      req.presence_penalty =
+          getFloat(json["presence_penalty"], "presence_penalty");
     if (json.isMember("frequency_penalty"))
-      req.frequency_penalty = json["frequency_penalty"].asFloat();
+      req.frequency_penalty =
+          getFloat(json["frequency_penalty"], "frequency_penalty");
     if (json.isMember("suffix") && !json["suffix"].isNull()) {
-      req.suffix = json["suffix"].asString();
+      req.suffix = getString(json["suffix"], "suffix");
     }
-    if (json.isMember("stream")) req.stream = json["stream"].asBool();
+    if (json.isMember("stream")) req.stream = getBool(json["stream"], "stream");
     if (json.isMember("stream_options") && !json["stream_options"].isNull()) {
+      if (!json["stream_options"].isObject())
+        throw std::invalid_argument("stream_options must be an object");
       req.stream_options = StreamOptions::fromJson(json["stream_options"]);
     }
 
     if (json.isMember("stop")) {
-      if (json["stop"].isString()) {
-        req.stop.push_back(json["stop"].asString());
-      } else if (json["stop"].isArray()) {
-        for (const auto& s : json["stop"]) {
-          req.stop.push_back(s.asString());
-        }
+      const auto& stopVal = json["stop"];
+      if (stopVal.isString()) {
+        req.stop.push_back(stopVal.asString());
+      } else if (stopVal.isArray()) {
+        for (const auto& s : stopVal)
+          req.stop.push_back(getString(s, "stop[]"));
+      } else {
+        throw std::invalid_argument(
+            "stop must be a string or array of strings");
       }
     }
 
-    if (json.isMember("seed") && !json["seed"].isNull()) {
-      req.seed = json["seed"].asInt();
-    }
-    if (json.isMember("temperature") && !json["temperature"].isNull()) {
-      req.temperature = json["temperature"].asFloat();
-    }
-    if (json.isMember("top_p") && !json["top_p"].isNull()) {
-      req.top_p = json["top_p"].asFloat();
-    }
-    if (json.isMember("logprobs") && !json["logprobs"].isNull()) {
-      req.logprobs = json["logprobs"].asInt();
-    }
-    if (json.isMember("user") && !json["user"].isNull()) {
-      req.user = json["user"].asString();
-    }
+    if (json.isMember("seed") && !json["seed"].isNull())
+      req.seed = getInt(json["seed"], "seed");
+    if (json.isMember("temperature") && !json["temperature"].isNull())
+      req.temperature = getFloat(json["temperature"], "temperature");
+    if (json.isMember("top_p") && !json["top_p"].isNull())
+      req.top_p = getFloat(json["top_p"], "top_p");
+    if (json.isMember("logprobs") && !json["logprobs"].isNull())
+      req.logprobs = getInt(json["logprobs"], "logprobs");
+    if (json.isMember("user") && !json["user"].isNull())
+      req.user = getString(json["user"], "user");
 
     if (json.isMember("use_beam_search"))
-      req.use_beam_search = json["use_beam_search"].asBool();
-    if (json.isMember("top_k") && !json["top_k"].isNull()) {
-      req.top_k = json["top_k"].asInt();
-    }
-    if (json.isMember("min_p") && !json["min_p"].isNull()) {
-      req.min_p = json["min_p"].asFloat();
-    }
+      req.use_beam_search = getBool(json["use_beam_search"], "use_beam_search");
+    if (json.isMember("top_k") && !json["top_k"].isNull())
+      req.top_k = getInt(json["top_k"], "top_k");
+    if (json.isMember("min_p") && !json["min_p"].isNull())
+      req.min_p = getFloat(json["min_p"], "min_p");
     if (json.isMember("repetition_penalty") &&
-        !json["repetition_penalty"].isNull()) {
-      req.repetition_penalty = json["repetition_penalty"].asFloat();
-    }
+        !json["repetition_penalty"].isNull())
+      req.repetition_penalty =
+          getFloat(json["repetition_penalty"], "repetition_penalty");
     if (json.isMember("length_penalty"))
-      req.length_penalty = json["length_penalty"].asFloat();
+      req.length_penalty = getFloat(json["length_penalty"], "length_penalty");
 
     if (json.isMember("stop_token_ids") && json["stop_token_ids"].isArray()) {
-      for (const auto& id : json["stop_token_ids"]) {
-        req.stop_token_ids.push_back(id.asInt());
-      }
+      for (const auto& id : json["stop_token_ids"])
+        req.stop_token_ids.push_back(getInt(id, "stop_token_ids[]"));
     }
 
-    if (json.isMember("include_stop_str_in_output")) {
-      req.include_stop_str_in_output =
-          json["include_stop_str_in_output"].asBool();
-    }
+    if (json.isMember("include_stop_str_in_output"))
+      req.include_stop_str_in_output = getBool(
+          json["include_stop_str_in_output"], "include_stop_str_in_output");
     if (json.isMember("ignore_eos"))
-      req.ignore_eos = json["ignore_eos"].asBool();
+      req.ignore_eos = getBool(json["ignore_eos"], "ignore_eos");
     if (json.isMember("min_tokens"))
-      req.min_tokens = json["min_tokens"].asInt();
+      req.min_tokens = getInt(json["min_tokens"], "min_tokens");
     if (json.isMember("skip_special_tokens"))
-      req.skip_special_tokens = json["skip_special_tokens"].asBool();
-    if (json.isMember("spaces_between_special_tokens")) {
+      req.skip_special_tokens =
+          getBool(json["skip_special_tokens"], "skip_special_tokens");
+    if (json.isMember("spaces_between_special_tokens"))
       req.spaces_between_special_tokens =
-          json["spaces_between_special_tokens"].asBool();
-    }
+          getBool(json["spaces_between_special_tokens"],
+                  "spaces_between_special_tokens");
 
-    if (json.isMember("session_id") && !json["session_id"].isNull()) {
-      req.sessionId = json["session_id"].asString();
-    }
+    if (json.isMember("session_id") && !json["session_id"].isNull())
+      req.sessionId = getString(json["session_id"], "session_id");
 
     return req;
   }

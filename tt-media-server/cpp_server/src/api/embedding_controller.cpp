@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <random>
 #include <sstream>
@@ -119,10 +120,20 @@ void EmbeddingController::createEmbedding(
     return;
   }
 
-  // Build request
   uint32_t taskId = tt::utils::TaskIDGenerator::generate();
-  domain::EmbeddingRequest request =
-      domain::EmbeddingRequest::fromJson(*json, std::move(taskId));
+  std::optional<domain::EmbeddingRequest> requestOpt;
+  try {
+    requestOpt = domain::EmbeddingRequest::fromJson(*json, std::move(taskId));
+  } catch (const std::invalid_argument& e) {
+    Json::Value error;
+    error["error"]["message"] = e.what();
+    error["error"]["type"] = "invalid_request_error";
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
+    resp->setStatusCode(drogon::k400BadRequest);
+    callback(resp);
+    return;
+  }
+  auto request = std::move(*requestOpt);
 
   // Default model if not specified
   if (request.model.empty()) {
