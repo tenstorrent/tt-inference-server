@@ -120,12 +120,8 @@ void EmbeddingController::createEmbedding(
   try {
     requestOpt = domain::EmbeddingRequest::fromJson(*json, std::move(taskId));
   } catch (const std::invalid_argument& e) {
-    Json::Value error;
-    error["error"]["message"] = e.what();
-    error["error"]["type"] = "invalid_request_error";
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-    resp->setStatusCode(drogon::k400BadRequest);
-    callback(resp);
+    callback(errorResponse(drogon::k400BadRequest, e.what(),
+                           "invalid_request_error"));
     return;
   }
   auto request = std::move(*requestOpt);
