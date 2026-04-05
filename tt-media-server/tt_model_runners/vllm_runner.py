@@ -19,6 +19,12 @@ FINAL_TYPE = "final_result"
 
 
 class VLLMForgeRunner(BaseDeviceRunner):
+    # Sampling defaults for Forge LLM inference (overrides global greedy defaults)
+    SAMPLING_DEFAULTS = {
+        "temperature": 0.6,
+        "repetition_penalty": 1.1,
+    }
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
 
@@ -51,7 +57,10 @@ class VLLMForgeRunner(BaseDeviceRunner):
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
 
         self.logger.info(f"Device {self.device_id}: Starting model warmup")
-        warmup_sampling_params = SamplingParams(temperature=0.0, max_tokens=10)
+        warmup_sampling_params = SamplingParams(
+            **self.SAMPLING_DEFAULTS,
+            max_tokens=10,
+        )
         warmup_generator = self.llm_engine.generate(
             prompt, warmup_sampling_params, "warmup_task_id"
         )
@@ -100,7 +109,7 @@ class VLLMForgeRunner(BaseDeviceRunner):
 
         chunks = []
         strip_eos = TextUtils.strip_eos
-        sampling_params = build_sampling_params(request)
+        sampling_params = build_sampling_params(request, self.SAMPLING_DEFAULTS)
 
         async for request_output in self.llm_engine.generate(
             self._build_vllm_input(request), sampling_params, request._task_id
@@ -138,7 +147,7 @@ class VLLMForgeRunner(BaseDeviceRunner):
     ) -> CompletionOutput:
         self.logger.info(f"Device {self.device_id}: Starting non-streaming generation")
 
-        sampling_params = build_sampling_params(request)
+        sampling_params = build_sampling_params(request, self.SAMPLING_DEFAULTS)
 
         generated_text = []
         async for request_output in self.llm_engine.generate(
