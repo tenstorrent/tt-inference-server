@@ -78,14 +78,6 @@ class LLMController : public drogon::HttpController<LLMController> {
       std::shared_ptr<domain::LLMRequest> reqPtr,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
-  /**
-   * Build OpenAI-style error JSON (flat object/message/type/param/code).
-   */
-  static Json::Value errorJson(const std::string& message,
-                               const std::string& type,
-                               const Json::Value& param = Json::nullValue,
-                               const Json::Value& code = Json::nullValue);
-
   struct SessionInfo {
     bool validSessionFound = false;
   };
