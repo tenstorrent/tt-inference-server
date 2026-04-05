@@ -13,6 +13,7 @@
 #include <iostream>
 #include <thread>
 
+#include "api/error_response.hpp"
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
 #include "profiling/tracy.hpp"
@@ -131,9 +132,10 @@ int main(int argc, char* argv[]) {
 
     if (authHeader.size() <= bearerPrefix.size() ||
         authHeader.compare(0, bearerPrefix.size(), bearerPrefix) != 0) {
-      auto resp = drogon::HttpResponse::newHttpJsonResponse(Json::Value(
-          "Missing or invalid Authorization header. Expected: Bearer <token>"));
-      resp->setStatusCode(drogon::k401Unauthorized);
+      auto resp = tt::api::errorResponse(
+          drogon::k401Unauthorized,
+          "Missing or invalid Authorization header. Expected: Bearer <token>",
+          "authentication_error");
       resp->addHeader("WWW-Authenticate", "Bearer");
       callback(resp);
       return;
@@ -143,9 +145,8 @@ int main(int argc, char* argv[]) {
                                    authHeader.size() - bearerPrefix.size());
 
     if (providedToken != SecurityFilter::getExpectedToken()) {
-      auto resp = drogon::HttpResponse::newHttpJsonResponse(
-          Json::Value("Invalid API key"));
-      resp->setStatusCode(drogon::k401Unauthorized);
+      auto resp = tt::api::errorResponse(
+          drogon::k401Unauthorized, "Invalid API key", "authentication_error");
       resp->addHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
       callback(resp);
       return;

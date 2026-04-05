@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "api/embedding_controller.hpp"
+#include "api/error_response.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "services/base_service.hpp"
@@ -101,21 +102,15 @@ void EmbeddingController::createEmbedding(
   // Parse request body
   auto json = req->getJsonObject();
   if (!json) {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        Json::Value("Invalid JSON body"));
-    resp->setStatusCode(drogon::k400BadRequest);
-    callback(resp);
+    callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
+                           "invalid_request_error"));
     return;
   }
 
-  // Validate required fields
   if (!json->isMember("input")) {
-    Json::Value error;
-    error["error"]["message"] = "Missing required field: input";
-    error["error"]["type"] = "invalid_request_error";
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-    resp->setStatusCode(drogon::k400BadRequest);
-    callback(resp);
+    callback(errorResponse(drogon::k400BadRequest,
+                           "Missing required field: input",
+                           "invalid_request_error"));
     return;
   }
 
@@ -141,12 +136,8 @@ void EmbeddingController::createEmbedding(
       auto gotResponseTime = std::chrono::steady_clock::now();
 
       if (!response.error.empty()) {
-        Json::Value error;
-        error["error"]["message"] = response.error;
-        error["error"]["type"] = "server_error";
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-        resp->setStatusCode(drogon::k500InternalServerError);
-        callback(resp);
+        callback(errorResponse(drogon::k500InternalServerError, response.error,
+                               "server_error"));
         return;
       }
 
@@ -177,19 +168,12 @@ void EmbeddingController::createEmbedding(
       callback(resp);
 
     } catch (const services::QueueFullException& e) {
-      Json::Value error;
-      error["error"]["message"] = e.what();
-      error["error"]["type"] = "rate_limit_exceeded";
-      auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-      resp->setStatusCode(drogon::k429TooManyRequests);
-      callback(resp);
+      callback(errorResponse(drogon::k429TooManyRequests, e.what(),
+                             "rate_limit_exceeded"));
     } catch (const std::exception& e) {
-      Json::Value error;
-      error["error"]["message"] = std::string("Internal error: ") + e.what();
-      error["error"]["type"] = "server_error";
-      auto resp = drogon::HttpResponse::newHttpJsonResponse(error);
-      resp->setStatusCode(drogon::k500InternalServerError);
-      callback(resp);
+      callback(errorResponse(drogon::k500InternalServerError,
+                             std::string("Internal error: ") + e.what(),
+                             "server_error"));
     }
   });
 }
