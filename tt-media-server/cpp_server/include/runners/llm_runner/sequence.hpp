@@ -37,65 +37,65 @@ class Sequence {
   void serialize(std::ostream& os) const;
   static Sequence deserialize(std::istream& is);
 
-  uint32_t taskId;  // set at construction; not const due to IPC deserialization
+  uint32_t taskId;
 
-  size_t size() const { return tokenIds_.size(); }
-  int64_t operator[](size_t i) const { return tokenIds_[i]; }
+  size_t size() const { return tokenIds.size(); }
+  int64_t operator[](size_t i) const { return tokenIds[i]; }
 
-  bool isFinished() const { return status_ == SequenceStatus::FINISHED; }
-  bool isAborted() const { return status_ == SequenceStatus::ABORTED; }
+  bool isFinished() const { return status == SequenceStatus::FINISHED; }
+  bool isAborted() const { return status == SequenceStatus::ABORTED; }
   size_t numCompletionTokens() const {
-    return tokenIds_.size() - numPromptTokens_;
+    return tokenIds.size() - numPromptTokens;
   }
-  size_t numCachedBlocks() const { return numCachedTokens_ / blockSize_; }
+  size_t numCachedBlocks() const { return numCachedTokens / blockSize; }
   size_t numBlocks() const {
-    return (tokenIds_.size() + blockSize_ - 1) / blockSize_;
+    return (tokenIds.size() + blockSize - 1) / blockSize;
   }
   int lastBlockNumTokens() const {
-    return static_cast<int>(tokenIds_.size()) -
-           static_cast<int>(numBlocks() - 1) * blockSize_;
+    return static_cast<int>(tokenIds.size()) -
+           static_cast<int>(numBlocks() - 1) * blockSize;
   }
 
-  void setKVCacheAddress(uint64_t addr) { address_ = addr; }
-  uint64_t getKVCacheAddress() const { return address_; }
+  void setKVCacheAddress(uint64_t addr) { address = addr; }
+  uint64_t getKVCacheAddress() const { return address; }
 
   std::vector<int64_t> block(size_t i) const;
   std::vector<int64_t> completionTokenIds() const;
   void appendToken(int64_t tokenId);
 
-  SequenceStatus status() const { return status_; }
-  void setStatus(SequenceStatus s) { status_ = s; }
+  SequenceStatus getStatus() const { return status; }
+  void setStatus(SequenceStatus s) { status = s; }
 
-  const std::vector<int64_t>& tokenIds() const { return tokenIds_; }
+  const std::vector<int64_t>& getTokenIds() const { return tokenIds; }
 
-  int64_t lastToken() const { return lastToken_; }
-  void setLastToken(int64_t t) { lastToken_ = t; }
+  int64_t getLastToken() const { return lastToken; }
+  void setLastToken(int64_t t) { lastToken = t; }
 
-  size_t numPromptTokens() const { return numPromptTokens_; }
-  void setNumPromptTokens(size_t n) { numPromptTokens_ = n; }
+  size_t getNumPromptTokens() const { return numPromptTokens; }
+  void setNumPromptTokens(size_t n) { numPromptTokens = n; }
 
-  size_t numCachedTokens() const { return numCachedTokens_; }
-  void setNumCachedTokens(size_t n) { numCachedTokens_ = n; }
+  size_t getNumCachedTokens() const { return numCachedTokens; }
+  void setNumCachedTokens(size_t n) { numCachedTokens = n; }
 
-  const std::vector<int>& blockTable() const { return blockTable_; }
-  std::vector<int>& mutableBlockTable() { return blockTable_; }
+  const std::vector<int>& getBlockTable() const { return blockTable; }
+  std::vector<int>& getMutableBlockTable() { return blockTable; }
 
-  const SamplingParams& samplingParams() const { return *samplingParams_; }
-  SamplingParams& mutableSamplingParams() { return *samplingParams_; }
+  const SamplingParams& getSamplingParams() const { return *samplingParams; }
+  SamplingParams& getMutableSamplingParams() { return *samplingParams; }
   void setSamplingParams(std::unique_ptr<SamplingParams> p) {
-    samplingParams_ = std::move(p);
+    samplingParams = std::move(p);
   }
 
  private:
-  SequenceStatus status_ = SequenceStatus::WAITING;
-  std::vector<int64_t> tokenIds_;
-  int64_t lastToken_ = 0;
-  size_t numPromptTokens_ = 0;
-  size_t numCachedTokens_ = 0;
-  std::vector<int> blockTable_;
-  std::unique_ptr<SamplingParams> samplingParams_;
-  int blockSize_;
-  uint64_t address_ = 0x0;
+  SequenceStatus status = SequenceStatus::WAITING;
+  std::vector<int64_t> tokenIds;
+  int64_t lastToken = 0;
+  size_t numPromptTokens = 0;
+  size_t numCachedTokens = 0;
+  std::vector<int> blockTable;
+  std::unique_ptr<SamplingParams> samplingParams;
+  int blockSize;
+  uint64_t address = 0x0;
 };
 
 }  // namespace llm_engine

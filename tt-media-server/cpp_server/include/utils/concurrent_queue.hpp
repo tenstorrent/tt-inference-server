@@ -128,7 +128,8 @@ class LockFreeSingleProducerQueue {
   size_t size() const { return (head.load() - tail.load()) & mask; }
 
   LockFreeSingleProducerQueue(const LockFreeSingleProducerQueue&) = delete;
-  LockFreeSingleProducerQueue& operator=(const LockFreeSingleProducerQueue&) = delete;
+  LockFreeSingleProducerQueue& operator=(const LockFreeSingleProducerQueue&) =
+      delete;
 
  private:
   size_t capacity;

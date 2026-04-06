@@ -29,7 +29,7 @@ class MockModelRunner : public IModelRunner {
       ZoneScopedN("MockModelRunner::decode");
       for (Sequence* seq : seqs) {
         decodeCallback(TokenResult(
-            seq->taskId, static_cast<uint64_t>(seq->lastToken() + 1)));
+            seq->taskId, static_cast<uint64_t>(seq->getLastToken() + 1)));
       }
     }
   }

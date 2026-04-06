@@ -33,7 +33,8 @@ void SpPrefillRunner::run() {
     TT_LOG_DEBUG("SpPrefillRunner: Starting prefill for task {}",
                  sequence->taskId);
 
-    auto result = modelRunner->forward(sequence->taskId, sequence->tokenIds());
+    auto result =
+        modelRunner->forward(sequence->taskId, sequence->getTokenIds());
 
     if (!result) {
       break;  // stopped

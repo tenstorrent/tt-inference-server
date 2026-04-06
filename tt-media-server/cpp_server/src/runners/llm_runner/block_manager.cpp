@@ -75,7 +75,7 @@ size_t BlockManager::numFreeBlocks() const {
 bool BlockManager::allocate(Sequence& seq) {
   ZoneScopedN("BlockManager::allocate");
   std::lock_guard<std::mutex> lock(mutex);
-  assert(seq.blockTable().empty());
+  assert(seq.getBlockTable().empty());
 
   if (free_block_ids_.size() < seq.numBlocks()) {
     return false;
@@ -102,9 +102,9 @@ bool BlockManager::allocate(Sequence& seq) {
         block.update(h, tokenIds);
         hash_to_block_id_[h] = blockId;
       }
-      seq.mutableBlockTable().push_back(blockId);
+      seq.getMutableBlockTable().push_back(blockId);
     } else {
-      seq.setNumCachedTokens(seq.numCachedTokens() + block_size_);
+      seq.setNumCachedTokens(seq.getNumCachedTokens() + block_size_);
       if (used_block_ids_.count(blockId)) {
         blocks_[static_cast<size_t>(blockId)].ref_count += 1;
       } else {
@@ -114,7 +114,7 @@ bool BlockManager::allocate(Sequence& seq) {
           hash_to_block_id_[h] = blockId;
         }
       }
-      seq.mutableBlockTable().push_back(blockId);
+      seq.getMutableBlockTable().push_back(blockId);
     }
   }
   return true;
@@ -125,8 +125,8 @@ void BlockManager::deallocate(Sequence& seq) {
   std::lock_guard<std::mutex> lock(mutex);
   LLM_ENGINE_LOG("block_manager")
       << "deallocate task_id=" << seq.taskId
-      << " num_blocks=" << seq.blockTable().size() << std::endl;
-  for (auto it = seq.blockTable().rbegin(); it != seq.blockTable().rend();
+      << " num_blocks=" << seq.getBlockTable().size() << std::endl;
+  for (auto it = seq.getBlockTable().rbegin(); it != seq.getBlockTable().rend();
        ++it) {
     int blockId = *it;
     Block& block = blocks_[static_cast<size_t>(blockId)];
@@ -136,7 +136,7 @@ void BlockManager::deallocate(Sequence& seq) {
     }
   }
   seq.setNumCachedTokens(0);
-  seq.mutableBlockTable().clear();
+  seq.getMutableBlockTable().clear();
 }
 
 bool BlockManager::canAppend(const Sequence& seq) const {
@@ -148,7 +148,7 @@ bool BlockManager::canAppend(const Sequence& seq) const {
 void BlockManager::mayAppend(Sequence& seq) {
   ZoneScopedN("BlockManager::may_append");
   std::lock_guard<std::mutex> lock(mutex);
-  std::vector<int>& blockTable = seq.mutableBlockTable();
+  std::vector<int>& blockTable = seq.getMutableBlockTable();
   Block& lastBlock = blocks_[static_cast<size_t>(blockTable.back())];
   size_t len = seq.size();
   if (len % block_size_ == 1) {

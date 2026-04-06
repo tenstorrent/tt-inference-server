@@ -93,21 +93,21 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
       for (Sequence* seq : seqs) {
         py::list tokenIds;
         if (isPrefill) {
-          for (int64_t t : seq->tokenIds()) tokenIds.append(t);
+          for (int64_t t : seq->getTokenIds()) tokenIds.append(t);
         } else {
-          tokenIds.append(seq->tokenIds().back());
+          tokenIds.append(seq->getTokenIds().back());
         }
 
         py::list blockTable;
-        for (int bid : seq->blockTable()) {
+        for (int bid : seq->getBlockTable()) {
           blockTable.append(bid);
         }
 
         int currentPos =
-            isPrefill ? 0 : static_cast<int>(seq->tokenIds().size() - 1);
-        int promptLen = static_cast<int>(seq->numPromptTokens());
+            isPrefill ? 0 : static_cast<int>(seq->getTokenIds().size() - 1);
+        int promptLen = static_cast<int>(seq->getNumPromptTokens());
 
-        const SamplingParams* sp = &seq->samplingParams();
+        const SamplingParams* sp = &seq->getSamplingParams();
         double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;
         bool ignoreEos = sp ? sp->ignore_eos : false;
 

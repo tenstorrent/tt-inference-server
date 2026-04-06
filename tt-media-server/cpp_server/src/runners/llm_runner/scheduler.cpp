@@ -81,7 +81,7 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
       break;
     }
     numSeqs += 1;
-    numBatchedTokens += seq->size() - seq->numCachedTokens();
+    numBatchedTokens += seq->size() - seq->getNumCachedTokens();
     auto id = seq->taskId;
     sequences_[id] = std::move(seq);
     scheduledSeqs.push_back(sequences_[id].get());
@@ -168,11 +168,11 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
 
     bool isStopToken = stop_token_ids_.count(tokenId) > 0;
     bool reachedMaxTokens =
-        seq->samplingParams().max_tokens.has_value() &&
+        seq->getSamplingParams().max_tokens.has_value() &&
         seq->numCompletionTokens() >=
-            static_cast<size_t>(seq->samplingParams().max_tokens.value());
-    bool finished =
-        (!seq->samplingParams().ignore_eos && isStopToken) || reachedMaxTokens;
+            static_cast<size_t>(seq->getSamplingParams().max_tokens.value());
+    bool finished = (!seq->getSamplingParams().ignore_eos && isStopToken) ||
+                    reachedMaxTokens;
 
     if (finished) {
       seq->setStatus(SequenceStatus::FINISHED);
@@ -191,7 +191,7 @@ void Scheduler::abortRequest(uint32_t taskId) {
 
   // If the task isn't tracked or is still waiting, it might have a stale
   // copy in the IPC queue. Mark it for skipping.
-  bool isWaiting = seq && seq->status() == SequenceStatus::WAITING;
+  bool isWaiting = seq && seq->getStatus() == SequenceStatus::WAITING;
   if (!seq || isWaiting) {
     if (pending_aborts_.size() < 2 * max_in_flight_count_) {
       pending_aborts_.insert(taskId);
