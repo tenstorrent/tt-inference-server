@@ -43,8 +43,8 @@ struct StreamParams {
  */
 class SseStreamWriter : public std::enable_shared_from_this<SseStreamWriter> {
  public:
-  static std::shared_ptr<SseStreamWriter> create(
-      trantor::EventLoop* loop, StreamParams params);
+  static std::shared_ptr<SseStreamWriter> create(trantor::EventLoop* loop,
+                                                 StreamParams params);
 
   SseStreamWriter(const SseStreamWriter&) = delete;
   SseStreamWriter& operator=(const SseStreamWriter&) = delete;

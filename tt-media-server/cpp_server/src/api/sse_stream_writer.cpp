@@ -26,18 +26,17 @@ std::shared_ptr<SseStreamWriter> SseStreamWriter::create(
 }
 
 void SseStreamWriter::sendSse(const std::string& sse,
-                               std::function<void()> onDisconnect) {
+                              std::function<void()> onDisconnect) {
   if (!accumulator_) {
-    loop_->queueInLoop(
-        [streamPtr = stream_ptr_, earlyBuffer = early_buffer_, sse,
-         onDisconnect = std::move(onDisconnect)]() {
-          if (*streamPtr) {
-            bool ok = (*streamPtr)->send(sse);
-            if (!ok && onDisconnect) onDisconnect();
-          } else if (earlyBuffer) {
-            earlyBuffer->push_back(sse);
-          }
-        });
+    loop_->queueInLoop([streamPtr = stream_ptr_, earlyBuffer = early_buffer_,
+                        sse, onDisconnect = std::move(onDisconnect)]() {
+      if (*streamPtr) {
+        bool ok = (*streamPtr)->send(sse);
+        if (!ok && onDisconnect) onDisconnect();
+      } else if (earlyBuffer) {
+        earlyBuffer->push_back(sse);
+      }
+    });
     return;
   }
   accumulator_->push(sse);
@@ -45,17 +44,16 @@ void SseStreamWriter::sendSse(const std::string& sse,
     auto accumulated = accumulator_->drain();
     std::string batch;
     for (auto& s : accumulated) batch.append(s);
-    loop_->queueInLoop(
-        [streamPtr = stream_ptr_, earlyBuffer = early_buffer_,
-         batch = std::move(batch),
-         onDisconnect = std::move(onDisconnect)]() {
-          if (*streamPtr) {
-            bool ok = (*streamPtr)->send(batch);
-            if (!ok && onDisconnect) onDisconnect();
-          } else if (earlyBuffer) {
-            earlyBuffer->push_back(batch);
-          }
-        });
+    loop_->queueInLoop([streamPtr = stream_ptr_, earlyBuffer = early_buffer_,
+                        batch = std::move(batch),
+                        onDisconnect = std::move(onDisconnect)]() {
+      if (*streamPtr) {
+        bool ok = (*streamPtr)->send(batch);
+        if (!ok && onDisconnect) onDisconnect();
+      } else if (earlyBuffer) {
+        earlyBuffer->push_back(batch);
+      }
+    });
   }
 }
 
@@ -72,9 +70,12 @@ void SseStreamWriter::flushAccumulated() {
 domain::CompletionUsage SseStreamWriter::buildFinalUsage() const {
   const int tokens = completion_tokens_.load();
 
-  domain::CompletionUsage usage{
-      params_.promptTokensCount, tokens,       tokens,
-      std::nullopt,              std::nullopt, std::nullopt};
+  domain::CompletionUsage usage{params_.promptTokensCount,
+                                tokens,
+                                tokens,
+                                std::nullopt,
+                                std::nullopt,
+                                std::nullopt};
 
   if (first_token_time_.has_value()) {
     auto ttftUs = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -100,8 +101,7 @@ domain::CompletionUsage SseStreamWriter::buildFinalUsage() const {
   return usage;
 }
 
-void SseStreamWriter::handleTokenChunk(
-    const domain::LLMStreamChunk& chunk) {
+void SseStreamWriter::handleTokenChunk(const domain::LLMStreamChunk& chunk) {
   if (done_.load()) return;
 
   const int currentTokens = completion_tokens_.fetch_add(1) + 1;
@@ -115,9 +115,12 @@ void SseStreamWriter::handleTokenChunk(
 
   std::optional<domain::CompletionUsage> usage;
   if (params_.continuousUsage) {
-    usage = domain::CompletionUsage{params_.promptTokensCount, currentTokens,
-                                    currentTokens,             std::nullopt,
-                                    std::nullopt,              params_.sessionId};
+    usage = domain::CompletionUsage{params_.promptTokensCount,
+                                    currentTokens,
+                                    currentTokens,
+                                    std::nullopt,
+                                    std::nullopt,
+                                    params_.sessionId};
   }
 
   auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
@@ -178,7 +181,7 @@ void SseStreamWriter::abort() {
     params_.service->abortRequest(params_.taskId);
     if (params_.sessionId.has_value() && params_.sessionManager) {
       params_.sessionManager->setSessionInFlight(params_.sessionId.value(),
-                                                  false);
+                                                 false);
     }
   }
 }

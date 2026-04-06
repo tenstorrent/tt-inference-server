@@ -226,12 +226,12 @@ void LLMController::handleStreaming(
   auto writer = SseStreamWriter::create(
       trantor::EventLoop::getEventLoopOfCurrentThread(), std::move(params));
 
-  auto streamingCallback =
-      [writer](const domain::LLMStreamChunk& chunk, bool isFinal) {
-        if (writer->isDone()) return;
-        if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
-        if (isFinal) writer->finalizeStream();
-      };
+  auto streamingCallback = [writer](const domain::LLMStreamChunk& chunk,
+                                    bool isFinal) {
+    if (writer->isDone()) return;
+    if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
+    if (isFinal) writer->finalizeStream();
+  };
 
   try {
     if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
