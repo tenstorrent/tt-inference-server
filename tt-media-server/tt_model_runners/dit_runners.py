@@ -297,10 +297,15 @@ class TTMochi1Runner(TTDiTRunner):
 class TTWan22Runner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        cache_root = os.environ.get("CACHE_ROOT", "/tmp")
+        os.environ["TT_DIT_CACHE_DIR"] = os.path.join(cache_root, "tt_dit_cache")
 
     def create_pipeline(self):
         try:
-            return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
+            return WanPipeline.create_pipeline(
+                checkpoint_name=self.settings.model_weights_path,
+                mesh_device=self.ttnn_device,
+            )
         except Exception as e:
             log_exception_chain(
                 self.logger,
