@@ -139,6 +139,8 @@ def get_rank_binding_path(device_type: DeviceTypes) -> str:
     config_dir = f"{tt_metal_home}/tests/tt_metal/distributed/config"
 
     binding_files = {
+        DeviceTypes.BH_LB_2X: "dual_bh_lb_rank_bindings.yaml",
+        DeviceTypes.BH_LB_4X: "quad_bh_lb_rank_bindings.yaml",
         DeviceTypes.DUAL_GALAXY: "dual_galaxy_rank_bindings.yaml",
         DeviceTypes.QUAD_GALAXY: "quad_galaxy_rank_bindings.yaml",
     }

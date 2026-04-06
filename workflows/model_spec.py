@@ -1332,6 +1332,49 @@ llm_templates = [
         impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
+                specifier=">=18.12.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.4.1",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        tt_metal_commit="dc60698",
+        vllm_commit="bb6980c",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.BH_LB_2X,
+                max_concurrency=32 * 2,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 2,
+                },
+                override_tt_config={
+                    "trace_region_size": 61341696,
+                    "fabric_config": "FABRIC_1D",
+                    "fabric_reliability_mode": "RELAXED_INIT",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        metadata={
+            "Qwen/Qwen3-32B": {
+                "reasoning_parser_name": "qwen3",
+                "tool_call_parser_name": "hermes",
+            },
+        },
+    ),
+    ModelSpecTemplate(
+        weights=["Qwen/Qwen3-32B"],
+        impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
                 specifier=">=19.2.0",
                 mode=VersionMode.STRICT,
             ),
@@ -1793,6 +1836,76 @@ llm_templates = [
         impl=tt_transformers_impl,
         system_requirements=SystemRequirements(
             firmware=VersionRequirement(
+                specifier=">=18.12.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.4.1",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        tt_metal_commit="dc60698",
+        vllm_commit="bb6980c",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.BH_LB_2X,
+                max_concurrency=32 * 2,
+                max_context=128 * 1024,
+                default_impl=True,
+                tensor_cache_timeout=5400.0,
+                vllm_args={
+                    "data_parallel_size": 2,
+                },
+                override_tt_config={
+                    "trace_region_size": 51453952,
+                    "fabric_config": "FABRIC_1D",
+                    "fabric_reliability_mode": "RELAXED_INIT",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.BH_LB_4X,
+                max_concurrency=32 * 4,
+                max_context=128 * 1024,
+                default_impl=True,
+                tensor_cache_timeout=5400.0,
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
+                override_tt_config={
+                    "trace_region_size": 51453952,
+                    "fabric_config": "FABRIC_1D",
+                    "fabric_reliability_mode": "RELAXED_INIT",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        metadata={
+            "meta-llama/Llama-3.3-70B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-70B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-70B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
+                "reasoning_parser_name": "deepseek_r1",
+                "tool_call_parser_name": "deepseek_v3",
+            },
+        },
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "meta-llama/Llama-3.1-70B",
+            "meta-llama/Llama-3.1-70B-Instruct",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+        ],
+        impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
                 specifier=">=19.2.0",
                 mode=VersionMode.STRICT,
             ),
@@ -2105,6 +2218,62 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        metadata={
+            "meta-llama/Llama-3.1-8B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-8B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+        },
+    ),
+    ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
+        impl=tt_transformers_impl,
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.12.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.4.1",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        tt_metal_commit="dc60698",
+        vllm_commit="bb6980c",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.BH_LB_2X,
+                max_concurrency=32 * 16,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 16,
+                },
+                override_tt_config={
+                    "sample_on_device_mode": "decode_only",
+                    "fabric_config": "FABRIC_1D",
+                    "fabric_reliability_mode": "RELAXED_INIT",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.BH_LB_4X,
+                max_concurrency=32 * 32,
+                max_context=128 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 32,
+                },
+                override_tt_config={
+                    "sample_on_device_mode": "decode_only",
+                    "fabric_config": "FABRIC_1D",
+                    "fabric_reliability_mode": "RELAXED_INIT",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
         metadata={
             "meta-llama/Llama-3.1-8B": {
                 "tool_call_parser_name": "llama3_json",

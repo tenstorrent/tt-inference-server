@@ -74,6 +74,8 @@ class DeviceTypes(IntEnum):
     BLACKHOLE_GALAXY = auto()  # BH Galaxy - 32x P150 chips
     GALAXY = auto()
     GALAXY_T3K = auto()
+    BH_LB_2X = auto()  # 2x BH LoudBox - 2 hosts, each 8x P150
+    BH_LB_4X = auto()  # 4x BH LoudBox - 4 hosts, each 8x P150
     DUAL_GALAXY = auto()
     QUAD_GALAXY = auto()
 
@@ -99,6 +101,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P300: "P300",
             DeviceTypes.P300X2: "P300x2",
             DeviceTypes.BLACKHOLE_GALAXY: "BH-Galaxy",
+            DeviceTypes.BH_LB_2X: "(2,8)",
+            DeviceTypes.BH_LB_4X: "(2,16)",
             DeviceTypes.N150X4: "N150x4",
             DeviceTypes.N300: "N300",
             DeviceTypes.T3K: "T3K",
@@ -123,6 +127,8 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P300: "BH P300",
             DeviceTypes.P300X2: "BH QuietBox GE (2xP300)",
             DeviceTypes.BLACKHOLE_GALAXY: "BH Galaxy",
+            DeviceTypes.BH_LB_2X: "2x BH LoudBox",
+            DeviceTypes.BH_LB_4X: "4x BH LoudBox",
             DeviceTypes.N150X4: "4xn150",
             DeviceTypes.N300: "n300",
             DeviceTypes.T3K: "WH LoudBox/QuietBox",
@@ -168,12 +174,19 @@ class DeviceTypes(IntEnum):
             DeviceTypes.P300,
             DeviceTypes.P300X2,
             DeviceTypes.BLACKHOLE_GALAXY,
+            DeviceTypes.BH_LB_2X,
+            DeviceTypes.BH_LB_4X,
         )
         return self in blackhole_devices
 
     def is_multihost(self) -> bool:
         """Check if this device type requires multi-host deployment."""
-        return self in {DeviceTypes.DUAL_GALAXY, DeviceTypes.QUAD_GALAXY}
+        return self in {
+            DeviceTypes.BH_LB_2X,
+            DeviceTypes.BH_LB_4X,
+            DeviceTypes.DUAL_GALAXY,
+            DeviceTypes.QUAD_GALAXY,
+        }
 
     def get_multihost_num_hosts(self) -> int:
         """Get expected number of hosts for multi-host device types.
@@ -185,6 +198,8 @@ class DeviceTypes(IntEnum):
             ValueError: If device type is not a multi-host type.
         """
         host_counts = {
+            DeviceTypes.BH_LB_2X: 2,
+            DeviceTypes.BH_LB_4X: 4,
             DeviceTypes.DUAL_GALAXY: 2,
             DeviceTypes.QUAD_GALAXY: 4,
         }
@@ -217,6 +232,10 @@ class DeviceTypes(IntEnum):
             (DeviceTypes.BLACKHOLE_GALAXY, 4): DeviceTypes.P150X8,
             (DeviceTypes.BLACKHOLE_GALAXY, 8): DeviceTypes.P150X4,
             (DeviceTypes.BLACKHOLE_GALAXY, 32): DeviceTypes.P150,
+            (DeviceTypes.BH_LB_2X, 2): DeviceTypes.P150X8,
+            (DeviceTypes.BH_LB_2X, 16): DeviceTypes.P150,
+            (DeviceTypes.BH_LB_4X, 4): DeviceTypes.P150X8,
+            (DeviceTypes.BH_LB_4X, 32): DeviceTypes.P150,
         }
         if (self, data_parallel) not in data_parallel_map:
             raise ValueError(

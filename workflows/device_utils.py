@@ -18,6 +18,8 @@ DEVICE_DEFAULT_PRIORITY = (
     DeviceTypes.GALAXY_T3K,
     DeviceTypes.T3K,
     DeviceTypes.BLACKHOLE_GALAXY,
+    DeviceTypes.BH_LB_4X,
+    DeviceTypes.BH_LB_2X,
     DeviceTypes.P300X2,
     DeviceTypes.P300,
     DeviceTypes.P150X8,
