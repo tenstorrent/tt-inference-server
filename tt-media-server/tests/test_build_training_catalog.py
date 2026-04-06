@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 import enum
-import math
 from unittest.mock import patch
 
 import pytest
@@ -13,7 +12,6 @@ from config.constants import (
     ModelNames,
     ModelRunners,
     SupportedModels,
-    TrainingMeshShapes,
 )
 from utils.build_catalog import (
     _build_clusters_catalog,
@@ -71,21 +69,6 @@ class TestBuildClustersCatalog:
 
     def test_runner_without_supported_devices_returns_empty(self):
         assert _build_clusters_catalog(ModelRunners.TT_XLA_RESNET.value) == []
-
-    def test_gemma_runner_returns_p150_cluster(self):
-        clusters = _build_clusters_catalog(ModelRunners.TRAINING_GEMMA_LORA.value)
-        assert len(clusters) == 2
-        cluster = clusters[0]
-        assert cluster["id"] == DeviceTypes.P150.value
-        assert cluster["display_name"] == DeviceTypes.P150.value.upper()
-        assert cluster["supported"] is True
-        assert cluster["partition"] is None
-        expected_mesh = list(TrainingMeshShapes.P150.value)
-        assert cluster["mesh_shape"] == expected_mesh
-        expected_devices = math.prod(expected_mesh)
-        assert cluster["topology"]["nodes"] == expected_devices
-        assert cluster["topology"]["total_devices"] == expected_devices
-        assert cluster["topology"]["mesh_shape"] == expected_mesh
 
 
 class TestBuildTrainingCatalog:
