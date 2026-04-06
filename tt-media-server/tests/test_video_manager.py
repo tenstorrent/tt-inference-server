@@ -8,7 +8,12 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from utils.video_manager import VideoManager
+from utils.video_manager import (
+    VideoManager,
+    _normalize_channels,
+    _normalize_dtype,
+    _normalize_shape,
+)
 
 
 @pytest.fixture
@@ -16,51 +21,88 @@ def manager():
     return VideoManager()
 
 
-class TestProcessFramesForExport:
-    """Tests for _process_frames_for_export normalisation logic."""
+class TestNormalizeShape:
+    """Tests for _normalize_shape batch squeeze and validation."""
 
-    def test_4d_rgb_uint8_passthrough(self, manager):
+    def test_4d_passthrough(self):
         frames = np.zeros((4, 64, 64, 3), dtype=np.uint8)
-        result = manager._process_frames_for_export(frames)
+        result = _normalize_shape(frames)
         assert result.shape == (4, 64, 64, 3)
-        assert result.dtype == np.uint8
 
-    def test_5d_input_squeezes_batch(self, manager):
+    def test_5d_squeezes_batch(self):
         frames = np.zeros((1, 4, 64, 64, 3), dtype=np.uint8)
-        result = manager._process_frames_for_export(frames)
+        result = _normalize_shape(frames)
         assert result.shape == (4, 64, 64, 3)
 
-    def test_grayscale_converted_to_rgb(self, manager):
+    def test_3d_raises(self):
+        frames = np.zeros((64, 64, 3), dtype=np.uint8)
+        with pytest.raises(ValueError, match="Unexpected frame dimensions"):
+            _normalize_shape(frames)
+
+
+class TestNormalizeChannels:
+    """Tests for _normalize_channels grayscale/RGBA conversion."""
+
+    def test_rgb_passthrough(self):
+        frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
+        result = _normalize_channels(frames)
+        assert result.shape == (2, 8, 8, 3)
+
+    def test_grayscale_to_rgb(self):
         frames = np.full((2, 8, 8, 1), 128, dtype=np.uint8)
-        result = manager._process_frames_for_export(frames)
+        result = _normalize_channels(frames)
         assert result.shape == (2, 8, 8, 3)
         assert np.all(result == 128)
 
-    def test_rgba_strips_alpha(self, manager):
+    def test_rgba_strips_alpha(self):
         frames = np.zeros((2, 8, 8, 4), dtype=np.uint8)
         frames[..., 3] = 255
-        result = manager._process_frames_for_export(frames)
+        result = _normalize_channels(frames)
         assert result.shape == (2, 8, 8, 3)
 
-    def test_float32_0_to_1_scaled_to_uint8(self, manager):
+    def test_invalid_channels_raises(self):
+        frames = np.zeros((2, 8, 8, 5), dtype=np.uint8)
+        with pytest.raises(ValueError, match="expected 1, 3, or 4"):
+            _normalize_channels(frames)
+
+
+class TestNormalizeDtype:
+    """Tests for _normalize_dtype uint8 conversion."""
+
+    def test_uint8_passthrough(self):
+        frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
+        result = _normalize_dtype(frames)
+        assert result is frames
+
+    def test_float32_0_to_1_scaled(self):
         frames = np.full((2, 8, 8, 3), 0.5, dtype=np.float32)
-        result = manager._process_frames_for_export(frames)
+        result = _normalize_dtype(frames)
         assert result.dtype == np.uint8
         assert np.allclose(result, 128, atol=1)
 
-    def test_float64_above_1_clipped_to_uint8(self, manager):
+    def test_float64_above_1_clipped(self):
         frames = np.full((2, 8, 8, 3), 200.0, dtype=np.float64)
-        result = manager._process_frames_for_export(frames)
+        result = _normalize_dtype(frames)
         assert result.dtype == np.uint8
         assert np.all(result == 200)
 
-    def test_int16_clipped_to_uint8(self, manager):
+    def test_int16_clipped(self):
         frames = np.array([[[[300, -10, 100]]]], dtype=np.int16)
-        result = manager._process_frames_for_export(frames)
+        result = _normalize_dtype(frames)
         assert result.dtype == np.uint8
         assert result[0, 0, 0, 0] == 255
         assert result[0, 0, 0, 1] == 0
         assert result[0, 0, 0, 2] == 100
+
+
+class TestProcessFramesForExport:
+    """Integration tests for the full _process_frames_for_export pipeline."""
+
+    def test_full_pipeline_uint8(self, manager):
+        frames = np.zeros((4, 64, 64, 3), dtype=np.uint8)
+        result = manager._process_frames_for_export(frames)
+        assert result.shape == (4, 64, 64, 3)
+        assert result.dtype == np.uint8
 
     def test_non_contiguous_made_contiguous(self, manager):
         frames = np.zeros((4, 8, 8, 3), dtype=np.uint8)
@@ -69,71 +111,94 @@ class TestProcessFramesForExport:
         result = manager._process_frames_for_export(frames)
         assert result.flags["C_CONTIGUOUS"]
 
-    def test_invalid_shape_raises(self, manager):
-        frames = np.zeros((64, 64, 3), dtype=np.uint8)
-        with pytest.raises(ValueError, match="Unexpected frame dimensions"):
-            manager._process_frames_for_export(frames)
-
-    def test_invalid_channels_raises(self, manager):
-        frames = np.zeros((2, 8, 8, 5), dtype=np.uint8)
-        with pytest.raises(ValueError, match="expected 1, 3, or 4"):
-            manager._process_frames_for_export(frames)
+    def test_5d_float32_grayscale(self, manager):
+        frames = np.full((1, 2, 8, 8, 1), 0.5, dtype=np.float32)
+        result = manager._process_frames_for_export(frames)
+        assert result.shape == (2, 8, 8, 3)
+        assert result.dtype == np.uint8
 
 
-class TestExportWithFfmpegPipe:
-    """Tests for _export_with_ffmpeg_pipe with mocked subprocess."""
+class TestBuildEncodeCmd:
+    """Tests for _build_encode_cmd command construction."""
 
-    def _make_mock_process(self, returncode=0, stderr=b""):
-        proc = MagicMock()
-        proc.communicate.return_value = (None, stderr)
-        proc.returncode = returncode
-        return proc
-
-    @patch("utils.video_manager.subprocess.Popen")
-    def test_lossless_crf0(self, mock_popen, manager):
-        mock_popen.return_value = self._make_mock_process()
+    def test_lossless_crf0(self):
         frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
-        manager._export_with_ffmpeg_pipe(frames, "/tmp/out.mp4", 16, 0, "medium")
-        cmd = mock_popen.call_args[0][0]
+        cmd = VideoManager._build_encode_cmd(frames, "/tmp/out.mp4", 16, 0, "medium")
         assert "-crf" in cmd
         assert "yuv444p" in cmd
-
-    @patch("utils.video_manager.subprocess.Popen")
-    def test_lossy_crf_uses_yuv420p(self, mock_popen, manager):
-        mock_popen.return_value = self._make_mock_process()
-        frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
-        manager._export_with_ffmpeg_pipe(frames, "/tmp/out.mp4", 16, 23, "fast")
-        cmd = mock_popen.call_args[0][0]
-        assert "yuv420p" in cmd
         assert "-preset" in cmd
 
-    @patch("utils.video_manager.subprocess.Popen")
-    def test_ffmpeg_nonzero_returncode_raises(self, mock_popen, manager):
-        mock_popen.return_value = self._make_mock_process(
-            returncode=1, stderr=b"encoding error"
-        )
+    def test_lossy_crf_uses_yuv420p(self):
         frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
-        with pytest.raises(RuntimeError, match="FFmpeg failed"):
-            manager._export_with_ffmpeg_pipe(frames, "/tmp/out.mp4", 16, 0, "medium")
+        cmd = VideoManager._build_encode_cmd(frames, "/tmp/out.mp4", 16, 23, "fast")
+        assert "yuv420p" in cmd
+        assert "fast" in cmd
+
+    def test_empty_preset_omitted(self):
+        frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
+        cmd = VideoManager._build_encode_cmd(frames, "/tmp/out.mp4", 16, 0, "")
+        assert "-preset" not in cmd
+
+    def test_bad_channels_raises(self):
+        frames = np.zeros((2, 8, 8, 5), dtype=np.uint8)
+        with pytest.raises(ValueError, match="Expected 3 RGB channels"):
+            VideoManager._build_encode_cmd(frames, "/tmp/out.mp4", 16, 0, "medium")
+
+    def test_faststart_and_output_path(self):
+        frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
+        cmd = VideoManager._build_encode_cmd(frames, "/tmp/test.mp4", 24, 0, "medium")
+        assert "+faststart" in cmd
+        assert cmd[-1] == "/tmp/test.mp4"
+
+
+class TestRunFfmpeg:
+    """Tests for _run_ffmpeg process execution."""
 
     @patch("utils.video_manager.subprocess.Popen")
-    def test_ffmpeg_timeout_raises(self, mock_popen, manager):
+    def test_success(self, mock_popen):
+        proc = MagicMock()
+        proc.communicate.return_value = (None, b"")
+        proc.returncode = 0
+        mock_popen.return_value = proc
+        VideoManager._run_ffmpeg(["ffmpeg", "-version"])
+
+    @patch("utils.video_manager.subprocess.Popen")
+    def test_nonzero_returncode_raises(self, mock_popen):
+        proc = MagicMock()
+        proc.communicate.return_value = (None, b"encoding error")
+        proc.returncode = 1
+        mock_popen.return_value = proc
+        with pytest.raises(RuntimeError, match="FFmpeg failed"):
+            VideoManager._run_ffmpeg(["ffmpeg", "-version"])
+
+    @patch("utils.video_manager.subprocess.Popen")
+    def test_timeout_kills_and_raises(self, mock_popen):
         proc = MagicMock()
         proc.communicate.side_effect = subprocess.TimeoutExpired(
             cmd="ffmpeg", timeout=600
         )
-        proc.kill = MagicMock()
         mock_popen.return_value = proc
-        frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
         with pytest.raises(RuntimeError, match="timed out"):
-            manager._export_with_ffmpeg_pipe(frames, "/tmp/out.mp4", 16, 0, "medium")
+            VideoManager._run_ffmpeg(["ffmpeg"], stdin_data=b"data")
         proc.kill.assert_called_once()
 
     @patch("utils.video_manager.subprocess.Popen")
-    def test_bad_channels_raises(self, mock_popen, manager):
-        frames = np.zeros((2, 8, 8, 5), dtype=np.uint8)
-        with pytest.raises(ValueError, match="Expected 3 RGB channels"):
-            manager._export_with_ffmpeg_pipe(frames, "/tmp/out.mp4", 16, 0, "medium")
+    def test_stdin_pipe_when_data_provided(self, mock_popen):
+        proc = MagicMock()
+        proc.communicate.return_value = (None, b"")
+        proc.returncode = 0
+        mock_popen.return_value = proc
+        VideoManager._run_ffmpeg(["ffmpeg"], stdin_data=b"pixels")
+        assert mock_popen.call_args[1]["stdin"] == subprocess.PIPE
+
+    @patch("utils.video_manager.subprocess.Popen")
+    def test_no_stdin_pipe_without_data(self, mock_popen):
+        proc = MagicMock()
+        proc.communicate.return_value = (None, b"")
+        proc.returncode = 0
+        mock_popen.return_value = proc
+        VideoManager._run_ffmpeg(["ffmpeg"])
+        assert mock_popen.call_args[1]["stdin"] is None
 
 
 class TestExportToMp4:
@@ -157,3 +222,19 @@ class TestExportToMp4:
         frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
         with pytest.raises(RuntimeError, match="Failed to export video"):
             manager.export_to_mp4(frames)
+
+
+class TestEnsureFaststart:
+    """Tests for ensure_faststart delegating to _run_ffmpeg."""
+
+    @patch("utils.video_manager.subprocess.Popen")
+    def test_calls_ffmpeg_with_copy_and_faststart(self, mock_popen):
+        proc = MagicMock()
+        proc.communicate.return_value = (None, b"")
+        proc.returncode = 0
+        mock_popen.return_value = proc
+        VideoManager.ensure_faststart("/tmp/in.mp4", "/tmp/out.mp4")
+        cmd = mock_popen.call_args[0][0]
+        assert "-c" in cmd
+        assert "copy" in cmd
+        assert "faststart" in cmd
