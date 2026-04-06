@@ -221,6 +221,7 @@ class DeviceTypes(Enum):
 
 
 class TrainingMeshShapes(Enum):
+    N150 = (1, 1)
     P150 = (1, 1)
     P300 = (1, 2)
 

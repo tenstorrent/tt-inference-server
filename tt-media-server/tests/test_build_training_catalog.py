@@ -74,7 +74,7 @@ class TestBuildClustersCatalog:
 
     def test_gemma_runner_returns_p150_cluster(self):
         clusters = _build_clusters_catalog(ModelRunners.TRAINING_GEMMA_LORA.value)
-        assert len(clusters) == 1
+        assert len(clusters) == 2
         cluster = clusters[0]
         assert cluster["id"] == DeviceTypes.P150.value
         assert cluster["display_name"] == DeviceTypes.P150.value.upper()
