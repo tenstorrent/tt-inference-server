@@ -64,26 +64,41 @@ class VideoManager:
             )
 
         cmd = [
-            "ffmpeg", "-y",
-            "-f", "rawvideo",
-            "-vcodec", "rawvideo",
-            "-s", f"{width}x{height}",
-            "-pix_fmt", "rgb24",
-            "-r", str(fps),
-            "-i", "-",
+            "ffmpeg",
+            "-y",
+            "-f",
+            "rawvideo",
+            "-vcodec",
+            "rawvideo",
+            "-s",
+            f"{width}x{height}",
+            "-pix_fmt",
+            "rgb24",
+            "-r",
+            str(fps),
+            "-i",
+            "-",
         ]
 
         if crf == 0:
             cmd.extend(["-c:v", "libx264", "-crf", "0", "-pix_fmt", "yuv444p"])
         else:
-            cmd.extend([
-                "-c:v", "libx264",
-                "-crf", str(crf),
-                "-pix_fmt", "yuv420p",
-                "-tune", "film",
-                "-profile:v", "high",
-                "-level", "4.2",
-            ])
+            cmd.extend(
+                [
+                    "-c:v",
+                    "libx264",
+                    "-crf",
+                    str(crf),
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-tune",
+                    "film",
+                    "-profile:v",
+                    "high",
+                    "-level",
+                    "4.2",
+                ]
+            )
 
         if preset:
             cmd.extend(["-preset", preset])
@@ -148,10 +163,14 @@ class VideoManager:
     def ensure_faststart(input_path, output_path):
         """Rewrites the MP4 file with -movflags faststart using ffmpeg."""
         cmd = [
-            "ffmpeg", "-y",
-            "-i", input_path,
-            "-c", "copy",
-            "-movflags", "faststart",
+            "ffmpeg",
+            "-y",
+            "-i",
+            input_path,
+            "-c",
+            "copy",
+            "-movflags",
+            "faststart",
             output_path,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
