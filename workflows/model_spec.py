@@ -2643,6 +2643,7 @@ video_templates = [
     ),
     ModelSpecTemplate(
         weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
+        version="0.10.1",
         tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=60,
@@ -2821,6 +2822,7 @@ image_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-dev", "black-forest-labs/FLUX.1-schnell"],
+        version="0.10.1",
         tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
