@@ -33,14 +33,6 @@ struct StreamParams {
   std::shared_ptr<services::SessionManager> sessionManager;
 };
 
-/**
- * Encapsulates SSE streaming infrastructure for chat completions.
- *
- * Manages the Drogon async response stream, optional token batching,
- * timing metrics, and final usage emission. Thread-safe: token callbacks
- * may arrive from service worker threads while the event loop drives
- * the HTTP response.
- */
 class SseStreamWriter : public std::enable_shared_from_this<SseStreamWriter> {
  public:
   static std::shared_ptr<SseStreamWriter> create(trantor::EventLoop* loop,
