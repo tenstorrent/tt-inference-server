@@ -2,9 +2,6 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-import re
-import sys
-
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from config.constants import (

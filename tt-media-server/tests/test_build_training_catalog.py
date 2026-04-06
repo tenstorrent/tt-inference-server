@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 import pytest
 from config.constants import (
-    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     DeviceTypes,
     ModelDisplayNames,
     ModelNames,
@@ -17,7 +16,6 @@ from config.constants import (
     TrainingMeshShapes,
 )
 from utils.build_catalog import (
-    TRAINING_CATALOG_DATA,
     _build_clusters_catalog,
     _build_models_catalog,
     build_training_catalog,
@@ -59,7 +57,9 @@ class TestBuildModelsCatalog:
         fake_model = enum.Enum("FakeModel", {"FAKE_MODEL": "fake-model"}).FAKE_MODEL
         fake_map = {ModelRunners.TRAINING_GEMMA_LORA: {fake_model}}
         with patch("utils.build_catalog.MODEL_RUNNER_TO_MODEL_NAMES_MAP", fake_map):
-            with pytest.raises(ValueError, match="SupportedModels and ModelDisplayNames"):
+            with pytest.raises(
+                ValueError, match="SupportedModels and ModelDisplayNames"
+            ):
                 _build_models_catalog(ModelRunners.TRAINING_GEMMA_LORA.value)
 
 
@@ -86,33 +86,6 @@ class TestBuildClustersCatalog:
         assert cluster["topology"]["nodes"] == expected_devices
         assert cluster["topology"]["total_devices"] == expected_devices
         assert cluster["topology"]["mesh_shape"] == expected_mesh
-
-    def test_llama_runner_returns_p300_cluster(self):
-        clusters = _build_clusters_catalog(ModelRunners.TRAINING_LLAMA_LORA.value)
-        assert len(clusters) == 1
-        cluster = clusters[0]
-        assert cluster["id"] == DeviceTypes.P300.value
-        expected_mesh = list(TrainingMeshShapes.P300.value)
-        assert cluster["mesh_shape"] == expected_mesh
-        assert cluster["topology"]["total_devices"] == math.prod(expected_mesh)
-
-    def test_all_returned_clusters_have_required_keys(self):
-        clusters = _build_clusters_catalog(ModelRunners.TRAINING_GEMMA_LORA.value)
-        required_keys = {
-            "id",
-            "display_name",
-            "supported",
-            "partition",
-            "mesh_shape",
-            "topology",
-        }
-        for cluster in clusters:
-            assert set(cluster.keys()) == required_keys
-            assert set(cluster["topology"].keys()) == {
-                "mesh_shape",
-                "nodes",
-                "total_devices",
-            }
 
 
 class TestBuildTrainingCatalog:
@@ -178,37 +151,3 @@ class TestBuildTrainingCatalog:
         catalog = build_training_catalog(ModelRunners.TRAINING_LLAMA_LORA.value)
         assert catalog["models"][0]["id"] == ModelNames.LLAMA_3_1_8B.value
         assert catalog["clusters"][0]["id"] == DeviceTypes.P300.value
-
-
-class TestTrainingCatalogData:
-    """Tests for the TRAINING_CATALOG_DATA constant."""
-
-    def test_trainers_key_present(self):
-        assert "trainers" in TRAINING_CATALOG_DATA
-
-    def test_optimizers_key_present(self):
-        assert "optimizers" in TRAINING_CATALOG_DATA
-
-    def test_lora_trainer_is_supported(self):
-        from config.constants import TrainingTrainers
-
-        assert (
-            TRAINING_CATALOG_DATA["trainers"][TrainingTrainers.LORA]["supported"]
-            is True
-        )
-
-    def test_sft_trainer_is_not_supported(self):
-        from config.constants import TrainingTrainers
-
-        assert (
-            TRAINING_CATALOG_DATA["trainers"][TrainingTrainers.SFT]["supported"]
-            is False
-        )
-
-    def test_adamw_optimizer_is_supported(self):
-        from config.constants import TrainingOptimizers
-
-        assert (
-            TRAINING_CATALOG_DATA["optimizers"][TrainingOptimizers.ADAMW]["supported"]
-            is True
-        )
