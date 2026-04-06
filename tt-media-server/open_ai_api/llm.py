@@ -6,7 +6,9 @@ import json
 import time
 import uuid
 
+from config.settings import settings
 from domain.completion_request import CompletionRequest
+from open_ai_api.chat import _count_tokens
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import JSONResponse, StreamingResponse
 from model_services.base_service import BaseService
@@ -34,6 +36,20 @@ async def complete_text(
     completion_id = f"cmpl-{uuid.uuid4().hex[:24]}"
     created = int(time.time())
     model = completion_request.model or "default"
+
+    # Reject prompts that exceed the model's context window
+    if isinstance(completion_request.prompt, str):
+        prompt_tokens = _count_tokens(completion_request.prompt)
+    elif isinstance(completion_request.prompt, list):
+        prompt_tokens = len(completion_request.prompt)
+    else:
+        prompt_tokens = 0
+    max_model_len = settings.vllm.max_model_length
+    if prompt_tokens > max_model_len:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Prompt length ({prompt_tokens}) exceeds max model length ({max_model_len})",
+        )
 
     try:
         if not completion_request.stream:
