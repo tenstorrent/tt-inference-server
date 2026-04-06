@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 import re
+import sys
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -175,16 +176,38 @@ class TestLlamaRunnerSupportedDevices:
         assert DeviceTypes.P150 not in supported
 
 
+def _import_llama_runner():
+    """Import the real TrainingLlamaLoraRunner, repairing sys.modules if needed.
+
+    test_worker_utils.py replaces tt_model_runners.base_device_runner with a
+    bare Mock() at module scope, which corrupts any later import that inherits
+    from BaseDeviceRunner. Detect and repair this before importing.
+    """
+    import types
+
+    bdr_key = "tt_model_runners.base_device_runner"
+    runner_key = "tt_model_runners.forge_training_runners.training_llama_lora_runner"
+
+    bdr_mod = sys.modules.get(bdr_key)
+    if bdr_mod is not None and not isinstance(bdr_mod, types.ModuleType):
+        repaired = types.ModuleType(bdr_key)
+        repaired.BaseDeviceRunner = type("BaseDeviceRunner", (), {})
+        sys.modules[bdr_key] = repaired
+        sys.modules.pop(runner_key, None)
+
+    from tt_model_runners.forge_training_runners.training_llama_lora_runner import (
+        TrainingLlamaLoraRunner,
+    )
+
+    return TrainingLlamaLoraRunner
+
+
 class TestLlamaRunnerConstants:
     """Tests for TrainingLlamaLoraRunner class-level constants."""
 
     @pytest.fixture(autouse=True)
     def runner_cls(self):
-        from tt_model_runners.forge_training_runners.training_llama_lora_runner import (
-            TrainingLlamaLoraRunner,
-        )
-
-        self.runner_cls = TrainingLlamaLoraRunner
+        self.runner_cls = _import_llama_runner()
 
     def test_device_mesh_shapes_populated(self):
         assert len(self.runner_cls.DEVICE_MESH_SHAPES) > 0
@@ -241,11 +264,8 @@ class TestLlamaRunnerDeviceValidation:
 
     @pytest.fixture
     def runner(self):
-        from tt_model_runners.forge_training_runners.training_llama_lora_runner import (
-            TrainingLlamaLoraRunner,
-        )
-
-        runner = object.__new__(TrainingLlamaLoraRunner)
+        cls = _import_llama_runner()
+        runner = object.__new__(cls)
         runner.device_id = "0,1"
         runner.logger = MagicMock()
         return runner
