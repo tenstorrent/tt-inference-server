@@ -68,9 +68,9 @@ RUN apt-get update && apt-get install -y \
     && protoc --version
 
 # Install Python 3.11 which is required for forge
-RUN add-apt-repository ppa:deadsnakes/ppa && \
-    apt-get update && \
-    apt-get install -y python3.11 python3.11-dev python3.11-venv python3.11-distutils
+RUN add-apt-repository ppa:deadsnakes/ppa -y
+    apt-get update -qq
+    apt-get install -y -qq python3.12 python3.12-dev python3.12-venv
 
 RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh -o cmake.sh && \
     chmod +x cmake.sh && \
