@@ -18,7 +18,7 @@ SpPrefillModelRunner::~SpPrefillModelRunner() { exit(); }
 std::optional<llm_engine::TokenResult> SpPrefillModelRunner::forward(
     uint32_t taskId, const std::vector<int64_t>& tokenIds) {
   TT_LOG_DEBUG(
-      "SpPrefillModelRunner: Shared memory write task_id={} num_prompt_tokens={} ",
+      "SpPrefillModelRunner: Shared memory write task_id={}, token count={} ",
       taskId, tokenIds.size());
   deviceInput.write(taskId, tokenIds, 1);
 
@@ -27,8 +27,8 @@ std::optional<llm_engine::TokenResult> SpPrefillModelRunner::forward(
     if (deviceOutput.tryRead(readBuf)) {
       uint64_t tokenId = readBuf.tokenIds.empty() ? 0 : readBuf.tokenIds[0];
       TT_LOG_DEBUG(
-          "SpPrefillModelRunner: Shared memory read task_id={} reported_task_id={} "
-          "token_id={} read_token_count={}",
+          "SpPrefillModelRunner: Shared memory read task_id={}, read task_id={} "
+          "token_id={} read token count={}",
           taskId, readBuf.taskId, tokenId, readBuf.tokenIds.size());
       return llm_engine::TokenResult(readBuf.taskId, tokenId);
     }
