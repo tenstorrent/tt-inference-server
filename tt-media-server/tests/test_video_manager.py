@@ -205,8 +205,8 @@ class TestExportToMp4:
     """Tests for the top-level export_to_mp4 orchestrator."""
 
     @patch("utils.video_manager.subprocess.Popen")
-    @patch("utils.video_manager.os.makedirs")
-    def test_returns_mp4_path(self, mock_makedirs, mock_popen, manager):
+    @patch("utils.video_manager.Path.mkdir")
+    def test_returns_mp4_path(self, mock_mkdir, mock_popen, manager):
         proc = MagicMock()
         proc.communicate.return_value = (None, b"")
         proc.returncode = 0
@@ -216,8 +216,8 @@ class TestExportToMp4:
         assert path.endswith(".mp4")
 
     @patch("utils.video_manager.subprocess.Popen")
-    @patch("utils.video_manager.os.makedirs")
-    def test_wraps_exception_in_runtime_error(self, mock_makedirs, mock_popen, manager):
+    @patch("utils.video_manager.Path.mkdir")
+    def test_wraps_exception_in_runtime_error(self, mock_mkdir, mock_popen, manager):
         mock_popen.side_effect = OSError("no ffmpeg")
         frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
         with pytest.raises(RuntimeError, match="Failed to export video"):
@@ -238,3 +238,15 @@ class TestEnsureFaststart:
         assert "-c" in cmd
         assert "copy" in cmd
         assert "faststart" in cmd
+
+    @patch("utils.video_manager.subprocess.Popen")
+    def test_uses_remux_timeout(self, mock_popen):
+        from utils.video_manager import _FFMPEG_REMUX_TIMEOUT_S
+
+        proc = MagicMock()
+        proc.communicate.return_value = (None, b"")
+        proc.returncode = 0
+        mock_popen.return_value = proc
+        VideoManager.ensure_faststart("/tmp/in.mp4", "/tmp/out.mp4")
+        actual_timeout = proc.communicate.call_args[1]["timeout"]
+        assert actual_timeout == _FFMPEG_REMUX_TIMEOUT_S
