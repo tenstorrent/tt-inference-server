@@ -6,12 +6,11 @@
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include "domain/task_id.hpp"
+#include "domain/manage_memory.hpp"
 
 namespace tt::sockets {
 
@@ -19,35 +18,34 @@ namespace tt::sockets {
  * @brief Prefill request message - sent from decode server to prefill server
  */
 struct PrefillRequestMessage {
-  tt::domain::TaskID task_id;
+  uint32_t task_id;
   std::string prompt;
   std::vector<int64_t> token_ids;
   std::optional<int> max_tokens;
   std::optional<uint32_t> slot_id;
 
-  explicit PrefillRequestMessage(tt::domain::TaskID taskId)
-      : task_id(std::move(taskId)) {}
+  explicit PrefillRequestMessage(uint32_t taskId) : task_id(taskId) {}
 
   template <class Archive>
   void write(Archive& ar) const {
     int mt = max_tokens.has_value() ? max_tokens.value() : -1;
-    uint32_t sid = slot_id.value_or(std::numeric_limits<uint32_t>::max());
-    ar(task_id.id, prompt, token_ids, mt, sid);
+    uint32_t sid = slot_id.value_or(tt::domain::INVALID_SLOT_ID);
+    ar(task_id, prompt, token_ids, mt, sid);
   }
 
   template <class Archive>
   static PrefillRequestMessage read(Archive& ar) {
-    std::string tid;
+    uint32_t tid;
     std::string p;
     std::vector<int64_t> tids;
     int mt;
     uint32_t sid;
     ar(tid, p, tids, mt, sid);
-    PrefillRequestMessage msg(tt::domain::TaskID(std::move(tid)));
+    PrefillRequestMessage msg(tid);
     msg.prompt = std::move(p);
     msg.token_ids = std::move(tids);
     msg.max_tokens = (mt == -1) ? std::nullopt : std::optional<int>(mt);
-    msg.slot_id = (sid == std::numeric_limits<uint32_t>::max())
+    msg.slot_id = (sid == tt::domain::INVALID_SLOT_ID)
                       ? std::nullopt
                       : std::optional<uint32_t>(sid);
     return msg;
@@ -62,7 +60,7 @@ struct PrefillRequestMessage {
  * generation.
  */
 struct PrefillResultMessage {
-  tt::domain::TaskID task_id;
+  uint32_t task_id;
   std::string generated_text;
   bool finished = false;
   int tokens_generated = 0;
@@ -71,20 +69,19 @@ struct PrefillResultMessage {
   std::optional<int> remaining_tokens;
   std::optional<uint32_t> slot_id;
 
-  explicit PrefillResultMessage(tt::domain::TaskID taskId)
-      : task_id(std::move(taskId)) {}
+  explicit PrefillResultMessage(uint32_t taskId) : task_id(taskId) {}
 
   template <class Archive>
   void write(Archive& ar) const {
     int rt = remaining_tokens.has_value() ? remaining_tokens.value() : -1;
-    uint32_t sid = slot_id.value_or(std::numeric_limits<uint32_t>::max());
-    ar(task_id.id, generated_text, finished, tokens_generated,
-       processing_time_ms, token_ids, rt, sid);
+    uint32_t sid = slot_id.value_or(tt::domain::INVALID_SLOT_ID);
+    ar(task_id, generated_text, finished, tokens_generated, processing_time_ms,
+       token_ids, rt, sid);
   }
 
   template <class Archive>
   static PrefillResultMessage read(Archive& ar) {
-    std::string tid;
+    uint32_t tid;
     std::string genText;
     bool fin;
     int tg;
@@ -93,14 +90,14 @@ struct PrefillResultMessage {
     int rt;
     uint32_t sid;
     ar(tid, genText, fin, tg, pt, tids, rt, sid);
-    PrefillResultMessage msg(tt::domain::TaskID(std::move(tid)));
+    PrefillResultMessage msg(tid);
     msg.generated_text = std::move(genText);
     msg.finished = fin;
     msg.tokens_generated = tg;
     msg.processing_time_ms = pt;
     msg.token_ids = std::move(tids);
     msg.remaining_tokens = (rt == -1) ? std::nullopt : std::optional<int>(rt);
-    msg.slot_id = (sid == std::numeric_limits<uint32_t>::max())
+    msg.slot_id = (sid == tt::domain::INVALID_SLOT_ID)
                       ? std::nullopt
                       : std::optional<uint32_t>(sid);
     return msg;

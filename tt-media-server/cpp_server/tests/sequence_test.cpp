@@ -9,19 +9,10 @@
 
 #include "config/runner_config.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
+#include "utils/id_generator.hpp"
 
 namespace llm_engine {
 namespace {
-
-TEST(SequenceIDTest, SerializeDeserialize_RoundTrip) {
-  TaskID orig(TaskID("seq-id-test"));
-
-  std::vector<char> buf = orig.ipcSerialize();
-  ASSERT_EQ(buf.size(), 36);
-
-  TaskID restored = TaskID::ipcDeserialize(buf.data(), buf.size());
-  EXPECT_EQ(restored.id, orig.id);
-}
 
 TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
   SamplingParams orig;
@@ -29,7 +20,7 @@ TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
   std::ostringstream os;
   orig.serialize(os);
   std::istringstream is(os.str());
-  std::unique_ptr<SamplingParams> restored(SamplingParams::deserialize(is));
+  auto restored = SamplingParams::deserialize(is);
   ASSERT_NE(restored.get(), nullptr);
 
   EXPECT_FLOAT_EQ(restored->temperature, orig.temperature);
@@ -54,6 +45,7 @@ TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
   EXPECT_EQ(restored->allowed_token_ids, orig.allowed_token_ids);
   EXPECT_EQ(restored->prompt_logprobs, orig.prompt_logprobs);
   EXPECT_EQ(restored->truncate_prompt_tokens, orig.truncate_prompt_tokens);
+  EXPECT_EQ(restored->fast_mode, orig.fast_mode);
 }
 
 TEST(SamplingParamsTest, SerializeDeserialize_AllOptionalFieldsSet) {
@@ -78,11 +70,12 @@ TEST(SamplingParamsTest, SerializeDeserialize_AllOptionalFieldsSet) {
   orig.allowed_token_ids = {100, 200, 300};
   orig.prompt_logprobs = 5;
   orig.truncate_prompt_tokens = 128;
+  orig.fast_mode = true;
 
   std::ostringstream os;
   orig.serialize(os);
   std::istringstream is(os.str());
-  std::unique_ptr<SamplingParams> restored(SamplingParams::deserialize(is));
+  auto restored = SamplingParams::deserialize(is);
   ASSERT_NE(restored.get(), nullptr);
 
   EXPECT_FLOAT_EQ(restored->temperature, orig.temperature);
@@ -115,6 +108,7 @@ TEST(SamplingParamsTest, SerializeDeserialize_AllOptionalFieldsSet) {
   EXPECT_EQ(*restored->prompt_logprobs, *orig.prompt_logprobs);
   ASSERT_TRUE(restored->truncate_prompt_tokens.has_value());
   EXPECT_EQ(*restored->truncate_prompt_tokens, *orig.truncate_prompt_tokens);
+  EXPECT_EQ(restored->fast_mode, orig.fast_mode);
 }
 
 TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
@@ -127,29 +121,29 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
   params.stop_token_ids = {10, 20};
   params.allowed_token_ids = {1, 2, 3};
 
-  Sequence orig(TaskID(TaskID::generate()), 256, {1, 2, 3, 4, 5}, params);
-  orig.numCachedTokens = 256;
-  orig.blockTable = {0, 1};
-  orig.status = SequenceStatus::IN_FLIGHT;
-  orig.lastToken = 5;
+  Sequence orig(tt::utils::TaskIDGenerator::generate(), 256, {1, 2, 3, 4, 5},
+                params);
+  orig.setNumCachedTokens(256);
+  orig.getMutableBlockTable() = {0, 1};
+  orig.setStatus(SequenceStatus::IN_FLIGHT);
+  orig.setLastToken(5);
 
   std::ostringstream os;
   orig.serialize(os);
   std::istringstream is(os.str());
 
-  std::unique_ptr<Sequence> restored(Sequence::deserialize(is));
-  ASSERT_NE(restored.get(), nullptr);
+  Sequence restored = Sequence::deserialize(is);
 
-  EXPECT_EQ(restored->taskId, orig.taskId);
-  EXPECT_EQ(restored->lastToken, orig.lastToken);
-  EXPECT_EQ(restored->numPromptTokens, orig.numPromptTokens);
-  EXPECT_EQ(restored->numCachedTokens, orig.numCachedTokens);
-  EXPECT_EQ(restored->tokenIds, orig.tokenIds);
-  EXPECT_EQ(restored->blockTable, orig.blockTable);
-  EXPECT_EQ(restored->status, orig.status);
+  EXPECT_EQ(restored.taskId, orig.taskId);
+  EXPECT_EQ(restored.getLastToken(), orig.getLastToken());
+  EXPECT_EQ(restored.getNumPromptTokens(), orig.getNumPromptTokens());
+  EXPECT_EQ(restored.getNumCachedTokens(), orig.getNumCachedTokens());
+  EXPECT_EQ(restored.getTokenIds(), orig.getTokenIds());
+  EXPECT_EQ(restored.getBlockTable(), orig.getBlockTable());
+  EXPECT_EQ(restored.getStatus(), orig.getStatus());
 
-  const auto& sp = *restored->samplingParams;
-  const auto& spOrig = *orig.samplingParams;
+  const auto& sp = restored.getSamplingParams();
+  const auto& spOrig = orig.getSamplingParams();
   EXPECT_FLOAT_EQ(sp.temperature, spOrig.temperature);
   EXPECT_EQ(sp.max_tokens, spOrig.max_tokens);
   EXPECT_EQ(sp.ignore_eos, spOrig.ignore_eos);
@@ -163,43 +157,41 @@ TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
 }
 
 TEST(SequenceTest, SerializeDeserialize_EmptyTokenIds) {
-  Sequence orig(TaskID("seq-empty-tokens"), 256, {},
-                SamplingParams{.max_tokens = 10});
-  orig.lastToken = 0;
+  Sequence orig(12345, 256, {}, SamplingParams{.max_tokens = 10});
+  orig.setLastToken(0);
 
   std::ostringstream os;
   orig.serialize(os);
   std::istringstream is(os.str());
 
-  std::unique_ptr<Sequence> restored(Sequence::deserialize(is));
-  ASSERT_NE(restored.get(), nullptr);
-  EXPECT_EQ(restored->taskId, orig.taskId);
-  EXPECT_TRUE(restored->tokenIds.empty());
-  EXPECT_EQ(restored->numPromptTokens, 0u);
-  EXPECT_EQ(restored->lastToken, 0);
+  Sequence restored = Sequence::deserialize(is);
+
+  EXPECT_EQ(restored.taskId, orig.taskId);
+  EXPECT_TRUE(restored.getTokenIds().empty());
+  EXPECT_EQ(restored.getNumPromptTokens(), 0u);
+  EXPECT_EQ(restored.getLastToken(), 0);
 }
 
 TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
-  Sequence orig(TaskID("seq-append"), 256, {10, 20},
-                SamplingParams{.max_tokens = 5});
+  Sequence orig(12345, 256, {10, 20}, SamplingParams{.max_tokens = 5});
   orig.appendToken(30);
   orig.appendToken(40);
-  orig.numCachedTokens = 256;
+  orig.setNumCachedTokens(256);
 
   std::ostringstream os;
   orig.serialize(os);
   std::istringstream is(os.str());
 
-  std::unique_ptr<Sequence> restored(Sequence::deserialize(is));
-  ASSERT_NE(restored.get(), nullptr);
-  EXPECT_EQ(restored->size(), 4u);
-  EXPECT_EQ((*restored)[0], 10);
-  EXPECT_EQ((*restored)[1], 20);
-  EXPECT_EQ((*restored)[2], 30);
-  EXPECT_EQ((*restored)[3], 40);
-  EXPECT_EQ(restored->lastToken, 40);
-  EXPECT_EQ(restored->numPromptTokens, 2u);
-  EXPECT_EQ(restored->numCachedTokens, 256u);
+  Sequence restored = Sequence::deserialize(is);
+
+  EXPECT_EQ(restored.size(), 4u);
+  EXPECT_EQ(restored[0], 10);
+  EXPECT_EQ(restored[1], 20);
+  EXPECT_EQ(restored[2], 30);
+  EXPECT_EQ(restored[3], 40);
+  EXPECT_EQ(restored.getLastToken(), 40);
+  EXPECT_EQ(restored.getNumPromptTokens(), 2u);
+  EXPECT_EQ(restored.getNumCachedTokens(), 256u);
 }
 
 }  // namespace

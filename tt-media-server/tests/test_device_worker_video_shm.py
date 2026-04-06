@@ -2,10 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+import os
 import pickle
+import tempfile
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pytest
 
 from ipc.video_shm import VideoRequest, VideoResponse, VideoStatus
@@ -45,6 +46,25 @@ class MockVideoGenerateRequest:
         self.seed = seed
 
 
+def _touch_mp4_file() -> str:
+    """Create an empty file; simulates coordinator output (mp4 path in SHM)."""
+    fd, path = tempfile.mkstemp(suffix=".mp4", prefix="tt_video_test_")
+    os.close(fd)
+    return path
+
+
+def _write_video_file(video) -> str:
+    """Pickle *video* to a file and return the path (legacy / error-path tests).
+
+    Uses :func:`tempfile.mkstemp` (short-lived OS temp). Production video IPC uses
+    RAM-backed paths under ``TT_VIDEO_FILE_DIR`` with a separate TTL policy — not this helper.
+    """
+    fd, path = tempfile.mkstemp(suffix=".pkl", prefix="tt_video_test_")
+    with os.fdopen(fd, "wb") as fh:
+        pickle.dump(video, fh)
+    return path
+
+
 class TestSPRunnerRequestConversion:
     """Test that SPRunner.run() correctly converts requests and sends to SHM."""
 
@@ -60,15 +80,15 @@ class TestSPRunnerRequestConversion:
 
         MockVideoShm.side_effect = mock_video_shm_factory
 
-        dummy_video = np.zeros((1, 1, 2, 3, 3), dtype=np.uint8)
+        file_path = _touch_mp4_file()
         mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, 0, 0, 0, 0, pickle.dumps(dummy_video), ""
+            "tid", VideoStatus.SUCCESS, file_path, ""
         )
 
         runner = SPRunner("dev0")
         runner.set_device()
         req = MockVideoGenerateRequest(task_id="tid")
-        runner.run([req])
+        assert runner.run([req]) == [file_path]
 
         written_req = mock_input.write_request.call_args[0][0]
         assert isinstance(written_req, VideoRequest)
@@ -93,15 +113,15 @@ class TestSPRunnerRequestConversion:
 
         MockVideoShm.side_effect = mock_video_shm_factory
 
-        dummy_video = np.zeros((1, 1, 2, 2, 3), dtype=np.uint8)
+        file_path = _touch_mp4_file()
         mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, 0, 0, 0, 0, pickle.dumps(dummy_video), ""
+            "tid", VideoStatus.SUCCESS, file_path, ""
         )
 
         runner = SPRunner("dev0")
         runner.set_device()
         req = MockVideoGenerateRequest(task_id="tid", negative_prompt=None)
-        runner.run([req])
+        assert runner.run([req]) == [file_path]
 
         written_req = mock_input.write_request.call_args[0][0]
         assert written_req.negative_prompt == ""
@@ -118,26 +138,23 @@ class TestSPRunnerRequestConversion:
 
         MockVideoShm.side_effect = mock_video_shm_factory
 
-        dummy_video = np.zeros((1, 1, 2, 2, 3), dtype=np.uint8)
+        file_path = _touch_mp4_file()
         mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, 0, 0, 0, 0, pickle.dumps(dummy_video), ""
+            "tid", VideoStatus.SUCCESS, file_path, ""
         )
 
         runner = SPRunner("dev0")
         runner.set_device()
         req = MockVideoGenerateRequest(task_id="tid", seed=None)
-        runner.run([req])
+        assert runner.run([req]) == [file_path]
 
         written_req = mock_input.write_request.call_args[0][0]
         assert written_req.seed == 0
 
 
 class TestSPRunnerResponseHandling:
-    H, W, C = 2, 3, 3
-    FRAME_BYTES = H * W * C
-
     @patch("tt_model_runners.sp_runner.VideoShm")
-    def test_success_response_returns_frames(self, MockVideoShm):
+    def test_success_response_returns_mp4_path(self, MockVideoShm):
         mock_input = MagicMock()
         mock_output = MagicMock()
 
@@ -148,23 +165,19 @@ class TestSPRunnerResponseHandling:
 
         MockVideoShm.side_effect = mock_video_shm_factory
 
-        num_frames = 3
-        expected = np.zeros((1, num_frames, self.H, self.W, self.C), dtype=np.uint8)
-        expected[0, 0, :, :, :] = 0x01
-        expected[0, 2, :, :, :] = 0x03
+        file_path = _touch_mp4_file()
         mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.SUCCESS, 0, 0, 0, 0, pickle.dumps(expected), ""
+            "tid", VideoStatus.SUCCESS, file_path, ""
         )
 
         runner = SPRunner("dev0")
         runner.set_device()
         req = MockVideoGenerateRequest(task_id="tid")
-        frames = runner.run([req])
+        out = runner.run([req])
 
-        assert isinstance(frames, np.ndarray)
-        assert frames.shape == (1, num_frames, self.H, self.W, self.C)
-        assert frames[0, 0, 0, 0, 0] == 0x01
-        assert frames[0, 2, 0, 0, 0] == 0x03
+        assert out == [file_path]
+        assert isinstance(out[0], str)
+        assert os.path.exists(file_path)
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_error_response_raises(self, MockVideoShm):
@@ -179,7 +192,7 @@ class TestSPRunnerResponseHandling:
         MockVideoShm.side_effect = mock_video_shm_factory
 
         mock_output.read_response.return_value = VideoResponse(
-            "tid", VideoStatus.ERROR, 0, 0, 0, 0, b"", "inference failed"
+            "tid", VideoStatus.ERROR, "", "inference failed"
         )
 
         runner = SPRunner("dev0")
@@ -263,6 +276,111 @@ class TestSPRunnerLifecycle:
         req = MockVideoGenerateRequest(task_id="tid")
         with pytest.raises(RuntimeError, match="timed out"):
             runner.run([req])
+
+
+class TestSPRunnerFileCleanup:
+    """SPRunner no longer reads/deletes the mp4 on success (job layer owns the file)."""
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_mp4_not_deleted_after_success(self, MockVideoShm):
+        mock_input = MagicMock()
+        mock_output = MagicMock()
+
+        def mock_video_shm_factory(*args, **kwargs):
+            if kwargs.get("mode") == "input":
+                return mock_input
+            return mock_output
+
+        MockVideoShm.side_effect = mock_video_shm_factory
+
+        file_path = _touch_mp4_file()
+        assert os.path.exists(file_path)
+
+        mock_output.read_response.return_value = VideoResponse(
+            "tid", VideoStatus.SUCCESS, file_path, ""
+        )
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+        assert runner.run([MockVideoGenerateRequest(task_id="tid")]) == [file_path]
+
+        assert os.path.exists(file_path)
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_success_does_not_open_or_parse_file(self, MockVideoShm):
+        """Coordinator sends a path; SPRunner returns it without reading bytes."""
+        mock_input = MagicMock()
+        mock_output = MagicMock()
+
+        def mock_video_shm_factory(*args, **kwargs):
+            if kwargs.get("mode") == "input":
+                return mock_input
+            return mock_output
+
+        MockVideoShm.side_effect = mock_video_shm_factory
+
+        fd, file_path = tempfile.mkstemp(suffix=".mp4", prefix="tt_video_corrupt_")
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(b"not-a-valid-mp4")
+
+        mock_output.read_response.return_value = VideoResponse(
+            "tid", VideoStatus.SUCCESS, file_path, ""
+        )
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+
+        out = runner.run([MockVideoGenerateRequest(task_id="tid")])
+        assert out == [file_path]
+        assert os.path.exists(file_path)
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_error_response_cleans_up_leftover_file(self, MockVideoShm):
+        """If runner wrote a file but then reported ERROR, SPRunner cleans up."""
+        mock_input = MagicMock()
+        mock_output = MagicMock()
+
+        def mock_video_shm_factory(*args, **kwargs):
+            if kwargs.get("mode") == "input":
+                return mock_input
+            return mock_output
+
+        MockVideoShm.side_effect = mock_video_shm_factory
+
+        fd, file_path = tempfile.mkstemp(suffix=".pkl", prefix="tt_video_err_")
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(b"partial")
+
+        mock_output.read_response.return_value = VideoResponse(
+            "tid", VideoStatus.ERROR, file_path, "pipeline error"
+        )
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+
+        with pytest.raises(RuntimeError, match="error"):
+            runner.run([MockVideoGenerateRequest(task_id="tid")])
+
+        assert not os.path.exists(file_path)
+
+    @patch("tt_model_runners.sp_runner.cleanup_orphaned_video_files")
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_close_device_calls_cleanup(self, MockVideoShm, mock_cleanup):
+        mock_input = MagicMock()
+        mock_output = MagicMock()
+
+        def mock_video_shm_factory(*args, **kwargs):
+            if kwargs.get("mode") == "input":
+                return mock_input
+            return mock_output
+
+        MockVideoShm.side_effect = mock_video_shm_factory
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+        runner.close_device()
+
+        mock_cleanup.assert_called_once()
 
 
 if __name__ == "__main__":

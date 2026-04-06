@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 //
 // Smoke test: two processes communicate through a Boost IPC task queue.
@@ -45,11 +46,10 @@ int main() {
                               MAX_MSG_SIZE);
 
   // Build two sequences with known values.
-  std::string seq1Id = TaskID::generate();
-  std::string seq2Id = TaskID::generate();
-  Sequence seq1(TaskID(seq1Id), 256, {1, 2, 3, 4},
-                SamplingParams{.max_tokens = 10});
-  Sequence seq2(TaskID(seq2Id), 256, {10, 20, 30},
+  uint32_t seq1Id = tt::utils::TaskIDGenerator::generate();
+  uint32_t seq2Id = tt::utils::TaskIDGenerator::generate();
+  Sequence seq1(seq1Id, 256, {1, 2, 3, 4}, SamplingParams{.max_tokens = 10});
+  Sequence seq2(seq2Id, 256, {10, 20, 30},
                 SamplingParams{.temperature = 0.7f, .max_tokens = 5});
 
   // Push via BoostIpcTaskQueue (opens the existing shared-memory queue).
@@ -91,10 +91,11 @@ int main() {
     for (auto* s : batch) {
       std::cout << "[child]    task_id=" << s->taskId << " size=" << s->size()
                 << " max_tokens="
-                << (s->samplingParams->max_tokens.has_value()
-                        ? std::to_string(s->samplingParams->max_tokens.value())
+                << (s->getSamplingParams().max_tokens.has_value()
+                        ? std::to_string(
+                              s->getSamplingParams().max_tokens.value())
                         : "none")
-                << " temperature=" << s->samplingParams->temperature
+                << " temperature=" << s->getSamplingParams().temperature
                 << " tokens=[";
       for (size_t i = 0; i < s->size(); ++i) {
         if (i > 0) std::cout << ",";
@@ -114,9 +115,9 @@ int main() {
     if (!is_prefill) fail("expected prefill batch");
 
     if (ok) {
-      if (batch[0]->taskId.id != seq1Id) fail("seq1 task_id mismatch");
+      if (batch[0]->taskId != seq1Id) fail("seq1 task_id mismatch");
       if (batch[0]->size() != 4) fail("seq1 size mismatch");
-      if (batch[0]->samplingParams->max_tokens != 10)
+      if (batch[0]->getSamplingParams().max_tokens != 10)
         fail("seq1 max_tokens mismatch");
       if ((*batch[0])[0] != 1 || (*batch[0])[1] != 2 || (*batch[0])[2] != 3 ||
           (*batch[0])[3] != 4)

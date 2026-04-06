@@ -237,6 +237,107 @@ class TestModelSpecTemplateSystem:
         assert specs3[0].system_requirements.kmd.specifier == ">=2.4.1"
         assert specs3[0].system_requirements.kmd.mode == VersionMode.SUGGESTED
 
+    def test_metadata_per_weight(self, sample_impl):
+        """Test that metadata is correctly assigned per weight during expansion."""
+        template = ModelSpecTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=16,
+                    max_context=64 * 1024,
+                    default_impl=True,
+                ),
+            ],
+            weights=["test/model-A", "test/model-B"],
+            metadata={
+                "test/model-A": {"license": "apache-2.0", "custom_key": 42},
+                "test/model-B": {"license": "mit"},
+            },
+        )
+
+        specs = template.expand_to_specs()
+        assert len(specs) == 2
+
+        spec_a = [s for s in specs if s.hf_model_repo == "test/model-A"][0]
+        spec_b = [s for s in specs if s.hf_model_repo == "test/model-B"][0]
+
+        assert spec_a.metadata == {"license": "apache-2.0", "custom_key": 42}
+        assert spec_b.metadata == {"license": "mit"}
+
+    def test_metadata_defaults_empty(self, sample_impl):
+        """Test that metadata defaults to empty dict when not provided."""
+        template = ModelSpecTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=16,
+                    max_context=64 * 1024,
+                ),
+            ],
+            weights=["test/model"],
+        )
+
+        assert template.metadata == {}
+        specs = template.expand_to_specs()
+        assert specs[0].metadata == {}
+
+    def test_metadata_partial_weights(self, sample_impl):
+        """Test that weights without metadata entries get empty dict."""
+        template = ModelSpecTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=16,
+                    max_context=64 * 1024,
+                ),
+            ],
+            weights=["test/model-A", "test/model-B"],
+            metadata={
+                "test/model-A": {"some": "data"},
+            },
+        )
+
+        specs = template.expand_to_specs()
+        spec_a = [s for s in specs if s.hf_model_repo == "test/model-A"][0]
+        spec_b = [s for s in specs if s.hf_model_repo == "test/model-B"][0]
+
+        assert spec_a.metadata == {"some": "data"}
+        assert spec_b.metadata == {}
+
+    def test_metadata_invalid_key_raises(self, sample_impl):
+        """Test that metadata with keys not in weights raises an error."""
+        with pytest.raises(AssertionError, match="These keys do not exist as weights"):
+            ModelSpecTemplate(
+                impl=sample_impl,
+                tt_metal_commit="v1.0.0",
+                vllm_commit="abc123",
+                inference_engine=InferenceEngine.VLLM.value,
+                device_model_specs=[
+                    DeviceModelSpec(
+                        device=DeviceTypes.N150,
+                        max_concurrency=16,
+                        max_context=64 * 1024,
+                    ),
+                ],
+                weights=["test/model-A"],
+                metadata={
+                    "test/model-A": {"ok": True},
+                    "test/nonexistent-model": {"bad": True},
+                },
+            )
+
 
 class TestModelSpecSystem:
     """Tests for the ModelSpec system."""

@@ -29,8 +29,9 @@ struct MockDeviceConfig {
 
 /// Simulates a pipelined device where prefill feeds chunk_size tokens into
 /// stage 0 (one per tick, blocking), and decode feeds 1 token per tick.
-/// Completions fire when the last fed token exits the final pipeline stage.
-/// Between chunks the scheduler round-robins: decode first, then prefill.
+/// Chat completions fire when the last fed token exits the final pipeline
+/// stage. Between chunks the scheduler round-robins: decode first, then
+/// prefill.
 class MockDevicePipeline {
  public:
   explicit MockDevicePipeline(MockDeviceConfig config = {});
@@ -39,7 +40,7 @@ class MockDevicePipeline {
   MockDevicePipeline(const MockDevicePipeline&) = delete;
   MockDevicePipeline& operator=(const MockDevicePipeline&) = delete;
 
-  void write(const std::string& taskId, const std::vector<int64_t>& tokenIds,
+  void write(uint32_t taskId, const std::vector<int64_t>& tokenIds,
              uint32_t maxTokens, RequestPhase phase);
 
   std::optional<llm_engine::TokenResult> read();
@@ -48,7 +49,7 @@ class MockDevicePipeline {
 
  private:
   struct PipelineRequest {
-    std::string taskId;
+    uint32_t taskId;
     std::vector<int64_t> tokenIds;
     uint32_t maxTokens;
     uint32_t tokensGenerated = 0;

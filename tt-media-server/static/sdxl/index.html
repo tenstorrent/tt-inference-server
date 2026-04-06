@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDXL Image Generation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- SVG noise filter for background texture -->
+    <svg style="position:absolute;width:0;height:0" aria-hidden="true">
+        <filter id="noise">
+            <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+            <feColorMatrix type="saturate" values="0"/>
+        </filter>
+    </svg>
+
+    <div class="container">
+        <div class="header">
+            <div class="window-dots">
+                <span class="dot dot-red"></span>
+                <span class="dot dot-yellow"></span>
+                <span class="dot dot-green"></span>
+            </div>
+            <h1>SDXL Image Generation</h1>
+            <p>High-quality AI image generation powered by Stable Diffusion XL</p>
+        </div>
+
+        <div class="app-layout">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <button class="tab-btn active" data-tab="generate">Generate Image</button>
+                <button class="tab-btn" data-tab="gallery">My Gallery</button>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="main-content">
+                <!-- Generate Tab -->
+                <section id="tab-generate" class="tab-content active">
+                    <div class="generate-layout">
+                        <!-- Params Panel -->
+                        <div class="params-panel">
+                            <h2>Parameters</h2>
+
+                            <div class="form-group">
+                                <label for="prompt">Prompt <span class="required">*</span></label>
+                                <textarea id="prompt" rows="4" placeholder="A majestic mountain landscape at sunset, photorealistic, 8k..."></textarea>
+                                <div class="field-error" id="prompt-error"></div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="negative-prompt">Negative Prompt</label>
+                                <textarea id="negative-prompt" rows="3" placeholder="blurry, low quality, distorted..."></textarea>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="steps">Steps</label>
+                                    <input type="number" id="steps" value="50" min="12" max="50">
+                                    <div class="field-error" id="steps-error"></div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="guidance">Guidance Scale</label>
+                                    <input type="number" id="guidance" value="7.5" min="1.0" max="20.0" step="0.5">
+                                    <div class="field-error" id="guidance-error"></div>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="seed">Seed</label>
+                                <div class="seed-row">
+                                    <input type="number" id="seed" placeholder="e.g. 42" min="0">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="random-seed" checked>
+                                        Random
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Resolution</label>
+                                <div class="resolution-display">512×512</div>
+                            </div>
+
+
+                            <div class="btn-3d btn-3d-primary btn-3d-full">
+                                <button id="generate-btn" class="btn-face">Generate Image</button>
+                            </div>
+                        </div>
+
+                        <!-- Canvas Panel -->
+                        <div class="canvas-panel">
+                            <div class="image-container" id="image-container">
+                                <div class="image-placeholder" id="image-placeholder">
+                                    <div class="placeholder-text">
+                                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                            <rect x="3" y="3" width="18" height="18" rx="2"/>
+                                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                                            <path d="M21 15l-5-5L5 21"/>
+                                        </svg>
+                                        <p>Your generated image will appear here</p>
+                                    </div>
+                                </div>
+                                <img id="generated-image" alt="Generated image" style="display:none;">
+                                <div class="loading-overlay" id="loading-overlay" style="display:none;">
+                                    <div class="spinner"></div>
+                                    <div class="loading-text">Generating image...</div>
+                                    <div class="loading-timer" id="loading-timer">0s</div>
+                                </div>
+                            </div>
+
+                            <div class="image-actions" id="image-actions" style="display:none;">
+                                <div class="btn-3d btn-3d-secondary">
+                                    <button id="download-btn" class="btn-face">Download PNG</button>
+                                </div>
+                                <div class="btn-3d btn-3d-secondary">
+                                    <button id="fullscreen-btn" class="btn-face">Fullscreen</button>
+                                </div>
+                                <div class="btn-3d btn-3d-secondary">
+                                    <button id="save-gallery-btn" class="btn-face">Save to Gallery</button>
+                                </div>
+                            </div>
+
+                            <div class="metadata-section" id="metadata-section" style="display:none;">
+                                <h3>Generation Details</h3>
+                                <dl class="metadata-list">
+                                    <dt>Prompt</dt><dd id="meta-prompt"></dd>
+                                    <dt>Steps</dt><dd id="meta-steps"></dd>
+                                    <dt>Guidance Scale</dt><dd id="meta-guidance"></dd>
+                                    <dt>Seed</dt><dd id="meta-seed"></dd>
+                                    <dt>Resolution</dt><dd id="meta-resolution"></dd>
+                                    <dt>Generation Time</dt><dd id="meta-time"></dd>
+                                </dl>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Gallery Tab -->
+                <section id="tab-gallery" class="tab-content" style="display:none;">
+                    <div class="gallery-header">
+                        <h2>My Gallery</h2>
+                        <div class="storage-usage" id="storage-usage"></div>
+                    </div>
+                    <div class="gallery-grid" id="gallery-grid"></div>
+                    <div class="empty-state" id="gallery-empty" style="display:none;">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <rect x="3" y="3" width="18" height="18" rx="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <path d="M21 15l-5-5L5 21"/>
+                        </svg>
+                        <p>No images saved yet.</p>
+                        <p class="empty-hint">Generate an image and click "Save to Gallery" to get started.</p>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="modal-overlay" style="display:none;">
+        <div class="modal">
+            <button class="modal-close" id="modal-close">&times;</button>
+            <div class="modal-body">
+                <img id="modal-image" alt="Full size image">
+                <div class="modal-meta">
+                    <h3>Generation Details</h3>
+                    <dl class="metadata-list" id="modal-metadata"></dl>
+                    <div class="modal-actions">
+                        <div class="btn-3d btn-3d-secondary">
+                            <button id="modal-download-btn" class="btn-face">Download PNG</button>
+                        </div>
+                        <div class="btn-3d btn-3d-danger">
+                            <button id="modal-delete-btn" class="btn-face btn-face-danger">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

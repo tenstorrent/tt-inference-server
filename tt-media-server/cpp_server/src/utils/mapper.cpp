@@ -3,7 +3,7 @@
 namespace tt::utils::mapper {
 
 llm_engine::SamplingParams mapSamplingParams(
-    const tt::domain::CompletionRequest& request) {
+    const tt::domain::LLMRequest& request) {
   llm_engine::SamplingParams params;
   params.temperature = request.temperature.value_or(1.0f);
   params.max_tokens = request.max_tokens;
@@ -25,6 +25,7 @@ llm_engine::SamplingParams mapSamplingParams(
   params.allowed_token_ids = request.allowed_token_ids;
   params.prompt_logprobs = request.prompt_logprobs;
   params.truncate_prompt_tokens = request.truncate_prompt_tokens;
+  params.fast_mode = request.fast_mode;
   return params;
 }
 

@@ -15,13 +15,12 @@
 namespace tt::api {
 
 /**
- * LLM API Controller - OpenAI-compatible completions endpoint.
+ * LLM API Controller - OpenAI-compatible chat completions endpoint.
  * Similar to Python's open_ai_api/llm.py router.
  */
 class LLMController : public drogon::HttpController<LLMController> {
  public:
   METHOD_LIST_BEGIN
-  ADD_METHOD_TO(LLMController::completions, "/v1/completions", drogon::Post);
   ADD_METHOD_TO(LLMController::chatCompletions, "/v1/chat/completions",
                 drogon::Post);
   ADD_METHOD_TO(LLMController::createSession, "/v1/sessions", drogon::Post);
@@ -32,14 +31,6 @@ class LLMController : public drogon::HttpController<LLMController> {
   METHOD_LIST_END
 
   LLMController();
-
-  /**
-   * POST /v1/completions
-   * OpenAI-compatible text completion endpoint.
-   */
-  void completions(
-      const drogon::HttpRequestPtr& req,
-      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**
    * POST /v1/chat/completions
@@ -80,27 +71,28 @@ class LLMController : public drogon::HttpController<LLMController> {
   std::shared_ptr<services::SessionManager> sessionManager;
 
   /**
-   * Handle streaming completion (SSE). When is_chat is true, emits
-   * ChatCompletionStreamChunk objects; otherwise StreamingChunkResponse.
-   * Automatically uses accumulated batching when enabled via config.
+   * Handle streaming chat completion (SSE). Emits ChatCompletionStreamChunk
+   * objects. Automatically uses accumulated batching when enabled via config.
    */
   void handleStreaming(
-      std::shared_ptr<domain::CompletionRequest> reqPtr,
-      std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-      bool isChat) const;
+      std::shared_ptr<domain::LLMRequest> reqPtr,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+
+  struct SessionInfo {
+    bool validSessionFound = false;
+  };
 
   /**
-   * Generate a unique completion ID (hex string).
+   * Validate/create session, assign slot, populate request fields.
+   * Throws std::runtime_error if session creation fails.
    */
-  static std::string generateCompletionId();
+  SessionInfo resolveSession(domain::LLMRequest& req) const;
 
   /**
-   * Build OpenAI-style error JSON (flat object/message/type/param/code).
+   * Determine if disaggregated prefill should be used for this request.
    */
-  static Json::Value errorJson(const std::string& message,
-                               const std::string& type,
-                               const Json::Value& param = Json::nullValue,
-                               const Json::Value& code = Json::nullValue);
+  bool shouldDoPrefillOnDecode(const domain::LLMRequest& request,
+                               bool validSessionFound) const;
 };
 
 }  // namespace tt::api

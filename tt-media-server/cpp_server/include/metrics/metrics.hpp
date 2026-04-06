@@ -50,7 +50,7 @@ class ServerMetrics {
    * Called when a streaming request is submitted to the service.
    * Starts the per-request timer and stores the prompt token count.
    */
-  void onRequestSubmitted(const std::string& task_id, int prompt_tokens);
+  void onRequestSubmitted(uint32_t task_id, int prompt_tokens);
 
   /**
    * Called for the first generated token of a request.
@@ -59,7 +59,7 @@ class ServerMetrics {
    * Only the first token needs to be reported here; subsequent tokens are
    * handled via onITLSample() at a reduced rate.
    */
-  void onToken(const std::string& task_id);
+  void onToken(uint32_t task_id);
 
   /**
    * Called for a sampled inter-token latency observation.
@@ -67,17 +67,13 @@ class ServerMetrics {
    * The caller (LLMService) is responsible for:
    *   - Computing the elapsed time between two consecutive tokens.
    *   - Calling this method only every kItlSampleStride tokens (defined in
-   *     llm_service.cpp) to amortise the per-event cost (string copy + mutex).
+   *     llm_service.cpp) to amortise the per-event cost.
    *
    * itl_seconds must be the actual elapsed time between two CONSECUTIVE tokens
    * (not between two sampled tokens), computed by the caller before invoking
    * this method.
-   *
-   * TODO: Remove sampling once task IDs become uint32 — at that point the
-   * per-event overhead disappears and onToken() can be called unconditionally
-   * for every token.
    */
-  void onITLSample(const std::string& task_id, double itl_seconds);
+  void onITLSample(uint32_t task_id, double itl_seconds);
 
   /**
    * Called when a request produces its final token.
@@ -87,8 +83,7 @@ class ServerMetrics {
    * generation_tokens is passed explicitly by the caller because token events
    * are sampled (only a fraction reach the metrics queue).
    */
-  void onRequestCompleted(const std::string& task_id,
-                          const std::string& finish_reason,
+  void onRequestCompleted(uint32_t task_id, const std::string& finish_reason,
                           int generation_tokens);
 
   /**
@@ -110,24 +105,24 @@ class ServerMetrics {
   // even though processing happens asynchronously.
   // -------------------------------------------------------------------------
   struct EventRequestSubmitted {
-    std::string task_id;
+    uint32_t task_id;
     std::chrono::steady_clock::time_point time;
     int prompt_tokens;
   };
   // Fired once per request (first token only) — drives TTFT.
   struct EventFirstToken {
-    std::string task_id;
+    uint32_t task_id;
     std::chrono::steady_clock::time_point time;
   };
   // Fired every kItlSampleStride tokens (see llm_service.cpp).
   // itl_seconds is the actual elapsed time between two CONSECUTIVE tokens,
   // pre-computed by the caller so this thread needs no per-task clock state.
   struct EventITLSample {
-    std::string task_id;
+    uint32_t task_id;
     double itl_seconds;
   };
   struct EventRequestCompleted {
-    std::string task_id;
+    uint32_t task_id;
     std::chrono::steady_clock::time_point time;
     std::string finish_reason;
     // Passed explicitly because token events are sampled, so the background
@@ -168,7 +163,7 @@ class ServerMetrics {
     // generation_tokens is no longer tracked here: it arrives with
     // EventRequestCompleted, supplied by the caller (LLMService).
   };
-  std::unordered_map<std::string, RequestContext> contexts_;
+  std::unordered_map<uint32_t, RequestContext> contexts_;
 
   // -------------------------------------------------------------------------
   // Prometheus objects — only written from metrics_thread_,

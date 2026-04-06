@@ -5,6 +5,7 @@
 
 #include <utility>
 
+#include "config/settings.hpp"
 #include "runners/llm_runner/block_manager.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
@@ -40,14 +41,14 @@ ManageMemoryStatus PagedMemoryManager::allocateKv(
     return ManageMemoryStatus::WAITING;
   }
 
-  outSlotIds = std::move(seq.blockTable);
+  outSlotIds = std::move(seq.getMutableBlockTable());
   return ManageMemoryStatus::SUCCESS;
 }
 
-void PagedMemoryManager::deallocateKv(const domain::TaskID& taskId,
+void PagedMemoryManager::deallocateKv(uint32_t taskId,
                                       std::vector<int> slotIds) {
   llm_engine::Sequence seq(taskId, blockManager->blockSize(), {});
-  seq.blockTable = std::move(slotIds);
+  seq.getMutableBlockTable() = std::move(slotIds);
   blockManager->deallocate(seq);
 }
 
@@ -59,6 +60,14 @@ void PagedMemoryManager::handleRequest(const ManageMemoryTask& task) {
 
   switch (task.action) {
     case MemoryManagementAction::ALLOCATE: {
+      // For mock backend, return hardcoded slot ID
+      auto llmConfig = tt::config::llmEngineConfig();
+      if (llmConfig.runner_type == tt::config::ModelRunnerType::MOCK ||
+          llmConfig.runner_type == tt::config::ModelRunnerType::MOCK_PIPELINE) {
+        resultQueue->push(makeResult(task, ManageMemoryStatus::SUCCESS, {123}));
+        return;
+      }
+
       std::vector<int> slotIds;
       auto status = allocateKv(task, slotIds);
       if (status == ManageMemoryStatus::WAITING) {
@@ -78,7 +87,6 @@ void PagedMemoryManager::handleRequest(const ManageMemoryTask& task) {
     case MemoryManagementAction::DEALLOCATE: {
       std::vector<int> slotIds(task.slotIds.begin(), task.slotIds.end());
       deallocateKv(task.taskId, std::move(slotIds));
-      resultQueue->push(makeResult(task, ManageMemoryStatus::SUCCESS));
       return;
     }
     default:

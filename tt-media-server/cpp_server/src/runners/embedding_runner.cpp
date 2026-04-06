@@ -12,9 +12,16 @@
 
 namespace tt::runners {
 
-/**
- * Implementation details hidden from header.
- */
+namespace {
+
+void setDictString(PyObject* dict, const char* key, const std::string& value) {
+  PyObject* str = PyUnicode_FromString(value.c_str());
+  PyDict_SetItemString(dict, key, str);
+  Py_DECREF(str);
+}
+
+}  // namespace
+
 struct EmbeddingRunner::Impl {
   bool python_initialized = false;
   PyObject* runner_module = nullptr;    // tt_model_runners.embedding_runner
@@ -221,34 +228,31 @@ struct EmbeddingRunner::Impl {
       const std::vector<domain::EmbeddingRequest>& requests) {
     std::vector<domain::EmbeddingResponse> responses;
 
-    // Build list of TextEmbeddingRequest objects
     PyObject* requestList = PyList_New(requests.size());
+    PyObject* emptyArgs = PyTuple_New(0);
 
     for (size_t i = 0; i < requests.size(); ++i) {
       const auto& req = requests[i];
 
-      // Create TextEmbeddingRequest(model=..., input=...)
       PyObject* kwargs = PyDict_New();
-      PyDict_SetItemString(kwargs, "model",
-                           PyUnicode_FromString(req.model.c_str()));
-      PyDict_SetItemString(kwargs, "input",
-                           PyUnicode_FromString(req.input.c_str()));
+      setDictString(kwargs, "model", req.model);
+      setDictString(kwargs, "input", req.input);
 
-      PyObject* pyRequest =
-          PyObject_Call(request_class, PyTuple_New(0), kwargs);
+      PyObject* pyRequest = PyObject_Call(request_class, emptyArgs, kwargs);
       Py_DECREF(kwargs);
 
       if (!pyRequest) {
         PyErr_Print();
         TT_LOG_ERROR("[EmbeddingRunner] Failed to create TextEmbeddingRequest");
+        Py_DECREF(emptyArgs);
         Py_DECREF(requestList);
         return responses;
       }
 
       PyList_SetItem(requestList, i, pyRequest);  // Steals reference
     }
+    Py_DECREF(emptyArgs);
 
-    // Call runner.run(request_list)
     PyObject* runMethod = PyObject_GetAttrString(runner_instance, "run");
     if (!runMethod) {
       PyErr_Print();

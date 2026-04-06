@@ -21,7 +21,12 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
-from config.constants import SupportedModels, TrainingOptimizers
+from config.constants import (
+    ModelRunners,
+    TrainingOptimizers,
+    TRAINING_RUNNER_SUPPORTED_DEVICES,
+    SupportedModels,
+)
 
 
 OPTIMIZER_MAP = {
@@ -65,12 +70,23 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 f"Batch processing not fully implemented. Processing only first of {len(training_requests)} requests"
             )
 
-        # Get the first request
         request = training_requests[0]
 
         log_handler = None
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
+
+        supported_device_types = {
+            dt.value
+            for dt in TRAINING_RUNNER_SUPPORTED_DEVICES[
+                ModelRunners.TRAINING_GEMMA_LORA
+            ]
+        }
+        if request.device_type not in supported_device_types:
+            raise ValueError(
+                f"Gemma Lora training requires a single chip device, "
+                f"got '{request.device_type}'. Supported: {sorted(supported_device_types)}"
+            )
 
         if request._start_event:
             request._start_event.set()

@@ -1,15 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+import math
+
 from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
-    MODEL_SERVICE_RUNNER_MAP,
+    TRAINING_RUNNER_SUPPORTED_DEVICES,
     ModelDisplayNames,
-    ModelServices,
+    ModelRunners,
     SupportedModels,
+    TrainingMeshShapes,
     TrainingOptimizers,
     TrainingTrainers,
-    DeviceTypes,
 )
 from utils.dataset_loaders.dataset_resolver import AVAILABLE_DATASET_LOADERS
 
@@ -21,45 +23,64 @@ TRAINING_CATALOG_DATA = {
     "optimizers": {
         TrainingOptimizers.ADAMW: {"display_name": "AdamW", "supported": True},
     },
-    "clusters": [
-        {
-            "id": DeviceTypes.P150.value,
-            "display_name": "1× P150",
-            "supported": True,
-            "partition": None,
-            "mesh_shape": [1, 1],
-            "topology": {"mesh_shape": [1, 1], "nodes": 1, "total_devices": 1},
-        },
-    ],
 }
 
 
-def _build_models_catalog():
-    runners = MODEL_SERVICE_RUNNER_MAP.get(ModelServices.TRAINING, set())
+def _build_models_catalog(model_runner: str):
+    try:
+        runner_enum = ModelRunners(model_runner)
+    except ValueError:
+        return []
     models = []
-    for runner in runners:
-        for model_name in MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner, set()):
-            try:
-                model_config = SupportedModels[model_name.name].value
-            except KeyError:
-                model_config = model_name.value
-            try:
-                display_name = ModelDisplayNames[model_name.name].value
-            except KeyError:
-                display_name = model_name.value
-            models.append(
-                {
-                    "id": model_name.value,
-                    "display_name": display_name,
-                    "supported": True,
-                    "model_config": model_config,
-                }
+    for model_name in MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner_enum, set()):
+        try:
+            model_config = SupportedModels[model_name.name].value
+            display_name = ModelDisplayNames[model_name.name].value
+        except KeyError:
+            raise ValueError(
+                f"Model '{model_name.name}' for runner '{model_runner}' "
+                f"must have an entry in SupportedModels and ModelDisplayNames"
             )
+        models.append(
+            {
+                "id": model_name.value,
+                "display_name": display_name,
+                "supported": True,
+                "model_config": model_config,
+            }
+        )
     return models
 
 
-def _build_training_catalog():
-    models = _build_models_catalog()
+def _build_clusters_catalog(model_runner: str):
+    try:
+        runner_enum = ModelRunners(model_runner)
+    except ValueError:
+        return []
+    clusters = []
+    for dt in TRAINING_RUNNER_SUPPORTED_DEVICES.get(runner_enum, set()):
+        mesh_shape = list(TrainingMeshShapes[dt.name].value)
+        total_devices = math.prod(mesh_shape)
+        clusters.append(
+            {
+                "id": dt.value,
+                "display_name": dt.value.upper(),
+                "supported": True,
+                "partition": None,
+                "mesh_shape": mesh_shape,
+                "topology": {
+                    "mesh_shape": mesh_shape,
+                    "nodes": total_devices,
+                    "total_devices": total_devices,
+                },
+            }
+        )
+    return clusters
+
+
+def build_training_catalog(model_runner: str):
+    models = _build_models_catalog(model_runner)
+    clusters = _build_clusters_catalog(model_runner)
 
     datasets = [
         {
@@ -108,8 +129,5 @@ def _build_training_catalog():
         "datasets": datasets,
         "trainers": trainers,
         "optimizers": optimizers,
-        "clusters": TRAINING_CATALOG_DATA["clusters"],
+        "clusters": clusters,
     }
-
-
-TRAINING_CATALOG = _build_training_catalog()
