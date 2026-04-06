@@ -1,6 +1,7 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/tenstorrent/tt-inference-server)
 
 # tt-inference-server
+<!-- test for tt-studio -->
 
 `tt-inference-server` is the fastest way to deploy and test models for serving inference on Tenstorrent hardware.
 
