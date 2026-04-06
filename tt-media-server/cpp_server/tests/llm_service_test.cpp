@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+#include "services/llm_service.hpp"
+
 #include <gtest/gtest.h>
 
 #include <stdexcept>
 #include <vector>
 
 #include "domain/llm_request.hpp"
-#include "services/llm_service.hpp"
 
 namespace tt::services {
 
@@ -76,9 +77,8 @@ TEST_F(LLMServiceTest, TooManyStopSequences) {
         try {
           service.preProcess(request);
         } catch (const std::invalid_argument& e) {
-          EXPECT_STREQ(
-              "Too many stop sequences: 5 exceeds maximum of 4",
-              e.what());
+          EXPECT_STREQ("Too many stop sequences: 5 exceeds maximum of 4",
+                       e.what());
           throw;
         }
       },
@@ -98,9 +98,7 @@ TEST_F(LLMServiceTest, EmptyStopString) {
         try {
           service.preProcess(request);
         } catch (const std::invalid_argument& e) {
-          EXPECT_STREQ(
-              "Stop sequence at index 1 cannot be empty",
-              e.what());
+          EXPECT_STREQ("Stop sequence at index 1 cannot be empty", e.what());
           throw;
         }
       },

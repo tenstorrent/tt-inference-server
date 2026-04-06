@@ -351,10 +351,12 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
       auto response = buildStreamChunk(token, parseResult, stop_token_set_);
 
-      // If we detected a stop string, override the finish reason and empty text for final chunk
+      // If we detected a stop string, override the finish reason and empty text
+      // for final chunk
       if (isFinal && stopStringHits.count(taskId) > 0) {
         if (!response.choices.empty()) {
-          response.choices[0].text = "";  // Empty - previous chunks already emitted
+          response.choices[0].text =
+              "";  // Empty - previous chunks already emitted
           response.choices[0].finish_reason = "stop";
         }
       }
