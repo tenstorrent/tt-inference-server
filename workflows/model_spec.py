@@ -2337,7 +2337,7 @@ vlm_templates = [
             "allenai/Molmo2-8B",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="f47e93fe7d",
+        tt_metal_commit="c2700e9",
         vllm_commit="ba84dbf0",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
@@ -2345,11 +2345,27 @@ vlm_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
                 max_concurrency=32,  # Batched decode enabled via token reshape fix
-                max_context=4 * 1024,
+                max_context=8 * 1024,
                 default_impl=True,
                 vllm_args={
                     "trust_remote_code": True,
                     "allowed_local_media_path": "/",
+                    "media_io_kwargs": '{"video":{"num_frames":384}}',
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32 * 4,  # 32 per DP replica * 4 replicas
+                max_context=8 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "trust_remote_code": True,
+                    "allowed_local_media_path": "/",
+                    "media_io_kwargs": '{"video":{"num_frames":384}}',
+                    "data_parallel_size": 4,
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D_RING",
                 },
             ),
         ],
