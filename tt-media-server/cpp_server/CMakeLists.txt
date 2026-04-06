@@ -106,20 +106,10 @@ FetchContent_MakeAvailable(spdlog)
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost 1.71 REQUIRED)
 
-# tt-blaze pipeline_manager
-# Make TT-Metalium discoverable so pipeline_manager builds the Full target
-# (SocketPipeline) instead of core-only (mock pipeline).
-if(TT_METAL_HOME)
-    foreach(_build_dir build_Release build)
-        if(EXISTS "${TT_METAL_HOME}/${_build_dir}/lib/cmake/tt-metalium")
-            list(APPEND CMAKE_PREFIX_PATH "${TT_METAL_HOME}/${_build_dir}")
-            break()
-        endif()
-    endforeach()
-endif()
+# tt-blaze pipeline_manager (core-only at compile time; use LD_PRELOAD with
+# the pre-built Full .so at runtime for SocketPipeline support)
 set(PM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(PM_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
-set(TT_METAL_SOURCE_DIR "${TT_METAL_HOME}" CACHE PATH "" FORCE)
 add_subdirectory(tt-blaze/pipeline_manager)
 
 # Option for Tracy support

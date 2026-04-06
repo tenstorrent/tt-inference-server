@@ -32,7 +32,8 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       .d2h_socket_id = "d2h_socket",
       .connect_timeout_ms = 30000,
   };
-  pipelineManager = std::make_unique<pm::PipelineManager>(socketConfig);
+  pipelineManager =
+      std::make_unique<pm::PipelineManager>(socketConfig );
   TT_LOG_INFO(
       "SpPipelineRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
