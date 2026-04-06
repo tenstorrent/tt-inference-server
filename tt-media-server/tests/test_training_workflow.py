@@ -27,9 +27,7 @@ def _training_service_patches(mock_settings):
         )
     )
     stack.enter_context(patch("model_services.base_service.get_scheduler"))
-    stack.enter_context(
-        patch("model_services.base_service.settings", mock_settings)
-    )
+    stack.enter_context(patch("model_services.base_service.settings", mock_settings))
     stack.enter_context(
         patch("model_services.base_job_service.settings", mock_settings)
     )
@@ -62,9 +60,7 @@ class TestGemmaTrainingServiceCreateJob:
         return request
 
     @pytest.mark.asyncio
-    async def test_create_job_sets_output_model_path(
-        self, mock_settings, mock_request
-    ):
+    async def test_create_job_sets_output_model_path(self, mock_settings, mock_request):
         """Test TrainingService.create_job sets correct model path for Gemma"""
         stack, mock_jm = _training_service_patches(mock_settings)
         with stack:
@@ -95,9 +91,7 @@ class TestLlamaTrainingServiceCreateJob:
         return request
 
     @pytest.mark.asyncio
-    async def test_create_job_sets_output_model_path(
-        self, mock_settings, mock_request
-    ):
+    async def test_create_job_sets_output_model_path(self, mock_settings, mock_request):
         stack, _ = _training_service_patches(mock_settings)
         with stack:
             from model_services.training_service import TrainingService
