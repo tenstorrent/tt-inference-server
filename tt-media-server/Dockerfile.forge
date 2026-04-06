@@ -67,7 +67,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && protoc --version
 
-# Install Python 3.11 which is required for forge
+# Install Python 3.12 which is required for forge
 RUN add-apt-repository ppa:deadsnakes/ppa -y && \
     apt-get update -qq && \
     apt-get install -y -qq python3.12 python3.12-dev python3.12-venv
