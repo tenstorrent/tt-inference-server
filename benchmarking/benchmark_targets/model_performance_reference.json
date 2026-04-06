@@ -5365,6 +5365,32 @@
                     }
                 }
             }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12500,
+                        "tput_user": 0.08
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12500,
+                        "tput_user": 0.08
+                    }
+                }
+            }
         ]
     },
     "stable-diffusion-3.5-large": {

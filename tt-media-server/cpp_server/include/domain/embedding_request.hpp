@@ -9,6 +9,7 @@
 #include <string>
 
 #include "domain/base_request.hpp"
+#include "domain/json_field.hpp"
 
 namespace tt::domain {
 
@@ -33,15 +34,12 @@ struct EmbeddingRequest : BaseRequest {
    */
   static EmbeddingRequest fromJson(const Json::Value& json, uint32_t taskId) {
     EmbeddingRequest req(std::move(taskId));
-    if (json.isMember("model")) {
-      req.model = json["model"].asString();
-    }
-    if (json.isMember("input")) {
-      req.input = json["input"].asString();
-    }
-    if (json.isMember("user")) {
-      req.user = json["user"].asString();
-    }
+    if (json.isMember("model"))
+      req.model = json_field::getString(json["model"], "model");
+    if (json.isMember("input"))
+      req.input = json_field::getString(json["input"], "input");
+    if (json.isMember("user"))
+      req.user = json_field::getString(json["user"], "user");
     return req;
   }
 

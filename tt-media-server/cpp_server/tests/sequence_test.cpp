@@ -20,7 +20,7 @@ TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
   std::ostringstream os;
   orig.serialize(os);
   std::istringstream is(os.str());
-  std::unique_ptr<SamplingParams> restored(SamplingParams::deserialize(is));
+  auto restored = SamplingParams::deserialize(is);
   ASSERT_NE(restored.get(), nullptr);
 
   EXPECT_FLOAT_EQ(restored->temperature, orig.temperature);
@@ -73,7 +73,7 @@ TEST(SamplingParamsTest, SerializeDeserialize_AllOptionalFieldsSet) {
   std::ostringstream os;
   orig.serialize(os);
   std::istringstream is(os.str());
-  std::unique_ptr<SamplingParams> restored(SamplingParams::deserialize(is));
+  auto restored = SamplingParams::deserialize(is);
   ASSERT_NE(restored.get(), nullptr);
 
   EXPECT_FLOAT_EQ(restored->temperature, orig.temperature);
