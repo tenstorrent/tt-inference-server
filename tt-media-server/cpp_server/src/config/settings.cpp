@@ -78,13 +78,8 @@ std::vector<std::string> parseDeviceIds(const std::string& raw) {
 }
 
 const std::vector<std::string>& deviceIdsParsed() {
-  static std::vector<std::string> cached;
-  std::string current = envString("DEVICE_IDS", defaults::DEVICE_IDS);
-  static std::string lastEnv;
-  if (current != lastEnv) {
-    lastEnv = std::move(current);
-    cached = parseDeviceIds(lastEnv);
-  }
+  static const std::vector<std::string> cached =
+      parseDeviceIds(envString("DEVICE_IDS", defaults::DEVICE_IDS));
   return cached;
 }
 

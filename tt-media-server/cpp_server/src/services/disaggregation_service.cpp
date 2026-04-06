@@ -40,7 +40,9 @@ void DisaggregationService::setupSocketHandlers() {
           streamCallbacks.erase(message.task_id);
 
           auto response = domain::LLMStreamChunk(message.task_id);
-          response.choices.push_back(domain::LLMChoice(message.generated_text));
+          domain::LLMChoice choice;
+          choice.text = message.generated_text;
+          response.choices.push_back(std::move(choice));
 
           callback.value()(response, false);
 
@@ -70,8 +72,9 @@ void DisaggregationService::setupSocketHandlers() {
       streamCallbacks.forEach(
           [](uint32_t taskId, const StreamCallback& callback) {
             auto response = domain::LLMStreamChunk(taskId);
-            response.choices.push_back(domain::LLMChoice(""));
-            response.choices.back().finish_reason = "error";
+            domain::LLMChoice errChoice;
+            errChoice.finish_reason = "error";
+            response.choices.push_back(std::move(errChoice));
             callback(response, true);
           });
       streamCallbacks.clear();

@@ -78,13 +78,15 @@ class LLMController : public drogon::HttpController<LLMController> {
       std::shared_ptr<domain::LLMRequest> reqPtr,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
+  struct SessionInfo {
+    bool validSessionFound = false;
+  };
+
   /**
-   * Build OpenAI-style error JSON (flat object/message/type/param/code).
+   * Validate/create session, assign slot, populate request fields.
+   * Throws std::runtime_error if session creation fails.
    */
-  static Json::Value errorJson(const std::string& message,
-                               const std::string& type,
-                               const Json::Value& param = Json::nullValue,
-                               const Json::Value& code = Json::nullValue);
+  SessionInfo resolveSession(domain::LLMRequest& req) const;
 
   /**
    * Determine if disaggregated prefill should be used for this request.

@@ -10,6 +10,7 @@
 #include <thread>
 
 #include "config/settings.hpp"
+#include "ipc/token_push.hpp"
 #include "profiling/tracy.hpp"
 #include "services/contiguous_memory_manager.hpp"
 #include "utils/logger.hpp"
@@ -164,7 +165,7 @@ void SpPipelineRunner::drainDecodeResults() {
     llm_engine::Sequence* seq = it->second.get();
 
     if (dr.isError) {
-      pushErrorToken(dr.taskId);
+      ipc::pushErrorToken(*resultQueue, dr.taskId);
       activeSequences.erase(it);
       --inFlightCount;
       continue;
@@ -180,34 +181,13 @@ void SpPipelineRunner::drainDecodeResults() {
     bool finished =
         (!seq->samplingParams->ignore_eos && isStop) || reachedMaxTokens;
 
-    {
-      pushToken(dr.taskId, dr.tokenId, finished);
-    }
+    ipc::pushToken(*resultQueue, dr.taskId, dr.tokenId, finished);
 
     if (finished) {
       activeSequences.erase(it);
       --inFlightCount;
     }
   }
-}
-
-void SpPipelineRunner::pushToken(uint32_t taskId, uint64_t tokenId,
-                                 bool finished) {
-  ipc::SharedToken shared{};
-  shared.token_index = 0;
-  shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;
-  shared.token_id = tokenId;
-  shared.task_id = taskId;
-  resultQueue->push(shared);
-}
-
-void SpPipelineRunner::pushErrorToken(uint32_t taskId) {
-  ipc::SharedToken shared{};
-  shared.token_index = 0;
-  shared.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR;
-  shared.token_id = 0;
-  shared.task_id = taskId;
-  resultQueue->push(shared);
 }
 
 }  // namespace tt::runners

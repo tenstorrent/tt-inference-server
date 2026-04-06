@@ -100,7 +100,7 @@ TEST_F(SchedulerAbortTest, AbortDecodingSequence_FreesBlocks) {
   std::shared_ptr<ITaskQueue> q = makeQueue();
   PrefillFirstScheduler s{smallConfig, q.get(), 4};
 
-  int freeBlocksBefore = s.blockManager().numFreeBlocks();
+  size_t freeBlocksBefore = s.blockManager().numFreeBlocks();
 
   uint32_t id = nextId();
   s.addRequest(id, prompt(4), {.max_tokens = 100});

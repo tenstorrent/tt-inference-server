@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <limits>
 #include <thread>
 
 #include "config/settings.hpp"
@@ -59,7 +58,8 @@ void SessionManager::drainResultQueue() {
   }
 }
 
-domain::Session SessionManager::createSession(std::optional<uint32_t> slotId) {
+domain::Session SessionManager::createSession(std::optional<uint32_t> slotId,
+                                              bool inFlight) {
   evictOldSessions();
 
   uint32_t slot = slotId.value_or(INVALID_SLOT_ID);
@@ -67,34 +67,63 @@ domain::Session SessionManager::createSession(std::optional<uint32_t> slotId) {
   std::string sessionId = session.getSessionId();
 
   if (!slotId.has_value() && memoryRequestQueue && memoryResultQueue) {
-    auto future = requestSlotIdFromMemoryManager(sessionId);
-    auto status = future.wait_for(std::chrono::seconds(1));
-    if (status == std::future_status::ready) {
-      uint32_t allocatedSlot = future.get();
-      if (allocatedSlot != INVALID_SLOT_ID) {
-        slot = allocatedSlot;
-        session.setSlotId(slot);
-        TT_LOG_INFO(
-            "[SessionManager] Received slot {} for session {} from memory "
-            "manager",
-            slot, sessionId);
+    constexpr int maxRetries = 10;
+    constexpr int retryDelayMs = 500;
+
+    for (int attempt = 0; attempt < maxRetries; ++attempt) {
+      if (attempt > 0) {
+        TT_LOG_DEBUG(
+            "[SessionManager] Retry attempt {}/{} for slot allocation for "
+            "session {}",
+            attempt + 1, maxRetries, sessionId);
+        std::this_thread::sleep_for(std::chrono::milliseconds(retryDelayMs));
+      }
+
+      auto future = requestSlotIdFromMemoryManager(sessionId);
+      auto status = future.wait_for(std::chrono::seconds(1));
+
+      if (status == std::future_status::ready) {
+        uint32_t allocatedSlot = future.get();
+        if (allocatedSlot != INVALID_SLOT_ID) {
+          slot = allocatedSlot;
+          session.setSlotId(slot);
+          TT_LOG_INFO(
+              "[SessionManager] Received slot {} for session {} from memory "
+              "manager (attempt {}/{})",
+              slot, sessionId, attempt + 1, maxRetries);
+          break;
+        } else {
+          TT_LOG_WARN(
+              "[SessionManager] Memory manager returned INVALID_SLOT_ID for "
+              "session {} (attempt {}/{})",
+              sessionId, attempt + 1, maxRetries);
+        }
       } else {
         TT_LOG_WARN(
-            "[SessionManager] Memory manager failed to allocate slot for "
-            "session {}",
-            sessionId);
+            "[SessionManager] Timeout waiting for slot allocation for session "
+            "{} (attempt {}/{})",
+            sessionId, attempt + 1, maxRetries);
       }
-    } else {
-      TT_LOG_WARN(
-          "[SessionManager] Timeout waiting for slot allocation for session {}",
-          sessionId);
+    }
+
+    if (slot == INVALID_SLOT_ID) {
+      TT_LOG_ERROR(
+          "[SessionManager] Failed to allocate slot for session {} after {} "
+          "attempts",
+          sessionId, maxRetries);
+      throw std::runtime_error(
+          "Failed to allocate memory slot after " + std::to_string(maxRetries) +
+          " attempts. System may be out of memory resources.");
     }
   }
 
+  session.setInFlight(inFlight);
   sessions.insert(sessionId, session);
 
-  TT_LOG_INFO("[SessionManager] Created session: {} with slot: {}", sessionId,
-              slot);
+  TT_LOG_INFO("[SessionManager] Created session: {} with slot: {} inFlight: {}",
+              sessionId,
+              slot == INVALID_SLOT_ID ? "none" : std::to_string(slot),
+              inFlight);
   return session;
 }
 
@@ -140,6 +169,16 @@ uint32_t SessionManager::getSlotIdBySessionId(
   return result;
 }
 
+uint32_t SessionManager::acquireSessionSlot(const std::string& sessionId) {
+  uint32_t result = INVALID_SLOT_ID;
+  sessions.modify(sessionId, [&result](domain::Session& s) {
+    s.updateActivityTime();
+    s.setInFlight(true);
+    result = s.getSlotId();
+  });
+  return result;
+}
+
 std::optional<domain::Session> SessionManager::getSession(
     const std::string& sessionId) const {
   return sessions.get(sessionId);
@@ -147,7 +186,31 @@ std::optional<domain::Session> SessionManager::getSession(
 
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
 
+void SessionManager::setSessionInFlight(const std::string& sessionId,
+                                        bool inFlight) {
+  bool found = sessions.modify(
+      sessionId, [inFlight](domain::Session& s) { s.setInFlight(inFlight); });
+
+  if (!found) {
+    TT_LOG_WARN("[SessionManager] Session not found for in-flight update: {}",
+                sessionId);
+  } else {
+    TT_LOG_DEBUG("[SessionManager] Set session {} in-flight: {}", sessionId,
+                 inFlight);
+  }
+}
+
 void SessionManager::evictOldSessions() {
+  bool expected = false;
+  if (!evictionInProgress.compare_exchange_strong(expected, true)) {
+    return;
+  }
+
+  struct EvictionGuard {
+    std::atomic<bool>& flag;
+    ~EvictionGuard() { flag.store(false, std::memory_order_release); }
+  } guard{evictionInProgress};
+
   size_t maxSessions = tt::config::maxSessionsCount();
   unsigned evictionRate = tt::config::sessionEvictionRate();
   size_t evictionCount = tt::config::sessionEvictionCount();
@@ -164,6 +227,10 @@ void SessionManager::evictOldSessions() {
 
   sessions.forEach([&heap, &newer, evictionCount](const std::string& id,
                                                   domain::Session& session) {
+    if (session.isInFlight()) {
+      return;
+    }
+
     auto t = session.getLastActivityTime();
     if (heap.size() < evictionCount) {
       heap.emplace_back(t, id);

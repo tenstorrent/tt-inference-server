@@ -6,6 +6,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_set>
@@ -72,6 +73,9 @@ class LLMService
 
   void startConsumers();
   void consumerLoopForWorker(size_t workerIdx);
+
+  std::optional<std::function<void(domain::LLMStreamChunk&, bool)>>
+  resolveCallback(uint32_t taskId, bool isFinal);
 
   std::vector<std::thread> consumer_threads_;
 

@@ -3,12 +3,12 @@
 
 #include "services/llm_service.hpp"
 
-#include <cassert>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -69,6 +69,23 @@ std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
 
 void LLMService::preProcess(domain::LLMRequest& request) const {
   BaseService::preProcess(request);
+
+  if (!request.stop.empty()) {
+    static constexpr size_t kMaxStopSequences = 4;
+    if (request.stop.size() > kMaxStopSequences) {
+      throw std::invalid_argument(
+          "Too many stop sequences: " + std::to_string(request.stop.size()) +
+          " exceeds maximum of " + std::to_string(kMaxStopSequences));
+    }
+
+    for (size_t i = 0; i < request.stop.size(); ++i) {
+      if (request.stop[i].empty()) {
+        throw std::invalid_argument("Stop sequence at index " +
+                                    std::to_string(i) + " cannot be empty");
+      }
+    }
+  }
+
   if (std::holds_alternative<std::string>(request.prompt)) {
     auto text = std::get<std::string>(request.prompt);
     static auto cfg = tt::utils::getTokenizerConfig();
@@ -123,6 +140,72 @@ void LLMService::stop() {
   queue_manager_->clear();
 }
 
+namespace {
+
+constexpr int K_ITL_SAMPLE_STRIDE = 5;
+
+struct MetricsSamplingState {
+  int token_count = 0;
+  std::chrono::steady_clock::time_point prev_token_time;
+};
+
+// Observe ITL once every K_ITL_SAMPLE_STRIDE tokens. Reported quantiles remain
+// representative; actual ITL values are accurate because elapsed time is
+// divided by the stride (assumes roughly uniform decode step latency).
+void recordTokenMetrics(
+    std::unordered_map<uint32_t, MetricsSamplingState>& sampling,
+    uint32_t taskId) {
+  auto& ms = sampling[taskId];
+  if (ms.token_count == 0) {
+    tt::metrics::ServerMetrics::instance().onToken(taskId);
+    ms.prev_token_time = std::chrono::steady_clock::now();
+  } else if (ms.token_count % K_ITL_SAMPLE_STRIDE == 0) {
+    auto now = std::chrono::steady_clock::now();
+    double itl =
+        std::chrono::duration<double>(now - ms.prev_token_time).count() /
+        K_ITL_SAMPLE_STRIDE;
+    tt::metrics::ServerMetrics::instance().onITLSample(taskId, itl);
+    ms.prev_token_time = now;
+  }
+  ms.token_count++;
+}
+
+domain::LLMStreamChunk buildStreamChunk(
+    const ipc::SharedToken& token, const TokenParseResult& parseResult,
+    const std::unordered_set<int64_t>& stopTokenSet) {
+  domain::LLMStreamChunk response{token.task_id};
+  response.id = std::to_string(token.task_id);
+  response.created = std::chrono::duration_cast<std::chrono::seconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
+
+  domain::LLMChoice choice;
+  choice.index = token.token_index;
+
+  if (parseResult.type == ContentType::REASONING) {
+    choice.text = "";
+    choice.reasoning = parseResult.text;
+  } else {
+    choice.text = parseResult.text;
+    choice.reasoning = std::nullopt;
+  }
+
+  if (token.isError()) {
+    choice.finish_reason = "error";
+  } else {
+    choice.token_id = static_cast<int64_t>(token.token_id);
+    if (token.isFinal()) {
+      bool isStop =
+          stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
+      choice.finish_reason = isStop ? "stop" : "length";
+    }
+  }
+  response.choices.push_back(std::move(choice));
+  return response;
+}
+
+}  // namespace
+
 void LLMService::consumerLoopForWorker(size_t workerIdx) {
   ZoneScopedN("LLMService::consumer_loop");
   tracy_config::tracySetThreadName(
@@ -139,20 +222,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   std::unordered_map<uint32_t,
                      std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>
       streamDecoders;
-
-  // Per-request state used to throttle ITL metric events.
-  //
-  // Mitigation: observe ITL once every kItlSampleStride consecutive tokens.
-  // The reported quantiles remain statistically representative; the absolute
-  // ITL values are accurate because the caller pre-computes elapsed time
-  // between the two most recent CONSECUTIVE tokens rather than relying on the
-  // spacing between sampled events.
-  static constexpr int kItlSampleStride = 5;
-
-  struct MetricsSamplingState {
-    int token_count = 0;
-    std::chrono::steady_clock::time_point prev_token_time;
-  };
   std::unordered_map<uint32_t, MetricsSamplingState> metricsSampling;
 
   while (running_) {
@@ -207,29 +276,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       std::string delta = decoder->step(static_cast<int>(token.token_id));
       if (isFinal) delta += decoder->flush();
 
-      // Record token-level metrics before reasoning filtering so all
-      // generated tokens (including hidden reasoning tokens) are counted.
-      //
-      // Hot-path budget: only a map counter increment for non-sampled tokens.
-      // steady_clock::now() and metric queue pushes happen only on the first
-      // token (TTFT) and every kItlSampleStride-th subsequent token.
-      // The ITL value is divided by kItlSampleStride to yield a per-token
-      // estimate (assumes roughly uniform decode step latency).
-      {
-        auto& ms = metricsSampling[taskId];
-        if (ms.token_count == 0) {
-          tt::metrics::ServerMetrics::instance().onToken(taskId);
-          ms.prev_token_time = std::chrono::steady_clock::now();
-        } else if (ms.token_count % kItlSampleStride == 0) {
-          auto now = std::chrono::steady_clock::now();
-          double itl =
-              std::chrono::duration<double>(now - ms.prev_token_time).count() /
-              kItlSampleStride;
-          tt::metrics::ServerMetrics::instance().onITLSample(taskId, itl);
-          ms.prev_token_time = now;
-        }
-        ms.token_count++;
-      }
+      recordTokenMetrics(metricsSampling, taskId);
 
       TokenParseResult parseResult{ContentType::ANSWER, delta, true};
       if (reasoning_parser_) {
@@ -241,36 +288,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         continue;
       }
 
-      domain::LLMStreamChunk response{token.task_id};
-      response.id = std::to_string(taskId);
-      response.created =
-          std::chrono::duration_cast<std::chrono::seconds>(
-              std::chrono::system_clock::now().time_since_epoch())
-              .count();
-
-      domain::LLMChoice choice;
-      choice.index = token.token_index;
-
-      if (parseResult.type == ContentType::REASONING) {
-        choice.text = "";
-        choice.reasoning = parseResult.text;
-      } else {
-        choice.text = parseResult.text;
-        choice.reasoning = std::nullopt;
-      }
-
-      if (token.isError()) {
-        choice.finish_reason = "error";
-      } else {
-        choice.token_id = static_cast<int64_t>(token.token_id);
-        if (isFinal) {
-          bool isStop =
-              stop_token_set_.count(static_cast<int64_t>(token.token_id)) > 0;
-          choice.finish_reason = isStop ? "stop" : "length";
-        }
-      }
-      response.choices.push_back(std::move(choice));
-
+      auto response = buildStreamChunk(token, parseResult, stop_token_set_);
       callback(response, isFinal);
 
       if (isFinal) {
@@ -367,7 +385,9 @@ domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
 void LLMService::processStreamingRequest(
     domain::LLMRequest request,
     std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback) {
-  assert(callback != nullptr);
+  if (!callback) {
+    throw std::invalid_argument("streaming callback must not be null");
+  }
 
   ZoneScopedN("LLMService::processStreamingRequest");
   if (request.task_id == 0) {
@@ -394,7 +414,8 @@ void LLMService::processStreamingRequest(
       taskId, static_cast<int>(prompt.size()));
 
   auto sequence = std::make_unique<llm_engine::Sequence>(
-      taskId, tt::config::llmEngineConfig().kvcache_block_size,
+      taskId,
+      static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
       std::move(tokenIds));
   sequence->numPromptTokens = prompt.size();
   if (request.slotId.has_value()) {

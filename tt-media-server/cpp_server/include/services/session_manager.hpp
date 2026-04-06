@@ -27,12 +27,17 @@ class SessionManager {
   SessionManager(const SessionManager&) = delete;
   SessionManager& operator=(const SessionManager&) = delete;
 
-  domain::Session createSession(std::optional<uint32_t> slotId = std::nullopt);
+  domain::Session createSession(std::optional<uint32_t> slotId = std::nullopt,
+                                bool inFlight = false);
   bool closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
   uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
+  uint32_t acquireSessionSlot(const std::string& sessionId);
   std::optional<domain::Session> getSession(const std::string& sessionId) const;
   size_t getActiveSessionCount() const;
+
+  // In-flight session management
+  void setSessionInFlight(const std::string& sessionId, bool inFlight);
 
  private:
   void evictOldSessions();
@@ -49,6 +54,7 @@ class SessionManager {
   using PromisePtr = std::shared_ptr<std::promise<uint32_t>>;
   ConcurrentMap<uint32_t, PromisePtr> pendingAllocations;
   std::atomic<bool> stopped{false};
+  std::atomic<bool> evictionInProgress{false};
   std::thread drainThread;
 };
 

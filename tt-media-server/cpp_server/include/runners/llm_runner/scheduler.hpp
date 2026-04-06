@@ -87,26 +87,29 @@ class Scheduler {
    * @param max_in_flight_count    maximum batch / decode_queue capacity.
    * @return true if the scheduler should attempt prefill before decode.
    */
-  virtual bool shouldPrefillFirst(int decodeCount,
-                                  int maxInFlightCount) const = 0;
+  virtual bool shouldPrefillFirst(size_t decodeCount,
+                                  size_t maxInFlightCount) const = 0;
 
   /**
    * Maximum number of sequences to prefill in one step.
    * Default: max_in_flight_count (full capacity). Override to limit prefill
    * to available slots when decode sequences should be preserved.
    */
-  virtual int maxPrefillSeqs(int /*decode_count*/, int maxInFlightCount) const {
+  virtual size_t maxPrefillSeqs(size_t /*decode_count*/,
+                                size_t maxInFlightCount) const {
     return maxInFlightCount;
   }
 
  private:
-  int block_size_;
-  bool trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs, int& numSeqs,
-                          int& numBatchedTokens, int seqLimit);
-  void tryScheduleDecode(std::vector<Sequence*>& scheduledSeqs, int& numSeqs);
+  size_t block_size_;
+  bool trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
+                          size_t& numSeqs, size_t& numBatchedTokens,
+                          size_t seqLimit);
+  void tryScheduleDecode(std::vector<Sequence*>& scheduledSeqs,
+                         size_t& numSeqs);
 
   size_t max_in_flight_count_;
-  int max_num_batched_tokens_;
+  size_t max_num_batched_tokens_;
   std::unordered_set<int64_t> stop_token_ids_;
   BlockManager block_manager_;
   ITaskQueue* prefill_queue_;
