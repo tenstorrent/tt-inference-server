@@ -298,10 +298,17 @@ class TTMochi1Runner(TTDiTRunner):
 class TTWan22Runner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        os.environ["TT_DIT_CACHE_DIR"] = "/tmp/TT_DIT_CACHE"
 
     def create_pipeline(self):
         try:
-            return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
+            checkpoint_name = (
+                os.environ.get("MODEL_WEIGHTS_DIR") or self.settings.model_weights_path
+            )
+            return WanPipeline.create_pipeline(
+                checkpoint_name=checkpoint_name,
+                mesh_device=self.ttnn_device,
+            )
         except Exception as e:
             log_exception_chain(
                 self.logger,
@@ -310,9 +317,6 @@ class TTWan22Runner(TTDiTRunner):
                 e,
             )
             raise
-
-    def load_weights(self):
-        return False
 
     @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
     def run(self, requests: list[VideoGenerateRequest]):
@@ -344,9 +348,6 @@ class TTWan22Runner(TTDiTRunner):
         device_params = {
             "fabric_config": ttnn.FabricConfig.FABRIC_1D,
         }
-        if ttnn.device.is_blackhole():
-            device_params["fabric_tensix_config"] = ttnn.FabricTensixConfig.MUX
-            device_params["dispatch_core_axis"] = ttnn.device.DispatchCoreAxis.ROW
-        elif tuple(self.settings.device_mesh_shape) == (4, 8):
+        if tuple(self.settings.device_mesh_shape) == (4, 8):
             device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
         return device_params
