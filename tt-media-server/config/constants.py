@@ -862,7 +862,6 @@ ModelConfigs = {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 32,
         "default_throttle_level": 0,
         "use_queue_per_worker": True,
         "request_processing_timeout_seconds": 2000,
