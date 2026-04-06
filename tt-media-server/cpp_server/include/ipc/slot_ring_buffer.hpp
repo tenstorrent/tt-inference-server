@@ -31,7 +31,7 @@ struct SlotRingBufferState {
 };
 
 template <int MaxTokenIds>
-struct Message {
+struct alignas(8) Message {
   std::atomic<int32_t> state;
   uint32_t maxTokens;
   uint32_t numTokenIds;
