@@ -400,12 +400,12 @@ void LLMService::processStreamingRequest(
       taskId,
       static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
       std::move(tokenIds));
-  sequence->numPromptTokens = prompt.size();
+  sequence->setNumPromptTokens(prompt.size());
   if (request.slotId.has_value()) {
     sequence->setKVCacheAddress(request.slotId.value());
   }
-  sequence->samplingParams = std::make_unique<llm_engine::SamplingParams>(
-      tt::utils::mapper::mapSamplingParams(request));
+  sequence->setSamplingParams(std::make_unique<llm_engine::SamplingParams>(
+      tt::utils::mapper::mapSamplingParams(request)));
   queue_manager_->task_queue->push(*std::move(sequence));
 }
 

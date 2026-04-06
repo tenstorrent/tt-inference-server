@@ -212,7 +212,7 @@ TEST(PrefillFirstSchedulerTest, Preempt_MovesSequenceBackToWaiting) {
   ASSERT_TRUE(is_prefill);
   ASSERT_EQ(batch.size(), 1u);
   sched.preempt(*batch[0]);
-  EXPECT_EQ(batch[0]->status, SequenceStatus::WAITING);
+  EXPECT_EQ(batch[0]->status(), SequenceStatus::WAITING);
   auto [batch2, is_prefill2] = sched.schedule();
   EXPECT_TRUE(is_prefill2);
   EXPECT_EQ(batch2.size(), 1u);

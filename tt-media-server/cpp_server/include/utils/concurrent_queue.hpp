@@ -55,14 +55,14 @@ constexpr std::memory_order RELEASE = std::memory_order_release;
 }  // namespace
 
 template <typename T>
-class LockFreeConcurrentQueue {
+class LockFreeSpscQueue {
  public:
-  LockFreeConcurrentQueue(size_t capacity)
+  LockFreeSpscQueue(size_t capacity)
       : capacity(nextPowerOfTwo(capacity + 1)),
         buffer(nextPowerOfTwo(capacity + 1)) {
     mask = this->capacity - 1;
   }
-  ~LockFreeConcurrentQueue() = default;
+  ~LockFreeSpscQueue() = default;
 
   bool push(const T& value) {
     const size_t HEAD = head.load(RELAXED);
@@ -127,8 +127,8 @@ class LockFreeConcurrentQueue {
 
   size_t size() const { return (head.load() - tail.load()) & mask; }
 
-  LockFreeConcurrentQueue(const LockFreeConcurrentQueue&) = delete;
-  LockFreeConcurrentQueue& operator=(const LockFreeConcurrentQueue&) = delete;
+  LockFreeSpscQueue(const LockFreeSpscQueue&) = delete;
+  LockFreeSpscQueue& operator=(const LockFreeSpscQueue&) = delete;
 
  private:
   size_t capacity;

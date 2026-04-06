@@ -81,7 +81,7 @@ bool Scheduler::trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
       break;
     }
     numSeqs += 1;
-    numBatchedTokens += seq->size() - seq->numCachedTokens;
+    numBatchedTokens += seq->size() - seq->numCachedTokens();
     auto id = seq->taskId;
     sequences_[id] = std::move(seq);
     scheduledSeqs.push_back(sequences_[id].get());
@@ -153,7 +153,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
 
 void Scheduler::preempt(Sequence& seq) {
   ZoneScopedN("Scheduler::preempt");
-  seq.status = SequenceStatus::WAITING;
+  seq.setStatus(SequenceStatus::WAITING);
   block_manager_.deallocate(seq);
   prefill_queue_->push(seq);
 }
@@ -168,17 +168,17 @@ void Scheduler::postprocess(std::vector<Sequence*>& seqs,
 
     bool isStopToken = stop_token_ids_.count(tokenId) > 0;
     bool reachedMaxTokens =
-        seq->samplingParams->max_tokens.has_value() &&
+        seq->samplingParams().max_tokens.has_value() &&
         seq->numCompletionTokens() >=
-            static_cast<size_t>(seq->samplingParams->max_tokens.value());
+            static_cast<size_t>(seq->samplingParams().max_tokens.value());
     bool finished =
-        (!seq->samplingParams->ignore_eos && isStopToken) || reachedMaxTokens;
+        (!seq->samplingParams().ignore_eos && isStopToken) || reachedMaxTokens;
 
     if (finished) {
-      seq->status = SequenceStatus::FINISHED;
+      seq->setStatus(SequenceStatus::FINISHED);
       block_manager_.deallocate(*seq);
     } else {
-      seq->status = SequenceStatus::RUNNING;
+      seq->setStatus(SequenceStatus::RUNNING);
       decode_queue_.push_back(seq);
     }
   }
@@ -191,7 +191,7 @@ void Scheduler::abortRequest(uint32_t taskId) {
 
   // If the task isn't tracked or is still waiting, it might have a stale
   // copy in the IPC queue. Mark it for skipping.
-  bool isWaiting = seq && seq->status == SequenceStatus::WAITING;
+  bool isWaiting = seq && seq->status() == SequenceStatus::WAITING;
   if (!seq || isWaiting) {
     if (pending_aborts_.size() < 2 * max_in_flight_count_) {
       pending_aborts_.insert(taskId);
@@ -204,7 +204,7 @@ void Scheduler::abortRequest(uint32_t taskId) {
   }
 
   // Clean up resources for active sequences
-  seq->status = SequenceStatus::ABORTED;
+  seq->setStatus(SequenceStatus::ABORTED);
   block_manager_.deallocate(*seq);
 
   // Remove from decode_queue (O(n) but abort should be rare)

@@ -17,7 +17,7 @@ constexpr size_t ITEM_COUNT = 500'000;
 // ---- SPSC single-element push/pop ------------------------------------
 
 TEST(LockFreeQueueTest, SpscOrdering) {
-  LockFreeConcurrentQueue<uint64_t> q(QUEUE_CAPACITY);
+  LockFreeSpscQueue<uint64_t> q(QUEUE_CAPACITY);
   std::vector<uint64_t> received;
   received.reserve(ITEM_COUNT);
   std::atomic<bool> producerDone{false};
@@ -56,7 +56,7 @@ TEST(LockFreeQueueTest, SpscOrdering) {
 
 TEST(LockFreeQueueTest, SpscBatchAligned) {
   constexpr size_t batchSize = 64;
-  LockFreeConcurrentQueue<uint64_t> q(QUEUE_CAPACITY);
+  LockFreeSpscQueue<uint64_t> q(QUEUE_CAPACITY);
   std::vector<uint64_t> received;
   received.reserve(ITEM_COUNT);
   std::atomic<bool> producerDone{false};
@@ -105,7 +105,7 @@ TEST(LockFreeQueueTest, SpscBatchAligned) {
 
 TEST(LockFreeQueueTest, SpscBatchOddSize) {
   constexpr size_t batchSize = 7;
-  LockFreeConcurrentQueue<uint64_t> q(QUEUE_CAPACITY);
+  LockFreeSpscQueue<uint64_t> q(QUEUE_CAPACITY);
   std::vector<uint64_t> received;
   received.reserve(ITEM_COUNT);
   std::atomic<bool> producerDone{false};
@@ -159,7 +159,7 @@ struct Payload {
 };
 
 TEST(LockFreeQueueTest, SpscNoTornReads) {
-  LockFreeConcurrentQueue<Payload> q(QUEUE_CAPACITY);
+  LockFreeSpscQueue<Payload> q(QUEUE_CAPACITY);
   std::atomic<bool> producerDone{false};
   std::atomic<bool> integiryOk{true};
   std::atomic<size_t> count{0};
@@ -201,7 +201,7 @@ TEST(LockFreeQueueTest, SpscNoTornReads) {
 TEST(LockFreeQueueTest, FillDrainCycles) {
   constexpr size_t cap = 64;
   constexpr size_t cycles = 1000;
-  LockFreeConcurrentQueue<int> q(cap);
+  LockFreeSpscQueue<int> q(cap);
 
   // Usable slots = nextPowerOfTwo(cap+1) - 1 (sentinel gap for SPSC).
   const size_t expectedCapacity = nextPowerOfTwo(cap + 1) - 1;
@@ -223,7 +223,7 @@ TEST(LockFreeQueueTest, FillDrainCycles) {
 // ---- Mixed single + batch ops ----------------------------------------
 
 TEST(LockFreeQueueTest, SpscMixedSingleAndBatch) {
-  LockFreeConcurrentQueue<uint64_t> q(QUEUE_CAPACITY);
+  LockFreeSpscQueue<uint64_t> q(QUEUE_CAPACITY);
   std::vector<uint64_t> received;
   received.reserve(ITEM_COUNT);
   std::atomic<bool> producerDone{false};
