@@ -852,8 +852,8 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
             model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
-            max_model_length=4096,
-            max_num_batched_tokens=4096 * 32,
+            max_model_length=1024,
+            max_num_batched_tokens=1024 * 32,
             max_num_seqs=32,
         ),
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
@@ -867,8 +867,8 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 2000,
         "vllm": _vllm_config(
             model=SupportedModels.QWEN_3_EMBEDDING_8B.value,
-            max_model_length=4096,
-            max_num_batched_tokens=4096 * 32,
+            max_model_length=1024,
+            max_num_batched_tokens=1024 * 32,
             max_num_seqs=32,
         ),
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
