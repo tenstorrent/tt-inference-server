@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "domain/base_request.hpp"
+#include "domain/json_field.hpp"
 
 namespace tt::domain {
 
@@ -45,12 +46,12 @@ struct StreamOptions {
 
   static StreamOptions fromJson(const Json::Value& json) {
     StreamOptions opts;
-    if (json.isMember("include_usage")) {
-      opts.include_usage = json["include_usage"].asBool();
-    }
-    if (json.isMember("continuous_usage_stats")) {
-      opts.continuous_usage_stats = json["continuous_usage_stats"].asBool();
-    }
+    if (json.isMember("include_usage"))
+      opts.include_usage =
+          json_field::getBool(json["include_usage"], "include_usage");
+    if (json.isMember("continuous_usage_stats"))
+      opts.continuous_usage_stats = json_field::getBool(
+          json["continuous_usage_stats"], "continuous_usage_stats");
     return opts;
   }
 };
@@ -110,6 +111,7 @@ struct LLMRequest : BaseRequest {
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
   int prompt_tokens_count = 0;
+  bool fast_mode = false;
 
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;

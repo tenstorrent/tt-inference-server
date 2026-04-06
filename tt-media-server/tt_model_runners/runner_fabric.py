@@ -59,6 +59,9 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.embedding_runner",
         fromlist=["Qwen3Embedding8BRunner"],
     ).Qwen3Embedding8BRunner(wid),
+    ModelRunners.TT_YOLOV4: lambda wid: __import__(
+        "tt_model_runners.yolov4_runner", fromlist=["TTYolov4Runner"]
+    ).TTYolov4Runner(wid),
     ModelRunners.VLLMForge_QWEN_EMBEDDING: lambda wid: __import__(
         "tt_model_runners.vllm_forge_qwen_embedding_runner",
         fromlist=["VLLMForgeEmbeddingQwenRunner"],
