@@ -49,7 +49,8 @@ TEST_F(StopStringProcessorTest, SimpleStopStringMatch) {
   auto result2 = processor.processText(1, "STOP");
   EXPECT_TRUE(result2.stop_detected);
   EXPECT_EQ(result2.matched_string, "STOP");
-  EXPECT_EQ(result2.output_text, "Hello ");  // Accumulated text with stop removed
+  EXPECT_EQ(result2.output_text,
+            "Hello ");  // Accumulated text with stop removed
   EXPECT_TRUE(cancel_called_);
   EXPECT_EQ(cancelled_task_, 1);
 }

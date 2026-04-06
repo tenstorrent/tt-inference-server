@@ -36,8 +36,8 @@ LLMService::LLMService() : tokenizer_(&tt::utils::activeTokenizer()) {
   worker_manager_ = std::make_unique<tt::worker::WorkerManager>(numWorkers);
   reasoning_parser_ = std::make_unique<ReasoningParser>();
 
-  stop_string_processor_ = std::make_unique<StopStringProcessor>(
-      [this](uint32_t taskId) {
+  stop_string_processor_ =
+      std::make_unique<StopStringProcessor>([this](uint32_t taskId) {
         if (queue_manager_) {
           for (auto& cq : queue_manager_->cancel_queues) {
             cq->push(taskId);
@@ -306,10 +306,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
       // Accumulate answer text and check for stop strings
       if (!parseResult.text.empty() &&
-          parseResult.type == ContentType::ANSWER &&
-          stop_string_processor_) {
-
-        auto stopResult = stop_string_processor_->processText(taskId, parseResult.text);
+          parseResult.type == ContentType::ANSWER && stop_string_processor_) {
+        auto stopResult =
+            stop_string_processor_->processText(taskId, parseResult.text);
 
         if (stopResult.stop_detected) {
           parseResult.text = stopResult.output_text;
@@ -450,9 +449,8 @@ void LLMService::processStreamingRequest(
   tt::metrics::ServerMetrics::instance().setQueueDepth(
       static_cast<double>(pending_tasks_.load()));
 
-  StreamCallbackEntry entry{
-      std::move(callback),
-      {request.skip_special_tokens, request.stop}};
+  StreamCallbackEntry entry{std::move(callback),
+                            {request.skip_special_tokens, request.stop}};
   stream_callbacks_.insert(taskId, std::move(entry));
 
   if (reasoning_parser_) {

@@ -28,8 +28,9 @@ void StopStringProcessor::initializeTask(
 
   task_states_[task_id] = std::move(state);
 
-  TT_LOG_DEBUG("[StopStringProcessor] Initialized task {} with {} stop sequences",
-               task_id, stop_sequences.size());
+  TT_LOG_DEBUG(
+      "[StopStringProcessor] Initialized task {} with {} stop sequences",
+      task_id, stop_sequences.size());
 }
 
 StopCheckResult StopStringProcessor::processText(uint32_t task_id,
@@ -39,8 +40,9 @@ StopCheckResult StopStringProcessor::processText(uint32_t task_id,
   // Find task state
   auto it = task_states_.find(task_id);
   if (it == task_states_.end()) {
-    TT_LOG_WARN("[StopStringProcessor] processText called for uninitialized task {}",
-                task_id);
+    TT_LOG_WARN(
+        "[StopStringProcessor] processText called for uninitialized task {}",
+        task_id);
     return {false, "", text};
   }
 
@@ -106,8 +108,9 @@ void StopStringProcessor::finalizeTask(uint32_t task_id) {
 
   auto it = task_states_.find(task_id);
   if (it == task_states_.end()) {
-    TT_LOG_WARN("[StopStringProcessor] finalizeTask called for non-existent task {}",
-                task_id);
+    TT_LOG_WARN(
+        "[StopStringProcessor] finalizeTask called for non-existent task {}",
+        task_id);
     return;
   }
 
