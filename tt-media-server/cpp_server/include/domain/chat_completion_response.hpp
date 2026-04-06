@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "domain/completion_response.hpp"
+#include "domain/llm_response.hpp"
 
 namespace tt::domain {
 
@@ -86,8 +86,7 @@ struct ChatCompletionResponse {
     return Json::writeString(writer, toJson());
   }
 
-  static ChatCompletionResponse fromCompletionResponse(
-      const CompletionResponse& completion) {
+  static ChatCompletionResponse fromLLMResponse(const LLMResponse& completion) {
     ChatCompletionResponse response;
     response.id = completion.id;
     response.created = completion.created;
@@ -223,11 +222,11 @@ struct ChatCompletionStreamChunk {
   }
 
   /**
-   * Create a content delta chunk from a CompletionChoice.
+   * Create a content delta chunk from an LLMChoice.
    */
   static ChatCompletionStreamChunk makeContentChunk(
       const std::string& id, const std::string& model, int64_t created,
-      const CompletionChoice& completionChoice,
+      const LLMChoice& completionChoice,
       const std::optional<CompletionUsage>& usage = std::nullopt) {
     ChatCompletionStreamChunk chunk;
     chunk.id = id;

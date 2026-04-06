@@ -18,13 +18,13 @@ namespace tt::config {
  */
 struct LLMConfig {
   static constexpr size_t MAX_INPUT_TOKENS = 131072;  // 128k
-  int max_num_batched_tokens = 64 * MAX_INPUT_TOKENS;
-  int max_in_flight_count = 64;
+  size_t max_num_batched_tokens = 64 * MAX_INPUT_TOKENS;
+  size_t max_in_flight_count = 64;
   std::vector<int64_t> stop_token_ids;  // Set by llm_engine_config() from
                                         // active tokenizer strategy
   int eos = 1;
-  int kvcache_block_size = 256;
-  int num_kvcache_blocks = 512;
+  size_t kvcache_block_size = 256;
+  size_t num_kvcache_blocks = 512;
   ModelRunnerType runner_type = ModelRunnerType::MOCK;
   SchedulingPolicy scheduling_policy = SchedulingPolicy::PREFILL_FIRST;
 };

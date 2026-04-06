@@ -11,17 +11,17 @@ namespace llm_engine {
 
 using Config = tt::config::LLMConfig;
 
-Sequence::Sequence(TaskID taskId, int blockSize, std::vector<int64_t> tokenIds,
-                   const SamplingParams& samplingParams)
-    : taskId(std::move(taskId)),
+Sequence::Sequence(uint32_t taskId, int blockSize,
+                   std::vector<int64_t> inputTokenIds,
+                   const SamplingParams& inputSamplingParams)
+    : taskId(taskId),
       status(SequenceStatus::WAITING),
-      tokenIds(std::move(tokenIds)),
-      numPromptTokens(this->tokenIds.size()),
-      samplingParams(std::make_unique<SamplingParams>(samplingParams)),
+      tokenIds(std::move(inputTokenIds)),
+      numPromptTokens(tokenIds.size()),
+      samplingParams(std::make_unique<SamplingParams>(inputSamplingParams)),
       blockSize(blockSize) {
-  assert(!this->taskId.id.empty() && "Sequence requires a non-empty task_id");
-  if (!this->tokenIds.empty()) {
-    lastToken = this->tokenIds.back();
+  if (!tokenIds.empty()) {
+    lastToken = tokenIds.back();
   }
 }
 
@@ -32,15 +32,14 @@ std::vector<int64_t> Sequence::block(size_t i) const {
   }
   size_t start = i * blockSize;
   size_t end = std::min(start + blockSize, tokenIds.size());
-  return std::vector<int64_t>(tokenIds.begin() + start, tokenIds.begin() + end);
+  return {tokenIds.begin() + start, tokenIds.begin() + end};
 }
 
 std::vector<int64_t> Sequence::completionTokenIds() const {
   if (numPromptTokens >= tokenIds.size()) {
     return {};
   }
-  return std::vector<int64_t>(tokenIds.begin() + numPromptTokens,
-                              tokenIds.end());
+  return {tokenIds.begin() + numPromptTokens, tokenIds.end()};
 }
 
 void Sequence::appendToken(int64_t tokenId) {
@@ -51,9 +50,7 @@ void Sequence::appendToken(int64_t tokenId) {
 void Sequence::serialize(std::ostream& os) const {
   size_t tokenIdsSize = tokenIds.size();
   size_t blockTableSize = blockTable.size();
-  size_t idSize = taskId.id.size();
-  os.write(reinterpret_cast<const char*>(&idSize), sizeof(idSize));
-  os.write(taskId.id.c_str(), idSize);
+  os.write(reinterpret_cast<const char*>(&taskId), sizeof(taskId));
   os.write(reinterpret_cast<const char*>(&lastToken), sizeof(lastToken));
   os.write(reinterpret_cast<const char*>(&numPromptTokens),
            sizeof(numPromptTokens));
@@ -72,39 +69,36 @@ void Sequence::serialize(std::ostream& os) const {
   samplingParams->serialize(os);
 }
 
-Sequence* Sequence::deserialize(std::istream& is) {
-  size_t taskIdSize;
-  is.read(reinterpret_cast<char*>(&taskIdSize), sizeof(taskIdSize));
-  std::string taskIdStr(taskIdSize, '\0');
-  is.read(taskIdStr.data(), taskIdSize);
+Sequence Sequence::deserialize(std::istream& is) {
+  uint32_t taskId;
+  is.read(reinterpret_cast<char*>(&taskId), sizeof(taskId));
 
   Config defaultConfig;
-  Sequence* seq =
-      new Sequence(TaskID(std::move(taskIdStr)),
-                   defaultConfig.kvcache_block_size, std::vector<int64_t>{});
+  Sequence seq(taskId, static_cast<int>(defaultConfig.kvcache_block_size),
+               std::vector<int64_t>{});
 
-  is.read(reinterpret_cast<char*>(&seq->lastToken), sizeof(seq->lastToken));
-  is.read(reinterpret_cast<char*>(&seq->numPromptTokens),
-          sizeof(seq->numPromptTokens));
-  is.read(reinterpret_cast<char*>(&seq->numCachedTokens),
-          sizeof(seq->numCachedTokens));
+  is.read(reinterpret_cast<char*>(&seq.lastToken), sizeof(seq.lastToken));
+  is.read(reinterpret_cast<char*>(&seq.numPromptTokens),
+          sizeof(seq.numPromptTokens));
+  is.read(reinterpret_cast<char*>(&seq.numCachedTokens),
+          sizeof(seq.numCachedTokens));
 
   size_t tokenIdsSize;
   is.read(reinterpret_cast<char*>(&tokenIdsSize), sizeof(tokenIdsSize));
-  seq->tokenIds.resize(tokenIdsSize);
-  is.read(reinterpret_cast<char*>(seq->tokenIds.data()),
+  seq.tokenIds.resize(tokenIdsSize);
+  is.read(reinterpret_cast<char*>(seq.tokenIds.data()),
           tokenIdsSize * sizeof(int64_t));
 
   size_t blockTableSize;
   is.read(reinterpret_cast<char*>(&blockTableSize), sizeof(blockTableSize));
-  seq->blockTable.resize(blockTableSize);
-  is.read(reinterpret_cast<char*>(seq->blockTable.data()),
+  seq.blockTable.resize(blockTableSize);
+  is.read(reinterpret_cast<char*>(seq.blockTable.data()),
           blockTableSize * sizeof(int));
 
-  is.read(reinterpret_cast<char*>(&seq->status), sizeof(seq->status));
-  is.read(reinterpret_cast<char*>(&seq->blockSize), sizeof(seq->blockSize));
-  is.read(reinterpret_cast<char*>(&seq->address), sizeof(seq->address));
-  seq->samplingParams.reset(SamplingParams::deserialize(is));
+  is.read(reinterpret_cast<char*>(&seq.status), sizeof(seq.status));
+  is.read(reinterpret_cast<char*>(&seq.blockSize), sizeof(seq.blockSize));
+  is.read(reinterpret_cast<char*>(&seq.address), sizeof(seq.address));
+  seq.samplingParams = SamplingParams::deserialize(is);
   return seq;
 }
 

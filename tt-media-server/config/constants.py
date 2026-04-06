@@ -7,6 +7,7 @@ from enum import Enum
 
 class SupportedModels(Enum):
     STABLE_DIFFUSION_XL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
+    STABLE_DIFFUSION_XL_512 = "hotshotco/SDXL-512"
     STABLE_DIFFUSION_XL_IMG2IMG = "stabilityai/stable-diffusion-xl-base-1.0"
     STABLE_DIFFUSION_XL_INPAINTING = "diffusers/stable-diffusion-xl-1.0-inpainting-0.1"
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
@@ -24,6 +25,7 @@ class SupportedModels(Enum):
     QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
+    LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B"
     LLAMA_3_1_70B = "meta-llama/Llama-3.1-70B"
     QWEN_3_4B = "Qwen/Qwen3-4B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
@@ -34,6 +36,7 @@ class SupportedModels(Enum):
 # Model names should be unique
 class ModelNames(Enum):
     STABLE_DIFFUSION_XL_BASE = "stable-diffusion-xl-base-1.0"
+    STABLE_DIFFUSION_XL_512 = "SDXL-512"
     STABLE_DIFFUSION_XL_IMG2IMG = "stable-diffusion-xl-base-1.0-img-2-img"
     STABLE_DIFFUSION_XL_INPAINTING = "stable-diffusion-xl-1.0-inpainting-0.1"
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
@@ -49,6 +52,7 @@ class ModelNames(Enum):
     MICROSOFT_RESNET_50 = "resnet-50"
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
+    YOLOV4 = "yolov4"
     EFFICIENTNET = "efficientnet"
     SEGFORMER = "segformer"
     UNET = "unet"
@@ -57,6 +61,7 @@ class ModelNames(Enum):
     QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
     LLAMA_3_2_3B = "Llama-3.2-3B"
+    LLAMA_3_1_8B = "Llama-3.1-8B"
     LLAMA_3_1_70B = "Llama-3.1-70B"
     QWEN_3_4B = "Qwen3-4B"
     SPEECHT5_TTS = "speecht5_tts"
@@ -77,6 +82,7 @@ class ModelRunners(Enum):
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
     VLLM = "vllm"
+    TT_YOLOV4 = "tt-yolov4"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
@@ -88,13 +94,14 @@ class ModelRunners(Enum):
     TT_XLA_SEGFORMER = "tt-xla-segformer"
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
+    TRAINING_LLAMA_LORA = "training-llama-lora"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     MOCK = "mock"
-    MOCK_VIDEO = "mock-video"
     SP_RUNNER = "sp_runner"
     LLM_TEST = "llm_test"
     LLAMA_RUNNER = "llama_runner"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
+    TT_XLA_SDXL = "tt-xla-sdxl"
 
 
 class ModelServices(Enum):
@@ -119,6 +126,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW,
         ModelRunners.TT_QWEN_IMAGE,
         ModelRunners.TT_QWEN_IMAGE_2512,
+        ModelRunners.TT_XLA_SDXL,
     },
     ModelServices.LLM: {
         ModelRunners.VLLM,
@@ -139,6 +147,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_SEGFORMER,
         ModelRunners.TT_XLA_UNET,
         ModelRunners.TT_XLA_VIT,
+        ModelRunners.TT_YOLOV4,
     },
     ModelServices.AUDIO: {
         ModelRunners.TT_WHISPER,
@@ -146,11 +155,11 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.VIDEO: {
         ModelRunners.TT_MOCHI_1,
         ModelRunners.TT_WAN_2_2,
-        ModelRunners.MOCK_VIDEO,
         ModelRunners.SP_RUNNER,
     },
     ModelServices.TRAINING: {
         ModelRunners.TRAINING_GEMMA_LORA,
+        ModelRunners.TRAINING_LLAMA_LORA,
     },
     ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
@@ -170,7 +179,6 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
-    ModelRunners.MOCK_VIDEO: {ModelNames.WAN_2_2},
     ModelRunners.SP_RUNNER: {ModelNames.WAN_2_2, ModelNames.MOCHI_1},
     ModelRunners.TT_WHISPER: {
         ModelNames.OPENAI_WHISPER_LARGE_V3,
@@ -190,6 +198,11 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
+    ModelRunners.TRAINING_LLAMA_LORA: {ModelNames.LLAMA_3_1_8B},
+    ModelRunners.TT_XLA_SDXL: {
+        ModelNames.STABLE_DIFFUSION_XL_BASE,
+        ModelNames.STABLE_DIFFUSION_XL_512,
+    },
 }
 
 
@@ -204,6 +217,18 @@ class DeviceTypes(Enum):
     P150X4 = "p150x4"  # 4x P150 cards (1,4 mesh)
     P150X8 = "p150x8"  # BH LoudBox - 8x P150 (2,4 mesh)
     P300X2 = "p300x2"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
+    BLACKHOLE_GALAXY = "bh-galaxy"
+
+
+class TrainingMeshShapes(Enum):
+    P150 = (1, 1)
+    P300 = (1, 2)
+
+
+TRAINING_RUNNER_SUPPORTED_DEVICES = {
+    ModelRunners.TRAINING_GEMMA_LORA: {DeviceTypes.P150},
+    ModelRunners.TRAINING_LLAMA_LORA: {DeviceTypes.P300},
+}
 
 
 class QueueType(Enum):
@@ -217,8 +242,10 @@ class DeviceIds(Enum):
     DEVICE_IDS_1 = "(0)"
     DEVICE_IDS_2 = "(0),(1)"
     DEVICE_IDS_2_GROUP = "(0,1)"
+    DEVICE_IDS_2X2_GROUP = "(0,1),(2,3)"
     DEVICE_IDS_4 = "(0),(1),(2),(3)"
     DEVICE_IDS_4_GROUP = "(0,1,2,3)"
+    DEVICE_IDS_4x2_GROUP = "(0,1),(2,3),(4,5),(6,7)"
     DEVICE_IDS_8_GROUP = "(0,1,2,3,4,5,6,7)"
     DEVICE_IDS_16 = (
         "(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15)"
@@ -267,6 +294,7 @@ class JobTypes(Enum):
 
 class DatasetLoaders(Enum):
     SST2 = "sst2"
+    ALPACA = "alpaca"
 
 
 class TrainingTrainers(Enum):
@@ -276,6 +304,7 @@ class TrainingTrainers(Enum):
 
 class ModelDisplayNames(Enum):
     GEMMA_1_1_2B_IT = "Gemma 1.1 2B Instruct"
+    LLAMA_3_1_8B = "Llama 3.1 8B"
 
 
 class TrainingOptimizers(Enum):
@@ -381,6 +410,42 @@ ModelConfigs = {
         "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P300): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P150X4): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4x2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_TRACE, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SD3_5, DeviceTypes.T3K): {
@@ -601,13 +666,6 @@ ModelConfigs = {
         "device_mesh_shape": (2, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-    },
-    (ModelRunners.MOCK_VIDEO, DeviceTypes.N150): {
-        "device_mesh_shape": (1, 1),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
     },
@@ -926,6 +984,18 @@ ModelConfigs = {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_XLA_SDXL, DeviceTypes.P150X4): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_XLA_SDXL, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
         "max_batch_size": 1,
     },
 }

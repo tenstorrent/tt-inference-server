@@ -3,93 +3,59 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstdint>
+#include <future>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
-#include <unordered_map>
+#include <thread>
 
 #include "domain/session.hpp"
+#include "ipc/boost_ipc_queue.hpp"
+#include "utils/concurrent_map.hpp"
 
 namespace tt::services {
 
-/**
- * SessionManager manages user sessions and slot assignments.
- */
+using tt::domain::INVALID_SLOT_ID;
+
 class SessionManager {
  public:
-  SessionManager() = default;
-  ~SessionManager() = default;
+  SessionManager();
+  ~SessionManager();
 
-  // Non-copyable
   SessionManager(const SessionManager&) = delete;
   SessionManager& operator=(const SessionManager&) = delete;
 
-  /**
-   * Create a new session.
-   * @param slotId Optional slot ID to assign (max uint32_t means unassigned)
-   * @return The created session
-   */
-  domain::Session createSession(std::optional<uint32_t> slotId = std::nullopt);
-
-  /**
-   * Close a session and remove it from the manager.
-   * @param sessionId The session ID to close
-   * @return true if session was found and closed, false otherwise
-   */
+  domain::Session createSession(std::optional<uint32_t> slotId = std::nullopt,
+                                bool inFlight = false);
   bool closeSession(const std::string& sessionId);
-
-  /**
-   * Assign a slot ID to an existing session.
-   * @param sessionId The session ID
-   * @param slotId The slot ID to assign
-   * @return true if session was found and slot assigned, false otherwise
-   */
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
-
-  /**
-   * Get the slot ID for a session.
-   * @param sessionId The session ID
-   * @return The slot ID, or max uint32_t if session not found or no slot
-   * assigned
-   */
   uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
-
-  /**
-   * Get a session by ID.
-   * @param sessionId The session ID
-   * @return Optional session object
-   */
+  uint32_t acquireSessionSlot(const std::string& sessionId);
   std::optional<domain::Session> getSession(const std::string& sessionId) const;
-
-  /**
-   * Get the count of active sessions.
-   */
   size_t getActiveSessionCount() const;
 
+  // In-flight session management
+  void setSessionInFlight(const std::string& sessionId, bool inFlight);
+
  private:
-  /**
-   * Evict old sessions if the eviction threshold is exceeded.
-   * Called automatically when creating new sessions.
-   */
   void evictOldSessions();
+  std::future<uint32_t> requestSlotIdFromMemoryManager(
+      const std::string& sessionId);
+  void sendDeallocRequest(const std::string& sessionId, uint32_t slotId);
+  void drainResultQueue();
 
-  /**
-   * Find the N oldest sessions (by last activity time).
-   * @param count Number of oldest sessions to find
-   * @return Vector of session IDs, sorted from oldest to newest
-   */
-  std::vector<std::string> findOldestSessions(size_t count) const;
+  mutable ConcurrentMap<std::string, domain::Session> sessions;
 
-  /**
-   * Close a session without locking (assumes mutex is already locked).
-   * @param sessionId The session ID to close
-   * @return true if session was found and closed, false otherwise
-   */
-  bool closeSessionLocked(const std::string& sessionId);
+  std::unique_ptr<ipc::MemoryRequestQueue> memoryRequestQueue;
+  std::unique_ptr<ipc::MemoryResultQueue> memoryResultQueue;
 
-  mutable std::mutex mutex_;
-  std::unordered_map<std::string, domain::Session> sessions_;
+  using PromisePtr = std::shared_ptr<std::promise<uint32_t>>;
+  ConcurrentMap<uint32_t, PromisePtr> pendingAllocations;
+  std::atomic<bool> stopped{false};
+  std::atomic<bool> evictionInProgress{false};
+  std::thread drainThread;
 };
 
 }  // namespace tt::services

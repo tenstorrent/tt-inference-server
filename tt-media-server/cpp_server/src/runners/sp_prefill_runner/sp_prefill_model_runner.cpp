@@ -16,19 +16,33 @@ SpPrefillModelRunner::SpPrefillModelRunner()
 SpPrefillModelRunner::~SpPrefillModelRunner() { exit(); }
 
 std::optional<llm_engine::TokenResult> SpPrefillModelRunner::forward(
-    const std::string& taskId, const std::vector<int64_t>& tokenIds) {
+    uint32_t taskId, const std::vector<int64_t>& tokenIds) {
+  TT_LOG_DEBUG(
+      "SpPrefillModelRunner: Writing into shared memory input task_id={}, "
+      "token count={}",
+      taskId, tokenIds.size());
   deviceInput.write(taskId, tokenIds, 1);
 
   tt::ipc::ReadResult readBuf;
+  TT_LOG_DEBUG(
+      "SpPrefillModelRunner: Reading from shared memory output task_id={}",
+      taskId);
   while (!stop.load(std::memory_order_relaxed)) {
     if (deviceOutput.tryRead(readBuf)) {
-      llm_engine::TaskID tid = llm_engine::TaskID::ipcDeserialize(
-          readBuf.taskId.data(), llm_engine::TaskID::K_SERIALIZED_SIZE);
       uint64_t tokenId = readBuf.tokenIds.empty() ? 0 : readBuf.tokenIds[0];
-      return llm_engine::TokenResult(std::move(tid), tokenId);
+      TT_LOG_DEBUG(
+          "SpPrefillModelRunner: Read from shared memory output task_id={}, "
+          "token_id={}, token count={}",
+          taskId, tokenId, readBuf.tokenIds.size());
+      return llm_engine::TokenResult(readBuf.taskId, tokenId);
     }
+    TT_LOG_DEBUG("SpPrefillModelRunner: Shared memory read failed");
     std::this_thread::yield();
   }
+  TT_LOG_DEBUG(
+      "SpPrefillModelRunner: forward exiting without Shared memory response "
+      "(stop)",
+      taskId);
   return std::nullopt;
 }
 

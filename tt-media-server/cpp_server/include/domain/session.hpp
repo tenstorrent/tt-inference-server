@@ -7,11 +7,12 @@
 
 #include <chrono>
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <random>
 #include <sstream>
 #include <string>
+
+#include "domain/manage_memory.hpp"
 
 namespace tt::domain {
 
@@ -24,7 +25,7 @@ class Session {
    * Create a new session with a generated UUID.
    * @param slotId Optional slot ID (max uint32_t means unassigned)
    */
-  explicit Session(uint32_t slotId = std::numeric_limits<uint32_t>::max());
+  explicit Session(uint32_t slotId = INVALID_SLOT_ID);
 
   /**
    * Get the session ID (UUID).
@@ -45,9 +46,17 @@ class Session {
   /**
    * Check if a slot is assigned.
    */
-  bool hasSlot() const {
-    return slot_id_ != std::numeric_limits<uint32_t>::max();
-  }
+  bool hasSlot() const { return slot_id_ != INVALID_SLOT_ID; }
+
+  /**
+   * Check if the session is in-flight (has an active request).
+   */
+  bool isInFlight() const { return in_flight_; }
+
+  /**
+   * Set the in-flight status of the session.
+   */
+  void setInFlight(bool inFlight) { in_flight_ = inFlight; }
 
   /**
    * Get the last activity time.
@@ -76,6 +85,7 @@ class Session {
  private:
   std::string session_id_;
   uint32_t slot_id_;
+  bool in_flight_{false};
   std::chrono::system_clock::time_point last_activity_time_;
 
   /**

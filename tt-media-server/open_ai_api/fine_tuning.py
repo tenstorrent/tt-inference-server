@@ -5,13 +5,14 @@ import os
 import io
 import zipfile
 from config.constants import JobTypes
+from config.settings import get_settings
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import JSONResponse, StreamingResponse
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
-from utils.build_catalog import TRAINING_CATALOG
+from utils.build_catalog import build_training_catalog
 
 router = APIRouter()
 
@@ -24,7 +25,9 @@ async def get_catalog(api_key: str = Security(get_api_key)):
     Returns:
         JSONResponse: Full training catalog.
     """
-    return JSONResponse(content=TRAINING_CATALOG)
+    settings = get_settings()
+    catalog = build_training_catalog(settings.model_runner)
+    return JSONResponse(content=catalog)
 
 
 @router.post("/jobs")

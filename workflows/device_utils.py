@@ -17,6 +17,7 @@ DEVICE_DEFAULT_PRIORITY = (
     DeviceTypes.GALAXY,
     DeviceTypes.GALAXY_T3K,
     DeviceTypes.T3K,
+    DeviceTypes.BLACKHOLE_GALAXY,
     DeviceTypes.P300X2,
     DeviceTypes.P300,
     DeviceTypes.P150X8,
@@ -44,6 +45,7 @@ BOARD_TYPE_COUNT_TO_DEVICE: Dict[Tuple[Tuple[str, int], ...], DeviceTypes] = {
     (("p150", 8),): DeviceTypes.P150X8,
     (("p300", 1),): DeviceTypes.P300,
     (("p300", 2),): DeviceTypes.P300X2,
+    (("tt-galaxy-bh", 32),): DeviceTypes.BLACKHOLE_GALAXY,
 }
 
 

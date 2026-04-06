@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+BASE_URL="${OPENAI_API_BASE:-http://localhost:8000}"
 MODEL="${MODEL:-deepseek-ai/DeepSeek-R1-0528}"
 BACKEND="openai-chat"
 ENDPOINT="/v1/chat/completions"
@@ -18,6 +19,7 @@ run_bench() {
 
     echo "=== Running: ISL=${isl} OSL=${osl} max-concurrency=${concurrency} ==="
     vllm bench serve \
+        --base-url "$BASE_URL" \
         --model "$MODEL" \
         --backend "$BACKEND" \
         --endpoint "$ENDPOINT" \
