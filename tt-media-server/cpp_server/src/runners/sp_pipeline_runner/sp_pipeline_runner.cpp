@@ -71,7 +71,7 @@ bool SpPipelineRunner::warmup() {
       1,  // block_size (doesn't matter for warmup)
       warmupTokens, warmupParams);
 
-  modelRunner->write(warmupSeq->taskId, warmupSeq->tokenIds, 1,
+  modelRunner->write(warmupSeq->taskId, warmupSeq->getTokenIds(), 1,
                      sp_pipeline::RequestPhase::PREFILL, false);
 
   // Wait for the response token (with timeout)
@@ -137,14 +137,14 @@ void SpPipelineRunner::step() {
     ZoneScopedN("SpPipelineRunner::write_to_device");
     uint32_t taskId = seq->taskId;
 
-    if (!seq->samplingParams->max_tokens.has_value()) {
-      seq->samplingParams->max_tokens =
+    if (!seq->getSamplingParams().max_tokens.has_value()) {
+      seq->getMutableSamplingParams().max_tokens =
           static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
     }
 
     modelRunner->write(
-        taskId, seq->tokenIds, seq->samplingParams->max_tokens.value(),
-        sp_pipeline::RequestPhase::PREFILL, seq->samplingParams->fast_mode);
+        taskId, seq->getTokenIds(), seq->getSamplingParams().max_tokens.value(),
+        sp_pipeline::RequestPhase::PREFILL, seq->getSamplingParams().fast_mode);
 
     activeSequences.emplace(taskId, std::move(seq));
     ++inFlightCount;
@@ -175,11 +175,11 @@ void SpPipelineRunner::drainDecodeResults() {
 
     bool isStop = stopTokenIds.count(static_cast<int64_t>(dr.tokenId)) > 0;
     bool reachedMaxTokens =
-        seq->samplingParams->max_tokens.has_value() &&
+        seq->getSamplingParams().max_tokens.has_value() &&
         seq->numCompletionTokens() >=
-            static_cast<size_t>(seq->samplingParams->max_tokens.value());
+            static_cast<size_t>(seq->getSamplingParams().max_tokens.value());
     bool finished =
-        (!seq->samplingParams->ignore_eos && isStop) || reachedMaxTokens;
+        (!seq->getSamplingParams().ignore_eos && isStop) || reachedMaxTokens;
 
     ipc::pushToken(*resultQueue, dr.taskId, dr.tokenId, finished);
 

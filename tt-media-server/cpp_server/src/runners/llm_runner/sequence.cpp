@@ -12,16 +12,16 @@ namespace llm_engine {
 using Config = tt::config::LLMConfig;
 
 Sequence::Sequence(uint32_t taskId, int blockSize,
-                   std::vector<int64_t> tokenIds,
-                   const SamplingParams& samplingParams)
-    : taskId(std::move(taskId)),
+                   std::vector<int64_t> inputTokenIds,
+                   const SamplingParams& inputSamplingParams)
+    : taskId(taskId),
       status(SequenceStatus::WAITING),
-      tokenIds(std::move(tokenIds)),
-      numPromptTokens(this->tokenIds.size()),
-      samplingParams(std::make_unique<SamplingParams>(samplingParams)),
+      tokenIds(std::move(inputTokenIds)),
+      numPromptTokens(tokenIds.size()),
+      samplingParams(std::make_unique<SamplingParams>(inputSamplingParams)),
       blockSize(blockSize) {
-  if (!this->tokenIds.empty()) {
-    lastToken = this->tokenIds.back();
+  if (!tokenIds.empty()) {
+    lastToken = tokenIds.back();
   }
 }
 
@@ -32,15 +32,14 @@ std::vector<int64_t> Sequence::block(size_t i) const {
   }
   size_t start = i * blockSize;
   size_t end = std::min(start + blockSize, tokenIds.size());
-  return std::vector<int64_t>(tokenIds.begin() + start, tokenIds.begin() + end);
+  return {tokenIds.begin() + start, tokenIds.begin() + end};
 }
 
 std::vector<int64_t> Sequence::completionTokenIds() const {
   if (numPromptTokens >= tokenIds.size()) {
     return {};
   }
-  return std::vector<int64_t>(tokenIds.begin() + numPromptTokens,
-                              tokenIds.end());
+  return {tokenIds.begin() + numPromptTokens, tokenIds.end()};
 }
 
 void Sequence::appendToken(int64_t tokenId) {
