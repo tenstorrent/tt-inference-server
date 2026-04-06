@@ -204,8 +204,8 @@ domain::LLMStreamChunk buildStreamChunk(
 
 }  // namespace
 
-std::optional<LLMService::StreamCallbackEntry>
-LLMService::resolveCallback(uint32_t taskId, bool isFinal) {
+std::optional<LLMService::StreamCallbackEntry> LLMService::resolveCallback(
+    uint32_t taskId, bool isFinal) {
   if (isFinal) {
     auto val = stream_callbacks_.take(taskId);
     if (!val.has_value()) return std::nullopt;
@@ -258,9 +258,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         continue;
       }
 
-      std::string delta = decodeToken(streamDecoders, tokenizer_, taskId,
-                                      token.token_id, isFinal,
-                                      entry->skip_special_tokens);
+      std::string delta =
+          decodeToken(streamDecoders, tokenizer_, taskId, token.token_id,
+                      isFinal, entry->skip_special_tokens);
       recordTokenMetrics(metricsSampling, taskId);
 
       TokenParseResult parseResult{ContentType::ANSWER, delta, true};

@@ -75,7 +75,7 @@ class LLMService
   void consumerLoopForWorker(size_t workerIdx);
 
   std::optional<StreamCallbackEntry> resolveCallback(uint32_t taskId,
-                                                      bool isFinal);
+                                                     bool isFinal);
 
   std::vector<std::thread> consumer_threads_;
 
