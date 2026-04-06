@@ -27,7 +27,7 @@ class MockSpPipelineModelRunner : public ISpPipelineModelRunner {
       delete;
 
   void write(uint32_t task_id, const std::vector<int64_t>& token_ids,
-             uint32_t max_tokens, RequestPhase phase) override;
+             uint32_t max_tokens, RequestPhase phase, bool fastMode) override;
   void exit() override;
 
  private:

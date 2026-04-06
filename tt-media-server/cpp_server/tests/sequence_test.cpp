@@ -45,6 +45,7 @@ TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
   EXPECT_EQ(restored->allowed_token_ids, orig.allowed_token_ids);
   EXPECT_EQ(restored->prompt_logprobs, orig.prompt_logprobs);
   EXPECT_EQ(restored->truncate_prompt_tokens, orig.truncate_prompt_tokens);
+  EXPECT_EQ(restored->fast_mode, orig.fast_mode);
 }
 
 TEST(SamplingParamsTest, SerializeDeserialize_AllOptionalFieldsSet) {
@@ -69,6 +70,7 @@ TEST(SamplingParamsTest, SerializeDeserialize_AllOptionalFieldsSet) {
   orig.allowed_token_ids = {100, 200, 300};
   orig.prompt_logprobs = 5;
   orig.truncate_prompt_tokens = 128;
+  orig.fast_mode = true;
 
   std::ostringstream os;
   orig.serialize(os);
@@ -106,6 +108,7 @@ TEST(SamplingParamsTest, SerializeDeserialize_AllOptionalFieldsSet) {
   EXPECT_EQ(*restored->prompt_logprobs, *orig.prompt_logprobs);
   ASSERT_TRUE(restored->truncate_prompt_tokens.has_value());
   EXPECT_EQ(*restored->truncate_prompt_tokens, *orig.truncate_prompt_tokens);
+  EXPECT_EQ(restored->fast_mode, orig.fast_mode);
 }
 
 TEST(SequenceTest, SerializeDeserialize_RoundTrip_PreservesAllFields) {
