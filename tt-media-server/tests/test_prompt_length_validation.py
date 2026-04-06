@@ -80,7 +80,7 @@ class TestCompletionsPromptLengthValidation:
     """Test that /v1/completions rejects prompts exceeding max_model_length."""
 
     @patch("open_ai_api.llm.settings")
-    @patch("open_ai_api.chat._count_tokens", return_value=200)
+    @patch("open_ai_api.llm._count_tokens", return_value=200)
     def test_returns_400_for_string_prompt_exceeding_limit(
         self, mock_count, mock_settings, test_client
     ):
