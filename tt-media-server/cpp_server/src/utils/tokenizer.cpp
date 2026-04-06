@@ -61,7 +61,7 @@ Tokenizer::Tokenizer(const std::string& path) {
 
   if (path.size() >= 5 && path.compare(path.size() - 5, 5, ".json") == 0) {
     tok_ = tokenizers::Tokenizer::FromBlobJSON(blob);
-    special_token_ids_ = parseSpecialTokenIds(blob);
+    specialTokenIds_ = parseSpecialTokenIds(blob);
   } else if (path.size() >= 7 &&
              path.compare(path.size() - 7, 7, ".model") == 0) {
     tok_ = tokenizers::Tokenizer::FromBlobSentencePiece(blob);
@@ -82,7 +82,7 @@ Tokenizer::Tokenizer(const std::string& path) {
   }
 
   TT_LOG_INFO("[TokenizerUtil] Loaded tokenizer from: {} ({} special tokens)",
-              path, special_token_ids_.size());
+              path, specialTokenIds_.size());
 }
 
 bool Tokenizer::isLoaded() const { return tok_ != nullptr; }
@@ -95,7 +95,8 @@ std::vector<int> Tokenizer::encode(const std::string& text) const {
   return tok_->Encode(text);
 }
 
-std::string Tokenizer::decode(const std::vector<int>& tokenIds) const {
+std::string Tokenizer::decode(const std::vector<int>& tokenIds,
+                              bool skipSpecialTokens) const {
   if (!tok_) {
     throw std::runtime_error(
         "[TokenizerUtil] Tokenizer not loaded, cannot decode");
@@ -103,13 +104,13 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds) const {
   if (tokenIds.empty()) return "";
 
   // Fast path: no special tokens to filter
-  if (special_token_ids_.empty()) {
+  if (!skipSpecialTokens || specialTokenIds_.empty()) {
     return tok_->Decode(tokenIds);
   }
 
   // Fast path: single token, check if special
   if (tokenIds.size() == 1) {
-    if (special_token_ids_.find(tokenIds[0]) != special_token_ids_.end()) {
+    if (specialTokenIds_.find(tokenIds[0]) != specialTokenIds_.end()) {
       return "";  // Special token, skip it
     }
     return tok_->Decode(tokenIds);
@@ -119,7 +120,7 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds) const {
   std::vector<int> filtered;
   filtered.reserve(tokenIds.size());
   for (int id : tokenIds) {
-    if (special_token_ids_.find(id) == special_token_ids_.end()) {
+    if (specialTokenIds_.find(id) == specialTokenIds_.end()) {
       filtered.push_back(id);
     }
   }
@@ -142,24 +143,22 @@ bool endsWithReplacementChar(const std::string& s) {
 
 }  // namespace
 
-Tokenizer::StreamDecoder::StreamDecoder(const Tokenizer& tokenizer)
-    : tokenizer_(tokenizer) {}
+Tokenizer::StreamDecoder::StreamDecoder(const Tokenizer& tokenizer,
+                                        bool skipSpecialTokens)
+    : tokenizer_(tokenizer), skipSpecialTokens_(skipSpecialTokens) {}
 
 std::string Tokenizer::StreamDecoder::step(int tokenId) {
-  // Fast path: no pending tokens, decode single token directly
   if (pending_.empty()) {
-    std::string decoded = tokenizer_.decode({tokenId});
+    std::string decoded = tokenizer_.decode({tokenId}, skipSpecialTokens_);
     if (!endsWithReplacementChar(decoded)) {
       return decoded;
     }
-    // Incomplete UTF-8, buffer it
     pending_.push_back(tokenId);
     return "";
   }
 
-  // Slow path: we have buffered tokens, try adding this one
   pending_.push_back(tokenId);
-  std::string decoded = tokenizer_.decode(pending_);
+  std::string decoded = tokenizer_.decode(pending_, skipSpecialTokens_);
   if (!endsWithReplacementChar(decoded)) {
     pending_.clear();
     return decoded;
@@ -169,14 +168,14 @@ std::string Tokenizer::StreamDecoder::step(int tokenId) {
 
 std::string Tokenizer::StreamDecoder::flush() {
   if (pending_.empty()) return "";
-  std::string decoded = tokenizer_.decode(pending_);
+  std::string decoded = tokenizer_.decode(pending_, skipSpecialTokens_);
   pending_.clear();
   return decoded;
 }
 
-std::unique_ptr<Tokenizer::StreamDecoder> Tokenizer::createStreamDecoder()
-    const {
-  return std::make_unique<StreamDecoder>(*this);
+std::unique_ptr<Tokenizer::StreamDecoder> Tokenizer::createStreamDecoder(
+    bool skipSpecialTokens) const {
+  return std::make_unique<StreamDecoder>(*this, skipSpecialTokens);
 }
 
 // ---------------------------------------------------------------------------

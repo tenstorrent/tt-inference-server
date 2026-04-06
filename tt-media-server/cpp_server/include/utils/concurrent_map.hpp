@@ -19,6 +19,11 @@ class ConcurrentMap {
     map_[key] = value;
   }
 
+  void insert(const Key& key, Value&& value) {
+    std::lock_guard lock(mutex);
+    map_[key] = std::move(value);
+  }
+
   std::optional<Value> get(const Key& key) {
     std::lock_guard lock(mutex);
     auto it = map_.find(key);
