@@ -425,8 +425,8 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
 
 void LLMService::abortRequest(uint32_t taskId) {
   // Atomically remove the stream callback and decrement pending_tasks_.
-  auto cb = stream_callbacks_.take(taskId);
-  if (cb.has_value()) {
+  auto entry = stream_callbacks_.take(taskId);
+  if (entry.has_value()) {
     pending_tasks_.fetch_sub(1);
     tt::metrics::ServerMetrics::instance().setQueueDepth(
         static_cast<double>(pending_tasks_.load()));
@@ -436,12 +436,12 @@ void LLMService::abortRequest(uint32_t taskId) {
   // (e.g. processRequest's cv.wait) is unblocked.  For streaming requests the
   // controller sets done=true BEFORE calling abortRequest, so the callback's
   // done->load() check returns immediately — no SSE data is sent.
-  if (cb.has_value()) {
+  if (entry.has_value()) {
     domain::LLMStreamChunk abortResponse{taskId};
     domain::LLMChoice choice;
     choice.finish_reason = "abort";
     abortResponse.choices.push_back(std::move(choice));
-    cb->callback(abortResponse, /*isFinal=*/true);
+    entry->callback(abortResponse, /*isFinal=*/true);
   }
 
   // Clean up any reasoning-parser state so task_states_ does not leak.
