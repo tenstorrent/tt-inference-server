@@ -77,11 +77,14 @@ class Tokenizer {
   std::vector<int> encode(const std::string& text) const;
 
   /**
-   * Decode token IDs to text. Special tokens (parsed from the tokenizer JSON's
-   * added_tokens with "special": true) are filtered out before decoding.
+   * Decode token IDs to text.
+   * @param skipSpecialTokens If true (default), special tokens (parsed from
+   *   the tokenizer JSON's added_tokens with "special": true) are filtered out
+   *   before decoding. If false, all tokens are decoded as-is.
    * @throws std::runtime_error if tokenizer not loaded.
    */
-  std::string decode(const std::vector<int>& tokenIds) const;
+  std::string decode(const std::vector<int>& tokenIds,
+                     bool skipSpecialTokens = true) const;
 
   /** Check if tokenizer is loaded and ready. */
   bool isLoaded() const;
@@ -102,7 +105,8 @@ class Tokenizer {
    */
   class StreamDecoder {
    public:
-    explicit StreamDecoder(const Tokenizer& tokenizer);
+    explicit StreamDecoder(const Tokenizer& tokenizer,
+                           bool skipSpecialTokens = true);
 
     /**
      * Decodes the next token. Returns the decoded text delta, or "" if the
@@ -121,14 +125,16 @@ class Tokenizer {
    private:
     const Tokenizer& tokenizer_;
     std::vector<int> pending_;
+    bool skipSpecialTokens_;
   };
 
-  std::unique_ptr<StreamDecoder> createStreamDecoder() const;
+  std::unique_ptr<StreamDecoder> createStreamDecoder(
+      bool skipSpecialTokens = true) const;
 
  protected:
   std::unique_ptr<tokenizers::Tokenizer> tok_;
   TokenizerConfig cfg_;
-  std::unordered_set<int> special_token_ids_;
+  std::unordered_set<int> specialTokenIds_;
 };
 
 /**
