@@ -86,8 +86,8 @@ const std::vector<std::string>& deviceIdsParsed() {
 }  // namespace
 
 ModelService modelService() {
-  static const ModelService cached =
-      modelServiceFromString(envStringLower("MODEL_SERVICE", defaults::MODEL_SERVICE));
+  static const ModelService cached = modelServiceFromString(
+      envStringLower("MODEL_SERVICE", defaults::MODEL_SERVICE));
   return cached;
 }
 

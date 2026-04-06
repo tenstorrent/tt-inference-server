@@ -49,8 +49,8 @@ int main(int argc, char* argv[]) {
 
     std::thread shutdownMonitor([&worker] {
       while (!workerShutdown.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(
-            tt::config::defaults::SHUTDOWN_POLL_MS));
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
       }
       worker.stop();
     });
