@@ -3,6 +3,7 @@
 
 #include "runners/sp_prefill_runner/sp_prefill_runner.hpp"
 
+#include "ipc/token_push.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
@@ -24,31 +25,36 @@ SpPrefillRunner::~SpPrefillRunner() {
 void SpPrefillRunner::run() {
   while (!stopped.load(std::memory_order_relaxed)) {
     // Get next sequence from task queue
-    auto* seq = taskQueue->tryPop();
-    if (!seq) {
+    auto sequence = taskQueue->tryPop();
+    if (!sequence) {
+      TT_LOG_DEBUG("SpPrefillRunner: No sequence from task queue");
       std::this_thread::yield();
       continue;
     }
-
-    // Use unique_ptr to ensure cleanup
-    std::unique_ptr<llm_engine::Sequence> sequence(seq);
     TT_LOG_DEBUG("SpPrefillRunner: Starting prefill for task {}",
-                 sequence->taskId.id);
+                 sequence->taskId);
 
-    auto result = modelRunner->forward(sequence->taskId.id, sequence->tokenIds);
+    auto result =
+        modelRunner->forward(sequence->taskId, sequence->getTokenIds());
 
     if (!result) {
+      TT_LOG_DEBUG(
+          "SpPrefillRunner: forward returned without result for task {}",
+          sequence->taskId);
       break;  // stopped
     }
 
+    TT_LOG_DEBUG("SpPrefillRunner: forward finished for task {}",
+                 result->taskId);
+
     if (result->isError) {
-      TT_LOG_WARN("SpPrefillRunner: Error token for task {}",
-                  result->taskId.id);
-      pushErrorToken(result->taskId);
+      TT_LOG_WARN("SpPrefillRunner: Error token for task {}", result->taskId);
+      ipc::pushErrorToken(*resultQueue, result->taskId);
     } else {
-      TT_LOG_DEBUG("SpPrefillRunner: Received prefill token {} for task {}",
-                   result->tokenId, result->taskId.id);
-      pushToken(result->taskId, result->tokenId, true);  // Always finished
+      TT_LOG_DEBUG(
+          "SpPrefillRunner: pushToken task_id={} token_id={} finished={}",
+          result->taskId, result->tokenId, true);
+      ipc::pushToken(*resultQueue, result->taskId, result->tokenId, true);
     }
 
     // sequence automatically cleaned up at end of scope
@@ -57,9 +63,11 @@ void SpPrefillRunner::run() {
 
 bool SpPrefillRunner::warmup() {
   std::vector<int64_t> warmupTokens = {1};
-  llm_engine::TaskID warmupTaskId("warmup_task");
+  uint32_t warmupTaskId = 0;  // Use 0 for warmup task
 
-  auto result = modelRunner->forward(warmupTaskId.id, warmupTokens);
+  TT_LOG_DEBUG("SpPrefillRunner: warmup forward task_id={} token_count={}",
+               warmupTaskId, warmupTokens.size());
+  auto result = modelRunner->forward(warmupTaskId, warmupTokens);
   if (!result || result->isError) {
     TT_LOG_ERROR("SpPrefillRunner: Warmup failed");
     return false;
@@ -73,26 +81,4 @@ void SpPrefillRunner::stop() {
   TT_LOG_INFO("SpPrefillRunner: Stopping");
   stopped.store(true, std::memory_order_relaxed);
 }
-
-void SpPrefillRunner::pushToken(const llm_engine::TaskID& taskId,
-                                uint64_t tokenId, bool finished) {
-  ipc::SharedToken shared{};
-  shared.token_index = 0;
-  shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;
-  shared.token_id = tokenId;
-  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
-  shared.task_id[sizeof(shared.task_id) - 1] = '\0';
-  resultQueue->push(shared);
-}
-
-void SpPrefillRunner::pushErrorToken(const llm_engine::TaskID& taskId) {
-  ipc::SharedToken shared{};
-  shared.token_index = 0;
-  shared.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR;
-  shared.token_id = 0;
-  std::strncpy(shared.task_id, taskId.id.c_str(), sizeof(shared.task_id) - 1);
-  shared.task_id[sizeof(shared.task_id) - 1] = '\0';
-  resultQueue->push(shared);
-}
-
 }  // namespace tt::runners

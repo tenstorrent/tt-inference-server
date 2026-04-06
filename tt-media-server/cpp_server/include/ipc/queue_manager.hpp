@@ -13,8 +13,6 @@
 
 namespace tt::ipc {
 
-using namespace std;
-
 constexpr const char* TASK_QUEUE_NAME = "tt_tasks";
 constexpr const char* CANCEL_QUEUE_PREFIX = "tt_cancels_";
 constexpr size_t RING_BUFFER_CAPACITY = 65536;
@@ -26,24 +24,23 @@ constexpr size_t CANCEL_QUEUE_CAPACITY = 1024;
  */
 class QueueManager {
  public:
-  shared_ptr<BoostIpcTaskQueue> task_queue;
-  vector<shared_ptr<TokenRingBuffer<RING_BUFFER_CAPACITY>>> result_queues;
-  vector<shared_ptr<BoostIpcCancelQueue>> cancel_queues;
+  std::shared_ptr<BoostIpcTaskQueue> task_queue;
+  std::vector<std::shared_ptr<TokenRingBuffer<RING_BUFFER_CAPACITY>>>
+      result_queues;
+  std::vector<std::shared_ptr<BoostIpcCancelQueue>> cancel_queues;
 
   explicit QueueManager(int numWorkers) {
-    BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
-    task_queue = make_shared<BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
+    task_queue = std::make_shared<BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
     result_queues.reserve(numWorkers);
     cancel_queues.reserve(numWorkers);
     for (int i = 0; i < numWorkers; i++) {
       result_queues.emplace_back(
-          make_shared<TokenRingBuffer<RING_BUFFER_CAPACITY>>(
-              "/tt_tokens_" + to_string(i), true));
+          std::make_shared<TokenRingBuffer<RING_BUFFER_CAPACITY>>(
+              "/tt_tokens_" + std::to_string(i), true));
 
-      string cancelName = CANCEL_QUEUE_PREFIX + to_string(i);
-      BoostIpcCancelQueue::removeByName(cancelName);
-      cancel_queues.emplace_back(
-          make_shared<BoostIpcCancelQueue>(cancelName, CANCEL_QUEUE_CAPACITY));
+      std::string cancelName = CANCEL_QUEUE_PREFIX + std::to_string(i);
+      cancel_queues.emplace_back(std::make_shared<BoostIpcCancelQueue>(
+          cancelName, CANCEL_QUEUE_CAPACITY));
     }
   }
 

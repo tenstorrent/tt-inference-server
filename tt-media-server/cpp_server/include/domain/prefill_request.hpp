@@ -8,8 +8,6 @@
 #include <string>
 #include <vector>
 
-#include "domain/task_id.hpp"
-
 namespace tt::domain {
 
 /**
@@ -19,12 +17,12 @@ namespace tt::domain {
  * Controllers (Socket) decide how to deliver this request.
  */
 struct PrefillRequest {
-  TaskID task_id;
+  uint32_t task_id;
   std::string prompt;
   std::vector<int64_t> token_ids;
   std::optional<int> max_tokens;
 
-  explicit PrefillRequest(TaskID taskId) : task_id(std::move(taskId)) {}
+  explicit PrefillRequest(uint32_t taskId) : task_id(taskId) {}
 };
 
 }  // namespace tt::domain

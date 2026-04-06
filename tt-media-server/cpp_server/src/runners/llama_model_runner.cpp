@@ -93,21 +93,21 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
       for (Sequence* seq : seqs) {
         py::list tokenIds;
         if (isPrefill) {
-          for (int64_t t : seq->tokenIds) tokenIds.append(t);
+          for (int64_t t : seq->getTokenIds()) tokenIds.append(t);
         } else {
-          tokenIds.append(seq->tokenIds.back());
+          tokenIds.append(seq->getTokenIds().back());
         }
 
         py::list blockTable;
-        for (int bid : seq->blockTable) {
+        for (int bid : seq->getBlockTable()) {
           blockTable.append(bid);
         }
 
         int currentPos =
-            isPrefill ? 0 : static_cast<int>(seq->tokenIds.size() - 1);
-        int promptLen = static_cast<int>(seq->numPromptTokens);
+            isPrefill ? 0 : static_cast<int>(seq->getTokenIds().size() - 1);
+        int promptLen = static_cast<int>(seq->getNumPromptTokens());
 
-        const SamplingParams* sp = seq->samplingParams.get();
+        const SamplingParams* sp = &seq->getSamplingParams();
         double temperature = sp ? static_cast<double>(sp->temperature) : 1.0;
         bool ignoreEos = sp ? sp->ignore_eos : false;
 
@@ -142,7 +142,7 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
             sp ? static_cast<double>(sp->frequency_penalty) : 0.0;
 
         pySeqs.append(gStepSeqClass(
-            seq->taskId.id, tokenIds, temperature, ignoreEos, blockTable,
+            seq->taskId, tokenIds, temperature, ignoreEos, blockTable,
             currentPos, promptLen, seed, topP, topK, minP, repetitionPenalty,
             presencePenalty, frequencyPenalty));
       }
@@ -156,13 +156,14 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
 
       for (size_t i = 0; i < seqs.size(); ++i) {
         py::object item = results[py::int_(i)];
-        TaskID drTaskId(item.attr("task_id").cast<std::string>());
+        std::string taskIdStr = item.attr("task_id").cast<std::string>();
+        uint32_t drTaskId = std::hash<std::string>{}(taskIdStr);
         uint64_t drTokenId =
             static_cast<uint64_t>(item.attr("token_id").cast<int64_t>());
         std::string error = item.attr("error").cast<std::string>();
         bool drIsError = !error.empty();
         if (drIsError) {
-          TT_LOG_ERROR("[LlamaModelRunner] sequence {} error: {}", drTaskId.id,
+          TT_LOG_ERROR("[LlamaModelRunner] sequence {} error: {}", taskIdStr,
                        error);
         }
         TokenResult dr(drTaskId, drTokenId, {}, drIsError);

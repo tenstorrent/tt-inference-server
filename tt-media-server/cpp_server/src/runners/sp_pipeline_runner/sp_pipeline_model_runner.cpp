@@ -19,11 +19,12 @@ SpPipelineModelRunner::SpPipelineModelRunner(DecodeCallback callback)
 
 SpPipelineModelRunner::~SpPipelineModelRunner() { exit(); }
 
-void SpPipelineModelRunner::write(const std::string& taskId,
+void SpPipelineModelRunner::write(uint32_t taskId,
                                   const std::vector<int64_t>& tokenIds,
-                                  uint32_t maxTokens, RequestPhase /*phase*/) {
+                                  uint32_t maxTokens, RequestPhase /*phase*/,
+                                  bool fastMode) {
   // TODO: propagate phase to the shared-memory protocol for disaggregated mode.
-  deviceInput.write(taskId, tokenIds, maxTokens);
+  deviceInput.write(taskId, tokenIds, maxTokens, fastMode);
 }
 
 void SpPipelineModelRunner::exit() {
@@ -36,10 +37,8 @@ void SpPipelineModelRunner::readerLoop() {
   tt::ipc::ReadResult readBuf;
   while (!stop.load(std::memory_order_relaxed)) {
     if (deviceOutput.tryRead(readBuf)) {
-      llm_engine::TaskID tid = llm_engine::TaskID::ipcDeserialize(
-          readBuf.taskId.data(), llm_engine::TaskID::K_SERIALIZED_SIZE);
       uint64_t tokenId = readBuf.tokenIds.empty() ? 0 : readBuf.tokenIds[0];
-      llm_engine::TokenResult result(std::move(tid), tokenId);
+      llm_engine::TokenResult result(readBuf.taskId, tokenId);
       decodeCallback(result);
     } else {
       std::this_thread::yield();

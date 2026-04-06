@@ -5,19 +5,21 @@
 import logging
 from dataclasses import dataclass
 
-from fastapi import APIRouter
-
 from config.constants import ModelServices
 from config.settings import settings
+from fastapi import APIRouter
+
 from open_ai_api import (
     audio,
+    chat,
     cnn,
     embedding,
     fine_tuning,
     image,
     llm,
-    tokenizer,
+    models,
     text_to_speech,
+    tokenizer,
     tt_maintenance_api,
     video,
 )
@@ -45,6 +47,7 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
     ModelServices.LLM.value: [
         ServiceRoute(tokenizer.router, "/v1", "", ["Tokenizer"]),
         ServiceRoute(llm.router, "/v1", None, ["Text processing"]),
+        ServiceRoute(chat.router, "/v1", None, ["Chat completions"]),
     ],
     ModelServices.CNN.value: [
         ServiceRoute(cnn.router, "/v1/cnn", "/cnn", ["CNN processing"]),
@@ -104,4 +107,11 @@ api_router.include_router(
     tt_maintenance_api.router,
     prefix="",
     tags=["Maintenance"],
+)
+
+# Model discovery endpoints (always included, no versioning)
+api_router.include_router(
+    models.router,
+    prefix="",
+    tags=["Models"],
 )
