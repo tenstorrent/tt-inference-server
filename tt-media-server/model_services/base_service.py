@@ -217,7 +217,5 @@ class BaseService(ABC):
                 f"Streaming timed out chunks for task {request._task_id} after {dynamic_timeout}s"
             )
             raise
-        except Exception:
-            raise
         finally:
             self.scheduler.result_queues.pop(request._task_id, None)

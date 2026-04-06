@@ -8,13 +8,11 @@ import uuid
 
 from domain.completion_request import CompletionRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
-from utils.logger import TTLogger
 from fastapi.responses import JSONResponse, StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 
-logger = TTLogger()
 router = APIRouter()
 
 
@@ -67,43 +65,23 @@ async def complete_text(
             raise HTTPException(status_code=405, detail="Model is not ready")
 
         async def result_stream():
-            try:
-                async for partial in service.process_streaming_request(
-                    completion_request
-                ):
-                    chunk = {
-                        "id": completion_id,
-                        "object": "text_completion",
-                        "created": created,
-                        "model": model,
-                        "choices": [
-                            {
-                                "text": partial.text,
-                                "index": partial.index or 0,
-                                "logprobs": None,
-                                "finish_reason": partial.finish_reason,
-                            }
-                        ],
-                    }
-                    yield f"data: {json.dumps(chunk)}\n\n"
-                yield "data: [DONE]\n\n"
-            except Exception as e:
-                error_chunk = {
+            async for partial in service.process_streaming_request(completion_request):
+                chunk = {
                     "id": completion_id,
                     "object": "text_completion",
                     "created": created,
                     "model": model,
                     "choices": [
                         {
-                            "text": f"\n\n[Error: {e}]",
-                            "index": 0,
+                            "text": partial.text,
+                            "index": partial.index or 0,
                             "logprobs": None,
-                            "finish_reason": "error",
+                            "finish_reason": partial.finish_reason,
                         }
                     ],
                 }
-                yield f"data: {json.dumps(error_chunk)}\n\n"
-                yield "data: [DONE]\n\n"
+                yield f"data: {json.dumps(chunk)}\n\n"
+            yield "data: [DONE]\n\n"
 
         return StreamingResponse(
             result_stream(),
