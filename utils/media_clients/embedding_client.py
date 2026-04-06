@@ -43,9 +43,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         )
         self.num_calls = 1000
         self.dimensions = 1000
-        self.concurrency = int(
-            self.model_spec.device_model_spec.env_vars.get("VLLM__MAX_NUM_SEQS", 1)
-        )
+        self.concurrency = self.model_spec.device_model_spec.max_concurrency
 
     def run_eval(self) -> None:
         """Run evaluations for the model."""
@@ -115,6 +113,8 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             str(self.isl),
             "--num-prompts",
             str(self.num_calls),
+            "--max-concurrency",
+            str(self.concurrency),
             "--backend",
             "openai-embeddings",
             "--endpoint",
