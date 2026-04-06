@@ -2015,8 +2015,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="e867533",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2048,8 +2048,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="555f240",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2643,7 +2643,6 @@ video_templates = [
     ),
     ModelSpecTemplate(
         weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
-        version="0.10.1",
         tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=60,
@@ -2822,7 +2821,6 @@ image_templates = [
     ),
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-dev", "black-forest-labs/FLUX.1-schnell"],
-        version="0.10.1",
         tt_metal_commit="555f240",
         impl=tt_transformers_impl,
         min_disk_gb=15,
