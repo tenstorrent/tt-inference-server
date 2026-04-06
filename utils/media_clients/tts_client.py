@@ -35,8 +35,8 @@ DEFAULT_TTS_TEXT = "Hello, this is a test of the text to speech system."
 class TtsClientStrategy(BaseMediaStrategy):
     """Strategy for text-to-speech models (SpeechT5, etc.)."""
 
-    def __init__(self, all_params, model_spec, device, output_path, service_port):
-        super().__init__(all_params, model_spec, device, output_path, service_port)
+    def __init__(self, all_params, model_spec, device, output_path, service_port, deploy_url=None):
+        super().__init__(all_params, model_spec, device, output_path, service_port, deploy_url=deploy_url)
 
         self.tokenizer = None
         try:

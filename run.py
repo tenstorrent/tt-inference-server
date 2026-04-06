@@ -325,6 +325,14 @@ def parse_arguments():
         )
     args.device = args.tt_device or args.device
 
+    if args.server_url and (args.docker_server or args.local_server):
+        parser.error(
+            "--server-url cannot be used together with --docker-server or --local-server. "
+            "Use --server-url alone to target an already-running inference server."
+        )
+    if args.server_url:
+        args.server_url = args.server_url.rstrip("/")
+
     args.engine = (
         InferenceEngine.from_string(args.engine).value if args.engine else None
     )
