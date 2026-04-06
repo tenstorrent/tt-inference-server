@@ -23,7 +23,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -106,7 +106,7 @@
             },
             {
                 "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
+                "module": "server_tests.test_cases.image_generation_eval_test",
                 "enabled": true,
                 "description": "LoRA eval: pixel-art-xl (nerijs/pixel-art-xl, scale=0.8)",
                 "test_config": {
@@ -128,7 +128,7 @@
             },
             {
                 "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
+                "module": "server_tests.test_cases.image_generation_eval_test",
                 "enabled": true,
                 "description": "LoRA eval: ColoringBookRedmond-V2 (artificialguybr/ColoringBookRedmond-V2, scale=0.6)",
                 "test_config": {
@@ -150,7 +150,7 @@
             },
             {
                 "name": "ImageGenerationLoraLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_lora_load_test",
+                "module": "server_tests.test_cases.image_generation_lora_load_test",
                 "enabled": true,
                 "description": "Mixed LoRA load test: concurrent baseline + pixel-art-xl + ColoringBookRedmond-V2",
                 "test_config": {
@@ -186,7 +186,7 @@
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "module": "server_tests.test_cases.device_liveness_test",
                 "enabled": true,
                 "description": "Test for device liveness checks",
                 "test_config": {
@@ -202,7 +202,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -215,7 +215,7 @@
             },
             {
                 "name": "ImageGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "module": "server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
                 "description": "Test image generation time for 20 iterations",
                 "test_config": {
@@ -233,7 +233,7 @@
             },
             {
                 "name": "ImageGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "module": "server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
                 "description": "Test image generation time for 30 iterations",
                 "test_config": {
@@ -251,7 +251,7 @@
             },
             {
                 "name": "ImageGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "module": "server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
                 "description": "Test image generation time for 50 iterations",
                 "test_config": {
@@ -269,7 +269,7 @@
             },
             {
                 "name": "ImageGenerationParamTest",
-                "module": "tests.server_tests.test_cases.image_generation_param_test",
+                "module": "server_tests.test_cases.image_generation_param_test",
                 "enabled": true,
                 "description": "Test image gen params",
                 "test_config": {
@@ -309,7 +309,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -392,7 +392,7 @@
             },
             {
                 "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
+                "module": "server_tests.test_cases.image_generation_eval_test",
                 "enabled": true,
                 "description": "LoRA eval: pixel-art-xl (nerijs/pixel-art-xl, scale=0.8)",
                 "test_config": {
@@ -414,7 +414,7 @@
             },
             {
                 "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
+                "module": "server_tests.test_cases.image_generation_eval_test",
                 "enabled": true,
                 "description": "LoRA eval: ColoringBookRedmond-V2 (artificialguybr/ColoringBookRedmond-V2, scale=0.6)",
                 "test_config": {
@@ -436,7 +436,7 @@
             },
             {
                 "name": "ImageGenerationLoraLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_lora_load_test",
+                "module": "server_tests.test_cases.image_generation_lora_load_test",
                 "enabled": true,
                 "description": "Mixed LoRA load test: concurrent baseline + pixel-art-xl + ColoringBookRedmond-V2",
                 "test_config": {
@@ -488,7 +488,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -571,7 +571,7 @@
             },
             {
                 "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
+                "module": "server_tests.test_cases.image_generation_eval_test",
                 "enabled": true,
                 "description": "LoRA eval: pixel-art-xl (nerijs/pixel-art-xl, scale=0.8)",
                 "test_config": {
@@ -593,7 +593,7 @@
             },
             {
                 "name": "ImageGenerationEvalsTest",
-                "module": "tests.server_tests.test_cases.image_generation_eval_test",
+                "module": "server_tests.test_cases.image_generation_eval_test",
                 "enabled": true,
                 "description": "LoRA eval: ColoringBookRedmond-V2 (artificialguybr/ColoringBookRedmond-V2, scale=0.6)",
                 "test_config": {
@@ -615,7 +615,7 @@
             },
             {
                 "name": "ImageGenerationLoraLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_lora_load_test",
+                "module": "server_tests.test_cases.image_generation_lora_load_test",
                 "enabled": true,
                 "description": "Mixed LoRA load test: concurrent baseline + pixel-art-xl + ColoringBookRedmond-V2",
                 "test_config": {
@@ -667,7 +667,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -774,7 +774,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -881,7 +881,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -931,7 +931,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -981,7 +981,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -1031,7 +1031,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -1081,7 +1081,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -1131,7 +1131,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -1181,7 +1181,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -1281,7 +1281,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -1385,7 +1385,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -1522,7 +1522,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -1610,7 +1610,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -1714,7 +1714,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -1853,7 +1853,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -1909,7 +1909,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -1965,7 +1965,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2020,7 +2020,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2102,7 +2102,7 @@
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "module": "server_tests.test_cases.device_liveness_test",
                 "enabled": true,
                 "description": "Test for device liveness checks",
                 "test_config": {
@@ -2118,7 +2118,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2131,7 +2131,7 @@
             },
             {
                 "name": "SpeechT5TTSTest",
-                "module": "tests.server_tests.test_cases.speecht5_tts_test",
+                "module": "server_tests.test_cases.speecht5_tts_test",
                 "enabled": false,
                 "description": "Test SpeechT5 Text-to-Speech functionality",
                 "test_config": {
@@ -2145,7 +2145,7 @@
             },
             {
                 "name": "TestTTSServerHealth",
-                "module": "tests.server_tests.test_cases.tts_integration_test",
+                "module": "server_tests.test_cases.tts_integration_test",
                 "enabled": false,
                 "description": "Test server health and availability",
                 "test_config": {
@@ -2164,7 +2164,7 @@
             },
             {
                 "name": "TTSParamTest",
-                "module": "tests.server_tests.test_cases.tts_param_test",
+                "module": "server_tests.test_cases.tts_param_test",
                 "enabled": true,
                 "description": "Test TTS generation with parameter variations",
                 "test_config": {
@@ -2178,7 +2178,7 @@
             },
             {
                 "name": "TTSIntegrationTest",
-                "module": "tests.server_tests.test_cases.tts_integration_test",
+                "module": "server_tests.test_cases.tts_integration_test",
                 "enabled": true,
                 "description": "Test TTS error handling and input validation",
                 "test_config": {
@@ -2216,7 +2216,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2287,7 +2287,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2342,7 +2342,7 @@
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "module": "server_tests.test_cases.device_liveness_test",
                 "enabled": true,
                 "description": "Test for device liveness checks",
                 "test_config": {
@@ -2358,7 +2358,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2379,7 +2379,7 @@
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "module": "server_tests.test_cases.device_liveness_test",
                 "enabled": true,
                 "description": "Test for device liveness checks",
                 "test_config": {
@@ -2395,7 +2395,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2416,7 +2416,7 @@
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "module": "server_tests.test_cases.device_liveness_test",
                 "enabled": true,
                 "description": "Test for device liveness checks",
                 "test_config": {
@@ -2432,7 +2432,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2453,7 +2453,7 @@
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "module": "server_tests.test_cases.device_liveness_test",
                 "enabled": true,
                 "description": "Test for device liveness checks",
                 "test_config": {
@@ -2469,7 +2469,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2490,7 +2490,7 @@
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "module": "server_tests.test_cases.device_liveness_test",
                 "enabled": true,
                 "description": "Test for device liveness checks",
                 "test_config": {
@@ -2506,7 +2506,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2543,7 +2543,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2612,7 +2612,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2665,7 +2665,7 @@
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "module": "server_tests.test_cases.device_liveness_test",
                 "enabled": true,
                 "description": "Test for device liveness checks",
                 "test_config": {
@@ -2681,7 +2681,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2694,7 +2694,7 @@
             },
             {
                 "name": "VideoGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.video_generation_load_test",
+                "module": "server_tests.test_cases.video_generation_load_test",
                 "enabled": true,
                 "description": "Test Video generation time",
                 "test_config": {
@@ -2711,7 +2711,7 @@
             },
             {
                 "name": "VideoGenerationParamTest",
-                "module": "tests.server_tests.test_cases.video_generation_param_test",
+                "module": "server_tests.test_cases.video_generation_param_test",
                 "enabled": true,
                 "description": "Test video generation parameter variations",
                 "test_config": {
@@ -2734,7 +2734,7 @@
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "module": "server_tests.test_cases.device_liveness_test",
                 "enabled": true,
                 "description": "Test for device liveness checks",
                 "test_config": {
@@ -2750,7 +2750,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2763,7 +2763,7 @@
             },
             {
                 "name": "VideoGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.video_generation_load_test",
+                "module": "server_tests.test_cases.video_generation_load_test",
                 "enabled": true,
                 "description": "Test Video generation time",
                 "test_config": {
@@ -2780,7 +2780,7 @@
             },
             {
                 "name": "VideoGenerationParamTest",
-                "module": "tests.server_tests.test_cases.video_generation_param_test",
+                "module": "server_tests.test_cases.video_generation_param_test",
                 "enabled": true,
                 "description": "Test video generation parameter variations",
                 "test_config": {
@@ -2819,7 +2819,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2889,7 +2889,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -2960,7 +2960,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -3016,7 +3016,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -3072,7 +3072,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -3127,7 +3127,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -3234,7 +3234,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -3341,7 +3341,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -3448,7 +3448,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -3555,7 +3555,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -3662,7 +3662,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -3769,7 +3769,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -3876,7 +3876,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -3983,7 +3983,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -4090,7 +4090,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -4197,7 +4197,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -4304,7 +4304,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -4411,7 +4411,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -4518,7 +4518,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -4625,7 +4625,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -4732,7 +4732,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -4823,7 +4823,7 @@
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "module": "server_tests.test_cases.device_liveness_test",
                 "enabled": true,
                 "description": "Test for device liveness checks",
                 "test_config": {
@@ -4839,7 +4839,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -4852,7 +4852,7 @@
             },
             {
                 "name": "ImageGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "module": "server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
                 "description": "Test image generation time for 20 iterations",
                 "test_config": {
@@ -4870,7 +4870,7 @@
             },
             {
                 "name": "ImageGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "module": "server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
                 "description": "Test image generation time for 30 iterations",
                 "test_config": {
@@ -4888,7 +4888,7 @@
             },
             {
                 "name": "ImageGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "module": "server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
                 "description": "Test image generation time for 50 iterations",
                 "test_config": {
@@ -4906,7 +4906,7 @@
             },
             {
                 "name": "ImageGenerationParamTest",
-                "module": "tests.server_tests.test_cases.image_generation_param_test",
+                "module": "server_tests.test_cases.image_generation_param_test",
                 "enabled": true,
                 "description": "Test image gen params",
                 "test_config": {
@@ -4930,7 +4930,7 @@
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "module": "server_tests.test_cases.device_liveness_test",
                 "enabled": true,
                 "description": "Test for device liveness checks",
                 "test_config": {
@@ -4946,7 +4946,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -4959,7 +4959,7 @@
             },
             {
                 "name": "VideoGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.video_generation_load_test",
+                "module": "server_tests.test_cases.video_generation_load_test",
                 "enabled": true,
                 "description": "Test Video generation time",
                 "test_config": {
@@ -4977,7 +4977,7 @@
             },
             {
                 "name": "VideoGenerationParamTest",
-                "module": "tests.server_tests.test_cases.video_generation_param_test",
+                "module": "server_tests.test_cases.video_generation_param_test",
                 "enabled": true,
                 "description": "Test video generation parameter variations",
                 "test_config": {
@@ -5000,7 +5000,7 @@
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "module": "server_tests.test_cases.device_liveness_test",
                 "enabled": true,
                 "description": "Test for device liveness checks",
                 "test_config": {
@@ -5016,7 +5016,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -5029,7 +5029,7 @@
             },
             {
                 "name": "ImageGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "module": "server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
                 "description": "Test image generation time for 20 iterations",
                 "test_config": {
@@ -5047,7 +5047,7 @@
             },
             {
                 "name": "ImageGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "module": "server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
                 "description": "Test image generation time for 30 iterations",
                 "test_config": {
@@ -5065,7 +5065,7 @@
             },
             {
                 "name": "ImageGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "module": "server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
                 "description": "Test image generation time for 50 iterations",
                 "test_config": {
@@ -5083,7 +5083,7 @@
             },
             {
                 "name": "ImageGenerationParamTest",
-                "module": "tests.server_tests.test_cases.image_generation_param_test",
+                "module": "server_tests.test_cases.image_generation_param_test",
                 "enabled": true,
                 "description": "Test image gen params",
                 "test_config": {
@@ -5107,7 +5107,7 @@
         "test_cases": [
             {
                 "name": "DeviceLivenessTest",
-                "module": "tests.server_tests.test_cases.device_liveness_test",
+                "module": "server_tests.test_cases.device_liveness_test",
                 "enabled": true,
                 "description": "Test for device liveness checks",
                 "test_config": {
@@ -5123,7 +5123,7 @@
             },
             {
                 "name": "LoggerForkSafetyTest",
-                "module": "tests.server_tests.test_cases.logger_fork_safety_test",
+                "module": "server_tests.test_cases.logger_fork_safety_test",
                 "enabled": true,
                 "description": "Test for logging fork safety to prevent deadlocks in forked processes",
                 "test_config": {
@@ -5136,7 +5136,7 @@
             },
             {
                 "name": "ImageGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "module": "server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
                 "description": "Test image generation time for 20 iterations",
                 "test_config": {
@@ -5154,7 +5154,7 @@
             },
             {
                 "name": "ImageGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "module": "server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
                 "description": "Test image generation time for 30 iterations",
                 "test_config": {
@@ -5172,7 +5172,7 @@
             },
             {
                 "name": "ImageGenerationLoadTest",
-                "module": "tests.server_tests.test_cases.image_generation_load_test",
+                "module": "server_tests.test_cases.image_generation_load_test",
                 "enabled": true,
                 "description": "Test image generation time for 50 iterations",
                 "test_config": {
@@ -5190,7 +5190,7 @@
             },
             {
                 "name": "ImageGenerationParamTest",
-                "module": "tests.server_tests.test_cases.image_generation_param_test",
+                "module": "server_tests.test_cases.image_generation_param_test",
                 "enabled": true,
                 "description": "Test image gen params",
                 "test_config": {
