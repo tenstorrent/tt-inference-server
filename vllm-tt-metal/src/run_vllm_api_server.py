@@ -17,10 +17,7 @@ from vllm import ModelRegistry
 
 from utils.logging_utils import set_vllm_logging_config
 from utils.prompt_client import run_background_trace_capture
-from utils.vllm_run_utils import (
-    create_model_symlink,
-    get_encoded_api_key,
-)
+from utils.vllm_run_utils import get_encoded_api_key
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -425,8 +422,6 @@ def model_setup(model_spec_json):
     # step 1: validate env vars passed in
     cache_root = Path(os.getenv("CACHE_ROOT"))
     assert cache_root.exists(), f"CACHE_ROOT: {cache_root} does not exist"
-    symlinks_dir = cache_root / "model_file_symlinks_map"
-    symlinks_dir.mkdir(parents=True, exist_ok=True)
 
     logging.info(f"MODEL_WEIGHTS_DIR: {os.getenv('MODEL_WEIGHTS_DIR')}")
     assert os.getenv("MODEL_WEIGHTS_DIR") is not None, "MODEL_WEIGHTS_DIR must be set"
@@ -445,7 +440,16 @@ def model_setup(model_spec_json):
     # set HF_MODEL environment variable for loading
     logging.info(f"HF model setup for {model_spec_json['hf_model_repo']}")
     model_dir_name = model_spec_json["hf_model_repo"].split("/")[-1]
-    hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
+    # Check if weights_dir already contains the model files (config.json)
+    # or if we need to append the model name
+    if (weights_dir / "config.json").exists():
+        # MODEL_WEIGHTS_DIR already points to model directory
+        hf_dir = weights_dir
+    else:
+        # MODEL_WEIGHTS_DIR is parent directory, append model name
+        hf_dir = weights_dir / model_dir_name
+    if not hf_dir.exists():
+        raise FileNotFoundError(f"Model directory not found: {hf_dir}")
 
     dynamic_env_vars = {
         "VLLM_LOGGING_CONFIG": str(config_path),

@@ -1,54 +1,15 @@
 {
     "OLMo-3.1-32B-Think": {
         "galaxy": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8
-            },
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 256
-            },
-            {
-                "isl": 1024,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 4
-            },
-            {
-                "isl": 1024,
-                "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 128
-            },
-            {
-                "isl": 2048,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 4
-            },
-            {
-                "isl": 2048,
-                "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 128
-            },
-            {
-                "isl": 4096,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 2
-            },
-            {
-                "isl": 4096,
-                "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 64
-            }
+            {"isl": 128, "osl": 128, "max_concurrency": 1, "num_prompts": 8},
+            {"isl": 128, "osl": 128, "max_concurrency": 32, "num_prompts": 256},
+            {"isl": 1024, "osl": 128, "max_concurrency": 1, "num_prompts": 8},
+            {"isl": 1024, "osl": 128, "max_concurrency": 32, "num_prompts": 256},
+            {"isl": 2048, "osl": 128, "max_concurrency": 1, "num_prompts": 8},
+            {"isl": 2048, "osl": 128, "max_concurrency": 32, "num_prompts": 128},
+            {"isl": 4096, "osl": 128, "max_concurrency": 1, "num_prompts": 8},
+            {"isl": 8192, "osl": 128, "max_concurrency": 1, "num_prompts": 4},
+            {"isl": 16384, "osl": 128, "max_concurrency": 1, "num_prompts": 2}
         ]
     }
 }

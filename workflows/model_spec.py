@@ -1500,7 +1500,7 @@ llm_templates = [
             "allenai/OLMo-3.1-32B-Think",
         ],
         impl=olmo3_32b_galaxy_impl,
-        tt_metal_commit="f0b2a127a06",
+        tt_metal_commit="9c0394f7c47",
         vllm_commit="8f36910",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1510,8 +1510,8 @@ llm_templates = [
                 # max_num_seqs=32 matches TT model's internal max_batch_size; the model runner
                 # pads inactive slots with token=0 / pos=-1 / block_table=0, which the
                 # paged SDPA kernel handles by skipping KV writes for pos=-1 slots.
-                # Up to 8k ISL + 128 OSL benchmark pair (8192+128) requires max_context >= 8320.
-                max_context=8192 + 128,
+                # 16K ISL enabled with sync CCL fix (2026-04-03). Runs in eager mode for ISL > 4K.
+                max_context=16384 + 128,
                 default_impl=True,
                 vllm_args={
                     "data_parallel_size": 1,
