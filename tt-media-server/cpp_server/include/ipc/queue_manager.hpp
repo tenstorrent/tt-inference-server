@@ -31,7 +31,6 @@ class QueueManager {
   vector<shared_ptr<BoostIpcCancelQueue>> cancel_queues;
 
   explicit QueueManager(int numWorkers) {
-    BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
     task_queue = make_shared<BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
     result_queues.reserve(numWorkers);
     cancel_queues.reserve(numWorkers);
@@ -41,7 +40,6 @@ class QueueManager {
               "/tt_tokens_" + to_string(i), true));
 
       string cancelName = CANCEL_QUEUE_PREFIX + to_string(i);
-      BoostIpcCancelQueue::removeByName(cancelName);
       cancel_queues.emplace_back(
           make_shared<BoostIpcCancelQueue>(cancelName, CANCEL_QUEUE_CAPACITY));
     }

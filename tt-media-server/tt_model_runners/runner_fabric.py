@@ -59,6 +59,9 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.embedding_runner",
         fromlist=["Qwen3Embedding8BRunner"],
     ).Qwen3Embedding8BRunner(wid),
+    ModelRunners.TT_YOLOV4: lambda wid: __import__(
+        "tt_model_runners.yolov4_runner", fromlist=["TTYolov4Runner"]
+    ).TTYolov4Runner(wid),
     ModelRunners.VLLMForge_QWEN_EMBEDDING: lambda wid: __import__(
         "tt_model_runners.vllm_forge_qwen_embedding_runner",
         fromlist=["VLLMForgeEmbeddingQwenRunner"],
@@ -99,15 +102,16 @@ AVAILABLE_RUNNERS = {
     ModelRunners.MOCK: lambda wid: __import__(
         "tt_model_runners.mock_runner", fromlist=["MockRunner"]
     ).MockRunner(wid),
-    ModelRunners.MOCK_VIDEO: lambda wid: __import__(
-        "tt_model_runners.mock_video_runner", fromlist=["MockVideoRunner"]
-    ).MockVideoRunner(wid),
     ModelRunners.SP_RUNNER: lambda wid: __import__(
         "tt_model_runners.sp_runner", fromlist=["SPRunner"]
     ).SPRunner(wid),
     ModelRunners.TT_SPEECHT5_TTS: lambda wid: __import__(
         "tt_model_runners.speecht5_runner", fromlist=["TTSpeechT5Runner"]
     ).TTSpeechT5Runner(wid),
+    ModelRunners.TT_XLA_SDXL: lambda wid: __import__(
+        "tt_model_runners.forge_runners.sdxl_forge_runner",
+        fromlist=["SDXLForgeRunner"],
+    ).SDXLForgeRunner(wid),
 }
 
 

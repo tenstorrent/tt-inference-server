@@ -6,7 +6,7 @@
 #include <optional>
 
 #include "domain/manage_memory.hpp"
-#include "ipc/boost_ipc_memory_queue.hpp"
+#include "ipc/boost_ipc_queue.hpp"
 
 namespace tt::services {
 

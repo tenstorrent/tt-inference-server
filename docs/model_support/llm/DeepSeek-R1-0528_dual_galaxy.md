@@ -33,8 +33,8 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [deepseek-ai/DeepSeek-R1-0528](https://huggingface.co/deepseek-ai/DeepSeek-R1-0528) |
 | Model Status | 🛠️ Experimental |
 | Max Batch Size | 256 |
-| Max Context Length | 2048 |
-| Implementation Code | [deepseek-r1-galaxy](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/deepseek_v3) |
-| tt-metal Commit | `bac8b34` |
-| vLLM Commit | `7c6685a` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64:0.11.0-bac8b34-7c6685a` |
+| Max Context Length | 32768 |
+| Implementation Code | [deepseek-r1-galaxy](https://github.com/tenstorrent/tt-metal/tree/805f43d/models/demos/deepseek_v3) |
+| tt-metal Commit | `805f43d` |
+| vLLM Commit | `a45c614` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64:0.12.0-805f43d-a45c614` |

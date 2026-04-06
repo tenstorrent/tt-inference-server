@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include <gtest/gtest.h>
@@ -44,24 +45,22 @@ std::vector<int64_t> prompt(size_t len) {
   return p;
 }
 
-TaskID nextId() { return TaskID(TaskID::generate()); }
+uint32_t nextId() { return tt::utils::TaskIDGenerator::generate(); }
 
 // ---------- In-memory cancel queue for testing ----------
 
 class InMemoryCancelQueue : public tt::ipc::ICancelQueue {
  public:
-  void push(const tt::domain::TaskID& taskId) override {
-    items.push_back(taskId);
-  }
+  void push(uint32_t taskId) override { items.push_back(taskId); }
 
-  void tryPopAll(std::vector<tt::domain::TaskID>& out) override {
+  void tryPopAll(std::vector<uint32_t>& out) override {
     out.insert(out.end(), items.begin(), items.end());
     items.clear();
   }
 
   void remove() override { items.clear(); }
 
-  std::vector<tt::domain::TaskID> items;
+  std::vector<uint32_t> items;
 };
 
 // ==========================================================
@@ -76,7 +75,7 @@ class SchedulerAbortTest : public ::testing::Test {
 };
 
 TEST_F(SchedulerAbortTest, AbortWaitingSequence) {
-  TaskID id = nextId();
+  uint32_t id = nextId();
   sched.addRequest(id, prompt(4), {.max_tokens = 10});
 
   // Schedule to get the sequence into sequences_ map
@@ -101,9 +100,9 @@ TEST_F(SchedulerAbortTest, AbortDecodingSequence_FreesBlocks) {
   std::shared_ptr<ITaskQueue> q = makeQueue();
   PrefillFirstScheduler s{smallConfig, q.get(), 4};
 
-  int freeBlocksBefore = s.blockManager().numFreeBlocks();
+  size_t freeBlocksBefore = s.blockManager().numFreeBlocks();
 
-  TaskID id = nextId();
+  uint32_t id = nextId();
   s.addRequest(id, prompt(4), {.max_tokens = 100});
 
   auto [seqs, isPrefill] = s.schedule();
@@ -121,7 +120,7 @@ TEST_F(SchedulerAbortTest, AbortDecodingSequence_FreesBlocks) {
 }
 
 TEST_F(SchedulerAbortTest, AbortIsIdempotent) {
-  TaskID id = nextId();
+  uint32_t id = nextId();
   sched.addRequest(id, prompt(4), {.max_tokens = 10});
 
   auto [seqs, isPrefill] = sched.schedule();
@@ -134,12 +133,12 @@ TEST_F(SchedulerAbortTest, AbortIsIdempotent) {
 }
 
 TEST_F(SchedulerAbortTest, AbortUnknownTaskId_IsNoOp) {
-  TaskID unknownId("nonexistent-task-id");
+  uint32_t unknownId = 99999;  // Use a number that's unlikely to exist
   EXPECT_NO_FATAL_FAILURE(sched.abortRequest(unknownId));
 }
 
 TEST_F(SchedulerAbortTest, AbortFinishedSequence_IsNoOp) {
-  TaskID id = nextId();
+  uint32_t id = nextId();
   // Use stop_token_ids={100} so token 100 triggers finish
   Config cfgWithStop = makeConfig(32, 8, 256, 0, {100});
   std::shared_ptr<ITaskQueue> q = makeQueue();
@@ -165,7 +164,7 @@ TEST_F(SchedulerAbortTest, AbortFinishedSequence_IsNoOp) {
 
 TEST_F(SchedulerAbortTest, AbortBeforePrefillDequeue_SkipsStale) {
   // Add a request which goes into sequences_ AND the prefill queue
-  TaskID id = nextId();
+  uint32_t id = nextId();
   sched.addRequest(id, prompt(4), {.max_tokens = 10});
 
   // Abort before scheduling pops it from the queue
@@ -184,7 +183,7 @@ TEST_F(SchedulerAbortTest, AbortEnablesNewRequests) {
   std::shared_ptr<ITaskQueue> q = makeQueue();
   PrefillFirstScheduler s{tightConfig, q.get(), 4};
 
-  TaskID id1 = nextId();
+  uint32_t id1 = nextId();
   s.addRequest(id1, prompt(8), {.max_tokens = 10});
 
   auto [seqs1, isPrefill1] = s.schedule();
@@ -199,7 +198,7 @@ TEST_F(SchedulerAbortTest, AbortEnablesNewRequests) {
   EXPECT_EQ(s.blockManager().numFreeBlocks(), 1);
 
   // Now a new request can be scheduled
-  TaskID id2 = nextId();
+  uint32_t id2 = nextId();
   s.addRequest(id2, prompt(8), {.max_tokens = 10});
 
   auto [seqs2, isPrefill2] = s.schedule();
@@ -225,13 +224,13 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
                                 &cancelQueue};
 
   // Add two requests: one we'll cancel, one we'll let finish
-  TaskID cancelId = nextId();
-  TaskID keepId = nextId();
+  uint32_t cancelId = nextId();
+  uint32_t keepId = nextId();
 
   runner.scheduler().addRequest(cancelId, prompt(4), {.max_tokens = 100});
   runner.scheduler().addRequest(keepId, prompt(4), {.max_tokens = 5});
 
-  std::unordered_map<std::string, int> tokenCounts;
+  std::unordered_map<uint32_t, int> tokenCounts;
   std::atomic<bool> keepFinished{false};
   bool cancelledAfterFirstToken = false;
 
@@ -239,16 +238,15 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
     tt::ipc::SharedToken token;
     while (!keepFinished.load()) {
       if (resultQueue.pop(token)) {
-        std::string tid(token.task_id);
-        tokenCounts[tid]++;
+        tokenCounts[token.task_id]++;
 
         // After first token from cancelId, push cancel signal
-        if (tid == cancelId.id && !cancelledAfterFirstToken) {
+        if (token.task_id == cancelId && !cancelledAfterFirstToken) {
           cancelledAfterFirstToken = true;
           cancelQueue.push(cancelId);
         }
 
-        if (tid == keepId.id && token.isFinal()) {
+        if (token.task_id == keepId && token.isFinal()) {
           keepFinished.store(true);
         }
       }
@@ -260,11 +258,11 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
   consumer.join();
 
   // The kept request should have exactly 5 tokens
-  EXPECT_EQ(tokenCounts[keepId.id], 5);
+  EXPECT_EQ(tokenCounts[keepId], 5);
 
   // The cancelled request should have significantly fewer than 100 tokens.
   // It may get a few tokens before the cancel is processed.
-  EXPECT_LT(tokenCounts[cancelId.id], 50);
+  EXPECT_LT(tokenCounts[cancelId], 50);
 
   resultQueue.shutdown();
 }
@@ -283,8 +281,8 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   tt::runners::LLMRunner runner{config, &resultQueue, taskQueue.get(),
                                 &cancelQueue};
 
-  TaskID cancelId = nextId();
-  TaskID keepId = nextId();
+  uint32_t cancelId = nextId();
+  uint32_t keepId = nextId();
 
   runner.scheduler().addRequest(cancelId, prompt(4), {.max_tokens = 10});
   runner.scheduler().addRequest(keepId, prompt(4), {.max_tokens = 5});
@@ -292,16 +290,15 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   // Push cancel BEFORE any step runs
   cancelQueue.push(cancelId);
 
-  std::unordered_map<std::string, int> tokenCounts;
+  std::unordered_map<uint32_t, int> tokenCounts;
   std::atomic<bool> keepFinished{false};
 
   std::thread consumer([&]() {
     tt::ipc::SharedToken token;
     while (!keepFinished.load()) {
       if (resultQueue.pop(token)) {
-        std::string tid(token.task_id);
-        tokenCounts[tid]++;
-        if (tid == keepId.id && token.isFinal()) {
+        tokenCounts[token.task_id]++;
+        if (token.task_id == keepId && token.isFinal()) {
           keepFinished.store(true);
         }
       }
@@ -313,10 +310,10 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   consumer.join();
 
   // keepId should complete normally
-  EXPECT_EQ(tokenCounts[keepId.id], 5);
+  EXPECT_EQ(tokenCounts[keepId], 5);
 
   // cancelId should have zero tokens (cancelled before scheduling)
-  EXPECT_EQ(tokenCounts[cancelId.id], 0);
+  EXPECT_EQ(tokenCounts[cancelId], 0);
 
   resultQueue.shutdown();
 }

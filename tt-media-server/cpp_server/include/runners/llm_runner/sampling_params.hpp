@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -8,7 +9,7 @@ namespace llm_engine {
 
 /**
  * Sampling parameters aligned with OpenAI-compatible completion request.
- * Mirrors sampling-related fields from tt::domain::CompletionRequest.
+ * Mirrors sampling-related fields from tt::domain::LLMRequest.
  */
 struct SamplingParams {
   float temperature = 0.0f;
@@ -35,7 +36,7 @@ struct SamplingParams {
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
   void serialize(std::ostream& os) const;
-  static SamplingParams* deserialize(std::istream& is);
+  static std::unique_ptr<SamplingParams> deserialize(std::istream& is);
 };
 
 }  // namespace llm_engine

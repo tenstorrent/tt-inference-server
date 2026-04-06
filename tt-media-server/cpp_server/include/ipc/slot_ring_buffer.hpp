@@ -35,10 +35,10 @@ struct Message {
   std::atomic<int32_t> state;
   uint32_t maxTokens;
   uint32_t numTokenIds;
-  char taskId[36];
+  uint32_t taskId;
   uint64_t tokenIds[MaxTokenIds];
 
-  static constexpr int K_MESSAGE_SIZE = 48 + MaxTokenIds * sizeof(uint64_t);
+  static constexpr int K_MESSAGE_SIZE = 16 + MaxTokenIds * sizeof(uint64_t);
   static constexpr int K_TOTAL_SIZE = SHM_SLOTS * K_MESSAGE_SIZE;
 
   bool stateMatches(SlotState state) {
@@ -56,7 +56,7 @@ static_assert(sizeof(Message<DECODE_MAX_TOKEN_IDS>) ==
               Message<DECODE_MAX_TOKEN_IDS>::K_MESSAGE_SIZE);
 
 struct ReadResult {
-  std::string taskId;
+  uint32_t taskId;
   uint32_t maxTokens;
   std::vector<int64_t> tokenIds;
 };
@@ -107,7 +107,10 @@ class SlotRingBuffer {
     fd = shm_open(name.c_str(), O_RDWR, 0);
     if (fd < 0) {
       fd = shm_open(name.c_str(), O_CREAT | O_RDWR, 0666);
-      ftruncate(fd, sizeof(SlotRingBufferState));
+      if (ftruncate(fd, sizeof(SlotRingBufferState)) < 0) {
+        ::close(fd);
+        throw std::runtime_error("SlotRingBuffer: ftruncate failed");
+      }
       auto memPointerState = mmap(nullptr, sizeof(SlotRingBufferState),
                                   PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
       memset(memPointerState, 0, sizeof(SlotRingBufferState));
@@ -122,7 +125,7 @@ class SlotRingBuffer {
     return;
   }
 
-  void write(const std::string& uuid, const std::vector<int64_t>& tokenIds,
+  void write(uint32_t taskId, const std::vector<int64_t>& tokenIds,
              uint32_t maxTokens) {
     if (static_cast<int>(tokenIds.size()) > MaxTokenIds) {
       throw std::runtime_error("SlotRingBuffer::write: token count " +
@@ -137,9 +140,9 @@ class SlotRingBuffer {
       std::this_thread::yield();
     }
 
+    msg.taskId = taskId;
     msg.maxTokens = maxTokens;
     msg.numTokenIds = tokenIds.size();
-    std::memcpy(msg.taskId, uuid.data(), 36);
     std::memcpy(msg.tokenIds, tokenIds.data(),
                 tokenIds.size() * sizeof(int64_t));
 
@@ -154,7 +157,7 @@ class SlotRingBuffer {
       return false;
     }
 
-    out.taskId.assign(msg.taskId, 36);
+    out.taskId = msg.taskId;
     out.maxTokens = msg.maxTokens;
     out.tokenIds.assign(msg.tokenIds, msg.tokenIds + msg.numTokenIds);
 

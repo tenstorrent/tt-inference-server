@@ -978,12 +978,18 @@ llm_templates = [
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
         },
+        metadata={
+            "openai/gpt-oss-20b": {
+                "reasoning_parser_name": "openai_gptoss",
+                "tool_call_parser_name": "openai",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
-        tt_metal_commit="bac8b34",
-        vllm_commit="7c6685a",
+        tt_metal_commit="805f43d",
+        vllm_commit="a45c614",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1017,6 +1023,12 @@ llm_templates = [
         has_builtin_warmup=True,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+        },
+        metadata={
+            "openai/gpt-oss-120b": {
+                "reasoning_parser_name": "openai_gptoss",
+                "tool_call_parser_name": "openai",
+            },
         },
     ),
     ModelSpecTemplate(
@@ -1137,6 +1149,12 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        metadata={
+            "Qwen/Qwen3-8B": {
+                "reasoning_parser_name": "qwen3",
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-8B"],
@@ -1163,6 +1181,12 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        metadata={
+            "Qwen/Qwen3-8B": {
+                "reasoning_parser_name": "qwen3",
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
@@ -1204,6 +1228,12 @@ llm_templates = [
         ),
         status=ModelStatusTypes.COMPLETE,
         has_builtin_warmup=True,
+        metadata={
+            "Qwen/Qwen3-32B": {
+                "reasoning_parser_name": "qwen3",
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
@@ -1252,6 +1282,12 @@ llm_templates = [
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
+        metadata={
+            "Qwen/Qwen3-32B": {
+                "reasoning_parser_name": "qwen3",
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
@@ -1284,6 +1320,12 @@ llm_templates = [
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
+        metadata={
+            "Qwen/Qwen3-32B": {
+                "reasoning_parser_name": "qwen3",
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
@@ -1312,6 +1354,12 @@ llm_templates = [
         status=ModelStatusTypes.FUNCTIONAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        metadata={
+            "Qwen/Qwen3-32B": {
+                "reasoning_parser_name": "qwen3",
+                "tool_call_parser_name": "hermes",
+            },
         },
     ),
     ModelSpecTemplate(
@@ -1389,6 +1437,12 @@ llm_templates = [
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
+        metadata={
+            "Qwen/QwQ-32B": {
+                "reasoning_parser_name": "deepseek_r1",
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
@@ -1442,6 +1496,14 @@ llm_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
             "MAX_PREFILL_CHUNK_SIZE": "16",
         },
+        metadata={
+            "Qwen/Qwen2.5-72B": {
+                "tool_call_parser_name": "hermes",
+            },
+            "Qwen/Qwen2.5-72B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-7B", "Qwen/Qwen2.5-7B-Instruct"],
@@ -1466,6 +1528,14 @@ llm_templates = [
         status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        metadata={
+            "Qwen/Qwen2.5-7B": {
+                "tool_call_parser_name": "hermes",
+            },
+            "Qwen/Qwen2.5-7B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
         },
     ),
     ModelSpecTemplate(
@@ -1510,14 +1580,29 @@ llm_templates = [
         ),
         status=ModelStatusTypes.COMPLETE,
         has_builtin_warmup=True,
+        metadata={
+            "meta-llama/Llama-3.3-70B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-70B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-70B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
+                "reasoning_parser_name": "deepseek_r1",
+                "tool_call_parser_name": "deepseek_v3",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=[
             "deepseek-ai/DeepSeek-R1-0528",
         ],
         impl=deepseek_r1_galaxy_impl,
-        tt_metal_commit="bac8b34",
-        vllm_commit="7c6685a",
+        tt_metal_commit="805f43d",
+        vllm_commit="a45c614",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1567,6 +1652,12 @@ llm_templates = [
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         has_builtin_warmup=True,
+        metadata={
+            "deepseek-ai/DeepSeek-R1-0528": {
+                "reasoning_parser_name": "deepseek_r1",
+                "tool_call_parser_name": "deepseek_v3",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -1606,6 +1697,21 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        metadata={
+            "meta-llama/Llama-3.3-70B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-70B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-70B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
+                "reasoning_parser_name": "deepseek_r1",
+                "tool_call_parser_name": "deepseek_v3",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -1661,6 +1767,21 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        metadata={
+            "meta-llama/Llama-3.3-70B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-70B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-70B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
+                "reasoning_parser_name": "deepseek_r1",
+                "tool_call_parser_name": "deepseek_v3",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -1696,6 +1817,21 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        metadata={
+            "meta-llama/Llama-3.3-70B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-70B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-70B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
+                "reasoning_parser_name": "deepseek_r1",
+                "tool_call_parser_name": "deepseek_v3",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -1737,6 +1873,21 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        metadata={
+            "meta-llama/Llama-3.3-70B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-70B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-70B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
+                "reasoning_parser_name": "deepseek_r1",
+                "tool_call_parser_name": "deepseek_v3",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
@@ -1767,6 +1918,14 @@ llm_templates = [
         env_vars={"VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1},
         status=ModelStatusTypes.FUNCTIONAL,
         has_builtin_warmup=True,
+        metadata={
+            "meta-llama/Llama-3.2-1B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.2-1B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
@@ -1796,6 +1955,14 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        metadata={
+            "meta-llama/Llama-3.2-3B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.2-3B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
@@ -1836,6 +2003,14 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
+        metadata={
+            "meta-llama/Llama-3.1-8B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-8B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
@@ -1861,6 +2036,14 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
+        metadata={
+            "meta-llama/Llama-3.1-8B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-8B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
@@ -1882,6 +2065,14 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.COMPLETE,
+        metadata={
+            "meta-llama/Llama-3.1-8B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-8B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
@@ -1914,6 +2105,14 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        metadata={
+            "meta-llama/Llama-3.1-8B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-8B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
@@ -1954,6 +2153,14 @@ llm_templates = [
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
+        metadata={
+            "meta-llama/Llama-3.1-8B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-8B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
@@ -2005,6 +2212,14 @@ llm_templates = [
         ),
         status=ModelStatusTypes.FUNCTIONAL,
         has_builtin_warmup=True,
+        metadata={
+            "meta-llama/Llama-3.1-8B": {
+                "tool_call_parser_name": "llama3_json",
+            },
+            "meta-llama/Llama-3.1-8B-Instruct": {
+                "tool_call_parser_name": "llama3_json",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-Coder-32B-Instruct"],
@@ -2036,6 +2251,11 @@ llm_templates = [
         status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+        metadata={
+            "Qwen/Qwen2.5-Coder-32B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
         },
     ),
 ]
@@ -2211,6 +2431,11 @@ vlm_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
+        metadata={
+            "Qwen/Qwen2.5-VL-3B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -2243,6 +2468,11 @@ vlm_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
+        metadata={
+            "Qwen/Qwen2.5-VL-7B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -2266,6 +2496,11 @@ vlm_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
+        metadata={
+            "Qwen/Qwen2.5-VL-32B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -2292,6 +2527,11 @@ vlm_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
         supported_modalities=["text", "image"],
+        metadata={
+            "Qwen/Qwen2.5-VL-72B-Instruct": {
+                "tool_call_parser_name": "hermes",
+            },
+        },
     ),
     ModelSpecTemplate(
         weights=[
@@ -2494,6 +2734,24 @@ image_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=16,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150X4,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150X8,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),

@@ -77,7 +77,7 @@ class ReasoningParser {
    * Initialize streaming state for a task.
    * Call before processing first token.
    */
-  void initializeTask(const std::string& task_id);
+  void initializeTask(uint32_t task_id);
 
   /**
    * Process single token for streaming.
@@ -88,19 +88,19 @@ class ReasoningParser {
    * @param decoded_text Decoded text for this token
    * @return TokenParseResult with content type and emit flag
    */
-  TokenParseResult processToken(const std::string& task_id, int64_t token_id,
+  TokenParseResult processToken(uint32_t task_id, int64_t token_id,
                                 const std::string& decoded_text);
 
   /**
    * Finalize task state and cleanup.
    * Call when generation completes.
    */
-  void finalizeTask(const std::string& task_id);
+  void finalizeTask(uint32_t task_id);
 
   /**
    * Check if task is currently in reasoning mode.
    */
-  bool isInReasoning(const std::string& task_id) const;
+  bool isInReasoning(uint32_t task_id) const;
 
   /**
    * Get count of active tasks.
@@ -109,7 +109,7 @@ class ReasoningParser {
 
  private:
   mutable std::mutex mutex_;
-  std::unordered_map<std::string, TaskState> task_states_;
+  std::unordered_map<uint32_t, TaskState> task_states_;
 };
 
 }  // namespace tt::services

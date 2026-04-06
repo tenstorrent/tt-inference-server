@@ -3,12 +3,12 @@
 
 #include "services/llm_service.hpp"
 
-#include <cassert>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -65,7 +65,7 @@ std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
   return worker_manager_->getWorkerInfo();
 }
 
-void LLMService::preProcess(domain::CompletionRequest& request) const {
+void LLMService::preProcess(domain::LLMRequest& request) const {
   BaseService::preProcess(request);
   if (std::holds_alternative<std::string>(request.prompt)) {
     auto text = std::get<std::string>(request.prompt);
@@ -121,6 +121,98 @@ void LLMService::stop() {
   queue_manager_->clear();
 }
 
+namespace {
+
+constexpr int K_ITL_SAMPLE_STRIDE = 5;
+
+struct MetricsSamplingState {
+  int token_count = 0;
+  std::chrono::steady_clock::time_point prev_token_time;
+};
+
+std::string decodeToken(
+    std::unordered_map<uint32_t,
+                       std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>&
+        decoders,
+    const tt::utils::Tokenizer* tokenizer, uint32_t taskId, uint32_t tokenId,
+    bool isFinal) {
+  auto& decoder = decoders[taskId];
+  if (!decoder) decoder = tokenizer->createStreamDecoder();
+  std::string delta = decoder->step(static_cast<int>(tokenId));
+  if (isFinal) delta += decoder->flush();
+  return delta;
+}
+
+// Observe ITL once every K_ITL_SAMPLE_STRIDE tokens. Reported quantiles remain
+// representative; actual ITL values are accurate because elapsed time is
+// divided by the stride (assumes roughly uniform decode step latency).
+void recordTokenMetrics(
+    std::unordered_map<uint32_t, MetricsSamplingState>& sampling,
+    uint32_t taskId) {
+  auto& ms = sampling[taskId];
+  if (ms.token_count == 0) {
+    tt::metrics::ServerMetrics::instance().onToken(taskId);
+    ms.prev_token_time = std::chrono::steady_clock::now();
+  } else if (ms.token_count % K_ITL_SAMPLE_STRIDE == 0) {
+    auto now = std::chrono::steady_clock::now();
+    double itl =
+        std::chrono::duration<double>(now - ms.prev_token_time).count() /
+        K_ITL_SAMPLE_STRIDE;
+    tt::metrics::ServerMetrics::instance().onITLSample(taskId, itl);
+    ms.prev_token_time = now;
+  }
+  ms.token_count++;
+}
+
+domain::LLMStreamChunk buildStreamChunk(
+    const ipc::SharedToken& token, const TokenParseResult& parseResult,
+    const std::unordered_set<int64_t>& stopTokenSet) {
+  domain::LLMStreamChunk response{token.task_id};
+  response.id = std::to_string(token.task_id);
+  response.created = std::chrono::duration_cast<std::chrono::seconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
+
+  domain::LLMChoice choice;
+  choice.index = token.token_index;
+
+  if (parseResult.type == ContentType::REASONING) {
+    choice.text = "";
+    choice.reasoning = parseResult.text;
+  } else {
+    choice.text = parseResult.text;
+    choice.reasoning = std::nullopt;
+  }
+
+  if (token.isError()) {
+    choice.finish_reason = "error";
+  } else {
+    choice.token_id = static_cast<int64_t>(token.token_id);
+    if (token.isFinal()) {
+      bool isStop =
+          stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
+      choice.finish_reason = isStop ? "stop" : "length";
+    }
+  }
+  response.choices.push_back(std::move(choice));
+  return response;
+}
+
+}  // namespace
+
+std::optional<std::function<void(domain::LLMStreamChunk&, bool)>>
+LLMService::resolveCallback(uint32_t taskId, bool isFinal) {
+  if (isFinal) {
+    auto val = stream_callbacks_.take(taskId);
+    if (!val.has_value()) return std::nullopt;
+    pending_tasks_.fetch_sub(1);
+    tt::metrics::ServerMetrics::instance().setQueueDepth(
+        static_cast<double>(pending_tasks_.load()));
+    return std::move(val.value());
+  }
+  return stream_callbacks_.get(taskId);
+}
+
 void LLMService::consumerLoopForWorker(size_t workerIdx) {
   ZoneScopedN("LLMService::consumer_loop");
   tracy_config::tracySetThreadName(
@@ -138,32 +230,10 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   const std::unordered_set<int64_t> stopTokenSet(stopIds.begin(),
                                                  stopIds.end());
 
-  std::unordered_map<std::string,
+  std::unordered_map<uint32_t,
                      std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>
       streamDecoders;
-
-  // Per-request state used to throttle ITL metric events.
-  //
-  // Pushing one EventITLSample per token causes a string heap-allocation
-  // (task_id is a UUID, 36 chars — above SSO) and a mutex acquisition on every
-  // generated token.  At ~120k tok/s that overhead degrades throughput by ~7%.
-  //
-  // Mitigation: observe ITL once every kItlSampleStride consecutive tokens.
-  // The reported quantiles remain statistically representative; the absolute
-  // ITL values are accurate because the caller pre-computes elapsed time
-  // between the two most recent CONSECUTIVE tokens rather than relying on the
-  // spacing between sampled events.
-  //
-  // TODO: Remove once task IDs become uint32 — then per-event cost is
-  // negligible (no heap allocation) and onToken() can be called for every
-  // token unconditionally.
-  static constexpr int kItlSampleStride = 5;
-
-  struct MetricsSamplingState {
-    int token_count = 0;
-    std::chrono::steady_clock::time_point prev_token_time;
-  };
-  std::unordered_map<std::string, MetricsSamplingState> metricsSampling;
+  std::unordered_map<uint32_t, MetricsSamplingState> metricsSampling;
 
   while (running_) {
     if (!worker_manager_->checkWorkerAlive(workerIdx)) {
@@ -178,65 +248,19 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     while (worker->cfg.result_queue->blockingPop(token)) {
       anyActivity = true;
 
-      std::string taskId = std::string(token.task_id);
+      uint32_t taskId = token.task_id;
       bool isFinal = token.isFinal();
 
-      // For final tokens, atomically take ownership of the callback so that
-      // only one of {consumer, abortRequest} decrements pending_tasks_.
-      std::function<void(domain::StreamingChunkResponse&, bool)> callback;
-      if (isFinal) {
-        auto val = stream_callbacks_.take(token.task_id);
-        if (!val.has_value()) {
-          // abortRequest already took the callback and finalized the task.
-          streamDecoders.erase(taskId);
-          metricsSampling.erase(taskId);
-          continue;
-        }
-        callback = std::move(val.value());
-        pending_tasks_.fetch_sub(1);
-        tt::metrics::ServerMetrics::instance().setQueueDepth(
-            static_cast<double>(pending_tasks_.load()));
-      } else {
-        auto val = stream_callbacks_.get(token.task_id);
-        if (!val.has_value()) {
-          // Client disconnected or task was cancelled — discard token.
-          // abortRequest() already finalized the reasoning parser state.
-          streamDecoders.erase(taskId);
-          metricsSampling.erase(taskId);
-          continue;
-        }
-        callback = std::move(val.value());
+      auto callback = resolveCallback(taskId, isFinal);
+      if (!callback.has_value()) {
+        streamDecoders.erase(taskId);
+        metricsSampling.erase(taskId);
+        continue;
       }
 
-      auto& decoder = streamDecoders[taskId];
-      if (!decoder) decoder = tokenizer_->createStreamDecoder();
-
-      std::string delta = decoder->step(static_cast<int>(token.token_id));
-      if (isFinal) delta += decoder->flush();
-
-      // Record token-level metrics before reasoning filtering so all
-      // generated tokens (including hidden reasoning tokens) are counted.
-      //
-      // Hot-path budget: only a map counter increment for non-sampled tokens.
-      // steady_clock::now() and metric queue pushes happen only on the first
-      // token (TTFT) and every kItlSampleStride-th subsequent token.
-      // The ITL value is divided by kItlSampleStride to yield a per-token
-      // estimate (assumes roughly uniform decode step latency).
-      {
-        auto& ms = metricsSampling[taskId];
-        if (ms.token_count == 0) {
-          tt::metrics::ServerMetrics::instance().onToken(taskId);
-          ms.prev_token_time = std::chrono::steady_clock::now();
-        } else if (ms.token_count % kItlSampleStride == 0) {
-          auto now = std::chrono::steady_clock::now();
-          double itl =
-              std::chrono::duration<double>(now - ms.prev_token_time).count() /
-              kItlSampleStride;
-          tt::metrics::ServerMetrics::instance().onITLSample(taskId, itl);
-          ms.prev_token_time = now;
-        }
-        ms.token_count++;
-      }
+      std::string delta = decodeToken(streamDecoders, tokenizer_, taskId,
+                                      token.token_id, isFinal);
+      recordTokenMetrics(metricsSampling, taskId);
 
       TokenParseResult parseResult{ContentType::ANSWER, delta, true};
       if (reasoning_parser_) {
@@ -248,40 +272,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         continue;
       }
 
-      domain::StreamingChunkResponse response{domain::TaskID(taskId)};
-      response.id = taskId;
-      response.created =
-          std::chrono::duration_cast<std::chrono::seconds>(
-              std::chrono::system_clock::now().time_since_epoch())
-              .count();
-
-      domain::CompletionChoice choice;
-      choice.index = token.token_index;
-
-      // Set text based on content type
-      if (parseResult.type == ContentType::REASONING) {
-        // This is reasoning content - put in reasoning field
-        choice.text = "";  // Empty normal text
-        choice.reasoning = parseResult.text;
-      } else {
-        // This is answer content - put in text field
-        choice.text = parseResult.text;
-        choice.reasoning = std::nullopt;
-      }
-
-      if (token.isError()) {
-        choice.finish_reason = "error";
-      } else {
-        choice.token_id = static_cast<int64_t>(token.token_id);
-        if (isFinal) {
-          bool isStop =
-              stopTokenSet.count(static_cast<int64_t>(token.token_id)) > 0;
-          choice.finish_reason = isStop ? "stop" : "length";
-        }
-      }
-      response.choices.push_back(std::move(choice));
-
-      callback(response, isFinal);
+      auto response = buildStreamChunk(token, parseResult, stopTokenSet);
+      callback.value()(response, isFinal);
 
       if (isFinal) {
         streamDecoders.erase(taskId);
@@ -309,8 +301,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Stopped", workerIdx);
 }
 
-domain::CompletionResponse LLMService::processRequest(
-    domain::CompletionRequest request) {
+domain::LLMResponse LLMService::processRequest(domain::LLMRequest request) {
   ZoneScopedN("LLMService::processRequest");
 
   std::mutex mtx;
@@ -326,12 +317,11 @@ domain::CompletionResponse LLMService::processRequest(
       std::holds_alternative<std::vector<int>>(request.prompt)
           ? static_cast<int>(std::get<std::vector<int>>(request.prompt).size())
           : 0;
-  const std::string taskId = request.task_id.id;
+  const uint32_t taskId = request.task_id;
   const std::string model = request.model.value_or("default");
 
   processStreamingRequest(
-      std::move(request),
-      [&](domain::StreamingChunkResponse& chunk, bool isFinal) {
+      std::move(request), [&](domain::LLMStreamChunk& chunk, bool isFinal) {
         if (!chunk.choices.empty()) {
           if (chunk.choices[0].reasoning.has_value()) {
             accumulatedReasoning.append(chunk.choices[0].reasoning.value());
@@ -352,14 +342,14 @@ domain::CompletionResponse LLMService::processRequest(
   std::unique_lock<std::mutex> lock(mtx);
   cv.wait(lock, [&] { return done; });
 
-  domain::CompletionResponse response{domain::TaskID(taskId)};
-  response.id = taskId;
+  domain::LLMResponse response{taskId};
+  response.id = std::to_string(taskId);
   response.model = model;
   response.created = std::chrono::duration_cast<std::chrono::seconds>(
                          std::chrono::system_clock::now().time_since_epoch())
                          .count();
 
-  domain::CompletionChoice choice;
+  domain::LLMChoice choice;
   choice.text = std::move(accumulatedAnswer);
   choice.reasoning =
       accumulatedReasoning.empty()
@@ -377,16 +367,17 @@ domain::CompletionResponse LLMService::processRequest(
 }
 
 void LLMService::processStreamingRequest(
-    domain::CompletionRequest request,
-    std::function<void(domain::StreamingChunkResponse&, bool isFinal)>
-        callback) {
-  assert(callback != nullptr);
+    domain::LLMRequest request,
+    std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback) {
+  if (!callback) {
+    throw std::invalid_argument("streaming callback must not be null");
+  }
 
   ZoneScopedN("LLMService::processStreamingRequest");
-  if (request.task_id.id.empty()) {
+  if (request.task_id == 0) {
     throw std::runtime_error("task_id must be set before submitting request");
   }
-  std::string taskId = request.task_id.id;
+  uint32_t taskId = request.task_id;
 
   pending_tasks_.fetch_add(1);
   TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
@@ -406,8 +397,9 @@ void LLMService::processStreamingRequest(
       taskId, static_cast<int>(prompt.size()));
 
   auto sequence = std::make_unique<llm_engine::Sequence>(
-      llm_engine::TaskID(taskId),
-      tt::config::llmEngineConfig().kvcache_block_size, std::move(tokenIds));
+      taskId,
+      static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
+      std::move(tokenIds));
   sequence->numPromptTokens = prompt.size();
   if (request.slotId.has_value()) {
     sequence->setKVCacheAddress(request.slotId.value());
@@ -417,7 +409,7 @@ void LLMService::processStreamingRequest(
   queue_manager_->task_queue->push(*std::move(sequence));
 }
 
-void LLMService::postProcess(domain::CompletionResponse& response) const {
+void LLMService::postProcess(domain::LLMResponse& response) const {
   // Parse and strip reasoning blocks from all choices
   if (reasoning_parser_) {
     for (auto& choice : response.choices) {
@@ -428,11 +420,9 @@ void LLMService::postProcess(domain::CompletionResponse& response) const {
     }
   }
 }
-void LLMService::abortRequest(const domain::TaskID& taskId) {
-  std::string taskKey = taskId.id;
-
+void LLMService::abortRequest(uint32_t taskId) {
   // Atomically remove the stream callback and decrement pending_tasks_.
-  auto cb = stream_callbacks_.take(taskKey);
+  auto cb = stream_callbacks_.take(taskId);
   if (cb.has_value()) {
     pending_tasks_.fetch_sub(1);
     tt::metrics::ServerMetrics::instance().setQueueDepth(
@@ -444,8 +434,8 @@ void LLMService::abortRequest(const domain::TaskID& taskId) {
   // controller sets done=true BEFORE calling abortRequest, so the callback's
   // done->load() check returns immediately — no SSE data is sent.
   if (cb.has_value()) {
-    domain::StreamingChunkResponse abortResponse{taskId};
-    domain::CompletionChoice choice;
+    domain::LLMStreamChunk abortResponse{taskId};
+    domain::LLMChoice choice;
     choice.finish_reason = "abort";
     abortResponse.choices.push_back(std::move(choice));
     cb.value()(abortResponse, /*isFinal=*/true);
@@ -453,7 +443,7 @@ void LLMService::abortRequest(const domain::TaskID& taskId) {
 
   // Clean up any reasoning-parser state so task_states_ does not leak.
   if (reasoning_parser_) {
-    reasoning_parser_->finalizeTask(taskKey);
+    reasoning_parser_->finalizeTask(taskId);
   }
 
   // Broadcast the cancel signal to every per-worker cancel queue.
@@ -464,7 +454,7 @@ void LLMService::abortRequest(const domain::TaskID& taskId) {
     }
   }
 
-  TT_LOG_INFO("[LLMService] Aborted request {}", taskKey);
+  TT_LOG_INFO("[LLMService] Aborted request {}", taskId);
 }
 
 }  // namespace tt::services
