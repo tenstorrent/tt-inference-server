@@ -7,6 +7,7 @@ import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence
+from urllib.parse import urlparse
 
 from server_tests.test_cases.device_liveness_test import DeviceLivenessTest
 from server_tests.test_classes import TestConfig
@@ -59,8 +60,12 @@ class BaseMediaStrategy(ABC):
         self.device = device
         self.output_path = output_path
         self.service_port = service_port
-        host = deploy_url.rstrip("/") if deploy_url else "http://localhost"
-        self.base_url = f"{host}:{service_port}"
+        if deploy_url:
+            normalized = deploy_url.rstrip("/")
+            parsed = urlparse(normalized)
+            self.base_url = normalized if parsed.port is not None else f"{normalized}:{service_port}"
+        else:
+            self.base_url = f"http://localhost:{service_port}"
         self.test_payloads_path = "utils/test_payloads"
 
     @abstractmethod
