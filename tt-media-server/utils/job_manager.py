@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from threading import Lock
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Any
 from pathlib import Path
 from multiprocessing import Event
 from sqlite3 import IntegrityError
@@ -454,113 +454,79 @@ class JobManager:
     async def _persist_job_data_to_db(self, job: Job):
         if job.job_type != JobTypes.TRAINING.value:
             return
-
-        metrics_list = self.get_job_metrics(job.id)
-        checkpoints_list = self.get_job_checkpoints(job.id)
-        logs_list = self.get_job_logs(job.id)
-
-        metrics_last_seen = 0
-        checkpoints_last_seen = 0
-        logs_last_seen = 0
-
-        metrics_failed = metrics_list is None
-        checkpoints_failed = checkpoints_list is None
-        logs_failed = logs_list is None
-
+        streams = [
+            (self.get_job_metrics(job.id), self._insert_metric, "metric"),
+            (self.get_job_checkpoints(job.id), self._insert_checkpoint, "checkpoint"),
+            (self.get_job_logs(job.id), self._insert_log, "log"),
+        ]
+        last_seen = [0] * len(streams)
+        failed = [items is None for items, _, _ in streams]
         while True:
-            if not metrics_failed:
-                metrics_last_seen = self._persist_new_metrics(
-                    job, metrics_list, metrics_last_seen
+            for i, (items, insert_fn, label) in enumerate(streams):
+                if failed[i]:
+                    continue
+                last_seen[i] = self._persist_new_items(
+                    job, items, last_seen[i], insert_fn, label
                 )
-                if metrics_last_seen < 0:
-                    metrics_failed = True
-
-            if not checkpoints_failed:
-                checkpoints_last_seen = self._persist_new_checkpoints(
-                    job, checkpoints_list, checkpoints_last_seen
-                )
-                if checkpoints_last_seen < 0:
-                    checkpoints_failed = True
-
-            if not logs_failed:
-                logs_last_seen = self._persist_new_logs(job, logs_list, logs_last_seen)
-                if logs_last_seen < 0:
-                    logs_failed = True
-
+                if last_seen[i] < 0:
+                    failed[i] = True
             if job.is_terminal():
                 break
             await asyncio.sleep(1.0)
 
-    def _persist_new_metrics(self, job: Job, metrics_list: list, last_seen: int) -> int:
-        current_len = len(metrics_list)
-        for i in range(last_seen, current_len):
-            metric = metrics_list[i]
-            try:
-                self.db.insert_metric(
-                    job_id=job.id,
-                    global_step=metric["global_step"],
-                    epoch=metric["epoch"],
-                    metric_name=metric["metric_name"],
-                    value=metric["value"],
-                    learning_rate=metric.get("learning_rate"),
-                    timestamp=metric["timestamp"],
-                )
-            except IntegrityError:
-                self._logger.warning(
-                    f"Duplicate metric for job {job.id} at step {metric['global_step']}, skipping"
-                )
-            except Exception as e:
-                self._logger.error(f"Failed to persist metric for job {job.id}: {e}")
-                return -1
-        return current_len
-
-    def _persist_new_checkpoints(
-        self, job: Job, checkpoints_list: list, last_seen: int
+    def _persist_new_items(
+        self,
+        job: Job,
+        items_list: list,
+        last_seen: int,
+        insert_fn: Callable[[str, Any, int], None],
+        item_label: str,
     ) -> int:
-        current_len = len(checkpoints_list)
+        current_len = len(items_list)
         for i in range(last_seen, current_len):
-            ckpt = checkpoints_list[i]
             try:
-                self.db.insert_checkpoint(
-                    job_id=job.id,
-                    checkpoint_id=ckpt["id"],
-                    step=ckpt["step"],
-                    epoch=ckpt["epoch"],
-                    metrics=ckpt.get("metrics", {}),
-                    created_at=ckpt["created_at"],
-                )
+                insert_fn(job.id, items_list[i], i)
             except IntegrityError:
                 self._logger.warning(
-                    f"Duplicate checkpoint for job {job.id} at step {ckpt['step']}, skipping"
+                    f"Duplicate {item_label} for job {job.id}: {items_list[i]}"
                 )
             except Exception as e:
                 self._logger.error(
-                    f"Failed to persist checkpoint for job {job.id}: {e}"
+                    f"Failed to persist {item_label} for job {job.id}: {e}"
                 )
                 return -1
         return current_len
 
-    def _persist_new_logs(self, job: Job, logs_list: list, last_seen: int) -> int:
-        current_len = len(logs_list)
-        for i in range(last_seen, current_len):
-            log_entry = logs_list[i]
-            try:
-                self.db.insert_log(
-                    job_id=job.id,
-                    log_index=i,
-                    timestamp=log_entry["timestamp"],
-                    log_type=log_entry["type"],
-                    step=log_entry.get("step"),
-                    message=log_entry["message"],
-                )
-            except IntegrityError:
-                self._logger.warning(
-                    f"Duplicate log for job {job.id} at index {i}, skipping"
-                )
-            except Exception as e:
-                self._logger.error(f"Failed to persist log for job {job.id}: {e}")
-                return -1
-        return current_len
+    def _insert_metric(self, job_id: str, metric: dict, _index: int):
+        self.db.insert_metric(
+            job_id=job_id,
+            global_step=metric["global_step"],
+            epoch=metric["epoch"],
+            metric_name=metric["metric_name"],
+            value=metric["value"],
+            learning_rate=metric.get("learning_rate"),
+            timestamp=metric["timestamp"],
+        )
+
+    def _insert_checkpoint(self, job_id: str, ckpt: dict, _index: int):
+        self.db.insert_checkpoint(
+            job_id=job_id,
+            checkpoint_id=ckpt["id"],
+            step=ckpt["step"],
+            epoch=ckpt["epoch"],
+            metrics=ckpt.get("metrics", {}),
+            created_at=ckpt["created_at"],
+        )
+
+    def _insert_log(self, job_id: str, log_entry: dict, index: int):
+        self.db.insert_log(
+            job_id=job_id,
+            log_index=index,
+            timestamp=log_entry["timestamp"],
+            log_type=log_entry["type"],
+            step=log_entry.get("step"),
+            message=log_entry["message"],
+        )
 
     def _restore_jobs_from_db(self):
         """
