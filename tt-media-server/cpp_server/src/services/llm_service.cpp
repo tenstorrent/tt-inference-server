@@ -36,6 +36,15 @@ LLMService::LLMService() : tokenizer_(&tt::utils::activeTokenizer()) {
   worker_manager_ = std::make_unique<tt::worker::WorkerManager>(numWorkers);
   reasoning_parser_ = std::make_unique<ReasoningParser>();
 
+  stop_string_processor_ = std::make_unique<StopStringProcessor>(
+      [this](uint32_t taskId) {
+        if (queue_manager_) {
+          for (auto& cq : queue_manager_->cancel_queues) {
+            cq->push(taskId);
+          }
+        }
+      });
+
   TT_LOG_INFO("[LLMService] Initialized (workers={})", numWorkers);
   queue_manager_ =
       std::make_unique<tt::ipc::QueueManager>(static_cast<int>(numWorkers));
@@ -150,11 +159,6 @@ struct MetricsSamplingState {
   std::chrono::steady_clock::time_point prev_token_time;
 };
 
-struct TaskStreamState {
-  std::string accumulated_text;
-  bool stop_detected = false;
-};
-
 std::string decodeToken(
     std::unordered_map<uint32_t,
                        std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>&
@@ -223,41 +227,6 @@ domain::LLMStreamChunk buildStreamChunk(
   return response;
 }
 
-// Check if accumulated text ends with any stop string
-// Returns true if a stop string was detected
-bool checkStopStrings(TaskStreamState& state,
-                      const std::vector<std::string>& stopSequences,
-                      tt::ipc::QueueManager* queueManager, uint32_t taskId,
-                      size_t workerIdx) {
-  if (stopSequences.empty() || state.accumulated_text.empty()) {
-    return false;
-  }
-
-  for (const auto& stopStr : stopSequences) {
-    const std::string& text = state.accumulated_text;
-    if (text.size() >= stopStr.size() &&
-        text.compare(text.size() - stopStr.size(), stopStr.size(), stopStr) ==
-            0) {
-      // Found a stop string match
-      state.stop_detected = true;
-      // Truncate stop string from output (MVP: always exclude)
-      state.accumulated_text.resize(text.size() - stopStr.size());
-
-      // Signal scheduler to abort this sequence
-      for (auto& cq : queueManager->cancel_queues) {
-        cq->push(taskId);
-      }
-
-      TT_LOG_INFO(
-          "[Consumer-{}] Stop string '{}' detected for task {}, aborting "
-          "sequence",
-          workerIdx, stopStr, taskId);
-      return true;
-    }
-  }
-  return false;
-}
-
 }  // namespace
 
 std::optional<LLMService::StreamCallbackEntry> LLMService::resolveCallback(
@@ -289,7 +258,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   std::unordered_map<uint32_t,
                      std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>
       streamDecoders;
-  std::unordered_map<uint32_t, TaskStreamState> streamStates;
   std::unordered_map<uint32_t, MetricsSamplingState> metricsSampling;
 
   while (running_) {
@@ -311,14 +279,17 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       auto entry = resolveCallback(taskId, isFinal);
       if (!entry.has_value()) {
         streamDecoders.erase(taskId);
-        streamStates.erase(taskId);
+        if (stop_string_processor_) {
+          stop_string_processor_->finalizeTask(taskId);
+        }
         metricsSampling.erase(taskId);
         continue;
       }
 
       // Skip processing tokens after stop string detected (handle race
       // condition) Only process final token to ensure clean shutdown
-      if (!isFinal && streamStates[taskId].stop_detected) {
+      if (!isFinal && stop_string_processor_ &&
+          stop_string_processor_->isStopDetected(taskId)) {
         continue;
       }
 
@@ -334,15 +305,14 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       }
 
       // Accumulate answer text and check for stop strings
-      auto& streamState = streamStates[taskId];
       if (!parseResult.text.empty() &&
-          parseResult.type == ContentType::ANSWER && !streamState.stop_detected) {
-        streamState.accumulated_text += parseResult.text;
+          parseResult.type == ContentType::ANSWER &&
+          stop_string_processor_) {
 
-        // Check if accumulated text ends with any stop string
-        if (checkStopStrings(streamState, entry->params.stop_sequences,
-                             queue_manager_.get(), taskId, workerIdx)) {
-          // Stop detected - skip emitting non-final chunks
+        auto stopResult = stop_string_processor_->processText(taskId, parseResult.text);
+
+        if (stopResult.stop_detected) {
+          parseResult.text = stopResult.output_text;
           if (!isFinal) {
             continue;
           }
@@ -357,7 +327,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
       // If we detected a stop string, override the finish reason and empty text
       // for final chunk
-      if (isFinal && streamState.stop_detected) {
+      if (isFinal && stop_string_processor_ &&
+          stop_string_processor_->isStopDetected(taskId)) {
         if (!response.choices.empty()) {
           response.choices[0].text =
               "";  // Empty - previous chunks already emitted
@@ -369,7 +340,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
       if (isFinal) {
         streamDecoders.erase(taskId);
-        streamStates.erase(taskId);
         std::string finishReason = "unknown";
         if (!response.choices.empty() &&
             response.choices[0].finish_reason.has_value()) {
@@ -381,6 +351,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
             taskId, finishReason, genTokens);
         if (reasoning_parser_) {
           reasoning_parser_->finalizeTask(taskId);
+        }
+        if (stop_string_processor_) {
+          stop_string_processor_->finalizeTask(taskId);
         }
         TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
       }
@@ -486,6 +459,10 @@ void LLMService::processStreamingRequest(
     reasoning_parser_->initializeTask(taskId);
   }
 
+  if (stop_string_processor_) {
+    stop_string_processor_->initializeTask(taskId, request.stop);
+  }
+
   auto prompt = std::get<std::vector<int>>(request.prompt);
   std::vector<int64_t> tokenIds(prompt.begin(), prompt.end());
 
@@ -541,6 +518,10 @@ void LLMService::abortRequest(uint32_t taskId) {
   // Clean up any reasoning-parser state so task_states_ does not leak.
   if (reasoning_parser_) {
     reasoning_parser_->finalizeTask(taskId);
+  }
+
+  if (stop_string_processor_) {
+    stop_string_processor_->finalizeTask(taskId);
   }
 
   // Broadcast the cancel signal to every per-worker cancel queue.

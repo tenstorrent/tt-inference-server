@@ -17,6 +17,7 @@
 #include "ipc/queue_manager.hpp"
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
+#include "services/stop_string_processor.hpp"
 #include "services/streamable.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/tokenizer.hpp"
@@ -95,6 +96,7 @@ class LLMService
   const tt::utils::Tokenizer* tokenizer_;
   std::unordered_set<int64_t> stop_token_set_;
   std::unique_ptr<ReasoningParser> reasoning_parser_;
+  std::unique_ptr<StopStringProcessor> stop_string_processor_;
 };
 
 }  // namespace tt::services

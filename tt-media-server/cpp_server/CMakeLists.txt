@@ -228,6 +228,7 @@ set(LLM_ENGINE_SOURCES
     src/services/memory_manager.cpp
     src/services/paged_memory_manager.cpp
     src/services/contiguous_memory_manager.cpp
+    src/services/stop_string_processor.cpp
 )
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
@@ -343,6 +344,13 @@ target_include_directories(cancellation_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(stop_string_processor_test tests/stop_string_processor_test.cpp)
+target_link_libraries(stop_string_processor_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(stop_string_processor_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -351,6 +359,7 @@ gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(cancellation_test)
+gtest_discover_tests(stop_string_processor_test)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -382,6 +391,7 @@ set(SOURCES
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
     src/services/reasoning_parser.cpp
+    src/services/stop_string_processor.cpp
     src/services/session_manager.cpp
     src/domain/session.cpp
     src/worker/single_process_worker.cpp
