@@ -35,8 +35,17 @@ MTEB_TASKS = ["STS12"]  # add AmazonCounterfactualClassification for classificat
 class EmbeddingClientStrategy(BaseMediaStrategy):
     """Strategy for embedding models."""
 
-    def __init__(self, all_params, model_spec, device, output_path, service_port, deploy_url=None):
-        super().__init__(all_params, model_spec, device, output_path, service_port, deploy_url=deploy_url)
+    def __init__(
+        self, all_params, model_spec, device, output_path, service_port, deploy_url=None
+    ):
+        super().__init__(
+            all_params,
+            model_spec,
+            device,
+            output_path,
+            service_port,
+            deploy_url=deploy_url,
+        )
         self.model = self.model_spec.hf_model_repo
         self.isl = int(
             model_spec.device_model_spec.env_vars.get("VLLM__MAX_MODEL_LENGTH", 1024)

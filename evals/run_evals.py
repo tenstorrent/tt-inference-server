@@ -541,7 +541,9 @@ def main():
         return 1
 
 
-def run_media_evals(all_params, model_spec, device, output_path, service_port, deploy_url=None):
+def run_media_evals(
+    all_params, model_spec, device, output_path, service_port, deploy_url=None
+):
     """
     Run media evals for cnn and image models only (not AUDIO models).
 

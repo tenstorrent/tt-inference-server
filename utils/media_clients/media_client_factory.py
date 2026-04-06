@@ -64,7 +64,14 @@ class MediaClientFactory:
         strategy = STRATEGY_MAP.get(model_spec.model_type.name)
         if strategy:
             logger.info(f"Using strategy: {strategy.__name__} for client.")
-            return strategy(all_params, model_spec, device, output_path, service_port, deploy_url=deploy_url)
+            return strategy(
+                all_params,
+                model_spec,
+                device,
+                output_path,
+                service_port,
+                deploy_url=deploy_url,
+            )
 
         raise ValueError(
             f"Unsupported model type: {model_spec.model_type.name}. Supported types: {', '.join(STRATEGY_MAP.keys())}"
@@ -104,7 +111,12 @@ class MediaClientFactory:
         try:
             # Create appropriate test case
             test_case = MediaClientFactory._create_strategy(
-                model_spec, all_params, device, output_path, service_port, deploy_url=deploy_url
+                model_spec,
+                all_params,
+                device,
+                output_path,
+                service_port,
+                deploy_url=deploy_url,
             )
 
             # Run the specified task using test_case
