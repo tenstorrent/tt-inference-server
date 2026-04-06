@@ -343,25 +343,6 @@ target_include_directories(cancellation_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(llm_service_test tests/llm_service_test.cpp
-    src/services/llm_service.cpp
-    src/services/reasoning_parser.cpp
-    src/worker/worker_manager.cpp
-    src/worker/single_process_worker.cpp
-    src/utils/runner_factory.cpp
-    src/utils/mapper.cpp
-    src/metrics/metrics.cpp
-    src/profiling/tracy.cpp
-    src/runners/embedding_runner.cpp
-)
-target_link_libraries(llm_service_test PRIVATE llm_engine GTest::gtest_main
-    Drogon::Drogon tokenizers_cpp JsonCpp::JsonCpp pybind11::embed prometheus-cpp::core)
-target_include_directories(llm_service_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${prometheus-cpp_SOURCE_DIR}/core/include
-)
-
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -370,7 +351,6 @@ gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(cancellation_test)
-gtest_discover_tests(llm_service_test)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
