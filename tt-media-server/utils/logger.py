@@ -13,6 +13,29 @@ from colorama import init as colorama_init
 colorama_init(autoreset=True)
 
 
+def _reset_logging_locks_after_fork():  # pragma: no cover
+    """Reset all logging handler locks in the child process after a fork.
+
+    When the parent process is forked, the child inherits a copy of all
+    memory including any logging locks that may be in the acquired state.
+    Since the thread holding the lock does not exist in the child, the lock
+    can never be released, causing a deadlock on the first log call that
+    reaches a handler with that inherited lock.
+
+    Registering this as an after-fork child callback replaces every handler
+    lock with a fresh released lock before the child executes any user code.
+    """
+    for handler in logging.root.handlers:
+        handler.createLock()
+    for logger in logging.Logger.manager.loggerDict.values():
+        if isinstance(logger, logging.Logger):
+            for handler in logger.handlers:
+                handler.createLock()
+
+
+os.register_at_fork(after_in_child=_reset_logging_locks_after_fork)
+
+
 class ColoredFormatter(logging.Formatter):
     """
     Logging Formatter to add colors based on log level.
