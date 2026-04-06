@@ -293,26 +293,27 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
         global_step = 0
         running_loss = 0.0
-        avg_val_loss = self._run_validation(
-            model, eval_dataloader, mesh, request, vocab_size
-        )
-        self.logger.info(
-            f"Initial Model | val/loss: {avg_val_loss:.4f}",
-            extra={"log_type": "info", "step": 0},
-        )
-        if request._training_metrics is not None:
-            request._training_metrics.append(
-                {
-                    "global_step": 0,
-                    "epoch": 0,
-                    "metric_name": "val_loss",
-                    "value": round(avg_val_loss, 4),
-                    "timestamp": time.time(),
-                }
-            )
-        model.train()
 
         try:
+            avg_val_loss = self._run_validation(
+                model, eval_dataloader, mesh, request, vocab_size
+            )
+            self.logger.info(
+                f"Initial Model | val/loss: {avg_val_loss:.4f}",
+                extra={"log_type": "info", "step": 0},
+            )
+            if request._training_metrics is not None:
+                request._training_metrics.append(
+                    {
+                        "global_step": 0,
+                        "epoch": 0,
+                        "metric_name": "val_loss",
+                        "value": round(avg_val_loss, 4),
+                        "timestamp": time.time(),
+                    }
+                )
+            model.train()
+
             for epoch in range(request.num_epochs):
                 for batch in tqdm(train_dataloader, desc="Training"):
                     optimizer.zero_grad()
