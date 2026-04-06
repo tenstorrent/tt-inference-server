@@ -51,8 +51,8 @@ void SpPrefillRunner::run() {
       TT_LOG_WARN("SpPrefillRunner: Error token for task {}", result->taskId);
       ipc::pushErrorToken(*resultQueue, result->taskId);
     } else {
-      TT_LOG_DEBUG("SpPrefillRunner: Received prefill token {} for task {}",
-                   result->tokenId, result->taskId);
+      TT_LOG_DEBUG("SpPrefillRunner: pushToken task_id={} token_id={} finished={}",
+          result->taskId, result->tokenId, true);
       ipc::pushToken(*resultQueue, result->taskId, result->tokenId, true);
     }
 
