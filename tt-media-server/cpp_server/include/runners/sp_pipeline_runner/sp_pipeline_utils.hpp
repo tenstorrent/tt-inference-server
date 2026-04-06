@@ -25,6 +25,7 @@ inline pm::GenerationParams makeGenerationParams(
       .max_new_tokens =
           static_cast<uint32_t>(seq.samplingParams->max_tokens.value_or(
               static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS))),
+      .spec_decode = seq.samplingParams->fast_mode,
       .temperature = seq.samplingParams->temperature,
       .top_p = seq.samplingParams->top_p.value_or(1.0f),
       .top_k = static_cast<int32_t>(seq.samplingParams->top_k.value_or(-1))};

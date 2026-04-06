@@ -13,6 +13,7 @@
 #include "llm_runner/sequence.hpp"
 #include "runners/sp_pipeline_runner/sp_pipeline_utils.hpp"
 #include "utils/logger.hpp"
+#include "ipc/token_push.hpp"
 
 namespace tt::runners {
 namespace utils = sp_pipeline_utils;
@@ -136,25 +137,6 @@ void SpPipelineRunner::step() {
   }
 }
 
-void SpPipelineRunner::pushToken(uint32_t taskId, uint64_t tokenId,
-                                 bool finished) {
-  ipc::SharedToken shared{};
-  shared.token_index = 0;
-  shared.flags = finished ? ipc::SharedToken::FLAG_FINAL : 0u;
-  shared.token_id = tokenId;
-  shared.task_id = taskId;
-  resultQueue->push(shared);
-}
-
-void SpPipelineRunner::pushErrorToken(uint32_t taskId) {
-  ipc::SharedToken shared{};
-  shared.token_index = 0;
-  shared.flags = ipc::SharedToken::FLAG_FINAL | ipc::SharedToken::FLAG_ERROR;
-  shared.token_id = 0;
-  shared.task_id = taskId;
-  resultQueue->push(shared);
-}
-
 std::optional<pm::PMResponse> SpPipelineRunner::getResponse() {
   pm::PMResponse response;
   if (pipelineManager->try_pop_response(response)) {
@@ -200,7 +182,7 @@ void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
   auto& seq = *it->second;
   seq.appendToken(output.token_id);
   bool finished = output.is_complete || stopTokenIds.count(output.token_id);
-  pushToken(seq.taskId, output.token_id, finished);
+  ipc::pushToken(*resultQueue, seq.taskId, output.token_id, finished);
 }
 
 inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
@@ -210,7 +192,7 @@ inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
 void SpPipelineRunner::handleRequest(
     std::unique_ptr<llm_engine::Sequence> request) {
   auto slotId = request->getKVCacheAddress();
-  assert(slotId != llm_engine::INVALID_KV_CACHE_ADDRESS);
+  assert(slotId != static_cast<uint64_t>(llm_engine::INVALID_KV_CACHE_ADDRESS));
   auto slot = static_cast<uint32_t>(slotId);
 
   auto it = running.find(slot);
