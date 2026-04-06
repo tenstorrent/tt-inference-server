@@ -2,7 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+import enum
 import math
+from unittest.mock import patch
 
 import pytest
 from config.constants import (
@@ -31,6 +33,9 @@ class TestBuildModelsCatalog:
 
     def test_training_gemma_runner_returns_model(self):
         models = _build_models_catalog(ModelRunners.TRAINING_GEMMA_LORA.value)
+        required_keys = {"id", "display_name", "supported", "model_config"}
+        for model in models:
+            assert set(model.keys()) == required_keys
         assert len(models) == 1
         model = models[0]
         assert model["id"] == ModelNames.GEMMA_1_1_2B_IT.value
@@ -40,6 +45,9 @@ class TestBuildModelsCatalog:
 
     def test_training_llama_runner_returns_model(self):
         models = _build_models_catalog(ModelRunners.TRAINING_LLAMA_LORA.value)
+        required_keys = {"id", "display_name", "supported", "model_config"}
+        for model in models:
+            assert set(model.keys()) == required_keys
         assert len(models) == 1
         model = models[0]
         assert model["id"] == ModelNames.LLAMA_3_1_8B.value
@@ -47,34 +55,12 @@ class TestBuildModelsCatalog:
         assert model["model_config"] == SupportedModels.LLAMA_3_1_8B.value
         assert model["supported"] is True
 
-    def test_model_config_falls_back_when_not_in_supported_models(self):
-        """MICROSOFT_RESNET_50 is in ModelNames but not SupportedModels."""
-        models = _build_models_catalog(ModelRunners.TT_XLA_RESNET.value)
-        assert len(models) == 1
-        assert models[0]["model_config"] == ModelNames.MICROSOFT_RESNET_50.value
-
-    def test_display_name_falls_back_when_not_in_display_names(self):
-        """MICROSOFT_RESNET_50 is in ModelNames but not ModelDisplayNames."""
-        models = _build_models_catalog(ModelRunners.TT_XLA_RESNET.value)
-        assert len(models) == 1
-        assert models[0]["display_name"] == ModelNames.MICROSOFT_RESNET_50.value
-
-    def test_runner_with_no_models_returns_empty(self):
-        """A runner not in MODEL_RUNNER_TO_MODEL_NAMES_MAP returns empty."""
-        runner_without_models = None
-        for runner in ModelRunners:
-            if runner not in MODEL_RUNNER_TO_MODEL_NAMES_MAP:
-                runner_without_models = runner
-                break
-        if runner_without_models is None:
-            pytest.skip("all runners have model entries")
-        assert _build_models_catalog(runner_without_models.value) == []
-
-    def test_all_returned_models_have_required_keys(self):
-        models = _build_models_catalog(ModelRunners.TRAINING_GEMMA_LORA.value)
-        required_keys = {"id", "display_name", "supported", "model_config"}
-        for model in models:
-            assert set(model.keys()) == required_keys
+    def test_raises_when_model_missing_from_enums(self):
+        fake_model = enum.Enum("FakeModel", {"FAKE_MODEL": "fake-model"}).FAKE_MODEL
+        fake_map = {ModelRunners.TRAINING_GEMMA_LORA: {fake_model}}
+        with patch("utils.build_catalog.MODEL_RUNNER_TO_MODEL_NAMES_MAP", fake_map):
+            with pytest.raises(ValueError, match="SupportedModels and ModelDisplayNames"):
+                _build_models_catalog(ModelRunners.TRAINING_GEMMA_LORA.value)
 
 
 class TestBuildClustersCatalog:
