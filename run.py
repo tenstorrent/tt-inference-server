@@ -149,6 +149,13 @@ def parse_arguments():
         default=os.getenv("SERVICE_PORT", "8000"),
     )
     parser.add_argument(
+        "--server-url",
+        type=str,
+        default=None,
+        help="Base URL of an already-running inference server to target (e.g. 'http://192.168.1.10'). "
+        "Overrides the default http://127.0.0.1. Use together with --service-port when not using --docker-server or --local-server.",
+    )
+    parser.add_argument(
         "--bind-host",
         type=str,
         default="0.0.0.0",
