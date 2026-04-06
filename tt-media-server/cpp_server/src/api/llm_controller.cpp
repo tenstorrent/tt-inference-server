@@ -13,6 +13,7 @@
 #include <sstream>
 #include <thread>
 
+#include "api/error_response.hpp"
 #include "api/llm_controller.hpp"
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
@@ -226,19 +227,6 @@ LLMController::LLMController() {
   TT_LOG_INFO("[LLMController] Initialized (service already started)");
 }
 
-Json::Value LLMController::errorJson(const std::string& message,
-                                     const std::string& type,
-                                     const Json::Value& param,
-                                     const Json::Value& code) {
-  Json::Value error;
-  error["object"] = "error";
-  error["message"] = message;
-  error["type"] = type;
-  error["param"] = param;
-  error["code"] = code;
-  return error;
-}
-
 LLMController::SessionInfo LLMController::resolveSession(
     domain::LLMRequest& req) const {
   SessionInfo info;
@@ -281,10 +269,8 @@ void LLMController::chatCompletions(
 
   auto json = req->getJsonObject();
   if (!json) {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson("Invalid JSON body", "invalid_request_error"));
-    resp->setStatusCode(drogon::k400BadRequest);
-    callback(resp);
+    callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
+                           "invalid_request_error"));
     return;
   }
 
@@ -294,11 +280,9 @@ void LLMController::chatCompletions(
     chatReqOpt =
         domain::ChatCompletionRequest::fromJson(*json, std::move(taskId));
   } catch (const std::exception& e) {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson(std::string("Failed to parse request: ") + e.what(),
-                  "invalid_request_error"));
-    resp->setStatusCode(drogon::k400BadRequest);
-    callback(resp);
+    callback(errorResponse(drogon::k400BadRequest,
+                           std::string("Failed to parse request: ") + e.what(),
+                           "invalid_request_error"));
     return;
   }
 
@@ -307,19 +291,15 @@ void LLMController::chatCompletions(
   TT_LOG_INFO("[LLMController] /v1/chat/completions {}", chatReq.toString());
 
   if (chatReq.messages.empty()) {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson("messages is required and must be a non-empty array",
-                  "invalid_request_error", Json::Value("messages")));
-    resp->setStatusCode(drogon::k400BadRequest);
-    callback(resp);
+    callback(errorResponse(drogon::k400BadRequest,
+                           "messages is required and must be a non-empty array",
+                           "invalid_request_error", Json::Value("messages")));
     return;
   }
 
   if (!service->isModelReady()) {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson("Model is not ready", "service_unavailable"));
-    resp->setStatusCode(drogon::k503ServiceUnavailable);
-    callback(resp);
+    callback(errorResponse(drogon::k503ServiceUnavailable, "Model is not ready",
+                           "service_unavailable"));
     return;
   }
 
@@ -374,10 +354,8 @@ void LLMController::chatCompletions(
         sessionManager->setSessionInFlight(sessionId.value(), false);
       }
 
-      auto resp = drogon::HttpResponse::newHttpJsonResponse(
-          errorJson(e.what(), "rate_limit_exceeded"));
-      resp->setStatusCode(drogon::k429TooManyRequests);
-      callback(resp);
+      callback(errorResponse(drogon::k429TooManyRequests, e.what(),
+                             "rate_limit_exceeded"));
     } catch (const std::runtime_error& e) {
       // Mark session as no longer in-flight on error
       auto sessionId = request->sessionId;
@@ -390,11 +368,10 @@ void LLMController::chatCompletions(
       if (errMsg.find("Failed to allocate memory slot") != std::string::npos ||
           errMsg.find("memory resources") != std::string::npos) {
         TT_LOG_ERROR("[LLMController] Session creation failed: {}", e.what());
-        auto resp = drogon::HttpResponse::newHttpJsonResponse(errorJson(
+        callback(errorResponse(
+            drogon::k503ServiceUnavailable,
             std::string("Failed to allocate memory resources: ") + errMsg,
             "service_unavailable"));
-        resp->setStatusCode(drogon::k503ServiceUnavailable);
-        callback(resp);
         return;
       }
       // Re-throw if it's not a memory allocation error
@@ -413,11 +390,10 @@ void LLMController::handleStreaming(
     sessionInfo = resolveSession(*reqPtr);
   } catch (const std::runtime_error& e) {
     TT_LOG_ERROR("[LLMController] Failed to create session: {}", e.what());
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(errorJson(
+    callback(errorResponse(
+        drogon::k503ServiceUnavailable,
         std::string("Failed to allocate memory resources: ") + e.what(),
         "service_unavailable"));
-    resp->setStatusCode(drogon::k503ServiceUnavailable);
-    callback(resp);
     return;
   }
 
@@ -484,10 +460,8 @@ void LLMController::handleStreaming(
           "streaming requests via HTTP");
     }
   } catch (const services::QueueFullException& e) {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson(e.what(), "rate_limit_exceeded"));
-    resp->setStatusCode(drogon::k429TooManyRequests);
-    callback(resp);
+    callback(errorResponse(drogon::k429TooManyRequests, e.what(),
+                           "rate_limit_exceeded"));
     return;
   }
 
@@ -554,10 +528,8 @@ void LLMController::createSession(
     resp->setStatusCode(drogon::k201Created);
     callback(resp);
   } catch (const std::exception& e) {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson(e.what(), "internal_error"));
-    resp->setStatusCode(drogon::k500InternalServerError);
-    callback(resp);
+    callback(errorResponse(drogon::k500InternalServerError, e.what(),
+                           "internal_error"));
   }
 }
 
@@ -574,10 +546,8 @@ void LLMController::closeSession(
     auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
     callback(resp);
   } else {
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(
-        errorJson("Session not found", "not_found"));
-    resp->setStatusCode(drogon::k404NotFound);
-    callback(resp);
+    callback(
+        errorResponse(drogon::k404NotFound, "Session not found", "not_found"));
   }
 }
 
@@ -591,10 +561,8 @@ void LLMController::getSlotId(
     // Check if session exists at all
     auto session = sessionManager->getSession(sessionId);
     if (!session.has_value()) {
-      auto resp = drogon::HttpResponse::newHttpJsonResponse(
-          errorJson("Session not found", "not_found"));
-      resp->setStatusCode(drogon::k404NotFound);
-      callback(resp);
+      callback(errorResponse(drogon::k404NotFound, "Session not found",
+                             "not_found"));
       return;
     }
   }
