@@ -226,7 +226,7 @@ class TrainingMeshShapes(Enum):
 
 
 TRAINING_RUNNER_SUPPORTED_DEVICES = {
-    ModelRunners.TRAINING_GEMMA_LORA: {DeviceTypes.P150},
+    ModelRunners.TRAINING_GEMMA_LORA: {DeviceTypes.P150, DeviceTypes.N150},
     ModelRunners.TRAINING_LLAMA_LORA: {DeviceTypes.P300},
 }
 

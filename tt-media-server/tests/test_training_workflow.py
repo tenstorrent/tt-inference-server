@@ -97,7 +97,7 @@ class TestLlamaTrainingServiceCreateJob:
             service = TrainingService()
             await service.create_job(JobTypes.TRAINING, mock_request)
 
-            assert mock_request._output_model_path == "models_save/llama_task_456.pt"
+            assert mock_request._output_model_path == "model_store/llama_task_456"
 
     @pytest.mark.asyncio
     async def test_create_job_sets_device_type_from_settings(
@@ -142,7 +142,7 @@ class TestLlamaTrainingServiceCreateJob:
             assert kwargs["cancel_event"] is not None
             assert kwargs["job_metrics"] is not None
             assert kwargs["job_logs"] is not None
-            assert kwargs["result_path"] == "models_save/llama_task_456.pt"
+            assert kwargs["result_path"] == "model_store/llama_task_456"
 
 
 class TestLlamaRunnerSupportedDevices:
