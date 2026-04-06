@@ -5,7 +5,7 @@
 
 from domain.base_request import BaseRequest
 from config.constants import DatasetLoaders, DeviceTypes, TrainingOptimizers
-from pydantic import PrivateAttr
+from pydantic import PrivateAttr, Field
 from multiprocessing import Event
 
 
@@ -31,7 +31,7 @@ class TrainingRequest(BaseRequest):
     device_type: str = DeviceTypes.P150.value
     optimizer: str = TrainingOptimizers.ADAMW.value
 
-    save_interval: int = 100
+    save_interval: int = Field(default=100, gt=0)
 
     _output_model_path: str = PrivateAttr(default=None)
     _start_event: Event = PrivateAttr(default=None)

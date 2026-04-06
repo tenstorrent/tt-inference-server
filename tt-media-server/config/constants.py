@@ -282,6 +282,7 @@ class TrainingOptimizers(Enum):
     ADAMW = "adamw"
 
 
+# Base directory for storing fine-tuned adapter outputs.
 TRAINING_STORE_ADAPTERS_DIR = "model_store/"
 
 

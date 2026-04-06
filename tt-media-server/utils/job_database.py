@@ -288,7 +288,7 @@ class JobDatabase:
     def insert_log(
         self,
         job_id: str,
-        log_index: str,
+        log_index: int,
         timestamp: str,
         log_type: str,
         step: int,
