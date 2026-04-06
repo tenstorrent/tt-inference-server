@@ -26,7 +26,7 @@ SingleProcessWorker::~SingleProcessWorker() = default;
 
 void SingleProcessWorker::start() {
   tracy_config::tracySetThreadName(
-      ("Worker-" + to_string(cfg.worker_id)).c_str());
+      ("Worker-" + std::to_string(cfg.worker_id)).c_str());
 
   for (const auto& [key, value] : cfg.env_vars) {
     setenv(key.c_str(), value.c_str(), 1);
@@ -68,8 +68,8 @@ void SingleProcessWorker::stop() {
     int status;
     int waitResult = waitpid(pid, &status, WNOHANG);
     if (waitResult == 0) {
-      this_thread::sleep_for(
-          chrono::milliseconds(tt::config::defaults::WORKER_STOP_TIMEOUT_MS));
+      std::this_thread::sleep_for(std::chrono::milliseconds(
+          tt::config::defaults::WORKER_STOP_TIMEOUT_MS));
       waitResult = waitpid(pid, &status, WNOHANG);
       if (waitResult == 0) {
         killpg(pid, SIGKILL);

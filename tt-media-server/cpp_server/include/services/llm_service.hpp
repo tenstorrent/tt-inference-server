@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include "domain/llm_request.hpp"
@@ -65,25 +66,28 @@ class LLMService
       override;
 
  private:
-  void startConsumers();
+  struct StreamCallbackEntry {
+    std::function<void(domain::LLMStreamChunk&, bool)> callback;
+    bool skip_special_tokens = true;
+  };
 
+  void startConsumers();
   void consumerLoopForWorker(size_t workerIdx);
 
-  std::optional<std::function<void(domain::LLMStreamChunk&, bool)>>
-  resolveCallback(uint32_t taskId, bool isFinal);
+  std::optional<StreamCallbackEntry> resolveCallback(uint32_t taskId,
+                                                     bool isFinal);
 
   std::vector<std::thread> consumer_threads_;
 
-  ConcurrentMap<uint32_t, std::function<void(domain::LLMStreamChunk&, bool)>>
-      stream_callbacks_;
+  ConcurrentMap<uint32_t, StreamCallbackEntry> stream_callbacks_;
 
   std::atomic<size_t> pending_tasks_{0};
-
   std::atomic<bool> running_{false};
 
   std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
   std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
   const tt::utils::Tokenizer* tokenizer_;
+  std::unordered_set<int64_t> stop_token_set_;
   std::unique_ptr<ReasoningParser> reasoning_parser_;
 };
 
