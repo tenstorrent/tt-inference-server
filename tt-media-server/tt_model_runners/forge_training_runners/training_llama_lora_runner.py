@@ -299,7 +299,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                 model, eval_dataloader, mesh, request, vocab_size
             )
             self.logger.info(
-                f"Initial Model | val/loss: {avg_val_loss:.4f}",
+                f"Base Model | val/loss: {avg_val_loss:.4f}",
                 extra={"log_type": "info", "step": 0},
             )
             if request._training_metrics is not None:
