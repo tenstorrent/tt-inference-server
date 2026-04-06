@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
@@ -14,6 +15,7 @@
 #include <thread>
 
 #include "api/error_response.hpp"
+#include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "filters/security_filter.hpp"
 #include "profiling/tracy.hpp"
@@ -47,7 +49,8 @@ int main(int argc, char* argv[]) {
 
     std::thread shutdownMonitor([&worker] {
       while (!workerShutdown.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        std::this_thread::sleep_for(std::chrono::milliseconds(
+            tt::config::defaults::SHUTDOWN_POLL_MS));
       }
       worker.stop();
     });
@@ -58,9 +61,10 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 
-  // Parse command line arguments
-  std::string host = "0.0.0.0";
-  uint16_t port = 8000;
+  namespace defs = tt::config::defaults;
+
+  std::string host = defs::SERVER_HOST;
+  uint16_t port = defs::SERVER_PORT;
   int threads = std::thread::hardware_concurrency();
   tt::utils::service_factory::initializeServices();
 
@@ -106,8 +110,9 @@ int main(int argc, char* argv[]) {
   TT_LOG_INFO("  Model Service: {}", serviceName);
   TT_LOG_INFO("=================================================");
 
-  // Ensure log directory exists (Drogon requires it)
-  mkdir("./logs", 0755);
+  if (mkdir("./logs", 0755) != 0 && errno != EEXIST) {
+    TT_LOG_WARN("[Main] Failed to create log directory: {}", strerror(errno));
+  }
 
   // Initialize the security token (lazy init happens on first check)
   SecurityFilter::initToken();
@@ -163,14 +168,16 @@ int main(int argc, char* argv[]) {
       .setThreadNum(threads)
       .setAfterAcceptSockOptCallback([](int fd) {
         int one = 1;
-        setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) < 0) {
+          TT_LOG_WARN("[Main] Failed to set TCP_NODELAY: {}", strerror(errno));
+        }
       })
-      .setMaxConnectionNum(100000)
-      .setMaxConnectionNumPerIP(0)  // No limit per IP
-      .setIdleConnectionTimeout(300)
-      .setKeepaliveRequestsNumber(0)            // No limit
-      .setClientMaxBodySize(100 * 1024 * 1024)  // 100MB max body
-      .setClientMaxMemoryBodySize(100 * 1024 * 1024)
+      .setMaxConnectionNum(defs::MAX_CONNECTIONS)
+      .setMaxConnectionNumPerIP(0)
+      .setIdleConnectionTimeout(defs::IDLE_CONNECTION_TIMEOUT_S)
+      .setKeepaliveRequestsNumber(0)
+      .setClientMaxBodySize(defs::CLIENT_MAX_BODY_BYTES)
+      .setClientMaxMemoryBodySize(defs::CLIENT_MAX_BODY_BYTES)
       .setStaticFilesCacheTime(0);
 
   TT_LOG_INFO("[Main] Starting Drogon server at http://{}:{}", host, port);

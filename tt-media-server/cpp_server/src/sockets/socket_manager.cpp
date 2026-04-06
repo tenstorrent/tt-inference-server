@@ -16,16 +16,32 @@ namespace tt::sockets {
 namespace {
 void setSocketKeepAlive(int socketFd) {
   int enable = 1;
-  setsockopt(socketFd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable));
+  if (setsockopt(socketFd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)) <
+      0) {
+    TT_LOG_WARN("[SocketManager] Failed to set SO_KEEPALIVE: {}",
+                strerror(errno));
+  }
 
   int idle = 10;
-  setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
+  if (setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle)) <
+      0) {
+    TT_LOG_WARN("[SocketManager] Failed to set TCP_KEEPIDLE: {}",
+                strerror(errno));
+  }
 
   int interval = 5;
-  setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval));
+  if (setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPINTVL, &interval,
+                 sizeof(interval)) < 0) {
+    TT_LOG_WARN("[SocketManager] Failed to set TCP_KEEPINTVL: {}",
+                strerror(errno));
+  }
 
   int maxProbes = 3;
-  setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPCNT, &maxProbes, sizeof(maxProbes));
+  if (setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPCNT, &maxProbes,
+                 sizeof(maxProbes)) < 0) {
+    TT_LOG_WARN("[SocketManager] Failed to set TCP_KEEPCNT: {}",
+                strerror(errno));
+  }
 }
 }  // namespace
 
@@ -155,9 +171,11 @@ void SocketManager::serverLoop() {
       break;
     }
 
-    // Set non-blocking mode and keep-alive
     int flags = fcntl(newSocket, F_GETFL, 0);
-    fcntl(newSocket, F_SETFL, flags | O_NONBLOCK);
+    if (flags < 0 || fcntl(newSocket, F_SETFL, flags | O_NONBLOCK) < 0) {
+      TT_LOG_WARN("[SocketManager] Failed to set non-blocking: {}",
+                  strerror(errno));
+    }
     setSocketKeepAlive(newSocket);
 
     peer_socket_ = newSocket;
@@ -215,9 +233,11 @@ void SocketManager::clientLoop() {
       continue;
     }
 
-    // Set non-blocking mode and keep-alive
     int flags = fcntl(client_socket_, F_GETFL, 0);
-    fcntl(client_socket_, F_SETFL, flags | O_NONBLOCK);
+    if (flags < 0 || fcntl(client_socket_, F_SETFL, flags | O_NONBLOCK) < 0) {
+      TT_LOG_WARN("[SocketManager] Failed to set non-blocking: {}",
+                  strerror(errno));
+    }
     setSocketKeepAlive(client_socket_);
 
     peer_socket_ = client_socket_;

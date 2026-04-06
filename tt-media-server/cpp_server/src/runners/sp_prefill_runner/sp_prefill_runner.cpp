@@ -30,7 +30,7 @@ void SpPrefillRunner::run() {
       std::this_thread::yield();
       continue;
     }
-    TT_LOG_DEBUG("SpPrefillRunner: Starting prefill for task {}",
+    TT_LOG_DEBUG("[SpPrefillRunner] Starting prefill for task {}",
                  sequence->taskId);
 
     auto result = modelRunner->forward(sequence->taskId, sequence->tokenIds);
@@ -40,10 +40,10 @@ void SpPrefillRunner::run() {
     }
 
     if (result->isError) {
-      TT_LOG_WARN("SpPrefillRunner: Error token for task {}", result->taskId);
+      TT_LOG_WARN("[SpPrefillRunner] Error token for task {}", result->taskId);
       ipc::pushErrorToken(*resultQueue, result->taskId);
     } else {
-      TT_LOG_DEBUG("SpPrefillRunner: Received prefill token {} for task {}",
+      TT_LOG_DEBUG("[SpPrefillRunner] Received prefill token {} for task {}",
                    result->tokenId, result->taskId);
       ipc::pushToken(*resultQueue, result->taskId, result->tokenId, true);
     }
@@ -58,16 +58,16 @@ bool SpPrefillRunner::warmup() {
 
   auto result = modelRunner->forward(warmupTaskId, warmupTokens);
   if (!result || result->isError) {
-    TT_LOG_ERROR("SpPrefillRunner: Warmup failed");
+    TT_LOG_ERROR("[SpPrefillRunner] Warmup failed");
     return false;
   }
 
-  TT_LOG_INFO("SpPrefillRunner: Warmup successful");
+  TT_LOG_INFO("[SpPrefillRunner] Warmup successful");
   return true;
 }
 
 void SpPrefillRunner::stop() {
-  TT_LOG_INFO("SpPrefillRunner: Stopping");
+  TT_LOG_INFO("[SpPrefillRunner] Stopping");
   stopped.store(true, std::memory_order_relaxed);
 }
 
