@@ -43,15 +43,15 @@ void SpPrefillRunner::run() {
       break;  // stopped
     }
 
-    TT_LOG_DEBUG(
-        "SpPrefillRunner: forward finished for task {}",
-        result->taskId);
+    TT_LOG_DEBUG("SpPrefillRunner: forward finished for task {}",
+                 result->taskId);
 
     if (result->isError) {
       TT_LOG_WARN("SpPrefillRunner: Error token for task {}", result->taskId);
       ipc::pushErrorToken(*resultQueue, result->taskId);
     } else {
-      TT_LOG_DEBUG("SpPrefillRunner: pushToken task_id={} token_id={} finished={}",
+      TT_LOG_DEBUG(
+          "SpPrefillRunner: pushToken task_id={} token_id={} finished={}",
           result->taskId, result->tokenId, true);
       ipc::pushToken(*resultQueue, result->taskId, result->tokenId, true);
     }
