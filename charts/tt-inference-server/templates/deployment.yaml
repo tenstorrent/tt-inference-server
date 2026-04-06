@@ -45,6 +45,14 @@ spec:
           volumeMounts:
             - name: cache
               mountPath: /cache
+        - name: cleanup-hugepages
+          image: busybox
+          command: ["sh", "-c", "rm -f /dev/hugepages-1G/device_*_tenstorrent /dev/hugepages-1G/tenstorrent && echo 'hugepage cleanup done'"]
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: hugepages-1g
+              mountPath: /dev/hugepages-1G
       containers:
         - name: inference-server
           image: {{ include "tt-inference-server.image" . }}

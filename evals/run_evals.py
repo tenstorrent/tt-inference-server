@@ -438,6 +438,7 @@ def build_eval_command(
     output_path,
     service_port,
     runtime_config=None,
+    deploy_url: str = "http://127.0.0.1",
 ) -> List[str]:
     """
     Build the command for lm_eval by templating command-line arguments using properties
@@ -455,9 +456,9 @@ def build_eval_command(
     # Audio models use tt-media-server which has endpoints at /audio (not /v1/audio)
     # Other models use vLLM which has endpoints at /v1
     if task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
-        base_url = f"http://127.0.0.1:{service_port}"
+        base_url = f"{deploy_url}:{service_port}"
     else:
-        base_url = f"http://127.0.0.1:{service_port}/v1"
+        base_url = f"{deploy_url}:{service_port}/v1"
     eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     if task.use_chat_api:
@@ -851,6 +852,12 @@ def main():
     env_config.jwt_secret = args.jwt_secret
     env_config.service_port = runtime_config.service_port
     env_config.vllm_model = model_spec.hf_model_repo
+    # EnvironmentConfig.vllm_api_key default is captured at module-load time;
+    # explicitly re-read so in-process PromptClient sees later env updates
+    # (mirrors run_benchmarks.py:439).
+    env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
+    if getattr(runtime_config, "server_url", None):
+        env_config.deploy_url = runtime_config.server_url
 
     if (
         model_spec.model_type in EVAL_TASK_TYPES
@@ -892,6 +899,7 @@ def main():
                 args.output_path,
                 runtime_config.service_port,
                 runtime_config=runtime_config,
+                deploy_url=env_config.deploy_url,
             )
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)
@@ -948,6 +956,7 @@ def main():
                 args.output_path,
                 runtime_config.service_port,
                 runtime_config=runtime_config,
+                deploy_url=env_config.deploy_url,
             )
             if not cmd:
                 logger.info("Skipping task %s (no command built)", task.task_name)
