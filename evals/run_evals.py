@@ -203,11 +203,12 @@ def _build_base_url(deploy_url: str, service_port: str) -> str:
     used and *service_port* is ignored so that the resulting URL is never of
     the form ``http://host:9000:8000``.
     """
-    parsed = urlparse(deploy_url.rstrip("/"))
+    normalized = deploy_url.rstrip("/")
+    parsed = urlparse(normalized)
     if parsed.port is not None:
         # URL already includes a port; use as-is
-        return deploy_url.rstrip("/")
-    return f"{deploy_url.rstrip('/')}:{service_port}"
+        return normalized
+    return f"{normalized}:{service_port}"
 
 
 def build_eval_command(
