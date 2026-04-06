@@ -128,8 +128,7 @@ class LockFreeSPSCQueue {
   size_t size() const { return (head.load() - tail.load()) & mask; }
 
   LockFreeSPSCQueue(const LockFreeSPSCQueue&) = delete;
-  LockFreeSPSCQueue& operator=(const LockFreeSPSCQueue&) =
-      delete;
+  LockFreeSPSCQueue& operator=(const LockFreeSPSCQueue&) = delete;
 
  private:
   size_t capacity;
