@@ -43,10 +43,11 @@ def _training_service_patches(mock_settings):
     return stack, mock_jm
 
 
-class TestTrainingServiceCreateJob:
+class TestGemmaTrainingServiceCreateJob:
+    """Tests for TrainingService.create_job with Gemma LoRA config."""
+
     @pytest.fixture
     def mock_settings(self):
-        """Create mock settings with dataset configuration"""
         settings = MagicMock()
         settings.model_runner = "training-gemma-lora"
         settings.device = "p150"
@@ -55,17 +56,16 @@ class TestTrainingServiceCreateJob:
 
     @pytest.fixture
     def mock_request(self):
-        """Create mock training request"""
         request = MagicMock()
         request._task_id = "unique_task_123"
         request._output_model_path = None
         return request
 
     @pytest.mark.asyncio
-    async def test_create_job_sets_dataset_from_settings(
+    async def test_create_job_sets_output_model_path(
         self, mock_settings, mock_request
     ):
-        """Test TrainingService.create_job sets correct dataset and model path"""
+        """Test TrainingService.create_job sets correct model path for Gemma"""
         stack, mock_jm = _training_service_patches(mock_settings)
         with stack:
             from model_services.training_service import TrainingService
@@ -282,7 +282,7 @@ class TestLlamaRunnerDeviceValidation:
                 mock_mesh.assert_called_once_with(dt.value)
 
 
-class TestTrainingServiceGetJobMetrics:
+class TestGemmaTrainingServiceGetJobMetrics:
     @pytest.fixture
     def service(self):
         from model_services.training_service import TrainingService
