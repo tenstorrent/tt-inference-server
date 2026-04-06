@@ -16,7 +16,7 @@
 namespace sp_pipeline {
 
 using DecodeCallback = std::function<void(const llm_engine::TokenResult&)>;
-using DecodeQueue = LockFreeSingleProducerQueue<llm_engine::TokenResult>;
+using DecodeQueue = LockFreeSPSCQueue<llm_engine::TokenResult>;
 
 enum class RequestPhase { PREFILL, DECODE };
 
