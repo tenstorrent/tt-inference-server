@@ -115,6 +115,13 @@ RUN rm -rf ${APP_DIR}/server/cpp_server/build \
 # cpp_server deps (apt + Rust if needed + Drogon)
 RUN cd ${APP_DIR}/server/cpp_server && ./install_dependencies.sh
 
+# Install Rust (needed for tokenizers-cpp)
+RUN export CARGO_HOME=${HOME_DIR}/.cargo \
+    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
+    && . ${HOME_DIR}/.cargo/env \
+    && rustup default stable
+
 # add tt-blaze (clone using GitHub token from secret)
 RUN --mount=type=secret,id=github_token \
     rm -rf ${APP_DIR}/server/cpp_server/tt-blaze \
@@ -126,16 +133,10 @@ RUN --mount=type=secret,id=github_token \
     && ./install.sh  \
     && . ./env.sh \
     && ./pipeline_manager/setup.sh \
-    && git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf \
-    && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
-
-# Update TT_METAL_HOME to point to tt-blaze's tt-metal
-ENV TT_METAL_HOME=${APP_DIR}/server/cpp_server/tt-blaze/tt-metal
-ENV PYTHONPATH=${TT_METAL_HOME}
-ENV LD_LIBRARY_PATH=${TT_METAL_HOME}/build_Release/lib
-
+    && git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf
 
 # Build C++ server (requires Rust for tokenizers-cpp)
+# Use existing Python venv, temporarily point TT_METAL_HOME to tt-blaze for the build
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && export CARGO_HOME=${HOME_DIR}/.cargo \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
@@ -188,12 +189,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     TT_METAL_RUNTIME_ROOT=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal \
     CONFIG=Release \
     TT_METAL_ENV=dev \
-    LOGURU_LEVEL=INFO \
-    PYTHONPATH=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal \
-    PYTHON_ENV_DIR=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal/python_env \
-    LD_LIBRARY_PATH=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal/build_Release/lib \
-    VLLM_USE_V1=1 \
-    TT_METAL_LOGS_PATH=${HOME_DIR}/logs
+    LOGURU_LEVEL=INFO
 
 # Install runtime dependencies
 # These packages are required for the application to run in production
@@ -236,7 +232,7 @@ RUN chmod +x ${HOME_DIR}/app/server/run_uvicorn.sh
 
 EXPOSE 8000
 WORKDIR ${HOME_DIR}/app/server
-ENTRYPOINT ["./docker-entrypoint.sh"]
-# Default to uvicorn
+# Default to uvicornr-entrypoint.sh"]
 ENV SERVER_MODE=uvicorn
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else source ./run_uvicorn.sh; fi"]
 CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else source ./run_uvicorn.sh; fi"]
