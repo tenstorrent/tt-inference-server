@@ -51,7 +51,7 @@ class LLMRunner : public IRunner {
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
   std::thread memoryThread;
 
-  std::unique_ptr<tt::services::GuidedDecoderManager> guidedDecoder_;
+  std::unique_ptr<tt::services::GuidedDecoderManager> guidedDecoder;
 };
 
 }  // namespace tt::runners

@@ -33,7 +33,7 @@ struct GuidedDecoderManager::Impl {
 
 GuidedDecoderManager::GuidedDecoderManager(
     const std::vector<std::string>& encodedVocab, int vocabSize)
-    : impl_(std::make_unique<Impl>(encodedVocab, vocabSize)) {}
+    : impl(std::make_unique<Impl>(encodedVocab, vocabSize)) {}
 
 GuidedDecoderManager::~GuidedDecoderManager() = default;
 
@@ -44,13 +44,13 @@ void GuidedDecoderManager::initRequest(
   xgrammar::CompiledGrammar compiled = [&]() {
     switch (params.response_format_type) {
       case llm_engine::ResponseFormatType::JSON_OBJECT:
-        return impl_->compiler.CompileBuiltinJSONGrammar();
+        return impl->compiler.CompileBuiltinJSONGrammar();
       case llm_engine::ResponseFormatType::JSON_SCHEMA: {
         if (!params.json_schema_str.has_value()) {
           throw std::invalid_argument(
               "json_schema response format requires a schema string");
         }
-        return impl_->compiler.CompileJSONSchema(*params.json_schema_str);
+        return impl->compiler.CompileJSONSchema(*params.json_schema_str);
       }
       default:
         throw std::logic_error("initRequest called for non-guided request");
@@ -59,19 +59,19 @@ void GuidedDecoderManager::initRequest(
 
   xgrammar::GrammarMatcher matcher(compiled);
 
-  std::lock_guard<std::mutex> lock(impl_->mu);
-  impl_->requests.emplace(
+  std::lock_guard<std::mutex> lock(impl->mu);
+  impl->requests.emplace(
       taskId, Impl::RequestState{std::move(matcher), std::move(compiled)});
 }
 
 std::vector<int32_t> GuidedDecoderManager::getNextAllowedTokenIds(
     uint32_t taskId) {
-  std::lock_guard<std::mutex> lock(impl_->mu);
-  auto it = impl_->requests.find(taskId);
-  if (it == impl_->requests.end()) return {};
+  std::lock_guard<std::mutex> lock(impl->mu);
+  auto it = impl->requests.find(taskId);
+  if (it == impl->requests.end()) return {};
 
   auto& matcher = it->second.matcher;
-  int bitmaskSize = xgrammar::GetBitmaskSize(impl_->vocabSize);
+  int bitmaskSize = xgrammar::GetBitmaskSize(impl->vocabSize);
 
   std::vector<int32_t> bitmask(bitmaskSize, 0);
 
@@ -89,7 +89,7 @@ std::vector<int32_t> GuidedDecoderManager::getNextAllowedTokenIds(
 
   std::vector<int32_t> allowed;
   allowed.reserve(1024);
-  for (int i = 0; i < impl_->vocabSize; ++i) {
+  for (int i = 0; i < impl->vocabSize; ++i) {
     int wordIdx = i / 32;
     int bitIdx = i % 32;
     if (bitmask[wordIdx] & (1 << bitIdx)) {
@@ -101,27 +101,27 @@ std::vector<int32_t> GuidedDecoderManager::getNextAllowedTokenIds(
 }
 
 bool GuidedDecoderManager::acceptToken(uint32_t taskId, int32_t tokenId) {
-  std::lock_guard<std::mutex> lock(impl_->mu);
-  auto it = impl_->requests.find(taskId);
-  if (it == impl_->requests.end()) return true;
+  std::lock_guard<std::mutex> lock(impl->mu);
+  auto it = impl->requests.find(taskId);
+  if (it == impl->requests.end()) return true;
   return it->second.matcher.AcceptToken(tokenId);
 }
 
 bool GuidedDecoderManager::isCompleted(uint32_t taskId) const {
-  std::lock_guard<std::mutex> lock(impl_->mu);
-  auto it = impl_->requests.find(taskId);
-  if (it == impl_->requests.end()) return false;
+  std::lock_guard<std::mutex> lock(impl->mu);
+  auto it = impl->requests.find(taskId);
+  if (it == impl->requests.end()) return false;
   return it->second.matcher.IsTerminated();
 }
 
 bool GuidedDecoderManager::hasGuidedDecoding(uint32_t taskId) const {
-  std::lock_guard<std::mutex> lock(impl_->mu);
-  return impl_->requests.count(taskId) > 0;
+  std::lock_guard<std::mutex> lock(impl->mu);
+  return impl->requests.count(taskId) > 0;
 }
 
 void GuidedDecoderManager::removeRequest(uint32_t taskId) {
-  std::lock_guard<std::mutex> lock(impl_->mu);
-  impl_->requests.erase(taskId);
+  std::lock_guard<std::mutex> lock(impl->mu);
+  impl->requests.erase(taskId);
 }
 
 }  // namespace tt::services
