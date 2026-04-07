@@ -198,7 +198,7 @@ class BoostIpcMemoryQueue {
 
 constexpr size_t MEMORY_REQUEST_MAX_MSG_SIZE = 256;
 constexpr size_t MEMORY_RESULT_MAX_MSG_SIZE = 4096;
-constexpr int MEMORY_QUEUE_CAPACITY = 512;
+constexpr int MEMORY_QUEUE_CAPACITY = 64;
 
 inline constexpr const char* k_memory_request_queue_name = "tt_mem_requests";
 inline constexpr const char* k_memory_result_queue_name = "tt_mem_results";
