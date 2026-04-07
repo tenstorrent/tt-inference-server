@@ -154,6 +154,27 @@ std::string visibleDevicesForWorker(size_t workerIndex) {
   return "";
 }
 
+std::string h2dSocketId() {
+  static const std::string cached =
+      envString("H2D_SOCKET_ID", defaults::H2D_SOCKET_ID);
+  return cached;
+}
+
+std::string d2hSocketId() {
+  static const std::string cached =
+      envString("D2H_SOCKET_ID", defaults::D2H_SOCKET_ID);
+  return cached;
+}
+
+unsigned pmConnectTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
+}
+
+size_t pmMaxUsers() {
+  return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
+}
+
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;

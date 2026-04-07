@@ -9,6 +9,7 @@
 #include <pipeline_manager/pipeline_manager_types.hpp>
 #include <thread>
 
+#include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
 #include "ipc/token_push.hpp"
 #include "llm_runner/sequence.hpp"
@@ -27,11 +28,13 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       taskQueue(taskQueue) {
   TT_LOG_INFO(
       "SpPipelineRunner: Constructing PipelineManager with SocketConfig...");
-  pm::SocketConfig socketConfig{.h2d_socket_id = "h2d_socket",
-                                .d2h_socket_id = "d2h_socket",
-                                .connect_timeout_ms = 30000,
-                                .use_deepseek_md_format = false};
-  pm::ManagerParams managerParams{.max_users = 32};
+  pm::SocketConfig socketConfig{
+      .h2d_socket_id = tt::config::h2dSocketId(),
+      .d2h_socket_id = tt::config::d2hSocketId(),
+      .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
+      .use_deepseek_md_format = false};
+  pm::ManagerParams managerParams{
+      .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
       std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
   TT_LOG_INFO(

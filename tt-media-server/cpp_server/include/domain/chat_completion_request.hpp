@@ -191,6 +191,7 @@ struct ChatCompletionRequest : BaseRequest {
     std::ostringstream out;
     out << "task_id=" << task_id << " model=" << model.value_or("default")
         << " stream=" << stream << " messages=" << messages.size()
+        << " last_msg=[" << lastMsg << "]"
         << " max_tokens=" << detail::optStr(max_tokens)
         << " temperature=" << detail::optStr(temperature)
         << " top_p=" << detail::optStr(top_p)
