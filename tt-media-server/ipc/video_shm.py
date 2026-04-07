@@ -36,7 +36,7 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from multiprocessing import shared_memory as _shm
+from multiprocessing import resource_tracker, shared_memory as _shm
 from typing import Callable
 
 
@@ -197,6 +197,13 @@ class VideoShm:
             os.chmod(f"/dev/shm/{self._name}", 0o666)
         else:
             self._shm = _shm.SharedMemory(name=self._name, create=False)
+            # Python 3.10 resource_tracker registers every SharedMemory opener
+            # and unlinks the segment on process exit — even for non-creators.
+            # Unregister immediately so the attaching process never destroys
+            # segments owned by another process.
+            resource_tracker.unregister(
+                f"/{self._name}", "shared_memory"
+            )
         self._buf = self._shm.buf
 
     def close(self) -> None:
