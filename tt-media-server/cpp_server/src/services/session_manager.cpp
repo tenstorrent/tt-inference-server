@@ -21,7 +21,7 @@ SessionManager::SessionManager() {
     memoryResultQueue = std::make_unique<ipc::MemoryResultQueue>(
         ipc::k_memory_result_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
     TT_LOG_INFO("[SessionManager] Created memory management IPC queues");
-    drainThread = std::thread([this] { drainResultQueue(); });
+    drainThread = std::thread([this] { readerLoop(); });
   } catch (const std::exception& e) {
     TT_LOG_WARN(
         "[SessionManager] Failed to create memory queues: {}. Slot allocation "
@@ -39,92 +39,20 @@ SessionManager::~SessionManager() {
   }
 }
 
-void SessionManager::drainResultQueue() {
+void SessionManager::readerLoop() {
   while (!stopped.load(std::memory_order_relaxed)) {
+    retryFailedAllocations();
+    retryFailedDeallocs();
     domain::ManageMemoryResult result;
-    if (memoryResultQueue->tryPop(result)) {
-      auto promise = pendingAllocations.take(result.taskId);
-      if (promise.has_value()) {
-        if (result.status == domain::ManageMemoryStatus::SUCCESS &&
-            !result.slotIds.empty()) {
-          (*promise)->set_value(result.slotIds[0]);
-        } else {
-          (*promise)->set_value(INVALID_SLOT_ID);
-        }
-      }
-    } else {
+    bool anyResults = false;
+    while (memoryResultQueue->tryPop(result)) {
+      anyResults = true;
+      handleMemoryResult(result);
+    }
+    if (!anyResults) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }
-}
-
-domain::Session SessionManager::createSession(std::optional<uint32_t> slotId,
-                                              bool inFlight) {
-  evictOldSessions();
-
-  uint32_t slot = slotId.value_or(INVALID_SLOT_ID);
-  domain::Session session(slot);
-  std::string sessionId = session.getSessionId();
-
-  if (!slotId.has_value() && memoryRequestQueue && memoryResultQueue) {
-    constexpr int maxRetries = 10;
-    constexpr int retryDelayMs = 500;
-
-    for (int attempt = 0; attempt < maxRetries; ++attempt) {
-      if (attempt > 0) {
-        TT_LOG_DEBUG(
-            "[SessionManager] Retry attempt {}/{} for slot allocation for "
-            "session {}",
-            attempt + 1, maxRetries, sessionId);
-        std::this_thread::sleep_for(std::chrono::milliseconds(retryDelayMs));
-      }
-
-      auto future = requestSlotIdFromMemoryManager(sessionId);
-      auto status = future.wait_for(std::chrono::seconds(1));
-
-      if (status == std::future_status::ready) {
-        uint32_t allocatedSlot = future.get();
-        if (allocatedSlot != INVALID_SLOT_ID) {
-          slot = allocatedSlot;
-          session.setSlotId(slot);
-          TT_LOG_INFO(
-              "[SessionManager] Received slot {} for session {} from memory "
-              "manager (attempt {}/{})",
-              slot, sessionId, attempt + 1, maxRetries);
-          break;
-        } else {
-          TT_LOG_WARN(
-              "[SessionManager] Memory manager returned INVALID_SLOT_ID for "
-              "session {} (attempt {}/{})",
-              sessionId, attempt + 1, maxRetries);
-        }
-      } else {
-        TT_LOG_WARN(
-            "[SessionManager] Timeout waiting for slot allocation for session "
-            "{} (attempt {}/{})",
-            sessionId, attempt + 1, maxRetries);
-      }
-    }
-
-    if (slot == INVALID_SLOT_ID) {
-      TT_LOG_ERROR(
-          "[SessionManager] Failed to allocate slot for session {} after {} "
-          "attempts",
-          sessionId, maxRetries);
-      throw std::runtime_error(
-          "Failed to allocate memory slot after " + std::to_string(maxRetries) +
-          " attempts. System may be out of memory resources.");
-    }
-  }
-
-  session.setInFlight(inFlight);
-  sessions.insert(sessionId, session);
-
-  TT_LOG_INFO("[SessionManager] Created session: {} with slot: {} inFlight: {}",
-              sessionId,
-              slot == INVALID_SLOT_ID ? "none" : std::to_string(slot),
-              inFlight);
-  return session;
 }
 
 bool SessionManager::closeSession(const std::string& sessionId) {
@@ -263,35 +191,6 @@ void SessionManager::evictOldSessions() {
   }
 }
 
-std::future<uint32_t> SessionManager::requestSlotIdFromMemoryManager(
-    const std::string& sessionId) {
-  auto promise = std::make_shared<std::promise<uint32_t>>();
-  auto future = promise->get_future();
-
-  domain::ManageMemoryTask task;
-  uint32_t requestTaskId = tt::utils::TaskIDGenerator::generate();
-  task.taskId = requestTaskId;
-
-  pendingAllocations.insert(requestTaskId, promise);
-  task.action = domain::MemoryManagementAction::ALLOCATE;
-  task.inputSeqLen = 0;
-  task.memoryLayout = domain::KvMemoryLayout::Paged;
-  task.slotIds = {};
-
-  try {
-    memoryRequestQueue->push(task);
-    TT_LOG_DEBUG("[SessionManager] Sent slot allocation request for session {}",
-                 sessionId);
-  } catch (const std::exception& e) {
-    TT_LOG_ERROR("[SessionManager] Error requesting slot for session {}: {}",
-                 sessionId, e.what());
-    pendingAllocations.erase(requestTaskId);
-    promise->set_value(INVALID_SLOT_ID);
-  }
-
-  return future;
-}
-
 void SessionManager::sendDeallocRequest(const std::string& sessionId,
                                         uint32_t slotId) {
   if (!memoryRequestQueue) {
@@ -305,14 +204,103 @@ void SessionManager::sendDeallocRequest(const std::string& sessionId,
   task.memoryLayout = domain::KvMemoryLayout::Paged;
   task.slotIds = {slotId};
 
-  try {
-    memoryRequestQueue->push(task);
-    TT_LOG_INFO("[SessionManager] Sent dealloc request for session {} slot {}",
-                sessionId, slotId);
-  } catch (const std::exception& e) {
+  if (memoryRequestQueue->tryPush(task)) {
+    TT_LOG_DEBUG("[SessionManager] Sent dealloc request for session {} slot {}",
+                 sessionId, slotId);
+  } else {
+    TT_LOG_WARN(
+        "[SessionManager] Dealloc queue full, deferring session {} slot {}",
+        sessionId, slotId);
+    deferredDeallocQueue.push({sessionId, slotId});
+  }
+}
+
+void SessionManager::createSession(
+    std::function<void(const tt::domain::Session&)> onCompletion,
+    std::function<void(std::string_view errorMessage)> onError,
+    trantor::EventLoop* callerEventLoop) {
+  evictOldSessions();
+
+  if (!memoryRequestQueue || !memoryResultQueue) {
+    callerEventLoop->queueInLoop([onError = std::move(onError)]() {
+      onError("Memory management IPC not available");
+    });
+    return;
+  }
+
+  domain::Session session = domain::Session(INVALID_SLOT_ID);
+  auto pendingAllocation =
+      PendingAllocation(std::move(session), std::move(onCompletion),
+                        std::move(onError), callerEventLoop, 10);
+
+  sendAsyncAllocationRequest(pendingAllocation);
+}
+
+void SessionManager::sendAsyncAllocationRequest(
+    PendingAllocation& pendingAllocation) {
+  auto task =
+      domain::ManageMemoryTask(tt::utils::TaskIDGenerator::generate(),
+                               domain::MemoryManagementAction::ALLOCATE);
+  if (!memoryRequestQueue->tryPush(task)) {
+    if (pendingAllocation.attemptsRemaining == 0) {
+      pendingAllocation.eventLoop->queueInLoop(
+          [onError = std::move(pendingAllocation.onError)]() {
+            onError("Failed to allocate: IPC queue full after all attempts");
+          });
+    } else {
+      pendingAllocation.attemptsRemaining--;
+      pendingAllocationsRetryQueue.push(std::move(pendingAllocation));
+    }
+    return;
+  }
+  pendingAllocationsMap.insert(task.taskId, std::move(pendingAllocation));
+}
+
+void SessionManager::retryFailedAllocations() {
+  auto pendingAllocations = pendingAllocationsRetryQueue.drain();
+  for (auto& pendingAllocation : pendingAllocations) {
+    sendAsyncAllocationRequest(pendingAllocation);
+  }
+}
+
+void SessionManager::handleMemoryResult(
+    const domain::ManageMemoryResult& result) {
+  auto allocation = pendingAllocationsMap.take(result.taskId);
+  if (!allocation.has_value()) {
+    TT_LOG_WARN("[SessionManager] No pending allocation found for task ID: {}",
+                result.taskId);
+    return;
+  }
+  auto& pendingAllocation = allocation.value();
+  bool success = result.status == domain::ManageMemoryStatus::SUCCESS &&
+                 !result.slotIds.empty();
+  if (success) {
+    pendingAllocation.session.setSlotId(result.slotIds.front());
+    pendingAllocation.session.setInFlight(true);
+    sessions.insert(pendingAllocation.session.getSessionId(),
+                    pendingAllocation.session);
+    pendingAllocation.eventLoop->queueInLoop(
+        [onCompletion = std::move(pendingAllocation.onCompletion),
+         session = pendingAllocation.session]() { onCompletion(session); });
+  } else if (pendingAllocation.attemptsRemaining > 0) {
+    pendingAllocation.attemptsRemaining--;
+    pendingAllocationsRetryQueue.push(std::move(pendingAllocation));
+  } else {
     TT_LOG_ERROR(
-        "[SessionManager] Failed to send dealloc for session {} slot {}: {}",
-        sessionId, slotId, e.what());
+        "[SessionManager] Async: failed to allocate slot for "
+        "session {} after all attempts",
+        pendingAllocation.session.getSessionId());
+    pendingAllocation.eventLoop->queueInLoop(
+        [onError = std::move(pendingAllocation.onError)]() {
+          onError("Failed to allocate: IPC queue full after all attempts");
+        });
+  }
+}
+
+void SessionManager::retryFailedDeallocs() {
+  auto deferredDeallocs = deferredDeallocQueue.drain();
+  for (auto& deferredDealloc : deferredDeallocs) {
+    sendDeallocRequest(deferredDealloc.sessionId, deferredDealloc.slotId);
   }
 }
 
