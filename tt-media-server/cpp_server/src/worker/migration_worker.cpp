@@ -80,7 +80,11 @@ void MigrationWorker::consumerLoop() {
 
     if (msg.has_value()) {
       // Message received - process it
-      processOffloadRequest(*msg);
+  // Capture receive timestamp immediately for accurate latency measurementm
+
+      auto receiveTime = std::chrono::system_clock::now();
+
+      processOffloadRequest(*msg, receiveTime);
     }
     // If no message (timeout or error), loop continues
   }
@@ -88,9 +92,7 @@ void MigrationWorker::consumerLoop() {
   TT_LOG_INFO("[MigrationWorker] Exited consumer loop");
 }
 
-void MigrationWorker::processOffloadRequest(const std::string& message) {
-  // Capture receive timestamp immediately for accurate latency measurementm
-  auto receiveTime = std::chrono::system_clock::now();
+void MigrationWorker::processOffloadRequest(const std::string& message, auto receiveTime) {
   auto receiveUs = std::chrono::duration_cast<std::chrono::microseconds>(
       receiveTime.time_since_epoch()).count();
 
@@ -111,7 +113,7 @@ void MigrationWorker::processOffloadRequest(const std::string& message) {
     int maxSessions = json.value("max_sessions", 0);
 
     // Log the offload request with overhead measurement
-    TT_LOG_WARN("[MigrationWorker] ⚡ OFFLOAD REQUEST RECEIVED");
+    TT_LOG_WARN("[MigrationWorker] ✅ OFFLOAD REQUEST RECEIVED");
     TT_LOG_WARN("[MigrationWorker]   Action:      {}", action);
     TT_LOG_WARN("[MigrationWorker]   Sessions:    {}/{} ({:.1f}%)",
                 currentCount, maxSessions,
@@ -122,12 +124,11 @@ void MigrationWorker::processOffloadRequest(const std::string& message) {
                 overheadUs, overheadMs);
     TT_LOG_WARN("[MigrationWorker]   Raw payload: {}", message);
 
-    // TODO: Phase 2 - Actual session migration logic would go here:
-    // 1. Parse session state from message
-    // 2. Allocate memory slot
-    // 3. Load KV cache
-    // 4. Register session locally
-    // 5. Send ACK back to producer
+  // TODO LJUBICA: actual implementation
+  // 1. Parse session properly
+  // 2. Allocate memory slot
+  // 3. Load KV cache
+  // etc. 
 
   } catch (const nlohmann::json::exception& e) {
     TT_LOG_ERROR("[MigrationWorker] Failed to parse JSON message: {}", e.what());
@@ -137,4 +138,4 @@ void MigrationWorker::processOffloadRequest(const std::string& message) {
   }
 }
 
-}  // namespace tt::worker
+}
