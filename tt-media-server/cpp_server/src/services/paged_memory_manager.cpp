@@ -41,14 +41,14 @@ ManageMemoryStatus PagedMemoryManager::allocateKv(
     return ManageMemoryStatus::WAITING;
   }
 
-  outSlotIds = std::move(seq.blockTable);
+  outSlotIds = std::move(seq.getMutableBlockTable());
   return ManageMemoryStatus::SUCCESS;
 }
 
 void PagedMemoryManager::deallocateKv(uint32_t taskId,
                                       std::vector<int> slotIds) {
   llm_engine::Sequence seq(taskId, blockManager->blockSize(), {});
-  seq.blockTable = std::move(slotIds);
+  seq.getMutableBlockTable() = std::move(slotIds);
   blockManager->deallocate(seq);
 }
 
