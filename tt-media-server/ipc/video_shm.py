@@ -205,7 +205,7 @@ class VideoShm:
                 f"/{self._name}", "shared_memory"
             )
         self._buf = self._shm.buf
-
+ 
     def close(self) -> None:
         if self._shm:
             self._shm.close()
