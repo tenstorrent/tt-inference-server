@@ -274,7 +274,6 @@ std::future<uint32_t> SessionManager::requestSlotIdFromMemoryManager(
 
   pendingAllocations.insert(requestTaskId, promise);
   task.action = domain::MemoryManagementAction::ALLOCATE;
-  task.inputSeqLen = 0;
   task.memoryLayout = domain::KvMemoryLayout::Paged;
   task.slotIds = {};
 
@@ -301,7 +300,6 @@ void SessionManager::sendDeallocRequest(const std::string& sessionId,
   domain::ManageMemoryTask task;
   task.taskId = utils::TaskIDGenerator::generate();
   task.action = domain::MemoryManagementAction::DEALLOCATE;
-  task.inputSeqLen = 0;
   task.memoryLayout = domain::KvMemoryLayout::Paged;
   task.slotIds = {slotId};
 
