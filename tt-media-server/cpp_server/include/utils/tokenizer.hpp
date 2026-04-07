@@ -131,9 +131,6 @@ class Tokenizer {
   std::unique_ptr<StreamDecoder> createStreamDecoder(
       bool skipSpecialTokens = true) const;
 
-  size_t vocabSize() const;
-  std::string idToToken(int32_t tokenId) const;
-
   std::vector<std::string> getEncodedVocab() const;
 
  protected:
