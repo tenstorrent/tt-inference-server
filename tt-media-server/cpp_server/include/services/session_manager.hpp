@@ -49,8 +49,10 @@ class SessionManager {
     tt::domain::Session session;
     std::function<void(const tt::domain::Session&)> onCompletion;
     std::function<void(std::string_view errorMessage)> onError;
-    trantor::EventLoop* eventLoop;
-    int attemptsRemaining;
+    trantor::EventLoop* eventLoop = nullptr;
+    int attemptsRemaining = 0;
+
+    PendingAllocation() = default;
 
     PendingAllocation(
         const tt::domain::Session& session,
