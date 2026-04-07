@@ -32,7 +32,6 @@ TEST(ResponseFormatTest, ParseTextType) {
   auto json = parseJson(R"({"type": "text"})");
   auto fmt = tt::domain::ResponseFormat::fromJson(json);
   EXPECT_EQ(fmt.type, tt::domain::ResponseFormatType::TEXT);
-  EXPECT_FALSE(fmt.isConstrained());
   EXPECT_FALSE(fmt.json_schema_str.has_value());
 }
 
@@ -40,7 +39,6 @@ TEST(ResponseFormatTest, ParseJsonObjectType) {
   auto json = parseJson(R"({"type": "json_object"})");
   auto fmt = tt::domain::ResponseFormat::fromJson(json);
   EXPECT_EQ(fmt.type, tt::domain::ResponseFormatType::JSON_OBJECT);
-  EXPECT_TRUE(fmt.isConstrained());
   EXPECT_FALSE(fmt.json_schema_str.has_value());
 }
 
@@ -63,7 +61,6 @@ TEST(ResponseFormatTest, ParseJsonSchemaType) {
   })");
   auto fmt = tt::domain::ResponseFormat::fromJson(json);
   EXPECT_EQ(fmt.type, tt::domain::ResponseFormatType::JSON_SCHEMA);
-  EXPECT_TRUE(fmt.isConstrained());
   EXPECT_TRUE(fmt.json_schema_str.has_value());
   EXPECT_EQ(fmt.json_schema_name, "person");
   EXPECT_TRUE(fmt.strict);

@@ -6,13 +6,11 @@
 #include <string>
 #include <vector>
 
+#include "config/types.hpp"
+
 namespace llm_engine {
 
-enum class ResponseFormatType : uint8_t {
-  TEXT = 0,
-  JSON_OBJECT = 1,
-  JSON_SCHEMA = 2
-};
+using tt::config::ResponseFormatType;
 
 /**
  * Sampling parameters aligned with OpenAI-compatible completion request.

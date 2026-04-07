@@ -9,19 +9,18 @@
 #include <stdexcept>
 #include <string>
 
+#include "config/types.hpp"
 #include "domain/json_field.hpp"
 
 namespace tt::domain {
 
-enum class ResponseFormatType { TEXT, JSON_OBJECT, JSON_SCHEMA };
+using tt::config::ResponseFormatType;
 
 struct ResponseFormat {
   ResponseFormatType type = ResponseFormatType::TEXT;
   std::optional<std::string> json_schema_name;
   std::optional<std::string> json_schema_str;
   bool strict = false;
-
-  bool isConstrained() const { return type != ResponseFormatType::TEXT; }
 
   static ResponseFormat fromJson(const Json::Value& json) {
     using namespace json_field;

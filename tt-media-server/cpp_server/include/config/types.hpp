@@ -77,6 +77,12 @@ inline LLMMode llmModeFromString(const std::string& v) {
 
 enum class ModelRunnerType { MOCK, PIPELINE, LLAMA, MOCK_PIPELINE, PREFILL };
 
+enum class ResponseFormatType : uint8_t {
+  TEXT = 0,
+  JSON_OBJECT = 1,
+  JSON_SCHEMA = 2
+};
+
 enum class SchedulingPolicy {
   PREFILL_FIRST,
   MAX_OCCUPANCY,
