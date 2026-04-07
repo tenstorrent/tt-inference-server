@@ -36,7 +36,7 @@ def generate_docker_tag(
 ) -> str:
     max_tag_len = 12
     if vllm_commit:
-        return f"{version}-{tt_metal_commit[:max_tag_len]}-{vllm_commit[:max_tag_len]}"
+        return f"{version}-{tt_metal_commit}-{vllm_commit[:max_tag_len]}"
     else:
         return f"{version}-{tt_metal_commit[:max_tag_len]}"
 
@@ -2092,8 +2092,8 @@ vlm_templates = [
         impl=tt_transformers_impl,
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
-        tt_metal_commit="ba32283",
-        vllm_commit="4386a82",
+        tt_metal_commit="8823e352449af3f574972ad2fd5fc0632fef0be4",
+        vllm_commit="1908628",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,

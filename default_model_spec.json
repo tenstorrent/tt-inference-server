@@ -12683,7 +12683,7 @@
           "model_name": "Qwen3-VL-32B-Instruct",
           "inference_engine": "vLLM",
           "device_type": "T3K",
-          "tt_metal_commit": "ba32283",
+          "tt_metal_commit": "8823e352449af3f574972ad2fd5fc0632fef0be4",
           "device_model_spec": {
             "device": "T3K",
             "max_concurrency": 32,
@@ -12760,7 +12760,7 @@
             "MESH_DEVICE": "T3K",
             "ARCH_NAME": "wormhole_b0"
           },
-          "vllm_commit": "4386a82",
+          "vllm_commit": "1908628",
           "hf_weights_repo": "Qwen/Qwen3-VL-32B-Instruct",
           "param_count": 32,
           "min_disk_gb": 84,
@@ -12768,9 +12768,9 @@
           "model_type": "VLM",
           "repacked": 0,
           "version": "0.9.0",
-          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-ba32283-4386a82",
+          "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-8823e352449af3f574972ad2fd5fc0632fef0be4-1908628",
           "status": "EXPERIMENTAL",
-          "code_link": "https://github.com/tenstorrent/tt-metal/tree/ba32283/models/tt_transformers",
+          "code_link": "https://github.com/tenstorrent/tt-metal/tree/8823e352449af3f574972ad2fd5fc0632fef0be4/models/tt_transformers",
           "override_tt_config": {},
           "supported_modalities": [
             "text",
