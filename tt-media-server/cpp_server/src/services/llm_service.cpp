@@ -404,7 +404,7 @@ void LLMService::processStreamingRequest(
       std::move(tokenIds));
   sequence->setNumPromptTokens(prompt.size());
   if (request.slotId.has_value()) {
-    sequence->setKVCacheAddress(request.slotId.value());
+    sequence->setKVCacheSlot(request.slotId.value());
   }
   sequence->setSamplingParams(std::make_unique<llm_engine::SamplingParams>(
       tt::utils::mapper::mapSamplingParams(request)));

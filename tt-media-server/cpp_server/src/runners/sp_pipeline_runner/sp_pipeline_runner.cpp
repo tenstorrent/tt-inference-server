@@ -14,6 +14,7 @@
 #include "ipc/token_push.hpp"
 #include "llm_runner/sequence.hpp"
 #include "runners/sp_pipeline_runner/sp_pipeline_utils.hpp"
+#include "services/memory_services/sp_pipeline_memory_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
@@ -195,30 +196,29 @@ inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
 
 void SpPipelineRunner::handleRequest(
     std::unique_ptr<llm_engine::Sequence> request) {
-  auto slotId = request->getKVCacheAddress();
-  assert(slotId != static_cast<uint64_t>(llm_engine::INVALID_KV_CACHE_ADDRESS));
-  auto slot = static_cast<uint32_t>(slotId);
+  auto slotId = request->getKVCacheSlot();
+  assert(slotId != tt::domain::INVALID_SLOT_ID);
 
-  auto it = running.find(slot);
+  auto it = running.find(slotId);
   bool isNew = (it == running.end());
 
   if (!isNew && it->second->taskId != request->taskId) {
     TT_LOG_INFO(
         "SpPipelineRunner::handleRequest slot={} reused by new task {} "
         "(was task {}), treating as new SUBMIT",
-        slot, request->taskId, it->second->taskId);
-    pipelineManager->push_request(utils::makeCancelRequest(slot));
+        slotId, request->taskId, it->second->taskId);
+    pipelineManager->push_request(utils::makeCancelRequest(slotId));
     running.erase(it);
     isNew = true;
   }
 
   if (isNew) {
     pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
-    running[slot] = std::move(request);
+    running[slotId] = std::move(request);
     return;
   }
-  pipelineManager->push_request(utils::makeContinueRequest(slot, *request));
-  running[slot] = std::move(request);
+  pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
+  running[slotId] = std::move(request);
 }
 
 }  // namespace tt::runners

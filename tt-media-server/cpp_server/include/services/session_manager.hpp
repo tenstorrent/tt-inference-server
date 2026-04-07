@@ -21,8 +21,6 @@
 
 namespace tt::services {
 
-using tt::domain::INVALID_SLOT_ID;
-
 class SessionManager {
  public:
   SessionManager();

@@ -50,7 +50,7 @@ void LLMController::resolveSession(
 
   if (req->sessionId.has_value() && sessionManager) {
     auto slotId = sessionManager->acquireSessionSlot(req->sessionId.value());
-    if (slotId != services::INVALID_SLOT_ID) {
+    if (slotId != domain::INVALID_SLOT_ID) {
       req->slotId = slotId;
       info.validSessionFound = true;
       onResolved(info);
@@ -339,7 +339,7 @@ void LLMController::getSlotId(
     const std::string& sessionId) const {
   uint32_t slotId = sessionManager->getSlotIdBySessionId(sessionId);
 
-  if (slotId == tt::services::INVALID_SLOT_ID) {
+  if (slotId == tt::domain::INVALID_SLOT_ID) {
     auto session = sessionManager->getSession(sessionId);
     if (!session.has_value()) {
       callback(errorResponse(drogon::k404NotFound, "Session not found",

@@ -16,7 +16,7 @@
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
-#include "services/memory_services/sp_pipeline_memory_manager.hpp"
+#include "services/memory_services/async_memory_manager.hpp"
 namespace tt::runners {
 
 namespace pm = tt_blaze::pipeline_manager;
@@ -53,6 +53,6 @@ class SpPipelineRunner : public IRunner {
   std::unique_ptr<pm::PipelineManager> pipelineManager;
   std::unordered_map<uint32_t, std::unique_ptr<llm_engine::Sequence>> running;
   std::atomic<bool> stopped{false};
-  std::unique_ptr<tt::services::SpPipelineMemoryManager> memoryManager;
+  std::unique_ptr<tt::services::AsyncMemoryManager> memoryManager;
 };
 }  // namespace tt::runners

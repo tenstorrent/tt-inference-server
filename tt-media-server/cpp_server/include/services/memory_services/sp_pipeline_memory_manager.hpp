@@ -7,11 +7,11 @@
 #include <unordered_map>
 
 #include "pipeline_manager/pipeline_manager.hpp"
-#include "services/memory_services/memory_manager.hpp"
+#include "services/memory_services/async_memory_manager.hpp"
 
 namespace tt::services {
 
-class SpPipelineMemoryManager : public MemoryManager {
+class SpPipelineMemoryManager : public AsyncMemoryManager {
   using onEvictCb = std::function<void(uint32_t slotId)>;
 
  public:
@@ -22,7 +22,7 @@ class SpPipelineMemoryManager : public MemoryManager {
 
   void handleRequest(const domain::ManageMemoryTask& request) override;
 
-  void handleResponse(uint32_t requestId, uint32_t slotId);
+  void handleResponse(uint32_t requestId, uint32_t slotId) override;
 
  private:
   tt_blaze::pipeline_manager::PipelineManager& pipelineManager;

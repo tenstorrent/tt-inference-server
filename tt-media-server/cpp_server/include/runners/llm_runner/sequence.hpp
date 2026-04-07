@@ -8,13 +8,12 @@
 #include <optional>
 #include <vector>
 
+#include "domain/slot_types.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
 
 namespace llm_engine {
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED, ABORTED };
-
-constexpr int32_t INVALID_KV_CACHE_ADDRESS = -1;
 
 struct TokenResult {
   uint32_t taskId;
@@ -58,8 +57,8 @@ class Sequence {
            static_cast<int>(numBlocks() - 1) * blockSize;
   }
 
-  void setKVCacheAddress(uint64_t addr) { address = addr; }
-  uint64_t getKVCacheAddress() const { return address; }
+  void setKVCacheSlot(uint32_t slot) { kvCacheSlot = slot; }
+  uint32_t getKVCacheSlot() const { return kvCacheSlot; }
 
   std::vector<int64_t> block(size_t i) const;
   std::vector<int64_t> completionTokenIds() const;
@@ -97,7 +96,7 @@ class Sequence {
   std::vector<int> blockTable;
   std::unique_ptr<SamplingParams> samplingParams;
   int blockSize;
-  int32_t address = INVALID_KV_CACHE_ADDRESS;
+  uint32_t kvCacheSlot = tt::domain::INVALID_SLOT_ID;
 };
 
 }  // namespace llm_engine
