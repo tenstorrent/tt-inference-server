@@ -104,22 +104,12 @@ set(SPDLOG_FMT_EXTERNAL ${USE_EXTERNAL_FMT} CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(spdlog)
 
 # Boost (header-only Boost.Interprocess for IPC message queue)
-find_package(Boost REQUIRED)
+find_package(Boost 1.71 REQUIRED)
 
-# tt-blaze pipeline_manager
-# Make TT-Metalium discoverable so pipeline_manager builds the Full target
-# (SocketPipeline) instead of core-only (mock pipeline).
-if(TT_METAL_HOME)
-    foreach(_build_dir build_Release build)
-        if(EXISTS "${TT_METAL_HOME}/${_build_dir}/lib/cmake/tt-metalium")
-            list(APPEND CMAKE_PREFIX_PATH "${TT_METAL_HOME}/${_build_dir}")
-            break()
-        endif()
-    endforeach()
-endif()
+# tt-blaze pipeline_manager (core-only at compile time; use LD_PRELOAD with
+# the pre-built Full .so at runtime for SocketPipeline support)
 set(PM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(PM_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
-set(TT_METAL_SOURCE_DIR "${TT_METAL_HOME}" CACHE PATH "" FORCE)
 add_subdirectory(tt-blaze/pipeline_manager)
 
 # Option for Tracy support
@@ -129,7 +119,7 @@ if(ENABLE_TRACY)
     FetchContent_Declare(
         tracy
         GIT_REPOSITORY https://github.com/tenstorrent/tracy.git
-        GIT_TAG master
+        GIT_TAG v0.10-tt.0
     )
     FetchContent_MakeAvailable(tracy)
 
@@ -356,15 +346,8 @@ target_include_directories(lockfree_queue_test PRIVATE
 )
 
 # Tokenizer test
-add_executable(test_tokenizer tests/test_tokenizer.cpp src/utils/tokenizer.cpp src/utils/deepseek_tokenizer.cpp src/utils/llama_tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp src/utils/logger.cpp)
-if(USE_EXTERNAL_FMT)
-    target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog fmt::fmt)
-else()
-    target_link_libraries(test_tokenizer PRIVATE GTest::gtest_main tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog)
-endif()
-target_include_directories(test_tokenizer PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
+add_executable(test_tokenizer tests/test_tokenizer.cpp)
+target_link_libraries(test_tokenizer PRIVATE llm_engine GTest::gtest_main)
 
 add_executable(cancel_queue_test tests/cancel_queue_test.cpp)
 target_link_libraries(cancel_queue_test PRIVATE llm_engine GTest::gtest_main)
@@ -406,42 +389,26 @@ add_test(NAME CancellationE2E
 set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 60)
 
 # Tokenizer benchmark
-add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp src/utils/tokenizer.cpp src/utils/deepseek_tokenizer.cpp src/utils/llama_tokenizer.cpp src/utils/tokenizer_config_loader.cpp src/config/settings.cpp src/utils/logger.cpp)
-target_include_directories(tokenizer_benchmark PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-if(USE_EXTERNAL_FMT)
-    target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog fmt::fmt)
-else()
-    target_link_libraries(tokenizer_benchmark PRIVATE tokenizers_cpp JsonCpp::JsonCpp spdlog::spdlog)
-endif()
+add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
+target_link_libraries(tokenizer_benchmark PRIVATE llm_engine)
 
-# Source files
+# Source files that aren't provided by llm_engine
 set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
     src/api/health_controller.cpp
     src/api/openapi.cpp
-    src/config/settings.cpp
     src/filters/security_filter.cpp
     src/services/llm_service.cpp
-    src/services/memory_manager.cpp
-    src/services/paged_memory_manager.cpp
-    src/services/contiguous_memory_manager.cpp
     src/services/reasoning_parser.cpp
     src/services/session_manager.cpp
     src/domain/session.cpp
-    src/utils/tokenizer.cpp
-    src/utils/logger.cpp
-    src/utils/deepseek_tokenizer.cpp
-    src/utils/llama_tokenizer.cpp
     src/worker/single_process_worker.cpp
     src/worker/worker_manager.cpp
     src/utils/service_factory.cpp
     src/utils/service_container.cpp
     src/utils/runner_factory.cpp
-    src/utils/tokenizer_config_loader.cpp
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
     src/runners/embedding_runner.cpp
@@ -464,9 +431,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${TT_METAL_INCLUDE_DIRS}
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
-
-# Compile definitions for performance optimization
-target_compile_definitions(${PROJECT_NAME} PRIVATE)
 
 # Link Drogon, llm_engine, and prometheus-cpp core
 if(USE_EXTERNAL_FMT)
@@ -498,20 +462,18 @@ endif()
 # AddressSanitizer for executables (must be after all add_executable calls)
 if(SANITIZE_ADDRESS)
     set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
-    target_compile_options(${PROJECT_NAME} PRIVATE ${ASAN_FLAGS})
-    target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
-    target_compile_options(scheduler_test PRIVATE ${ASAN_FLAGS})
-    target_link_options(scheduler_test PRIVATE -fsanitize=address)
-    target_compile_options(llm_runner_test PRIVATE ${ASAN_FLAGS})
-    target_link_options(llm_runner_test PRIVATE -fsanitize=address)
-    target_compile_options(sequence_test PRIVATE ${ASAN_FLAGS})
-    target_link_options(sequence_test PRIVATE -fsanitize=address)
-    target_compile_options(ipc_scheduler_smoke_test PRIVATE ${ASAN_FLAGS})
-    target_link_options(ipc_scheduler_smoke_test PRIVATE -fsanitize=address)
-    target_compile_options(lockfree_queue_test PRIVATE ${ASAN_FLAGS})
-    target_link_options(lockfree_queue_test PRIVATE -fsanitize=address)
-    target_compile_options(cancel_queue_test PRIVATE ${ASAN_FLAGS})
-    target_link_options(cancel_queue_test PRIVATE -fsanitize=address)
-    target_compile_options(cancellation_test PRIVATE ${ASAN_FLAGS})
-    target_link_options(cancellation_test PRIVATE -fsanitize=address)
+    set(ASAN_TARGETS
+        ${PROJECT_NAME}
+        scheduler_test
+        llm_runner_test
+        sequence_test
+        lockfree_queue_test
+        ipc_scheduler_smoke_test
+        cancel_queue_test
+        cancellation_test
+    )
+    foreach(target IN LISTS ASAN_TARGETS)
+        target_compile_options(${target} PRIVATE ${ASAN_FLAGS})
+        target_link_options(${target} PRIVATE -fsanitize=address)
+    endforeach()
 endif()
