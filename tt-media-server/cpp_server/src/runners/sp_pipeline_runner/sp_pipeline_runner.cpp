@@ -31,6 +31,7 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       .h2d_socket_id = "h2d_socket",
       .d2h_socket_id = "d2h_socket",
       .connect_timeout_ms = 30000,
+      .use_deepseek_md_format = false
   };
   pm::ManagerParams managerParams{.max_users = 32};
   pipelineManager =
