@@ -68,6 +68,12 @@ class SPRunner(BaseDeviceRunner):
 
     def close_device(self):
         self._shutdown = True
+        if self._input_shm:
+            self._input_shm.close()
+            self._input_shm = None
+        if self._output_shm:
+            self._output_shm.close()
+            self._output_shm = None
         removed = cleanup_orphaned_video_files()
         if removed:
             self.logger.info(
