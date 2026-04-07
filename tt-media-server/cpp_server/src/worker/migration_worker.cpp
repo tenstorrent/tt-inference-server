@@ -89,7 +89,7 @@ void MigrationWorker::consumerLoop() {
 }
 
 void MigrationWorker::processOffloadRequest(const std::string& message) {
-  // Capture receive timestamp immediately for accurate latency measurement
+  // Capture receive timestamp immediately for accurate latency measurementm
   auto receiveTime = std::chrono::system_clock::now();
   auto receiveUs = std::chrono::duration_cast<std::chrono::microseconds>(
       receiveTime.time_since_epoch()).count();

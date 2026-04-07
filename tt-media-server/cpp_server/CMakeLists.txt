@@ -523,7 +523,6 @@ if(SANITIZE_ADDRESS)
         ipc_scheduler_smoke_test
         cancel_queue_test
         cancellation_test
-        kafka_smoke_test
     )
     foreach(target IN LISTS ASAN_TARGETS)
         target_compile_options(${target} PRIVATE ${ASAN_FLAGS})

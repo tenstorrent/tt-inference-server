@@ -135,7 +135,7 @@ domain::Session SessionManager::createSession(std::optional<uint32_t> slotId,
   session.setInFlight(inFlight);
   sessions.insert(sessionId, session);
 
-  // LJUBICA Check if we need to send offload request 
+  // LJUBICA : Checking if we need to send offload request 
   checkAndSendOffloadRequest();
 
 
@@ -177,10 +177,7 @@ void SessionManager::checkAndSendOffloadRequest() {
     } else {
       TT_LOG_ERROR("[SessionManager] Failed to send offload request: {}", err);
     }
-    
 
-    
-    // kafkaProducer->send_copy("offload");
   }
 }
 

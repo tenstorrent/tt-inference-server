@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) {
   // Parse command line arguments
   std::string host = "0.0.0.0";
   uint16_t port = 8001;  // Default to different port than main server
-  int threads = 2;        // Minimal threads since we're not serving HTTP
+  int threads = 1;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -98,7 +98,6 @@ int main(int argc, char* argv[]) {
   TT_LOG_INFO("=================================================");
 
   // Create MigrationWorker
-  // TODO: Make these configurable via environment variables or command line
   auto worker = std::make_shared<tt::worker::MigrationWorker>(
       tt::worker::MigrationWorkerConfig{
           .brokers = "localhost:9092",

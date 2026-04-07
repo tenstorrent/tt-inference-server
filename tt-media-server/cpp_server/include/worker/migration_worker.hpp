@@ -16,48 +16,14 @@ namespace tt::worker {
  * Configuration for MigrationWorker.
  */
 struct MigrationWorkerConfig {
-  std::string brokers;    ///< Kafka broker addresses (e.g., "localhost:9092")
-  std::string topic;      ///< Topic to consume from (e.g., "session-offload")
-  std::string group_id;   ///< Consumer group ID (e.g., "migration-workers")
+  std::string brokers;
+  std::string topic;
+  std::string group_id;
 };
 
-/**
- * Worker that listens to Kafka for session offload requests.
- *
- * This worker runs in a separate thread and continuously polls Kafka for
- * offload messages from the main server. When a message is received, it
- * prints the message and calculates the messaging overhead.
- *
- * Purpose: Measure the latency between producer sending and consumer receiving
- * offload signals. This validates whether Kafka is fast enough for real-time
- * session migration coordination.
- *
- * Thread-safety: This class manages its own thread internally. Safe to call
- * start()/stop() from any thread.
- *
- * Example usage:
- * @code
- *   MigrationWorker worker({
- *     .brokers = "localhost:9092",
- *     .topic = "session-offload",
- *     .group_id = "migration-workers"
- *   });
- *
- *   worker.start();  // Begins polling in background thread
- *   // ... worker runs ...
- *   worker.stop();   // Graceful shutdown
- * @endcode
- */
 class MigrationWorker {
  public:
-  /**
-   * Creates a MigrationWorker with the given configuration.
-   *
-   * @param config Kafka connection and topic configuration
-   *
-   * @note Constructor creates the Kafka consumer but does not start polling.
-   *       Call start() to begin consuming messages.
-   */
+
   explicit MigrationWorker(MigrationWorkerConfig config);
 
   /**
