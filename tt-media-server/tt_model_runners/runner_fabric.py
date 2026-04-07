@@ -49,6 +49,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.VLLM: lambda wid: __import__(
         "tt_model_runners.vllm_runner", fromlist=["VLLMRunner"]
     ).VLLMRunner(wid),
+    ModelRunners.VLLM_LORA: lambda wid: __import__(
+        "tt_model_runners.vllm_runner_lora", fromlist=["VLLMLoraRunner"]
+    ).VLLMLoraRunner(wid),
     ModelRunners.BGELargeEN_V1_5: lambda wid: __import__(
         "tt_model_runners.embedding_runner", fromlist=["BGELargeENRunner"]
     ).BGELargeENRunner(wid),

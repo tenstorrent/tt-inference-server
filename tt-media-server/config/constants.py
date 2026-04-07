@@ -82,6 +82,7 @@ class ModelRunners(Enum):
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
     VLLM = "vllm"
+    VLLM_LORA = "vllm-lora"
     TT_YOLOV4 = "tt-yolov4"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
@@ -130,6 +131,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.LLM: {
         ModelRunners.VLLM,
+        ModelRunners.VLLM_LORA,
         ModelRunners.VLLMForge_LLAMA_70B,
         ModelRunners.LLM_TEST,
         ModelRunners.LLAMA_RUNNER,
@@ -196,6 +198,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
     ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
+    ModelRunners.VLLM_LORA: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TRAINING_LLAMA_LORA: {ModelNames.LLAMA_3_1_8B},
@@ -962,6 +965,12 @@ ModelConfigs = {
         "max_batch_size": 8,
         "default_throttle_level": 0,
         "use_queue_per_worker": True,
+    },
+    (ModelRunners.VLLM_LORA, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
     },
     (ModelRunners.VLLM, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
