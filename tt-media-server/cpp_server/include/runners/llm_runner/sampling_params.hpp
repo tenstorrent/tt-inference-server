@@ -3,9 +3,16 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace llm_engine {
+
+enum class ResponseFormatType : uint8_t {
+  TEXT = 0,
+  JSON_OBJECT = 1,
+  JSON_SCHEMA = 2
+};
 
 /**
  * Sampling parameters aligned with OpenAI-compatible completion request.
@@ -36,6 +43,14 @@ struct SamplingParams {
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
   bool fast_mode = false;
+
+  ResponseFormatType response_format_type = ResponseFormatType::TEXT;
+  std::optional<std::string> json_schema_str;
+
+  bool hasGuidedDecoding() const {
+    return response_format_type != ResponseFormatType::TEXT;
+  }
+
   void serialize(std::ostream& os) const;
   static std::unique_ptr<SamplingParams> deserialize(std::istream& is);
 };

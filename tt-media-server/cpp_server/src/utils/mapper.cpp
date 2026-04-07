@@ -2,6 +2,20 @@
 
 namespace tt::utils::mapper {
 
+namespace {
+llm_engine::ResponseFormatType mapResponseFormatType(
+    tt::domain::ResponseFormatType t) {
+  switch (t) {
+    case tt::domain::ResponseFormatType::JSON_OBJECT:
+      return llm_engine::ResponseFormatType::JSON_OBJECT;
+    case tt::domain::ResponseFormatType::JSON_SCHEMA:
+      return llm_engine::ResponseFormatType::JSON_SCHEMA;
+    default:
+      return llm_engine::ResponseFormatType::TEXT;
+  }
+}
+}  // namespace
+
 llm_engine::SamplingParams mapSamplingParams(
     const tt::domain::LLMRequest& request) {
   llm_engine::SamplingParams params;
@@ -26,6 +40,13 @@ llm_engine::SamplingParams mapSamplingParams(
   params.prompt_logprobs = request.prompt_logprobs;
   params.truncate_prompt_tokens = request.truncate_prompt_tokens;
   params.fast_mode = request.fast_mode;
+
+  if (request.response_format.has_value()) {
+    params.response_format_type =
+        mapResponseFormatType(request.response_format->type);
+    params.json_schema_str = request.response_format->json_schema_str;
+  }
+
   return params;
 }
 

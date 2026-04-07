@@ -8,7 +8,10 @@
 #include "config/settings.hpp"
 #include "ipc/token_push.hpp"
 #include "profiling/tracy.hpp"
+#include "services/guided_decoder_manager.hpp"
 #include "services/paged_memory_manager.hpp"
+#include "utils/logger.hpp"
+#include "utils/tokenizer.hpp"
 
 namespace tt::runners {
 using namespace llm_engine;
@@ -27,17 +30,37 @@ LLMRunner::LLMRunner(const Config& config,
     memoryThread = std::thread([this] { memoryLoop(); });
   }
 
+  try {
+    const auto& tok = tt::utils::activeTokenizer();
+    auto encodedVocab = tok.getEncodedVocab();
+    int vocabSize = static_cast<int>(encodedVocab.size());
+    guidedDecoder_ = std::make_unique<services::GuidedDecoderManager>(
+        encodedVocab, vocabSize);
+    TT_LOG_INFO("[LLMRunner] Guided decoder initialized (vocab_size={})",
+                vocabSize);
+  } catch (const std::exception& e) {
+    TT_LOG_WARN(
+        "[LLMRunner] Failed to init guided decoder, structured outputs "
+        "disabled: {}",
+        e.what());
+  }
+
   auto decodeCb = [this](const TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");
     Sequence* seq = scheduler_->findSequence(result.taskId);
 
-    // Sequence was aborted between model run and token callback — discard.
     if (!seq || seq->isAborted()) return;
 
     if (result.isError) {
+      if (guidedDecoder_) guidedDecoder_->removeRequest(result.taskId);
       scheduler_->removeSequence(result.taskId);
       ipc::pushErrorToken(*result_queue_, result.taskId);
       return;
+    }
+
+    if (guidedDecoder_ && guidedDecoder_->hasGuidedDecoding(result.taskId)) {
+      guidedDecoder_->acceptToken(result.taskId,
+                                  static_cast<int32_t>(result.tokenId));
     }
 
     std::vector<Sequence*> seqs = {seq};
@@ -45,9 +68,16 @@ LLMRunner::LLMRunner(const Config& config,
     scheduler_->postprocess(seqs, tokenIds);
 
     bool finished = seq->isFinished();
+    if (!finished && guidedDecoder_ &&
+        guidedDecoder_->isCompleted(result.taskId)) {
+      finished = true;
+      seq->setStatus(SequenceStatus::FINISHED);
+    }
+
     ipc::pushToken(*result_queue_, result.taskId, result.tokenId, finished);
 
     if (finished) {
+      if (guidedDecoder_) guidedDecoder_->removeRequest(result.taskId);
       scheduler_->removeSequence(result.taskId);
     }
   };
@@ -88,13 +118,32 @@ void LLMRunner::memoryLoop() {
   }
 }
 
+void LLMRunner::applyGuidedDecodingMasks(const std::vector<Sequence*>& seqs,
+                                         bool isPrefill) {
+  if (!guidedDecoder_) return;
+
+  for (Sequence* seq : seqs) {
+    if (isPrefill) {
+      if (seq->getSamplingParams().hasGuidedDecoding()) {
+        guidedDecoder_->initRequest(seq->taskId, seq->getSamplingParams());
+      }
+    } else {
+      if (guidedDecoder_->hasGuidedDecoding(seq->taskId)) {
+        auto allowed = guidedDecoder_->getNextAllowedTokenIds(seq->taskId);
+        std::vector<int> allowedInt(allowed.begin(), allowed.end());
+        seq->getMutableSamplingParams().allowed_token_ids =
+            std::move(allowedInt);
+      }
+    }
+  }
+}
+
 void LLMRunner::step() {
-  // Drain cancel queue before scheduling so aborted sequences are excluded
-  // from the next batch.
   if (cancel_queue_) {
     std::vector<uint32_t> cancelled;
     cancel_queue_->tryPopAll(cancelled);
     for (const auto& taskId : cancelled) {
+      if (guidedDecoder_) guidedDecoder_->removeRequest(taskId);
       scheduler_->abortRequest(taskId);
     }
   }
@@ -102,6 +151,8 @@ void LLMRunner::step() {
   auto [seqs, is_prefill] = scheduler_->schedule();
   if (seqs.empty()) return;
   ZoneScopedN("LLMRunner::step");
+
+  applyGuidedDecodingMasks(seqs, is_prefill);
   model_runner_->run(seqs, is_prefill);
 }
 }  // namespace tt::runners

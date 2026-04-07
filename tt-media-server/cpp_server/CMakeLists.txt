@@ -69,6 +69,27 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# xgrammar for structured output / guided decoding (JSON schema constrained generation)
+FetchContent_Declare(xgrammar
+    GIT_REPOSITORY https://github.com/mlc-ai/xgrammar.git
+    GIT_TAG        v0.1.33
+    GIT_SHALLOW    TRUE
+)
+FetchContent_GetProperties(xgrammar)
+if(NOT xgrammar_POPULATED)
+    FetchContent_Populate(xgrammar)
+    # xgrammar ships cmake/config.cmake that forces PYTHON_BINDINGS=ON; override it
+    # in the source tree so its CMakeLists.txt picks up our settings.
+    file(WRITE "${xgrammar_SOURCE_DIR}/cmake/config.cmake"
+        "set(XGRAMMAR_BUILD_PYTHON_BINDINGS OFF)\n"
+        "set(XGRAMMAR_BUILD_CXX_TESTS OFF)\n"
+        "set(XGRAMMAR_ENABLE_CPPTRACE OFF)\n"
+        "set(XGRAMMAR_ENABLE_COVERAGE OFF)\n"
+        "set(XGRAMMAR_ENABLE_INTERNAL_CHECK OFF)\n"
+    )
+    add_subdirectory(${xgrammar_SOURCE_DIR} ${xgrammar_BINARY_DIR})
+endif()
+
 # Import fmt from tt-metal for spdlog
 if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
     set(fmt_DIR "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
@@ -228,6 +249,7 @@ set(LLM_ENGINE_SOURCES
     src/services/memory_manager.cpp
     src/services/paged_memory_manager.cpp
     src/services/contiguous_memory_manager.cpp
+    src/services/guided_decoder_manager.cpp
 )
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
@@ -244,8 +266,8 @@ target_include_directories(llm_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
-# Link tokenizers_cpp and JsonCpp since settings.cpp depends on tokenizer.hpp
-target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp)
+# Link tokenizers_cpp, JsonCpp, and xgrammar (guided decoding for structured outputs)
+target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar)
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     target_compile_definitions(llm_engine PUBLIC USE_METAL_CPP_LIB)
     # Find tt_metal library directory
@@ -343,6 +365,13 @@ target_include_directories(cancellation_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(structured_output_test tests/structured_output_test.cpp)
+target_link_libraries(structured_output_test PRIVATE llm_engine GTest::gtest_main)
+target_include_directories(structured_output_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -351,6 +380,7 @@ gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(cancellation_test)
+gtest_discover_tests(structured_output_test)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -452,6 +482,7 @@ if(SANITIZE_ADDRESS)
         ipc_scheduler_smoke_test
         cancel_queue_test
         cancellation_test
+        structured_output_test
     )
     foreach(target IN LISTS ASAN_TARGETS)
         target_compile_options(${target} PRIVATE ${ASAN_FLAGS})

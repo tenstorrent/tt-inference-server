@@ -23,13 +23,15 @@ class MockModelRunner : public IModelRunner {
     if (isPrefill) {
       ZoneScopedN("MockModelRunner::prefill");
       for (Sequence* seq : seqs) {
-        decodeCallback(TokenResult(seq->taskId, K_WHITESPACE_TOKEN_ID));
+        uint64_t tokenId = pickToken(seq, K_WHITESPACE_TOKEN_ID);
+        decodeCallback(TokenResult(seq->taskId, tokenId));
       }
     } else {
       ZoneScopedN("MockModelRunner::decode");
       for (Sequence* seq : seqs) {
-        decodeCallback(TokenResult(
-            seq->taskId, static_cast<uint64_t>(seq->getLastToken() + 1)));
+        uint64_t defaultToken = static_cast<uint64_t>(seq->getLastToken() + 1);
+        uint64_t tokenId = pickToken(seq, defaultToken);
+        decodeCallback(TokenResult(seq->taskId, tokenId));
       }
     }
   }
@@ -39,6 +41,17 @@ class MockModelRunner : public IModelRunner {
   }
 
  private:
+  static uint64_t pickToken(const Sequence* seq, uint64_t defaultToken) {
+    const auto& allowed = seq->getSamplingParams().allowed_token_ids;
+    if (!allowed.has_value() || allowed->empty()) return defaultToken;
+
+    int target = static_cast<int>(defaultToken);
+    for (int id : *allowed) {
+      if (id == target) return defaultToken;
+    }
+    return static_cast<uint64_t>(allowed->front());
+  }
+
   Config config;
   DecodeCallback decodeCallback;
 };

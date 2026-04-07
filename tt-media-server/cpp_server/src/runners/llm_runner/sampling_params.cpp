@@ -78,6 +78,15 @@ void SamplingParams::serialize(std::ostream& os) const {
   writeOptional(os, prompt_logprobs);
   writeOptional(os, truncate_prompt_tokens);
   writeScalar(os, fast_mode);
+
+  writeScalar(os, static_cast<uint8_t>(response_format_type));
+  bool hasSchema = json_schema_str.has_value();
+  writeScalar(os, hasSchema);
+  if (hasSchema) {
+    size_t len = json_schema_str->size();
+    writeScalar(os, len);
+    os.write(json_schema_str->data(), static_cast<std::streamsize>(len));
+  }
 }
 
 std::unique_ptr<SamplingParams> SamplingParams::deserialize(std::istream& is) {
@@ -108,6 +117,17 @@ std::unique_ptr<SamplingParams> SamplingParams::deserialize(std::istream& is) {
   params->prompt_logprobs = readOptional<int>(is);
   params->truncate_prompt_tokens = readOptional<int>(is);
   params->fast_mode = readScalar<bool>(is);
+
+  if (is.peek() != std::char_traits<char>::eof()) {
+    params->response_format_type =
+        static_cast<ResponseFormatType>(readScalar<uint8_t>(is));
+    if (readScalar<bool>(is)) {
+      size_t len = readScalar<size_t>(is);
+      std::string schema(len, '\0');
+      is.read(schema.data(), static_cast<std::streamsize>(len));
+      params->json_schema_str = std::move(schema);
+    }
+  }
 
   return params;
 }

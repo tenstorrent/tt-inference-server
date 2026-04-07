@@ -137,6 +137,14 @@ void SpPipelineRunner::step() {
     ZoneScopedN("SpPipelineRunner::write_to_device");
     uint32_t taskId = seq->taskId;
 
+    if (seq->getSamplingParams().hasGuidedDecoding()) {
+      TT_LOG_WARN(
+          "[SpPipelineRunner] task_id={} has response_format constraint but "
+          "SP Pipeline does not support per-step guided decoding yet. "
+          "Output may not conform to the requested schema.",
+          taskId);
+    }
+
     if (!seq->getSamplingParams().max_tokens.has_value()) {
       seq->getMutableSamplingParams().max_tokens =
           static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);

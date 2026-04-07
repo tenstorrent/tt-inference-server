@@ -128,6 +128,31 @@ std::string Tokenizer::decode(const std::vector<int>& tokenIds,
   return tok_->Decode(filtered);
 }
 
+size_t Tokenizer::vocabSize() const {
+  if (!tok_) {
+    throw std::runtime_error(
+        "[TokenizerUtil] Tokenizer not loaded, cannot get vocab size");
+  }
+  return tok_->GetVocabSize();
+}
+
+std::string Tokenizer::idToToken(int32_t tokenId) const {
+  if (!tok_) {
+    throw std::runtime_error(
+        "[TokenizerUtil] Tokenizer not loaded, cannot convert id to token");
+  }
+  return tok_->IdToToken(tokenId);
+}
+
+std::vector<std::string> Tokenizer::getEncodedVocab() const {
+  size_t size = vocabSize();
+  std::vector<std::string> vocab(size);
+  for (size_t i = 0; i < size; ++i) {
+    vocab[i] = tok_->IdToToken(static_cast<int32_t>(i));
+  }
+  return vocab;
+}
+
 // ---------------------------------------------------------------------------
 // StreamDecoder
 // ---------------------------------------------------------------------------
