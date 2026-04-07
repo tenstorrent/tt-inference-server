@@ -41,7 +41,7 @@ fi
 if [ -f "tt_model_runners/forge_runners/requirements.txt" ]; then
     # Dissable pip's package cache, reducing disk usage during installation and Docker size
     pip install --no-cache-dir -r tt_model_runners/forge_runners/requirements.txt
-    sudo tt-forge-install
+    tt-forge-install
 fi
 
 echo "Setup complete in virtual environment ${virtual_env_name}."
