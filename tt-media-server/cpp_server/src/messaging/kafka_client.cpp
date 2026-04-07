@@ -77,13 +77,15 @@ KafkaProducer::KafkaProducer(KafkaProducerConfig config) : impl_(std::make_uniqu
     return;
   }
 
+  // rd_kafka_new() takes ownership of conf on success, leaves it on failure
   rd_kafka_t* rk =
       rd_kafka_new(RD_KAFKA_PRODUCER, conf, errstr, sizeof(errstr));
-  rd_kafka_conf_destroy(conf);
   if (!rk) {
     TT_LOG_ERROR("[Kafka] rd_kafka_new (producer) failed: {}", errstr);
+    rd_kafka_conf_destroy(conf);  // Only destroy on failure
     return;
   }
+  // Do NOT destroy conf here - ownership transferred to rk
 
   rd_kafka_topic_t* rkt = rd_kafka_topic_new(rk, config.topic.c_str(), nullptr);
   if (!rkt) {
@@ -153,13 +155,15 @@ KafkaConsumer::KafkaConsumer(KafkaConsumerConfig config)
     return;
   }
 
+  // rd_kafka_new() takes ownership of conf on success, leaves it on failure
   rd_kafka_t* rk =
       rd_kafka_new(RD_KAFKA_CONSUMER, conf, errstr, sizeof(errstr));
-  rd_kafka_conf_destroy(conf);
   if (!rk) {
     TT_LOG_ERROR("[Kafka] rd_kafka_new (consumer) failed: {}", errstr);
+    rd_kafka_conf_destroy(conf);  // Only destroy on failure
     return;
   }
+  // Do NOT destroy conf here - ownership transferred to rk
 
   rd_kafka_poll_set_consumer(rk);
 
