@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import json
 import os
 from functools import lru_cache
 from typing import Optional
@@ -133,6 +134,8 @@ class Settings(BaseSettings):
         )
         self._set_mesh_overrides()
         logger.info(f"After mesh overrides: device_mesh_shape={self.device_mesh_shape}")
+        self._apply_override_tt_config()
+        logger.info(f"After OVERRIDE_TT_CONFIG: device_mesh_shape={self.device_mesh_shape}")
 
         if self.model_service is None:
             found = False
@@ -265,6 +268,22 @@ class Settings(BaseSettings):
             if value and value.lower() == "true":
                 setattr(self, "device_mesh_shape", mesh_shape)
                 break
+
+    def _apply_override_tt_config(self):
+        """Apply overrides from OVERRIDE_TT_CONFIG env var (JSON string from --override-tt-config CLI)."""
+        raw = os.getenv("OVERRIDE_TT_CONFIG")
+        if not raw:
+            return
+        override = json.loads(raw)
+        logger.info(f"OVERRIDE_TT_CONFIG: {override}")
+        TUPLE_FIELDS = {"device_mesh_shape", "sdxl_image_resolution"}
+        for key, value in override.items():
+            if not hasattr(self, key):
+                logger.warning(f"OVERRIDE_TT_CONFIG: unknown setting {key!r}, skipping")
+                continue
+            if key in TUPLE_FIELDS and isinstance(value, list):
+                value = tuple(value)
+            setattr(self, key, value)
 
     def _calculate_audio_chunk_duration(self):
         worker_count = len(self.device_ids.replace(" ", "").split("),("))
