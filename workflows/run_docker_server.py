@@ -266,7 +266,7 @@ def generate_docker_run_command(
         if value:
             docker_command.extend(["-e", f"{key}={str(value)}"])
         else:
-            logger.info(f"Skipping {key} in docker run command, value={value}")
+            logger.info(f"Skipping {key} in docker run command (value not set)")
 
     if runtime_config.disable_metal_timeout:
         docker_command.extend(["-e", "DISABLE_METAL_OP_TIMEOUT=1"])
