@@ -9,7 +9,6 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <sstream>
 
 #include "api/error_response.hpp"
 #include "api/sse_stream_writer.hpp"
@@ -43,39 +42,42 @@ LLMController::LLMController() {
   TT_LOG_INFO("[LLMController] Initialized (service already started)");
 }
 
-LLMController::SessionInfo LLMController::resolveSession(
-    domain::LLMRequest& req) const {
+void LLMController::resolveSession(
+    std::shared_ptr<domain::LLMRequest> req, trantor::EventLoop* loop,
+    std::function<void(SessionInfo)> onResolved,
+    std::function<void(std::string_view)> onError) const {
   SessionInfo info;
 
-  if (req.sessionId.has_value() && sessionManager) {
-    auto slotId = sessionManager->acquireSessionSlot(req.sessionId.value());
+  if (req->sessionId.has_value() && sessionManager) {
+    auto slotId = sessionManager->acquireSessionSlot(req->sessionId.value());
     if (slotId != services::INVALID_SLOT_ID) {
-      req.slotId = slotId;
+      req->slotId = slotId;
       info.validSessionFound = true;
+      onResolved(info);
+      return;
     } else {
       TT_LOG_INFO(
           "Received request with non existing session, resetting session id");
-      req.sessionId.reset();
+      req->sessionId.reset();
     }
   }
 
-  if (!req.sessionId.has_value() && sessionManager) {
-    auto session = sessionManager->createSession(std::nullopt, true);
-    req.sessionId = session.getSessionId();
-    req.slotId = session.getSlotId();
-    TT_LOG_INFO("[LLMController] Created NEW session: {}",
-                req.sessionId.value());
+  if (!req->sessionId.has_value() && sessionManager) {
+    sessionManager->createSession(
+        [req, onResolved](const domain::Session& session) {
+          req->sessionId = session.getSessionId();
+          req->slotId = session.getSlotId();
+          SessionInfo info;
+          onResolved(info);
+        },
+        onError, loop);
+    return;
   }
 
-  if (req.sessionId.has_value()) {
-    TT_LOG_DEBUG(
-        "[LLMController] Session: {}, SlotID: {}", req.sessionId.value(),
-        req.slotId.has_value() ? std::to_string(req.slotId.value()) : "none");
-  } else if (!sessionManager) {
+  if (!sessionManager) {
     TT_LOG_WARN("[LLMController] SessionManager not available");
+    onResolved(info);
   }
-
-  return info;
 }
 
 void LLMController::chatCompletions(
@@ -124,68 +126,67 @@ void LLMController::chatCompletions(
   if (request->stream) {
     handleStreaming(request, std::move(callback));
   } else {
-    try {
-      resolveSession(*request);
+    auto* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
+    auto cb =
+        std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
+            std::move(callback));
 
-      auto sessionId = request->sessionId;
-      auto startTime = std::chrono::high_resolution_clock::now();
-      auto completion = service->submitRequest(std::move(*request));
-      auto endTime = std::chrono::high_resolution_clock::now();
+    resolveSession(
+        request, loop,
+        [this, request, cb](SessionInfo) {
+          try {
+            auto sessionId = request->sessionId;
+            auto startTime = std::chrono::high_resolution_clock::now();
+            auto completion = service->submitRequest(std::move(*request));
+            auto endTime = std::chrono::high_resolution_clock::now();
 
-      completion.id = "chatcmpl-" + completion.id;
+            completion.id = "chatcmpl-" + completion.id;
 
-      auto totalDuration =
-          std::chrono::duration_cast<std::chrono::milliseconds>(endTime -
-                                                                startTime);
-      if (totalDuration.count() > 0 && completion.usage.completion_tokens > 0) {
-        completion.usage.ttft_ms = static_cast<double>(totalDuration.count());
-        if (completion.usage.completion_tokens > 1) {
-          completion.usage.tps = completion.usage.completion_tokens * 1000.0 /
-                                 totalDuration.count();
-        }
-      }
+            auto totalDuration =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    endTime - startTime);
+            if (totalDuration.count() > 0 &&
+                completion.usage.completion_tokens > 0) {
+              completion.usage.ttft_ms =
+                  static_cast<double>(totalDuration.count());
+              if (completion.usage.completion_tokens > 1) {
+                completion.usage.tps = completion.usage.completion_tokens *
+                                       1000.0 / totalDuration.count();
+              }
+            }
 
-      if (sessionId.has_value()) {
-        completion.usage.sessionId = sessionId;
-      }
+            if (sessionId.has_value()) {
+              completion.usage.sessionId = sessionId;
+            }
 
-      auto chatResponse =
-          domain::ChatCompletionResponse::fromLLMResponse(completion);
-      auto resp = drogon::HttpResponse::newHttpResponse();
-      resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-      resp->setBody(chatResponse.toJsonString());
+            auto chatResponse =
+                domain::ChatCompletionResponse::fromLLMResponse(completion);
+            auto resp = drogon::HttpResponse::newHttpResponse();
+            resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+            resp->setBody(chatResponse.toJsonString());
 
-      if (sessionId.has_value() && sessionManager) {
-        sessionManager->setSessionInFlight(sessionId.value(), false);
-      }
+            if (sessionId.has_value() && sessionManager) {
+              sessionManager->setSessionInFlight(sessionId.value(), false);
+            }
 
-      callback(resp);
-    } catch (const services::QueueFullException& e) {
-      auto sessionId = request->sessionId;
-      if (sessionId.has_value() && sessionManager) {
-        sessionManager->setSessionInFlight(sessionId.value(), false);
-      }
-
-      callback(errorResponse(drogon::k429TooManyRequests, e.what(),
-                             "rate_limit_exceeded"));
-    } catch (const std::runtime_error& e) {
-      auto sessionId = request->sessionId;
-      if (sessionId.has_value() && sessionManager) {
-        sessionManager->setSessionInFlight(sessionId.value(), false);
-      }
-
-      std::string errMsg = e.what();
-      if (errMsg.find("Failed to allocate memory slot") != std::string::npos ||
-          errMsg.find("memory resources") != std::string::npos) {
-        TT_LOG_ERROR("[LLMController] Session creation failed: {}", e.what());
-        callback(errorResponse(
-            drogon::k503ServiceUnavailable,
-            std::string("Failed to allocate memory resources: ") + errMsg,
-            "service_unavailable"));
-        return;
-      }
-      throw;
-    }
+            (*cb)(resp);
+          } catch (const services::QueueFullException& e) {
+            auto sessionId = request->sessionId;
+            if (sessionId.has_value() && sessionManager) {
+              sessionManager->setSessionInFlight(sessionId.value(), false);
+            }
+            (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
+                                "rate_limit_exceeded"));
+          }
+        },
+        [cb](std::string_view err) {
+          TT_LOG_ERROR("[LLMController] Session creation failed: {}", err);
+          (*cb)(errorResponse(
+              drogon::k503ServiceUnavailable,
+              std::string("Failed to allocate memory resources: ") +
+                  std::string(err),
+              "service_unavailable"));
+        });
   }
 }
 
@@ -194,75 +195,83 @@ void LLMController::handleStreaming(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleStreaming");
 
-  SessionInfo sessionInfo;
-  try {
-    sessionInfo = resolveSession(*reqPtr);
-  } catch (const std::runtime_error& e) {
-    TT_LOG_ERROR("[LLMController] Failed to create session: {}", e.what());
-    callback(errorResponse(
-        drogon::k503ServiceUnavailable,
-        std::string("Failed to allocate memory resources: ") + e.what(),
-        "service_unavailable"));
-    return;
-  }
+  auto* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
+  auto cb =
+      std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
+          std::move(callback));
 
-  StreamParams params;
-  params.completionId = "chatcmpl-" + std::to_string(reqPtr->task_id);
-  params.model = reqPtr->model.value_or("default");
-  params.created = static_cast<int64_t>(
-      std::chrono::duration_cast<std::chrono::seconds>(
-          std::chrono::system_clock::now().time_since_epoch())
-          .count());
-  params.includeUsage = !reqPtr->stream_options.has_value() ||
-                        reqPtr->stream_options->include_usage;
-  params.continuousUsage = reqPtr->stream_options.has_value() &&
-                           reqPtr->stream_options->continuous_usage_stats;
-  params.promptTokensCount = reqPtr->prompt_tokens_count;
-  params.sessionId = reqPtr->sessionId;
-  params.taskId = reqPtr->task_id;
-  params.service = service;
-  params.sessionManager = sessionManager;
+  resolveSession(
+      reqPtr, loop,
+      [this, reqPtr, cb, loop](SessionInfo sessionInfo) {
+        StreamParams params;
+        params.completionId = "chatcmpl-" + std::to_string(reqPtr->task_id);
+        params.model = reqPtr->model.value_or("default");
+        params.created = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch())
+                .count());
+        params.includeUsage = !reqPtr->stream_options.has_value() ||
+                              reqPtr->stream_options->include_usage;
+        params.continuousUsage = reqPtr->stream_options.has_value() &&
+                                 reqPtr->stream_options->continuous_usage_stats;
+        params.promptTokensCount = reqPtr->prompt_tokens_count;
+        params.sessionId = reqPtr->sessionId;
+        params.taskId = reqPtr->task_id;
+        params.service = service;
+        params.sessionManager = sessionManager;
 
-  auto writer = SseStreamWriter::create(
-      trantor::EventLoop::getEventLoopOfCurrentThread(), std::move(params));
+        auto writer = SseStreamWriter::create(loop, std::move(params));
 
-  auto streamingCallback = [writer](const domain::LLMStreamChunk& chunk,
-                                    bool isFinal) {
-    if (writer->isDone()) return;
-    if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
-    if (isFinal) writer->finalizeStream();
-  };
+        auto streamingCallback = [writer](const domain::LLMStreamChunk& chunk,
+                                          bool isFinal) {
+          if (writer->isDone()) return;
+          if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
+          if (isFinal) writer->finalizeStream();
+        };
 
-  try {
-    if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
-      service->submitStreamingRequest(*reqPtr, streamingCallback);
-    } else if (tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY) {
-      service->preProcess(*reqPtr);
-      if (shouldDoPrefillOnDecode(*reqPtr, sessionInfo.validSessionFound)) {
-        TT_LOG_DEBUG(
-            "[LLMController] Using prefill on decode for sessionId: {}",
-            reqPtr->sessionId.value_or("none"));
-        service->submitStreamingRequest(*reqPtr, streamingCallback);
-      } else {
-        TT_LOG_DEBUG(
-            "[LLMController] Using disaggregated prefill for request with "
-            "sessionId: {}",
-            reqPtr->sessionId.value_or("none"));
-        disaggregationService->handleStreamingRequest(*reqPtr,
-                                                      streamingCallback);
-      }
-    } else {
-      throw std::runtime_error(
-          "[LLMController] LLM Mode must be regular or decode only to handle "
-          "streaming requests via HTTP");
-    }
-  } catch (const services::QueueFullException& e) {
-    callback(errorResponse(drogon::k429TooManyRequests, e.what(),
-                           "rate_limit_exceeded"));
-    return;
-  }
+        try {
+          if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
+            service->submitStreamingRequest(*reqPtr, streamingCallback);
+          } else if (tt::config::llmMode() ==
+                     tt::config::LLMMode::DECODE_ONLY) {
+            service->preProcess(*reqPtr);
+            if (shouldDoPrefillOnDecode(*reqPtr,
+                                        sessionInfo.validSessionFound)) {
+              TT_LOG_DEBUG(
+                  "[LLMController] Using prefill on decode for sessionId: {}",
+                  reqPtr->sessionId.value_or("none"));
+              service->submitStreamingRequest(*reqPtr, streamingCallback);
+            } else {
+              TT_LOG_DEBUG(
+                  "[LLMController] Using disaggregated prefill for request "
+                  "with sessionId: {}",
+                  reqPtr->sessionId.value_or("none"));
+              disaggregationService->handleStreamingRequest(*reqPtr,
+                                                            streamingCallback);
+            }
+          } else {
+            (*cb)(errorResponse(
+                drogon::k500InternalServerError,
+                "LLM Mode must be regular or decode only for streaming",
+                "internal_error"));
+            return;
+          }
+        } catch (const services::QueueFullException& e) {
+          (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
+                              "rate_limit_exceeded"));
+          return;
+        }
 
-  callback(writer->buildResponse());
+        (*cb)(writer->buildResponse());
+      },
+      [cb](std::string_view err) {
+        TT_LOG_ERROR("[LLMController] Failed to create session: {}", err);
+        (*cb)(
+            errorResponse(drogon::k503ServiceUnavailable,
+                          std::string("Failed to allocate memory resources: ") +
+                              std::string(err),
+                          "service_unavailable"));
+      });
 }
 
 bool LLMController::shouldDoPrefillOnDecode(const domain::LLMRequest& request,
@@ -278,35 +287,32 @@ bool LLMController::shouldDoPrefillOnDecode(const domain::LLMRequest& request,
 }
 
 void LLMController::createSession(
-    const drogon::HttpRequestPtr& req,
+    const drogon::HttpRequestPtr& /*req*/,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
-  try {
-    std::optional<uint32_t> slotId;
-
-    if (req->getBody().length() > 0) {
-      Json::Value requestBody;
-      Json::CharReaderBuilder builder;
-      std::istringstream bodyStream(std::string(req->getBody()));
-      std::string errs;
-
-      if (Json::parseFromStream(builder, bodyStream, &requestBody, &errs)) {
-        if (requestBody.isMember("slot_id") &&
-            requestBody["slot_id"].isUInt()) {
-          slotId = requestBody["slot_id"].asUInt();
-        }
-      }
-    }
-
-    auto session = sessionManager->createSession(slotId);
-
-    Json::Value response = session.toJson();
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-    resp->setStatusCode(drogon::k201Created);
-    callback(resp);
-  } catch (const std::exception& e) {
-    callback(errorResponse(drogon::k500InternalServerError, e.what(),
-                           "internal_error"));
+  if (!sessionManager) {
+    callback(errorResponse(drogon::k503ServiceUnavailable,
+                           "Session management not available",
+                           "service_unavailable"));
+    return;
   }
+
+  auto* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
+  auto cb =
+      std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
+          std::move(callback));
+
+  sessionManager->createSession(
+      [cb](const domain::Session& session) {
+        Json::Value response = session.toJson();
+        auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+        resp->setStatusCode(drogon::k201Created);
+        (*cb)(resp);
+      },
+      [cb](std::string_view err) {
+        (*cb)(errorResponse(drogon::k500InternalServerError, std::string(err),
+                            "internal_error"));
+      },
+      loop);
 }
 
 void LLMController::closeSession(
