@@ -241,25 +241,33 @@ void SessionManager::sendAsyncAllocationRequest(
   auto task =
       domain::ManageMemoryTask(tt::utils::TaskIDGenerator::generate(),
                                domain::MemoryManagementAction::ALLOCATE);
-  if (!memoryRequestQueue->tryPush(task)) {
-    if (pendingAllocation.attemptsRemaining == 0) {
-      pendingAllocation.eventLoop->queueInLoop(
-          [onError = std::move(pendingAllocation.onError)]() {
-            onError("Failed to allocate: IPC queue full after all attempts");
-          });
-    } else {
-      pendingAllocation.attemptsRemaining--;
-      pendingAllocationsRetryQueue.push(std::move(pendingAllocation));
-    }
-    return;
-  }
   pendingAllocationsMap.insert(task.taskId, std::move(pendingAllocation));
+  if (!memoryRequestQueue->tryPush(task)) {
+    auto taken = pendingAllocationsMap.take(task.taskId);
+    if (!taken.has_value()) return;
+    auto& pa = *taken;
+    if (pa.attemptsRemaining == 0) {
+      pa.eventLoop->queueInLoop([onError = std::move(pa.onError)]() {
+        onError("Failed to allocate: IPC queue full after all attempts");
+      });
+    } else {
+      pa.attemptsRemaining--;
+      pa.retryAt =
+          std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+      pendingAllocationsRetryQueue.push(std::move(pa));
+    }
+  }
 }
 
 void SessionManager::retryFailedAllocations() {
   auto pendingAllocations = pendingAllocationsRetryQueue.drain();
+  auto now = std::chrono::steady_clock::now();
   for (auto& pendingAllocation : pendingAllocations) {
-    sendAsyncAllocationRequest(pendingAllocation);
+    if (now >= pendingAllocation.retryAt) {
+      sendAsyncAllocationRequest(pendingAllocation);
+    } else {
+      pendingAllocationsRetryQueue.push(std::move(pendingAllocation));
+    }
   }
 }
 
@@ -284,6 +292,8 @@ void SessionManager::handleMemoryResult(
          session = pendingAllocation.session]() { onCompletion(session); });
   } else if (pendingAllocation.attemptsRemaining > 0) {
     pendingAllocation.attemptsRemaining--;
+    pendingAllocation.retryAt =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
     pendingAllocationsRetryQueue.push(std::move(pendingAllocation));
   } else {
     TT_LOG_ERROR(

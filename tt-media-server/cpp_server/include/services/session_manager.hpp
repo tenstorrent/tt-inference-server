@@ -6,6 +6,7 @@
 #include <trantor/net/EventLoop.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -51,6 +52,7 @@ class SessionManager {
     std::function<void(std::string_view errorMessage)> onError;
     trantor::EventLoop* eventLoop = nullptr;
     int attemptsRemaining = 0;
+    std::chrono::steady_clock::time_point retryAt{};
 
     PendingAllocation() = default;
 
