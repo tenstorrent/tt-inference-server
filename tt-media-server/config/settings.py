@@ -237,7 +237,7 @@ class Settings(BaseSettings):
 
         self.device_ids = ",".join(
             f"({d})" if isinstance(d, int) else f"({','.join(map(str, d))})"
-            for d in devices
+            for d in devices or []
         )
         logger.info(
             f"_set_device_pairs_overrides: galaxy override applied, device_ids(after)={self.device_ids!r}"
