@@ -73,8 +73,8 @@ def _shm_is_configured() -> bool:
     return bool(c2p_name and p2c_name)
 
 
-def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
-    """Open shared-memory buffers and run the inference loop."""
+def _open_shm() -> tuple[SharedMemory, SharedMemory]:
+    """Create shared-memory segments immediately so the C++ side can attach."""
     c2p_name = os.environ.get("TT_IPC_SHM_C2P")
     p2c_name = os.environ.get("TT_IPC_SHM_P2C")
     if not (c2p_name and p2c_name):
@@ -85,28 +85,39 @@ def _run_shm_bridge(model_pipeline: ModelPipeline) -> None:
     def is_shutdown() -> bool:
         return _shutdown
 
-    with SharedMemory(
+    c2p = SharedMemory(
         c2p_name, max_token_ids=PREFILL_MAX_TOKEN_IDS, is_shutdown=is_shutdown
-    ) as c2p, SharedMemory(
+    )
+    p2c = SharedMemory(
         p2c_name, max_token_ids=DECODE_MAX_TOKEN_IDS, is_shutdown=is_shutdown
-    ) as p2c:
-        print("Starting inference loop")
-        while not _shutdown:
-            msg = c2p.read()
-            if msg is None:
-                break
-            print(f"Received message: {msg}")
-            print(
-                f"Running inference for task {msg.task_id} with "
-                f"{len(msg.token_ids)} token_ids and max_tokens {msg.max_tokens}"
-            )
-            model_pipeline.run_inference(
-                prompt_token_ids=msg.token_ids,
-                max_new_tokens=msg.max_tokens,
-                on_token=lambda tid: p2c.write_token(msg.task_id, tid),
-                eos_token_id=1,
-            )
-            print("Inference completed")
+    )
+    c2p.open()
+    p2c.open()
+    print(f"Shared memory created: C2P={c2p_name}, P2C={p2c_name}")
+    return c2p, p2c
+
+
+def _run_shm_bridge(
+    model_pipeline: ModelPipeline, c2p: SharedMemory, p2c: SharedMemory
+) -> None:
+    """Run the inference loop using pre-opened shared-memory buffers."""
+    print("Starting inference loop")
+    while not _shutdown:
+        msg = c2p.read()
+        if msg is None:
+            break
+        print(f"Received message: {msg}")
+        print(
+            f"Running inference for task {msg.task_id} with "
+            f"{len(msg.token_ids)} token_ids and max_tokens {msg.max_tokens}"
+        )
+        model_pipeline.run_inference(
+            prompt_token_ids=msg.token_ids,
+            max_new_tokens=msg.max_tokens,
+            on_token=lambda tid: p2c.write_token(msg.task_id, tid),
+            eos_token_id=1,
+        )
+        print("Inference completed")
 
 
 def _fabric_config_for_num_procs(num_procs: int):
@@ -156,19 +167,14 @@ def main() -> None:
     rank = _rank()
     args = _parse_args(sys.argv[1:])
 
+    c2p, p2c = None, None
     if rank == 0:
-        shm_enabled = _shm_is_configured()
-        if not shm_enabled:
-            raise RuntimeError(
-                "Shared memory bridge not configured. Set TT_IPC_SHM_C2P and TT_IPC_SHM_P2C "
-                "and ensure both exist under /dev/shm/."
-            )
+        c2p, p2c = _open_shm()
 
     try:
         try:
             ttnn.init_distributed_context()
         except Exception as e:
-            # Some launchers may initialize distributed context before invoking this script.
             if "already" not in str(e).lower():
                 raise
         mesh_device = _open_mesh_device(
@@ -188,13 +194,17 @@ def main() -> None:
         )
 
         if rank == 0:
-            _run_shm_bridge(model_pipeline)
+            _run_shm_bridge(model_pipeline, c2p, p2c)
         else:
             print(f"Rank {rank}: Waiting (non-host)")
             _run_dummy_inference(model_pipeline)
 
         model_pipeline.terminate()
     finally:
+        if c2p:
+            c2p.close()
+        if p2c:
+            p2c.close()
         if ttnn is not None:
             ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
 
