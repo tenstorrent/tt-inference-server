@@ -191,12 +191,24 @@ class VideoShm:
                 temp_shm = _shm.SharedMemory(name=self._name, create=False)
                 temp_shm.unlink()
                 temp_shm.close()
+                try:
+                    os.close(temp_shm._fd)
+                except OSError:
+                    pass
                 self._shm = _shm.SharedMemory(
                     name=self._name, create=True, size=self._total_size
                 )
             os.chmod(f"/dev/shm/{self._name}", 0o666)
         else:
             self._shm = _shm.SharedMemory(name=self._name, create=False)
+            # Python's resource tracker unlinks shared memory when the attaching
+            # process exits, even though it didn't create it. Unregister so only
+            # the runner (creator) is responsible for cleanup.
+            try:
+                from multiprocessing.resource_tracker import unregister
+                unregister(self._shm._name, "shared_memory")
+            except Exception:
+                pass
         self._buf = self._shm.buf
 
     def close(self) -> None:

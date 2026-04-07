@@ -201,7 +201,7 @@ class Settings(BaseSettings):
 
         try:
             if mesh == (1, 1) and self.use_greedy_based_allocation:
-                devices = dm.get_single_devices()
+                devices = [0] #dm.get_single_devices()
 
             elif mesh == (2, 1):
                 logger.info(

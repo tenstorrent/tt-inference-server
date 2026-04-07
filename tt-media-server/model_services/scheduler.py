@@ -292,6 +292,9 @@ class Scheduler:
 
                 self.logger.error(f"Error in worker {result_key}: {error}")
 
+                if not isinstance(result_key, str):
+                    continue
+
                 task_id = (
                     result_key.split("_chunk_")[0]
                     if "_chunk_" in result_key
