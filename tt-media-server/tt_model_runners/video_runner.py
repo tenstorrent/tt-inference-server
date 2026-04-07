@@ -57,7 +57,6 @@ from ipc.video_shm import (
     VideoResponse,
     VideoShm,
     VideoStatus,
-    video_result_path,
 )
 from utils.logger import TTLogger
 
