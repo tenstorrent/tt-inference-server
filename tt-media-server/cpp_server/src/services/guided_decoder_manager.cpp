@@ -22,7 +22,7 @@ struct GuidedDecoderManager::Impl {
     xgrammar::CompiledGrammar compiledGrammar;
   };
 
-  ConcurrentMap<uint32_t, std::shared_ptr<RequestState>> requests;
+  ConcurrentMap<uint32_t, std::unique_ptr<RequestState>> requests;
 
   Impl(const std::vector<std::string>& encodedVocab, int vocabSize)
       : tokenizerInfo(encodedVocab, xgrammar::VocabType::BYTE_LEVEL, vocabSize),
@@ -59,7 +59,7 @@ void GuidedDecoderManager::initRequest(
   xgrammar::GrammarMatcher matcher(compiled);
 
   impl->requests.insert(
-      taskId, std::make_shared<Impl::RequestState>(
+      taskId, std::make_unique<Impl::RequestState>(
                   Impl::RequestState{std::move(matcher), std::move(compiled)}));
 }
 
@@ -69,7 +69,7 @@ std::vector<int32_t> GuidedDecoderManager::getNextAllowedTokenIds(
   int vocabSize = impl->vocabSize;
 
   bool found = impl->requests.modify(
-      taskId, [&](std::shared_ptr<Impl::RequestState>& state) {
+      taskId, [&](std::unique_ptr<Impl::RequestState>& state) {
         int bitmaskSize = xgrammar::GetBitmaskSize(vocabSize);
         std::vector<int32_t> bitmask(bitmaskSize, 0);
 
@@ -102,7 +102,7 @@ std::vector<int32_t> GuidedDecoderManager::getNextAllowedTokenIds(
 bool GuidedDecoderManager::acceptToken(uint32_t taskId, int32_t tokenId) {
   bool result = true;
   impl->requests.modify(taskId,
-                        [&](std::shared_ptr<Impl::RequestState>& state) {
+                        [&](std::unique_ptr<Impl::RequestState>& state) {
                           result = state->matcher.AcceptToken(tokenId);
                         });
   return result;
@@ -111,7 +111,7 @@ bool GuidedDecoderManager::acceptToken(uint32_t taskId, int32_t tokenId) {
 bool GuidedDecoderManager::isCompleted(uint32_t taskId) const {
   bool completed = false;
   impl->requests.modify(taskId,
-                        [&](std::shared_ptr<Impl::RequestState>& state) {
+                        [&](std::unique_ptr<Impl::RequestState>& state) {
                           completed = state->matcher.IsTerminated();
                         });
   return completed;
