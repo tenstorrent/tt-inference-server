@@ -85,7 +85,7 @@ bool SpPipelineRunner::warmup() {
     for (const auto& dr : results) {
       if (dr.taskId == warmupTaskId) {
         if (dr.isError) {
-          TT_LOG_ERROR("SpPipelineRunner: Warmup failed with error");
+          TT_LOG_ERROR("[SpPipelineRunner] Warmup failed with error");
           return false;
         }
         receivedToken = true;
@@ -100,11 +100,11 @@ bool SpPipelineRunner::warmup() {
   }
 
   if (!receivedToken) {
-    TT_LOG_ERROR("SpPipelineRunner: Warmup timed out waiting for token");
+    TT_LOG_ERROR("[SpPipelineRunner] Warmup timed out waiting for token");
     return false;
   }
 
-  TT_LOG_INFO("SpPipelineRunner: Warmup successful");
+  TT_LOG_INFO("[SpPipelineRunner] Warmup successful");
   return true;
 }
 
@@ -158,7 +158,7 @@ void SpPipelineRunner::drainDecodeResults() {
     auto it = activeSequences.find(dr.taskId);
     if (it == activeSequences.end()) {  // safeguard for too many decode results
       TT_LOG_WARN(
-          "SpPipelineRunner: task_id not found in active_sequences_: {}",
+          "[SpPipelineRunner] task_id not found in active_sequences_: {}",
           dr.taskId);
       continue;
     }

@@ -48,7 +48,7 @@ std::optional<llm_engine::TokenResult> SpPrefillModelRunner::forward(
 
 void SpPrefillModelRunner::exit() {
   stop.store(true, std::memory_order_relaxed);
-  TT_LOG_INFO("SpPrefillModelRunner: Model runner exit");
+  TT_LOG_INFO("[SpPrefillModelRunner] Model runner exit");
 }
 
 }  // namespace sp_prefill
