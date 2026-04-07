@@ -164,33 +164,6 @@ TEST(SamplingParamsTest, HasGuidedDecoding) {
 }
 
 // ---------------------------------------------------------------------------
-// Backward compatibility: deserialize old format without response_format
-// ---------------------------------------------------------------------------
-
-TEST(SamplingParamsTest, DeserializeOldFormat_BackwardCompatible) {
-  llm_engine::SamplingParams orig;
-  orig.temperature = 0.5f;
-  orig.max_tokens = 100;
-
-  std::ostringstream os;
-  orig.serialize(os);
-  std::string data = os.str();
-
-  // The old format ended after fast_mode. Find the position where
-  // response_format fields start and truncate.
-  // We can verify backward compatibility by checking that the new fields
-  // default correctly when old data is loaded.
-  auto restored = llm_engine::SamplingParams::deserialize(
-      *std::make_unique<std::istringstream>(data));
-
-  EXPECT_FLOAT_EQ(restored->temperature, 0.5f);
-  EXPECT_EQ(restored->max_tokens, 100);
-  EXPECT_EQ(restored->response_format_type,
-            llm_engine::ResponseFormatType::TEXT);
-  EXPECT_FALSE(restored->json_schema_str.has_value());
-}
-
-// ---------------------------------------------------------------------------
 // ChatCompletionRequest response_format parsing
 // ---------------------------------------------------------------------------
 

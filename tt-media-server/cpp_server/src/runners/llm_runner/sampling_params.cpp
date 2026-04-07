@@ -118,15 +118,13 @@ std::unique_ptr<SamplingParams> SamplingParams::deserialize(std::istream& is) {
   params->truncate_prompt_tokens = readOptional<int>(is);
   params->fast_mode = readScalar<bool>(is);
 
-  if (is.peek() != std::char_traits<char>::eof()) {
-    params->response_format_type =
-        static_cast<ResponseFormatType>(readScalar<uint8_t>(is));
-    if (readScalar<bool>(is)) {
-      size_t len = readScalar<size_t>(is);
-      std::string schema(len, '\0');
-      is.read(schema.data(), static_cast<std::streamsize>(len));
-      params->json_schema_str = std::move(schema);
-    }
+  params->response_format_type =
+      static_cast<ResponseFormatType>(readScalar<uint8_t>(is));
+  if (readScalar<bool>(is)) {
+    size_t len = readScalar<size_t>(is);
+    std::string schema(len, '\0');
+    is.read(schema.data(), static_cast<std::streamsize>(len));
+    params->json_schema_str = std::move(schema);
   }
 
   return params;
