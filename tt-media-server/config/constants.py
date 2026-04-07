@@ -96,6 +96,7 @@ class ModelRunners(Enum):
     TT_XLA_VIT = "tt-xla-vit"
     TRAINING_LLAMA_LORA = "training-llama-lora"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
+    LORA_INFERENCE = "lora-inference"
     MOCK = "mock"
     SP_RUNNER = "sp_runner"
     LLM_TEST = "llm_test"
@@ -133,6 +134,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.VLLMForge_LLAMA_70B,
         ModelRunners.LLM_TEST,
         ModelRunners.LLAMA_RUNNER,
+        ModelRunners.LORA_INFERENCE,
     },
     ModelServices.EMBEDDING: {
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
@@ -199,6 +201,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TRAINING_LLAMA_LORA: {ModelNames.LLAMA_3_1_8B},
+    ModelRunners.LORA_INFERENCE: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TT_XLA_SDXL: {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
         ModelNames.STABLE_DIFFUSION_XL_512,

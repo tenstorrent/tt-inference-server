@@ -5,72 +5,90 @@
 from typing import List
 
 import torch
+from domain.completion_request import CompletionRequest
 from transformers import StaticCache
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from config.constants import SupportedModels
-from domain.lora_inference_request import LoraInferenceRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
+from utils.adapter_resolver import AdapterInfo, is_fine_tuned_model, resolve_adapter
 
 
-class TrainingGemmaLoraRunner(BaseDeviceRunner):
+class LoraInferenceRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads=num_torch_threads)
-        self.model_name = SupportedModels.GEMMA_1_1_2B_IT.value
+        self._compiled_model = None
+        self._active_adapter: AdapterInfo | None = None
+        self._base_model = None
+        self._tokenizer = None
     
     def warmup(self):
         pass
-
+    
     @log_execution_time("Lora Inference")
-    def run(self, request: LoraInferenceRequest):
+    def run(self, requests: list[CompletionRequest]):
+        request = requests[0]
         max_cache_len: int = 128
         batch_size: int = 1
-
-        requested_mode = "base" if request.use_base_model else "fine_tuned"
-
-        if requested_mode != self._compiled_mode:
-            if self.compiled_inference_model is not None:
-                del self.compiled_inference_model
-                self._active_model.to("cpu")
-                torch._dynamo.reset()
-
-            if request.use_base_model:
-                self._active_model = self.hf_base_model_inference
-                self.logger.info("Using base model for inference")
-            else:
-                self._active_model = self.hf_fine_tuned_model_inference
-                self.logger.info(f"Using fine-tuned model for inference from {PEFT_MODEL_PATH}")
-            
-            self._active_model.to(self.device)
-            self.compiled_inference_model = torch.compile(
-                self._active_model, backend="tt"
-            )
-            self.compiled_inference_model.eval()
-            self._compiled_mode = requested_mode
-
-        user_prompt = [request.prompt]
-
-        input_args = self.construct_inputs(
-            user_prompt, 
-            self._active_model.config, batch_size, max_cache_len,
+        if is_fine_tuned_model(request.model):
+            adapter_info = resolve_adapter(request.model)
+            self._load_adapter(adapter_info)
+        else:
+            base_name = request.model or self.settings.model_weights_path
+            self._load_base_model(base_name)
+        compiled_model = self._get_inference_model()
+        prompt = request.prompt if isinstance(request.prompt, str) else self._tokenizer.decode(request.prompt)
+        user_prompt = [prompt]
+        input_args = self._construct_inputs(
+            user_prompt, compiled_model.config, batch_size, max_cache_len
         )
-
-        max_tokens_to_generate: int = max_cache_len - input_args["input_ids"].shape[1]
-
-        input_args = self.transfer_inputs_to_device(input_args, self.device)
-
-        output_tokens = self.run_generate(
-            self.compiled_inference_model,
-            input_args,
-            self.device,
-            max_tokens_to_generate,
-            user_prompt,
+        max_tokens = min(
+            request.max_tokens or 16,
+            max_cache_len - input_args["input_ids"].shape[1],
         )
-
+        input_args = self._transfer_inputs_to_device(input_args, self.device)
+        output_tokens = self._run_generate(
+            compiled_model, input_args, self.device, max_tokens
+        )
         return ["".join(output_tokens)]
+    
+    def _load_base_model(self, model_name: str):
+        """Load (or swap) the base model and tokenizer."""
+        if self._base_model is not None and self._base_model.name_or_path == model_name:
+            return
+        self._teardown_compiled()
+        self._base_model = AutoModelForCausalLM.from_pretrained(
+            model_name, use_cache=False
+        )
+        self._tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self._active_adapter = None
+        self.logger.info(f"Loaded base model: {model_name}")
+    def _load_adapter(self, adapter_info: AdapterInfo):
+        """Merge a PEFT adapter on top of the base model."""
+        self._load_base_model(adapter_info.base_model_name)
+        if self._active_adapter == adapter_info:
+            return
+        self._teardown_compiled()
+        self._active_model = PeftModel.from_pretrained(
+            self._base_model, adapter_info.adapter_path
+        )
+        self._active_adapter = adapter_info
+        self.logger.info(f"Loaded adapter from {adapter_info.adapter_path}")
+    def _teardown_compiled(self):
+        if self._compiled_model is not None:
+            del self._compiled_model
+            self._compiled_model = None
+            torch._dynamo.reset()
+    def _get_inference_model(self):
+        model = self._active_model if self._active_adapter else self._base_model
+        if self._compiled_model is None:
+            model.to(self.device)
+            self._compiled_model = torch.compile(model, backend="tt")
+            self._compiled_model.eval()
+        return self._compiled_model
 
-    def construct_inputs(
+    def _construct_inputs(
         self, 
         input_prompt: str,
         model_config,
@@ -137,7 +155,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         return input_args
 
 
-    def transfer_inputs_to_device(
+    def _transfer_inputs_to_device(
         self, input_args: dict, device: torch.device
     ) -> dict:
         """Transfer inputs to device."""
@@ -150,12 +168,11 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         return input_args
 
-    def run_generate(
+    def _run_generate(
         self, compiled_model: torch.nn.Module,
         input_args: dict,
         device: torch.device,
         max_tokens_to_generate: int = 128,
-        input_prompt: List[str] = [""],
     ):
         """
         Run the generation loop.
@@ -193,29 +210,3 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 input_args["cache_position"] = host_cache_pos.to(device)
         return output_tokens[0]
 
-
-
-    # @router.post("/jobs/{job_id}/inference")
-    # async def run_inference_on_fine_tuned_model(
-    #     job_id: str,
-    #     request: InferenceOnFineTunedGemmaRequest,
-    #     service: BaseJobService = Depends(service_resolver),
-    #     api_key: str = Security(get_api_key),
-    # ):
-    #     # Look up the job to get the model_path
-    #     job_data = service.get_job_metadata(job_id)
-    #     if not job_data:
-    #         raise HTTPException(404, "Job not found")
-    #     if job_data.get("status") not in ["completed", "cancelled"]:
-    #         raise HTTPException(400, "Training job not yet completed or cancelled")
-    #     if job_data.get("job_type") != JobTypes.TRAINING.value:
-    #         raise HTTPException(400, "Job is not a training job")
-
-    #     if not request.use_base_model:
-    #         request._adapter_path = service.get_job_result_path(job_id)
-            
-    #     try:
-    #         result = await service.process_request(request)
-    #         return JSONResponse(content={"output": result})
-    #     except Exception as e:
-    #         raise HTTPException(status_code=500, detail=str(e))

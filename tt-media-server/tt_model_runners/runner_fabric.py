@@ -95,6 +95,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.forge_training_runners.training_gemma_lora_runner",
         fromlist=["TrainingGemmaLoraRunner"],
     ).TrainingGemmaLoraRunner(wid),
+    ModelRunners.LORA_INFERENCE: lambda wid: __import__(
+        "tt_model_runners.forge_training_runners.lora_inference_runner",
+        fromlist=["LoraInferenceRunner"],
+    ).LoraInferenceRunner(wid),
     ModelRunners.TRAINING_LLAMA_LORA: lambda wid: __import__(
         "tt_model_runners.forge_training_runners.training_llama_lora_runner",
         fromlist=["TrainingLlamaLoraRunner"],
