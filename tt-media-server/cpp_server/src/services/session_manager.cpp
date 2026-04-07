@@ -30,6 +30,21 @@ SessionManager::SessionManager() {
     memoryRequestQueue.reset();
     memoryResultQueue.reset();
   }
+      // Kafka setup Producer 
+      maxSessions = tt::config::maxSessionsCount();
+      try{
+        kafkaProducer = std::make_unique<tt::messaging::KafkaProducer>(
+tt::messaging::KafkaProducerConfig{
+  .brokers = "localhost:9092",
+  .topic = "session-offload"
+      });
+      TT_LOG_INFO("[SessionManager] Created Kafka producer");
+
+      } catch(const std::exception& e){
+        TT_LOG_WARN("[SessionManager] Failed to create Kafka producer: {}", e.what());
+      }
+    
+
 }
 
 SessionManager::~SessionManager() {
@@ -120,11 +135,53 @@ domain::Session SessionManager::createSession(std::optional<uint32_t> slotId,
   session.setInFlight(inFlight);
   sessions.insert(sessionId, session);
 
+  // LJUBICA Check if we need to send offload request 
+  checkAndSendOffloadRequest();
+
+
   TT_LOG_INFO("[SessionManager] Created session: {} with slot: {} inFlight: {}",
               sessionId,
               slot == INVALID_SLOT_ID ? "none" : std::to_string(slot),
               inFlight);
   return session;
+}
+
+void SessionManager::checkAndSendOffloadRequest() {
+  if (!kafkaProducer) return;
+
+  size_t currentCount = sessions.size();
+  size_t threshold = (maxSessions * 80)/100; 
+
+  if (currentCount >= threshold) {
+    TT_LOG_INFO("[SessionManager] Current session count {} exceeds threshold {}. Sending offload request.", currentCount, threshold);
+    
+    auto now = std::chrono::system_clock::now();
+    auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+      now.time_since_epoch()).count();
+
+    std::string message = fmt::format(
+      R"(
+      {{
+      "timestamp_us": {},
+      "action" : "offload",
+      "current_session_count": {},
+      "max_sessions": {}
+      }}
+      )",
+      us, currentCount, maxSessions
+    );
+
+    std::string err;
+    if (kafkaProducer->send_copy(message, &err)) {
+      TT_LOG_WARN("[SessionManager] Sent offload request: {}/{} sessions ({}%)", currentCount, maxSessions, (currentCount * 100)/maxSessions);
+    } else {
+      TT_LOG_ERROR("[SessionManager] Failed to send offload request: {}", err);
+    }
+    
+
+    
+    // kafkaProducer->send_copy("offload");
+  }
 }
 
 bool SessionManager::closeSession(const std::string& sessionId) {

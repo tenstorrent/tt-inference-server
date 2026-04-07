@@ -14,6 +14,7 @@
 #include "domain/session.hpp"
 #include "ipc/boost_ipc_queue.hpp"
 #include "utils/concurrent_map.hpp"
+#include "messaging/kafka_client.hpp"
 
 namespace tt::services {
 
@@ -56,6 +57,10 @@ class SessionManager {
   std::atomic<bool> stopped{false};
   std::atomic<bool> evictionInProgress{false};
   std::thread drainThread;
+  std::unique_ptr<tt::messaging::KafkaProducer> kafkaProducer;
+  size_t maxSessions;
+
+  void checkAndSendOffloadRequest();
 };
 
 }  // namespace tt::services
