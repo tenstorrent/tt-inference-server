@@ -8,7 +8,7 @@
 #include "config/settings.hpp"
 #include "ipc/token_push.hpp"
 #include "profiling/tracy.hpp"
-#include "services/paged_memory_manager.hpp"
+#include "services/memory_services/paged_memory_manager.hpp"
 
 namespace tt::runners {
 using namespace llm_engine;

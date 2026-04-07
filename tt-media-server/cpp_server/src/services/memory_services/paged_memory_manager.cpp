@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "services/paged_memory_manager.hpp"
+#include "services/memory_services/paged_memory_manager.hpp"
 
 #include <utility>
 
