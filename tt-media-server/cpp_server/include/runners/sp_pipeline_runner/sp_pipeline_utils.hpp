@@ -21,14 +21,14 @@ inline pm::ISRequest makeCancelRequest(uint32_t slotId) {
 
 inline pm::GenerationParams makeGenerationParams(
     const llm_engine::Sequence& seq) {
-  return {
-      .max_new_tokens =
-          static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
-              static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS))),
-      .spec_decode = seq.getSamplingParams().fast_mode,
-      .temperature = seq.getSamplingParams().temperature,
-      .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
-      .top_k = static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1))};
+  return {.max_new_tokens =
+              static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
+                  static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS))),
+          .spec_decode = seq.getSamplingParams().fast_mode,
+          .temperature = seq.getSamplingParams().temperature,
+          .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
+          .top_k =
+              static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1))};
 }
 
 inline void fillSequenceFields(pm::ISRequest& req,

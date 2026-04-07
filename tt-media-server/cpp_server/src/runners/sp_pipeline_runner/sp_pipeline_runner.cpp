@@ -10,10 +10,10 @@
 #include <thread>
 
 #include "domain/manage_memory.hpp"
+#include "ipc/token_push.hpp"
 #include "llm_runner/sequence.hpp"
 #include "runners/sp_pipeline_runner/sp_pipeline_utils.hpp"
 #include "utils/logger.hpp"
-#include "ipc/token_push.hpp"
 
 namespace tt::runners {
 namespace utils = sp_pipeline_utils;
@@ -27,12 +27,10 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       taskQueue(taskQueue) {
   TT_LOG_INFO(
       "SpPipelineRunner: Constructing PipelineManager with SocketConfig...");
-  pm::SocketConfig socketConfig{
-      .h2d_socket_id = "h2d_socket",
-      .d2h_socket_id = "d2h_socket",
-      .connect_timeout_ms = 30000,
-      .use_deepseek_md_format = false
-  };
+  pm::SocketConfig socketConfig{.h2d_socket_id = "h2d_socket",
+                                .d2h_socket_id = "d2h_socket",
+                                .connect_timeout_ms = 30000,
+                                .use_deepseek_md_format = false};
   pm::ManagerParams managerParams{.max_users = 32};
   pipelineManager =
       std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
@@ -108,7 +106,7 @@ bool SpPipelineRunner::warmup() {
   }
 
   if (!receivedToken) {
-    TT_LOG_ERROR("SpPipelineRunner: Warmup timed out waiting for token");
+    TT_LOG_ERROR("[SpPipelineRunner] Warmup timed out waiting for token");
     return false;
   }
 

@@ -16,7 +16,7 @@
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
-#include "services/sp_pipeline_memory_manager.hpp"
+#include "services/memory_services/sp_pipeline_memory_manager.hpp"
 namespace tt::runners {
 
 namespace pm = tt_blaze::pipeline_manager;

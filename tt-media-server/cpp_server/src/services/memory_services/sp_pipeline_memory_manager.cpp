@@ -1,4 +1,4 @@
-#include "services/sp_pipeline_memory_manager.hpp"
+#include "services/memory_services/sp_pipeline_memory_manager.hpp"
 
 #include "runners/sp_pipeline_runner/sp_pipeline_utils.hpp"
 

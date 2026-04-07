@@ -221,12 +221,13 @@ class DeviceTypes(Enum):
 
 
 class TrainingMeshShapes(Enum):
+    N150 = (1, 1)
     P150 = (1, 1)
     P300 = (1, 2)
 
 
 TRAINING_RUNNER_SUPPORTED_DEVICES = {
-    ModelRunners.TRAINING_GEMMA_LORA: {DeviceTypes.P150},
+    ModelRunners.TRAINING_GEMMA_LORA: {DeviceTypes.P150, DeviceTypes.N150},
     ModelRunners.TRAINING_LLAMA_LORA: {DeviceTypes.P300},
 }
 
@@ -309,6 +310,10 @@ class ModelDisplayNames(Enum):
 
 class TrainingOptimizers(Enum):
     ADAMW = "adamw"
+
+
+# Base directory for storing fine-tuned adapter outputs.
+TRAINING_STORE_ADAPTERS_DIR = "model_store/"
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports

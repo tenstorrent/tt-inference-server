@@ -51,7 +51,7 @@ KV_CACHE_BLOCK_SIZE = 32
 class StepSequence:
     """One sequence in a step request (mirrors C++ Sequence)."""
 
-    task_id: str
+    task_id: int
     token_ids: list[int]
     temperature: float
     ignore_eos: bool
@@ -71,7 +71,7 @@ class StepSequence:
 class StepResult:
     """One token result (mirrors C++ TokenResult)."""
 
-    task_id: str
+    task_id: int
     token_id: int
     error: str = ""
 

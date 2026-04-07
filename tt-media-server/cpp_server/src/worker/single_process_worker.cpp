@@ -4,9 +4,9 @@
 
 #include <chrono>
 #include <csignal>
-#include <iostream>
 #include <thread>
 
+#include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "ipc/boost_ipc_warmup_signal_queue.hpp"
 #include "profiling/tracy.hpp"
@@ -68,15 +68,15 @@ void SingleProcessWorker::stop() {
     int status;
     int waitResult = waitpid(pid, &status, WNOHANG);
     if (waitResult == 0) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      std::this_thread::sleep_for(std::chrono::milliseconds(
+          tt::config::defaults::WORKER_STOP_TIMEOUT_MS));
       waitResult = waitpid(pid, &status, WNOHANG);
       if (waitResult == 0) {
         killpg(pid, SIGKILL);
         waitpid(pid, &status, 0);
       }
     }
-    std::cout << "[SingleProcessWorker] Worker " << worker_id << " exited\n"
-              << std::flush;
+    TT_LOG_INFO("[SingleProcessWorker] Worker {} exited", worker_id);
   }
 }
 

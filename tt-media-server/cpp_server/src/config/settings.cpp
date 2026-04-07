@@ -86,8 +86,9 @@ const std::vector<std::string>& deviceIdsParsed() {
 }  // namespace
 
 ModelService modelService() {
-  return modelServiceFromString(
+  static const ModelService cached = modelServiceFromString(
       envStringLower("MODEL_SERVICE", defaults::MODEL_SERVICE));
+  return cached;
 }
 
 bool isEmbeddingService() { return modelService() == ModelService::EMBEDDING; }
@@ -154,55 +155,65 @@ std::string visibleDevicesForWorker(size_t workerIndex) {
 }
 
 LLMConfig llmEngineConfig() {
-  LLMConfig cfg;
-  cfg.stop_token_ids = utils::activeTokenizer().stopTokenIds();
-  cfg.max_in_flight_count = maxInFlightCount();
-  std::string backend =
-      envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
-  if (backend == "pipeline") {
-    cfg.runner_type = ModelRunnerType::PIPELINE;
-    cfg.max_in_flight_count = 1;
-  } else if (backend == "prefill") {
-    cfg.runner_type = ModelRunnerType::PREFILL;
-    cfg.max_in_flight_count = 1;
-  } else if (backend == "llama") {
-    cfg.kvcache_block_size = 32;
-    cfg.max_num_batched_tokens = 16384;
-    cfg.runner_type = ModelRunnerType::LLAMA;
-  } else if (backend == "mock") {
-    cfg.runner_type = ModelRunnerType::MOCK;
-  } else if (backend == "mock_pipeline") {
-    cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
-  } else if (backend == "pipeline_manager") {
-    cfg.runner_type = ModelRunnerType::PIPELINE_MANAGER;
-  } else {
-    cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
-  }
-  cfg.scheduling_policy = schedulingPolicy();
-  return cfg;
+  static const LLMConfig cached = [] {
+    LLMConfig cfg;
+    cfg.stop_token_ids = utils::activeTokenizer().stopTokenIds();
+    cfg.max_in_flight_count = maxInFlightCount();
+    std::string backend =
+        envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
+    if (backend == "pipeline") {
+      cfg.runner_type = ModelRunnerType::PIPELINE;
+      cfg.max_in_flight_count = 1;
+    } else if (backend == "prefill") {
+      cfg.runner_type = ModelRunnerType::PREFILL;
+      cfg.max_in_flight_count = 1;
+    } else if (backend == "llama") {
+      cfg.kvcache_block_size = 32;
+      cfg.max_num_batched_tokens = 16384;
+      cfg.runner_type = ModelRunnerType::LLAMA;
+    } else if (backend == "mock") {
+      cfg.runner_type = ModelRunnerType::MOCK;
+    } else if (backend == "mock_pipeline") {
+      cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
+    } else if (backend == "pipeline_manager") {
+      cfg.runner_type = ModelRunnerType::PIPELINE_MANAGER;
+    } else {
+      cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
+    }
+    cfg.scheduling_policy = schedulingPolicy();
+    return cfg;
+  }();
+  return cached;
 }
 
 ModelType modelType() {
-  return modelTypeFromDeviceBackend(
+  static const ModelType cached = modelTypeFromDeviceBackend(
       envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND));
+  return cached;
 }
 
 LLMMode llmMode() {
-  return llmModeFromString(envStringLower("LLM_MODE", defaults::LLM_MODE));
+  static const LLMMode cached =
+      llmModeFromString(envStringLower("LLM_MODE", defaults::LLM_MODE));
+  return cached;
 }
 
 SchedulingPolicy schedulingPolicy() {
-  return schedulingPolicyFromString(
+  static const SchedulingPolicy cached = schedulingPolicyFromString(
       envStringLower("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY));
+  return cached;
 }
 
 size_t maxInFlightCount() {
-  return static_cast<size_t>(
+  static const size_t cached = static_cast<size_t>(
       envUlong("MAX_IN_FLIGHT_COUNT", defaults::MAX_IN_FLIGHT_COUNT));
+  return cached;
 }
 
 std::string socketHost() {
-  return envString("SOCKET_HOST", defaults::SOCKET_HOST);
+  static const std::string cached =
+      envString("SOCKET_HOST", defaults::SOCKET_HOST);
+  return cached;
 }
 
 bool enableAccumulatedStreaming() {
@@ -216,12 +227,15 @@ size_t maxAccumulatedTokens() {
 }
 
 uint16_t socketPort() {
-  return static_cast<uint16_t>(envUlong("SOCKET_PORT", defaults::SOCKET_PORT));
+  static const uint16_t cached =
+      static_cast<uint16_t>(envUlong("SOCKET_PORT", defaults::SOCKET_PORT));
+  return cached;
 }
 
 size_t maxQueueSize() {
-  return static_cast<size_t>(
-      envUlong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));
+  static const size_t cached =
+      static_cast<size_t>(envUlong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));
+  return cached;
 }
 
 size_t maxSessionsCount() {
@@ -243,6 +257,12 @@ size_t maxTokensToPrefillOnDecode() {
   return static_cast<size_t>(
       envUlong("MAX_TOKENS_TO_PREFILL_ON_DECODE",
                defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
+}
+
+unsigned sessionAllocationMaxRetries() {
+  return static_cast<unsigned>(
+      envUlong("SESSION_ALLOCATION_MAX_RETRIES",
+               defaults::SESSION_ALLOCATION_MAX_RETRIES));
 }
 
 }  // namespace tt::config

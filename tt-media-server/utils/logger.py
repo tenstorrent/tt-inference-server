@@ -141,9 +141,7 @@ class TTLogger:
 
     def add_list_handler(self, log_list) -> ListHandler:
         handler = ListHandler(log_list)
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-        )
+        handler.setFormatter(logging.Formatter("%(message)s"))
         self.logger.addHandler(handler)
         return handler
 

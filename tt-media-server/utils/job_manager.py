@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from threading import Lock
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Any
 from pathlib import Path
 from multiprocessing import Event
 from sqlite3 import IntegrityError
@@ -44,6 +44,7 @@ class Job:
     cancel_event: Optional[Event] = None
     job_metrics: list = field(default_factory=list)
     job_logs: list = field(default_factory=list)
+    job_checkpoints: list = field(default_factory=list)
 
     def __post_init__(self):
         if self.created_at is None:
@@ -131,6 +132,7 @@ class JobManager:
         cancel_event: Optional[Event] = None,
         job_metrics: list = None,
         job_logs: list = None,
+        job_checkpoints: list = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
@@ -153,6 +155,8 @@ class JobManager:
                 job.job_metrics = job_metrics
             if job_logs is not None:
                 job.job_logs = job_logs
+            if job_checkpoints is not None:
+                job.job_checkpoints = job_checkpoints
 
             if self.db:
                 try:
@@ -222,6 +226,13 @@ class JobManager:
                 return job.job_logs
         return None
 
+    def get_job_checkpoints(self, job_id: str) -> Optional[list]:
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+            if job:
+                return job.job_checkpoints
+        return None
+
     def cancel_job(self, job_id: str) -> bool:
         """Cancel job, cancel if in progress, and return cancellation confirmation."""
         with self._jobs_lock:
@@ -288,43 +299,6 @@ class JobManager:
             await asyncio.gather(*running_tasks, return_exceptions=True)
         self._logger.info("Job manager shutdown complete")
 
-    async def _persist_job_metrics_to_db(self, job: Job):
-        # Only persist metrics for training jobs for now.
-        if job.job_type != JobTypes.TRAINING.value:
-            return
-
-        metrics_list = self.get_job_metrics(job.id)
-        if metrics_list is None:
-            return
-        last_seen = 0
-        while True:
-            current_len = len(metrics_list)
-            for i in range(last_seen, current_len):
-                metric = metrics_list[i]
-                try:
-                    self.db.insert_metric(
-                        job_id=job.id,
-                        global_step=metric["global_step"],
-                        epoch=metric["epoch"],
-                        metric_name=metric["metric_name"],
-                        value=metric["value"],
-                        timestamp=metric["timestamp"],
-                    )
-                except IntegrityError:
-                    self._logger.warning(
-                        f"Duplicate metric for job {job.id} at step {metric['global_step']}, skipping"
-                    )
-                except Exception as e:
-                    self._logger.error(
-                        f"Failed to persist metric for job {job.id}: {e}"
-                    )
-                    break  # we break the loop to avoid increasing last_seen and potentially losing the metric
-            else:
-                last_seen = current_len
-            if job.is_terminal():
-                break
-            await asyncio.sleep(1.0)
-
     async def _mark_job_in_progress(self, job: Job):
         if job.start_event:
             while not job.start_event.is_set():
@@ -334,14 +308,12 @@ class JobManager:
         self._sync_status_to_db(job)
 
     async def _process_job(self, job: Job, request: BaseRequest, task_function):
-        metrics_persister = None
+        data_persister = None
         try:
             progress_monitor = asyncio.create_task(self._mark_job_in_progress(job))
 
             if self.db:
-                metrics_persister = asyncio.create_task(
-                    self._persist_job_metrics_to_db(job)
-                )
+                data_persister = asyncio.create_task(self._persist_job_data_to_db(job))
 
             result_path = await task_function(request)
 
@@ -379,8 +351,8 @@ class JobManager:
         finally:
             if not progress_monitor.done():
                 progress_monitor.cancel()
-            if metrics_persister and not metrics_persister.done():
-                await metrics_persister
+            if data_persister and not data_persister.done():
+                await data_persister
             job._task = None
 
     def _start_cleanup_task(self):
@@ -479,6 +451,83 @@ class JobManager:
                 f"DB sync failed for job {job.id} to '{job.status.value}': {e}"
             )
 
+    async def _persist_job_data_to_db(self, job: Job):
+        if job.job_type != JobTypes.TRAINING.value:
+            return
+        streams = [
+            (self.get_job_metrics(job.id), self._insert_metric, "metric"),
+            (self.get_job_checkpoints(job.id), self._insert_checkpoint, "checkpoint"),
+            (self.get_job_logs(job.id), self._insert_log, "log"),
+        ]
+        last_seen = [0] * len(streams)
+        failed = [items is None for items, _, _ in streams]
+        while True:
+            for i, (items, insert_fn, label) in enumerate(streams):
+                if failed[i]:
+                    continue
+                last_seen[i] = self._persist_new_items(
+                    job, items, last_seen[i], insert_fn, label
+                )
+                if last_seen[i] < 0:
+                    failed[i] = True
+            if job.is_terminal():
+                break
+            await asyncio.sleep(1.0)
+
+    def _persist_new_items(
+        self,
+        job: Job,
+        items_list: list,
+        last_seen: int,
+        insert_fn: Callable[[str, Any, int], None],
+        item_label: str,
+    ) -> int:
+        current_len = len(items_list)
+        for i in range(last_seen, current_len):
+            try:
+                insert_fn(job.id, items_list[i], i)
+            except IntegrityError:
+                self._logger.warning(
+                    f"Duplicate {item_label} for job {job.id}: {items_list[i]}"
+                )
+            except Exception as e:
+                self._logger.error(
+                    f"Failed to persist {item_label} for job {job.id}: {e}"
+                )
+                return -1
+        return current_len
+
+    def _insert_metric(self, job_id: str, metric: dict, _index: int):
+        self.db.insert_metric(
+            job_id=job_id,
+            global_step=metric["global_step"],
+            epoch=metric["epoch"],
+            metric_name=metric["metric_name"],
+            value=metric["value"],
+            learning_rate=metric.get("learning_rate"),
+            timestamp=metric["timestamp"],
+        )
+
+    def _insert_checkpoint(self, job_id: str, ckpt: dict, _index: int):
+        self.db.insert_checkpoint(
+            job_id=job_id,
+            checkpoint_id=ckpt["id"],
+            step=ckpt["step"],
+            epoch=ckpt["epoch"],
+            metrics=ckpt.get("metrics", {}),
+            created_at=ckpt["created_at"],
+        )
+
+    def _insert_log(self, job_id: str, log_entry: dict, index: int):
+        self.db.insert_log(
+            job_id=job_id,
+            log_index=index,
+            timestamp=log_entry["timestamp"],
+            log_type=log_entry["type"],
+            step=log_entry.get("step"),
+            message=log_entry["message"],
+        )
+
     def _restore_jobs_from_db(self):
         """
         Restore all jobs from database on server restart.
@@ -513,6 +562,26 @@ class JobManager:
                     except Exception as e:
                         self._logger.error(
                             f"Failed to restore metrics for job {job.id}: {e}"
+                        )
+                    try:
+                        checkpoints = self.db.get_checkpoints(job.id)
+                        if checkpoints:
+                            job.job_checkpoints = checkpoints
+                        if job.job_checkpoints:
+                            job.job_checkpoints = self._validate_checkpoints_on_disk(
+                                job
+                            )
+                    except Exception as e:
+                        self._logger.error(
+                            f"Failed to restore checkpoints for job {job.id}: {e}"
+                        )
+                    try:
+                        logs = self.db.get_logs(job.id)
+                        if logs:
+                            job.job_logs = logs
+                    except Exception as e:
+                        self._logger.error(
+                            f"Failed to restore logs for job {job.id}: {e}"
                         )
 
                 # If job was stuck, mark it as failed or cancelled and sync to database
@@ -556,6 +625,33 @@ class JobManager:
 
         except Exception as e:
             self._logger.error(f"Failed to restore jobs from database: {e}")
+
+    def _validate_checkpoints_on_disk(self, job: Job) -> list:
+        """Filter out checkpoints whose directories no longer exist on disk."""
+        if not job.job_checkpoints:
+            # no checkpoints to validate
+            return job.job_checkpoints
+        if not job.result_path:
+            self._logger.warning(
+                f"Job {job.id} has checkpoints but no result_path, clearing checkpoints"
+            )
+            return []
+        try:
+            existing_entries = set(os.listdir(job.result_path))
+        except FileNotFoundError:
+            self._logger.warning(
+                f"Result path {job.result_path} for job {job.id} not found on disk, clearing all checkpoints"
+            )
+            return []
+        valid_checkpoints = []
+        for ckpt in job.job_checkpoints:
+            if ckpt["id"] in existing_entries:
+                valid_checkpoints.append(ckpt)
+            else:
+                self._logger.warning(
+                    f"Checkpoint '{ckpt['id']}' for job {job.id} not found on disk, removing from restored data"
+                )
+        return valid_checkpoints
 
 
 _job_manager_instance: Optional[JobManager] = None
