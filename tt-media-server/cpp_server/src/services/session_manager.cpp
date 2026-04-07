@@ -218,8 +218,20 @@ void SessionManager::sendDeallocRequest(const std::string& sessionId,
 void SessionManager::createSession(
     std::function<void(const tt::domain::Session&)> onCompletion,
     std::function<void(std::string_view errorMessage)> onError,
-    trantor::EventLoop* callerEventLoop) {
+    trantor::EventLoop* callerEventLoop, std::optional<uint32_t> slotId) {
   evictOldSessions();
+
+  if (slotId.has_value()) {
+    domain::Session session(slotId.value());
+    sessions.insert(session.getSessionId(), session);
+    TT_LOG_INFO("[SessionManager] Created session with pre-assigned slot: {}",
+                slotId.value());
+    callerEventLoop->queueInLoop(
+        [onCompletion = std::move(onCompletion), session]() {
+          onCompletion(session);
+        });
+    return;
+  }
 
   if (!memoryRequestQueue || !memoryResultQueue) {
     callerEventLoop->queueInLoop([onError = std::move(onError)]() {
@@ -231,7 +243,8 @@ void SessionManager::createSession(
   domain::Session session = domain::Session(INVALID_SLOT_ID);
   auto pendingAllocation =
       PendingAllocation(std::move(session), std::move(onCompletion),
-                        std::move(onError), callerEventLoop, 10);
+                        std::move(onError), callerEventLoop,
+                        tt::config::sessionAllocationMaxRetries());
 
   sendAsyncAllocationRequest(pendingAllocation);
 }

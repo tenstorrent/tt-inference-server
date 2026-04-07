@@ -257,4 +257,10 @@ size_t maxTokensToPrefillOnDecode() {
                defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
 }
 
+unsigned sessionAllocationMaxRetries() {
+  return static_cast<unsigned>(
+      envUlong("SESSION_ALLOCATION_MAX_RETRIES",
+               defaults::SESSION_ALLOCATION_MAX_RETRIES));
+}
+
 }  // namespace tt::config

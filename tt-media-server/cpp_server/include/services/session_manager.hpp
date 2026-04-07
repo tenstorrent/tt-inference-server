@@ -34,7 +34,8 @@ class SessionManager {
   void createSession(
       std::function<void(const tt::domain::Session&)> onCompletion,
       std::function<void(std::string_view errorMessage)> onError,
-      trantor::EventLoop* eventLoop);
+      trantor::EventLoop* eventLoop,
+      std::optional<uint32_t> slotId = std::nullopt);
 
   bool closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);

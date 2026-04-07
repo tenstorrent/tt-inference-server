@@ -32,6 +32,7 @@ constexpr size_t MAX_SESSIONS_COUNT = 64;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
 constexpr size_t SESSION_EVICTION_COUNT = 10;
 constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 100;
+constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 10;
 
 constexpr const char* SERVER_HOST = "0.0.0.0";
 constexpr uint16_t SERVER_PORT = 8000;
