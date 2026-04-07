@@ -17,8 +17,6 @@ namespace tt::api {
  *
  * Endpoints:
  * - POST /v1/embeddings - Create embeddings
- * - GET /health - Health check
- * - GET /tt-liveness - Liveness check
  */
 class EmbeddingController : public drogon::HttpController<EmbeddingController> {
  public:

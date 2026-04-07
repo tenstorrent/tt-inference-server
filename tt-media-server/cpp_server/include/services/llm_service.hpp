@@ -86,7 +86,6 @@ class LLMService
 
   ConcurrentMap<uint32_t, StreamCallbackEntry> stream_callbacks_;
 
-  std::atomic<uint64_t> next_worker_{0};
   std::atomic<size_t> pending_tasks_{0};
   std::atomic<bool> running_{false};
 

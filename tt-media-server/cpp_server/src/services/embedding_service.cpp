@@ -40,7 +40,8 @@ bool pipeWrite(int fd, const void* data, size_t len) {
 std::vector<uint8_t> pipeReadBinary(int fd) {
   uint32_t len = 0;
   ssize_t n = read(fd, &len, sizeof(len));
-  if (n != sizeof(len) || len > 100 * 1024 * 1024) return {};
+  if (n != sizeof(len) || len > tt::config::defaults::EMBEDDING_MAX_PIPE_BYTES)
+    return {};
 
   std::vector<uint8_t> buf(len);
   size_t total = 0;

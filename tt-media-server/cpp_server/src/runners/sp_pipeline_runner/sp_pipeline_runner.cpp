@@ -12,7 +12,7 @@
 #include "config/settings.hpp"
 #include "ipc/token_push.hpp"
 #include "profiling/tracy.hpp"
-#include "services/contiguous_memory_manager.hpp"
+#include "services/memory_services/contiguous_memory_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
@@ -71,8 +71,8 @@ bool SpPipelineRunner::warmup() {
       1,  // block_size (doesn't matter for warmup)
       warmupTokens, warmupParams);
 
-  modelRunner->write(warmupSeq->taskId, warmupSeq->tokenIds, 1,
-                     sp_pipeline::RequestPhase::PREFILL);
+  modelRunner->write(warmupSeq->taskId, warmupSeq->getTokenIds(), 1,
+                     sp_pipeline::RequestPhase::PREFILL, false);
 
   // Wait for the response token (with timeout)
   const int maxAttempts = 1000;  // ~10 seconds with 10ms sleep
@@ -85,7 +85,7 @@ bool SpPipelineRunner::warmup() {
     for (const auto& dr : results) {
       if (dr.taskId == warmupTaskId) {
         if (dr.isError) {
-          TT_LOG_ERROR("SpPipelineRunner: Warmup failed with error");
+          TT_LOG_ERROR("[SpPipelineRunner] Warmup failed with error");
           return false;
         }
         receivedToken = true;
@@ -100,11 +100,11 @@ bool SpPipelineRunner::warmup() {
   }
 
   if (!receivedToken) {
-    TT_LOG_ERROR("SpPipelineRunner: Warmup timed out waiting for token");
+    TT_LOG_ERROR("[SpPipelineRunner] Warmup timed out waiting for token");
     return false;
   }
 
-  TT_LOG_INFO("SpPipelineRunner: Warmup successful");
+  TT_LOG_INFO("[SpPipelineRunner] Warmup successful");
   return true;
 }
 
@@ -137,14 +137,14 @@ void SpPipelineRunner::step() {
     ZoneScopedN("SpPipelineRunner::write_to_device");
     uint32_t taskId = seq->taskId;
 
-    if (!seq->samplingParams->max_tokens.has_value()) {
-      seq->samplingParams->max_tokens =
+    if (!seq->getSamplingParams().max_tokens.has_value()) {
+      seq->getMutableSamplingParams().max_tokens =
           static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
     }
 
-    modelRunner->write(taskId, seq->tokenIds,
-                       seq->samplingParams->max_tokens.value(),
-                       sp_pipeline::RequestPhase::PREFILL);
+    modelRunner->write(
+        taskId, seq->getTokenIds(), seq->getSamplingParams().max_tokens.value(),
+        sp_pipeline::RequestPhase::PREFILL, seq->getSamplingParams().fast_mode);
 
     activeSequences.emplace(taskId, std::move(seq));
     ++inFlightCount;
@@ -158,7 +158,7 @@ void SpPipelineRunner::drainDecodeResults() {
     auto it = activeSequences.find(dr.taskId);
     if (it == activeSequences.end()) {  // safeguard for too many decode results
       TT_LOG_WARN(
-          "SpPipelineRunner: task_id not found in active_sequences_: {}",
+          "[SpPipelineRunner] task_id not found in active_sequences_: {}",
           dr.taskId);
       continue;
     }
@@ -175,11 +175,11 @@ void SpPipelineRunner::drainDecodeResults() {
 
     bool isStop = stopTokenIds.count(static_cast<int64_t>(dr.tokenId)) > 0;
     bool reachedMaxTokens =
-        seq->samplingParams->max_tokens.has_value() &&
+        seq->getSamplingParams().max_tokens.has_value() &&
         seq->numCompletionTokens() >=
-            static_cast<size_t>(seq->samplingParams->max_tokens.value());
+            static_cast<size_t>(seq->getSamplingParams().max_tokens.value());
     bool finished =
-        (!seq->samplingParams->ignore_eos && isStop) || reachedMaxTokens;
+        (!seq->getSamplingParams().ignore_eos && isStop) || reachedMaxTokens;
 
     ipc::pushToken(*resultQueue, dr.taskId, dr.tokenId, finished);
 

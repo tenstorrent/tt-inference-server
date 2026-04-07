@@ -26,7 +26,7 @@ class SpPipelineModelRunner : public ISpPipelineModelRunner {
   SpPipelineModelRunner& operator=(const SpPipelineModelRunner&) = delete;
 
   void write(uint32_t taskId, const std::vector<int64_t>& tokenIds,
-             uint32_t maxTokens, RequestPhase phase) override;
+             uint32_t maxTokens, RequestPhase phase, bool fastMode) override;
   void exit() override;
 
  private:

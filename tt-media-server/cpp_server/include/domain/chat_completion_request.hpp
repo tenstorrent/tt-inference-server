@@ -71,6 +71,8 @@ struct ChatCompletionRequest : BaseRequest {
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
 
+  bool fast_mode = false;
+
   // Session management
   std::optional<std::string> sessionId;
 
@@ -169,6 +171,8 @@ struct ChatCompletionRequest : BaseRequest {
           getBool(json["spaces_between_special_tokens"],
                   "spaces_between_special_tokens");
 
+    if (json.isMember("fast_mode")) req.fast_mode = json["fast_mode"].asBool();
+
     if (json.isMember("session_id") && !json["session_id"].isNull())
       req.sessionId = getString(json["session_id"], "session_id");
 
@@ -234,6 +238,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.allowed_token_ids = allowed_token_ids;
     out.prompt_logprobs = prompt_logprobs;
     out.truncate_prompt_tokens = truncate_prompt_tokens;
+    out.fast_mode = fast_mode;
     out.sessionId = sessionId;
     return out;
   }

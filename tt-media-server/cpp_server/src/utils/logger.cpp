@@ -13,6 +13,8 @@
 #include <filesystem>
 #include <iostream>
 
+#include "config/defaults.hpp"
+
 namespace tt::utils {
 
 ZeroOverheadLogger::Level ZeroOverheadLogger::level = ZeroOverheadLogger::INFO;
@@ -49,7 +51,8 @@ void ZeroOverheadLogger::initialize() {
     }
 
     auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-        logFileEnv, 1024 * 1024 * 50, 5);  // 50MB, 5 files
+        logFileEnv, tt::config::defaults::LOG_FILE_MAX_BYTES,
+        tt::config::defaults::LOG_FILE_MAX_COUNT);
     fileSink->set_pattern("[%Y-%m-%d %H:%M:%S.%f] [tt-media-server] [%l] %v");
     sinks.push_back(fileSink);
   }
@@ -164,7 +167,5 @@ std::string ZeroOverheadLogger::levelToString(Level level) {
       return "UNKNOWN";
   }
 }
-
-void initializeLogger() { ZeroOverheadLogger::initialize(); }
 
 }  // namespace tt::utils

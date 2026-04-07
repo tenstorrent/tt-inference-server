@@ -26,6 +26,7 @@ llm_engine::SamplingParams mapSamplingParams(
   params.allowed_token_ids = request.allowed_token_ids;
   params.prompt_logprobs = request.prompt_logprobs;
   params.truncate_prompt_tokens = request.truncate_prompt_tokens;
+  params.fast_mode = request.fast_mode;
   return params;
 }
 

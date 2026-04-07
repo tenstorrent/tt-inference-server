@@ -11,6 +11,7 @@ from fastapi import APIRouter
 
 from open_ai_api import (
     audio,
+    chat,
     cnn,
     embedding,
     fine_tuning,
@@ -46,6 +47,7 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
     ModelServices.LLM.value: [
         ServiceRoute(tokenizer.router, "/v1", "", ["Tokenizer"]),
         ServiceRoute(llm.router, "/v1", None, ["Text processing"]),
+        ServiceRoute(chat.router, "/v1", None, ["Chat completions"]),
     ],
     ModelServices.CNN.value: [
         ServiceRoute(cnn.router, "/v1/cnn", "/cnn", ["CNN processing"]),

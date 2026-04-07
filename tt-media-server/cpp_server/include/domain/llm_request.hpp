@@ -111,6 +111,7 @@ struct LLMRequest : BaseRequest {
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
   int prompt_tokens_count = 0;
+  bool fast_mode = false;
 
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;

@@ -336,7 +336,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       // Accumulate answer text and check for stop strings
       auto& streamState = streamStates[taskId];
       if (!parseResult.text.empty() &&
-          parseResult.type == ContentType::ANSWER && !streamState.stop_detected) {
+          parseResult.type == ContentType::ANSWER &&
+          !streamState.stop_detected) {
         streamState.accumulated_text += parseResult.text;
 
         // Check if accumulated text ends with any stop string
@@ -477,9 +478,8 @@ void LLMService::processStreamingRequest(
   tt::metrics::ServerMetrics::instance().setQueueDepth(
       static_cast<double>(pending_tasks_.load()));
 
-  StreamCallbackEntry entry{
-      std::move(callback),
-      {request.skip_special_tokens, request.stop}};
+  StreamCallbackEntry entry{std::move(callback),
+                            {request.skip_special_tokens, request.stop}};
   stream_callbacks_.insert(taskId, std::move(entry));
 
   if (reasoning_parser_) {
@@ -496,12 +496,12 @@ void LLMService::processStreamingRequest(
       taskId,
       static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
       std::move(tokenIds));
-  sequence->numPromptTokens = prompt.size();
+  sequence->setNumPromptTokens(prompt.size());
   if (request.slotId.has_value()) {
     sequence->setKVCacheAddress(request.slotId.value());
   }
-  sequence->samplingParams = std::make_unique<llm_engine::SamplingParams>(
-      tt::utils::mapper::mapSamplingParams(request));
+  sequence->setSamplingParams(std::make_unique<llm_engine::SamplingParams>(
+      tt::utils::mapper::mapSamplingParams(request)));
   queue_manager_->task_queue->push(*std::move(sequence));
 }
 
