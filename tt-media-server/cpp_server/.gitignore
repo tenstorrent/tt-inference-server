@@ -13,6 +13,8 @@ build-tracy/
 # In-source CMake artifacts (if cmake was run from cpp_server/ by mistake)
 CMakeFiles/
 
+tt-blaze/
+
 # Runtime logs (Drogon setLogPath)
 logs/
 
