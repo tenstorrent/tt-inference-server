@@ -217,6 +217,9 @@ def generate_docker_run_command(
         or model_spec.inference_engine == InferenceEngine.MEDIA.value
     ):
         docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
+        api_key = os.getenv("API_KEY")
+        if api_key:
+            docker_env_vars["API_KEY"] = api_key
 
     user_home_path = "/home/container_app_user"
     if runtime_config.dev_mode:
@@ -263,7 +266,7 @@ def generate_docker_run_command(
         if value:
             docker_command.extend(["-e", f"{key}={str(value)}"])
         else:
-            logger.info(f"Skipping {key} in docker run command, value={value}")
+            logger.info(f"Skipping {key} in docker run command (value not set)")
 
     if runtime_config.disable_metal_timeout:
         docker_command.extend(["-e", "DISABLE_METAL_OP_TIMEOUT=1"])

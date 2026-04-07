@@ -362,6 +362,18 @@ def handle_secrets(runtime_config):
     if huggingface_required:
         required_env_vars += ["HF_TOKEN"]
 
+    if (
+        workflow_type == WorkflowType.SERVER
+        and runtime_config.engine in ("media", "forge")
+        and not runtime_config.no_auth
+        and not runtime_config.interactive
+        and not os.getenv("API_KEY")
+    ):
+        logger.warning(
+            "API_KEY is not set. Using a default key for media/forge server auth. "
+            "Set API_KEY in .env or as an environment variable."
+        )
+
     # load secrets from env file or prompt user to enter them once
     if not load_dotenv():
         env_vars = {}
