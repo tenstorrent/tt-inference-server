@@ -55,6 +55,10 @@ KafkaProducer::KafkaProducer(KafkaProducerConfig config) : impl_(std::make_uniqu
     return;
   }
 
+  // Force round-robin partitioning for better distribution
+  setConfigOrLog(conf, "partitioner", "murmur2_random");
+  setConfigOrLog(conf, "linger.ms", "0");  // Send immediately, don't batch
+
   // rd_kafka_new() takes ownership of conf on success, leaves it on failure
   rd_kafka_t* kafka_handle =
       rd_kafka_new(RD_KAFKA_PRODUCER, conf, errstr, sizeof(errstr));
