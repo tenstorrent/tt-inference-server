@@ -200,7 +200,6 @@ void SessionManager::sendDeallocRequest(const std::string& sessionId,
   domain::ManageMemoryTask task;
   task.taskId = utils::TaskIDGenerator::generate();
   task.action = domain::MemoryManagementAction::DEALLOCATE;
-  task.inputSeqLen = 0;
   task.memoryLayout = domain::KvMemoryLayout::Paged;
   task.slotIds = {slotId};
 
@@ -226,10 +225,8 @@ void SessionManager::createSession(
     sessions.insert(session.getSessionId(), session);
     TT_LOG_INFO("[SessionManager] Created session with pre-assigned slot: {}",
                 slotId.value());
-    callerEventLoop->queueInLoop(
-        [onCompletion = std::move(onCompletion), session]() {
-          onCompletion(session);
-        });
+    callerEventLoop->queueInLoop([onCompletion = std::move(onCompletion),
+                                  session]() { onCompletion(session); });
     return;
   }
 
@@ -241,10 +238,9 @@ void SessionManager::createSession(
   }
 
   domain::Session session = domain::Session(INVALID_SLOT_ID);
-  auto pendingAllocation =
-      PendingAllocation(std::move(session), std::move(onCompletion),
-                        std::move(onError), callerEventLoop,
-                        tt::config::sessionAllocationMaxRetries());
+  auto pendingAllocation = PendingAllocation(
+      std::move(session), std::move(onCompletion), std::move(onError),
+      callerEventLoop, tt::config::sessionAllocationMaxRetries());
 
   sendAsyncAllocationRequest(pendingAllocation);
 }
