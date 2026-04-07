@@ -9,7 +9,7 @@
 #include "ipc/token_push.hpp"
 #include "profiling/tracy.hpp"
 #include "services/guided_decoder_manager.hpp"
-#include "services/paged_memory_manager.hpp"
+#include "services/memory_services/paged_memory_manager.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizer.hpp"
 
@@ -128,8 +128,7 @@ void LLMRunner::applyGuidedDecodingMasks(const std::vector<Sequence*>& seqs,
     } else if (!isPrefill && guidedDecoder->hasGuidedDecoding(seq->taskId)) {
       auto allowed = guidedDecoder->getNextAllowedTokenIds(seq->taskId);
       std::vector<int> allowedInt(allowed.begin(), allowed.end());
-      seq->getMutableSamplingParams().allowed_token_ids =
-          std::move(allowedInt);
+      seq->getMutableSamplingParams().allowed_token_ids = std::move(allowedInt);
     }
   }
 }

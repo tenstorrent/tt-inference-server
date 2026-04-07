@@ -12,7 +12,7 @@
 #include "config/settings.hpp"
 #include "ipc/token_push.hpp"
 #include "profiling/tracy.hpp"
-#include "services/contiguous_memory_manager.hpp"
+#include "services/memory_services/contiguous_memory_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
