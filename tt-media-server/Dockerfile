@@ -148,7 +148,7 @@ RUN --mount=type=secret,id=github_token \
     rm -rf ${TT_METAL_HOME}/server/cpp_server/tt-blaze \
     && GITHUB_TOKEN=$(cat /run/secrets/github_token) \
     && git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:" \
-    && git clone --depth 1 https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git ${TT_METAL_HOME}/server/cpp_server/tt-blaze \
+    && git clone --depth 1 --branch asaigal/model_integration https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git ${TT_METAL_HOME}/server/cpp_server/tt-blaze \
     && cd ${TT_METAL_HOME}/server/cpp_server/tt-blaze \
     && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
     # Set environment variables to point to tt-blaze's tt-metal for the build
