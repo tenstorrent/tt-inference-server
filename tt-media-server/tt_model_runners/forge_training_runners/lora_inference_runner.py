@@ -5,14 +5,14 @@
 from typing import List
 
 import torch
-from domain.completion_request import CompletionRequest
-from transformers import StaticCache
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer, StaticCache
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-from config.constants import SupportedModels
+from domain.completion_request import CompletionRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
+from utils.adapter_resolver import AdapterInfo, resolve_model
 from utils.decorators import log_execution_time
-from utils.adapter_resolver import AdapterInfo, is_fine_tuned_model, resolve_adapter
 
 
 class LoraInferenceRunner(BaseDeviceRunner):
@@ -22,39 +22,60 @@ class LoraInferenceRunner(BaseDeviceRunner):
         self._active_adapter: AdapterInfo | None = None
         self._base_model = None
         self._tokenizer = None
-    
+
     def warmup(self):
         pass
-    
+
     @log_execution_time("Lora Inference")
     def run(self, requests: list[CompletionRequest]):
         request = requests[0]
         max_cache_len: int = 128
         batch_size: int = 1
-        if is_fine_tuned_model(request.model):
-            adapter_info = resolve_adapter(request.model)
-            self._load_adapter(adapter_info)
-        else:
-            base_name = request.model or self.settings.model_weights_path
-            self._load_base_model(base_name)
-        compiled_model = self._get_inference_model()
-        prompt = request.prompt if isinstance(request.prompt, str) else self._tokenizer.decode(request.prompt)
-        user_prompt = [prompt]
+
+        adapter_info = resolve_model(request.model)
+        self._load_model(adapter_info)
+
+        compiled_model = self._get_compiled_model()
+
+        prompt = (
+            request.prompt
+            if isinstance(request.prompt, str)
+            else self._tokenizer.decode(request.prompt)
+        )
+
         input_args = self._construct_inputs(
-            user_prompt, compiled_model.config, batch_size, max_cache_len
+            [prompt], compiled_model.config, batch_size, max_cache_len
         )
         max_tokens = min(
             request.max_tokens or 16,
             max_cache_len - input_args["input_ids"].shape[1],
         )
         input_args = self._transfer_inputs_to_device(input_args, self.device)
+
         output_tokens = self._run_generate(
             compiled_model, input_args, self.device, max_tokens
         )
         return ["".join(output_tokens)]
-    
+
+    def _load_model(self, adapter_info: AdapterInfo):
+        if self._active_adapter == adapter_info:
+            return
+
+        self._load_base_model(adapter_info.base_model_name)
+
+        if adapter_info.use_adapter:
+            self._teardown_compiled()
+            self._active_model = PeftModel.from_pretrained(
+                self._base_model, adapter_info.adapter_path
+            )
+            self.logger.info(f"Loaded adapter from {adapter_info.adapter_path}")
+        else:
+            self._active_model = self._base_model
+            self.logger.info("Using base model for inference")
+
+        self._active_adapter = adapter_info
+
     def _load_base_model(self, model_name: str):
-        """Load (or swap) the base model and tokenizer."""
         if self._base_model is not None and self._base_model.name_or_path == model_name:
             return
         self._teardown_compiled()
@@ -64,33 +85,23 @@ class LoraInferenceRunner(BaseDeviceRunner):
         self._tokenizer = AutoTokenizer.from_pretrained(model_name)
         self._active_adapter = None
         self.logger.info(f"Loaded base model: {model_name}")
-    def _load_adapter(self, adapter_info: AdapterInfo):
-        """Merge a PEFT adapter on top of the base model."""
-        self._load_base_model(adapter_info.base_model_name)
-        if self._active_adapter == adapter_info:
-            return
-        self._teardown_compiled()
-        self._active_model = PeftModel.from_pretrained(
-            self._base_model, adapter_info.adapter_path
-        )
-        self._active_adapter = adapter_info
-        self.logger.info(f"Loaded adapter from {adapter_info.adapter_path}")
+
     def _teardown_compiled(self):
         if self._compiled_model is not None:
             del self._compiled_model
             self._compiled_model = None
             torch._dynamo.reset()
-    def _get_inference_model(self):
-        model = self._active_model if self._active_adapter else self._base_model
+
+    def _get_compiled_model(self):
         if self._compiled_model is None:
-            model.to(self.device)
-            self._compiled_model = torch.compile(model, backend="tt")
+            self._active_model.to(self.device)
+            self._compiled_model = torch.compile(self._active_model, backend="tt")
             self._compiled_model.eval()
         return self._compiled_model
 
     def _construct_inputs(
-        self, 
-        input_prompt: str,
+        self,
+        input_prompt: list[str],
         model_config,
         batch_size: int,
         max_cache_len: int,
@@ -107,7 +118,7 @@ class LoraInferenceRunner(BaseDeviceRunner):
         Returns:
             Dictionary containing input_ids, past_key_values, cache_position, and use_cache
         """
-        inputs = self.tokenizer(
+        inputs = self._tokenizer(
             input_prompt,
             return_tensors="pt",
             max_length=32,
@@ -154,7 +165,6 @@ class LoraInferenceRunner(BaseDeviceRunner):
 
         return input_args
 
-
     def _transfer_inputs_to_device(
         self, input_args: dict, device: torch.device
     ) -> dict:
@@ -165,11 +175,11 @@ class LoraInferenceRunner(BaseDeviceRunner):
         input_args["input_ids"] = input_args["input_ids"].to(device)
         input_args["cache_position"] = input_args["cache_position"].to(device)
         input_args["attention_mask"] = input_args["attention_mask"].to(device)
-
         return input_args
 
     def _run_generate(
-        self, compiled_model: torch.nn.Module,
+        self,
+        compiled_model: torch.nn.Module,
         input_args: dict,
         device: torch.device,
         max_tokens_to_generate: int = 128,
@@ -194,12 +204,12 @@ class LoraInferenceRunner(BaseDeviceRunner):
                 output: CausalLMOutputWithPast = compiled_model(**input_args)
                 output_logits: torch.Tensor = output.logits.to("cpu")
                 next_token_id = output_logits[:, -1].argmax(dim=-1)
-                output_text = [self.tokenizer.decode(next_token_id[i]) for i in range(num_users)]
+                output_text = [self._tokenizer.decode(next_token_id[i]) for i in range(num_users)]
                 for i, output_tokens_list in enumerate(output_tokens):
                     output_tokens_list.append(output_text[i])
 
                 # Check for EOS token and early exit
-                if torch.all(next_token_id == self.tokenizer.eos_token_id):
+                if torch.all(next_token_id == self._tokenizer.eos_token_id):
                     return output_tokens[0]
 
                 # Update inputs for next iteration
@@ -209,4 +219,3 @@ class LoraInferenceRunner(BaseDeviceRunner):
                 host_cache_pos = torch.tensor([host_cache_pos[-1:] + 1])
                 input_args["cache_position"] = host_cache_pos.to(device)
         return output_tokens[0]
-
