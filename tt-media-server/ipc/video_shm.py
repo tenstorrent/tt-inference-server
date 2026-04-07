@@ -201,11 +201,9 @@ class VideoShm:
             # and unlinks the segment on process exit — even for non-creators.
             # Unregister immediately so the attaching process never destroys
             # segments owned by another process.
-            resource_tracker.unregister(
-                f"/{self._name}", "shared_memory"
-            )
+            resource_tracker.unregister(f"/{self._name}", "shared_memory")
         self._buf = self._shm.buf
- 
+
     def close(self) -> None:
         if self._shm:
             self._shm.close()
