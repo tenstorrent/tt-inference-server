@@ -25,11 +25,12 @@ bool setConfigOrLog(rd_kafka_conf_t* conf, const char* name, const char* value) 
   return true;
 }
 
-}  // namespace
+}
 
 struct KafkaProducer::Impl {
   rd_kafka_t* kafka_handle{nullptr};
   rd_kafka_topic_t* topic_handle{nullptr};
+
 
   ~Impl() {
     if (topic_handle) {
@@ -37,7 +38,7 @@ struct KafkaProducer::Impl {
       topic_handle = nullptr;
     }
     if (kafka_handle) {
-      rd_kafka_flush(kafka_handle, 10 * 1000);   // Flush before destruction
+      rd_kafka_flush(kafka_handle, 80 * 1000);
       rd_kafka_destroy(kafka_handle);
       kafka_handle = nullptr;
     }
@@ -55,21 +56,17 @@ KafkaProducer::KafkaProducer(KafkaProducerConfig config) : impl_(std::make_uniqu
     return;
   }
 
-  // Low-latency producer settings
   setConfigOrLog(conf, "linger.ms", "0");
   setConfigOrLog(conf, "compression.type", "none");
   setConfigOrLog(conf, "socket.nagle.disable", "true");
 
-  // rd_kafka_new() takes ownership of conf on success, leaves it on failure
   rd_kafka_t* kafka_handle =
       rd_kafka_new(RD_KAFKA_PRODUCER, conf, errstr, sizeof(errstr));
   if (!kafka_handle) {
     TT_LOG_ERROR("[Kafka] rd_kafka_new (producer) failed: {}", errstr);
-    rd_kafka_conf_destroy(conf);  // Only destroy on failure
+    rd_kafka_conf_destroy(conf);
     return;
   }
-  // Do NOT destroy conf here - ownership transferred to kafka_handle
-
   rd_kafka_topic_t* topic_handle = rd_kafka_topic_new(kafka_handle, config.topic.c_str(), nullptr);
   if (!topic_handle) {
     TT_LOG_ERROR("[Kafka] rd_kafka_topic_new failed: {}",
@@ -112,7 +109,7 @@ bool KafkaProducer::sendCopy(std::string_view payload, std::string* errorMessage
 }
 
 struct KafkaConsumer::Impl {
-  rd_kafka_t* kafka_handle{nullptr};  // Main Kafka consumer connection
+  rd_kafka_t* kafka_handle{nullptr};
 
   ~Impl() {
     if (kafka_handle) {
@@ -131,30 +128,25 @@ KafkaConsumer::KafkaConsumer(KafkaConsumerConfig config)
     return;
   }
 
-  // Low-latency consumer configuration for ~1ms overhead
   if (!setConfigOrLog(conf, "bootstrap.servers", config.brokers.c_str()) ||
       !setConfigOrLog(conf, "group.id", config.group_id.c_str()) ||
-      !setConfigOrLog(conf, "auto.offset.reset", "latest") ||  // Only read NEW messages, not old ones
+      !setConfigOrLog(conf, "auto.offset.reset", "latest") ||
       !setConfigOrLog(conf, "enable.partition.eof", "false") ||
-      // Critical: reduce fetch wait from default 500ms to 1ms for low latency
       !setConfigOrLog(conf, "fetch.wait.max.ms", "1") ||
       !setConfigOrLog(conf, "fetch.min.bytes", "1") ||
-      // Auto-commit to reduce coordination overhead
       !setConfigOrLog(conf, "enable.auto.commit", "true") ||
       !setConfigOrLog(conf, "auto.commit.interval.ms", "100")) {
     rd_kafka_conf_destroy(conf);
     return;
   }
 
-  // rd_kafka_new() takes ownership of conf on success, leaves it on failure
   rd_kafka_t* kafka_handle =
       rd_kafka_new(RD_KAFKA_CONSUMER, conf, errstr, sizeof(errstr));
   if (!kafka_handle) {
     TT_LOG_ERROR("[Kafka] rd_kafka_new (consumer) failed: {}", errstr);
-    rd_kafka_conf_destroy(conf);  // Only destroy on failure
+    rd_kafka_conf_destroy(conf);
     return;
   }
-  // Do NOT destroy conf here - ownership transferred to kafka_handle
 
   rd_kafka_poll_set_consumer(kafka_handle);
 
@@ -208,4 +200,4 @@ std::optional<std::string> KafkaConsumer::pollPayload(int timeoutMs) {
   return std::string(static_cast<const char*>(message->payload), message->len);
 }
 
-}  // namespace tt::messaging
+}
