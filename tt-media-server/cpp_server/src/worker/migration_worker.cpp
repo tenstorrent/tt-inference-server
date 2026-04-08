@@ -1,20 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-/**
- * @file migration_worker.cpp
- * @brief Implementation of MigrationWorker for consuming Kafka offload messages.
- *
- * This worker is designed to run in separate Drogon instances (consumer servers)
- * that listen for session offload signals from the main producer server.
- *
- * Key responsibilities:
- * - Poll Kafka topic for offload messages
- * - Parse JSON messages
- * - Calculate messaging overhead (latency)
- * - Log received signals for monitoring
- */
-
 #include "worker/migration_worker.hpp"
 
 #include <chrono>

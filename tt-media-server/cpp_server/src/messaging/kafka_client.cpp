@@ -84,8 +84,7 @@ KafkaProducer::KafkaProducer(KafkaProducerConfig config) : impl_(std::make_uniqu
 
 KafkaProducer::~KafkaProducer() = default;
 
-bool KafkaProducer::sendCopy(std::string_view payload, std::string_view key,
-                             std::string* errorMessage) {
+bool KafkaProducer::sendCopy(std::string_view payload, std::string* errorMessage) {
   if (!impl_ || !impl_->kafka_handle || !impl_->topic_handle) {
     if (errorMessage) {
       *errorMessage = "Kafka producer not initialized";
@@ -93,14 +92,10 @@ bool KafkaProducer::sendCopy(std::string_view payload, std::string_view key,
     return false;
   }
 
-  // If key is provided, Kafka will hash it to select partition for distribution
-  const void* keyPtr = key.empty() ? nullptr : key.data();
-  size_t keyLen = key.empty() ? 0 : key.size();
-
   if (rd_kafka_produce(
           impl_->topic_handle, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_COPY,
           const_cast<char*>(payload.data()), payload.size(),
-          keyPtr, keyLen,
+          nullptr, 0,
           nullptr) != 0) {
 
     std::string err = rd_kafka_err2str(rd_kafka_last_error());
