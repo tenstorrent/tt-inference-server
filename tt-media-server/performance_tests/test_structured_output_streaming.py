@@ -150,9 +150,7 @@ async def test_structured_output_json_schema_streaming(server_process):
     if result.token_count == 0:
         failures.append("Received 0 tokens")
     if result.mean_tpot_ms > tpot_threshold:
-        failures.append(
-            f"mean_tpot_ms {result.mean_tpot_ms:.2f} > {tpot_threshold}ms"
-        )
+        failures.append(f"mean_tpot_ms {result.mean_tpot_ms:.2f} > {tpot_threshold}ms")
     if result.ttft_ms > ttft_threshold:
         failures.append(f"ttft_ms {result.ttft_ms:.2f} > {ttft_threshold}ms")
 
@@ -184,9 +182,7 @@ async def test_structured_output_json_object_streaming(server_process):
     if result.token_count == 0:
         failures.append("Received 0 tokens")
     if result.mean_tpot_ms > tpot_threshold:
-        failures.append(
-            f"mean_tpot_ms {result.mean_tpot_ms:.2f} > {tpot_threshold}ms"
-        )
+        failures.append(f"mean_tpot_ms {result.mean_tpot_ms:.2f} > {tpot_threshold}ms")
     if result.ttft_ms > ttft_threshold:
         failures.append(f"ttft_ms {result.ttft_ms:.2f} > {ttft_threshold}ms")
 
