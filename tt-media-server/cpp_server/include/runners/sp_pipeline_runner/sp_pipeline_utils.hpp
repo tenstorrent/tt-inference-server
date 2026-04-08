@@ -9,14 +9,15 @@
 
 namespace tt::runners::sp_pipeline_utils {
 
-namespace pm = tt_blaze::pipeline_manager;
+namespace pm = pipeline_manager;
 
 inline pm::ISRequest makeAllocateRequest(uint32_t requestId) {
-  return {.type = pm::RequestType::ALLOCATE, .request_id = requestId};
+  return {
+      .type = pm::RequestType::ALLOCATE, .request_id = requestId, .tokens = {}};
 }
 
 inline pm::ISRequest makeCancelRequest(uint32_t slotId) {
-  return {.type = pm::RequestType::CANCEL, .slot_id = slotId};
+  return {.type = pm::RequestType::CANCEL, .slot_id = slotId, .tokens = {}};
 }
 
 inline pm::GenerationParams makeGenerationParams(

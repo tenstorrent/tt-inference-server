@@ -19,7 +19,7 @@
 #include "services/memory_services/async_memory_manager.hpp"
 namespace tt::runners {
 
-namespace pm = tt_blaze::pipeline_manager;
+namespace pm = pipeline_manager;
 
 class SpPipelineRunner : public IRunner {
  public:
