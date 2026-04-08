@@ -20,7 +20,7 @@ python_functions = ["test_*"]
 python_classes = ["Test*"]
 # Ignore integration tests that require external service
 # To run this test, see: docs/run_vllm_param_tests.md
-addopts = "--ignore=tests/server_tests/test_cases/test_vllm_server_parameters.py"
+addopts = "--ignore=server_tests/test_cases"
 
 # Test markers for selective test execution
 markers = [

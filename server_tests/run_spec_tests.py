@@ -43,12 +43,7 @@ logger = logging.getLogger("server_tests.run")
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-_categorization_parent = os.path.join(project_root, "tests", "server_tests")
-if _categorization_parent not in sys.path:
-    sys.path.insert(0, _categorization_parent)
-
-from test_categorization_system import TestFilter
-
+from server_tests.test_categorization_system import TestFilter
 from server_tests.test_classes import TestConfig
 from server_tests.tests_runner import ServerRunner
 
