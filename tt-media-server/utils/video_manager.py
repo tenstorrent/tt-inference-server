@@ -49,7 +49,7 @@ class VideoManager:
 
         crf = int(os.environ.get("TT_VIDEO_EXPORT_CRF", "18"))
         crf = max(_MIN_CRF, min(_MAX_CRF, crf))
-        preset = os.environ.get("TT_VIDEO_EXPORT_PRESET", "medium").strip()
+        preset = os.environ.get("TT_VIDEO_EXPORT_PRESET", "ultrafast").strip()
 
         try:
             processed = self._process_frames_for_export(frames)
