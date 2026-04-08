@@ -150,7 +150,7 @@ void SessionManager::checkAndSendOffloadRequest() {
   if (!kafkaProducer) return;
 
   size_t currentCount = sessions.size();
-  size_t threshold = (maxSessions * 10)/100;  //LJUBICA TMP 10%
+  size_t threshold = (maxSessions * 80)/100;  //LJUBICA TMP 10%
 
   if (currentCount >= threshold) {
     TT_LOG_INFO("[SessionManager] Current session count {} exceeds threshold {}. Sending offload request.", currentCount, threshold);
