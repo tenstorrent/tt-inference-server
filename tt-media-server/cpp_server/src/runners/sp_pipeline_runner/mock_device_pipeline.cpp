@@ -40,7 +40,7 @@ void MockDevicePipeline::write(uint32_t taskId,
   inputQueue.push_back(std::move(req));
 }
 
-std::optional<llm_engine::TokenResult> MockDevicePipeline::read() {
+std::optional<tt::runners::llm_engine::TokenResult> MockDevicePipeline::read() {
   ZoneScopedN("MockDevice::read");
   std::unique_lock lock(outputMutex);
   outputNotEmpty.wait(lock, [this] {

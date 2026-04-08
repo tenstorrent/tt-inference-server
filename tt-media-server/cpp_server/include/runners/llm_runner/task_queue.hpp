@@ -5,7 +5,7 @@
 
 #include "runners/llm_runner/sequence.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 /**
  * Abstract interface for the scheduler's task queue.
@@ -24,4 +24,4 @@ class ITaskQueue {
   virtual bool empty() const = 0;
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

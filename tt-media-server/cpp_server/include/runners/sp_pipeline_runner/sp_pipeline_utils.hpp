@@ -20,7 +20,7 @@ inline pm::ISRequest makeCancelRequest(uint32_t slotId) {
 }
 
 inline pm::GenerationParams makeGenerationParams(
-    const llm_engine::Sequence& seq) {
+    const tt::runners::llm_engine::Sequence& seq) {
   return {.max_new_tokens =
               static_cast<uint32_t>(seq.getSamplingParams().max_tokens.value_or(
                   static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS))),
@@ -32,13 +32,13 @@ inline pm::GenerationParams makeGenerationParams(
 }
 
 inline void fillSequenceFields(pm::ISRequest& req,
-                               const llm_engine::Sequence& seq) {
+                               const tt::runners::llm_engine::Sequence& seq) {
   req.tokens.assign(seq.getTokenIds().begin(), seq.getTokenIds().end());
   req.gen = makeGenerationParams(seq);
 }
 
-inline pm::ISRequest makeSubmitRequest(uint32_t slotId,
-                                       const llm_engine::Sequence& seq) {
+inline pm::ISRequest makeSubmitRequest(
+    uint32_t slotId, const tt::runners::llm_engine::Sequence& seq) {
   pm::ISRequest req{};
   req.type = pm::RequestType::SUBMIT;
   req.slot_id = slotId;
@@ -46,8 +46,8 @@ inline pm::ISRequest makeSubmitRequest(uint32_t slotId,
   return req;
 }
 
-inline pm::ISRequest makeContinueRequest(uint32_t slotId,
-                                         const llm_engine::Sequence& seq) {
+inline pm::ISRequest makeContinueRequest(
+    uint32_t slotId, const tt::runners::llm_engine::Sequence& seq) {
   pm::ISRequest req{};
   req.type = pm::RequestType::CONTINUE;
   req.slot_id = slotId;

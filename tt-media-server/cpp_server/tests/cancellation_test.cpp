@@ -17,7 +17,7 @@
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 using Config = tt::config::LLMConfig;
 
@@ -319,4 +319,4 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
 }
 
 }  // namespace
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

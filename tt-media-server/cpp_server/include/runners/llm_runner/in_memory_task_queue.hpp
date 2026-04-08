@@ -9,7 +9,7 @@
 
 #include "runners/llm_runner/task_queue.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 /**
  * In-process ITaskQueue backed by a deque of owned pointers.
@@ -45,4 +45,4 @@ class InMemoryTaskQueue : public ITaskQueue {
   std::deque<std::unique_ptr<Sequence>> queue_;
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

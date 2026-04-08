@@ -398,7 +398,7 @@ void LLMService::processStreamingRequest(
   tt::metrics::ServerMetrics::instance().onRequestSubmitted(
       taskId, static_cast<int>(prompt.size()));
 
-  auto sequence = std::make_unique<llm_engine::Sequence>(
+  auto sequence = std::make_unique<tt::runners::llm_engine::Sequence>(
       taskId,
       static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
       std::move(tokenIds));
@@ -406,8 +406,9 @@ void LLMService::processStreamingRequest(
   if (request.slotId.has_value()) {
     sequence->setKVCacheSlot(request.slotId.value());
   }
-  sequence->setSamplingParams(std::make_unique<llm_engine::SamplingParams>(
-      tt::utils::mapper::mapSamplingParams(request)));
+  sequence->setSamplingParams(
+      std::make_unique<tt::runners::llm_engine::SamplingParams>(
+          tt::utils::mapper::mapSamplingParams(request)));
   queue_manager_->task_queue->push(*std::move(sequence));
 }
 

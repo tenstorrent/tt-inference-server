@@ -14,7 +14,7 @@
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 #include "runners/llm_runner/sequence.hpp"
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 using Config = tt::config::LLMConfig;
 
@@ -106,4 +106,4 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
 }
 
 }  // namespace
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

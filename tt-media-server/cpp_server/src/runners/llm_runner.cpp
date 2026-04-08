@@ -11,7 +11,7 @@
 #include "services/memory_services/paged_memory_manager.hpp"
 
 namespace tt::runners {
-using namespace llm_engine;
+using namespace tt::runners::llm_engine;
 using Config = tt::config::LLMConfig;
 
 LLMRunner::LLMRunner(const Config& config,
