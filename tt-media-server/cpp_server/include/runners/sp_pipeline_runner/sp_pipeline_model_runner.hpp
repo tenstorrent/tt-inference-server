@@ -13,7 +13,7 @@
 #include "ipc/slot_ring_buffer.hpp"
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 
-namespace sp_pipeline {
+namespace tt::runners::sp_pipeline {
 
 using DecodeCallback = std::function<void(const llm_engine::TokenResult&)>;
 
@@ -53,4 +53,4 @@ class SpPipelineModelRunner : public ISpPipelineModelRunner {
   std::thread readerThread;
 };
 
-}  // namespace sp_pipeline
+}  // namespace tt::runners::sp_pipeline

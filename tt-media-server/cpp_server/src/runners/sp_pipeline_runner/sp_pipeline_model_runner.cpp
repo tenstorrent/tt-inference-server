@@ -5,7 +5,7 @@
 
 #include "runners/llm_runner/debug.hpp"
 
-namespace sp_pipeline {
+namespace tt::runners::sp_pipeline {
 
 SpPipelineModelRunner::SpPipelineModelRunner(DecodeCallback callback)
     : decodeCallback(std::move(callback)),
@@ -46,4 +46,4 @@ void SpPipelineModelRunner::readerLoop() {
   }
 }
 
-}  // namespace sp_pipeline
+}  // namespace tt::runners::sp_pipeline
