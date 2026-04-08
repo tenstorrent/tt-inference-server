@@ -92,8 +92,7 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
             f"Device {self.device_id}: Model weights downloaded successfully"
         )
 
-        # 6 minutes to distribute the model on device
-        weights_distribution_timeout = 720
+        weights_distribution_timeout = self.settings.weights_distribution_timeout_seconds
 
         try:
             await asyncio.wait_for(
