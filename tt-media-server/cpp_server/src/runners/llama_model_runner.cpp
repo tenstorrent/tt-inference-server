@@ -55,7 +55,7 @@ bool LlamaModelRunner::initialize() {
     if (!warmupOk) {
       TT_LOG_ERROR("[LlamaModelRunner] Warmup failed");
     } else {
-      TT_LOG_INFO("[LlamaModelRunner] test Llama runner ready (in-process)");
+      TT_LOG_INFO("[LlamaModelRunner] Llama runner ready (in-process)");
       initialized_ = true;
       success = true;
     }
