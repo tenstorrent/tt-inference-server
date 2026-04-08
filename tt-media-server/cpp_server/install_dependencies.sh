@@ -2,15 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 # cpp_server build deps: apt + Rust (if needed) + Drogon (if not found).
-# Optional: ./install_dependencies.sh --kafka  (or INSTALL_KAFKA_DEPS=1) for librdkafka when using -DKAFKA_ENABLED=ON.
+# Optional: ./install_dependencies.sh --kafka for librdkafka when using -DKAFKA_ENABLED=ON.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 INSTALL_KAFKA=0
-case "${INSTALL_KAFKA_DEPS:-}" in
-    1|true|yes|YES) INSTALL_KAFKA=1 ;;
-esac
 while [[ $# -gt 0 ]]; do
     case $1 in
         --kafka)
@@ -20,7 +17,6 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 [--kafka]"
             echo "  --kafka              Also install librdkafka-dev (C + C++ client for CMake KAFKA_ENABLED=ON)"
-            echo "  INSTALL_KAFKA_DEPS=1 same effect as --kafka"
             exit 0
             ;;
         *)
