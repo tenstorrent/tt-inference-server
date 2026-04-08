@@ -4,7 +4,7 @@
 
 import os
 
-from config.constants import ModelRunners
+from config.constants import ModelRunners, DeviceTypes
 from config.settings import settings
 from telemetry.telemetry_client import get_telemetry_client
 
@@ -60,6 +60,14 @@ def setup_runner_environment(
             )
             _setup_blackhole_mesh_config(tt_metal_home)
 
+    _RUNNERS_REQUIRING_GRID_OVERRIDE = {
+        ModelRunners.TT_SDXL_TRACE.value,
+        ModelRunners.TT_SDXL_EDIT.value,
+        ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value,
+    }
+    if settings.is_galaxy and settings.model_runner in _RUNNERS_REQUIRING_GRID_OVERRIDE:
+        _setup_grid_override(settings.device)
+
 
 def setup_cpu_threading_limits(cpu_threads: str, num_torch_threads: int = 1):
     """Set up CPU threading limits for PyTorch to prevent CPU oversubscription"""
@@ -95,4 +103,17 @@ def _setup_galaxy_mesh_config(tt_metal_home: str):
     if descriptor:
         os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
             f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/{descriptor}"
+        )
+
+
+def _setup_grid_override(device: str):
+    _logger = TTLogger()
+    if (
+        device == DeviceTypes.BLACKHOLE_GALAXY.value
+        or device == DeviceTypes.GALAXY.value
+    ):
+        expected = "7,7" if device == DeviceTypes.GALAXY.value else "10,9"
+        os.environ["TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE"] = expected
+        _logger.info(
+            f"Set TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE={expected} for {device}"
         )
