@@ -3,13 +3,17 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 from typing import List
+import os
 
 import torch
+import torch_xla
+import torch_xla.runtime as xr
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer, StaticCache
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from domain.completion_request import CompletionRequest
+from domain.completion_response import CompletionOutput, CompletionResult
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.adapter_resolver import AdapterInfo, resolve_adapter
 from utils.decorators import log_execution_time
@@ -23,8 +27,12 @@ class LoraInferenceRunner(BaseDeviceRunner):
         self._base_model = None
         self._tokenizer = None
 
-    def warmup(self):
-        pass
+    async def warmup(self):
+        # single chip setup
+        xr.set_device_type("TT")
+        os.environ["PJRT_DEVICE"] = "TT"
+        os.environ["XLA_STABLEHLO_COMPILE"] = "1"
+        self.device = torch_xla.device()
 
     @log_execution_time("Lora Inference")
     def run(self, requests: list[CompletionRequest]):
@@ -65,7 +73,12 @@ class LoraInferenceRunner(BaseDeviceRunner):
         output_tokens = self._run_generate(
             compiled_model, input_args, self.device, max_tokens
         )
-        return ["".join(output_tokens)]
+        return [
+            CompletionOutput(
+                type="final_result",
+                data=CompletionResult(text="".join(output_tokens)),
+            )
+        ]
 
     def _validate_request(self, request: CompletionRequest):
         if isinstance(request.prompt, str) and not request.prompt.strip():
@@ -91,7 +104,7 @@ class LoraInferenceRunner(BaseDeviceRunner):
             return
         self._teardown_compiled()
         self._base_model = AutoModelForCausalLM.from_pretrained(
-            model_name, use_cache=False
+            model_name, torch_dtype=torch.bfloat16, use_cache=False
         )
         self._tokenizer = AutoTokenizer.from_pretrained(model_name)
         self._active_model = self._base_model
