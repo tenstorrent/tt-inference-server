@@ -31,7 +31,7 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | LLM | [gpt-oss-20b](llm/gpt-oss-20b_galaxy.md) |
 | 🛠️ Experimental | VLM | [gemma-3-27b-it](vlm/gemma-3-27b-it_galaxy.md) |
 
-## [BH QuietBox GE (2xP300)](https://tenstorrent.com/hardware/tt-quietbox)
+## [BH QuietBox 2 (2xP300)](https://tenstorrent.com/hardware/tt-quietbox)
 
 | Status | Type | Model |
 |--------|------|-------|
@@ -55,7 +55,7 @@ This page lists all supported models organized by hardware type.
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p150x8.md) |
 | 🟡 Functional | LLM | [Qwen3-32B](llm/Qwen3-32B_p150x8.md) |
 
-## [BH 4xP150](https://tenstorrent.com/hardware/tt-quietbox)
+## [BH Quietbox 4xP150](https://tenstorrent.com/hardware/tt-quietbox)
 
 | Status | Type | Model |
 |--------|------|-------|
