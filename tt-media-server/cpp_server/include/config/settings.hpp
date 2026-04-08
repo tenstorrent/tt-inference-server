@@ -128,6 +128,10 @@ unsigned pmConnectTimeoutMs();
  * defaults::PM_MAX_USERS. */
 size_t pmMaxUsers();
 
+/** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
+ * defaults::USE_DEEPSEEK_MD_FORMAT. */
+bool useDeepseekMdFormat();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();
