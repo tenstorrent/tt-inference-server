@@ -92,7 +92,9 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
             f"Device {self.device_id}: Model weights downloaded successfully"
         )
 
-        weights_distribution_timeout = self.settings.weights_distribution_timeout_seconds
+        weights_distribution_timeout = (
+            self.settings.weights_distribution_timeout_seconds
+        )
 
         try:
             await asyncio.wait_for(
