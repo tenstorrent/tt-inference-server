@@ -28,8 +28,8 @@ bool setConfigOrLog(rd_kafka_conf_t* conf, const char* name, const char* value) 
 }  // namespace
 
 struct KafkaProducer::Impl {
-  rd_kafka_t* kafka_handle{nullptr};        // Main Kafka producer connection
-  rd_kafka_topic_t* topic_handle{nullptr};  // Specific topic to publish to
+  rd_kafka_t* kafka_handle{nullptr};
+  rd_kafka_topic_t* topic_handle{nullptr};
 
   ~Impl() {
     if (topic_handle) {

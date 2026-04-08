@@ -641,6 +641,14 @@ chmod +x build.sh
 ./build.sh --tsan    # ThreadSanitizer (data-race detection; cannot combine with --asan)
 ```
 
+Optional **Kafka** (`KAFKA_ENABLED=ON`, `messaging` / `migration_worker` / `tt_consumer`): install **librdkafka** first, then build with `--kafka`:
+
+```bash
+sudo apt install librdkafka-dev
+# or: ./install_dependencies.sh --kafka
+./build.sh --kafka
+```
+
 ### Memory leak detection
 
 1. **AddressSanitizer (ASan) + LeakSanitizer (LSan)** — recommended on macOS and Linux:
