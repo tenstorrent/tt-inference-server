@@ -92,6 +92,9 @@ async def chat_completions(
     # Reject prompts that exceed the model's context window
     max_model_len = settings.vllm.max_model_length
     if prompt_tokens > max_model_len:
+        logger.warning(
+            f"Rejected prompt: length ({prompt_tokens}) exceeds max model length ({max_model_len})"
+        )
         raise HTTPException(
             status_code=400,
             detail=f"Prompt length ({prompt_tokens}) exceeds max model length ({max_model_len})",

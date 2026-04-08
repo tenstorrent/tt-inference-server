@@ -10,11 +10,13 @@ from config.settings import settings
 from domain.completion_request import CompletionRequest
 from open_ai_api.chat import _count_tokens
 from fastapi import APIRouter, Depends, HTTPException, Security
+from utils.logger import TTLogger
 from fastapi.responses import JSONResponse, StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 
+logger = TTLogger()
 router = APIRouter()
 
 
@@ -47,6 +49,9 @@ async def complete_text(
             prompt_tokens = 0
         max_model_len = settings.vllm.max_model_length
         if prompt_tokens > max_model_len:
+            logger.warning(
+                f"Rejected prompt: length ({prompt_tokens}) exceeds max model length ({max_model_len})"
+            )
             raise HTTPException(
                 status_code=400,
                 detail=f"Prompt length ({prompt_tokens}) exceeds max model length ({max_model_len})",
