@@ -38,10 +38,12 @@ class SocketManager {
     CLIENT   // Connect to remote server
   };
 
-  /**
-   * @brief Get singleton instance
-   */
-  static SocketManager& getInstance();
+  SocketManager() = default;
+  SocketManager(const SocketManager&) = delete;
+  SocketManager& operator=(const SocketManager&) = delete;
+  SocketManager(SocketManager&&) = delete;
+  SocketManager& operator=(SocketManager&&) = delete;
+  ~SocketManager();
 
   /**
    * @brief Initialize as server (listening mode)
@@ -102,14 +104,7 @@ class SocketManager {
    */
   void setConnectionLostCallback(std::function<void()> callback);
 
-  // Disable copy/move for singleton
-  SocketManager(const SocketManager&) = delete;
-  SocketManager& operator=(const SocketManager&) = delete;
-
  private:
-  SocketManager() = default;
-  ~SocketManager();
-
   void serverLoop();
   void clientLoop();
   void messageLoop();
