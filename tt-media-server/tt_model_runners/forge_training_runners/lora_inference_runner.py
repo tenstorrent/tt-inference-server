@@ -20,6 +20,10 @@ from utils.decorators import log_execution_time
 
 
 class LoraInferenceRunner(BaseDeviceRunner):
+    MAX_PROMPT_LENGTH: int = 32
+    MAX_CACHE_LENGTH: int = 128
+    BATCH_SIZE: int = 1
+
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads=num_torch_threads)
         self._compiled_model = None
@@ -39,9 +43,6 @@ class LoraInferenceRunner(BaseDeviceRunner):
         request = requests[0]
         self._validate_request(request)
 
-        max_cache_len: int = 128
-        batch_size: int = 1
-
         if request.adapter:
             adapter_info = resolve_adapter(request.adapter)
             self._load_adapter(adapter_info)
@@ -58,15 +59,15 @@ class LoraInferenceRunner(BaseDeviceRunner):
         )
 
         input_args = self._construct_inputs(
-            [prompt], compiled_model.config, batch_size, max_cache_len
+            [prompt], compiled_model.config, self.BATCH_SIZE, self.MAX_CACHE_LENGTH
         )
         max_tokens = min(
             request.max_tokens or 16,
-            max_cache_len - input_args["input_ids"].shape[1],
+            self.MAX_CACHE_LENGTH - input_args["input_ids"].shape[1],
         )
         if max_tokens < 1:
             raise ValueError(
-                f"Prompt fills the entire context window ({max_cache_len} tokens), no room to generate"
+                f"Prompt fills the entire context window ({self.MAX_CACHE_LENGTH} tokens), no room to generate"
             )
         input_args = self._transfer_inputs_to_device(input_args, self.device)
 
@@ -146,7 +147,7 @@ class LoraInferenceRunner(BaseDeviceRunner):
         inputs = self._tokenizer(
             input_prompt,
             return_tensors="pt",
-            max_length=32,
+            max_length=self.MAX_PROMPT_LENGTH,
             padding="max_length",
             padding_side="left",
             return_attention_mask=True,
