@@ -132,9 +132,9 @@ def _open_mesh_device(
     os.environ["TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS"] = str(
         fabric_router_sync_timeout_ms
     )
-    my_rank = int(ttnn.distributed_context_get_rank())
+    mid = os.environ.get("TT_MESH_ID")
     worker_l1_size = 1431568
-    if my_rank == 62:
+    if int(mid) == 62:
         worker_l1_size = 1499000
 
     num_procs = int(ttnn.distributed_context_get_size())
