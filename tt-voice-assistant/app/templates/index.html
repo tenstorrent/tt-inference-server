@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TT Voice Assistant - Face Authentication</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a24;
+            --border-color: #2a2a3a;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b0;
+            --text-muted: #606070;
+            --accent-purple: #8b5cf6;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            background-image: 
+                linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            min-height: 100vh;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .auth-container {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 32px;
+            max-width: 450px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, var(--accent-purple), #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 24px;
+        }
+
+        .camera-preview {
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: var(--bg-primary);
+            border-radius: 16px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            border: 2px solid var(--border-color);
+        }
+
+        .camera-preview video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        .status {
+            padding: 12px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+
+        .status.info {
+            background: rgba(139, 92, 246, 0.1);
+            color: var(--accent-purple);
+        }
+
+        .status.success {
+            background: rgba(34, 197, 94, 0.1);
+            color: var(--accent-green);
+        }
+
+        .status.error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--accent-red);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 14px 20px;
+            border-radius: 10px;
+            border: none;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-purple), #7c3aed);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border-color);
+        }
+
+        .register-form {
+            display: none;
+            margin-bottom: 16px;
+        }
+
+        .register-form.show {
+            display: block;
+        }
+
+        .register-form input {
+            width: 100%;
+            padding: 14px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 1rem;
+            margin-bottom: 12px;
+        }
+
+        .register-form input:focus {
+            outline: none;
+            border-color: var(--accent-purple);
+        }
+
+        .skip-link {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            text-decoration: none;
+        }
+
+        .skip-link:hover {
+            color: var(--text-secondary);
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <h1 class="logo">TT Voice Assistant</h1>
+        <p class="subtitle">Powered by Tenstorrent</p>
+        
+        <div class="camera-preview">
+            <video id="camera" autoplay playsinline></video>
+        </div>
+        
+        <div class="status info" id="status">Position your face in the camera</div>
+        
+        <div class="register-form" id="registerForm">
+            <input type="text" id="registerName" placeholder="Enter your name">
+        </div>
+        
+        <div class="btn-group">
+            <button class="btn btn-primary" id="authBtn" onclick="authenticate()">
+                Authenticate
+            </button>
+            <button class="btn btn-secondary" id="registerBtn" onclick="toggleRegister()">
+                Register
+            </button>
+        </div>
+        
+        <a href="/chat?user=Guest" class="skip-link">Skip → Continue as Guest</a>
+    </div>
+
+    <script>
+        let cameraStream = null;
+        let isRegistering = false;
+
+        // Start camera on load
+        document.addEventListener('DOMContentLoaded', startCamera);
+
+        async function startCamera() {
+            try {
+                cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'user', width: 640, height: 480 } 
+                });
+                document.getElementById('camera').srcObject = cameraStream;
+            } catch (e) {
+                setStatus('Camera not available: ' + e.message, 'error');
+            }
+        }
+
+        function setStatus(msg, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = msg;
+            status.className = 'status ' + type;
+        }
+
+        function toggleRegister() {
+            const form = document.getElementById('registerForm');
+            const authBtn = document.getElementById('authBtn');
+            const regBtn = document.getElementById('registerBtn');
+            
+            isRegistering = !isRegistering;
+            
+            if (isRegistering) {
+                form.classList.add('show');
+                authBtn.textContent = 'Capture & Save';
+                regBtn.textContent = 'Cancel';
+                setStatus('Enter your name and click "Capture & Save"', 'info');
+                document.getElementById('registerName').focus();
+            } else {
+                form.classList.remove('show');
+                authBtn.textContent = 'Authenticate';
+                regBtn.textContent = 'Register';
+                setStatus('Position your face in the camera', 'info');
+            }
+        }
+
+        async function authenticate() {
+            const video = document.getElementById('camera');
+            const authBtn = document.getElementById('authBtn');
+            
+            if (video.videoWidth === 0) {
+                setStatus('Camera not ready', 'error');
+                return;
+            }
+
+            // Capture frame
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            
+            authBtn.disabled = true;
+            
+            if (isRegistering) {
+                // Register new face
+                const name = document.getElementById('registerName').value.trim();
+                if (!name) {
+                    setStatus('Please enter your name', 'error');
+                    authBtn.disabled = false;
+                    return;
+                }
+                
+                authBtn.innerHTML = '<span class="loading"></span>Registering...';
+                setStatus('Capturing and registering...', 'info');
+                
+                try {
+                    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
+                    const formData = new FormData();
+                    formData.append('image', blob, 'face.jpg');
+                    
+                    const response = await fetch('/api/register-face?name=' + encodeURIComponent(name), {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        setStatus('✅ Registered successfully!', 'success');
+                        setTimeout(() => {
+                            window.location.href = '/chat?user=' + encodeURIComponent(name);
+                        }, 1500);
+                    } else {
+                        const result = await response.json();
+                        setStatus('❌ ' + (result.detail || 'Registration failed'), 'error');
+                        authBtn.disabled = false;
+                        authBtn.textContent = 'Capture & Save';
+                    }
+                } catch (e) {
+                    setStatus('❌ Registration failed: ' + e.message, 'error');
+                    authBtn.disabled = false;
+                    authBtn.textContent = 'Capture & Save';
+                }
+            } else {
+                // Authenticate
+                authBtn.innerHTML = '<span class="loading"></span>Verifying...';
+                setStatus('Verifying identity...', 'info');
+                
+                try {
+                    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
+                    const formData = new FormData();
+                    formData.append('image', blob, 'face.jpg');
+                    
+                    const response = await fetch('/api/face-auth', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const result = await response.json();
+                    const userName = result.user_id || 'Guest';
+                    
+                    if (userName !== 'Guest' && userName !== 'Unknown') {
+                        setStatus('✅ Welcome, ' + userName + '!', 'success');
+                    } else {
+                        setStatus('Face not recognized. Try Register or continue as Guest.', 'info');
+                        authBtn.disabled = false;
+                        authBtn.textContent = 'Authenticate';
+                        return;
+                    }
+                    
+                    // Stop camera and redirect
+                    if (cameraStream) {
+                        cameraStream.getTracks().forEach(t => t.stop());
+                    }
+                    
+                    setTimeout(() => {
+                        window.location.href = '/chat?user=' + encodeURIComponent(userName);
+                    }, 1500);
+                    
+                } catch (e) {
+                    setStatus('❌ Authentication failed: ' + e.message, 'error');
+                    authBtn.disabled = false;
+                    authBtn.textContent = 'Authenticate';
+                }
+            }
+        }
+    </script>
+</body>
+</html>

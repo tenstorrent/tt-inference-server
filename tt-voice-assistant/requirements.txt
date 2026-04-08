@@ -1,0 +1,24 @@
+# TT Voice Assistant Dependencies
+
+# Web Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+jinja2>=3.1.2
+
+# Audio Processing
+scipy>=1.11.0
+soundfile>=0.12.1
+
+# TTS (SpeechT5)
+transformers>=4.35.0
+torch>=2.1.0
+sentencepiece>=0.1.99
+
+# Image Processing (Face Auth)
+opencv-python>=4.8.0
+numpy>=1.24.0
+Pillow>=10.0.0
+
+# Utilities
+aiofiles>=23.2.0

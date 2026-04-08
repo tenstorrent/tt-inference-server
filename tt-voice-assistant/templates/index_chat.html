@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Pipeline - TT Voice Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a24;
+            --border-color: #2a2a3a;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b0;
+            --text-muted: #606070;
+            --accent-purple: #8b5cf6;
+            --accent-green: #22c55e;
+            --accent-yellow: #eab308;
+            --accent-red: #ef4444;
+            --accent-blue: #3b82f6;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            background-image: 
+                linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            min-height: 100vh;
+            color: var(--text-primary);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            background: var(--bg-card);
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-purple);
+        }
+
+        .status-dot.recording { background: var(--accent-red); animation: pulse 1s infinite; }
+        .status-dot.thinking { background: var(--accent-yellow); animation: pulse 1s infinite; }
+        .status-dot.speaking { background: var(--accent-green); animation: pulse 1s infinite; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .header-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .header-btn:hover {
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        /* Main Content */
+        .main-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 900px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Chat Messages */
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding-bottom: 20px;
+        }
+
+        .message {
+            margin-bottom: 24px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .message-sender {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .message-sender.user { color: var(--accent-blue); }
+        .message-sender.assistant { color: var(--accent-purple); }
+
+        .message-time {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .message-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            line-height: 1.6;
+            color: var(--text-primary);
+        }
+
+        .message.user .message-content {
+            border-left: 3px solid var(--accent-blue);
+        }
+
+        .message.assistant .message-content {
+            border-left: 3px solid var(--accent-purple);
+        }
+
+        /* Audio Player */
+        .audio-player {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 12px;
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+        }
+
+        .play-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            background: var(--accent-purple);
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .play-btn:hover {
+            background: #7c3aed;
+            transform: scale(1.05);
+        }
+
+        .audio-progress {
+            flex: 1;
+            height: 4px;
+            background: var(--border-color);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .audio-progress-bar {
+            height: 100%;
+            background: var(--accent-purple);
+            width: 0%;
+            transition: width 0.1s;
+        }
+
+        .copy-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            color: var(--text-primary);
+            background: var(--bg-card);
+        }
+
+        /* Thinking Indicator */
+        .thinking-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 16px;
+            color: var(--text-secondary);
+        }
+
+        .thinking-dots {
+            display: flex;
+            gap: 4px;
+        }
+
+        .thinking-dots span {
+            width: 6px;
+            height: 6px;
+            background: var(--accent-yellow);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+
+        .thinking-dots span:nth-child(1) { animation-delay: 0s; }
+        .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-8px); }
+        }
+
+        /* Bottom Controls */
+        .controls-container {
+            padding: 20px 0;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .record-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .record-btn {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, var(--accent-purple), #6d28d9);
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            transition: all 0.2s;
+            box-shadow: 0 4px 20px rgba(139, 92, 246, 0.3);
+        }
+
+        .record-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 6px 30px rgba(139, 92, 246, 0.4);
+        }
+
+        .record-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .record-btn.recording {
+            background: linear-gradient(135deg, var(--accent-red), #dc2626);
+            animation: pulse-glow 1.5s infinite;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 4px 20px rgba(239, 68, 68, 0.3); }
+            50% { box-shadow: 0 4px 40px rgba(239, 68, 68, 0.6); }
+        }
+
+        .status-text {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        /* Welcome Banner */
+        .welcome-banner {
+            display: none;
+            background: linear-gradient(135deg, var(--accent-purple), #6d28d9);
+            padding: 16px 24px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            animation: slideDown 0.3s ease;
+        }
+
+        .welcome-banner.show {
+            display: block;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .welcome-text {
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+
+        /* Face Auth Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+
+        .modal h2 {
+            margin-bottom: 16px;
+            font-size: 1.25rem;
+        }
+
+        .camera-preview {
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: var(--bg-primary);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .camera-preview video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent-purple);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #7c3aed;
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border-color);
+        }
+
+        /* Register Form */
+        .register-form {
+            display: none;
+            margin-top: 16px;
+        }
+
+        .register-form.show {
+            display: block;
+        }
+
+        .register-form input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 1rem;
+            margin-bottom: 12px;
+        }
+
+        .register-form input:focus {
+            outline: none;
+            border-color: var(--accent-purple);
+        }
+
+        /* Model Status */
+        .model-status {
+            display: flex;
+            gap: 8px;
+        }
+
+        .model-badge {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            background: var(--bg-card);
+            border-radius: 4px;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .model-badge .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        .model-badge .dot.ready { background: var(--accent-green); }
+        .model-badge .dot.loading { background: var(--accent-yellow); animation: pulse 1s infinite; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <span class="logo">Voice Pipeline</span>
+            <div class="status-badge">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusLabel">Ready</span>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="model-status">
+                <div class="model-badge"><span class="dot ready" id="faceStatus"></span>Face</div>
+                <div class="model-badge"><span class="dot ready" id="whisperStatus"></span>Whisper</div>
+                <div class="model-badge"><span class="dot ready" id="llamaStatus"></span>Llama</div>
+                <div class="model-badge"><span class="dot ready" id="ttsStatus"></span>TTS</div>
+            </div>
+            <button class="header-btn" onclick="showFaceAuthModal()">👤 Face Auth</button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-container">
+        <!-- Welcome Banner -->
+        <div class="welcome-banner" id="welcomeBanner">
+            <span class="welcome-text" id="welcomeText">Welcome! How can I help you today?</span>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="chat-container" id="chatContainer">
+            <!-- Messages will be added here -->
+        </div>
+
+        <!-- Thinking Indicator -->
+        <div class="thinking-indicator" id="thinkingIndicator" style="display: none;">
+            <div class="thinking-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+            <span id="thinkingText">Thinking...</span>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-container">
+            <div class="record-section">
+                <button class="record-btn" id="recordBtn" onclick="toggleRecording()">
+                    🎤
+                </button>
+                <span class="status-text" id="controlStatus">Hold to speak or press Space</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- Face Auth Modal -->
+    <div class="modal-overlay" id="faceAuthModal">
+        <div class="modal">
+            <h2>Face Authentication</h2>
+            <div class="camera-preview">
+                <video id="modalCamera" autoplay playsinline></video>
+            </div>
+            <p id="modalStatus" style="margin-bottom: 16px; color: var(--text-secondary);">Position your face in the camera</p>
+            
+            <div class="register-form" id="registerForm">
+                <input type="text" id="registerName" placeholder="Enter your name">
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="btn btn-primary" id="authBtn" onclick="authenticateFace()">Authenticate</button>
+                <button class="btn btn-secondary" id="registerBtn" onclick="toggleRegisterForm()">Register</button>
+                <button class="btn btn-secondary" onclick="closeFaceAuthModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let isRecording = false;
+        let isProcessing = false;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let currentAudio = null;
+        let userName = 'Guest';
+        let cameraStream = null;
+
+        // Elements
+        const chatContainer = document.getElementById('chatContainer');
+        const recordBtn = document.getElementById('recordBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusLabel = document.getElementById('statusLabel');
+        const controlStatus = document.getElementById('controlStatus');
+        const thinkingIndicator = document.getElementById('thinkingIndicator');
+        const thinkingText = document.getElementById('thinkingText');
+        const welcomeBanner = document.getElementById('welcomeBanner');
+        const welcomeText = document.getElementById('welcomeText');
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            await checkHealth();
+            setupKeyboardShortcuts();
+        });
+
+        async function checkHealth() {
+            try {
+                const response = await fetch('/health');
+                if (response.ok) {
+                    setStatus('idle', 'Ready');
+                }
+            } catch (e) {
+                setStatus('error', 'Connecting...');
+            }
+        }
+
+        function setStatus(state, label) {
+            statusDot.className = 'status-dot ' + state;
+            statusLabel.textContent = label;
+        }
+
+        function setupKeyboardShortcuts() {
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' && !e.repeat && !isProcessing) {
+                    e.preventDefault();
+                    startRecording();
+                }
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                if (e.code === 'Space' && isRecording) {
+                    e.preventDefault();
+                    stopRecording();
+                }
+            });
+
+            // Mouse events for record button
+            recordBtn.addEventListener('mousedown', () => {
+                if (!isProcessing) startRecording();
+            });
+            recordBtn.addEventListener('mouseup', () => {
+                if (isRecording) stopRecording();
+            });
+            recordBtn.addEventListener('mouseleave', () => {
+                if (isRecording) stopRecording();
+            });
+        }
+
+        function toggleRecording() {
+            // Handled by mousedown/mouseup
+        }
+
+        async function startRecording() {
+            if (isRecording || isProcessing) return;
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    stream.getTracks().forEach(t => t.stop());
+                    processAudio(audioBlob);
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+
+                recordBtn.classList.add('recording');
+                recordBtn.textContent = '🔴';
+                setStatus('recording', 'Listening');
+                controlStatus.textContent = 'Release to send';
+
+            } catch (error) {
+                console.error('Mic error:', error);
+                controlStatus.textContent = 'Microphone access denied';
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+                recordBtn.classList.remove('recording');
+                recordBtn.textContent = '🎤';
+            }
+        }
+
+        async function processAudio(audioBlob) {
+            isProcessing = true;
+            recordBtn.disabled = true;
+            setStatus('thinking', 'Processing');
+            controlStatus.textContent = 'Processing...';
+
+            try {
+                // 1. Speech to Text
+                setStatus('thinking', 'Transcribing');
+                thinkingText.textContent = 'Transcribing...';
+                thinkingIndicator.style.display = 'flex';
+
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'audio.wav');
+                
+                const sttResponse = await fetch('/api/speech-to-text', {
+                    method: 'POST',
+                    body: formData
+                });
+                const sttResult = await sttResponse.json();
+                const userText = sttResult.text || '';
+
+                if (!userText.trim()) {
+                    throw new Error('No speech detected');
+                }
+
+                // Add user message
+                addMessage('user', userText);
+
+                // 2. Generate response
+                setStatus('thinking', 'Thinking');
+                thinkingText.textContent = 'Thinking...';
+
+                const chatResponse = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: userText })
+                });
+                const chatResult = await chatResponse.json();
+                const assistantText = chatResult.response || 'I could not generate a response.';
+
+                // 3. Text to Speech
+                setStatus('speaking', 'Speaking');
+                thinkingText.textContent = 'Generating speech...';
+
+                const ttsResponse = await fetch('/api/text-to-speech', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: assistantText })
+                });
+
+                let audioUrl = null;
+                if (ttsResponse.ok) {
+                    const audioBlob = await ttsResponse.blob();
+                    audioUrl = URL.createObjectURL(audioBlob);
+                }
+
+                // Add assistant message with audio
+                addMessage('assistant', assistantText, audioUrl);
+
+                // Play audio
+                if (audioUrl) {
+                    thinkingIndicator.style.display = 'none';
+                    await playAudio(audioUrl);
+                }
+
+            } catch (error) {
+                console.error('Processing error:', error);
+                addMessage('assistant', 'Sorry, there was an error: ' + error.message);
+            } finally {
+                isProcessing = false;
+                recordBtn.disabled = false;
+                thinkingIndicator.style.display = 'none';
+                setStatus('idle', 'Ready');
+                controlStatus.textContent = 'Hold to speak or press Space';
+            }
+        }
+
+        function addMessage(sender, text, audioUrl = null) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            
+            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            let audioPlayerHtml = '';
+            if (audioUrl) {
+                const audioId = 'audio-' + Date.now();
+                audioPlayerHtml = `
+                    <div class="audio-player">
+                        <button class="play-btn" onclick="playMessageAudio('${audioId}', '${audioUrl}')">▶</button>
+                        <div class="audio-progress">
+                            <div class="audio-progress-bar" id="${audioId}-progress"></div>
+                        </div>
+                        <audio id="${audioId}" src="${audioUrl}"></audio>
+                    </div>
+                `;
+            }
+
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-sender ${sender}">${sender === 'user' ? 'YOU' : 'ASSISTANT'}</span>
+                    <span class="message-time">${time}</span>
+                </div>
+                <div class="message-content">
+                    ${text}
+                    ${audioPlayerHtml}
+                </div>
+                <button class="copy-btn" onclick="copyText('${text.replace(/'/g, "\\'")}')">📋</button>
+            `;
+
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function playMessageAudio(audioId, audioUrl) {
+            const audio = document.getElementById(audioId);
+            const progressBar = document.getElementById(audioId + '-progress');
+            const playBtn = audio.parentElement.querySelector('.play-btn');
+
+            if (audio.paused) {
+                // Stop any currently playing audio
+                if (currentAudio && currentAudio !== audio) {
+                    currentAudio.pause();
+                    currentAudio.currentTime = 0;
+                }
+                
+                audio.play();
+                currentAudio = audio;
+                playBtn.textContent = '⏸';
+
+                audio.ontimeupdate = () => {
+                    const progress = (audio.currentTime / audio.duration) * 100;
+                    progressBar.style.width = progress + '%';
+                };
+
+                audio.onended = () => {
+                    playBtn.textContent = '▶';
+                    progressBar.style.width = '0%';
+                    currentAudio = null;
+                };
+            } else {
+                audio.pause();
+                playBtn.textContent = '▶';
+            }
+        }
+
+        async function playAudio(audioUrl) {
+            return new Promise((resolve) => {
+                const audio = new Audio(audioUrl);
+                currentAudio = audio;
+                
+                audio.onended = () => {
+                    currentAudio = null;
+                    resolve();
+                };
+                
+                audio.onerror = () => {
+                    currentAudio = null;
+                    resolve();
+                };
+                
+                audio.play().catch(() => resolve());
+            });
+        }
+
+        function copyText(text) {
+            navigator.clipboard.writeText(text);
+        }
+
+        // Face Auth Modal
+        function showFaceAuthModal() {
+            const modal = document.getElementById('faceAuthModal');
+            modal.classList.add('show');
+            document.getElementById('modalStatus').textContent = 'Starting camera...';
+            startCamera();
+        }
+
+        function closeFaceAuthModal() {
+            const modal = document.getElementById('faceAuthModal');
+            modal.classList.remove('show');
+            stopCamera();
+            document.getElementById('registerForm').classList.remove('show');
+            // Reset buttons
+            document.getElementById('registerBtn').textContent = 'Register';
+            document.getElementById('authBtn').textContent = 'Authenticate';
+            document.getElementById('authBtn').onclick = authenticateFace;
+        }
+
+        async function startCamera() {
+            try {
+                console.log('Starting camera...');
+                cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'user', width: 640, height: 480 } 
+                });
+                const video = document.getElementById('modalCamera');
+                video.srcObject = cameraStream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    document.getElementById('modalStatus').textContent = 'Position your face in the camera';
+                    console.log('Camera ready, video size:', video.videoWidth, 'x', video.videoHeight);
+                };
+            } catch (e) {
+                console.error('Camera error:', e);
+                document.getElementById('modalStatus').textContent = 'Camera not available: ' + e.message;
+            }
+        }
+
+        function stopCamera() {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(t => t.stop());
+                cameraStream = null;
+            }
+            const video = document.getElementById('modalCamera');
+            if (video) video.srcObject = null;
+        }
+
+        function toggleRegisterForm() {
+            const form = document.getElementById('registerForm');
+            const btn = document.getElementById('registerBtn');
+            const authBtn = document.getElementById('authBtn');
+            
+            if (form.classList.contains('show')) {
+                form.classList.remove('show');
+                btn.textContent = 'Register';
+                authBtn.textContent = 'Authenticate';
+                authBtn.onclick = authenticateFace;
+                document.getElementById('modalStatus').textContent = 'Position your face in the camera';
+            } else {
+                form.classList.add('show');
+                btn.textContent = 'Cancel';
+                authBtn.textContent = 'Capture & Save';
+                authBtn.onclick = registerFace;
+                document.getElementById('registerName').focus();
+                document.getElementById('modalStatus').textContent = 'Enter name, then click "Capture & Save"';
+            }
+        }
+
+        async function authenticateFace() {
+            const video = document.getElementById('modalCamera');
+            
+            // Check if camera is ready
+            if (!video.srcObject || video.videoWidth === 0) {
+                document.getElementById('modalStatus').textContent = 'Camera not ready. Please wait...';
+                await startCamera();
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            document.getElementById('modalStatus').textContent = 'Authenticating...';
+
+            try {
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+                const formData = new FormData();
+                formData.append('image', blob, 'face.jpg');
+
+                const response = await fetch('/api/face-auth', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (result.authenticated && result.user_id !== 'Guest') {
+                    userName = result.user_id;
+                    document.getElementById('modalStatus').textContent = '✅ Welcome, ' + userName + '!';
+                    welcomeText.textContent = 'Welcome, ' + userName + '! How can I help you today?';
+                    welcomeBanner.classList.add('show');
+                    
+                    setTimeout(() => {
+                        closeFaceAuthModal();
+                        playGreeting();
+                    }, 1500);
+                } else {
+                    document.getElementById('modalStatus').textContent = 'Face not recognized. Try Register.';
+                }
+            } catch (e) {
+                document.getElementById('modalStatus').textContent = 'Authentication failed';
+            }
+        }
+
+        async function registerFace() {
+            const name = document.getElementById('registerName').value.trim();
+            if (!name) {
+                document.getElementById('modalStatus').textContent = 'Please enter a name first!';
+                document.getElementById('registerName').focus();
+                return;
+            }
+
+            const video = document.getElementById('modalCamera');
+            
+            // Check if camera is ready
+            if (!video.srcObject || video.videoWidth === 0) {
+                document.getElementById('modalStatus').textContent = 'Camera not ready. Please wait...';
+                await startCamera();
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            
+            // Check again
+            if (video.videoWidth === 0) {
+                document.getElementById('modalStatus').textContent = 'No camera feed. Check camera permissions.';
+                return;
+            }
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            console.log('Capturing face for:', name, 'Size:', canvas.width, 'x', canvas.height);
+
+            document.getElementById('modalStatus').textContent = 'Capturing and registering...';
+
+            try {
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+                const formData = new FormData();
+                formData.append('image', blob, 'face.jpg');
+
+                const response = await fetch('/api/register-face?name=' + encodeURIComponent(name), {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('modalStatus').textContent = '✅ Registered: ' + name;
+                    userName = name;
+                    setTimeout(() => {
+                        closeFaceAuthModal();
+                        welcomeText.textContent = 'Welcome, ' + userName + '! How can I help you today?';
+                        welcomeBanner.classList.add('show');
+                    }, 1500);
+                } else {
+                    document.getElementById('modalStatus').textContent = '❌ ' + (result.detail || 'Registration failed');
+                }
+            } catch (e) {
+                document.getElementById('modalStatus').textContent = 'Registration failed';
+            }
+        }
+
+        async function playGreeting() {
+            try {
+                const greeting = `Welcome ${userName}! How can I help you today?`;
+                const response = await fetch('/api/text-to-speech', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: greeting })
+                });
+                
+                if (response.ok) {
+                    const audioBlob = await response.blob();
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    await playAudio(audioUrl);
+                }
+            } catch (e) {
+                console.error('Greeting error:', e);
+            }
+        }
+    </script>
+</body>
+</html>
