@@ -82,22 +82,6 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
     && rm cmake.sh \
     && /usr/local/bin/cmake --version
 
-# build tt-metal
-RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
-    && cd ${TT_METAL_HOME} \
-    && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
-    && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
-    && git submodule update --init --recursive --depth 1 \
-    && ./install_dependencies.sh --docker \
-    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
-    && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
-    && uv pip install --upgrade setuptools wheel \
-    && bash ./build_metal.sh --release -e \
-    && bash ./build_metal.sh --release -e --build-metal-tests -c --configure-only \
-    && cmake --build build_Release --target test_system_health -j$(nproc) \
-    && uv pip install --upgrade cmake \
-    && hash -r \
-    && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
 RUN mkdir -p ${HOME_DIR} \
     && mkdir -p /run/sshd \
@@ -106,14 +90,14 @@ RUN mkdir -p ${HOME_DIR} \
 RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
 # install tt-smi
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && export CARGO_HOME=${HOME_DIR}/.cargo \
-    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
-    && . ${HOME_DIR}/.cargo/env \
-    && rustup update \
-    && uv pip install git+https://github.com/tenstorrent/tt-smi \
-    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
+# RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+#     && export CARGO_HOME=${HOME_DIR}/.cargo \
+#     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
+#     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
+#     && . ${HOME_DIR}/.cargo/env \
+#     && rustup update \
+#     && uv pip install git+https://github.com/tenstorrent/tt-smi \
+#     && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
 
 WORKDIR ${HOME_DIR}
 
@@ -121,82 +105,59 @@ WORKDIR ${HOME_DIR}
 ARG APP_DIR="${HOME_DIR}/app"
 ENV APP_DIR=${APP_DIR}
 WORKDIR ${APP_DIR}
-ENV PYTHONPATH=${TT_METAL_HOME}
-COPY "tt-media-server" "${TT_METAL_HOME}/server"
-COPY "tt-media-server/requirements.txt" "${TT_METAL_HOME}/requirements.txt"
-COPY "tt-media-server/fix_dependencies.sh" "${TT_METAL_HOME}/fix_dependencies.sh"
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME} && uv pip install --no-cache-dir -r requirements.txt || \
-    (echo 'Requirements installation failed, trying without pyluwen...' && \
-    grep -v pyluwen requirements.txt > requirements_no_pyluwen.txt && \
-    uv pip install --no-cache-dir -r requirements_no_pyluwen.txt) \
-    && echo 'Running dependency fixes...' \
-    && chmod +x fix_dependencies.sh \
-    && ./fix_dependencies.sh"
+# ENV PYTHONPATH=${TT_METAL_HOME}
+COPY "tt-media-server" "${APP_DIR}/server"
 
-# Install tt-vllm-plugin
-COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-    && uv pip install ."
+# Remove any local build artifacts that were copied
+RUN rm -rf ${APP_DIR}/server/cpp_server/build \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze
 
 # cpp_server deps (apt + Rust if needed + Drogon)
-RUN cd ${TT_METAL_HOME}/server/cpp_server && ./install_dependencies.sh
+RUN cd ${APP_DIR}/server/cpp_server && ./install_dependencies.sh
+
+# Install Rust (needed for tokenizers-cpp)
+RUN export CARGO_HOME=${HOME_DIR}/.cargo \
+    && export RUSTUP_HOME=${HOME_DIR}/.rustup \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
+    && . ${HOME_DIR}/.cargo/env \
+    && rustup default stable
 
 # add tt-blaze (clone using GitHub token from secret)
 RUN --mount=type=secret,id=github_token \
-    rm -rf ${TT_METAL_HOME}/server/cpp_server/tt-blaze \
+    rm -rf ${APP_DIR}/server/cpp_server/tt-blaze \
     && GITHUB_TOKEN=$(cat /run/secrets/github_token) \
     && git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:" \
-    && git clone --depth 1 --branch asaigal/model_integration https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git ${TT_METAL_HOME}/server/cpp_server/tt-blaze \
-    && cd ${TT_METAL_HOME}/server/cpp_server/tt-blaze \
+    && git clone --depth 1 --branch asaigal/model_integration https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git ${APP_DIR}/server/cpp_server/tt-blaze \
+    && cd ${APP_DIR}/server/cpp_server/tt-blaze \
     && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
-    # Set environment variables to point to tt-blaze's tt-metal for the build
-    && export TT_METAL_HOME=${TT_METAL_HOME}/server/cpp_server/tt-blaze/tt-metal \
-    && export PYTHONPATH=${TT_METAL_HOME}/server/cpp_server/tt-blaze/tt-metal \
-    && export PYTHON_ENV_DIR=${TT_METAL_HOME}/server/cpp_server/tt-blaze/tt-metal/python_env \
-    && export LD_LIBRARY_PATH=${TT_METAL_HOME}/server/cpp_server/tt-blaze/tt-metal/build_Release/lib \
-    && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
-    && CMAKE_BUILD_PARALLEL_LEVEL=4 ./install.sh  \
+    && ./install.sh  \
+    && . ./env.sh \
     && ./pipeline_manager/setup.sh \
     && git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf
 
 # Build C++ server (requires Rust for tokenizers-cpp)
+# Use existing Python venv, temporarily point TT_METAL_HOME to tt-blaze for the build
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && export CARGO_HOME=${HOME_DIR}/.cargo \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
-    && export TT_METAL_HOME=${TT_METAL_HOME}/server/cpp_server/tt-blaze/tt-metal \
-    && cd ${TT_METAL_HOME}/server/cpp_server \
+    && export TT_METAL_HOME=${APP_DIR}/server/cpp_server/tt-blaze/tt-metal \
+    && cd ${APP_DIR}/server/cpp_server \
     && ./build.sh"
 
 # Add script for running C++ server
-COPY "tt-media-server/run_cpp.sh" "${TT_METAL_HOME}/server/run_cpp.sh"
-RUN chmod +x ${TT_METAL_HOME}/server/run_cpp.sh
+COPY "tt-media-server/run_cpp.sh" "${APP_DIR}/server/run_cpp.sh"
+RUN chmod +x ${APP_DIR}/server/run_cpp.sh
 
 # Cleanup build-only directories
 RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/.cargo \
     && rm -rf ${HOME_DIR}/.cache \
-    && rm -rf ${HOME_DIR}/tt-metal/.cpmcache \
-    && rm -rf ${HOME_DIR}/tt-metal/docs \
-    && rm -rf ${HOME_DIR}/tt-metal/tests \
-    && rm -rf ${HOME_DIR}/tt-metal/tech_reports \
-    && rm -rf ${HOME_DIR}/tt-metal/.github \
-    && rm -rf ${HOME_DIR}/tt-metal/contributing \
-    && rm -rf ${HOME_DIR}/tt-metal/releases \
-    && rm -rf ${HOME_DIR}/tt-metal/dockerfile \
-    && rm -rf ${HOME_DIR}/tt-metal/cmake \
-    && rm -rf ${HOME_DIR}/tt-metal/scripts \
-    && rm -rf ${HOME_DIR}/tt-metal/infra/tests \
-    && rm -rf ${HOME_DIR}/tt-metal/tt-train \
-    && rm -rf ${HOME_DIR}/tt-metal/server/tests \
-    && rm -rf ${HOME_DIR}/tt-metal/server/scripts \
-    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/tt-blaze \
-    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/include \
-    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/src \
-    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/tests \
-    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/benchmarks \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/.cpmcache \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/docs \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/tests \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/tech_reports \
+    && rm -rf ${APP_DIR}/server/cpp_server/tt-blaze/tt-metal/.github \
     && rm -rf /usr/local/rustup \
     && rm -rf /usr/include
 
@@ -223,16 +184,12 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     TT_MM_THROTTLE_PERF=5 \
     SHELL=/bin/bash \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
-    TT_METAL_HOME=${HOME_DIR}/tt-metal \
-    TT_METAL_RUNTIME_ROOT=${HOME_DIR}/tt-metal \
+    APP_DIR=${HOME_DIR}/app \
+    TT_METAL_HOME=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal \
+    TT_METAL_RUNTIME_ROOT=${HOME_DIR}/app/server/cpp_server/tt-blaze/tt-metal \
     CONFIG=Release \
     TT_METAL_ENV=dev \
-    LOGURU_LEVEL=INFO \
-    PYTHONPATH=${HOME_DIR}/tt-metal \
-    PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
-    LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
-    VLLM_USE_V1=1 \
-    TT_METAL_LOGS_PATH=${HOME_DIR}/logs
+    LOGURU_LEVEL=INFO
 
 # Install runtime dependencies
 # These packages are required for the application to run in production
@@ -269,12 +226,13 @@ RUN echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc
 
 # Switch back to root for entrypoint (it will drop to non-root user via gosu)
 USER root
-COPY docker-entrypoint.sh ${HOME_DIR}/tt-metal
-RUN chmod +x ${HOME_DIR}/tt-metal/docker-entrypoint.sh
-RUN chmod +x ${TT_METAL_HOME}/server/run_uvicorn.sh
+COPY docker-entrypoint.sh ${HOME_DIR}/app/server/docker-entrypoint.sh
+RUN chmod +x ${HOME_DIR}/app/server/docker-entrypoint.sh
+RUN chmod +x ${HOME_DIR}/app/server/run_uvicorn.sh
 
 EXPOSE 8000
-ENTRYPOINT ["./docker-entrypoint.sh"]
-# Default to uvicorn
+WORKDIR ${HOME_DIR}/app/server
+# Default to uvicornr-entrypoint.sh"]
 ENV SERVER_MODE=uvicorn
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else source ./run_uvicorn.sh; fi"]
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else source ./run_uvicorn.sh; fi"]
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else source ./run_uvicorn.sh; fi"]

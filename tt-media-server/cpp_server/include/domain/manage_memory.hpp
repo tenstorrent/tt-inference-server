@@ -5,13 +5,12 @@
 
 #include <cstdint>
 #include <istream>
-#include <limits>
 #include <ostream>
 #include <vector>
 
-namespace tt::domain {
+#include "domain/slot_types.hpp"
 
-constexpr uint32_t INVALID_SLOT_ID = std::numeric_limits<uint32_t>::max();
+namespace tt::domain {
 
 enum class MemoryManagementAction : std::uint8_t {
   ALLOCATE = 0,

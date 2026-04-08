@@ -36,17 +36,4 @@ std::optional<domain::ManageMemoryTask> MemoryManager::getRequest() {
   return std::nullopt;
 }
 
-void MemoryManager::handleResponse(int slotId) {
-  domain::ManageMemoryResult result{};
-  result.status = domain::ManageMemoryStatus::SUCCESS;
-  result.slotIds = {static_cast<std::uint32_t>(slotId)};
-
-  TT_LOG_DEBUG("[MemoryManager] Sending response - SlotID: {}, Status: SUCCESS",
-               slotId);
-
-  resultQueue->push(result);
-
-  TT_LOG_DEBUG("[MemoryManager] Response sent successfully");
-}
-
 }  // namespace tt::services

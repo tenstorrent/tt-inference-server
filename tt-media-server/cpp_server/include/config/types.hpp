@@ -75,7 +75,14 @@ inline LLMMode llmModeFromString(const std::string& v) {
   return LLMMode::REGULAR;
 }
 
-enum class ModelRunnerType { MOCK, PIPELINE, LLAMA, MOCK_PIPELINE, PREFILL };
+enum class ModelRunnerType {
+  MOCK,
+  PIPELINE,
+  LLAMA,
+  MOCK_PIPELINE,
+  PIPELINE_MANAGER,
+  PREFILL
+};
 
 enum class SchedulingPolicy {
   PREFILL_FIRST,
