@@ -559,6 +559,32 @@ class TestProcessStreaming:
                     pass
 
     @pytest.mark.asyncio
+    async def test_process_streaming_worker_exception(
+        self, base_service, mock_scheduler, mock_settings
+    ):
+        """Test process_streaming propagates worker exceptions from result queue.
+
+        Workers put Exception objects on the result queue when they fail
+        (e.g. prompt exceeding max_model_len). Before the fix, calling
+        .get("type") on the Exception caused AttributeError and crashed
+        the server.
+        """
+        mock_request = MockRequest(task_id="streaming_worker_error")
+
+        async def simulate_worker_error():
+            await asyncio.sleep(0.01)
+            queue = mock_scheduler.result_queues.get("streaming_worker_error")
+            if queue:
+                await queue.put(RuntimeError("prompt exceeds max_model_len"))
+
+        with patch("model_services.base_service.settings", mock_settings):
+            asyncio.create_task(simulate_worker_error())
+
+            with pytest.raises(RuntimeError, match="prompt exceeds max_model_len"):
+                async for _ in base_service.process_streaming(mock_request):
+                    pass
+
+    @pytest.mark.asyncio
     async def test_process_streaming_with_duration(
         self, base_service, mock_scheduler, mock_settings
     ):
