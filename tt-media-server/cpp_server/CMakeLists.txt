@@ -380,7 +380,6 @@ set(SOURCES
     src/api/sse_stream_writer.cpp
     src/api/health_controller.cpp
     src/api/openapi.cpp
-    src/filters/security_filter.cpp
     src/services/llm_service.cpp
     src/services/reasoning_parser.cpp
     src/services/session_manager.cpp
