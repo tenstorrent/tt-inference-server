@@ -59,8 +59,18 @@ LLMRunner::LLMRunner(const Config& config,
     }
 
     if (guidedDecoder && guidedDecoder->hasGuidedDecoding(result.taskId)) {
-      guidedDecoder->acceptToken(result.taskId,
-                                 static_cast<int32_t>(result.tokenId));
+      if (!guidedDecoder->acceptToken(result.taskId,
+                                      static_cast<int32_t>(result.tokenId))) {
+        TT_LOG_WARN(
+            "[LLMRunner] Grammar rejected token {} for task {} - "
+            "finishing sequence",
+            result.tokenId, result.taskId);
+        guidedDecoder->removeRequest(result.taskId);
+        seq->setStatus(SequenceStatus::FINISHED);
+        ipc::pushToken(*result_queue_, result.taskId, result.tokenId, true);
+        scheduler_->removeSequence(result.taskId);
+        return;
+      }
     }
 
     std::vector<Sequence*> seqs = {seq};
