@@ -9,6 +9,9 @@
 
 #include "utils/concurrent_queue.hpp"
 
+using tt::utils::LockFreeSPSCQueue;
+using tt::utils::detail::nextPowerOfTwo;
+
 namespace {
 
 constexpr size_t QUEUE_CAPACITY = 1024;

@@ -15,7 +15,7 @@ namespace tt::api {
 SseStreamWriter::SseStreamWriter(trantor::EventLoop* loop, StreamParams params)
     : loop_(loop), params_(std::move(params)) {
   if (config::enableAccumulatedStreaming()) {
-    accumulator_ = std::make_shared<ConcurrentQueue<std::string>>();
+    accumulator_ = std::make_shared<tt::utils::ConcurrentQueue<std::string>>();
   }
 }
 
