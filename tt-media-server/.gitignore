@@ -1,1 +1,3 @@
 venv/
+cpp_server/build/
+model_store/

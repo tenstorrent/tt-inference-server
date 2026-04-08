@@ -7,17 +7,26 @@ from abc import ABC, abstractmethod
 
 from config.settings import get_settings
 from utils.logger import TTLogger
-from utils.torch_utils import set_torch_thread_limits
+from utils.runner_utils import setup_runner_environment
 
 
 class BaseDeviceRunner(ABC):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
+    def __init__(
+        self, device_id: str, cpu_threads: str = None, num_torch_threads: int = None
+    ):
         self.device_id = device_id
         self.logger = TTLogger()
         self.settings = get_settings()
         self.ttnn_device = None
 
-        set_torch_thread_limits(num_torch_threads)
+        # Skip in main process when runner is only used for download_weights (device_id "-1")
+        if self.device_id != "-1":
+            if not cpu_threads:
+                # Dynamic batcher is used for LLM workloads where VLLM performs better with higher thread counts
+                cpu_threads = "16" if self.settings.use_dynamic_batcher else "2"
+            if not num_torch_threads:
+                num_torch_threads = 16 if self.settings.use_dynamic_batcher else 1
+            setup_runner_environment(device_id, cpu_threads, num_torch_threads)
 
         if not os.getenv("HF_TOKEN", None) and not (
             os.getenv("HF_HOME", None) and any(os.scandir(os.getenv("HF_HOME")))
@@ -34,11 +43,14 @@ class BaseDeviceRunner(ABC):
             )
 
     @abstractmethod
-    def load_model(self):
+    def warmup(self):
         pass
 
+    def load_weights(self):
+        return False
+
     @abstractmethod
-    def run_inference(self, *args, **kwargs):
+    def run(self, *args, **kwargs):
         pass
 
     def set_device(self):

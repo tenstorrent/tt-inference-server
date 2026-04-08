@@ -9,9 +9,8 @@ from multiprocessing import Process, Queue
 from threading import Lock
 
 from config.settings import settings
-from model_services.device_worker import setup_cpu_threading_limits
-from model_services.tt_queue import TTQueue
 from utils.logger import TTLogger
+from utils.runner_utils import setup_cpu_threading_limits
 
 
 def _process_worker_tasks(
@@ -88,9 +87,7 @@ class CpuWorkloadHandler:
         self.error_listener_task = asyncio.create_task(self._error_listener())
 
     def _init_queues(self):
-        self.task_queue = TTQueue(
-            max_size=settings.max_queue_size, batch_enabled=settings.max_batch_size > 1
-        )
+        self.task_queue = Queue(settings.max_queue_size)
         self.result_queue = Queue()
         self.error_queue = Queue()
 

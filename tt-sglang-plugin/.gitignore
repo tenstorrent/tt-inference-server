@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyc
+*.egg-info/
+*.egg
+
+# Scripts
+activate_sglang_tt.sh
+
+# Repos
+sglang/
+
+# Virtual environments
+sglang-venv/
+
+# Build artifacts
+dist/
+build/
+
+# Model cache (large tensor files)
+model_cache/
+model_cache_worker*/
+generated/
+
+# PTH files
+*.pth
+
+# IDE
+.vscode/
+.idea/

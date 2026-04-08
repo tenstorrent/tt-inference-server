@@ -4,7 +4,6 @@
 
 import asyncio
 from abc import ABC
-from typing import Any, Optional
 
 from config.settings import settings
 from domain.base_request import BaseRequest
@@ -13,7 +12,6 @@ from resolver.scheduler_resolver import get_scheduler
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
 from utils.hugging_face_utils import HuggingFaceUtils
-from utils.job_manager import get_job_manager
 from utils.logger import TTLogger
 
 
@@ -22,7 +20,6 @@ class BaseService(ABC):
     def __init__(self):
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
-        self._job_manager = get_job_manager()
         if settings.download_weights_from_service:
             HuggingFaceUtils().download_weights()
 
@@ -115,7 +112,15 @@ class BaseService(ABC):
 
     @log_execution_time("Starting workers")
     def start_workers(self):
-        self.scheduler.start_workers()
+        # Create task for async start_workers, don't await it
+        asyncio.create_task(self._start_workers_async())
+
+    async def _start_workers_async(self):
+        """Internal async wrapper for scheduler.start_workers()"""
+        try:
+            await self.scheduler.start_workers()
+        except Exception as e:
+            self.logger.error(f"Failed to start workers: {e}")
 
     @log_execution_time("Stopping workers")
     def stop_workers(self):
@@ -127,9 +132,6 @@ class BaseService(ABC):
     async def pre_process(self, request):
         return request
 
-    @log_execution_time(
-        "Base single request", TelemetryEvent.BASE_SINGLE_PROCESSING, None
-    )
     async def process(self, request):
         queue = asyncio.Queue()
         self.scheduler.result_queues[request._task_id] = queue
@@ -138,12 +140,12 @@ class BaseService(ABC):
 
         try:
             result = await asyncio.wait_for(
-                queue.get(), timeout=settings.inference_timeout_seconds
+                queue.get(), timeout=settings.request_processing_timeout_seconds
             )
             return result
         except asyncio.TimeoutError:
             self.logger.error(
-                f"Request timed out for task {request._task_id}after {settings.inference_timeout_seconds}s"
+                f"Request timed out for task {request._task_id}after {settings.request_processing_timeout_seconds}s"
             )
             raise
         except Exception as e:
@@ -152,87 +154,68 @@ class BaseService(ABC):
         finally:
             self.scheduler.result_queues.pop(request._task_id, None)
 
+    def handle_streaming_chunk(self, chunk):
+        formatted_chunk = chunk["chunk"]
+        if formatted_chunk and formatted_chunk.text:
+            return formatted_chunk
+        return None
+
+    def handle_final_result(self, result):
+        if result.get("return", False):
+            return result.get("result")
+        return None
+
     @log_execution_time(
         "Base single request streaming", TelemetryEvent.BASE_SINGLE_PROCESSING, None
     )
     async def process_streaming(self, request):
         """Handle model-level streaming through the scheduler/device worker using composite keys"""
-        queue = asyncio.Queue()
-        self.scheduler.result_queues[request._task_id] = queue
+        queue = self.scheduler.result_queues[request._task_id] = asyncio.Queue()
 
         # Submit the request
         self.scheduler.process_request(request)
 
         try:
-            # Add extra time based on request duration if available (e.g., audio duration)
-            # Add 0.2x the duration as buffer, but cap the additional timeout at 5 minutes (300 seconds)
-            dynamic_timeout = settings.inference_timeout_seconds
+            # Calculate timeout ONCE
+            dynamic_timeout = settings.request_processing_timeout_seconds
             if hasattr(request, "_duration") and request._duration is not None:
                 duration_based_timeout = min(request._duration * 0.2, 300)
                 dynamic_timeout += duration_based_timeout
-            self.logger.debug(
-                f"Using timeout of {dynamic_timeout}s for streaming request"
-            )
 
-            chunk_count = 0
             while True:
-                chunk = await asyncio.wait_for(queue.get(), timeout=dynamic_timeout)
+                try:
+                    # Get chunk without extra timeout overhead
+                    chunk = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    # Wait only when queue is empty
+                    chunk = await asyncio.wait_for(queue.get(), timeout=dynamic_timeout)
 
-                if isinstance(chunk, dict) and chunk.get("type") == "streaming_chunk":
-                    formatted_chunk = chunk.get("chunk")
-                    # Only yield non-empty chunks
-                    if (
-                        formatted_chunk
-                        and hasattr(formatted_chunk, "text")
-                        and formatted_chunk.text
-                    ):
-                        yield formatted_chunk
+                # Propagate worker errors to the endpoint layer
+                if isinstance(chunk, Exception):
+                    raise chunk
 
-                    # Always increment chunk_count regardless of whether we yielded or not to keep us in sync with the device worker
-                    chunk_count += 1
+                # Type-based dispatch (faster than isinstance)
+                chunk_type = chunk.get("type")
 
-                elif isinstance(chunk, dict) and chunk.get("type") == "final_result":
-                    if chunk.get("return", False):
-                        final_result = chunk.get("result")
-                        if final_result is not None:
-                            yield final_result
+                if chunk_type == "streaming_chunk":
+                    result = self.handle_streaming_chunk(chunk)
+                    if result is not None:
+                        yield result
+                elif chunk_type == "final_result":
+                    result = self.handle_final_result(chunk)
+                    if result is not None:
+                        yield result
                     break
-
                 else:
                     self.logger.error(
-                        f"Received unexpected chunk format for task {request._task_id}: {type(chunk)} - {chunk}"
+                        f"Received unexpected chunk format for task {request._task_id}: {chunk_type}"
                     )
-                    raise ValueError(
-                        f"Streaming protocol violation: Expected streaming_chunk or final_result, got {type(chunk)}: {chunk}"
-                    )
+                    raise ValueError(f"Streaming protocol violation: {chunk_type}")
 
         except asyncio.TimeoutError:
             self.logger.error(
-                f"Streaming timed out after {chunk_count} chunks for task {request._task_id} after {dynamic_timeout}s"
-            )
-            raise
-        except Exception as e:
-            self.logger.error(
-                f"Model-level streaming failed for task {request._task_id}: {e}"
+                f"Streaming timed out chunks for task {request._task_id} after {dynamic_timeout}s"
             )
             raise
         finally:
             self.scheduler.result_queues.pop(request._task_id, None)
-
-    async def create_job(self, job_type: str, request: BaseRequest) -> dict:
-        return await self._job_manager.create_job(
-            job_id=request._task_id,
-            job_type=job_type,
-            model=settings.model_weights_path,
-            request=request,
-            task_function=self.process_request,
-        )
-
-    def get_job_metadata(self, job_id: str) -> Optional[dict]:
-        return self._job_manager.get_job_metadata(job_id)
-
-    def get_job_result(self, job_id: str) -> Optional[Any]:
-        return self._job_manager.get_job_result(job_id)
-
-    def cancel_job(self, job_id: str) -> bool:
-        return self._job_manager.cancel_job(job_id)

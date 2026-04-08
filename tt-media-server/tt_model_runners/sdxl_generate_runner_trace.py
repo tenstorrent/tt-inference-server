@@ -8,7 +8,7 @@ import torch
 from config.constants import SupportedModels
 from diffusers import DiffusionPipeline
 from domain.image_generate_request import ImageGenerateRequest
-from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
+from models.demos.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
     TtSDXLPipeline,
     TtSDXLPipelineConfig,
 )
@@ -18,8 +18,8 @@ from utils.decorators import log_execution_time
 
 
 class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
 
     def _load_pipeline(self):
         self.pipeline = DiffusionPipeline.from_pretrained(
@@ -39,11 +39,12 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
                 num_inference_steps=2,
                 guidance_scale=5.0,
                 use_cfg_parallel=self.is_tensor_parallel,
+                image_resolution=self.settings.sdxl_image_resolution,
             ),
         )
 
     def _warmup_inference_block(self):
-        self.run_inference(
+        self.run(
             [
                 ImageGenerateRequest.model_construct(
                     prompt="Sunrise on a beach",
@@ -76,13 +77,14 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[ImageGenerateRequest]):
+    def run(self, requests: list[ImageGenerateRequest]):
         prompts, negative_prompts, prompts_2, negative_prompt_2, needed_padding = (
             self._process_prompts(requests)
         )
+        prompts = self._inject_lora_triggers(prompts, requests[0].lora_path)
 
         self._apply_request_settings(requests[0])
-        self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
+        self._ensure_lora_state(requests[0])
         self.tt_sdxl.compile_text_encoding()
 
         (
@@ -91,8 +93,6 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         ) = self.tt_sdxl.encode_prompts(
             prompts, negative_prompts, prompts_2, negative_prompt_2
         )
-
-        self.logger.debug(f"Device {self.device_id}: Generating input tensors...")
 
         tt_latents, tt_prompt_embeds, tt_add_text_embeds = (
             self.tt_sdxl.generate_input_tensors(
@@ -104,16 +104,12 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
             )
         )
 
-        self.logger.debug(f"Device {self.device_id}: Preparing input tensors...")
-
         tensors = (
             tt_latents,
             tt_prompt_embeds,
             tt_add_text_embeds,
         )
         self._prepare_input_tensors_for_iteration(tensors)
-
-        self.logger.debug(f"Device {self.device_id}: Compiling image processing...")
 
         self.tt_sdxl.compile_image_processing()
 

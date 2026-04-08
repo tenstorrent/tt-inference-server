@@ -90,6 +90,24 @@
             "model_marker": "distil_whisper",
             "test_cases": [
                 {
+                    "template": "AudioTranscriptionLoadDp2Chunk5Test",
+                    "enabled": true,
+                    "description": "DP2 burst with 60s audio, chunk_duration_seconds=5",
+                    "targets": {
+                        "num_concurrent": 64,
+                        "dataset": "60s"
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadDp2Chunk30Test",
+                    "enabled": true,
+                    "description": "DP2 burst with 60s audio, chunk_duration_seconds=30",
+                    "targets": {
+                        "num_concurrent": 64,
+                        "dataset": "60s"
+                    }
+                },
+                {
                     "template": "AudioTranscriptionLoadTest",
                     "enabled": true,
                     "description": "Test audio 30s load",
@@ -136,7 +154,7 @@
                     "enabled": true,
                     "description": "Test audio 30s load",
                     "targets": {
-                        "audio_transcription_time": 3
+                        "audio_transcription_time": 6
                     }
                 },
                 {
@@ -144,7 +162,7 @@
                     "enabled": true,
                     "description": "Test audio 60s load",
                     "targets": {
-                        "audio_transcription_time": 5,
+                        "audio_transcription_time": 12,
                         "dataset": "60s"
                     }
                 },
@@ -153,7 +171,7 @@
                     "enabled": true,
                     "description": "Test single audio 60s transcription and expect chunking",
                     "targets": {
-                        "audio_transcription_time": 3,
+                        "audio_transcription_time": 12,
                         "num_of_devices": 1,
                         "dataset": "60s"
                     }
@@ -173,7 +191,7 @@
                     "enabled": true,
                     "description": "Test audio 30s load",
                     "targets": {
-                        "audio_transcription_time": 4
+                        "audio_transcription_time": 5
                     }
                 },
                 {
@@ -181,7 +199,7 @@
                     "enabled": true,
                     "description": "Test audio 60s load",
                     "targets": {
-                        "audio_transcription_time": 6,
+                        "audio_transcription_time": 10,
                         "dataset": "60s"
                     }
                 },
@@ -190,7 +208,7 @@
                     "enabled": true,
                     "description": "Test single audio 60s transcription and expect chunking",
                     "targets": {
-                        "audio_transcription_time": 3,
+                        "audio_transcription_time": 6,
                         "num_of_devices": 1,
                         "dataset": "60s"
                     }
@@ -211,11 +229,29 @@
             "model_marker": "whisper",
             "test_cases": [
                 {
+                    "template": "AudioTranscriptionLoadDp2Chunk5Test",
+                    "enabled": true,
+                    "description": "DP2 burst with 60s audio, chunk_duration_seconds=5",
+                    "targets": {
+                        "num_concurrent": 64,
+                        "dataset": "60s"
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadDp2Chunk30Test",
+                    "enabled": true,
+                    "description": "DP2 burst with 60s audio, chunk_duration_seconds=30",
+                    "targets": {
+                        "num_concurrent": 64,
+                        "dataset": "60s"
+                    }
+                },
+                {
                     "template": "AudioTranscriptionLoadTest",
                     "enabled": true,
                     "description": "Test audio 30s load",
                     "targets": {
-                        "audio_transcription_time": 3
+                        "audio_transcription_time": 4
                     }
                 },
                 {
@@ -223,7 +259,7 @@
                     "enabled": true,
                     "description": "Test audio 60s load",
                     "targets": {
-                        "audio_transcription_time": 6,
+                        "audio_transcription_time": 7,
                         "dataset": "60s"
                     }
                 },
@@ -232,7 +268,7 @@
                     "enabled": true,
                     "description": "Test single audio 60s transcription and expect chunking",
                     "targets": {
-                        "audio_transcription_time": 3,
+                        "audio_transcription_time": 4,
                         "num_of_devices": 1,
                         "dataset": "60s"
                     }

@@ -4,7 +4,7 @@
 
 import numpy as np
 from domain.video_generate_request import VideoGenerateRequest
-from model_services.base_service import BaseService
+from model_services.base_job_service import BaseJobService
 from model_services.cpu_workload_handler import CpuWorkloadHandler
 
 
@@ -15,6 +15,21 @@ def create_video_worker_context():
 
 
 def video_worker_function(video_manager, video_frames, should_discard_file=True):
+    # str: already-exported video on disk (filesystem path), not raw frame tensors.
+    if isinstance(video_frames, str):
+        path = video_frames
+        if should_discard_file:
+            import os
+
+            try:
+                os.remove(path)
+                video_manager._logger.info(f"Deleted warmup video file: {path}")
+            except Exception as e:
+                video_manager._logger.warning(
+                    f"Failed to delete warmup video file: {e}"
+                )
+            return None
+        return path
     output_path = video_manager.export_to_mp4(video_frames)
     if should_discard_file:
         import os
@@ -28,7 +43,7 @@ def video_worker_function(video_manager, video_frames, should_discard_file=True)
     return output_path
 
 
-class VideoService(BaseService):
+class VideoService(BaseJobService):
     def __init__(self):
         super().__init__()
 

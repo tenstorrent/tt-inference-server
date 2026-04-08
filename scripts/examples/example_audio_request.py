@@ -14,7 +14,7 @@
 #
 # Notes:
 # - Uses Hugging Face Datasets Server HTTP APIs, no extra dependencies required.
-# - Intended to work with tt-media-server audio endpoint: /audio/transcriptions
+# - Intended to work with tt-media-server audio endpoint: /v1/audio/transcriptions
 
 import argparse
 import base64
@@ -349,7 +349,7 @@ def stream_single_request(
     timeout: int = DEFAULT_TIMEOUT,
 ) -> Tuple[bool, Optional[float]]:
     start = time.perf_counter()
-    url = f"{host.rstrip('/')}/audio/transcriptions"
+    url = f"{host.rstrip('/')}/v1/audio/transcriptions"
     data = json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "application/json, application/x-ndjson",
@@ -403,7 +403,7 @@ def nonstream_single_request(
 ) -> Tuple[bool, Optional[float]]:
     start = time.perf_counter()
     status, body, content_type = post_json(
-        host, "/audio/transcriptions", payload, authorization, timeout=timeout
+        host, "/v1/audio/transcriptions", payload, authorization, timeout=timeout
     )
     elapsed = time.perf_counter() - start
     if status == 200 and body:

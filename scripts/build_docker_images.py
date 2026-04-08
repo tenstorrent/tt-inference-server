@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 import argparse
+import concurrent.futures
 import json
 import logging
 import multiprocessing
@@ -11,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -23,10 +25,242 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from workflows.log_setup import setup_workflow_script_logger
-from workflows.model_spec import MODEL_SPECS
+from workflows.model_spec import MODEL_SPECS, export_model_specs_json
 from workflows.utils import get_repo_root_path
 
 logger = logging.getLogger(__file__)
+
+MEMORY_PER_BUILD_GB = 16
+MEMORY_RESERVE_GB = 16
+DISK_PER_BUILD_GB = 40
+DISK_RESERVE_GB = 20
+RESOURCE_POLL_INTERVAL_SECONDS = 10
+# ~4 CPU cores needed per concurrent Docker build
+CPU_CORES_PER_BUILD = 4
+DRY_RUN_BUILD_DURATION_SECONDS = 5
+
+
+def get_available_memory_gb():
+    """Get available system memory in GB from /proc/meminfo (MemAvailable).
+
+    MemAvailable accounts for reclaimable buffers/cache, so it reflects
+    what is actually usable. Available since Linux 3.14.
+    """
+    try:
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    kb = int(line.split()[1])
+                    return kb / (1024 * 1024)
+    except (FileNotFoundError, ValueError, IndexError):
+        pass
+
+    try:
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        avail_pages = os.sysconf("SC_AVPHYS_PAGES")
+        if page_size > 0 and avail_pages > 0:
+            return (page_size * avail_pages) / (1024**3)
+    except (ValueError, OSError):
+        pass
+
+    raise RuntimeError("Could not determine available memory")
+
+
+def get_docker_root_dir():
+    """Get Docker's storage root directory via `docker info`."""
+    try:
+        result = subprocess.run(
+            ["docker", "info", "--format", "{{.DockerRootDir}}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    return "/var/lib/docker"
+
+
+def get_available_disk_gb(path=None):
+    """Get available disk space in GB for the filesystem containing path.
+
+    Defaults to the Docker storage root directory.
+    """
+    if path is None:
+        path = get_docker_root_dir()
+    try:
+        usage = shutil.disk_usage(path)
+        return usage.free / (1024**3)
+    except OSError:
+        usage = shutil.disk_usage("/")
+        return usage.free / (1024**3)
+
+
+def get_max_concurrent_builds(
+    memory_per_build_gb=MEMORY_PER_BUILD_GB,
+    memory_reserve_gb=MEMORY_RESERVE_GB,
+    disk_per_build_gb=DISK_PER_BUILD_GB,
+    disk_reserve_gb=DISK_RESERVE_GB,
+    max_workers=None,
+):
+    """Compute safe max concurrent builds based on host RAM, disk, and CPU.
+
+    Returns:
+        Tuple of (limit, details_dict) where details_dict contains the
+        individual constraint values for logging.
+    """
+    available_mem_gb = get_available_memory_gb()
+    docker_root = get_docker_root_dir()
+    available_disk_gb = get_available_disk_gb(docker_root)
+    physical_cpu_count = get_physical_cpu_count()
+
+    max_by_memory = int((available_mem_gb - memory_reserve_gb) // memory_per_build_gb)
+    max_by_disk = int((available_disk_gb - disk_reserve_gb) // disk_per_build_gb)
+    max_by_cpu = physical_cpu_count // CPU_CORES_PER_BUILD
+
+    resource_limit = max(1, min(max_by_memory, max_by_disk, max_by_cpu))
+
+    if max_workers is not None:
+        limit = min(resource_limit, max_workers)
+    else:
+        limit = resource_limit
+
+    limit = max(1, limit)
+
+    constraints = {
+        "memory": max_by_memory,
+        "disk": max_by_disk,
+        "cpu": max_by_cpu,
+    }
+    binding = min(constraints, key=constraints.get)
+
+    details = {
+        "available_memory_gb": round(available_mem_gb, 1),
+        "available_disk_gb": round(available_disk_gb, 1),
+        "docker_root": docker_root,
+        "physical_cpu_count": physical_cpu_count,
+        "memory_per_build_gb": memory_per_build_gb,
+        "memory_reserve_gb": memory_reserve_gb,
+        "disk_per_build_gb": disk_per_build_gb,
+        "disk_reserve_gb": disk_reserve_gb,
+        "max_by_memory": max_by_memory,
+        "max_by_disk": max_by_disk,
+        "max_by_cpu": max_by_cpu,
+        "resource_limit": resource_limit,
+        "max_workers_override": max_workers,
+        "effective_limit": limit,
+        "binding_constraint": binding,
+    }
+    return limit, details
+
+
+def check_resources_for_new_build(
+    memory_per_build_gb=MEMORY_PER_BUILD_GB,
+    memory_reserve_gb=MEMORY_RESERVE_GB,
+    disk_per_build_gb=DISK_PER_BUILD_GB,
+    disk_reserve_gb=DISK_RESERVE_GB,
+):
+    """Check if there are sufficient resources to start one more build.
+
+    Returns:
+        Tuple of (ok, available_mem_gb, available_disk_gb)
+    """
+    available_mem_gb = get_available_memory_gb()
+    available_disk_gb = get_available_disk_gb()
+    mem_ok = (available_mem_gb - memory_reserve_gb) >= memory_per_build_gb
+    disk_ok = (available_disk_gb - disk_reserve_gb) >= disk_per_build_gb
+    return (mem_ok and disk_ok), available_mem_gb, available_disk_gb
+
+
+def log_resource_summary(details, total_builds):
+    """Log a detailed resource summary before builds begin."""
+    d = details
+    logger.info("=" * 60)
+    logger.info("BUILD RESOURCE SUMMARY")
+    logger.info("=" * 60)
+    logger.info("Host resources:")
+    logger.info(f"  Available memory: {d['available_memory_gb']} GB")
+    logger.info(f"  Available disk ({d['docker_root']}): {d['available_disk_gb']} GB")
+    logger.info(f"  Physical CPU cores: {d['physical_cpu_count']}")
+    logger.info("Per-build requirements:")
+    logger.info(f"  Memory per build: {d['memory_per_build_gb']} GB")
+    logger.info(f"  Memory reserve: {d['memory_reserve_gb']} GB")
+    logger.info(f"  Disk per build: {d['disk_per_build_gb']} GB")
+    logger.info(f"  Disk reserve: {d['disk_reserve_gb']} GB")
+    logger.info("Concurrency limits:")
+    logger.info(
+        f"  By memory: {d['max_by_memory']}"
+        f" (({d['available_memory_gb']} - {d['memory_reserve_gb']}) GB"
+        f" / {d['memory_per_build_gb']} GB)"
+    )
+    logger.info(
+        f"  By disk: {d['max_by_disk']}"
+        f" (({d['available_disk_gb']} - {d['disk_reserve_gb']}) GB"
+        f" / {d['disk_per_build_gb']} GB)"
+    )
+    logger.info(
+        f"  By CPU: {d['max_by_cpu']}"
+        f" ({d['physical_cpu_count']} cores / {CPU_CORES_PER_BUILD})"
+    )
+    if d["max_workers_override"] is not None:
+        logger.info(f"  --max-workers override: {d['max_workers_override']}")
+    logger.info(
+        f"  Effective max concurrent builds: {d['effective_limit']}"
+        f" (limited by {d['binding_constraint']})"
+    )
+    logger.info("Build queue:")
+    start_now = min(d["effective_limit"], total_builds)
+    queued = total_builds - start_now
+    logger.info(f"  Total builds queued: {total_builds}")
+    logger.info(
+        f"  Will start {start_now} immediately, {queued} queued waiting for resources"
+    )
+    logger.info("=" * 60)
+
+    if d["effective_limit"] < total_builds:
+        logger.warning(
+            f"Throttling active: only {d['effective_limit']} of {total_builds}"
+            " builds can run concurrently due to resource constraints"
+        )
+
+    usable_mem = d["available_memory_gb"] - d["memory_reserve_gb"]
+    if usable_mem < d["memory_per_build_gb"]:
+        logger.error(
+            f"Available memory after reserve ({usable_mem:.1f} GB) is below the"
+            f" minimum per-build requirement ({d['memory_per_build_gb']} GB)."
+            " Builds may fail due to OOM."
+        )
+
+    usable_disk = d["available_disk_gb"] - d["disk_reserve_gb"]
+    if usable_disk < d["disk_per_build_gb"]:
+        logger.error(
+            f"Available disk after reserve ({usable_disk:.1f} GB) is below the"
+            f" minimum per-build requirement ({d['disk_per_build_gb']} GB)."
+            " Builds may fail due to insufficient disk space."
+        )
+
+
+def generate_model_specs_json(output_path: Path = None) -> Path:
+    """Generate model_spec.json by serializing all MODEL_SPECS.
+
+    This function generates a JSON file containing all model specifications
+    that will be embedded in the Docker image. The JSON can be used at runtime
+    to look up model configurations by hf_model_repo and device_type.
+
+    Args:
+        output_path: Path where the JSON file should be written.
+                    Defaults to repo_root / "model_spec.json"
+
+    Returns:
+        Path to the generated JSON file
+    """
+    if output_path is None:
+        output_path = get_repo_root_path() / "model_spec.json"
+
+    num_specs = export_model_specs_json(MODEL_SPECS, output_path)
+    logger.info(f"Generated model_spec.json with {num_specs} specs at {output_path}")
+    return output_path
 
 
 def _format_commit_for_id(commit, fallback):
@@ -46,21 +280,31 @@ def _build_combination_id(tt_metal_commit, vllm_commit):
     return f"{tm}-{vc}"
 
 
-def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir):
+def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir, stdout_only=False):
     """
-    Set up individual logger for each combination with file logging only.
-    Console output is handled by the main process to avoid overlapping.
+    Set up individual logger for each combination.
+    Default: logs to file only.
+    With stdout_only=True: logs to stdout only (no file).
+
+    Args:
+        tt_metal_commit: tt-metal commit hash
+        vllm_commit: vllm commit hash
+        log_dir: Directory for log files
+        stdout_only: If True, only log to stdout (no file logging)
     """
     combination_id = _build_combination_id(tt_metal_commit, vllm_commit)
     logger_name = f"process_{combination_id}"
 
-    # Create log directory if it doesn't exist
+    # Create log directory if it doesn't exist (only if we're logging to file)
     log_dir = Path(log_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
+    if not stdout_only:
+        log_dir.mkdir(parents=True, exist_ok=True)
 
     # Create log file path
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_dir / f"build_{timestamp}_{combination_id}.log"
+    log_file = (
+        log_dir / f"build_{timestamp}_{combination_id}.log" if not stdout_only else None
+    )
 
     # Create logger
     process_logger = logging.getLogger(logger_name)
@@ -70,18 +314,23 @@ def setup_individual_logger(tt_metal_commit, vllm_commit, log_dir):
     if process_logger.handlers:
         process_logger.handlers.clear()
 
-    # File handler for this combination (NO console handler to avoid overlap)
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.DEBUG)
-
     # Formatter
     formatter = logging.Formatter(
         f"[{combination_id}] %(asctime)s - %(levelname)s: %(message)s"
     )
-    file_handler.setFormatter(formatter)
 
-    # Add only file handler - no console handler to prevent overlapping output
-    process_logger.addHandler(file_handler)
+    # File handler (default behavior - only if not stdout_only)
+    if not stdout_only:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        process_logger.addHandler(file_handler)
+    else:
+        # Console handler for stdout-only mode (with combination_id prefix for clarity)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+        process_logger.addHandler(console_handler)
 
     return process_logger, log_file
 
@@ -152,15 +401,18 @@ def process_sha_combination(args_tuple):
         ubuntu_version,
         force_build,
         release,
+        multihost,
         push,
         container_app_uid,
         dry_run,
+        stdout_only,
+        dry_run_build_duration,
     ) = args_tuple
 
     # Set up individual logging for this combination
     logs_dir = get_build_logs_dir()
     process_logger, log_file = setup_individual_logger(
-        tt_metal_commit, vllm_commit, logs_dir
+        tt_metal_commit, vllm_commit, logs_dir, stdout_only=stdout_only
     )
 
     combination_id = _build_combination_id(tt_metal_commit, vllm_commit)
@@ -170,7 +422,10 @@ def process_sha_combination(args_tuple):
         process_logger.info(f"tt_metal_commit: {tt_metal_commit}")
         process_logger.info(f"vllm_commit: {vllm_commit}")
         process_logger.info(f"ubuntu_version: {ubuntu_version}")
-        process_logger.info(f"Log file: {log_file}")
+        if log_file:
+            process_logger.info(f"Log file: {log_file}")
+        else:
+            process_logger.info("Logging to stdout only (no file logging)")
 
         # Resolve tt_metal_commit to full SHA early in the process
         process_logger.info("Resolving tt_metal_commit to full SHA...")
@@ -191,7 +446,7 @@ def process_sha_combination(args_tuple):
 
         # Check existence of all images
         process_logger.info("Checking if images already exist...")
-        for image_type in ["tt_metal_base", "cloud", "dev", "release"]:
+        for image_type in ["tt_metal_base", "dev", "release", "multihost"]:
             image_tag = image_tags[image_type]
             local_exists = check_image_exists_local(image_tag)
             remote_exists = check_image_exists_remote(image_tag)
@@ -206,30 +461,17 @@ def process_sha_combination(args_tuple):
 
         # Determine what images need to be built
         build_tt_metal_base_flag = True
-        build_cloud_image_flag = True
         build_dev_image_flag = True
         build_release_image_flag = True
+        build_multihost_image_flag = True
 
         if not force_build:
-            if (
-                image_status["cloud"]["local_exists"]
-                or image_status["cloud"]["remote_exists"]
-            ):
-                build_cloud_image_flag = False
-                process_logger.info("Cloud image already exists, skipping build")
-
             if (
                 image_status["dev"]["local_exists"]
                 or image_status["dev"]["remote_exists"]
             ):
                 build_dev_image_flag = False
                 process_logger.info("Dev image already exists, skipping build")
-                # Dev image is built FROM cloud image, so cloud must exist too
-                if build_cloud_image_flag:
-                    build_cloud_image_flag = False
-                    process_logger.info(
-                        "Dev image exists, cloud image must exist too, skipping cloud build"
-                    )
 
             if (
                 image_status["release"]["local_exists"]
@@ -237,12 +479,13 @@ def process_sha_combination(args_tuple):
             ):
                 build_release_image_flag = False
                 process_logger.info("Release image already exists, skipping build")
-                # Release image is built FROM cloud image, so cloud must exist too
-                if build_cloud_image_flag:
-                    build_cloud_image_flag = False
-                    process_logger.info(
-                        "Release image exists, cloud image must exist too, skipping cloud build"
-                    )
+
+            if (
+                image_status["multihost"]["local_exists"]
+                or image_status["multihost"]["remote_exists"]
+            ):
+                build_multihost_image_flag = False
+                process_logger.info("Multihost image already exists, skipping build")
 
             if (
                 image_status["tt_metal_base"]["local_exists"]
@@ -253,25 +496,36 @@ def process_sha_combination(args_tuple):
             if (
                 release
                 and build_release_image_flag
-                and not image_status["cloud"]["local_exists"]
+                and not image_status["dev"]["local_exists"]
             ):
-                # NOTE: copying a dev image into a release image is not guaranteed
-                # to have correct code in it, so it is required to build the cloud image
-                # as part of release process.
+                # Release image is tagged from dev, so dev must be built
                 process_logger.info(
-                    "Cloud image does not exist locally, building cloud image to safely build release image"
+                    "Dev image does not exist locally, building dev image to safely build release image"
                 )
-                build_cloud_image_flag = True
-                # might as well build the dev image too, just a different tag
                 build_dev_image_flag = True
 
+            if (
+                multihost
+                and build_multihost_image_flag
+                and not image_status["release"]["local_exists"]
+            ):
+                # Multihost image is built from release, so release must exist
+                process_logger.info(
+                    "Release image does not exist locally, building release image to build multihost image"
+                )
+                build_release_image_flag = True
+                if not image_status["dev"]["local_exists"]:
+                    build_dev_image_flag = True
+
         # Build tt-metal base image only if needed
-        if (
-            build_cloud_image_flag or build_dev_image_flag
-        ) and build_tt_metal_base_flag:
+        if build_dev_image_flag and build_tt_metal_base_flag:
             image_status["tt_metal_base"]["build_attempted"] = True
             if dry_run:
-                process_logger.info("[DRY-RUN] Would build tt-metal base image...")
+                process_logger.info(
+                    f"[DRY-RUN] Would build tt-metal base image... "
+                    f"(simulating {dry_run_build_duration}s build)"
+                )
+                time.sleep(dry_run_build_duration)
             else:
                 process_logger.info("Building tt-metal base image...")
                 try:
@@ -291,42 +545,25 @@ def process_sha_combination(args_tuple):
                 "All final images exist, skipping tt-metal base image build"
             )
 
-        # Build cloud image
-        if build_cloud_image_flag:
-            image_status["cloud"]["build_attempted"] = True
+        # Build dev image
+        if build_dev_image_flag:
+            image_status["dev"]["build_attempted"] = True
             if dry_run:
                 process_logger.info(
-                    f"[DRY-RUN] Would build cloud image: {image_tags['cloud']}"
+                    f"[DRY-RUN] Would build dev image: {image_tags['dev']} "
+                    f"(simulating {dry_run_build_duration}s build)"
                 )
+                time.sleep(dry_run_build_duration)
             else:
-                process_logger.info("Building cloud image...")
+                process_logger.info("Building dev image...")
                 try:
-                    build_cloud_image(
+                    build_dev_image(
                         image_tags,
                         resolved_tt_metal_commit,
                         vllm_commit,
                         container_app_uid,
                         process_logger,
                     )
-                    image_status["cloud"]["build_succeeded"] = True
-                except Exception as e:
-                    process_logger.error(f"Failed to build cloud image: {e}")
-                    image_status["cloud"]["build_succeeded"] = False
-                    raise
-        else:
-            process_logger.info(f"Skipping cloud image build: {image_tags['cloud']}")
-
-        # Build dev image
-        if build_dev_image_flag:
-            image_status["dev"]["build_attempted"] = True
-            if dry_run:
-                process_logger.info(
-                    f"[DRY-RUN] Would build dev image: {image_tags['dev']}"
-                )
-            else:
-                process_logger.info("Building dev image...")
-                try:
-                    build_dev_image(image_tags, process_logger)
                     image_status["dev"]["build_succeeded"] = True
                 except Exception as e:
                     process_logger.error(f"Failed to build dev image: {e}")
@@ -340,8 +577,10 @@ def process_sha_combination(args_tuple):
             image_status["release"]["build_attempted"] = True
             if dry_run:
                 process_logger.info(
-                    f"[DRY-RUN] Would build release image: {image_tags['release']}"
+                    f"[DRY-RUN] Would build release image: {image_tags['release']} "
+                    f"(simulating {dry_run_build_duration}s build)"
                 )
+                time.sleep(dry_run_build_duration)
             else:
                 process_logger.info("Building release image...")
                 try:
@@ -356,14 +595,39 @@ def process_sha_combination(args_tuple):
                 f"Skipping release image build: {image_tags['release']}"
             )
 
+        # Build multihost image (only if multihost=True)
+        if multihost and build_multihost_image_flag:
+            image_status["multihost"]["build_attempted"] = True
+            if dry_run:
+                process_logger.info(
+                    f"[DRY-RUN] Would build multihost image: {image_tags['multihost']}"
+                )
+            else:
+                process_logger.info("Building multihost image...")
+                try:
+                    build_multihost_image(image_tags, process_logger)
+                    image_status["multihost"]["build_succeeded"] = True
+                except Exception as e:
+                    process_logger.error(f"Failed to build multihost image: {e}")
+                    image_status["multihost"]["build_succeeded"] = False
+                    raise
+        else:
+            process_logger.info(
+                f"Skipping multihost image build: {image_tags['multihost']}"
+            )
+
         # Push images if requested
         if push:
             if dry_run:
-                process_logger.info("[DRY-RUN] Would push images to registry...")
+                process_logger.info(
+                    f"[DRY-RUN] Would push images to registry... "
+                    f"(simulating {dry_run_build_duration}s push)"
+                )
+                time.sleep(dry_run_build_duration)
             else:
                 process_logger.info("Pushing images to registry...")
 
-            for image_type in ["cloud", "dev", "release"]:
+            for image_type in ["dev", "release", "multihost"]:
                 image_tag = image_tags[image_type]
 
                 # Skip release image unless explicitly marked as a release
@@ -373,9 +637,20 @@ def process_sha_combination(args_tuple):
                     )
                     continue
 
+                # Skip multihost image unless explicitly marked as multihost
+                if image_type == "multihost" and not multihost:
+                    process_logger.info(
+                        f"Skipping push for {image_tag}, multihost={multihost}"
+                    )
+                    continue
+
                 if should_push_image(image_tag, force_push=False):
                     if dry_run:
-                        process_logger.info(f"[DRY-RUN] Would push image: {image_tag}")
+                        process_logger.info(
+                            f"[DRY-RUN] Would push image: {image_tag} "
+                            f"(simulating {dry_run_build_duration}s push)"
+                        )
+                        time.sleep(dry_run_build_duration)
                     else:
                         push_image(image_tag, process_logger)
                 else:
@@ -387,7 +662,7 @@ def process_sha_combination(args_tuple):
             "combination_id": combination_id,
             "tt_metal_commit": tt_metal_commit,
             "vllm_commit": vllm_commit,
-            "log_file": str(log_file),
+            "log_file": str(log_file) if log_file else None,
             "images": image_status,
         }
 
@@ -406,7 +681,7 @@ def process_sha_combination(args_tuple):
             "combination_id": combination_id,
             "tt_metal_commit": tt_metal_commit,
             "vllm_commit": vllm_commit,
-            "log_file": str(log_file),
+            "log_file": str(log_file) if log_file else None,
             "error": str(e),
             "images": image_status if "image_status" in locals() else {},
         }
@@ -414,7 +689,9 @@ def process_sha_combination(args_tuple):
 
 def run_command_with_logging(command, logger, check=True, cwd=None):
     """
-    Run a command and write output directly to the process log file.
+    Run a command and write output to log file (default) or stdout (if stdout-only mode).
+    Default behavior: writes to log file only.
+    stdout-only mode: writes to stdout in real-time.
     """
     if isinstance(command, str):
         command = command.split()
@@ -443,6 +720,11 @@ def run_command_with_logging(command, logger, check=True, cwd=None):
         # Capture output while streaming it
         stdout_lines = []
 
+        # Check if there's a console handler (stdout-only mode)
+        has_console_handler = any(
+            isinstance(handler, logging.StreamHandler) for handler in logger.handlers
+        )
+
         # Read output line by line as it's produced
         for line in iter(process.stdout.readline, ""):
             line = line.rstrip()
@@ -452,6 +734,9 @@ def run_command_with_logging(command, logger, check=True, cwd=None):
                 if log_file_handler:
                     log_file_handler.stream.write(line + "\n")
                     log_file_handler.stream.flush()
+                # Print to stdout only if console handler is present (stdout-only mode)
+                if has_console_handler:
+                    print(line, flush=True)
 
         # Wait for process to complete
         process.wait()
@@ -487,7 +772,7 @@ def check_image_exists_remote(image_tag):
     try:
         cmd = ["docker", "manifest", "inspect", image_tag]
         logger.info(f"Running command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode == 0:
             logger.info(f"✅ The image exists on GHCR: {image_tag}")
             return True
@@ -509,7 +794,6 @@ def check_image_exists_local(image_tag):
             ["docker", "inspect", "--type=image", image_tag],
             capture_output=True,
             text=True,
-            check=False,
         )
         if result.returncode == 0:
             logger.info(f"✅ The image exists locally: {image_tag}")
@@ -581,15 +865,15 @@ def get_image_tags(
 
     suffix = f"-{tag_suffix}" if tag_suffix else ""
 
-    cloud_image_tag = f"{image_repo}/vllm-tt-metal-src-cloud-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     dev_image_tag = f"{image_repo}/vllm-tt-metal-src-dev-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     release_image_tag = f"{image_repo}/vllm-tt-metal-src-release-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
+    multihost_image_tag = f"{image_repo}/vllm-tt-metal-src-multihost-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     tt_metal_base_tag = f"local/tt-metal/tt-metalium/{os_version}:{tt_metal_commit}"
 
     return {
-        "cloud": cloud_image_tag,
         "dev": dev_image_tag,
         "release": release_image_tag,
+        "multihost": multihost_image_tag,
         "tt_metal_base": tt_metal_base_tag,
     }
 
@@ -607,7 +891,6 @@ def resolve_commit_to_full_sha(tt_metal_commit):
             shell=True,
             capture_output=True,
             text=True,
-            check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
             # Parse the output: "SHA\trefs/..."
@@ -772,6 +1055,8 @@ def build_tt_metal_base_image(
         build_command = [
             "docker",
             "build",
+            "--platform",
+            "linux/amd64",
             "-t",
             tt_metal_base_tag,
             "--build-arg",
@@ -812,11 +1097,11 @@ def should_push_image(image_tag, force_push=False):
     return local_exists and (not remote_exists or force_push)
 
 
-def build_cloud_image(
+def build_dev_image(
     image_tags, tt_metal_commit, vllm_commit, container_app_uid, logger
 ):
     """
-    Build the cloud Docker image.
+    Build the dev Docker image from the Dockerfile.
 
     Args:
         image_tags: Dictionary of image tags
@@ -826,40 +1111,12 @@ def build_cloud_image(
         logger: Logger instance
     """
     repo_root = get_repo_root_path()
-    cloud_image_tag = image_tags["cloud"]
+    dev_image_tag = image_tags["dev"]
     tt_metal_base_tag = image_tags["tt_metal_base"]
 
-    logger.info(f"Building cloud image: {cloud_image_tag}")
-
-    build_command = [
-        "docker",
-        "build",
-        "-t",
-        cloud_image_tag,
-        "--build-arg",
-        f"TT_METAL_DOCKERFILE_URL={tt_metal_base_tag}",
-        "--build-arg",
-        f"TT_METAL_COMMIT_SHA_OR_TAG={tt_metal_commit}",
-        "--build-arg",
-        f"TT_VLLM_COMMIT_SHA_OR_TAG={vllm_commit}",
-        "--build-arg",
-        f"CONTAINER_APP_UID={container_app_uid}",
-        "-f",
-        "vllm-tt-metal-llama3/vllm.tt-metal.src.cloud.Dockerfile",
-        ".",
-    ]
-
-    run_command_with_logging(build_command, logger=logger, check=True, cwd=repo_root)
-    logger.info(f"Successfully built cloud image: {cloud_image_tag}")
-
-
-def build_dev_image(image_tags, logger):
-    """
-    Build the dev Docker image.
-    """
-    repo_root = get_repo_root_path()
-    dev_image_tag = image_tags["dev"]
-    cloud_image_tag = image_tags["cloud"]
+    # Generate model_spec.json before building (COPY'd into image)
+    model_specs_json_path = generate_model_specs_json()
+    logger.info(f"Generated model specs JSON at: {model_specs_json_path}")
 
     logger.info(f"Building dev image: {dev_image_tag}")
 
@@ -869,9 +1126,15 @@ def build_dev_image(image_tags, logger):
         "-t",
         dev_image_tag,
         "--build-arg",
-        f"CLOUD_DOCKERFILE_URL={cloud_image_tag}",
+        f"TT_METAL_DOCKERFILE_URL={tt_metal_base_tag}",
+        "--build-arg",
+        f"TT_METAL_COMMIT_SHA_OR_TAG={tt_metal_commit}",
+        "--build-arg",
+        f"TT_VLLM_COMMIT_SHA_OR_TAG={vllm_commit}",
+        "--build-arg",
+        f"CONTAINER_APP_UID={container_app_uid}",
         "-f",
-        "vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile",
+        "vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile",
         ".",
     ]
 
@@ -881,28 +1144,48 @@ def build_dev_image(image_tags, logger):
 
 def build_release_image(image_tags, logger):
     """
-    Build the release Docker image.
+    Tag the dev image as the release image.
+
+    Release image is identical to the dev image — just a different tag.
+    """
+    release_image_tag = image_tags["release"]
+    dev_image_tag = image_tags["dev"]
+
+    logger.info(f"Tagging dev image as release: {dev_image_tag} -> {release_image_tag}")
+
+    tag_command = ["docker", "tag", dev_image_tag, release_image_tag]
+    run_command_with_logging(tag_command, logger=logger, check=True)
+    logger.info(f"Successfully tagged release image: {release_image_tag}")
+
+
+def build_multihost_image(image_tags, logger):
+    """
+    Build the multihost Docker image from the release image.
+
+    Multihost image extends the release image with SSH server and
+    multihost_entrypoint.sh for distributed MPI-based inference.
     """
     repo_root = get_repo_root_path()
+    multihost_image_tag = image_tags["multihost"]
     release_image_tag = image_tags["release"]
-    cloud_image_tag = image_tags["cloud"]
 
-    logger.info(f"Building release image: {release_image_tag}")
+    logger.info(f"Building multihost image: {multihost_image_tag}")
+    logger.info(f"Base image: {release_image_tag}")
 
     build_command = [
         "docker",
         "build",
         "-t",
-        release_image_tag,
+        multihost_image_tag,
         "--build-arg",
-        f"CLOUD_DOCKERFILE_URL={cloud_image_tag}",
+        f"BASE_IMAGE={release_image_tag}",
         "-f",
-        "vllm-tt-metal-llama3/vllm.tt-metal.src.dev.Dockerfile",
+        "vllm-tt-metal/vllm.tt-metal.src.multihost.Dockerfile",
         ".",
     ]
 
     run_command_with_logging(build_command, logger=logger, check=True, cwd=repo_root)
-    logger.info(f"Successfully built release image: {release_image_tag}")
+    logger.info(f"Successfully built multihost image: {multihost_image_tag}")
 
 
 def push_image(image_tag, logger):
@@ -916,36 +1199,17 @@ def push_image(image_tag, logger):
     logger.info(f"Successfully pushed image: {image_tag}")
 
 
-def build_docker_images(
-    model_configs,
-    force_build=False,
-    release=False,
-    push=False,
-    ubuntu_version="20.04",
-    build_metal_commit=None,
-    max_workers=None,
-    single_threaded=False,
-    dry_run=False,
-):
+def list_image_combinations(model_configs, build_metal_commit=None):
     """
-    Builds all Docker images required by the provided ModelConfigs.
+    Get unique Docker image commit combinations that would be built.
 
     Args:
         model_configs: Dictionary of model configurations
-        force_build: Force rebuild even if images exist
-        release: Mark build as release
-        push: Push containers to registry
-        ubuntu_version: Ubuntu version to use for base images
-        build_metal_commit: Only build containers with this exact tt-metal commit
-        max_workers: Maximum number of parallel workers (defaults to physical CPU cores)
-        single_threaded: Run builds sequentially instead of in parallel (for debugging)
-        dry_run: Print summary of what would be built without building
-    """
-    # Validate inputs
-    container_app_uid = 1000
-    validate_inputs(ubuntu_version, container_app_uid)
+        build_metal_commit: Only return combinations with this exact tt-metal commit
 
-    # Filter combinations if build_metal_commit is specified
+    Returns:
+        Set of tuples (tt_metal_commit, vllm_commit) representing unique combinations
+    """
     unique_sha_combinations = {
         (config.tt_metal_commit, config.vllm_commit)
         for config in model_configs.values()
@@ -968,7 +1232,153 @@ def build_docker_images(
         logger.warning(
             f"No configurations found with tt_metal_commit={build_metal_commit}"
         )
+        return set()
+
+    return unique_sha_combinations
+
+
+def _run_resource_aware_queue(
+    args_tuples,
+    max_concurrent,
+    memory_per_build_gb,
+    memory_reserve_gb,
+    disk_per_build_gb,
+    disk_reserve_gb,
+):
+    """Submit builds via a resource-gated queue using ProcessPoolExecutor.
+
+    Submits up to max_concurrent builds initially, then after each completion
+    polls host resources before submitting the next queued build.
+    """
+    pending_queue = list(args_tuples)
+    results = []
+    active_futures = {}
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_concurrent) as executor:
+
+        def _submit_next():
+            if not pending_queue:
+                return
+            args = pending_queue.pop(0)
+            combo_id = _build_combination_id(args[0], args[1])
+            future = executor.submit(process_sha_combination, args)
+            active_futures[future] = combo_id
+            active = len(active_futures)
+            queued = len(pending_queue)
+            logger.info(
+                f"Starting build {combo_id}"
+                f" ({active}/{max_concurrent} slots, {queued} queued)"
+            )
+
+        def _wait_for_resources_and_submit():
+            logger.info("Polling resources for next build...")
+            ok, avail_mem, avail_disk = check_resources_for_new_build(
+                memory_per_build_gb,
+                memory_reserve_gb,
+                disk_per_build_gb,
+                disk_reserve_gb,
+            )
+            while not ok:
+                logger.warning(
+                    f"Waiting for resources: {avail_mem:.1f} GB memory,"
+                    f" {avail_disk:.1f} GB disk available"
+                    f" (need {memory_per_build_gb} GB mem"
+                    f" + {memory_reserve_gb} GB reserve,"
+                    f" {disk_per_build_gb} GB disk"
+                    f" + {disk_reserve_gb} GB reserve;"
+                    f" polling every {RESOURCE_POLL_INTERVAL_SECONDS}s)..."
+                )
+                time.sleep(RESOURCE_POLL_INTERVAL_SECONDS)
+                ok, avail_mem, avail_disk = check_resources_for_new_build(
+                    memory_per_build_gb,
+                    memory_reserve_gb,
+                    disk_per_build_gb,
+                    disk_reserve_gb,
+                )
+            logger.info("Resources available, starting next build from queue")
+            _submit_next()
+
+        while pending_queue and len(active_futures) < max_concurrent:
+            ok, avail_mem, avail_disk = check_resources_for_new_build(
+                memory_per_build_gb,
+                memory_reserve_gb,
+                disk_per_build_gb,
+                disk_reserve_gb,
+            )
+            if not ok:
+                logger.info(
+                    f"Pausing initial submissions: {avail_mem:.1f} GB memory,"
+                    f" {avail_disk:.1f} GB disk available"
+                )
+                break
+            _submit_next()
+
+        while active_futures:
+            done, _ = concurrent.futures.wait(
+                active_futures,
+                return_when=concurrent.futures.FIRST_COMPLETED,
+            )
+            for future in done:
+                combo_id = active_futures.pop(future)
+                result = future.result()
+                results.append(result)
+                status = "succeeded" if result["success"] else "FAILED"
+                logger.info(f"Completed build {combo_id} ({status})")
+
+                if pending_queue:
+                    _wait_for_resources_and_submit()
+
+    return results
+
+
+def build_docker_images(
+    model_configs,
+    force_build=False,
+    release=False,
+    multihost=False,
+    push=False,
+    ubuntu_version="20.04",
+    build_metal_commit=None,
+    max_workers=None,
+    single_threaded=False,
+    dry_run=False,
+    stdout_only=False,
+    memory_per_build_gb=MEMORY_PER_BUILD_GB,
+    disk_per_build_gb=DISK_PER_BUILD_GB,
+    dry_run_build_duration=DRY_RUN_BUILD_DURATION_SECONDS,
+):
+    """
+    Builds all Docker images required by the provided ModelConfigs.
+
+    Args:
+        model_configs: Dictionary of model configurations
+        force_build: Force rebuild even if images exist
+        release: Mark build as release
+        push: Push containers to registry
+        ubuntu_version: Ubuntu version to use for base images
+        build_metal_commit: Only build containers with this exact tt-metal commit
+        max_workers: Ceiling on parallel workers (resource-based limit applies first)
+        single_threaded: Run builds sequentially instead of in parallel (for debugging)
+        dry_run: Print summary of what would be built without building
+        stdout_only: If True, only log to stdout (no file logging)
+        memory_per_build_gb: GB of RAM required per concurrent build
+        disk_per_build_gb: GB of disk required per concurrent build
+        dry_run_build_duration: Seconds each mock build sleeps in dry-run mode
+    """
+    container_app_uid = 1000
+    validate_inputs(ubuntu_version, container_app_uid)
+
+    unique_sha_combinations = list_image_combinations(
+        model_configs,
+        build_metal_commit=build_metal_commit,
+    )
+
+    if not unique_sha_combinations:
+        logger.warning(
+            f"No configurations found with tt_metal_commit={build_metal_commit}"
+        )
         return
+
     unique_sha_combinations_str = "\n".join(
         [f"{combo[0]}-{combo[1]}" for combo in unique_sha_combinations]
     )
@@ -976,20 +1386,6 @@ def build_docker_images(
         f"Unique SHA combinations to build if needed:\n{unique_sha_combinations_str}"
     )
 
-    # Get physical CPU count for multiprocessing
-    physical_cpu_count = get_physical_cpu_count()
-
-    # Use max_workers if specified, otherwise use physical CPU count
-    if max_workers is not None:
-        workers = max(1, min(max_workers, physical_cpu_count))
-        logger.info(
-            f"Using {workers} workers (max_workers={max_workers}, physical_cores={physical_cpu_count})"
-        )
-    else:
-        workers = max(1, physical_cpu_count)
-        logger.info(f"Using {workers} workers (physical cores detected)")
-
-    # Create argument tuples for each combination
     args_tuples = [
         (
             tt_metal_commit,
@@ -997,9 +1393,12 @@ def build_docker_images(
             ubuntu_version,
             force_build,
             release,
+            multihost,
             push,
             container_app_uid,
             dry_run,
+            stdout_only,
+            dry_run_build_duration,
         )
         for tt_metal_commit, vllm_commit in unique_sha_combinations
     ]
@@ -1008,22 +1407,36 @@ def build_docker_images(
         logger.warning("No combinations to process")
         return
 
-    # Log execution mode
+    max_concurrent, resource_details = get_max_concurrent_builds(
+        memory_per_build_gb=memory_per_build_gb,
+        memory_reserve_gb=MEMORY_RESERVE_GB,
+        disk_per_build_gb=disk_per_build_gb,
+        max_workers=max_workers,
+    )
+    log_resource_summary(resource_details, total_builds=len(args_tuples))
+
     if dry_run:
         logger.info("=" * 80)
         logger.info("DRY-RUN MODE: Checking image status without building")
         logger.info("=" * 80)
 
-    # Use multiprocessing.Pool to process combinations in parallel
-    logger.info(f"Processing {len(args_tuples)} combinations with {workers} workers")
+    logger.info(
+        f"Processing {len(args_tuples)} combinations (max concurrent: {max_concurrent})"
+    )
 
     if single_threaded:
         results = []
         for args_tuple in args_tuples:
             results.append(process_sha_combination(args_tuple))
     else:
-        with multiprocessing.Pool(processes=workers) as pool:
-            results = pool.map(process_sha_combination, args_tuples)
+        results = _run_resource_aware_queue(
+            args_tuples,
+            max_concurrent,
+            memory_per_build_gb,
+            MEMORY_RESERVE_GB,
+            disk_per_build_gb,
+            DISK_RESERVE_GB,
+        )
 
     # Process results and show individual log files
     success_count = 0
@@ -1033,15 +1446,21 @@ def build_docker_images(
     for result in results:
         if result["success"]:
             success_count += 1
-            logger.info(
-                f"✅ Success: {result['combination_id']} - Log: {result['log_file']}"
+            log_info = (
+                f" - Log: {result['log_file']}"
+                if result.get("log_file")
+                else " (stdout only)"
             )
+            logger.info(f"✅ Success: {result['combination_id']}{log_info}")
         else:
             failure_count += 1
             failed_combinations.append(result)
-            logger.error(
-                f"❌ Failed: {result['combination_id']} - Log: {result['log_file']}"
+            log_info = (
+                f" - Log: {result['log_file']}"
+                if result.get("log_file")
+                else " (stdout only)"
             )
+            logger.error(f"❌ Failed: {result['combination_id']}{log_info}")
             logger.error(f"   Error: {result['error']}")
 
     logger.info(
@@ -1049,19 +1468,25 @@ def build_docker_images(
     )
 
     if failed_combinations:
-        logger.error("Failed combinations and their log files:")
+        logger.error("Failed combinations:")
         for failed in failed_combinations:
-            logger.error(f"  - {failed['combination_id']}: {failed['log_file']}")
-        logger.error("Use the log files above to debug the specific failures.")
+            log_info = (
+                f" - Log: {failed['log_file']}"
+                if failed.get("log_file")
+                else " (stdout only)"
+            )
+            logger.error(f"  - {failed['combination_id']}{log_info}")
+        if any(f.get("log_file") for f in failed_combinations):
+            logger.error("Use the log files above to debug the specific failures.")
 
     # Aggregate image build status across all combinations
-    build_attempted = {"cloud": [], "dev": [], "release": []}
-    build_succeeded = {"cloud": [], "dev": [], "release": []}
-    remote_exists = {"cloud": [], "dev": [], "release": []}
+    build_attempted = {"dev": [], "release": [], "multihost": []}
+    build_succeeded = {"dev": [], "release": [], "multihost": []}
+    remote_exists = {"dev": [], "release": [], "multihost": []}
 
     for result in results:
         images = result.get("images", {})
-        for image_type in ["cloud", "dev", "release"]:
+        for image_type in ["dev", "release", "multihost"]:
             if image_type in images:
                 image_info = images[image_type]
                 if image_info.get("build_attempted", False):
@@ -1074,6 +1499,7 @@ def build_docker_images(
     # Generate JSON summary
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     logs_dir = get_build_logs_dir()
+    logs_dir.mkdir(parents=True, exist_ok=True)
     json_file = logs_dir / f"build_summary_{timestamp}.json"
 
     summary_data = {
@@ -1107,6 +1533,11 @@ if __name__ == "__main__":
         "--force-build", action="store_true", help="Force rebuild even if image exists."
     )
     parser.add_argument("--release", action="store_true", help="Mark build as release.")
+    parser.add_argument(
+        "--multihost",
+        action="store_true",
+        help="Build multihost image for distributed inference.",
+    )
     parser.add_argument("--push", action="store_true", help="Push containers.")
     parser.add_argument(
         "--ubuntu-version",
@@ -1123,7 +1554,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max-workers",
         type=int,
-        help="Maximum number of parallel workers (defaults to physical CPU cores)",
+        help="Ceiling on parallel workers (resource-based auto-limit applies first)",
     )
     parser.add_argument(
         "--single-threaded",
@@ -1135,24 +1566,57 @@ if __name__ == "__main__":
         action="store_true",
         help="Print summary of what would be built without building",
     )
+    parser.add_argument(
+        "--dry-run-build-duration",
+        type=float,
+        default=DRY_RUN_BUILD_DURATION_SECONDS,
+        help=f"Seconds each mock build sleeps in dry-run mode (default: {DRY_RUN_BUILD_DURATION_SECONDS})",
+    )
+    parser.add_argument(
+        "--stdout-only",
+        action="store_true",
+        help="Only log to stdout (no file logging)",
+    )
+    parser.add_argument(
+        "--memory-per-build",
+        type=float,
+        default=MEMORY_PER_BUILD_GB,
+        help=f"GB of RAM required per concurrent build (default: {MEMORY_PER_BUILD_GB})",
+    )
+    parser.add_argument(
+        "--disk-per-build",
+        type=float,
+        default=DISK_PER_BUILD_GB,
+        help=f"GB of disk required per concurrent build (default: {DISK_PER_BUILD_GB})",
+    )
     args = parser.parse_args()
     logger.info(f"ubuntu_version: {args.ubuntu_version}")
     logger.info(f"build_metal_commit: {args.build_metal_commit}")
     logger.info(f"max_workers: {args.max_workers}")
     logger.info(f"force_build: {args.force_build}")
     logger.info(f"release: {args.release}")
+    logger.info(f"multihost: {args.multihost}")
     logger.info(f"push: {args.push}")
     logger.info(f"single_threaded: {args.single_threaded}")
     logger.info(f"dry_run: {args.dry_run}")
+    logger.info(f"dry_run_build_duration: {args.dry_run_build_duration}")
+    logger.info(f"stdout_only: {args.stdout_only}")
+    logger.info(f"memory_per_build: {args.memory_per_build}")
+    logger.info(f"disk_per_build: {args.disk_per_build}")
 
     build_docker_images(
         MODEL_SPECS,
         force_build=args.force_build,
         release=args.release,
+        multihost=args.multihost,
         push=args.push,
         ubuntu_version=args.ubuntu_version,
         build_metal_commit=args.build_metal_commit,
         max_workers=args.max_workers,
         single_threaded=args.single_threaded,
         dry_run=args.dry_run,
+        stdout_only=args.stdout_only,
+        memory_per_build_gb=args.memory_per_build,
+        disk_per_build_gb=args.disk_per_build,
+        dry_run_build_duration=args.dry_run_build_duration,
     )

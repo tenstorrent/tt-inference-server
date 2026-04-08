@@ -4,31 +4,30 @@
 
 import asyncio
 import os
-from typing import Optional
+from typing import List, Optional, Union
 
 import numpy as np
 import torch
 import ttnn
-from config.constants import AudioResponseFormat, SupportedModels
+from config.constants import ResponseFormat, SupportedModels
 from domain.audio_processing_request import AudioProcessingRequest
 from domain.audio_text_response import (
     AudioStreamChunk,
     AudioTextResponse,
     AudioTextSegment,
 )
-from model_services.device_worker import setup_cpu_threading_limits
-from models.demos.utils.common_demo_utils import get_mesh_mappers
-from models.demos.whisper.tt.ttnn_optimized_functional_whisper import (
+from models.demos.audio.whisper.tt.ttnn_optimized_functional_whisper import (
     WHISPER_L1_SMALL_SIZE,
     WHISPER_TRACE_REGION_SIZE,
     convert_to_ttnn,
     create_custom_mesh_preprocessor,
     init_kv_cache,
 )
-from models.demos.whisper.tt.whisper_generator import (
+from models.demos.audio.whisper.tt.whisper_generator import (
     GenerationParams,
     WhisperGenerator,
 )
+from models.demos.utils.common_demo_utils import get_mesh_mappers
 from telemetry.telemetry_client import TelemetryEvent
 from transformers import (
     AutoFeatureExtractor,
@@ -40,17 +39,20 @@ from ttnn.model_preprocessing import preprocess_model_parameters
 from utils.decorators import log_execution_time
 from utils.text_utils import TextUtils
 
+# two-command-queue (2CQ) trace execution path
+WHISPER_NUM_COMMAND_QUEUES = 2
+
 
 class TTWhisperRunner(BaseMetalDeviceRunner):
-    def __init__(self, device_id: str, num_torch_threads: int = 1):
-        super().__init__(device_id, num_torch_threads)
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
         self.pipeline = None
-        setup_cpu_threading_limits("1")
 
     def get_pipeline_device_params(self):
         device_params = {
             "l1_small_size": WHISPER_L1_SMALL_SIZE,
             "trace_region_size": WHISPER_TRACE_REGION_SIZE,
+            "num_command_queues": WHISPER_NUM_COMMAND_QUEUES,
         }
         return device_params
 
@@ -59,7 +61,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         TelemetryEvent.DEVICE_WARMUP,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    async def load_model(self) -> bool:
+    async def warmup(self) -> bool:
         try:
             self.logger.info(f"Device {self.device_id}: Loading Whisper model...")
 
@@ -90,6 +92,9 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                     f"Device {self.device_id}: Starting model warmup with {len(dummy_audio)} samples"
                 )
                 await self.pipeline(dummy_audio)
+                if self.settings.max_batch_size > 1:
+                    warmup_batch = [dummy_audio, dummy_audio]
+                    await self.pipeline(warmup_batch)
                 self.logger.info(
                     f"Device {self.device_id}: Model warmup completed successfully"
                 )
@@ -112,20 +117,24 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         TelemetryEvent.MODEL_INFERENCE,
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
-    def run_inference(self, requests: list[AudioProcessingRequest]):
+    def run(self, requests: list[AudioProcessingRequest]):
         """Synchronous wrapper for async inference"""
-        return asyncio.run(self._run_inference_async(requests))
+        return asyncio.run(self._run_async(requests))
 
-    async def _run_inference_async(self, requests: list[AudioProcessingRequest]):
+    async def _run_async(self, requests: list[AudioProcessingRequest]):
         """Main inference method - validates input and routes to appropriate processing"""
         try:
             # Validate prerequisites and input
             if self.pipeline is None:
-                raise RuntimeError(
-                    "Model pipeline not loaded. Call load_model() first."
-                )
+                raise RuntimeError("Model pipeline not loaded. Call warmup() first.")
             if self.ttnn_device is None:
                 raise RuntimeError("TTNN device not initialized")
+
+            if requests.__len__() > 1 or self.settings.max_batch_size > 1:
+                return await self._execute_pipeline_batch(
+                    requests, [self._create_generation_params(req) for req in requests]
+                )
+
             request = self._validate_and_extract_request(requests)
 
             if request._segments and len(request._segments) > 0:
@@ -229,6 +238,57 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 return await self._execute_pipeline_non_streaming(
                     audio_data, generation_params
                 )
+
+        except Exception as e:
+            self.logger.error(
+                f"Device {self.device_id}: Pipeline execution failed: {e}"
+            )
+            raise RuntimeError(f"Audio processing failed: {str(e)}") from e
+
+    async def _execute_pipeline_batch(self, requests, generation_params):
+        """Main pipeline execution method for batch processing.
+
+        Supports 1 or 2 requests. When 2 requests are provided, audio arrays
+        are padded to the same tensor size. Generator handles both batch sizes
+        natively using separate pre-warmed traces (trace_key=1 and trace_key=2).
+        """
+        try:
+            audio_arrays = [req._audio_array for req in requests]
+            durations = [req._duration for req in requests]
+
+            if len(audio_arrays) > 2:
+                raise ValueError(f"Expected 1 or 2 requests, got {len(audio_arrays)}")
+
+            if len(audio_arrays) == 2:
+                max_len = max(len(audio_arrays[0]), len(audio_arrays[1]))
+                audio_data = [
+                    np.pad(arr, (0, max_len - len(arr))) if len(arr) < max_len else arr
+                    for arr in audio_arrays
+                ]
+            else:
+                audio_data = audio_arrays
+
+            result = await self.pipeline(
+                audio_data,
+                stream=False,
+                generation_params=generation_params,
+            )
+
+            responses = []
+            if result and result[0]:
+                for index, text in enumerate(result[0]):
+                    cleaned_text, start, end = TextUtils.extract_text(text)
+                    responses.append(
+                        AudioTextResponse(
+                            text=cleaned_text,
+                            duration=durations[index],
+                            start=start,
+                            end=end,
+                            segments=[],
+                        )
+                    )
+
+            return responses
 
         except Exception as e:
             self.logger.error(
@@ -359,7 +419,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             "type": "final_result",
             "result": final_result,
             "task_id": request._task_id,
-            "return": request.response_format.lower() != AudioResponseFormat.TEXT.value,
+            "return": request.response_format.lower() != ResponseFormat.TEXT.value,
         }
 
     async def _process_segments_non_streaming(self, request: AudioProcessingRequest):
@@ -461,8 +521,12 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             "type": "final_result",
             "result": final_result,
             "task_id": request._task_id,
-            "return": request.response_format.lower() != AudioResponseFormat.TEXT.value,
+            "return": request.response_format.lower() != ResponseFormat.TEXT.value,
         }
+
+    def load_weights(self):
+        self._load_conditional_generation_ref_model()
+        return True
 
     def _format_non_streaming_result(self, result, duration):
         text, start, end = TextUtils.extract_text(result)
@@ -560,8 +624,6 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
             # Preprocess model parameters in thread pool to avoid blocking
             def _preprocess_parameters():
-                setup_cpu_threading_limits("1")
-
                 return preprocess_model_parameters(
                     initialize_model=lambda: model,
                     convert_to_ttnn=convert_to_ttnn,
@@ -580,17 +642,24 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 return init_kv_cache(
                     config,
                     self.ttnn_device,
-                    self.settings.max_batch_size,
                     max_seq_len=max_seq_len,
                     weights_mesh_mapper=weights_mesh_mapper,
                 )
 
-            kv_cache, cross_attn_cache = await asyncio.to_thread(_init_kv_cache)
+            (
+                kv_cache_per_batch_size,
+                cross_attn_cache_per_batch_size,
+            ) = await asyncio.to_thread(_init_kv_cache)
 
             self.logger.info(
                 f"Device {self.device_id}: Successfully initialized TTNN model components"
             )
-            return parameters, ttnn_linear_weight, kv_cache, cross_attn_cache
+            return (
+                parameters,
+                ttnn_linear_weight,
+                kv_cache_per_batch_size,
+                cross_attn_cache_per_batch_size,
+            )
 
         except Exception as e:
             self.logger.error(
@@ -622,8 +691,8 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             (
                 parameters,
                 ttnn_linear_weight,
-                kv_cache,
-                cross_attn_cache,
+                kv_cache_per_batch_size,
+                cross_attn_cache_per_batch_size,
             ) = await self._init_conditional_generation_tt_model(
                 hf_ref_model, config, weights_mesh_mapper
             )
@@ -639,32 +708,44 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 input_mesh_mapper=input_mesh_mapper,
                 output_mesh_composer=output_mesh_composer,
                 weights_mesh_mapper=weights_mesh_mapper,
-                kv_cache=kv_cache,
-                cross_attn_cache=cross_attn_cache,
+                kv_cache_per_batch_size=kv_cache_per_batch_size,
+                cross_attn_cache_per_batch_size=cross_attn_cache_per_batch_size,
                 max_batch_size=self.settings.max_batch_size,
             )
 
             async def _model_pipeline(
                 audio_data,
                 stream=False,
-                generation_params: Optional[GenerationParams] = None,
+                generation_params: Optional[
+                    Union[GenerationParams, List[GenerationParams]]
+                ] = None,
             ):
                 try:
                     # Validate pipeline inputs
-                    if audio_data is None or len(audio_data) == 0:
+                    if audio_data is None:
                         raise ValueError("Audio data is empty or None")
-
-                    if not hasattr(audio_data, "shape"):
-                        raise ValueError(
-                            f"Pipeline expected array with shape, got {type(audio_data)}"
-                        )
 
                     if self.ttnn_device is None:
                         raise RuntimeError("TTNN device not initialized")
 
-                    # TODO: Support real batching here (currently only single-item batch)
-                    # Format as (sampling_rate, audio_array) tuples as expected by generate()
-                    current_batch = [(self.settings.default_sample_rate, audio_data)]
+                    # Handle both single audio array and batch (list of arrays)
+                    if isinstance(audio_data, list):
+                        # Batch mode: list of audio arrays
+                        current_batch = [
+                            (self.settings.default_sample_rate, arr)
+                            for arr in audio_data
+                        ]
+                    else:
+                        # Single audio mode
+                        if not hasattr(audio_data, "shape"):
+                            raise ValueError(
+                                f"Pipeline expected array with shape, got {type(audio_data)}"
+                            )
+                        if len(audio_data) == 0:
+                            raise ValueError("Audio data is empty")
+                        current_batch = [
+                            (self.settings.default_sample_rate, audio_data)
+                        ]
 
                     durations = [
                         audio_array.shape[0] / sampling_rate
@@ -675,7 +756,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                     )
 
                     # Run inference in thread pool to avoid blocking
-                    def _run_inference():
+                    def _run():
                         return generator.generate(
                             current_batch=current_batch,
                             generation_params=generation_params,
@@ -683,7 +764,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                             return_perf_metrics=False,
                         )
 
-                    return await asyncio.to_thread(_run_inference)
+                    return await asyncio.to_thread(_run)
                 except Exception as e:
                     self.logger.error(
                         f"Device {self.device_id}: Pipeline execution failed: {e}"

@@ -1,8 +1,15 @@
 --extra-index-url https://pypi.eng.aws.tenstorrent.com
-pjrt-plugin-tt==0.6.0.dev20251202
-vllm-tt==0.6.0.dev20251202
+tt-forge==0.9.0
 torchvision
 
+tabulate
 timm # input preprocessing
 flax # input preprocessing
 pytorchcv # for vovnet
+tabulate
+
+diffusers==0.37.1
+transformers
+
+datasets # model training
+peft # model training

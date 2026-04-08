@@ -3,10 +3,9 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 import logging
-import os
 import json
 import time
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple, Union
 from pathlib import Path
 
 import requests
@@ -15,7 +14,7 @@ from transformers import AutoTokenizer
 
 from utils.prompt_generation import generate_prompts
 from utils.prompt_configs import PromptConfig, EnvironmentConfig
-from utils.cache_monitor import CacheMonitor
+from utils.cache_monitor import CacheMonitor, get_environment_cache_dir
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -68,12 +67,26 @@ def get_trace_context_lens(
     ]
 
 
+def format_human_readable_bytes(total_bytes: int) -> str:
+    """Format a byte count using human-readable storage units."""
+    size = float(max(total_bytes, 0))
+    for unit in ["B", "KB", "MB", "GB", "TB", "PB"]:
+        if size < 1024.0 or unit == "PB":
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+
+    return "0 B"
+
+
 class PromptClient:
     def __init__(
         self,
         env_config: EnvironmentConfig,
         model_spec=None,
-        cache_dir: Optional[Path] = None,
+        cache_dir: Optional[Union[str, Path]] = None,
+        runtime_config=None,
     ):
         self.env_config = env_config
         authorization = self._get_authorization()
@@ -83,8 +96,14 @@ class PromptClient:
             self.headers = {}
         self.completions_url = self._get_api_completions_url()
         self.health_url = self._get_api_health_url()
-        self.cache_monitor = CacheMonitor(model_spec=model_spec, cache_dir=cache_dir)
+        self.cache_monitor = CacheMonitor(
+            model_spec=model_spec,
+            cache_dir=cache_dir,
+            runtime_config=runtime_config,
+        )
         self.server_ready = False
+        self.last_health_status_code: Optional[int] = None
+        self.last_health_exception: Optional[Exception] = None
 
     def _get_authorization(self) -> Optional[str]:
         if self.env_config.vllm_api_key:
@@ -105,17 +124,42 @@ class PromptClient:
         )
         return None
 
-    def _get_api_base_url(self) -> str:
-        return f"{self.env_config.deploy_url}:{self.env_config.service_port}/v1"
+    def _get_api_base_url(self, include_v1: bool = True) -> str:
+        """Get base API URL, optionally with /v1 suffix.
+
+        Args:
+            include_v1: If True, append /v1 for OpenAI-compatible endpoints.
+                       If False, return root URL for vLLM-specific endpoints.
+        """
+        base = f"{self.env_config.deploy_url}:{self.env_config.service_port}"
+        return f"{base}/v1" if include_v1 else base
 
     def _get_api_completions_url(self) -> str:
         return f"{self._get_api_base_url()}/completions"
 
     def _get_api_health_url(self) -> str:
-        return f"{self.env_config.deploy_url}:{self.env_config.service_port}/health"
+        return f"{self._get_api_base_url(include_v1=False)}/health"
 
-    def get_health(self) -> requests.Response:
-        return requests.get(self.health_url, headers=self.headers)
+    def _get_api_tokenize_url(self) -> str:
+        return f"{self._get_api_base_url(include_v1=False)}/tokenize"
+
+    def _get_api_detokenize_url(self) -> str:
+        return f"{self._get_api_base_url(include_v1=False)}/detokenize"
+
+    def get_health(self, timeout: Optional[float] = None) -> requests.Response:
+        try:
+            response = requests.get(
+                self.health_url,
+                headers=self.headers,
+                timeout=timeout,
+            )
+        except requests.exceptions.RequestException as error:
+            self.last_health_status_code = None
+            self.last_health_exception = error
+            raise
+        self.last_health_status_code = response.status_code
+        self.last_health_exception = None
+        return response
 
     def wait_for_healthy(
         self,
@@ -132,53 +176,82 @@ class PromptClient:
         Returns:
             bool: True if service becomes healthy, False if timeout exceeded
         """
-        timeout = float(timeout)
+        base_timeout = float(timeout)
+        effective_timeout = base_timeout
         if self.server_ready:
             return True
 
         start_time = time.time()
-        original_timeout = timeout
-        cache_generation_detected = False
+        using_tensor_cache_timeout = False
         last_cache_status_log = 0
         cache_status_log_interval = 60  # Log cache status every 60 seconds
 
         logger.info(
-            f"Waiting for vLLM service to become healthy (base timeout: {timeout}s)"
+            f"Waiting for vLLM service to become healthy (base timeout: {base_timeout}s)"
         )
 
-        while time.time() - start_time < timeout:
+        while time.time() - start_time < effective_timeout:
             req_time = time.time()
 
             # Check cache generation status
             cache_status = self.cache_monitor.get_cache_generation_status()
             current_time = time.time()
+            has_existing_cache = getattr(cache_status, "has_existing_cache", False)
+            tensor_cache_wait_active = (
+                cache_status.is_first_run or cache_status.is_generating
+            )
+            effective_timeout = self.cache_monitor.get_effective_timeout(
+                default_timeout=base_timeout, cache_status=cache_status
+            )
+
+            if cache_status.is_stalled:
+                logger.error(
+                    "⛔ Tensor cache generation stalled after %.1fs without cache growth in %s. "
+                    "Aborting server startup wait so the workflow can stop the server cleanly.",
+                    cache_status.no_progress_duration,
+                    cache_status.cache_dir,
+                )
+                return False
 
             # Log cache status periodically
             if current_time - last_cache_status_log > cache_status_log_interval:
-                if cache_status.is_generating:
-                    logger.info(
-                        "🔄 Cache generation in progress - this may take 40-60 minutes for new models"
-                    )
-                    if not cache_generation_detected:
-                        # First time detecting cache generation - extend timeout
-                        extended_timeout = 90 * 60.0
-                        timeout = extended_timeout
-                        cache_generation_detected = True
+                if tensor_cache_wait_active:
+                    if not using_tensor_cache_timeout:
                         logger.info(
-                            f"⏰ using extended timeout:={timeout}s due to cache generation"
+                            "⏰ Using tensor_cache_timeout:=%ss for first-run tensor cache generation",
+                            effective_timeout,
+                        )
+                        using_tensor_cache_timeout = True
+                    if cache_status.is_generating:
+                        logger.info(
+                            "🔄 Tensor cache generation in progress - tracking %s file(s), %s total bytes",
+                            cache_status.file_count,
+                            cache_status.total_size_bytes,
+                        )
+                    else:
+                        logger.info(
+                            "📁 First-run cache directory is still empty; waiting for tensor cache activity"
                         )
                 else:
-                    logger.info(
-                        f"📁 No active cache generation detected, using standard timeout:={timeout}s"
-                    )
-                    timeout = original_timeout
+                    if using_tensor_cache_timeout:
+                        using_tensor_cache_timeout = False
+                    if has_existing_cache:
+                        logger.info(
+                            "📁 Existing tensor cache detected - tracking %s file(s), %s; using standard timeout:=%ss",
+                            cache_status.file_count,
+                            format_human_readable_bytes(cache_status.total_size_bytes),
+                            effective_timeout,
+                        )
+                    else:
+                        logger.info(
+                            "📁 No active tensor cache generation detected, using standard timeout:=%ss",
+                            effective_timeout,
+                        )
                 last_cache_status_log = current_time
 
             # Try health check
             try:
-                response = requests.get(
-                    self.health_url, headers=self.headers, timeout=interval
-                )
+                response = self.get_health(timeout=interval)
                 if response.status_code == 200:
                     startup_time = time.time() - start_time
                     logger.info(
@@ -206,27 +279,62 @@ class PromptClient:
             # Provide different messaging based on cache status
             if cache_status.is_generating:
                 logger.info(
-                    f"🔄 Cache generation in progress. Waited {total_time_waited:.1f}s, "
-                    f"next check in {sleep_interval:.1f}s (timeout: {timeout}s)"
+                    f"🔄 Tensor cache generation in progress. Waited {total_time_waited:.1f}s, "
+                    f"next check in {sleep_interval:.1f}s (timeout: {effective_timeout}s, "
+                    f"no progress: {cache_status.no_progress_duration:.1f}s)"
+                )
+            elif cache_status.is_first_run:
+                logger.info(
+                    f"⏳ First-run tensor cache warmup detected. Waited {total_time_waited:.1f}s, "
+                    f"waiting {sleep_interval:.1f}s before polling (timeout: {effective_timeout}s)"
+                )
+            elif has_existing_cache:
+                logger.info(
+                    "📁 Existing tensor cache detected (%s file(s), %s total bytes). "
+                    "Service not ready after %.1fs, waiting %.1fs before polling (timeout: %ss)",
+                    cache_status.file_count,
+                    cache_status.total_size_bytes,
+                    total_time_waited,
+                    sleep_interval,
+                    effective_timeout,
                 )
             else:
                 logger.info(
                     f"⏳ Service not ready after {total_time_waited:.1f}s, "
-                    f"waiting {sleep_interval:.1f}s before polling (timeout: {timeout}s)"
+                    f"waiting {sleep_interval:.1f}s before polling (timeout: {effective_timeout}s)"
                 )
 
             time.sleep(sleep_interval)
 
         # Final status check
         final_cache_status = self.cache_monitor.get_cache_generation_status()
-        if final_cache_status.is_generating:
+        if final_cache_status.is_stalled:
             logger.error(
-                f"⛔ Service did not become healthy within {timeout}s. "
-                f"Cache generation appears to still be in progress. "
+                f"⛔ Tensor cache generation stalled for {final_cache_status.no_progress_duration:.1f}s "
+                f"in {final_cache_status.cache_dir}"
+            )
+        elif final_cache_status.is_generating:
+            logger.error(
+                f"⛔ Service did not become healthy within {effective_timeout}s. "
+                f"Tensor cache generation appears to still be in progress. "
                 f"Consider increasing the timeout or checking the docker logs."
             )
+        elif final_cache_status.is_first_run:
+            logger.error(
+                f"⛔ Service did not become healthy within {effective_timeout}s during first-run tensor cache startup"
+            )
+        elif getattr(final_cache_status, "has_existing_cache", False):
+            logger.error(
+                "⛔ Service did not become healthy within %ss even though tensor cache already appears present "
+                "(%s file(s), %s total bytes)",
+                effective_timeout,
+                final_cache_status.file_count,
+                final_cache_status.total_size_bytes,
+            )
         else:
-            logger.error(f"⛔ Service did not become healthy within {timeout}s")
+            logger.error(
+                f"⛔ Service did not become healthy within {effective_timeout}s"
+            )
 
         return False
 
@@ -294,37 +402,37 @@ class PromptClient:
             # Generate prompts for current size
             prompts, prompt_lengths = generate_prompts(prompt_config)
 
-            # If no image resolutions specified, do text-only traces
-            if not image_resolutions:
-                for i, (prompt, prompt_len) in enumerate(zip(prompts, prompt_lengths)):
-                    try:
-                        logger.info(
-                            f"Starting text trace capture: "
-                            f"input_seq_len={prompt_len}, output_seq_len={osl}"
-                        )
-                        response_data = self.call_inference(
-                            prompt=prompt,
-                            images=[],
-                            response_idx=i,
-                            prompt_len=prompt_len,
-                            max_tokens=osl,
-                            stream=True,
-                            vllm_model=self.env_config.vllm_model,
-                            tokenizer=None,
-                            force_max_tokens=True,
-                            use_chat_api=False,
-                        )
-                        logger.info(
-                            f"Text trace completed: "
-                            f"tokens_generated={response_data['output_seq_len']}, "
-                            f"TTFT={response_data['ttft_ms']:.3f}ms, "
-                            f"TPOT={response_data['tpot_ms']:.3f}ms\n"
-                        )
-                    except Exception as e:
-                        logger.error(f"Error processing text prompt: {e}")
-                        continue
-            else:
-                # Process each image resolution with the current text length
+            # Always capture text-only traces first
+            for i, (prompt, prompt_len) in enumerate(zip(prompts, prompt_lengths)):
+                try:
+                    logger.info(
+                        f"Starting text trace capture: "
+                        f"input_seq_len={prompt_len}, output_seq_len={osl}"
+                    )
+                    response_data = self.call_inference(
+                        prompt=prompt,
+                        images=[],
+                        response_idx=i,
+                        prompt_len=prompt_len,
+                        max_tokens=osl,
+                        stream=True,
+                        vllm_model=self.env_config.vllm_model,
+                        tokenizer=None,
+                        force_max_tokens=True,
+                        use_chat_api=False,
+                    )
+                    logger.info(
+                        f"Text trace completed: "
+                        f"tokens_generated={response_data['output_seq_len']}, "
+                        f"TTFT={response_data['ttft_ms']:.3f}ms, "
+                        f"TPOT={response_data['tpot_ms']:.3f}ms\n"
+                    )
+                except Exception as e:
+                    logger.error(f"Error processing text prompt: {e}")
+                    continue
+
+            # If image resolutions specified, also capture image+text traces
+            if image_resolutions:
                 for width, height in image_resolutions:
                     for i, (prompt, prompt_len) in enumerate(
                         zip(prompts, prompt_lengths)
@@ -421,7 +529,6 @@ class PromptClient:
             completions_url = self.completions_url
 
         if force_max_tokens:
-            json_data["min_tokens"] = max_tokens
             json_data["ignore_eos"] = True
 
         logger.info(f"calling: {completions_url}, response_idx={response_idx}")
@@ -445,6 +552,58 @@ class PromptClient:
             stream,
             use_chat_api,
         )
+
+    def tokenize(self, prompt: str, model: Optional[str] = None) -> dict:
+        """
+        Tokenize text using server-side tokenization.
+
+        Args:
+            prompt: The text to tokenize
+            model: Model to use for tokenization (defaults to env config vllm_model)
+
+        Returns:
+            Dictionary with tokenization result including tokens
+        """
+        model_name = model or self.env_config.vllm_model
+
+        url = self._get_api_tokenize_url()
+
+        payload = {"model": model_name, "prompt": prompt}
+
+        response = requests.post(url, headers=self.headers, json=payload)
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            error_msg = f"Error: {response.status_code}, {response.text}"
+            logger.error(f"Server-side tokenization failed: {error_msg}")
+            return {"error": error_msg}
+
+    def detokenize(self, tokens: List[int], model: Optional[str] = None) -> dict:
+        """
+        Detokenize tokens using server-side detokenization.
+
+        Args:
+            tokens: The token IDs to detokenize
+            model: Model to use for detokenization (defaults to env config vllm_model)
+
+        Returns:
+            Dictionary with detokenization result including prompt
+        """
+        model_name = model or self.env_config.vllm_model
+
+        url = self._get_api_detokenize_url()
+
+        payload = {"model": model_name, "tokens": tokens}
+
+        response = requests.post(url, headers=self.headers, json=payload)
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            error_msg = f"Error: {response.status_code}, {response.text}"
+            logger.error(f"Server-side detokenization failed: {error_msg}")
+            return {"error": error_msg}
 
     def _process_response(
         self,
@@ -713,15 +872,9 @@ def run_background_trace_capture(
         env_config.service_port = service_port
         env_config.vllm_model = hf_model_repo
 
-        # Create prompt client
-        # TODO: since this is only called inside the vLLM container this env var should be set.
-        # TODO: I know the whole purpose of the ModelSpec is to not parse env vars, but it was hard
-        # TODO: to infer the path without importing the SetupConfig (which is not copied to the container)
-        # TODO: Eventually this will not be necessary when we perform trace capture / warmup inside vLLM
-        # TODO: https://github.com/tenstorrent/vllm/issues/220
-        if "TT_CACHE_PATH" not in os.environ:
+        tt_cache_path = get_environment_cache_dir()
+        if tt_cache_path is None:
             raise RuntimeError("TT_CACHE_PATH environment variable is not set.")
-        tt_cache_path = Path(os.environ["TT_CACHE_PATH"])
         prompt_client = PromptClient(env_config, cache_dir=tt_cache_path)
 
         # Use intelligent timeout - automatically determines 90 minutes for first run, 30 minutes for subsequent runs

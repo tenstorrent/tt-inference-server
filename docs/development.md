@@ -6,18 +6,18 @@ All development uses the following workflows in git for the repo repository http
 
 ### development in `dev`
 
-All normal development work should be done using this simple workflow, making branchs off `dev` and making PRs back to `dev`.
+All normal development work should be done using this simple workflow, making branches off `dev` and making PRs back to `dev`.
 
 **branches:**
-- `<namett>/feature-<my-description>`
+- `<namett>/<my-description>`
 - `<namett>/fix-<my-description>`
 - `dev`
 
 **workflow for development:**
 1. git checkout `dev` && git pull
-1. git checkout -b `<namett>/feature-<my-description>` or `<namett>/fix-<my-description>`
+1. git checkout -b `<namett>/<my-description>` or `<namett>/fix-<my-description>`
 1. make code changes
-1. PR `<namett>/feature-<my-description>` to `dev`
+1. PR `<namett>/<my-description>` to `dev`
 1. PR reviewed and approved by >= 1 responsible person defined in CODEOWNERS.md
 1. squash and merge PR to `dev`
 
@@ -54,7 +54,7 @@ workflow for release:
   - well named and documented commits refing PR 
   - squash to merge in GitHub
 
-`<namett>/feature-<my-description>`:
+`<namett>/<my-description>`:
 - specific WIP development work
 - based off `dev`, PR back to `dev`
 - multiple people can work together on a single branch, but generally easier to structure collaboration  via multiple PRs into `dev
@@ -86,28 +86,49 @@ workflow for release:
 
 Follow the development and release git workflow, steps described below image:
 
-![ttis-git-workflows-2025-08-14-1106](ttis-git-workflows-2025-08-14-1106.png)
+![ttis-git-workflows-2026-02-10](ttis-git-workflows-2026-02-10.png)
 
 ### pre-commit
 
 Pre-commit usage is defined in `.pre-commit-config.yaml`.
 
 Set up linting and formatting for development:
+#### option 1: use uv
 ```bash
-# [optional] step 1: use venv
+# option 1: use uv
+uv venv .pre-commit --python 3.10
+source .pre-commit/bin/activate
+
+uv pip install -r requirements-dev.txt
+uv pip install -r tt-media-server/requirements.txt
+```
+
+#### option 2: use os python venv
+```bash
+# option 2: use os python venv
 python3 -m venv .pre-commit
 source .pre-commit/bin/activate
 
-# step 2: install
 pip install --upgrade pip setuptools wheel
 pip install -r requirements-dev.txt
+pip install -r tt-media-server/requirements.txt
+```
 
-# step 3: pre-commit
+#### running pre-commit tests
+
+```bash
+# option 1: use git pre-commit hooks direct
+. scripts/setup-hooks.sh
+
+# option 2: use pre-commit tool
 pre-commit install
 ```
 
 run pre-commit:
 ```bash
+# run git hooks script directly
+.git/hooks/pre-commit
+
 # pre-commit behaviour is defined in .pre-commit-config.yaml
 # by default it runs only on git staged files
 pre-commit run
@@ -117,6 +138,19 @@ pre-commit run --all-files
 pre-commit run --files path/to/file
 ```
 
+### Workflow smoke tests
+
+Use `--limit-samples-mode smoke-test` for fast end-to-end workflow validation while iterating on `benchmarks` or `evals`.
+
+```bash
+python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks --limit-samples-mode smoke-test
+python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow evals --limit-samples-mode smoke-test
+```
+
+If you also want `run.py` to launch the inference server for the run, add `--docker-server`.
+
+Smoke-test mode keeps the run short by reducing `benchmarks` to a single lightweight target and `evals` to the first configured eval task with 3 samples.
+
 ### How to build Docker images for a specific model (tt-metal, vLLM commits)
 
 For building containers for development it is generally faster to use 
@@ -124,6 +158,39 @@ For building containers for development it is generally faster to use
 python3 scripts/build_docker_images.py --build-metal-commit <my_metal_commit_SHA_or_tag>
 ```
 This filters the Docker images to be built for only the tt-metal version needed.
+
+### What to do if I can't find the Docker image I need for development?
+
+Ideally you can do development without Docker using `--local-server` and building tt-metal + vLLM locally.
+
+If you need to develop with a Docker image build the image locally:
+
+##### Step 1: edit workflows/model_spec.py
+
+Find and edit the ref `ModelSpecTemplate` your model-hardware combination, e.g. for `Llama-3.2-1B` on n150:
+Update the commits:
+```python
+    ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.2-1B", "meta-llama/Llama-3.2-1B-Instruct"],
+        impl=tt_transformers_impl,
+        tt_metal_commit=<my_metal_commit_SHA_or_tag>,
+        vllm_commit=<my_vllm_commit_SHA>,
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+```
+
+##### Step 2: build the Docker image locally
+```
+python3 scripts/build_docker_images.py --build-metal-commit <my_metal_commit_SHA_or_tag>
+
+```
+
 
 ## Release process
 

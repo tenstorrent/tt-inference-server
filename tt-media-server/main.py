@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from open_ai_api import api_router
+
+from open_ai_api.deprecation import DeprecatedPathMiddleware
 from resolver.service_resolver import service_resolver
 from telemetry.prometheus_metrics import PrometheusMetrics
 from utils.job_manager import get_job_manager
@@ -21,8 +23,8 @@ env = "development"
 async def lifespan(app: FastAPI):
     service_resolver().start_workers()
     yield
-    service_resolver().stop_workers()
     await get_job_manager().shutdown()
+    service_resolver().stop_workers()
 
 
 app = FastAPI(
@@ -39,6 +41,7 @@ prometheus_metrics = PrometheusMetrics(app)
 prometheus_metrics.setup_metrics()
 
 app.include_router(api_router)
+app.add_middleware(DeprecatedPathMiddleware, sunset_date="2026-06-30")
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")

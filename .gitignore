@@ -2,6 +2,9 @@
 .vscode
 .DS_Store
 
+# Cursor rules
+.cursorrules
+
 # Python
 *.pyc
 __pycache__
@@ -13,6 +16,7 @@ __pycache__
 python_env
 .venv*
 .workflow_venvs*
+.pre-commit*
 
 # persistent storage volume
 persistent_volume
@@ -38,6 +42,8 @@ generated_modules
 *.txt
 unzipped_tti/
 db.sqlite3
+**/generated/inspector/
+
 
 # secrets
 .env
@@ -46,14 +52,16 @@ db.sqlite3
 scripts/examples/example_data
 
 # unignore
+!**/CMakeLists.txt
 !requirements*.txt
 !workflows/model_performance_reference.json
 !tests/server_tests/test_config.json
 !tests/server_tests/server_tests_config.json
 !tests/server_tests/test_suites/*.json
 !benchmarking/benchmark_targets/*.json
-!model_specs_output.json
+!release_model_spec.json
 !tt-media-server/static/demos/images.json
+.github/workflows/*.json
 
 venv*/**
 tt-media-server/venv-worker
@@ -61,3 +69,11 @@ tt-media-server/huggingface
 
 *.tensorbin
 *.log
+
+# ignore downloaded datsets
+tests/server_tests/datasets/*
+
+# ignore generated files
+model_spec.json
+# deprecated
+default_model_spec.json 

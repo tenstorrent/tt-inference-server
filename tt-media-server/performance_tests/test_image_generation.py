@@ -14,7 +14,7 @@ import aiohttp
 import pytest
 
 BASE_URL = "http://localhost:8020"
-API_URL = f"{BASE_URL}/image/generations"
+API_URL = f"{BASE_URL}/v1/images/generations"
 
 output_dir = "./image_generation_eval_results"
 logs_output_dir = f"{output_dir}/run_logs"

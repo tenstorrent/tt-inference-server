@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import logging
+import re
 import sys
 from datetime import datetime
 from glob import glob
@@ -18,11 +19,24 @@ if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from benchmarking.benchmark_config import cap_benchmark_params
-from benchmarking.summary_report import generate_report, get_markdown_table
+from benchmarking.summary_report import (
+    generate_report as benchmark_generate_report_helper,
+)
+from benchmarking.summary_report import get_markdown_table
 from evals.eval_config import EVAL_CONFIGS
-from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
+from stress_tests.stress_tests_summary_report import (
+    generate_report as stress_test_generate_report_helper,
+)
+from server_tests.utils.vllm_parameter_json_to_md import (
+    main as generate_vllm_parameter_report,
+)
+from workflows.acceptance_criteria import (
+    acceptance_criteria_check,
+    format_acceptance_summary_markdown,
+)
 from workflows.log_setup import setup_workflow_script_logger
-from workflows.model_spec import ModelSpec, ModelType
+from workflows.model_spec import ModelSpec
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import (
     get_default_workflow_root_log_dir,
     is_preprocessing_enabled_for_whisper,
@@ -34,7 +48,7 @@ from workflows.workflow_config import (
 )
 
 # from workflows.workflow_venvs import VENV_CONFIGS
-from workflows.workflow_types import DeviceTypes, ReportCheckTypes
+from workflows.workflow_types import DeviceTypes, ModelType, ReportCheckTypes
 
 logger = logging.getLogger(__name__)
 
@@ -88,17 +102,46 @@ def generate_cnn_report_data(model_spec, eval_run_id):
     return file_name_pattern
 
 
-def generate_image_report_data(model_spec, eval_run_id):
-    """Generate image-specific report data.
+def generate_video_report_data(model_spec, eval_run_id):
+    """Generate video-specific report data.
 
     Args:
         model_spec: Model specification
         eval_run_id: Evaluation run ID
 
     Returns:
-        File pattern for image evaluation results
+        File pattern for CNN evaluation results
     """
-    # Image models use results_*.json pattern
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+    return file_name_pattern
+
+
+def generate_image_generation_report_data(model_spec, eval_run_id):
+    """Generate image-generation-specific report data.
+
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+
+    Returns:
+        File pattern for image generation evaluation results
+    """
+    # Image generation models use results_*.json pattern
+    file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
+    return file_name_pattern
+
+
+def generate_tts_report_data(model_spec, eval_run_id):
+    """Generate TTS-specific report data.
+
+    Args:
+        model_spec: Model specification
+        eval_run_id: Evaluation run ID
+
+    Returns:
+        File pattern for TTS evaluation results
+    """
+    # TTS models use results_*.json pattern (same as image/cnn)
     file_name_pattern = f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/results_*.json"
     return file_name_pattern
 
@@ -181,9 +224,9 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Run vLLM reports")
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     parser.add_argument(
@@ -289,8 +332,9 @@ def benchmark_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def benchmark_image_release_markdown(release_raw, target_checks=None):
-    # Define display columns mapping for image benchmarks
+def benchmark_vlm_release_markdown(release_raw, target_checks=None):
+    """Build markdown table for VLM benchmark results (isl, osl, image dimensions, etc.)."""
+    # Display columns for VLM benchmarks only
     display_cols = [
         ("isl", "ISL"),
         ("osl", "OSL"),
@@ -360,23 +404,1174 @@ def benchmark_image_release_markdown(release_raw, target_checks=None):
     return markdown_str
 
 
-def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
-    # Look for both vLLM and genai-perf benchmark files
-    vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
-    genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
+def aiperf_release_markdown(release_raw, is_vlm_benchmark=False):
+    """Generate markdown table for AIPerf benchmarks with detailed metrics.
 
+    This follows NVIDIA's genai-perf style output with mean, median, and p99 percentiles
+    for each key metric category.
+
+    Args:
+        release_raw: Raw benchmark data
+        is_vlm_benchmark: If True, table is for VLM results (includes image dimension columns).
+    """
+    # Define display columns mapping - NVIDIA style with detailed percentiles
+    display_cols = [
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("concurrency", "Concur"),
+    ]
+
+    # Add image-dimension columns for VLM benchmarks only
+    if is_vlm_benchmark:
+        display_cols.extend(
+            [
+                ("image_height", "Image Height"),
+                ("image_width", "Image Width"),
+                ("images_per_prompt", "Images per Prompt"),
+            ]
+        )
+
+    display_cols.extend(
+        [
+            ("num_requests", "N"),
+            # TTFT metrics
+            ("mean_ttft_ms", "TTFT Avg (ms)"),
+            ("median_ttft_ms", "TTFT P50 (ms)"),
+            ("p99_ttft_ms", "TTFT P99 (ms)"),
+            # TPOT metrics (Time Per Output Token)
+            ("mean_tpot_ms", "TPOT Avg (ms)"),
+            ("median_tpot_ms", "TPOT P50 (ms)"),
+            ("p99_tpot_ms", "TPOT P99 (ms)"),
+            # E2EL metrics (End-to-End Latency)
+            ("mean_e2el_ms", "E2EL Avg (ms)"),
+            ("median_e2el_ms", "E2EL P50 (ms)"),
+            ("p99_e2el_ms", "E2EL P99 (ms)"),
+            # Throughput
+            ("output_token_throughput", "Output Tok/s"),
+            ("total_token_throughput", "Total Tok/s"),
+            ("request_throughput", "Req/s"),
+        ]
+    )
+
+    NOT_MEASURED_STR = "N/A"
+    display_dicts = []
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            value = row.get(col_name, NOT_MEASURED_STR)
+            if value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, float):
+                # Format floats with appropriate precision
+                if col_name in ("request_throughput",):
+                    row_dict[display_header] = f"{value:.4f}"
+                elif col_name in ("output_token_throughput", "total_token_throughput"):
+                    row_dict[display_header] = f"{value:.2f}"
+                else:
+                    row_dict[display_header] = f"{value:.1f}"
+            else:
+                row_dict[display_header] = str(value)
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def aiperf_throughput_markdown(release_raw):
+    """Generate markdown table for benchmarks with derived throughput metrics.
+
+    This follows the genai-perf comparison style with Tput User, Tput Decode, and Tput Prefill
+    columns for easy comparison between vLLM, AIPerf, and genai-perf benchmarks.
+    """
+    # Define display columns - genai-perf comparison style with Source column
+    display_cols = [
+        ("source", "Source"),
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("concurrency", "Concur"),
+        ("num_requests", "N"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_tpot_ms", "TPOT (ms)"),
+        ("tput_user", "Tput User (TPS)"),
+        ("tput_decode", "Tput Decode (TPS)"),
+        ("tput_prefill", "Tput Prefill (TPS)"),
+        ("mean_e2el_ms", "E2EL (ms)"),
+        ("request_throughput", "Req Tput (RPS)"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+    display_dicts = []
+    for row in release_raw:
+        # Calculate derived throughput metrics
+        tpot = row.get("mean_tpot_ms", 0)
+        ttft = row.get("mean_ttft_ms", 0)
+        isl = row.get("isl", 0)
+        concurrency = row.get("concurrency", 1)
+
+        tput_user = 1000.0 / tpot if tpot > 0 else 0
+        tput_decode = tput_user * concurrency
+        tput_prefill = (isl * concurrency) / (ttft / 1000.0) if ttft > 0 else 0
+
+        # Add derived metrics to row
+        row_with_derived = dict(row)
+        row_with_derived["tput_user"] = tput_user
+        row_with_derived["tput_decode"] = tput_decode
+        row_with_derived["tput_prefill"] = tput_prefill
+
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            value = row_with_derived.get(col_name, NOT_MEASURED_STR)
+            if value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, float):
+                # Format floats with appropriate precision
+                if col_name == "request_throughput":
+                    row_dict[display_header] = f"{value:.3f}"
+                elif col_name in ("tput_user", "tput_decode", "tput_prefill"):
+                    row_dict[display_header] = f"{value:.1f}"
+                elif col_name in ("mean_ttft_ms", "mean_tpot_ms", "mean_e2el_ms"):
+                    row_dict[display_header] = f"{value:.1f}"
+                else:
+                    row_dict[display_header] = f"{value:.2f}"
+            else:
+                row_dict[display_header] = str(value)
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def aiperf_throughput_markdown_with_images(release_raw):
+    """Generate markdown table for image benchmarks with image parameters.
+    Similar to aiperf_throughput_markdown but includes image dimensions.
+    """
+    # Define display columns for image benchmarks
+    display_cols = [
+        ("source", "Source"),
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("concurrency", "Concur"),
+        ("num_requests", "N"),
+        ("images", "Images"),
+        ("image_width", "Width"),
+        ("image_height", "Height"),
+        ("mean_ttft_ms", "TTFT (ms)"),
+        ("mean_tpot_ms", "TPOT (ms)"),
+        ("tput_user", "Tput User (TPS)"),
+        ("tput_decode", "Tput Decode (TPS)"),
+        ("tput_prefill", "Tput Prefill (TPS)"),
+        ("mean_e2el_ms", "E2EL (ms)"),
+        ("request_throughput", "Req Tput (RPS)"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+    display_dicts = []
+    for row in release_raw:
+        # Calculate derived throughput metrics
+        tpot = row.get("mean_tpot_ms", 0)
+        ttft = row.get("mean_ttft_ms", 0)
+        isl = row.get("isl", 0)
+        concurrency = row.get("concurrency", 1)
+
+        tput_user = 1000.0 / tpot if tpot > 0 else 0
+        tput_decode = tput_user * concurrency
+        tput_prefill = (isl * concurrency) / (ttft / 1000.0) if ttft > 0 else 0
+
+        # Add derived metrics to row
+        row_with_derived = dict(row)
+        row_with_derived["tput_user"] = tput_user
+        row_with_derived["tput_decode"] = tput_decode
+        row_with_derived["tput_prefill"] = tput_prefill
+
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            value = row_with_derived.get(col_name, NOT_MEASURED_STR)
+            if value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, float):
+                # Format floats with appropriate precision
+                if col_name == "request_throughput":
+                    row_dict[display_header] = f"{value:.3f}"
+                elif col_name in ("tput_user", "tput_decode", "tput_prefill"):
+                    row_dict[display_header] = f"{value:.1f}"
+                elif col_name in ("mean_ttft_ms", "mean_tpot_ms", "mean_e2el_ms"):
+                    row_dict[display_header] = f"{value:.1f}"
+                else:
+                    row_dict[display_header] = f"{value:.2f}"
+            else:
+                row_dict[display_header] = str(value)
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def aiperf_benchmark_generate_report(
+    args, server_mode, model_spec, report_id, metadata={}
+):
+    """Generate benchmark report specifically for AIPerf results.
+
+    AIPerf provides more detailed metrics than vLLM's benchmark_serving.py,
+    including mean, median, and p99 percentiles for TTFT, TPOT, and E2EL.
+    This function creates a separate report in NVIDIA's genai-perf style.
+    Table 2 (Comparison) combines both vLLM and AIPerf results for easy comparison.
+    """
+    # All benchmark tools now use the same output directory
     benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
+
+    # Look for aiperf benchmark files
+    aiperf_pattern = f"aiperf_benchmark_{model_spec.model_id}_*.json"
+    aiperf_files = glob(f"{benchmarks_output_dir}/{aiperf_pattern}")
+
+    # Also look for vLLM benchmark files for comparison table
+    vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
     vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
+
+    # Look for GenAI-Perf benchmark files
+    genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
     genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
 
-    files = vllm_files + genai_files
+    output_dir = Path(args.output_path) / "benchmarks_aiperf"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("AIPerf Benchmark Summary")
+    logger.info(f"Found {len(aiperf_files)} AIPerf benchmark files")
+    logger.info(f"Found {len(vllm_files)} vLLM benchmark files for comparison")
+    logger.info(f"Found {len(genai_files)} GenAI-Perf benchmark files for comparison")
+
+    if not aiperf_files and not vllm_files and not genai_files:
+        logger.info("No benchmark files found. Skipping AIPerf report.")
+        return "", [], None, None
+
+    # Helper function to keep only the latest file for each (isl, osl, concurrency, task_type) config
+    def deduplicate_by_config(files):
+        """Keep only the latest file for each unique benchmark configuration.
+
+        Files are sorted by name (which includes timestamp) in reverse order,
+        so we keep the first occurrence of each config.
+
+        Config key includes:
+        - isl, osl, concurrency, num_requests (base params)
+        - images, height, width (for image benchmarks - treated as separate configs)
+        """
+        config_to_file = {}
+        # Sort in reverse order so latest files come first
+        for filepath in sorted(files, reverse=True):
+            filename = Path(filepath).name
+            # Extract base config from filename
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, con, n = map(int, match.groups())
+
+                # Check if this is an image benchmark (has images-X in filename)
+                img_match = re.search(
+                    r"images-(\d+)_height-(\d+)_width-(\d+)", filename
+                )
+                if img_match:
+                    images, height, width = map(int, img_match.groups())
+                    config_key = (isl, osl, con, n, images, height, width)
+                else:
+                    # Text-only benchmark
+                    config_key = (isl, osl, con, n, 0, 0, 0)
+
+                # Only keep the first (latest) file for each config
+                if config_key not in config_to_file:
+                    config_to_file[config_key] = filepath
+            else:
+                # If no match, include the file anyway
+                config_to_file[filepath] = filepath
+        return list(config_to_file.values())
+
+    # Deduplicate files to keep only latest run for each config
+    vllm_files = deduplicate_by_config(vllm_files)
+    aiperf_files = deduplicate_by_config(aiperf_files)
+    genai_files = deduplicate_by_config(genai_files)
+
     logger.info(
-        f"Found {len(vllm_files)} vLLM benchmark files and {len(genai_files)} genai-perf benchmark files"
+        f"After deduplication: {len(vllm_files)} vLLM, {len(aiperf_files)} AIPerf, {len(genai_files)} GenAI-Perf files"
+    )
+
+    # Separate text-only and VLM benchmarks
+    vllm_text_only_files = [f for f in vllm_files if "images" not in Path(f).name]
+    vllm_vlm_files = [f for f in vllm_files if "images" in Path(f).name]
+    aiperf_text_only_files = [f for f in aiperf_files if "images" not in Path(f).name]
+    aiperf_vlm_files = [f for f in aiperf_files if "images" in Path(f).name]
+    genai_text_only_files = [f for f in genai_files if "images" not in Path(f).name]
+    genai_vlm_files = [f for f in genai_files if "images" in Path(f).name]
+
+    logger.info(
+        f"Text benchmarks: {len(vllm_text_only_files)} vLLM, {len(aiperf_text_only_files)} AIPerf, {len(genai_text_only_files)} GenAI-Perf"
+    )
+    logger.info(
+        f"VLM benchmarks: {len(vllm_vlm_files)} vLLM, {len(aiperf_vlm_files)} AIPerf, {len(genai_vlm_files)} GenAI-Perf"
+    )
+
+    # Process text-only vLLM benchmarks
+    vllm_text_results = []
+    for filepath in sorted(vllm_text_only_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            # Pattern: benchmark_*_isl-{isl}_osl-{osl}_maxcon-{con}_n-{n}*.json
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, concurrency, num_requests = map(int, match.groups())
+            else:
+                # Fallback to data fields
+                isl = data.get("total_input_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                osl = data.get("total_output_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                concurrency = data.get("max_concurrency", 1)
+                num_requests = data.get("num_prompts", 0)
+
+            result = {
+                "source": "vLLM",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "vllm",
+            }
+            vllm_text_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing vLLM file {filepath}: {e}")
+            continue
+
+    # Process text-only AIPerf files
+    aiperf_text_results = []
+    for filepath in sorted(aiperf_text_only_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            # Pattern: aiperf_benchmark_*_isl-{isl}_osl-{osl}_maxcon-{con}_n-{n}.json
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, concurrency, num_requests = map(int, match.groups())
+            else:
+                # Fallback to data fields
+                isl = data.get("total_input_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                osl = data.get("total_output_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                concurrency = data.get("max_concurrency", 1)
+                num_requests = data.get("num_prompts", 0)
+
+            result = {
+                "source": "aiperf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "aiperf",
+            }
+            aiperf_text_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing AIPerf file {filepath}: {e}")
+            continue
+
+    # Process VLM vLLM benchmarks
+    vllm_vlm_results = []
+    for filepath in sorted(vllm_vlm_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            match = re.search(
+                r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)_images-(\d+)_height-(\d+)_width-(\d+)",
+                filename,
+            )
+            if match:
+                isl, osl, concurrency, num_requests, images, height, width = map(
+                    int, match.groups()
+                )
+            else:
+                logger.warning(f"Could not parse image parameters from {filename}")
+                continue
+
+            # Calculate throughput metrics
+            mean_tpot_ms = data.get("mean_tpot_ms", 0)
+            if mean_tpot_ms and mean_tpot_ms > 0:
+                mean_tps = 1000.0 / mean_tpot_ms
+            else:
+                mean_tps = 0
+
+            actual_max_con = min(concurrency, num_requests)
+            tps_decode_throughput = mean_tps * actual_max_con if mean_tps else 0
+
+            result = {
+                "source": "vLLM",
+                "task_type": "vlm",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "max_con": concurrency,
+                "num_requests": num_requests,
+                "images": images,
+                "image_height": height,
+                "image_width": width,
+                "images_per_prompt": images,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput (calculated)
+                "mean_tps": mean_tps,
+                "tps_decode_throughput": tps_decode_throughput,
+                "output_token_throughput": data.get("output_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": data.get("backend", "vllm"),
+            }
+            vllm_vlm_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing vLLM VLM file {filepath}: {e}")
+            continue
+
+    # Process VLM AIPerf files
+    aiperf_vlm_results = []
+    for filepath in sorted(aiperf_vlm_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            match = re.search(
+                r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)_images-(\d+)_height-(\d+)_width-(\d+)",
+                filename,
+            )
+            if match:
+                isl, osl, concurrency, num_requests, images, height, width = map(
+                    int, match.groups()
+                )
+            else:
+                logger.warning(f"Could not parse image parameters from {filename}")
+                continue
+
+            result = {
+                "source": "aiperf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                "images_per_prompt": images,
+                "image_height": height,
+                "image_width": width,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "aiperf",
+            }
+            aiperf_vlm_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing AIPerf VLM file {filepath}: {e}")
+            continue
+
+    # Process GenAI-Perf text files
+    genai_text_results = []
+    for filepath in sorted(genai_text_only_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            # Pattern: genai_benchmark_*_isl-{isl}_osl-{osl}_maxcon-{con}_n-{n}.json
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, concurrency, num_requests = map(int, match.groups())
+            else:
+                # Fallback to data fields
+                isl = data.get("total_input_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                osl = data.get("total_output_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                concurrency = data.get("max_concurrency", 1)
+                num_requests = data.get("num_prompts", 0)
+
+            result = {
+                "source": "genai-perf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "genai-perf",
+            }
+            genai_text_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing GenAI-Perf file {filepath}: {e}")
+            continue
+
+    # Process GenAI-Perf VLM files
+    genai_vlm_results = []
+    for filepath in sorted(genai_vlm_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            match = re.search(
+                r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)_images-(\d+)_height-(\d+)_width-(\d+)",
+                filename,
+            )
+            if match:
+                isl, osl, concurrency, num_requests, images, height, width = map(
+                    int, match.groups()
+                )
+            else:
+                logger.warning(f"Could not parse image parameters from {filename}")
+                continue
+
+            result = {
+                "source": "genai-perf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                "images": images,
+                "image_height": height,
+                "image_width": width,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "genai-perf",
+            }
+            genai_vlm_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing GenAI-Perf VLM file {filepath}: {e}")
+            continue
+
+    if (
+        not aiperf_text_results
+        and not vllm_text_results
+        and not genai_text_results
+        and not aiperf_vlm_results
+        and not vllm_vlm_results
+        and not genai_vlm_results
+    ):
+        return "", [], None, None
+
+    # Sort text benchmarks by ISL, OSL, concurrency
+    vllm_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
+    aiperf_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
+    genai_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
+
+    # Sort VLM benchmarks by ISL, OSL, concurrency, image size
+    vllm_vlm_results.sort(
+        key=lambda x: (
+            x["isl"],
+            x["osl"],
+            x["concurrency"],
+            x["image_height"],
+            x["image_width"],
+        )
+    )
+    aiperf_vlm_results.sort(
+        key=lambda x: (
+            x["isl"],
+            x["osl"],
+            x["concurrency"],
+            x["image_height"],
+            x["image_width"],
+        )
+    )
+    genai_vlm_results.sort(
+        key=lambda x: (
+            x["isl"],
+            x["osl"],
+            x["concurrency"],
+            x["image_height"],
+            x["image_width"],
+        )
+    )
+
+    # Build the complete report
+    release_str = ""
+
+    # Only include section if there are results to display
+    if aiperf_text_results or aiperf_vlm_results:
+        release_str = f"### Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
+
+        # TEXT BENCHMARKS SECTION
+        if aiperf_text_results:
+            release_str += "#### AIPerf Text Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
+
+            # Only show AIPerf-specific detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(aiperf_text_results)
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
+
+        # VLM BENCHMARKS SECTION
+        if aiperf_vlm_results:
+            release_str += "#### AIPerf VLM Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
+
+            # Only show AIPerf-specific detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(
+                aiperf_vlm_results, is_vlm_benchmark=True
+            )
+            release_str += nvidia_markdown_str
+            release_str += "\n\n"
+
+        # Metric definitions
+        release_str += "**Metric Definitions:**\n"
+        release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
+        release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
+        release_str += "> - **Concur**: Concurrent requests (batch size)\n"
+        release_str += "> - **N**: Total number of requests\n"
+        release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
+        release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **Output Tok/s**: Output token throughput\n"
+        release_str += (
+            "> - **Total Tok/s**: Total token throughput (input + output tokens)\n"
+        )
+        release_str += "> - **Req/s**: Request throughput\n"
+
+    # Save markdown report
+    disp_md_path = output_dir / f"aiperf_benchmark_display_{report_id}.md"
+    with open(disp_md_path, "w", encoding="utf-8") as f:
+        f.write(release_str)
+    logger.info(f"AIPerf report saved to: {disp_md_path}")
+
+    # Save CSV data for text benchmarks
+    text_data_file_path = (
+        output_dir / "data" / f"aiperf_benchmark_text_stats_{report_id}.csv"
+    )
+    text_data_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if aiperf_text_results:
+        headers = list(aiperf_text_results[0].keys())
+        with open(text_data_file_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for result in aiperf_text_results:
+                writer.writerow([str(result.get(h, "")) for h in headers])
+        logger.info(f"AIPerf text benchmark data saved to: {text_data_file_path}")
+
+    # Save CSV data for VLM benchmarks
+    image_data_file_path = (
+        output_dir / "data" / f"aiperf_benchmark_vlm_stats_{report_id}.csv"
+    )
+    if aiperf_vlm_results:
+        headers = list(aiperf_vlm_results[0].keys())
+        with open(image_data_file_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for result in aiperf_vlm_results:
+                writer.writerow([str(result.get(h, "")) for h in headers])
+        logger.info(f"AIPerf VLM benchmark data saved to: {image_data_file_path}")
+
+    # Return combined results for both text and VLM
+    all_aiperf_results = aiperf_text_results + aiperf_vlm_results
+    return release_str, all_aiperf_results, disp_md_path, text_data_file_path
+
+
+def genai_perf_benchmark_generate_report(
+    args, server_mode, model_spec, report_id, metadata={}
+):
+    """Generate benchmark report specifically for GenAI-Perf results.
+
+    GenAI-Perf provides detailed metrics similar to AIPerf,
+    including mean, median, and p99 percentiles for TTFT, TPOT, and E2EL.
+    This function creates a separate detailed report following the same format as AIPerf.
+    """
+    # All benchmark tools now use the same output directory
+    benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
+
+    # Look for genai-perf benchmark files
+    genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
+    genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
+
+    output_dir = Path(args.output_path) / "benchmarks_genai_perf"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("GenAI-Perf Benchmark Summary")
+    logger.info(f"Found {len(genai_files)} GenAI-Perf benchmark files")
+
+    if not genai_files:
+        logger.info("No GenAI-Perf benchmark files found. Skipping GenAI-Perf report.")
+        return "", [], None, None
+
+    # Helper function to keep only the latest file for each config
+    def deduplicate_by_config(files):
+        """Keep only the latest file for each unique benchmark configuration."""
+        config_to_file = {}
+        # Sort in reverse order so latest files come first
+        for filepath in sorted(files, reverse=True):
+            filename = Path(filepath).name
+            # Extract base config from filename
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, maxcon, n = match.groups()
+                # For image benchmarks, also include image dimensions
+                image_match = re.search(
+                    r"images-(\d+)_height-(\d+)_width-(\d+)", filename
+                )
+                if image_match:
+                    images, height, width = image_match.groups()
+                    config_key = (isl, osl, maxcon, n, images, height, width)
+                else:
+                    config_key = (isl, osl, maxcon, n)
+
+                # Only keep the first (latest) file for each config
+                if config_key not in config_to_file:
+                    config_to_file[config_key] = filepath
+            else:
+                # If no match, include the file anyway
+                config_to_file[filepath] = filepath
+        return list(config_to_file.values())
+
+    genai_files = deduplicate_by_config(genai_files)
+    logger.info(f"After deduplication: {len(genai_files)} GenAI-Perf benchmark files")
+
+    # Separate text-only and VLM benchmarks
+    genai_text_only_files = [f for f in genai_files if "images" not in Path(f).name]
+    genai_vlm_files = [f for f in genai_files if "images" in Path(f).name]
+
+    logger.info(
+        f"GenAI-Perf Text benchmarks: {len(genai_text_only_files)}, VLM benchmarks: {len(genai_vlm_files)}"
+    )
+
+    # Process text-only GenAI-Perf benchmarks
+    genai_text_results = []
+    for filepath in sorted(genai_text_only_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, concurrency, num_requests = map(int, match.groups())
+            else:
+                # Fallback to data fields
+                isl = data.get("total_input_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                osl = data.get("total_output_tokens", 0) // max(
+                    data.get("num_prompts", 1), 1
+                )
+                concurrency = data.get("max_concurrency", 1)
+                num_requests = data.get("num_prompts", 0)
+
+            result = {
+                "source": "genai-perf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "genai-perf",
+            }
+            genai_text_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing GenAI-Perf text file {filepath}: {e}")
+            continue
+
+    # Process VLM GenAI-Perf files
+    genai_vlm_results = []
+    for filepath in sorted(genai_vlm_files):
+        try:
+            with open(filepath, "r") as f:
+                data = json.load(f)
+
+            # Extract parameters from filename
+            filename = Path(filepath).name
+            match = re.search(
+                r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)_images-(\d+)_height-(\d+)_width-(\d+)",
+                filename,
+            )
+            if match:
+                isl, osl, concurrency, num_requests, images, height, width = map(
+                    int, match.groups()
+                )
+            else:
+                logger.warning(f"Could not parse image parameters from {filename}")
+                continue
+
+            result = {
+                "source": "genai-perf",
+                "isl": isl,
+                "osl": osl,
+                "concurrency": concurrency,
+                "num_requests": num_requests,
+                "images_per_prompt": images,
+                "image_height": height,
+                "image_width": width,
+                # TTFT metrics
+                "mean_ttft_ms": data.get("mean_ttft_ms", 0),
+                "median_ttft_ms": data.get("median_ttft_ms", 0),
+                "p99_ttft_ms": data.get("p99_ttft_ms", 0),
+                "std_ttft_ms": data.get("std_ttft_ms", 0),
+                # TPOT metrics
+                "mean_tpot_ms": data.get("mean_tpot_ms", 0),
+                "median_tpot_ms": data.get("median_tpot_ms", 0),
+                "p99_tpot_ms": data.get("p99_tpot_ms", 0),
+                "std_tpot_ms": data.get("std_tpot_ms", 0),
+                # E2EL metrics
+                "mean_e2el_ms": data.get("mean_e2el_ms", 0),
+                "median_e2el_ms": data.get("median_e2el_ms", 0),
+                "p99_e2el_ms": data.get("p99_e2el_ms", 0),
+                "std_e2el_ms": data.get("std_e2el_ms", 0),
+                # Throughput
+                "output_token_throughput": data.get("output_token_throughput", 0),
+                "total_token_throughput": data.get("total_token_throughput", 0),
+                "request_throughput": data.get("request_throughput", 0),
+                # Tokens
+                "completed": data.get("completed", 0),
+                "total_input_tokens": data.get("total_input_tokens", 0),
+                "total_output_tokens": data.get("total_output_tokens", 0),
+                # Metadata
+                "model_id": data.get("model_id", ""),
+                "backend": "genai-perf",
+            }
+            genai_vlm_results.append(result)
+        except Exception as e:
+            logger.warning(f"Error processing GenAI-Perf VLM file {filepath}: {e}")
+            continue
+
+    if not genai_text_results and not genai_vlm_results:
+        logger.info("No GenAI-Perf results to process.")
+        return "", [], None, None
+
+    # Sort text benchmarks by ISL, OSL, concurrency
+    genai_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
+
+    # Sort VLM benchmarks by ISL, OSL, concurrency, image dimensions
+    genai_vlm_results.sort(
+        key=lambda x: (
+            x["isl"],
+            x["osl"],
+            x["concurrency"],
+            x["images_per_prompt"],
+            x["image_height"],
+            x["image_width"],
+        )
+    )
+
+    # Build the complete report
+    release_str = ""
+
+    # Only include section if there are results to display
+    if genai_text_results or genai_vlm_results:
+        release_str = f"### GenAI-Perf Benchmark Performance Results for {model_spec.model_name} on {args.device}\n\n"
+
+        # TEXT BENCHMARKS SECTION
+        if genai_text_results:
+            release_str += "#### GenAI-Perf Text Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
+
+            # Show GenAI-Perf detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(genai_text_results)
+            release_str += nvidia_markdown_str
+            release_str += "\n*Note: GenAI-Perf does not natively support total token throughput metrics.*\n\n"
+
+        # VLM BENCHMARKS SECTION
+        if genai_vlm_results:
+            release_str += "#### GenAI-Perf VLM Benchmarks - Detailed Percentiles\n\n"
+            release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
+
+            # Show GenAI-Perf detailed percentiles (mean, median, P99)
+            nvidia_markdown_str = aiperf_release_markdown(
+                genai_vlm_results, is_vlm_benchmark=True
+            )
+            release_str += nvidia_markdown_str
+            release_str += "\n*Note: GenAI-Perf does not natively support total token throughput metrics.*\n\n"
+
+        # Metric definitions
+        release_str += "**Metric Definitions:**\n"
+        release_str += "> - **ISL**: Input Sequence Length (tokens)\n"
+        release_str += "> - **OSL**: Output Sequence Length (tokens)\n"
+        release_str += "> - **Concur**: Concurrent requests (batch size)\n"
+        release_str += "> - **N**: Total number of requests\n"
+        release_str += "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
+        release_str += "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
+        release_str += "> - **Output Tok/s**: Output token throughput\n"
+        release_str += (
+            "> - **Total Tok/s**: Total token throughput (input + output tokens)\n"
+        )
+        release_str += "> - **Req/s**: Request throughput\n"
+
+    # Save markdown report
+    disp_md_path = output_dir / f"genai_perf_benchmark_display_{report_id}.md"
+    with open(disp_md_path, "w", encoding="utf-8") as f:
+        f.write(release_str)
+    logger.info(f"GenAI-Perf report saved to: {disp_md_path}")
+
+    # Save CSV data for text benchmarks
+    text_data_file_path = (
+        output_dir / "data" / f"genai_perf_benchmark_text_stats_{report_id}.csv"
+    )
+    text_data_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if genai_text_results:
+        headers = list(genai_text_results[0].keys())
+        with open(text_data_file_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for result in genai_text_results:
+                writer.writerow([str(result.get(h, "")) for h in headers])
+        logger.info(f"GenAI-Perf text benchmark data saved to: {text_data_file_path}")
+
+    # Save CSV data for VLM benchmarks
+    image_data_file_path = (
+        output_dir / "data" / f"genai_perf_benchmark_vlm_stats_{report_id}.csv"
+    )
+    if genai_vlm_results:
+        headers = list(genai_vlm_results[0].keys())
+        with open(image_data_file_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for result in genai_vlm_results:
+                writer.writerow([str(result.get(h, "")) for h in headers])
+        logger.info(f"GenAI-Perf VLM benchmark data saved to: {image_data_file_path}")
+
+    # Return combined results for both text and VLM
+    all_genai_results = genai_text_results + genai_vlm_results
+    return release_str, all_genai_results, disp_md_path, text_data_file_path
+
+
+def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata={}):
+    # Look for vLLM, genai-perf, and AIPerf benchmark files (all stack together)
+    # All benchmark tools now use the same unified output directory
+    vllm_pattern = f"benchmark_{model_spec.model_id}_*.json"
+    genai_pattern = f"genai_benchmark_{model_spec.model_id}_*.json"
+    aiperf_pattern = f"aiperf_benchmark_{model_spec.model_id}_*.json"
+
+    benchmarks_output_dir = f"{get_default_workflow_root_log_dir()}/benchmarks_output"
+
+    vllm_files = glob(f"{benchmarks_output_dir}/{vllm_pattern}")
+    genai_files = glob(f"{benchmarks_output_dir}/{genai_pattern}")
+    aiperf_files = glob(f"{benchmarks_output_dir}/{aiperf_pattern}")
+
+    logger.info(
+        f"Found {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, and {len(aiperf_files)} AIPerf benchmark files before deduplication"
+    )
+
+    # Deduplicate files - keep only latest run for each config
+    def deduplicate_by_config(files):
+        """Keep only the latest file for each unique benchmark configuration."""
+        config_to_file = {}
+        # Sort in reverse order so latest files come first
+        for filepath in sorted(files, reverse=True):
+            filename = Path(filepath).name
+            # Extract base config from filename
+            match = re.search(r"isl-(\d+)_osl-(\d+)_maxcon-(\d+)_n-(\d+)", filename)
+            if match:
+                isl, osl, con, n = map(int, match.groups())
+
+                # Check if this is an image benchmark (has images-X in filename)
+                img_match = re.search(
+                    r"images-(\d+)_height-(\d+)_width-(\d+)", filename
+                )
+                if img_match:
+                    images, height, width = map(int, img_match.groups())
+                    config_key = (isl, osl, con, n, images, height, width)
+                else:
+                    # Text-only benchmark
+                    config_key = (isl, osl, con, n, 0, 0, 0)
+
+                # Only keep the first (latest) file for each config
+                if config_key not in config_to_file:
+                    config_to_file[config_key] = filepath
+            else:
+                # If no match, include the file anyway
+                config_to_file[filepath] = filepath
+        return list(config_to_file.values())
+
+    vllm_files = deduplicate_by_config(vllm_files)
+    genai_files = deduplicate_by_config(genai_files)
+    aiperf_files = deduplicate_by_config(aiperf_files)
+
+    logger.info(
+        f"After deduplication: {len(vllm_files)} vLLM, {len(genai_files)} genai-perf, {len(aiperf_files)} AIPerf benchmark files"
     )
     output_dir = Path(args.output_path) / "benchmarks"
-    logger.info("Benchmark Summary")
-    logger.info(f"Processing: {len(files)} files")
-    if not files:
+
+    if not vllm_files and not genai_files and not aiperf_files:
         logger.info("No benchmark files found. Skipping.")
         return (
             "",
@@ -389,10 +1584,197 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             None,
             None,
         )
-    # extract summary data
-    release_str, release_raw, disp_md_path, stats_file_path = generate_report(
-        files, output_dir, report_id, metadata, model_spec=model_spec
+
+    # Process each tool separately to generate individual tables
+    # Order: vLLM -> AIPerf -> GenAI-Perf (for both text and image)
+    all_tool_results = []
+
+    # Import display functions once
+    from benchmarking.summary_report import (
+        create_audio_display_dict,
+        create_display_dict,
+        create_embedding_display_dict,
+        create_image_generation_display_dict,
+        create_video_display_dict,
+        create_vlm_display_dict,
+        get_markdown_table,
+        save_markdown_table,
+        save_to_csv,
     )
+
+    # Process all tools and collect results by type (text/image/audio/tts/embedding/cnn)
+    text_sections = []
+    image_sections = []
+    audio_sections = []
+    tts_sections = []
+    embedding_sections = []
+    cnn_sections = []
+    video_sections = []
+
+    # Process vLLM benchmarks
+    if vllm_files:
+        _, vllm_release_raw, _, _ = benchmark_generate_report_helper(
+            vllm_files, output_dir, report_id, metadata, model_spec=model_spec
+        )
+        all_tool_results.extend(vllm_release_raw)
+
+        # Separate text, vlm, audio, tts, embedding and cnn for vLLM
+        vllm_text = [r for r in vllm_release_raw if r.get("task_type") == "text"]
+        vllm_vlm = [r for r in vllm_release_raw if r.get("task_type") == "vlm"]
+        vllm_audio = [r for r in vllm_release_raw if r.get("task_type") == "audio"]
+        vllm_tts = [r for r in vllm_release_raw if r.get("task_type") == "tts"]
+        vllm_embedding = [
+            r for r in vllm_release_raw if r.get("task_type") == "embedding"
+        ]
+        vllm_cnn = [r for r in vllm_release_raw if r.get("task_type") == "cnn"]
+        vllm_image = [r for r in vllm_release_raw if r.get("task_type") == "image"]
+        vllm_video = [r for r in vllm_release_raw if r.get("task_type") == "video"]
+
+        if vllm_text:
+            vllm_text_display = [create_display_dict(r) for r in vllm_text]
+            vllm_text_md = get_markdown_table(vllm_text_display)
+            text_sections.append(
+                f"#### vLLM Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_text_md}"
+            )
+
+        if vllm_vlm:
+            vllm_vlm_display = [create_vlm_display_dict(r) for r in vllm_vlm]
+            vllm_vlm_md = get_markdown_table(vllm_vlm_display)
+            image_sections.append(
+                f"#### vLLM Vision-Language Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_vlm_md}"
+            )
+
+        if vllm_audio:
+            vllm_audio_display = [
+                create_audio_display_dict(r, model_spec) for r in vllm_audio
+            ]
+            vllm_audio_md = get_markdown_table(vllm_audio_display)
+            audio_sections.append(
+                f"#### vLLM Audio Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_audio_md}"
+            )
+
+        if vllm_tts:
+            from benchmarking.summary_report import create_tts_display_dict
+
+            vllm_tts_display = [create_tts_display_dict(r) for r in vllm_tts]
+            vllm_tts_md = get_markdown_table(vllm_tts_display)
+            tts_sections.append(
+                f"#### vLLM Text-to-Speech Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_tts_md}"
+            )
+
+        if vllm_embedding:
+            vllm_embedding_display = [
+                create_embedding_display_dict(r) for r in vllm_embedding
+            ]
+            vllm_embedding_md = get_markdown_table(vllm_embedding_display)
+            embedding_sections.append(
+                f"#### vLLM Embedding Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_embedding_md}"
+            )
+
+        if vllm_cnn:
+            vllm_cnn_display = [
+                create_image_generation_display_dict(r) for r in vllm_cnn
+            ]
+            vllm_cnn_md = get_markdown_table(vllm_cnn_display)
+            cnn_sections.append(
+                f"#### CNN Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_cnn_md}"
+            )
+
+        if vllm_image:
+            vllm_image_display = [
+                create_image_generation_display_dict(r) for r in vllm_image
+            ]
+            vllm_image_md = get_markdown_table(vllm_image_display)
+            image_sections.append(
+                f"#### vLLM Image Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_image_md}"
+            )
+
+        if vllm_video:
+            vllm_video_display = [create_video_display_dict(r) for r in vllm_video]
+            vllm_video_md = get_markdown_table(vllm_video_display)
+            video_sections.append(
+                f"#### vLLM Video Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{vllm_video_md}"
+            )
+
+    # Process AIPerf benchmarks
+    if aiperf_files:
+        _, aiperf_release_raw, _, _ = benchmark_generate_report_helper(
+            aiperf_files, output_dir, report_id, metadata, model_spec=model_spec
+        )
+        all_tool_results.extend(aiperf_release_raw)
+
+        # Separate text and vlm for AIPerf
+        aiperf_text = [r for r in aiperf_release_raw if r.get("task_type") == "text"]
+        aiperf_vlm = [r for r in aiperf_release_raw if r.get("task_type") == "vlm"]
+
+        if aiperf_text:
+            aiperf_text_display = [create_display_dict(r) for r in aiperf_text]
+            aiperf_text_md = get_markdown_table(aiperf_text_display)
+            text_sections.append(
+                f"#### AIPerf Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_text_md}"
+            )
+
+        if aiperf_vlm:
+            aiperf_vlm_display = [create_vlm_display_dict(r) for r in aiperf_vlm]
+            aiperf_vlm_md = get_markdown_table(aiperf_vlm_display)
+            image_sections.append(
+                f"#### AIPerf VLM Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{aiperf_vlm_md}"
+            )
+
+    # Process GenAI-Perf benchmarks
+    if genai_files:
+        _, genai_release_raw, _, _ = benchmark_generate_report_helper(
+            genai_files, output_dir, report_id, metadata, model_spec=model_spec
+        )
+        all_tool_results.extend(genai_release_raw)
+
+        # Separate text and vlm for GenAI-Perf
+        genai_text = [r for r in genai_release_raw if r.get("task_type") == "text"]
+        genai_vlm = [r for r in genai_release_raw if r.get("task_type") == "vlm"]
+
+        if genai_text:
+            genai_text_display = [create_display_dict(r) for r in genai_text]
+            genai_text_md = get_markdown_table(genai_text_display)
+            text_sections.append(
+                f"#### GenAI-Perf Text-to-Text Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_text_md}"
+            )
+
+        if genai_vlm:
+            genai_vlm_display = [create_vlm_display_dict(r) for r in genai_vlm]
+            genai_vlm_md = get_markdown_table(genai_vlm_display)
+            image_sections.append(
+                f"#### GenAI-Perf VLM Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n{genai_vlm_md}"
+            )
+
+    # Combine sections: text, image, audio, embedding, then cnn (matching original order)
+    markdown_sections = (
+        text_sections
+        + image_sections
+        + audio_sections
+        + tts_sections
+        + embedding_sections
+        + cnn_sections
+        + video_sections
+    )
+
+    # Combine all sections
+    release_str = ""
+    if markdown_sections:
+        release_str = (
+            f"### Performance Benchmark Sweeps for {model_spec.model_name} on {args.device}\n\n"
+            + "\n\n".join(markdown_sections)
+        )
+
+    # Save combined CSV for all tools
+    stats_file_path = output_dir / "data" / f"benchmark_stats_{report_id}.csv"
+    stats_file_path.parent.mkdir(parents=True, exist_ok=True)
+    save_to_csv(all_tool_results, stats_file_path)
+
+    # Save display markdown
+    disp_md_path = output_dir / f"benchmark_display_{report_id}.md"
+    save_markdown_table(release_str, disp_md_path)
+
+    release_raw = all_tool_results
     # release report for benchmarks
     device_type = DeviceTypes.from_string(args.device)
 
@@ -400,6 +1782,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     # to match what benchmarks actually use
     _model_max_concurrency = model_spec.device_model_spec.max_concurrency
     _max_context = model_spec.device_model_spec.max_context
+    _max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
     raw_perf_refs = (
         model_spec.device_model_spec.perf_reference
         if model_spec.device_model_spec.perf_reference
@@ -407,23 +1790,34 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     )
     perf_refs = [
         cap_benchmark_params(
-            params, _max_context, _model_max_concurrency, model_spec.model_name
+            params,
+            _max_context,
+            _max_tokens_all_users,
+            _model_max_concurrency,
+            model_spec.model_name,
         )
         for params in raw_perf_refs
     ]
 
-    # Separate text and image benchmarks from release_raw
-    text_release_raw = [r for r in release_raw if r.get("task_type", "text") == "text"]
-    image_release_raw = [
-        r for r in release_raw if r.get("task_type", "text") == "image"
+    # For performance targets, use only vLLM results (as per user requirement)
+    vllm_release_raw = [
+        r for r in release_raw if r.get("backend") in ("vllm", "openai-chat")
     ]
 
-    # Separate text and image performance references
+    # Separate text and vlm benchmarks from vLLM results (for targets)
+    text_release_raw = [
+        r for r in vllm_release_raw if r.get("task_type", "text") == "text"
+    ]
+    vlm_release_raw = [
+        r for r in vllm_release_raw if r.get("task_type", "text") == "vlm"
+    ]
+
+    # Separate text and vlm performance references
     text_perf_refs = [
         p_ref for p_ref in perf_refs if getattr(p_ref, "task_type", "text") == "text"
     ]
-    image_perf_refs = [
-        p_ref for p_ref in perf_refs if getattr(p_ref, "task_type", "text") == "image"
+    vlm_perf_refs = [
+        p_ref for p_ref in perf_refs if getattr(p_ref, "task_type", "text") == "vlm"
     ]
 
     release_sections = []
@@ -561,26 +1955,26 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         text_section += "No performance targets defined for text benchmarks.\n\n"
         release_sections.append(text_section)
 
-    # Process image benchmarks if they exist
-    print(f"image_release_raw: {image_release_raw}")
-    if image_perf_refs and image_release_raw and False:
-        # hard coded for now - using fallback option for image benchmarks
-        # TODO: implement proper image benchmark targets retrieval
+    # Process VLM benchmarks if they exist
+    print(f"vlm_release_raw: {vlm_release_raw}")
+    if vlm_perf_refs and vlm_release_raw:
+        # VLM models (ModelType.VLM) now distinguished from image generation models (ModelType.IMAGE)
         # make lookup dict so references can find the correct result row
         # key: (isl, osl, image_height, image_width, images_per_prompt, max_concurrency)
-        image_res_dict = {
+        # Support both old (input_sequence_length) and new (isl) key names for backward compatibility
+        vlm_res_dict = {
             (
-                r["input_sequence_length"],
-                r["output_sequence_length"],
+                r.get("isl", r.get("input_sequence_length", 0)),
+                r.get("osl", r.get("output_sequence_length", 0)),
                 r["image_height"],
                 r["image_width"],
                 r["images_per_prompt"],
                 r["max_con"],
             ): r
-            for r in image_release_raw
+            for r in vlm_release_raw
         }
-        image_perf_results = {}
-        for p_ref in image_perf_refs:
+        vlm_perf_results = {}
+        for p_ref in vlm_perf_refs:
             p_ref_key = (
                 p_ref.isl,
                 p_ref.osl,
@@ -589,9 +1983,9 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 p_ref.images_per_prompt,
                 p_ref.max_concurrency,
             )
-            res = image_res_dict.get(p_ref_key)
+            res = vlm_res_dict.get(p_ref_key)
             # add reference values to the result
-            image_perf_results[p_ref_key] = {
+            vlm_perf_results[p_ref_key] = {
                 "isl": p_ref.isl,
                 "osl": p_ref.osl,
                 "max_concurrency": res["max_con"] if res else p_ref.max_concurrency,
@@ -604,7 +1998,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
             }
             # add measurements to result and checks if defined
             if res:
-                image_perf_results[p_ref_key].update(
+                vlm_perf_results[p_ref_key].update(
                     {
                         "ttft": res["mean_ttft_ms"],
                         "tput_user": res["mean_tps"],
@@ -613,7 +2007,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 )
 
                 # Prepare a dictionary to hold checks for all targets.
-                image_perf_results[p_ref_key]["target_checks"] = {}
+                vlm_perf_results[p_ref_key]["target_checks"] = {}
                 # Iterate over each target defined in p_ref.targets.
                 for target_name, perf_target in p_ref.targets.items():
                     target_check = {}
@@ -664,7 +2058,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                         target_check["tput_check"] = ReportCheckTypes.NA
 
                     # Save the computed checks under the target's name.
-                    image_perf_results[p_ref_key]["target_checks"][target_name] = (
+                    vlm_perf_results[p_ref_key]["target_checks"][target_name] = (
                         target_check
                     )
 
@@ -672,7 +2066,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 # No result available from benchmark measurements.
                 NA_STRING = "N/A"
                 # In this case, add N/A for performance measures and an empty check dict per target.
-                image_perf_results[p_ref_key].update(
+                vlm_perf_results[p_ref_key].update(
                     {
                         "ttft": NA_STRING,
                         "tput_user": NA_STRING,
@@ -688,35 +2082,31 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                     }
                 )
 
-        # build release performance benchmarking report for images
-        sorted_image_perf_results = {
-            k: image_perf_results[k] for k in sorted(image_perf_results)
+        # build release performance benchmarking report for VLMs
+        sorted_vlm_perf_results = {
+            k: vlm_perf_results[k] for k in sorted(vlm_perf_results)
         }
-        image_release_raw_targets = [v for k, v in sorted_image_perf_results.items()]
+        vlm_release_raw_targets = [v for k, v in sorted_vlm_perf_results.items()]
 
-        flat_image_release_raw = flatten_target_checks(image_release_raw_targets)
-        image_section = (
-            f"#### Image Benchmark Targets {model_spec.model_name} on {args.device}\n\n"
-        )
-        if image_release_raw_targets and image_release_raw_targets[0].get(
-            "target_checks"
-        ):
-            image_section += benchmark_image_release_markdown(
-                flat_image_release_raw,
-                target_checks=image_release_raw_targets[0]["target_checks"],
+        flat_vlm_release_raw = flatten_target_checks(vlm_release_raw_targets)
+        vlm_section = f"#### VLM Performance Benchmark Results {model_spec.model_name} on {args.device}\n\n"
+        if vlm_release_raw_targets and vlm_release_raw_targets[0].get("target_checks"):
+            vlm_section += benchmark_vlm_release_markdown(
+                flat_vlm_release_raw,
+                target_checks=vlm_release_raw_targets[0]["target_checks"],
             )
         else:
-            image_section += benchmark_image_release_markdown(
-                flat_image_release_raw, target_checks=None
+            vlm_section += benchmark_vlm_release_markdown(
+                flat_vlm_release_raw, target_checks=None
             )
-        release_sections.append(image_section)
-    elif image_release_raw:
-        # Show image benchmarks even without performance targets
-        image_section = (
-            f"#### Image Benchmark Results {model_spec.model_name} on {args.device}\n\n"
+        release_sections.append(vlm_section)
+    elif vlm_release_raw:
+        # Show VLM benchmarks even without performance targets
+        vlm_section = (
+            f"#### VLM Benchmark Results {model_spec.model_name} on {args.device}\n\n"
         )
-        image_section += "No performance targets defined for image benchmarks.\n\n"
-        release_sections.append(image_section)
+        vlm_section += "No performance targets defined for VLM benchmarks.\n\n"
+        release_sections.append(vlm_section)
 
     # Combine sections or fallback to original behavior
     if release_sections:
@@ -731,10 +2121,10 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
                 if "text_release_raw_targets" in locals()
                 else release_raw
             )
-        elif image_perf_refs:
+        elif vlm_perf_refs:
             release_raw = (
-                image_release_raw_targets
-                if "image_release_raw_targets" in locals()
+                vlm_release_raw_targets
+                if "vlm_release_raw_targets" in locals()
                 else release_raw
             )
     else:
@@ -751,34 +2141,29 @@ def extract_eval_json_data(json_path: Path):
     with json_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
-    extracted = []
-
     results = data.get("results", {})
     configs = data.get("configs", {})
 
     first_key = list(results.keys())[0]
 
-    for result_key, result_metrics in results.items():
-        extracted_metrics = {
-            k: v
-            for k, v in result_metrics.items()
-            if "alias" not in k and "_stderr" not in k
-        }
+    # extract first results' metrics
+    first_results = results[first_key]
+    extracted_metrics = {
+        k: v
+        for k, v in first_results.items()
+        if "alias" not in k and "_stderr" not in k
+    }
+    extracted = [{first_key: extracted_metrics}]
 
-        extracted.append({result_key: extracted_metrics})
     config = configs.get(first_key, {})
-    task_name = config.get("task")
-    if task_name is None:
-        group_subtasks = data.get("group_subtasks")
-        if group_subtasks:
-            task_name = list(group_subtasks.keys())[0]
-            config = configs.get(group_subtasks[task_name][0], {})
+    task_name = config.get("task", first_key)
 
-    if task_name != first_key:
-        if first_key == "mmmu_val":
-            task_name = "mmmu_val"
+    # assert that all configs have the same dataset path
+    dataset_path = list(configs.values())[0]["dataset_path"]  # first_dataset_path
+    for config in configs.values():
+        config_dataset_path = config.get("dataset_path")
+        assert dataset_path == config_dataset_path
 
-    dataset_path = config.get("dataset_path", "N/A")
     assert task_name == first_key, f"Task name mismatch: {task_name} != {first_key}"
 
     meta_data = {"task_name": task_name, "dataset_path": dataset_path}
@@ -787,18 +2172,17 @@ def extract_eval_json_data(json_path: Path):
 
 
 def extract_eval_results(files):
+    files = sorted(files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
     results = {}
     meta_data = {}
     for json_file in files:
-        # logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))
-        task_name = meta.pop("task_name")
-        check_task_name = list(res[0].keys())[0]
-        assert task_name == check_task_name, (
-            f"Task name mismatch: {task_name} != {check_task_name}"
-        )
-        results[task_name] = {k: v for d in res for k, v in d.items()}
-        meta_data[task_name] = meta
+        _ = meta.pop("task_name", None)
+        for task_dict in res:
+            for specific_task_name, metrics in task_dict.items():
+                if specific_task_name not in results:
+                    results[specific_task_name] = metrics
+                    meta_data[specific_task_name] = meta
 
     return results, meta_data
 
@@ -814,59 +2198,124 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 f"Skipping report for task:= {task.task_name}, no eval score is defined."
             )
             continue
+
+        target_keys = []
+        # Check for exact match (e.g. "meta_gpqa")
         if task.task_name in results:
-            logger.info(f"eval processing task_name: {task.task_name}")
-            res = results[task.task_name]
-            kwargs = task.score.score_func_kwargs
-            kwargs["task_name"] = task.task_name
-            score = task.score.score_func(res, task_name=task.task_name, kwargs=kwargs)
+            target_keys.append(task.task_name)
+        else:
+            # Check for subtasks (e.g. config says "longbench", results have "longbench_2wikimqa")
+            prefix = f"{task.task_name}_"
+            subtasks = [k for k in results if k.startswith(prefix)]
+            target_keys.extend(sorted(subtasks))
+        if target_keys:
+            for t_key in target_keys:
+                logger.info(f"eval processing task_name: {t_key}")
 
-            # For WER (Word Error Rate), convert to accuracy once before all calculations
-            # WER is an error rate (lower is better), but published/reference scores are accuracy (higher is better)
-            if kwargs.get("unit") == "WER":
-                score = 100 - score
+                # do NOT extract results[t_key] here.
+                # The score_func expects the ROOT results dict so it can do results[task_name].
 
-            if task.score.published_score:
-                assert task.score.published_score > 0, "Published score is not > 0"
-                ratio_to_published = score / task.score.published_score
-            else:
-                ratio_to_published = "N/A"
-            if task.score.gpu_reference_score:
-                assert task.score.gpu_reference_score > 0, "Reference score is not > 0"
-                ratio_to_reference = score / task.score.gpu_reference_score
-                accuracy_check = ReportCheckTypes.from_result(
-                    ratio_to_reference >= (1.0 - task.score.tolerance)
-                )
-            else:
-                ratio_to_reference = "N/A"
+                # Shallow-copy to avoid mutating the shared config dict: kwargs["task_name"] = t_key
+                # below would permanently alter score_func_kwargs for all subsequent tasks in this process.
+                kwargs = dict(task.score.score_func_kwargs)
+                # Update task_name so the score function looks up the specific subtask (e.g. longbench_2wikimqa)
+                kwargs["task_name"] = t_key
+                configured_keys = kwargs.get("result_keys", [])
+                actual_data = results.get(t_key, {})
+
+                key_found = any(k in actual_data for k in configured_keys)
+
+                if not key_found:
+                    valid_candidates = [
+                        k
+                        for k, v in actual_data.items()
+                        if isinstance(v, (int, float))
+                        and "stderr" not in k
+                        and "alias" not in k
+                    ]
+
+                    if valid_candidates:
+                        logger.info(
+                            f"  Metric mismatch for {t_key}. Auto-detected replacement: {valid_candidates[0]}"
+                        )
+                        kwargs["result_keys"] = [valid_candidates[0]]
+                try:
+                    score = task.score.score_func(
+                        results, task_name=t_key, kwargs=kwargs
+                    )
+                except Exception as e:
+                    logger.warning(f"  Could not calculate score for {t_key}: {e}")
+                    if kwargs.get("unit") == "WER":
+                        # WER=100 is worst-case (100% word error rate). Using score=0.0 here
+                        # would be transformed to 100-0=100 and incorrectly pass the tolerance check.
+                        score = 100.0
+                    else:
+                        score = 0.0
+                if kwargs.get("unit") == "WER":
+                    score = 100 - score
+
                 if task.score.published_score:
+                    assert task.score.published_score > 0, "Published score is not > 0"
+                    ratio_to_published = score / task.score.published_score
+                else:
+                    ratio_to_published = "N/A"
+
+                if task.score.gpu_reference_score:
+                    assert task.score.gpu_reference_score > 0, (
+                        "Reference score is not > 0"
+                    )
+                    ratio_to_reference = score / task.score.gpu_reference_score
                     accuracy_check = ReportCheckTypes.from_result(
-                        ratio_to_published >= (1.0 - task.score.tolerance)
+                        ratio_to_reference >= (1.0 - task.score.tolerance)
                     )
                 else:
-                    accuracy_check = ReportCheckTypes.NA
+                    ratio_to_reference = "N/A"
+                    if task.score.published_score:
+                        accuracy_check = ReportCheckTypes.from_result(
+                            ratio_to_published >= (1.0 - task.score.tolerance)
+                        )
+                    else:
+                        accuracy_check = ReportCheckTypes.NA
+
+                report_rows.append(
+                    {
+                        "model": model_spec.model_name,
+                        "device": args.device,
+                        "task_name": t_key,
+                        "accuracy_check": accuracy_check,
+                        "score": score,
+                        "ratio_to_reference": ratio_to_reference,
+                        "gpu_reference_score": task.score.gpu_reference_score,
+                        "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
+                        "ratio_to_published": ratio_to_published,
+                        "published_score": task.score.published_score,
+                        "published_score_ref": task.score.published_score_ref,
+                        "metadata": meta_data.get(t_key),
+                    }
+                )
         else:
             score = "N/A"
             ratio_to_published = "N/A"
             ratio_to_reference = "N/A"
             accuracy_check = ReportCheckTypes.NA
 
-        report_rows.append(
-            {
-                "model": model_spec.model_name,
-                "device": args.device,
-                "task_name": task.task_name,
-                "accuracy_check": accuracy_check,
-                "score": score,
-                "ratio_to_reference": ratio_to_reference,
-                "gpu_reference_score": task.score.gpu_reference_score,
-                "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
-                "ratio_to_published": ratio_to_published,
-                "published_score": task.score.published_score,
-                "published_score_ref": task.score.published_score_ref,
-                "metadata": meta_data.get(task.task_name),
-            }
-        )
+            report_rows.append(
+                {
+                    "model": model_spec.model_name,
+                    "device": args.device,
+                    "task_name": task.task_name,
+                    "accuracy_check": accuracy_check,
+                    "score": score,
+                    "ratio_to_reference": ratio_to_reference,
+                    "gpu_reference_score": task.score.gpu_reference_score,
+                    "gpu_reference_score_ref": task.score.gpu_reference_score_ref,
+                    "ratio_to_published": ratio_to_published,
+                    "published_score": task.score.published_score,
+                    "published_score_ref": task.score.published_score_ref,
+                    "metadata": meta_data.get(task.task_name),
+                }
+            )
+
     return report_rows
 
 
@@ -966,6 +2415,7 @@ def process_list_format_eval_files(list_files):
     Returns:
         Tuple of (results_dict, meta_data_dict) in the same format as extract_eval_results()
     """
+    list_files = sorted(list_files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
     results = {}
     meta_data = {}
 
@@ -985,19 +2435,15 @@ def process_list_format_eval_files(list_files):
             # Extract task name if available
             task_name = eval_data.get("task_name", "image_generation")
 
-            # Store metrics under task name
-            if task_name not in results:
-                results[task_name] = {}
+            if task_name in results:
+                continue
 
-            # Add all metrics from this eval data
-            results[task_name].update(eval_data)
+            results[task_name] = eval_data
 
-            # Store metadata
-            if task_name not in meta_data:
-                meta_data[task_name] = {
-                    "task_name": task_name,
-                    "dataset_path": eval_data.get("dataset_path", "N/A"),
-                }
+            meta_data[task_name] = {
+                "task_name": task_name,
+                "dataset_path": eval_data.get("dataset_path", "N/A"),
+            }
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Could not process list format file {filepath}: {e}")
 
@@ -1025,13 +2471,33 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         )
         files = glob(file_path_pattern)
     elif model_spec.model_type == ModelType.IMAGE:
-        file_name_pattern = generate_image_report_data(model_spec, eval_run_id)
+        file_name_pattern = generate_image_generation_report_data(
+            model_spec, eval_run_id
+        )
         file_path_pattern = (
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
         files = glob(file_path_pattern)
     elif model_spec.model_type == ModelType.EMBEDDING:
         file_name_pattern = generate_embedding_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
+        file_name_pattern = generate_tts_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.VIDEO:
+        file_name_pattern = generate_video_report_data(model_spec, eval_run_id)
+        file_path_pattern = (
+            f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
+        )
+        files = glob(file_path_pattern)
+    elif model_spec.model_type == ModelType.TEXT_TO_SPEECH:
+        file_name_pattern = generate_tts_report_data(model_spec, eval_run_id)
         file_path_pattern = (
             f"{get_default_workflow_root_log_dir()}/evals_output/{file_name_pattern}"
         )
@@ -1055,12 +2521,15 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         image_files = glob(image_file_path_pattern)
         logger.info(f"Image Files: {image_files}")
         files.extend(image_files)
+    files = list(dict.fromkeys(files))
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
     if (
         model_spec.model_type.name == ModelType.CNN.name
         or model_spec.model_type.name == ModelType.IMAGE.name
         or model_spec.model_type.name == ModelType.EMBEDDING.name
+        or model_spec.model_type.name == ModelType.VIDEO.name
+        or model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
     ):
         # TODO rewrite this
         data_fpath = data_dir / f"eval_data_{report_id}.json"
@@ -1094,7 +2563,6 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         dict_results, dict_meta_data = extract_eval_results(dict_format_files)
         results.update(dict_results)
         meta_data.update(dict_meta_data)
-
     if list_format_files:
         list_results, list_meta_data = process_list_format_eval_files(list_format_files)
         results.update(list_results)
@@ -1140,58 +2608,124 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
 
 
 def generate_tests_report(args, server_mode, model_spec, report_id, metadata={}):
-    # glob on all test reports - each test category might produce its own report
-    file_name_pattern = f"test_{model_spec.model_id}_*/*"
-    file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/tests_output/{file_name_pattern}"
-    )
-    files = glob(file_path_pattern)
     output_dir = Path(args.output_path) / "tests"
     output_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = output_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"summary_{report_id}.md"
 
-    logger.info("Tests Summary")
-    logger.info(f"Processing: {len(files)} files")
-    if not files:
-        logger.info("No tests report files found. Skipping.")
-        return (
-            "",
-            [
-                {
-                    "model": getattr(args, "model", "unknown_model"),
-                    "device": getattr(args, "device", "unknown_device"),
-                }
-            ],
-        )
-    # TODO: Support handling of multiple test reports
-    assert len(files) == 1, "Handling of multiple tests reports is unimplemented."
-    files = files[0]
-
-    # generate vLLM parameter coverage report
-    # TODO: Implement returning raw report, defaulting to None for now
-    markdown_str, release_raw = (
-        generate_vllm_parameter_report(
-            files, output_path, report_id, metadata, model_spec=model_spec
-        ),
+    empty_result = (
+        "",
+        [
+            {
+                "model": getattr(args, "model", "unknown_model"),
+                "device": getattr(args, "device", "unknown_device"),
+            }
+        ],
+        None,
         None,
     )
 
-    release_str = f"### Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
+    # Find the latest test output directory for this model
+    tests_output_dir = get_default_workflow_root_log_dir() / "tests_output"
+    dir_pattern = f"test_{model_spec.model_id}__*"
+    matching_dirs = list(tests_output_dir.glob(dir_pattern))
+    if not matching_dirs:
+        logger.info(
+            f"No test output directories matching '{dir_pattern}' "
+            f"in {tests_output_dir}. Skipping."
+        )
+        return empty_result
 
-    return release_str, release_raw
+    latest_dir = max(matching_dirs, key=lambda d: d.stat().st_mtime)
+    logger.info(f"Using latest test output directory: {latest_dir}")
+
+    # Collect report file paths from parameter_report_*.json files
+    report_files = []
+    for report_path in sorted(latest_dir.glob("parameter_report_*.json")):
+        report_files.append(str(report_path))
+        logger.info(f"  Found report: {report_path}")
+
+    logger.info(f"Found {len(report_files)} parameter report(s)")
+
+    if not report_files:
+        logger.info("No parameter report files found in test output directory.")
+        return empty_result
+
+    logger.info(f"Processing {len(report_files)} parameter report(s)")
+
+    # Generate vLLM parameter coverage report from all report files
+    # Each JSON contains its own task_name field
+    markdown_str = generate_vllm_parameter_report(report_files)
+
+    # Merge all parameter report data into combined release_raw
+    release_raw_list = []
+    for report_file in report_files:
+        try:
+            with open(report_file, "r", encoding="utf-8") as f:
+                release_raw_list.append(json.load(f))
+            logger.info(f"Loaded parameter report from: {report_file}")
+        except Exception as e:
+            logger.warning(f"Could not read parameter report {report_file}: {e}")
+
+    if not release_raw_list:
+        release_raw = [
+            {
+                "model": getattr(args, "model", "unknown_model"),
+                "device": getattr(args, "device", "unknown_device"),
+            }
+        ]
+    elif len(release_raw_list) == 1:
+        release_raw = release_raw_list[0]
+    else:
+        # Merge results from multiple reports
+        release_raw = {
+            "endpoint_url": ", ".join(
+                r.get("endpoint_url", "N/A") for r in release_raw_list
+            ),
+            "model_name": release_raw_list[0].get("model_name", "unknown-model"),
+            "model_impl": release_raw_list[0].get("model_impl", "unknown-impl"),
+            "results": {},
+        }
+        for report_data in release_raw_list:
+            for test_case, tests in report_data.get("results", {}).items():
+                if test_case in release_raw["results"]:
+                    release_raw["results"][test_case].extend(tests)
+                else:
+                    release_raw["results"][test_case] = list(tests)
+
+    release_str = (
+        f"### Test Results for {model_spec.model_name} on {args.device}"
+        f"\n\n{markdown_str}"
+    )
+
+    # Write markdown report to file
+    with output_path.open("w", encoding="utf-8") as f:
+        f.write(release_str)
+    logger.info(f"Tests report saved to: {output_path}")
+
+    # Save raw data to data directory
+    data_fpath = data_dir / f"tests_data_{report_id}.json"
+    with data_fpath.open("w", encoding="utf-8") as f:
+        json.dump(release_raw, f, indent=4)
+    logger.info(f"Tests data saved to: {data_fpath}")
+
+    return release_str, release_raw, output_path, data_fpath
 
 
 def generate_evals_markdown_table(results, meta_data) -> str:
     rows = []
-    for task_group, tasks in results.items():
-        for task_name, metrics in tasks.items():
-            for metric_name, metric_value in metrics.items():
-                if metric_name and metric_name != " ":
-                    if not isinstance(
-                        metric_value, float
-                    ):  # some metrics in image evals are not floats
-                        continue
-                    rows.append((task_name, metric_name, f"{metric_value:.4f}"))
+    for task_name, metrics in results.items():
+        for metric_name, metric_value in metrics.items():
+            if metric_name and metric_name != " ":
+                if not isinstance(
+                    metric_value, float
+                ):  # some metrics in image evals are not floats
+                    continue
+                rows.append((task_name, metric_name, f"{metric_value:.4f}"))
+
+    if not rows:
+        return "No evaluation results to display."
     col_widths = [max(len(row[i]) for row in rows) for i in range(3)]
     header = f"| {'Task Name'.ljust(col_widths[0])} | {'Metric'.ljust(col_widths[1])} | {'Value'.rjust(col_widths[2])} |"
     separator = f"|{'-' * (col_widths[0] + 2)}|{'-' * (col_widths[1] + 2)}|{'-' * (col_widths[2] + 2)}|"
@@ -1203,7 +2737,379 @@ def generate_evals_markdown_table(results, meta_data) -> str:
     return markdown
 
 
-def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data):
+def generate_stress_tests_markdown_table(release_raw, model_config):
+    """Generate markdown table for test results with mean values only (original format)."""
+
+    # Define display columns: ISL, OSL, Concurrency, Num Prompts
+    # Then mean values for TTFT, TPOT, ITL, E2EL
+    # Then throughput metrics
+    display_cols = [
+        # Configuration columns
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("max_concurrency", "Concurrency"),
+        ("num_prompts", "Num Prompts"),
+        # Mean metrics only (original format)
+        ("ttft", "TTFT (ms)"),
+        ("tpot", "TPOT (ms)"),
+        ("itl", "ITL (ms)"),
+        ("e2el", "E2EL (ms)"),
+        # Throughput metrics at the end
+        ("tput_user", "Tput User (TPS)"),
+        ("tput", "Tput Decode (TPS)"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+
+    # Define decimal formatting standards
+    decimal_places_map = {
+        "ISL": 0,
+        "OSL": 0,
+        "Concurrency": 0,
+        "Num Prompts": 0,
+        "TTFT (ms)": 1,
+        "TPOT (ms)": 1,
+        "ITL (ms)": 1,
+        "E2EL (ms)": 1,
+        "Tput User (TPS)": 2,
+        "Tput Decode (TPS)": 1,
+    }
+
+    display_dicts = []
+
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            if col_name == "isl":
+                value = row.get(
+                    "input_sequence_length", row.get("isl", NOT_MEASURED_STR)
+                )
+            elif col_name == "osl":
+                value = row.get(
+                    "output_sequence_length", row.get("osl", NOT_MEASURED_STR)
+                )
+            elif col_name == "max_concurrency":
+                value = row.get("max_con", NOT_MEASURED_STR)
+            elif col_name == "num_prompts":
+                value = row.get("num_prompts", NOT_MEASURED_STR)
+            elif col_name == "ttft":
+                value = row.get("mean_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "tpot":
+                value = row.get("mean_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "itl":
+                value = row.get("mean_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "e2el":
+                value = row.get("mean_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "tput_user":
+                value = row.get("mean_tps", NOT_MEASURED_STR)
+            elif col_name == "tput":
+                value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
+            else:
+                value = row.get(col_name, NOT_MEASURED_STR)
+
+            # Format numeric values with consistent decimal places for proper alignment
+            if value == NOT_MEASURED_STR or value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, (int, float)) and not (
+                isinstance(value, float) and (value != value)
+            ):  # Check for NaN
+                decimal_places = decimal_places_map.get(display_header, 2)
+                if decimal_places == 0:
+                    # Format as integer
+                    row_dict[display_header] = str(int(value))
+                else:
+                    # Format as float with specified decimal places
+                    row_dict[display_header] = f"{float(value):.{decimal_places}f}"
+            else:
+                # Handle string numbers or other formats
+                try:
+                    numeric_value = float(value)
+                    decimal_places = decimal_places_map.get(display_header, 2)
+                    if decimal_places == 0:
+                        row_dict[display_header] = str(int(numeric_value))
+                    else:
+                        row_dict[display_header] = f"{numeric_value:.{decimal_places}f}"
+                except (ValueError, TypeError):
+                    row_dict[display_header] = str(value)
+
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def generate_stress_tests_markdown_table_detailed(release_raw, model_config):
+    """Generate detailed markdown table with percentile statistics for test results."""
+
+    # Define display columns in requested order:
+    # ISL, OSL, Concurrency, Num Prompts
+    # Then for each metric (ttft, tpot, itl, e2el): mean, p05, p25, p50, p95, p99
+    # Then throughput metrics
+    display_cols = [
+        # Configuration columns
+        ("isl", "ISL"),
+        ("osl", "OSL"),
+        ("max_concurrency", "Concurrency"),
+        ("num_prompts", "Num Prompts"),
+        # TTFT metrics: mean, p05, p25, p50, p95, p99
+        ("ttft", "TTFT (ms)"),
+        ("p5_ttft", "P5 TTFT (ms)"),
+        ("p25_ttft", "P25 TTFT (ms)"),
+        ("p50_ttft", "P50 TTFT (ms)"),
+        ("p95_ttft", "P95 TTFT (ms)"),
+        ("p99_ttft", "P99 TTFT (ms)"),
+        # TPOT metrics: mean, p05, p25, p50, p95, p99
+        ("tpot", "TPOT (ms)"),
+        ("p5_tpot", "P5 TPOT (ms)"),
+        ("p25_tpot", "P25 TPOT (ms)"),
+        ("p50_tpot", "P50 TPOT (ms)"),
+        ("p95_tpot", "P95 TPOT (ms)"),
+        ("p99_tpot", "P99 TPOT (ms)"),
+        # ITL metrics: mean, p05, p25, p50, p95, p99
+        ("itl", "ITL (ms)"),
+        ("p5_itl", "P5 ITL (ms)"),
+        ("p25_itl", "P25 ITL (ms)"),
+        ("p50_itl", "P50 ITL (ms)"),
+        ("p95_itl", "P95 ITL (ms)"),
+        ("p99_itl", "P99 ITL (ms)"),
+        # E2EL metrics: mean, p05, p25, p50, p95, p99
+        ("e2el", "E2EL (ms)"),
+        ("p5_e2el", "P5 E2EL (ms)"),
+        ("p25_e2el", "P25 E2EL (ms)"),
+        ("p50_e2el", "P50 E2EL (ms)"),
+        ("p95_e2el", "P95 E2EL (ms)"),
+        ("p99_e2el", "P99 E2EL (ms)"),
+        # Throughput metrics at the end
+        ("tput_user", "Tput User (TPS)"),
+        ("tput", "Tput Decode (TPS)"),
+    ]
+
+    NOT_MEASURED_STR = "N/A"
+
+    # Define decimal formatting standards based on benchmarking standards
+    decimal_places_map = {
+        "ISL": 0,
+        "OSL": 0,
+        "Concurrency": 0,
+        "Num Prompts": 0,
+        # TTFT
+        "TTFT (ms)": 1,
+        "P5 TTFT (ms)": 1,
+        "P25 TTFT (ms)": 1,
+        "P50 TTFT (ms)": 1,
+        "P95 TTFT (ms)": 1,
+        "P99 TTFT (ms)": 1,
+        # TPOT
+        "TPOT (ms)": 1,
+        "P5 TPOT (ms)": 1,
+        "P25 TPOT (ms)": 1,
+        "P50 TPOT (ms)": 1,
+        "P95 TPOT (ms)": 1,
+        "P99 TPOT (ms)": 1,
+        # ITL
+        "ITL (ms)": 1,
+        "P5 ITL (ms)": 1,
+        "P25 ITL (ms)": 1,
+        "P50 ITL (ms)": 1,
+        "P95 ITL (ms)": 1,
+        "P99 ITL (ms)": 1,
+        # E2EL
+        "E2EL (ms)": 1,
+        "P5 E2EL (ms)": 1,
+        "P25 E2EL (ms)": 1,
+        "P50 E2EL (ms)": 1,
+        "P95 E2EL (ms)": 1,
+        "P99 E2EL (ms)": 1,
+        # Throughput
+        "Tput User (TPS)": 2,
+        "Tput Decode (TPS)": 1,
+    }
+
+    display_dicts = []
+
+    for row in release_raw:
+        row_dict = {}
+        for col_name, display_header in display_cols:
+            if col_name == "isl":
+                value = row.get(
+                    "input_sequence_length", row.get("isl", NOT_MEASURED_STR)
+                )
+            elif col_name == "osl":
+                value = row.get(
+                    "output_sequence_length", row.get("osl", NOT_MEASURED_STR)
+                )
+            elif col_name == "max_concurrency":
+                value = row.get("max_con", NOT_MEASURED_STR)
+            elif col_name == "num_prompts":
+                value = row.get("num_prompts", NOT_MEASURED_STR)
+
+            # TTFT metrics
+            elif col_name == "ttft":
+                value = row.get("mean_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_ttft":
+                value = row.get("p5_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_ttft":
+                value = row.get("p25_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_ttft":
+                value = row.get("p50_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_ttft":
+                value = row.get("p95_ttft_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_ttft":
+                value = row.get("p99_ttft_ms", NOT_MEASURED_STR)
+
+            # TPOT metrics
+            elif col_name == "tpot":
+                value = row.get("mean_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_tpot":
+                value = row.get("p5_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_tpot":
+                value = row.get("p25_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_tpot":
+                value = row.get("p50_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_tpot":
+                value = row.get("p95_tpot_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_tpot":
+                value = row.get("p99_tpot_ms", NOT_MEASURED_STR)
+
+            # ITL metrics
+            elif col_name == "itl":
+                value = row.get("mean_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_itl":
+                value = row.get("p5_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_itl":
+                value = row.get("p25_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_itl":
+                value = row.get("p50_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_itl":
+                value = row.get("p95_itl_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_itl":
+                value = row.get("p99_itl_ms", NOT_MEASURED_STR)
+
+            # E2EL metrics
+            elif col_name == "e2el":
+                value = row.get("mean_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p5_e2el":
+                value = row.get("p5_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p25_e2el":
+                value = row.get("p25_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p50_e2el":
+                value = row.get("p50_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p95_e2el":
+                value = row.get("p95_e2el_ms", NOT_MEASURED_STR)
+            elif col_name == "p99_e2el":
+                value = row.get("p99_e2el_ms", NOT_MEASURED_STR)
+
+            # Throughput metrics
+            elif col_name == "tput_user":
+                value = row.get("mean_tps", NOT_MEASURED_STR)
+            elif col_name == "tput":
+                value = row.get("tps_decode_throughput", NOT_MEASURED_STR)
+
+            else:
+                value = row.get(col_name, NOT_MEASURED_STR)
+
+            # Format numeric values with consistent decimal places for proper alignment
+            if value == NOT_MEASURED_STR or value is None or value == "":
+                row_dict[display_header] = NOT_MEASURED_STR
+            elif isinstance(value, (int, float)) and not (
+                isinstance(value, float) and (value != value)
+            ):  # Check for NaN
+                decimal_places = decimal_places_map.get(display_header, 2)
+                if decimal_places == 0:
+                    # Format as integer
+                    row_dict[display_header] = str(int(value))
+                else:
+                    # Format as float with specified decimal places
+                    row_dict[display_header] = f"{float(value):.{decimal_places}f}"
+            else:
+                # Handle string numbers or other formats
+                try:
+                    numeric_value = float(value)
+                    decimal_places = decimal_places_map.get(display_header, 2)
+                    if decimal_places == 0:
+                        row_dict[display_header] = str(int(numeric_value))
+                    else:
+                        row_dict[display_header] = f"{numeric_value:.{decimal_places}f}"
+                except (ValueError, TypeError):
+                    row_dict[display_header] = str(value)
+
+        display_dicts.append(row_dict)
+
+    # Create the markdown table
+    markdown_str = get_markdown_table(display_dicts)
+    return markdown_str
+
+
+def stress_test_generate_report(args, server_mode, model_spec, report_id, metadata={}):
+    """Generate stress test report using stress_tests-specific summary report module."""
+    file_name_pattern = f"stress_test_{model_spec.model_id}_*.json"
+    file_path_pattern = (
+        f"{get_default_workflow_root_log_dir()}/stress_tests_output/{file_name_pattern}"
+    )
+    files = glob(file_path_pattern)
+    output_dir = Path(args.output_path) / "stress_tests"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = output_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Stress Tests Summary")
+    logger.info(f"Processing: {len(files)} files")
+    if not files:
+        logger.info("No stress test files found. Skipping.")
+        return "", None, None, None
+
+    # Use the stress_tests-specific generate_report function
+    release_str, release_raw, disp_md_path, stats_file_path = (
+        stress_test_generate_report_helper(files, output_dir, report_id, metadata)
+    )
+
+    # Generate stress test-specific release report
+    # Build stress test performance report
+    stress_test_release_str = (
+        f"### Stress Test Results for {model_spec.model_name} on {args.device}\n\n"
+    )
+
+    if release_raw:
+        # Check if percentile report is requested
+        percentile_report = getattr(args, "percentile_report", False)
+
+        # Create stress test-specific markdown table (detailed or simple format)
+        if percentile_report:
+            logger.info("Generating detailed percentile report for stress tests")
+            stress_test_markdown = generate_stress_tests_markdown_table_detailed(
+                release_raw, model_spec
+            )
+        else:
+            logger.info(
+                "Generating simplified report for stress tests (use --percentile-report for detailed statistics)"
+            )
+            stress_test_markdown = generate_stress_tests_markdown_table(
+                release_raw, model_spec
+            )
+
+        stress_test_release_str += stress_test_markdown
+    else:
+        stress_test_release_str += (
+            "No stress test results found for this model and device combination.\n"
+        )
+
+    # Save stress test-specific summary
+    summary_fpath = output_dir / f"stress_test_summary_{report_id}.md"
+    with summary_fpath.open("w", encoding="utf-8") as f:
+        f.write(stress_test_release_str)
+
+    # Save raw data
+    data_fpath = data_dir / f"stress_test_data_{report_id}.json"
+    with data_fpath.open("w", encoding="utf-8") as f:
+        json.dump(release_raw, f, indent=4, default=str)
+
+    return stress_test_release_str, release_raw, summary_fpath, data_fpath
+
+
+def benchmarks_release_data_format(
+    model_spec, device_str, benchmark_summary_data, runtime_config=None
+):
     """Convert the benchmark release data to the desired format"""
     reformated_benchmarks_release_data = []
 
@@ -1227,8 +3133,18 @@ def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_dat
     if (
         model_spec.model_type.name == ModelType.CNN.name
         or model_spec.model_type.name == ModelType.IMAGE.name
+        or model_spec.model_type.name == ModelType.VIDEO.name
     ):
         benchmark_summary["tput_user"] = benchmark_summary_data.get("tput_user", 0)
+
+    if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
+        benchmark_summary["ttft_p90"] = (
+            benchmark_summary_data.get("p90_ttft_ms", 0) / 1000
+        )
+        benchmark_summary["ttft_p95"] = (
+            benchmark_summary_data.get("p95_ttft_ms", 0) / 1000
+        )
+        benchmark_summary["rtr"] = benchmark_summary_data.get("rtr", 0)
 
     # Add Whisper-specific fields only for Whisper models
     if "whisper" in model_spec.hf_model_repo.lower():
@@ -1273,11 +3189,11 @@ def benchmarks_release_data_format_embedding(
     ]
 
 
-def add_target_checks_cnn_and_image(
+def add_target_checks_cnn_image_video(
     targets, evals_release_data, benchmark_summary_data, metrics
 ):
-    """Add target checks for CNN and IMAGE models based on evals and benchmark data."""
-    logger.info("Adding target_checks to CNN and IMAGE benchmark release data")
+    """Add target checks for CNN, IMAGE and VIDEO models based on evals and benchmark data."""
+    logger.info("Adding target_checks to CNN, IMAGE and VIDEO benchmark release data")
     tput_user = evals_release_data[0].get("tput_user", 0) if evals_release_data else 0
     benchmark_summary_data["tput_user"] = tput_user
 
@@ -1355,6 +3271,31 @@ def add_target_checks_embedding(metrics):
     return target_checks
 
 
+def add_target_checks_video(metrics):
+    """Add target checks for VIDEO models based on evals and benchmark data."""
+    logger.info("Adding target_checks to VIDEO benchmark release data")
+    logger.info("Calculating target checks")
+    target_checks = {
+        "functional": {
+            "concurrency": metrics["functional_concurrency"],
+            "concurrency_ratio": metrics["functional_concurrency_ratio"],
+            "concurrency_check": metrics["functional_concurrency_check"],
+        },
+        "complete": {
+            "concurrency": metrics["complete_concurrency"],
+            "concurrency_ratio": metrics["complete_concurrency_ratio"],
+            "concurrency_check": metrics["complete_concurrency_check"],
+        },
+        "target": {
+            "concurrency": metrics["target_concurrency"],
+            "concurrency_ratio": metrics["target_concurrency_ratio"],
+            "concurrency_check": metrics["target_concurrency_check"],
+        },
+    }
+
+    return target_checks
+
+
 def calculate_target_metrics(metrics_config):
     """Calculate metrics for functional, complete, and target thresholds.
 
@@ -1364,7 +3305,7 @@ def calculate_target_metrics(metrics_config):
             - target_metric: Target metric from performance reference
             - field_name: Name of the metric field
             - is_ascending_metric: If True, higher values are preffered (e.g., throughput).
-                               If False, lower values are preffered (e.g., latency, TTFT).
+            If False, lower values are preffered (e.g., latency, TTFT).
 
     Returns:
         Dict containing metrics for all target levels (functional, complete, target)
@@ -1373,6 +3314,8 @@ def calculate_target_metrics(metrics_config):
     def get_metric_ratio_and_check(avg_metric, ref_metric, is_ascending_metric):
         if not ref_metric:
             return "Undefined", "Undefined"
+        if not avg_metric:
+            return 0.0, 1
         ratio = avg_metric / ref_metric
         if is_ascending_metric:
             check = 2 if ratio > 1.0 else 3
@@ -1394,8 +3337,19 @@ def calculate_target_metrics(metrics_config):
         field_name = config["field_name"]
         is_ascending_metric = config.get("is_ascending_metric", False)
 
+        # Skip if target_metric is None (e.g., for TTS when target_rtr is not set)
+        if target_metric is None:
+            logger.warning(
+                f"Skipping metric calculation for {field_name}: target_metric is None"
+            )
+            continue
+
         for level, multiplier in target_multipliers.items():
-            level_metric = target_metric * multiplier
+            if is_ascending_metric:
+                level_metric = target_metric / multiplier
+            else:
+                level_metric = target_metric * multiplier
+
             ratio, check = get_metric_ratio_and_check(
                 avg_metric, level_metric, is_ascending_metric
             )
@@ -1435,19 +3389,50 @@ def add_target_checks_audio(metrics):
     return target_checks
 
 
+def add_target_checks_tts(metrics):
+    logger.info("Adding target_checks to TTS benchmark release data")
+    # tput_check is always 1 for now (no tput target)
+    tput_check = 1
+    target_checks = {
+        "functional": {
+            "ttft": metrics.get("functional_ttft"),
+            "ttft_ratio": metrics.get("functional_ttft_ratio", "Undefined"),
+            "ttft_check": metrics.get("functional_ttft_check", "Undefined"),
+            "rtr_check": metrics.get("functional_rtr_check", 1),
+            "tput_check": tput_check,
+        },
+        "complete": {
+            "ttft": metrics.get("complete_ttft"),
+            "ttft_ratio": metrics.get("complete_ttft_ratio", "Undefined"),
+            "ttft_check": metrics.get("complete_ttft_check", "Undefined"),
+            "rtr_check": metrics.get("complete_rtr_check", 1),
+            "tput_check": tput_check,
+        },
+        "target": {
+            "ttft": metrics.get("target_ttft"),
+            "ttft_ratio": metrics.get("target_ttft_ratio", "Undefined"),
+            "ttft_check": metrics.get("target_ttft_check", "Undefined"),
+            "rtr_check": metrics.get("target_rtr_check", 1),
+            "tput_check": tput_check,
+        },
+    }
+
+    return target_checks
+
+
 def main():
     # Setup logging configuration.
     setup_workflow_script_logger(logger)
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    # Extract CLI args from model_spec
-    cli_args = model_spec.cli_args
-    model = cli_args.get("model")
-    device_str = cli_args.get("device")
-    docker_server = cli_args.get("docker_server", False)
+    # runtime config loaded from JSON
+    model = runtime_config.model
+    device_str = runtime_config.device
+    docker_server = runtime_config.docker_server
 
     workflow_config = WORKFLOW_REPORT_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
@@ -1467,15 +3452,15 @@ def main():
 
     # only show the impl run command if non-default impl is used
     if model_spec.device_model_spec.default_impl:
-        run_cmd = f"python run.py --model {model} --device {device_str} --workflow release {command_flag}"
+        run_cmd = f"python run.py --model {model} --tt-device {device_str} --workflow release {command_flag}"
     else:
-        run_cmd = f"python run.py --model {model} --device {device_str} --impl {model_spec.impl.impl_name} --workflow release {command_flag}"
+        run_cmd = f"python run.py --model {model} --tt-device {device_str} --impl {model_spec.impl.impl_name} --workflow release {command_flag}"
 
     metadata = {
         "report_id": report_id,
         "model_name": model_spec.model_name,
         "model_id": model_spec.model_id,
-        "model_spec_json": args.model_spec_json,
+        "runtime_model_spec_json": args.runtime_model_spec_json,
         "model_repo": model_spec.hf_model_repo,
         "model_impl": model_spec.impl.impl_name,
         "inference_engine": model_spec.inference_engine,
@@ -1491,21 +3476,57 @@ def main():
 
     # Create a simple args object for the report generation functions
     class SimpleArgs:
-        def __init__(self, output_path, model, device, model_spec_json):
+        def __init__(
+            self,
+            output_path,
+            model,
+            device,
+            runtime_model_spec_json,
+            percentile_report=False,
+        ):
             self.output_path = output_path
             self.model = model
             self.device = device
-            self.model_spec_json = model_spec_json
+            self.runtime_model_spec_json = runtime_model_spec_json
+            self.percentile_report = percentile_report
 
-    simple_args = SimpleArgs(args.output_path, model, device_str, args.model_spec_json)
+    percentile_report = runtime_config.percentile_report
 
-    # generate benchmarks report
+    simple_args = SimpleArgs(
+        args.output_path,
+        model,
+        device_str,
+        args.runtime_model_spec_json,
+        percentile_report=percentile_report,
+    )
+
+    # generate vLLM benchmarks report
     (
         benchmarks_release_str,
         benchmarks_release_data,
         benchmarks_disp_md_path,
         benchmarks_data_file_path,
     ) = benchmark_generate_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+
+    # generate AIPerf benchmarks report (separate detailed report)
+    (
+        aiperf_release_str,
+        aiperf_release_data,
+        aiperf_disp_md_path,
+        aiperf_data_file_path,
+    ) = aiperf_benchmark_generate_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+
+    # generate GenAI-Perf benchmarks report (separate detailed report)
+    (
+        genai_perf_release_str,
+        genai_perf_release_data,
+        genai_perf_disp_md_path,
+        genai_perf_data_file_path,
+    ) = genai_perf_benchmark_generate_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
@@ -1517,7 +3538,21 @@ def main():
     )
 
     # generate tests report
-    tests_release_str, tests_release_data = generate_tests_report(
+    (
+        tests_release_str,
+        tests_release_data,
+        tests_disp_md_path,
+        tests_data_file_path,
+    ) = generate_tests_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
+    )
+    # generate stress test report
+    (
+        stress_tests_release_str,
+        stress_tests_release_data,
+        stress_tests_disp_md_path,
+        stress_tests_data_file_path,
+    ) = stress_test_generate_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
@@ -1526,30 +3561,39 @@ def main():
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
-    # if no benchmark data exists, do not
+    # Collect benchmark display content
+    benchmarks_disp_md_str = ""
     try:
-        with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
-            benchmarks_disp_md_str = f.read()
-    except TypeError:
-        benchmarks_disp_md_str = ""
+        if benchmarks_disp_md_path:
+            with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
+                benchmarks_disp_md_str = f.read()
+    except (TypeError, FileNotFoundError):
+        pass
 
     logging.info("Release Summary\n\n")
 
     release_header = (
         f"## Tenstorrent Model Release Summary: {model_spec.model_name} on {device_str}"
     )
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{benchmarks_disp_md_str}\n\n{benchmarks_release_str}\n\n{evals_release_str}\n\n{tests_release_str}\n\n{server_tests_release_str}"
-    print(release_str)
-    # save to file
+
+    # Combine all benchmark sections
+    all_benchmarks_str = ""
+    if benchmarks_disp_md_str:
+        all_benchmarks_str += benchmarks_disp_md_str + "\n\n"
+    if benchmarks_release_str:
+        all_benchmarks_str += benchmarks_release_str + "\n\n"
+    if aiperf_release_str:
+        all_benchmarks_str += aiperf_release_str + "\n\n"
+    if genai_perf_release_str:
+        all_benchmarks_str += genai_perf_release_str + "\n\n"
+
     release_output_dir = Path(args.output_path) / "release"
     release_output_dir.mkdir(parents=True, exist_ok=True)
     release_data_dir = release_output_dir / "data"
     release_data_dir.mkdir(parents=True, exist_ok=True)
     release_file = release_output_dir / f"report_{report_id}.md"
     raw_file = release_data_dir / f"report_data_{report_id}.json"
-    with release_file.open("w", encoding="utf-8") as f:
-        f.write(release_str)
-
+    release_str = ""
     with raw_file.open("w", encoding="utf-8") as f:
         # Read detailed benchmark statistics from CSV if available
         benchmarks_detailed_data = None
@@ -1564,15 +3608,19 @@ def main():
         # Check for server tests JSON files
         server_tests_data = []
 
+        # Use tests_release_data for parameter_support_tests
+        parameter_support_tests_data = tests_release_data if tests_release_data else []
+
         # Add target_checks for specific model if applicable
         if (
             model_spec.model_type.name == ModelType.CNN.name
             or model_spec.model_type.name == ModelType.IMAGE.name
             or model_spec.model_type.name == ModelType.AUDIO.name
+            or model_spec.model_type.name == ModelType.VIDEO.name
+            or model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
         ):
             # Get performance targets using the shared utility
-            # Extract the device we are running on
-            device_str = cli_args.get("device").lower()
+            device_str = runtime_config.device.lower()
             targets = get_performance_targets(
                 model_spec.model_name,
                 device_str,
@@ -1582,6 +3630,7 @@ def main():
 
             # extract targets for functional, complete, target and calculate them
             target_ttft = targets.ttft_ms
+            target_rtr = targets.rtr if hasattr(targets, "rtr") else None
 
             # Initialize the benchmark summary data
             benchmark_summary_data = {}
@@ -1589,9 +3638,13 @@ def main():
             # Aggregate mean_ttft_ms and inference_steps_per_second across all benchmarks
             total_ttft = 0.0
             total_tput = 0.0
+            total_rtr = 0.0
             for benchmark in benchmarks_release_data:
                 total_ttft += benchmark.get("mean_ttft_ms", 0)
                 total_tput += benchmark.get("inference_steps_per_second", 0)
+                # Aggregate RTR for TTS models
+                if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
+                    total_rtr += benchmark.get("rtr", 0)
                 benchmark_summary_data["num_requests"] = benchmark.get(
                     "num_requests", 0
                 )
@@ -1612,66 +3665,80 @@ def main():
                 else 0
             )
 
+            # For TTS, also calculate average RTR
+            avg_rtr = None
+            if model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
+                avg_rtr = (
+                    total_rtr / len(benchmarks_release_data)
+                    if len(benchmarks_release_data) > 0
+                    else 0
+                )
+
             # Calculate all target metrics using centralized function
             # TTFT: lower is better, so is_ascending_metric=False
-            metrics = calculate_target_metrics(
-                [
+            metrics_config = [
+                {
+                    "avg_metric": avg_ttft,
+                    "target_metric": target_ttft,
+                    "field_name": "ttft",
+                    "is_ascending_metric": False,
+                },
+            ]
+
+            # For TTS, also calculate RTR metrics if target is available
+            if (
+                model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
+                and target_rtr is not None
+                and avg_rtr is not None
+            ):
+                metrics_config.append(
                     {
-                        "avg_metric": avg_ttft,
-                        "target_metric": target_ttft,
-                        "field_name": "ttft",
-                        "is_ascending_metric": False,
-                    },
-                ]
-            )
+                        "avg_metric": avg_rtr,
+                        "target_metric": target_rtr,
+                        "field_name": "rtr",
+                        "is_ascending_metric": True,  # RTR: higher is better
+                    }
+                )
+
+            metrics = calculate_target_metrics(metrics_config)
 
             target_checks = {}
             if (
                 model_spec.model_type.name == ModelType.CNN.name
                 or model_spec.model_type.name == ModelType.IMAGE.name
+                or model_spec.model_type.name == ModelType.VIDEO.name
             ):
                 logger.info(
-                    "Adding target_checks for tput_user to CNN and IMAGE benchmark release data"
+                    "Adding target_checks for tput_user to CNN, IMAGE and VIDEO benchmark release data"
                 )
-                target_checks = add_target_checks_cnn_and_image(
+                target_checks = add_target_checks_cnn_image_video(
                     targets,
                     evals_release_data,
                     benchmark_summary_data,
                     metrics,
                 )
-            else:
+            elif model_spec.model_type.name == ModelType.AUDIO.name:
                 logger.info("Adding target_checks for Audio benchmark release data")
+                target_checks = add_target_checks_audio(metrics)
+            elif model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name:
+                logger.info("Adding target_checks for TTS benchmark release data")
+                target_checks = add_target_checks_tts(metrics)
+            else:
+                logger.warning(f"Unknown model type: {model_spec.model_type.name}")
                 target_checks = add_target_checks_audio(metrics)
 
             # Make sure benchmarks_release_data is of proper format for CNN and IMAGE
             benchmarks_release_data = benchmarks_release_data_format(
-                model_spec, device_str, benchmark_summary_data
+                model_spec, device_str, benchmark_summary_data, runtime_config
             )
 
             # Add target_checks to the existing benchmark object
             if benchmarks_release_data:
                 benchmarks_release_data[0]["target_checks"] = target_checks
 
-            server_tests_path = Path(project_root) / "test_reports"
-            if server_tests_path.exists():
-                server_tests_json_files = list(server_tests_path.glob("*.json"))
-                if server_tests_json_files:
-                    logger.info(
-                        f"Found {len(server_tests_json_files)} server test report(s)"
-                    )
-                    for json_file in server_tests_json_files:
-                        try:
-                            with open(json_file, "r", encoding="utf-8") as test_file:
-                                test_data = json.load(test_file)
-                                server_tests_data.append(test_data)
-                        except Exception as e:
-                            logger.warning(
-                                f"Could not read server test file {json_file}: {e}"
-                            )
         elif model_spec.model_type.name == ModelType.EMBEDDING.name:
             # Get performance targets using the shared utility
-            # Extract the device we are running on
-            device_str = cli_args.get("device").lower()
+            device_str = runtime_config.device.lower()
             targets = get_performance_targets(
                 model_spec.model_name,
                 device_str,
@@ -1720,11 +3787,42 @@ def main():
             if benchmarks_release_data:
                 benchmarks_release_data[0]["target_checks"] = target_checks
 
+        # Read AIPerf benchmark data if available
+        aiperf_detailed_data = None
+        if aiperf_data_file_path:
+            try:
+                with open(aiperf_data_file_path, "r", encoding="utf-8") as csv_file:
+                    csv_reader = csv.DictReader(csv_file)
+                    aiperf_detailed_data = list(csv_reader)
+            except Exception as e:
+                logger.warning(f"Could not read AIPerf CSV data: {e}")
+
+        # Read server tests data if available
+        server_tests_data = []
+        server_tests_path = Path(project_root) / "test_reports"
+        if server_tests_path.exists():
+            server_tests_json_files = list(server_tests_path.glob("*.json"))
+            if server_tests_json_files:
+                logger.info(
+                    f"Found {len(server_tests_json_files)} server test report(s)"
+                )
+                for json_file in server_tests_json_files:
+                    try:
+                        with open(json_file, "r", encoding="utf-8") as test_file:
+                            test_data = json.load(test_file)
+                            server_tests_data.append(test_data)
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not read server test file {json_file}: {e}"
+                        )
+
         # Build the final JSON output
         output_data = {
             "metadata": metadata,
             "benchmarks_summary": benchmarks_release_data,
+            "aiperf_benchmarks": aiperf_release_data if aiperf_release_data else [],
             "evals": evals_release_data,
+            "stress_tests": stress_tests_release_data,
             "benchmarks": benchmarks_detailed_data
             if benchmarks_detailed_data
             else [
@@ -1733,13 +3831,41 @@ def main():
                     "device": getattr(args, "device", "unknown_device"),
                 }
             ],
+            "aiperf_benchmarks_detailed": aiperf_detailed_data
+            if aiperf_detailed_data
+            else [],
         }
 
         # Add server_tests only if data exists
         if server_tests_data:
             output_data["server_tests"] = server_tests_data
 
+        # Add parameter_support_tests only if data exists
+        if parameter_support_tests_data:
+            output_data["parameter_support_tests"] = parameter_support_tests_data
+
+        acceptance_criteria, acceptance_blockers = acceptance_criteria_check(
+            output_data
+        )
+        acceptance_summary_markdown = format_acceptance_summary_markdown(
+            acceptance_criteria, acceptance_blockers
+        )
+        output_data["acceptance_criteria"] = acceptance_criteria
+        output_data["acceptance_blockers"] = acceptance_blockers
+        output_data["acceptance_summary_markdown"] = acceptance_summary_markdown
+
+        release_str = (
+            f"{release_header}\n\n{metadata_str}\n\n"
+            f"{acceptance_summary_markdown}\n\n{all_benchmarks_str}"
+            f"{evals_release_str}\n\n{tests_release_str}\n\n"
+            f"{stress_tests_release_str}\n\n{server_tests_release_str}"
+        )
+        print(release_str)
+
         json.dump(output_data, f, indent=4)
+
+    with release_file.open("w", encoding="utf-8") as f:
+        f.write(release_str)
 
     main_return_code = 0
     return main_return_code

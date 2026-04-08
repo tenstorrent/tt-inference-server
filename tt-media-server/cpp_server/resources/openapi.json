@@ -1,0 +1,530 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TT Media Server API (C++ Drogon)",
+    "description": "High-performance C++ implementation of the TT Media Server using Drogon framework. Provides OpenAI-compatible chat completions API for benchmarking server overhead.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Tenstorrent",
+      "url": "https://tenstorrent.com"
+    },
+    "license": {
+      "name": "Apache-2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Local server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Chat Completions",
+      "description": "OpenAI-compatible chat completion endpoints"
+    },
+    {
+      "name": "Sessions",
+      "description": "Session management for slot assignments"
+    },
+    {
+      "name": "Health",
+      "description": "Server health and liveness endpoints"
+    },
+    {
+      "name": "Monitoring",
+      "description": "Prometheus metrics scrape endpoint"
+    }
+  ],
+  "paths": {
+    "/v1/chat/completions": {
+      "post": {
+        "tags": ["Chat Completions"],
+        "summary": "Create chat completion",
+        "description": "Creates a chat completion for the provided messages. OpenAI-compatible endpoint. Messages are converted to a prompt internally; responses use object \"chat.completion\" and choices[].message with role and content.",
+        "operationId": "createChatCompletion",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChatCompletionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful chat completion (JSON) or streaming (text/event-stream)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ChatCompletionResponse" }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE stream; object \"chat.completion.chunk\", choices[].delta"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (e.g. missing or empty messages)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Model not ready",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions": {
+      "post": {
+        "tags": ["Sessions"],
+        "summary": "Create a new session",
+        "description": "Create a new session with optional slot assignment",
+        "operationId": "createSession",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "description": "Optional slot ID to assign",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "slot_id": {
+                    "type": "integer",
+                    "description": "Slot ID to assign (-1 means unassigned)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Session created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session_id": { "type": "string", "format": "uuid" },
+                    "slot_id": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{session_id}": {
+      "delete": {
+        "tags": ["Sessions"],
+        "summary": "Close a session",
+        "description": "Close an existing session by ID",
+        "operationId": "closeSession",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "description": "The session ID to close",
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session closed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{session_id}/slot": {
+      "get": {
+        "tags": ["Sessions"],
+        "summary": "Get slot ID for a session",
+        "description": "Retrieve the slot ID assigned to a session (-1 if unassigned)",
+        "operationId": "getSlotId",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "description": "The session ID",
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Slot ID retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session_id": { "type": "string", "format": "uuid" },
+                    "slot_id": {
+                      "type": "integer",
+                      "description": "Slot ID (-1 if unassigned)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "description": "Returns server health status.",
+        "operationId": "healthCheck",
+        "responses": {
+          "200": {
+            "description": "Server is healthy",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tt-liveness": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Liveness check",
+        "description": "Liveness probe (same as Python tt-liveness). Returns 200 with {\"status\": \"alive\", ...system status} when the process can respond. model_ready in the body reflects whether any worker has warmed up. Does not return 503 for model not ready; 500 only on unrecoverable failure.",
+        "operationId": "livenessCheck",
+        "responses": {
+          "200": {
+            "description": "Process is alive; body includes status alive and system status (model_ready, workers, queue)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReadyResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Unrecoverable failure (e.g. no service configured, exception)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReadyResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": ["Monitoring"],
+        "summary": "Prometheus metrics",
+        "description": "Exposes all server metrics in Prometheus text exposition format (version 0.0.4). No authentication required. Intended to be scraped by a Prometheus server every few seconds.",
+        "operationId": "getMetrics",
+        "responses": {
+          "200": {
+            "description": "Prometheus text format metrics",
+            "content": {
+              "text/plain; version=0.0.4": {
+                "schema": {
+                  "type": "string",
+                  "example": "# HELP tt_generation_tokens_total Total number of generation tokens produced\n# TYPE tt_generation_tokens_total counter\ntt_generation_tokens_total{model_name=\"llm\"} 42\n"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ChatCompletionRequest": {
+        "type": "object",
+        "required": ["messages"],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model identifier",
+            "example": "test-model"
+          },
+          "messages": {
+            "type": "array",
+            "description": "Conversation messages (required, non-empty)",
+            "items": {
+              "type": "object",
+              "required": ["role", "content"],
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "description": "Message role: system, user, or assistant",
+                  "default": "user"
+                },
+                "content": {
+                  "type": "string",
+                  "description": "Message content"
+                }
+              }
+            }
+          },
+          "max_tokens": {
+            "type": "integer",
+            "default": 16,
+            "minimum": 1,
+            "description": "Maximum number of tokens to generate"
+          },
+          "stream": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to stream the response as SSE"
+          },
+          "stream_options": {
+            "$ref": "#/components/schemas/StreamOptions"
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2,
+            "description": "Sampling temperature"
+          },
+          "top_p": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Nucleus sampling probability"
+          },
+          "stop": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ],
+            "description": "Stop sequence(s)"
+          },
+          "presence_penalty": { "type": "number" },
+          "frequency_penalty": { "type": "number" },
+          "seed": { "type": "integer" },
+          "user": { "type": "string" }
+        }
+      },
+      "ChatCompletionResponse": {
+        "type": "object",
+        "required": ["id", "object", "created", "choices"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique chat completion identifier",
+            "example": "chatcmpl-abc123def456"
+          },
+          "object": {
+            "type": "string",
+            "enum": ["chat.completion"],
+            "description": "Object type"
+          },
+          "created": {
+            "type": "integer",
+            "description": "Unix timestamp of creation"
+          },
+          "model": {
+            "type": "string",
+            "description": "Model used for completion"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": { "type": "integer" },
+                "message": {
+                  "type": "object",
+                  "properties": {
+                    "role": { "type": "string" },
+                    "content": { "type": "string" }
+                  }
+                },
+                "finish_reason": { "type": "string" }
+              }
+            }
+          },
+          "usage": {
+            "$ref": "#/components/schemas/CompletionUsage"
+          }
+        }
+      },
+      "StreamOptions": {
+        "type": "object",
+        "properties": {
+          "include_usage": {
+            "type": "boolean",
+            "default": true,
+            "description": "Include usage statistics in response"
+          },
+          "continuous_usage_stats": {
+            "type": "boolean",
+            "default": false,
+            "description": "Include usage stats in each streamed chunk"
+          }
+        }
+      },
+      "CompletionUsage": {
+        "type": "object",
+        "properties": {
+          "prompt_tokens": {
+            "type": "integer",
+            "description": "Number of tokens in the prompt"
+          },
+          "completion_tokens": {
+            "type": "integer",
+            "description": "Number of tokens in the completion"
+          },
+          "total_tokens": {
+            "type": "integer",
+            "description": "Total tokens used"
+          },
+          "ttft_ms": {
+            "type": "number",
+            "description": "Time to first token in milliseconds",
+            "nullable": true
+          },
+          "tps": {
+            "type": "number",
+            "description": "Tokens per second (excluding first token)",
+            "nullable": true
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["healthy"],
+            "description": "Server health status"
+          },
+          "timestamp": {
+            "type": "integer",
+            "description": "Unix timestamp"
+          }
+        }
+      },
+      "ReadyResponse": {
+        "type": "object",
+        "properties": {
+          "model_ready": {
+            "type": "boolean",
+            "description": "Whether the model is ready for inference"
+          },
+          "queue_size": {
+            "type": "integer",
+            "description": "Current number of requests in queue"
+          },
+          "max_queue_size": {
+            "type": "integer",
+            "description": "Maximum queue capacity"
+          },
+          "device": {
+            "type": "string",
+            "description": "Device type"
+          },
+          "workers": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/WorkerInfo" }
+          }
+        }
+      },
+      "WorkerInfo": {
+        "type": "object",
+        "properties": {
+          "worker_id": {
+            "type": "string",
+            "description": "Worker identifier"
+          },
+          "is_ready": {
+            "type": "boolean",
+            "description": "Whether worker is ready"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "message": { "type": "string" },
+              "type": { "type": "string" },
+              "code": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "API Key",
+        "description": "Bearer token authentication using OPENAI_API_KEY environment variable. If not set, defaults to 'your-secret-key'."
+      }
+    }
+  }
+}

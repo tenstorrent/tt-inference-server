@@ -1,0 +1,26 @@
+# Build output and CMake / FetchContent
+build/
+build-tracy/
+.cache/
+
+# Object and dependency files (in-source or stray)
+*.o
+*.o.d
+*.obj
+*.obj.d
+*.tracy
+
+# In-source CMake artifacts (if cmake was run from cpp_server/ by mistake)
+CMakeFiles/
+
+tt-blaze/
+
+# Runtime logs (Drogon setLogPath)
+logs/
+
+**/vllm-venv
+
+deps/
+
+# Override root-level *.json ignore
+!resources/openapi.json

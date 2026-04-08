@@ -1,0 +1,22 @@
+# Exclude Dockerfiles from COPY to improve layer caching
+tt-media-server/Dockerfile
+tt-media-server/Dockerfile.*
+
+# Common exclusions
+**/.git
+**/.gitignore
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.egg-info
+**/.venv
+**/venv
+**/.env
+**/.idea
+**/.vscode
+**/node_modules
+**/*.log
+**/*.tmp

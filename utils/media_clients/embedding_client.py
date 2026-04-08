@@ -39,11 +39,13 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         super().__init__(all_params, model_spec, device, output_path, service_port)
         self.model = self.model_spec.hf_model_repo
         self.isl = int(
-            model_spec.device_model_spec.env_vars.get("MAX_MODEL_LENGTH", 1024)
+            model_spec.device_model_spec.env_vars.get("VLLM__MAX_MODEL_LENGTH", 1024)
         )
         self.num_calls = 1000
         self.dimensions = 1000
-        self.concurrency = self.model_spec.device_model_spec.max_concurrency
+        self.concurrency = int(
+            self.model_spec.device_model_spec.env_vars.get("VLLM__MAX_NUM_SEQS", 1)
+        )
 
     def run_eval(self) -> None:
         """Run evaluations for the model."""
@@ -98,7 +100,7 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
         """Run embedding transcription benchmark."""
 
         # Use the venv's python and vllm executable directly
-        venv_config = VENV_CONFIGS.get(WorkflowVenvType.BENCHMARKS_EMBEDDING)
+        venv_config = VENV_CONFIGS.get(WorkflowVenvType.BENCHMARKS_VLLM)
         vllm_exec = venv_config.venv_path / "bin" / "vllm"
 
         os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
@@ -251,6 +253,15 @@ class EmbeddingClientStrategy(BaseMediaStrategy):
             framework=[],
             similarity_fn_name=None,
             use_instructions=None,
+            # Required fields added for MTEB schema compatibility
+            release_date=None,
+            languages=[],
+            n_parameters=None,
+            memory_usage_mb=None,
+            license=None,
+            public_training_code=None,
+            public_training_data=None,
+            training_datasets=None,
         )
         model.mteb_model_meta = model_meta
 

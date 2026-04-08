@@ -186,11 +186,35 @@ def stream_subprocess_output(pipe, logger, level):
 
 
 def run_command(
-    command, logger, log_file_path=None, shell=False, copy_env=True, env=None
+    command,
+    logger,
+    log_file_path=None,
+    shell=False,
+    copy_env=True,
+    env=None,
+    check=False,
 ):
     """
-    Note: logger must be passed because the common use case is to capture the command's
-    stdout and stderr in the caller's logger.
+    This function is a wrapper around subprocess.Popen and subprocess.run.
+    It is used to run a command and capture the stdout and stderr in the caller's logger.
+
+    Args:
+        command: Command to run. Can be a string or a list of strings.
+        logger: Logger to use for logging. Must be passed because the common use case is to capture the command's stdout and stderr in the caller's logger.
+        log_file_path: Path to log file. If None, stdout and stderr will be logged to the logger.
+        shell: Whether to use shell to run the command.
+        copy_env: Whether to copy the environment variables.
+        env: Environment variables to use.
+        check: Whether to check the return code. Set to True for commands that must succeed.
+    Returns:
+        Return code of the command.
+    Raises:
+        RuntimeError: If the command fails and check is True.
+        NotImplementedError: If copy_env is True and not implemented.
+        AssertionError: If command is not a list of strings.
+        ValueError: If command is None.
+        PermissionError: If the directory is not writable.
+        IOError: If the directory is not readable.
     """
     if not copy_env:
         raise NotImplementedError("TODO")
@@ -210,6 +234,7 @@ def run_command(
     logger.info(f"Running command: {shlex.join(command)}")
 
     if not log_file_path:
+        subproc_type = "subprocess.Popen"
         # capture all output to stdout and stderr in current process
         process = subprocess.Popen(
             command,
@@ -225,7 +250,7 @@ def run_command(
         )
         stderr_thread = threading.Thread(
             target=stream_subprocess_output,
-            args=(process.stderr, logger, logging.ERROR),
+            args=(process.stderr, logger, logging.INFO),
         )
 
         stdout_thread.start()
@@ -237,6 +262,7 @@ def run_command(
         process.wait()
         return_code = process.returncode
     else:
+        subproc_type = "subprocess.run"
         logger.info(f"Logging output to: {log_file_path} ...")
         with open(log_file_path, "a", buffering=1) as log_file:
             result = subprocess.run(
@@ -244,12 +270,25 @@ def run_command(
                 shell=shell,
                 stdout=log_file,
                 stderr=log_file,
-                check=False,
+                check=check,
                 text=True,
                 env=env,
             )
             return_code = result.returncode
 
+    if return_code != 0:
+        error_message = (
+            f"⛔ {subproc_type} command failed with return code: {return_code}\n"
+            f"command: {shlex.join(command)}\n\n"
+            "See error messages in logs above this RuntimeError for details on actual cause of failure.\n"
+        )
+        if check:
+            raise RuntimeError(error_message)
+        else:
+            logger.error(
+                error_message
+                + "\nThis command is optional or can be recovered from failure (check=False set). Continuing ...\n"
+            )
     return return_code
 
 
@@ -276,13 +315,41 @@ def load_dotenv(dotenv_path=default_dotenv_path, logger=logger):
 
 
 def write_dotenv(env_vars, dotenv_path=default_dotenv_path, logger=logger):
-    """Writes environment variables to a .env file"""
+    """Writes environment variables to a .env file, merging with existing content.
+
+    If the .env file exists, existing values are preserved unless explicitly
+    overwritten by env_vars. New variables are appended.
+
+    Args:
+        env_vars: Dict of environment variables to write/update
+        dotenv_path: Path to the .env file (default: repo_root/.env)
+        logger: Logger instance
+
+    Returns:
+        True on success
+    """
     dotenv_path = Path(dotenv_path)
 
+    # Read existing content if file exists
+    existing_vars = {}
+    if dotenv_path.exists():
+        with open(dotenv_path, "r") as file:
+            for line in file:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    existing_vars[key.strip()] = value.strip()
+
+    # Merge: new values override existing
+    merged_vars = {**existing_vars, **env_vars}
+
+    # Write merged content
     with open(dotenv_path, "w") as file:
-        for key, value in env_vars.items():
+        for key, value in merged_vars.items():
             file.write(f"{key}={value}\n")
-            logger.info(f"writting env var to .env file: {key}")
+            if key in env_vars:
+                logger.info(f"writing env var to .env file: {key}")
+
     logger.info(f"Environment variables written to {dotenv_path}")
     return True
 
@@ -313,11 +380,13 @@ def get_default_hf_home_path() -> Path:
     return Path(default_hf_home)
 
 
-def get_weights_hf_cache_dir(hf_repo: str) -> Path:
-    local_repo_name = hf_repo.replace("/", "--")
-    hf_home = get_default_hf_home_path()
+def get_default_persistent_volume_root(repo_root: Optional[Path] = None) -> Path:
+    root = repo_root or get_repo_root_path()
+    return Path(root).resolve() / "persistent_volume"
 
-    # Check both potential snapshot directory locations
+
+def resolve_hf_snapshot_dir(hf_repo: str, hf_home: Path) -> Optional[Path]:
+    local_repo_name = hf_repo.replace("/", "--")
     possible_snapshot_dirs = [
         hf_home / f"models--{local_repo_name}" / "snapshots",
         hf_home / "hub" / f"models--{local_repo_name}" / "snapshots",
@@ -334,11 +403,13 @@ def get_weights_hf_cache_dir(hf_repo: str) -> Path:
     if not valid_snapshot_dir:
         return None
 
-    # Get the most recent snapshot
     snapshots = list(valid_snapshot_dir.glob("*"))
-    most_recent_snapshot = max(snapshots, key=lambda p: p.stat().st_mtime)
+    return max(snapshots, key=lambda p: p.stat().st_mtime)
 
-    return most_recent_snapshot
+
+def get_weights_hf_cache_dir(hf_repo: str) -> Path:
+    hf_home = get_default_hf_home_path()
+    return resolve_hf_snapshot_dir(hf_repo, hf_home)
 
 
 def is_streaming_enabled_for_whisper(self) -> bool:
@@ -414,3 +485,99 @@ def get_num_calls(self) -> int:
         )
 
     return 2
+
+
+# =============================================================================
+# Permission Checking Utilities
+# =============================================================================
+
+
+def get_groups_for_uid(uid: int) -> set[int]:
+    """Return the set of GIDs that a given UID belongs to on this host.
+
+    Args:
+        uid: Numeric UID to lookup
+
+    Returns:
+        Set of GIDs the UID belongs to, including primary group and
+        supplementary groups. Returns empty set if UID doesn't exist
+        on the host.
+    """
+    import grp
+    import pwd
+
+    gids = set()
+    try:
+        pw = pwd.getpwuid(uid)
+        gids.add(pw.pw_gid)
+        username = pw.pw_name
+        for group in grp.getgrall():
+            if username in group.gr_mem:
+                gids.add(group.gr_gid)
+    except KeyError:
+        # UID doesn't exist on the host; can only rely on "other" bits
+        pass
+    return gids
+
+
+def check_path_permissions_for_uid(
+    path, uid: int, need_write: bool = False
+) -> tuple[bool, str]:
+    """Check whether the given UID can access a path based on POSIX permission bits.
+
+    Best-effort pre-flight check. Cannot detect ACLs, SELinux, or other
+    security modules, but catches common UID/permission mismatches.
+
+    Args:
+        path: Filesystem path to check.
+        uid: Numeric UID that will access the path (i.e. --image-user).
+        need_write: If True, also check write permission.
+
+    Returns:
+        Tuple of (ok: bool, reason: str). reason is empty when ok is True.
+    """
+    import stat
+
+    path = Path(path)
+    if not path.exists():
+        return False, f"path does not exist: {path}"
+
+    st = path.stat()
+    mode = st.st_mode
+    gids = get_groups_for_uid(uid)
+
+    if uid == st.st_uid:
+        has_read = bool(mode & stat.S_IRUSR)
+        has_write = bool(mode & stat.S_IWUSR)
+        has_exec = bool(mode & stat.S_IXUSR)
+        scope = "owner"
+    elif st.st_gid in gids:
+        has_read = bool(mode & stat.S_IRGRP)
+        has_write = bool(mode & stat.S_IWGRP)
+        has_exec = bool(mode & stat.S_IXGRP)
+        scope = "group"
+    else:
+        has_read = bool(mode & stat.S_IROTH)
+        has_write = bool(mode & stat.S_IWOTH)
+        has_exec = bool(mode & stat.S_IXOTH)
+        scope = "other"
+
+    if not has_read:
+        return False, (
+            f"UID {uid} lacks read permission ({scope}) on {path} "
+            f"(owner={st.st_uid}, gid={st.st_gid}, mode={oct(mode)})"
+        )
+
+    if path.is_dir() and not has_exec:
+        return False, (
+            f"UID {uid} lacks execute/traverse permission ({scope}) on directory {path} "
+            f"(owner={st.st_uid}, gid={st.st_gid}, mode={oct(mode)})"
+        )
+
+    if need_write and not has_write:
+        return False, (
+            f"UID {uid} lacks write permission ({scope}) on {path} "
+            f"(owner={st.st_uid}, gid={st.st_gid}, mode={oct(mode)})"
+        )
+
+    return True, ""

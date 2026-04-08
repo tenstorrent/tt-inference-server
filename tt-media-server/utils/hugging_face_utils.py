@@ -7,6 +7,7 @@ import os
 from config.settings import settings
 from huggingface_hub import snapshot_download, try_to_load_from_cache
 from huggingface_hub.utils import LocalEntryNotFoundError
+from tt_model_runners.runner_fabric import get_device_runner
 
 from utils.logger import TTLogger
 
@@ -16,8 +17,16 @@ class HuggingFaceUtils:
         self.logger = TTLogger()
 
     def download_weights(self):
+        model_name = settings.model_weights_path
         try:
-            model_name = settings.model_weights_path
+            # get device runner instance and try to load weights
+            pipeline_weights_loaded = get_device_runner("-1").load_weights()
+
+            # if weights could be loaded from pipeline stop here
+            # otherwise continue for models that don't use pipeline object
+            if pipeline_weights_loaded:
+                return
+
             if not model_name:
                 self.logger.warning(
                     "No model_weights_path specified, skipping download"
@@ -64,7 +73,9 @@ class HuggingFaceUtils:
             raise RuntimeError("Missing required dependency: huggingface_hub")
 
         except Exception as e:
-            self.logger.error(f"Failed to download model weights for {model_name}: {e}")
+            self.logger.error(
+                f"Failed to download model weights for {model_name or 'unknown model'}: {e}"
+            )
             self.logger.warning("Continuing with existing model weights path")
 
     def _are_huggingface_weights_cached(self, repo_id: str) -> bool:

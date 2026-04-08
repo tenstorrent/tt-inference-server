@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should-test: ${{ steps.filter.outputs.code }}
+      cpp-server: ${{ steps.filter.outputs.cpp_server }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -22,6 +23,9 @@ jobs:
               - '**.py'
               - '**/requirements*.txt'
               - 'pyproject.toml'
+              - '.github/workflows/*.yml'
+            cpp_server:
+              - 'tt-media-server/cpp_server/**'
 
   lint:
     needs: detect-changes
@@ -37,7 +41,7 @@ jobs:
           python-version: "3.10"
 
       - name: Install ruff
-        run: pip install ruff
+        run: pip install ruff==0.15.0
 
       - name: Run ruff linter
         run: ruff check .
@@ -79,61 +83,8 @@ jobs:
       - name: Run tt-inference-server tests
         run: |
           echo "Running tests from tests/ directory..."
-          pytest tests/ --ignore=tests/server_tests -v --tb=short --continue-on-collection-errors > main_test_output.txt 2>&1 || echo "MAIN_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
-
-          # try to find final pytest summary line (robust)
-          SUMMARY_LINE=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" main_test_output.txt | tail -n 1 || true)
-          if [ -z "$SUMMARY_LINE" ]; then
-            SUMMARY_LINE=$(tail -n 5 main_test_output.txt | sed -n '/./,$p' | tail -n 1 || true)
-          fi
-
-          extract_number() {
-            line="$1"; token="$2"
-            echo "$line" | sed -nE "s/.* ([0-9]+) ${token}.*/\\1/p" || echo "0"
-          }
-
-          MAIN_PASSED=$(extract_number "$SUMMARY_LINE" "passed")
-          MAIN_FAILED=$(extract_number "$SUMMARY_LINE" "failed")
-          MAIN_SKIPPED=$(extract_number "$SUMMARY_LINE" "skipped")
-          MAIN_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) errors.*/\1/p' || true)
-          if [ -z "$MAIN_ERRORS" ]; then
-            MAIN_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) error.*/\1/p' || true)
-          fi
-          MAIN_ERRORS=${MAIN_ERRORS:-0}
-          MAIN_COLLECTED=$(extract_number "$SUMMARY_LINE" "collected")
-
-          # Try to detect collection-time errors like "X tests collected / Y errors"
-          MAIN_COLLECTION_ERRORS=$(
-            grep -oE "[0-9]+ tests collected / [0-9]+ errors" main_test_output.txt \
-              | sed -nE 's/.*\/ ([0-9]+) errors/\1/p' \
-              | tail -n1 || echo "0"
-          )
-          MAIN_COLLECTION_ERRORS=${MAIN_COLLECTION_ERRORS:-0}
-
-          # sanitize numeric-only
-          MAIN_PASSED=$(echo "$MAIN_PASSED" | tr -dc '0-9'); MAIN_PASSED=${MAIN_PASSED:-0}
-          MAIN_FAILED=$(echo "$MAIN_FAILED" | tr -dc '0-9'); MAIN_FAILED=${MAIN_FAILED:-0}
-          MAIN_SKIPPED=$(echo "$MAIN_SKIPPED" | tr -dc '0-9'); MAIN_SKIPPED=${MAIN_SKIPPED:-0}
-          MAIN_ERRORS=$(echo "$MAIN_ERRORS" | tr -dc '0-9'); MAIN_ERRORS=${MAIN_ERRORS:-0}
-          MAIN_COLLECTED=$(echo "$MAIN_COLLECTED" | tr -dc '0-9'); MAIN_COLLECTED=${MAIN_COLLECTED:-0}
-          MAIN_COLLECTION_ERRORS=$(echo "$MAIN_COLLECTION_ERRORS" | tr -dc '0-9'); MAIN_COLLECTION_ERRORS=${MAIN_COLLECTION_ERRORS:-0}
-
-          echo "MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
-          echo "MAIN_FAILED=$MAIN_FAILED" >> $GITHUB_ENV
-          echo "MAIN_SKIPPED=$MAIN_SKIPPED" >> $GITHUB_ENV
-          echo "MAIN_ERRORS=$MAIN_ERRORS" >> $GITHUB_ENV
-          echo "MAIN_COLLECTED=$MAIN_COLLECTED" >> $GITHUB_ENV
-          echo "MAIN_COLLECTION_ERRORS=$MAIN_COLLECTION_ERRORS" >> $GITHUB_ENV
-
+          pytest tests/ -v --tb=short --continue-on-collection-errors > main_test_output.txt 2>&1 || true
           cat main_test_output.txt
-
-          # Fail this step if there's at least 1 failed test OR at least 1 error (including collection errors)
-          MAIN_TOTAL_FAILED=$(( MAIN_FAILED + MAIN_ERRORS + MAIN_COLLECTION_ERRORS ))
-          if [ "$MAIN_TOTAL_FAILED" -gt 0 ] || [ "${MAIN_PYTEST_EXIT_NONZERO:-}" = "true" ]; then
-            echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
-            # fail the step intentionally so PR will be blocked
-            exit 1
-          fi
 
       - name: Run tt-media-server tests
         if: always()
@@ -144,62 +95,8 @@ jobs:
         working-directory: tt-media-server
         run: |
           echo "Running tests from tt-media-server/tests/"
-          pytest tests/ -v --tb=short --continue-on-collection-errors > ../media_test_output.txt 2>&1 || echo "MEDIA_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
-
-          # parse final pytest summary line robustly
-          SUMMARY_LINE=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" ../media_test_output.txt | tail -n 1 || true)
-          if [ -z "$SUMMARY_LINE" ]; then
-            SUMMARY_LINE=$(tail -n 5 ../media_test_output.txt | sed -n '/./,$p' | tail -n 1 || true)
-          fi
-
-          extract_number() {
-            line="$1"; token="$2"
-            echo "$line" | sed -nE "s/.* ([0-9]+) ${token}.*/\\1/p" || echo "0"
-          }
-
-          MEDIA_PASSED=$(extract_number "$SUMMARY_LINE" "passed")
-          MEDIA_FAILED=$(extract_number "$SUMMARY_LINE" "failed")
-          MEDIA_SKIPPED=$(extract_number "$SUMMARY_LINE" "skipped")
-          MEDIA_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) errors.*/\1/p' || true)
-          if [ -z "$MEDIA_ERRORS" ]; then
-            MEDIA_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) error.*/\1/p' || true)
-          fi
-          MEDIA_ERRORS=${MEDIA_ERRORS:-0}
-          MEDIA_COLLECTED=$(extract_number "$SUMMARY_LINE" "collected")
-
-          # Try to detect collection-time errors like "X tests collected / Y errors"
-          MEDIA_COLLECTION_ERRORS=$(
-            grep -oE "[0-9]+ tests collected / [0-9]+ errors" ../media_test_output.txt \
-              | sed -nE 's/.*\/ ([0-9]+) errors/\1/p' \
-              | tail -n1 || echo "0"
-          )
-          MEDIA_COLLECTION_ERRORS=${MEDIA_COLLECTION_ERRORS:-0}
-
-          # sanitize numeric-only
-          MEDIA_PASSED=$(echo "$MEDIA_PASSED" | tr -dc '0-9'); MEDIA_PASSED=${MEDIA_PASSED:-0}
-          MEDIA_FAILED=$(echo "$MEDIA_FAILED" | tr -dc '0-9'); MEDIA_FAILED=${MEDIA_FAILED:-0}
-          MEDIA_SKIPPED=$(echo "$MEDIA_SKIPPED" | tr -dc '0-9'); MEDIA_SKIPPED=${MEDIA_SKIPPED:-0}
-          MEDIA_ERRORS=$(echo "$MEDIA_ERRORS" | tr -dc '0-9'); MEDIA_ERRORS=${MEDIA_ERRORS:-0}
-          MEDIA_COLLECTED=$(echo "$MEDIA_COLLECTED" | tr -dc '0-9'); MEDIA_COLLECTED=${MEDIA_COLLECTED:-0}
-          MEDIA_COLLECTION_ERRORS=$(echo "$MEDIA_COLLECTION_ERRORS" | tr -dc '0-9'); MEDIA_COLLECTION_ERRORS=${MEDIA_COLLECTION_ERRORS:-0}
-
-          # persist numeric envs (safe)
-          echo "MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
-          echo "MEDIA_FAILED=$MEDIA_FAILED" >> $GITHUB_ENV
-          echo "MEDIA_SKIPPED=$MEDIA_SKIPPED" >> $GITHUB_ENV
-          echo "MEDIA_ERRORS=$MEDIA_ERRORS" >> $GITHUB_ENV
-          echo "MEDIA_COLLECTED=$MEDIA_COLLECTED" >> $GITHUB_ENV
-          echo "MEDIA_COLLECTION_ERRORS=$MEDIA_COLLECTION_ERRORS" >> $GITHUB_ENV
-
+          pytest tests/ -v --tb=short --continue-on-collection-errors > ../media_test_output.txt 2>&1 || true
           cat ../media_test_output.txt
-
-          # Track failures but don't exit yet - let summary run
-          MEDIA_TOTAL_FAILED=$(( MEDIA_FAILED + MEDIA_ERRORS + MEDIA_COLLECTION_ERRORS ))
-          echo "MEDIA_TOTAL_FAILED=$MEDIA_TOTAL_FAILED" >> $GITHUB_ENV
-          if [ "$MEDIA_TOTAL_FAILED" -gt 0 ] || [ "${MEDIA_PYTEST_EXIT_NONZERO:-}" = "true" ]; then
-            echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
-            echo "⚠️ tt-media-server tests had failures, but continuing to summary..."
-          fi
 
       - name: Test Results Summary
         if: always()
@@ -208,7 +105,6 @@ jobs:
           echo "===== 🧪 Test Results Summary =====" >> $GITHUB_STEP_SUMMARY
           echo >> $GITHUB_STEP_SUMMARY
 
-          # --- Re-parse both outputs to guarantee correct numbers (avoid env contamination) ---
           parse_summary() {
             file="$1"
             # find final summary line
@@ -398,7 +294,6 @@ jobs:
               });
             }
 
-
   llm-streaming-performance:
     needs: detect-changes
     name: LLM Streaming Performance Test
@@ -429,8 +324,582 @@ jobs:
 
       - name: Run LLM Streaming Performance Test
         run: |
-          pytest performance_tests/test_llm_streaming.py -sv >> $GITHUB_STEP_SUMMARY
+          # Run pytest and capture output (visible in job logs via tee)
+          pytest performance_tests/test_llm_streaming.py -sv 2>&1 | tee test_output.txt
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
 
+          # Extract only the CI report section (between markers) to avoid matching source code
+          sed -n '/::CI_REPORT_START::/,/::CI_REPORT_END::/p' test_output.txt > ci_report.txt
+
+          # Parse CI report metrics from the extracted section
+          TOKENS=$(grep '^tokens_received=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          TOTAL_TIME=$(grep '^total_time_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          MEAN_INTERVAL=$(grep '^mean_interval_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          THROUGHPUT=$(grep '^throughput_tps=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          OVERHEAD=$(grep '^overhead_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+          THRESHOLD=$(grep '^threshold_ms=' ci_report.txt | cut -d= -f2 || echo "N/A")
+
+          # Determine status
+          if [ $TEST_EXIT_CODE -eq 0 ]; then
+            STATUS="✅ PASSED"
+          else
+            STATUS="❌ FAILED"
+          fi
+
+          # Write formatted summary
+          {
+            echo "## 🚀 LLM Streaming Performance Test"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| **Status** | $STATUS |"
+            echo "| **Tokens Received** | $TOKENS |"
+            echo "| **Total Time** | ${TOTAL_TIME}ms |"
+            echo "| **Mean Interval** | ${MEAN_INTERVAL}ms |"
+            echo "| **Throughput** | ${THROUGHPUT} tokens/s |"
+            echo "| **Overhead/Token** | ${OVERHEAD}ms (threshold: ${THRESHOLD}ms) |"
+          } >> $GITHUB_STEP_SUMMARY
+
+          # Store exit code for later
+          echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> $GITHUB_ENV
+
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== Server Logs ==="
+          if [ -f performance_tests/server.log ]; then
+            cat performance_tests/server.log
+          else
+            echo "No server.log file found"
+          fi
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-streaming-server-logs
+          path: tt-media-server/performance_tests/server.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check test result
+        run: exit ${{ env.TEST_EXIT_CODE }}
+
+  cpp-format-check:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Lint & Format Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+
+      - name: Configure git for private submodules
+        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Init tt-blaze submodule (without tt-metal)
+        working-directory: .
+        run: git submodule update --init tt-media-server/cpp_server/tt-blaze
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: C++ format check (.clang-format)
+        run: |
+          cd cpp_server
+          if ! find include src tests benchmarks -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
+            | xargs -0 -r clang-format-20 --dry-run --Werror >/dev/null 2>&1; then
+            echo '::error::Some C++ files are not formatted per .clang-format.'
+            echo 'To fix locally, run from repo root:'
+            echo '  cd tt-media-server/cpp_server && find include src tests benchmarks -type f \( -name '"'"'*.cpp'"'"' -o -name '"'"'*.h'"'"' -o -name '"'"'*.hpp'"'"' \) -print0 | xargs -0 clang-format-20 -i'
+            exit 1
+          fi
+
+      - name: C++ lint check (build with clang-tidy)
+        run: |
+          cd cpp_server
+          ./build.sh --clang-tidy
+
+  cpp-build:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Build & Unit Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+
+      - name: Configure git for private submodules
+        run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Init tt-blaze submodule (without tt-metal)
+        working-directory: .
+        run: git submodule update --init tt-media-server/cpp_server/tt-blaze
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Build C++ server
+        run: |
+          cd cpp_server
+          ./build.sh
+          cd ..
+
+      - name: Run C++ unit tests
+        run: |
+          cd cpp_server/build
+          ctest --output-on-failure
+          cd ../..
+
+      - name: Upload C++ build
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-build
+          path: |
+            tt-media-server/cpp_server/build/
+            tt-media-server/cpp_server/tokenizers/
+          retention-days: 1
+
+  cpp-server-benchmarks:
+    needs: [detect-changes, cpp-build]
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server Benchmarks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Download C++ build
+        uses: actions/download-artifact@v4
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Make binaries executable
+        run: chmod +x cpp_server/build/tt_media_server_cpp
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install Python test dependencies
+        run: |
+          uv venv
+          uv pip install vllm
+          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
+
+      # ── Mock backend benchmarks ──────────────────────────────────────
+      - name: Start C++ server (mock backend)
+        run: |
+          cd cpp_server/build
+          LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 > ../../cpp_server_mock.log 2>&1 &
+          echo $! > ../../cpp_server.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "Server ready."
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Server did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: Bench mock backend
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "vllm-bench-mock.json" \
+            2>&1 | tee bench_mock_output.txt
+
+      - name: Stop mock server
+        if: always()
+        run: |
+          [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
+          sleep 1
+
+      # ── Mock pipeline backend benchmarks ─────────────────────────────
+      - name: Start C++ server (mock_pipeline backend)
+        run: |
+          cd cpp_server/build
+          LLM_DEVICE_BACKEND=mock_pipeline ./tt_media_server_cpp -p 8000 > ../../cpp_server_mock_pipeline.log 2>&1 &
+          echo $! > ../../cpp_server.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "Server ready."
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Server did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: Bench mock_pipeline backend
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "vllm-bench-mock-pipeline.json" \
+            2>&1 | tee bench_mock_pipeline_output.txt
+
+      - name: Stop mock_pipeline server
+        if: always()
+        run: |
+          [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
+
+      # ── Check thresholds ─────────────────────────────────────────────
+      - name: Check all benchmark thresholds
+        run: |
+          FAIL=0
+
+          check_thresholds() {
+            local LABEL="$1" FILE="$2" TPOT_LIMIT="$3" TTFT_LIMIT="$4"
+            if [ ! -f "$FILE" ]; then
+              echo "❌ [$LABEL] Result file not found: $FILE"
+              FAIL=1
+              return
+            fi
+
+            local COMPLETED FAILED_REQ MEAN_TPOT_MS MEAN_TTFT_MS
+            COMPLETED=$(jq -r '.completed // 0' "$FILE")
+            FAILED_REQ=$(jq -r '.failed // 0' "$FILE")
+            MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
+            MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
+
+            if [ "$COMPLETED" -eq 0 ] && [ "$FAILED_REQ" -gt 0 ]; then
+              echo "❌ [$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
+              FAIL=1
+            fi
+
+            if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
+              if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_LIMIT else 1)"; then
+                echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
+                FAIL=1
+              fi
+            fi
+            if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
+              if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_LIMIT else 1)"; then
+                echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
+                FAIL=1
+              fi
+            fi
+
+            {
+              echo "## $LABEL"
+              echo ""
+              echo "| Metric | Value | Threshold |"
+              echo "|--------|-------|-----------|"
+              echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ ${TPOT_LIMIT}ms |"
+              echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ ${TTFT_LIMIT}ms |"
+              echo "| **completed** | $COMPLETED | - |"
+              echo "| **failed** | $FAILED_REQ | - |"
+              echo ""
+            } >> $GITHUB_STEP_SUMMARY
+          }
+
+          check_thresholds "C++ Server vLLM Bench (mock)" \
+            "vllm-bench-mock.json" 1 150
+
+          check_thresholds "C++ Server vLLM Bench (mock_pipeline)" \
+            "vllm-bench-mock-pipeline.json" 3 395
+
+          echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
+
+      # ── Artifacts & logs ─────────────────────────────────────────────
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== Mock Server Logs ==="
+          [ -f cpp_server_mock.log ] && cat cpp_server_mock.log || echo "No log"
+          echo ""
+          echo "=== Mock Pipeline Server Logs ==="
+          [ -f cpp_server_mock_pipeline.log ] && cat cpp_server_mock_pipeline.log || echo "No log"
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-bench-results
+          path: |
+            tt-media-server/vllm-bench-mock.json
+            tt-media-server/vllm-bench-mock-pipeline.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-bench-logs
+          path: |
+            tt-media-server/cpp_server_mock.log
+            tt-media-server/cpp_server_mock_pipeline.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check benchmark result
+        run: exit ${{ env.BENCH_FAIL }}
+
+  cpp-server-prefill-decode-split:
+    needs: [detect-changes, cpp-build]
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server Prefill/Decode Split Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Download C++ build
+        uses: actions/download-artifact@v4
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Make binaries executable
+        run: chmod +x cpp_server/build/tt_media_server_cpp
+
+      - name: Start Decode server (receives HTTP, listens for prefill)
+        run: |
+          cd cpp_server/build
+          LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+            ./tt_media_server_cpp -p 8001 > ../../decode_server.log 2>&1 &
+          echo $! > ../../decode_server.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Decode server ready on port 8001"
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Decode server did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: Start Prefill server (connects to decode server)
+        run: |
+          cd cpp_server/build
+          LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+            ./tt_media_server_cpp -p 8002 > ../../prefill_server.log 2>&1 &
+          echo $! > ../../prefill_server.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Prefill server ready on port 8002"
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8002/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Prefill server did not become ready within 30 seconds"
+            exit 1
+          fi
+          sleep 2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install Python test dependencies
+        run: |
+          uv venv
+          uv pip install vllm
+          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Run vLLM bench serve against split servers
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          RESULT_FILE="vllm-bench-split-result.json"
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --base-url http://127.0.0.1:8001 \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --save-result \
+            --result-filename "$RESULT_FILE" \
+            2>&1 | tee bench_split_output.txt
+          echo "RESULT_FILE=$RESULT_FILE" >> $GITHUB_ENV
+
+      - name: Check benchmark thresholds
+        run: |
+          FAIL=0
+
+          check_thresholds() {
+            local LABEL="$1" FILE="$2" TPOT_LIMIT="$3" TTFT_LIMIT="$4"
+            if [ ! -f "$FILE" ]; then
+              echo "❌ [$LABEL] Result file not found: $FILE"
+              FAIL=1
+              return
+            fi
+
+            local COMPLETED FAILED_REQ MEAN_TPOT_MS MEAN_TTFT_MS
+            COMPLETED=$(jq -r '.completed // 0' "$FILE")
+            FAILED_REQ=$(jq -r '.failed // 0' "$FILE")
+            MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
+            MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
+
+            if [ "$COMPLETED" -eq 0 ] && [ "$FAILED_REQ" -gt 0 ]; then
+              echo "❌ [$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
+              FAIL=1
+            fi
+
+            if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
+              if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_LIMIT else 1)"; then
+                echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
+                FAIL=1
+              fi
+            fi
+            if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
+              if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_LIMIT else 1)"; then
+                echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
+                FAIL=1
+              fi
+            fi
+
+            {
+              echo "## $LABEL"
+              echo ""
+              echo "| Metric | Value | Threshold |"
+              echo "|--------|-------|-----------|"
+              echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ ${TPOT_LIMIT}ms |"
+              echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ ${TTFT_LIMIT}ms |"
+              echo "| **completed** | $COMPLETED | - |"
+              echo "| **failed** | $FAILED_REQ | - |"
+              echo ""
+            } >> $GITHUB_STEP_SUMMARY
+          }
+
+          check_thresholds "C++ Server Prefill/Decode Split" \
+            "${{ env.RESULT_FILE }}" 10 650
+
+          echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
+
+      - name: Stop servers
+        if: always()
+        run: |
+          [ -f decode_server.pid ] && kill $(cat decode_server.pid) 2>/dev/null || true
+          [ -f prefill_server.pid ] && kill $(cat prefill_server.pid) 2>/dev/null || true
+
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== Decode Server Logs ==="
+          if [ -f decode_server.log ]; then
+            cat decode_server.log
+          else
+            echo "No decode_server.log file found"
+          fi
+          echo ""
+          echo "=== Prefill Server Logs ==="
+          if [ -f prefill_server.log ]; then
+            cat prefill_server.log
+          else
+            echo "No prefill_server.log file found"
+          fi
+
+      - name: Upload benchmark result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-prefill-decode-split-result
+          path: tt-media-server/vllm-bench-split-result.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-prefill-decode-split-logs
+          path: |
+            tt-media-server/decode_server.log
+            tt-media-server/prefill_server.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check benchmark result
+        run: exit ${{ env.BENCH_FAIL }}
 
   forge-runner-changes:
     name: Detect Forge Runner Changes
@@ -506,25 +975,236 @@ jobs:
           source venv-3.11/bin/activate
           pytest tt_model_runners/forge_runners/test_forge_models.py -k "cpu" -v
 
+  test-coverage:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.should-test == 'true' && github.event_name == 'pull_request' }}
+    name: Test Coverage Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: 'pip'
+          cache-dependency-path: 'requirements-dev.txt'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -r tt-media-server/requirements.txt
+          pip install pytest-cov diff-cover
+
+      - name: Run tt-media-server tests with coverage
+        env:
+          HF_TOKEN: ""
+          MODEL: ""
+          JWT_SECRET: ""
+        run: |
+          # Run from repo root so coverage.xml has paths like "tt-media-server/..."
+          # This makes paths match git diff output
+          pytest tt-media-server/tests/ \
+            --ignore=tt-media-server/performance_tests/ \
+            --cov=tt-media-server \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            -v --tb=short --continue-on-collection-errors || true
+
+      - name: Check coverage of changed lines
+        id: diff-cover
+        run: |
+          # Get the base branch
+          BASE_REF="${{ github.event.pull_request.base.ref }}"
+
+          # Check if coverage file exists
+          if [ ! -f coverage.xml ]; then
+            echo "⚠️ No coverage file found"
+            echo "coverage_passed=true" >> $GITHUB_OUTPUT
+            echo "coverage_pct=N/A" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Checking coverage for tt-media-server only (gradual rollout)"
+
+          # Generate diff-cover report for changed lines only
+          # --exclude uses fnmatch patterns (shell-style wildcards)
+          diff-cover coverage.xml \
+            --compare-branch=origin/${BASE_REF} \
+            --exclude '*/tests/*' '*/performance_tests/*' \
+            --fail-under=50 \
+            > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
+
+          cat diff-cover-output.txt
+
+          # Extract coverage percentage
+          COVERAGE_PCT=$(grep -oE "Coverage: [0-9]+(\.[0-9]+)?%" diff-cover-output.txt | grep -oE "[0-9]+(\.[0-9]+)?" | tail -1 || echo "0")
+          echo "coverage_pct=$COVERAGE_PCT" >> $GITHUB_OUTPUT
+
+          if [ "$DIFF_COVER_FAILED" = "true" ]; then
+            echo "coverage_passed=false" >> $GITHUB_OUTPUT
+          else
+            echo "coverage_passed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fail if coverage below threshold
+        if: ${{ steps.diff-cover.outputs.coverage_passed == 'false' }}
+        run: |
+          echo ""
+          echo "❌ COVERAGE FAILED"
+          echo "=================="
+          echo "Coverage: ${{ steps.diff-cover.outputs.coverage_pct }}% (required: 50%)"
+          echo ""
+
+          # Show just the summary from diff-cover (first ~20 lines)
+          if [ -f diff-cover-output.txt ]; then
+            head -25 diff-cover-output.txt
+          fi
+
+          echo ""
+          echo "💡 Add tests for the files listed above to increase coverage."
+          echo ""
+
+          exit 1
+
+      - name: Generate coverage summary
+        if: always()
+        run: |
+          COVERAGE_PCT="${{ steps.diff-cover.outputs.coverage_pct }}"
+          COVERAGE_PASSED="${{ steps.diff-cover.outputs.coverage_passed }}"
+
+          # Determine status
+          if [ "$COVERAGE_PASSED" = "true" ]; then
+            STATUS_ICON="✅"
+            STATUS_TEXT="PASSED"
+          else
+            STATUS_ICON="⚠️"
+            STATUS_TEXT="BELOW THRESHOLD"
+          fi
+
+          echo "## $STATUS_ICON Test Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Coverage of Changed Lines" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Coverage** | ${COVERAGE_PCT}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Threshold** | 50% |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Status** | $STATUS_ICON $STATUS_TEXT |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> 💡 This checks coverage of **newly added/modified lines only**, not total codebase coverage." >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment coverage on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const coveragePct = '${{ steps.diff-cover.outputs.coverage_pct }}';
+            const coveragePassed = '${{ steps.diff-cover.outputs.coverage_passed }}' === 'true';
+
+            const statusIcon = coveragePassed ? '✅' : '❌';
+            const statusText = coveragePassed ? 'PASSED' : 'FAILED';
+
+            const commentBody = `## ${statusIcon} Test Coverage Report
+
+            ### Coverage of Changed Lines
+
+            | Metric | Value |
+            |--------|-------|
+            | **Coverage** | ${coveragePct}% |
+            | **Threshold** | 50% |
+            | **Status** | ${statusIcon} ${statusText} |
+
+            > 💡 This checks coverage of **newly added/modified lines only**, not total codebase coverage.
+            ${!coveragePassed ? '\n> ❌ **This PR cannot be merged until coverage reaches at least 50%.**' : ''}`;
+
+            // Find existing coverage comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Test Coverage Report')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage.xml
+            diff-cover-output.txt
+          retention-days: 14
+
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests, forge-runner-cpu-tests, llm-streaming-performance]
+    needs:
+      - lint
+      - unit-tests
+      - forge-runner-cpu-tests
+      - llm-streaming-performance
+      - test-coverage
+      - cpp-format-check
+      - cpp-build
+      - cpp-server-benchmarks
+      - cpp-server-prefill-decode-split
     if: always()
     steps:
       - name: Check results
         run: |
-          # Fail if any required job failed
-          if [[ "${{ needs.lint.result }}" == "failure" ]]; then
-            echo "❌ Lint check failed"
-            exit 1
-          fi
-          if [[ "${{ needs.unit-tests.result }}" == "failure" ]]; then
-            echo "❌ Unit tests failed"
-            exit 1
-          fi
-          if [[ "${{ needs.forge-runner-cpu-tests.result }}" == "failure" ]]; then
-            echo "❌ Forge runner tests failed"
+          STATUS=0
+          declare -A JOBS=(
+            [lint]="${{ needs.lint.result }}"
+            [unit-tests]="${{ needs.unit-tests.result }}"
+            [forge-runner-cpu-tests]="${{ needs.forge-runner-cpu-tests.result }}"
+            [llm-streaming-performance]="${{ needs.llm-streaming-performance.result }}"
+            [test-coverage]="${{ needs.test-coverage.result }}"
+            [cpp-format-check]="${{ needs.cpp-format-check.result }}"
+            [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
+            [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
+          )
+          for job in "${!JOBS[@]}"; do
+            result="${JOBS[$job]}"
+            if [[ "$result" == "success" || "$result" == "skipped" ]]; then
+              echo "✅ $job: $result"
+            else
+              echo "❌ $job: $result"
+              STATUS=1
+            fi
+          done
+          if [[ "$STATUS" -ne 0 ]]; then
+            echo "CI gate failed: one or more jobs failed or were cancelled"
             exit 1
           fi
           echo "✅ All checks passed (or were skipped)"

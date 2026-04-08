@@ -8,17 +8,56 @@
             "source.organizeImports": "explicit"
         }
     },
+    "[cpp]": {
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+        "editor.formatOnSave": true
+    },
+    "[c]": {
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+        "editor.formatOnSave": true
+    },
     "files.trimTrailingWhitespace": true,
     "files.insertFinalNewline": true,
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
     "python.testing.pytestArgs": [
-        "tests"
+        "--rootdir=.",
+        "resolver/",
+        "tests/",
+        "."
     ],
     "python.testing.cwd": "${workspaceFolder}",
     "python.defaultInterpreterPath": "/opt/venv/bin/python",
     "python.testing.autoTestDiscoverOnSaveEnabled": true,
-    "python.languageServer": "Pylance",
+    "python.languageServer": "None",
     "python-envs.pythonProjects": [],
-    "python.envFile": "${workspaceFolder}/.env.test"
+    "python.envFile": "${workspaceFolder}/.env.test",
+    "cmake.sourceDirectory": "${workspaceFolder}/tt-media-server/cpp_server",
+    "cmake.useCMakePresets": "always",
+    "cmake.allowCommentsInPresetsFile": true,
+    "cmake.configureOnOpen": true,
+    "cmake.buildBeforeRun": true,
+    "cmake.automaticReconfigure": true,
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.default.intelliSenseMode": "gcc-x64",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "C_Cpp.default.cppStandard": "c++20",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/include",
+        "${workspaceFolder}/include/runners",
+        "/usr/include/jsoncpp"
+    ],
+    "C_Cpp.errorSquiggles": "enabled",
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "C_Cpp.enhanced_hover": true,
+    "C_Cpp.autocomplete": "default",
+    "C_Cpp.suggestSnippets": true,
+    "files.associations": {
+        "*.hpp": "cpp",
+        "*.cpp": "cpp"
+    },
+    "cmake.buildTask": true,
+    "cmake.generator": "Ninja",
+    "editor.semanticHighlighting.enabled": true,
+    "editor.bracketPairColorization.enabled": true
 }

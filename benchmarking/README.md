@@ -6,11 +6,43 @@ Performance Benchmarks for Tenstorrent LLM (model) implementations. These benchm
 
 See [Model Readiness Workflows User Guide](../docs/workflows_user_guide.md#performance-benchmarks)
 
+## Benchmarking Tools
+
+The tt-inference-server supports three benchmarking tools:
+
+
+### vLLM (default) - server-side measurements
+```
+python run.py --model <model> --device <device> --workflow benchmarks --docker-server --tools vllm
+```
+
+### GenAI-Perf - NVIDIA Triton SDK tool
+```
+python run.py --model <model> --device <device> --workflow benchmarks --docker-server --tools genai
+```
+
+### AIPerf - detailed percentile metrics (mean, P50, P99)
+```
+python run.py --model <model> --device <device> --workflow benchmarks --docker-server --tools aiperf
+```
+
+**Key differences:** vLLM provides baseline metrics, GenAI-Perf validates against NVIDIA Triton standards, and AIPerf adds detailed latency percentiles for performance analysis.
+
+For detailed comparison, TTFT measurement differences, and usage guide, see [Benchmarking Tools Guide](../docs/benchmarking_tools.md).
+
 ### `run_benchmarks.py`
 
-Purpose: Main script for performance benchmarks defined in `BENCHMARK_CONFIGS`, called by `run.py` via `run_workflows.py`.
+Purpose: Main script for vLLM benchmarks defined in `BENCHMARK_CONFIGS`, called by `run.py` via `run_workflows.py`.
 
-### Workflow
+### `run_genai_benchmarks.py`
+
+Purpose: Docker orchestration script for GenAI-Perf benchmarks using NVIDIA Triton SDK container.
+
+### `run_benchmarks_aiperf.py`
+
+Purpose: Main script for AIPerf benchmarks with detailed percentile metrics and warm-up logic.
+
+#### Workflow
 
 1. Parse CLI runtime arguments
 2. Model & Device Validation
@@ -19,18 +51,18 @@ Purpose: Main script for performance benchmarks defined in `BENCHMARK_CONFIGS`, 
 
 ### `benchmark_config.py`
 
-Purpose: defines all static information known ahead of run time for evaluations to be run for each model implementation including: python environment, eval parameters, scoring methods, and expected results.
+Purpose: defines all static information known ahead of run time for benchmarks to be run for each model implementation including: python environment, benchmark parameters, and expected results.
 
 #### Components
 
 - **`BenchmarkConfig`**: a set of tasks for a specific model implementation.
-- **`BenchmarkTask`**: defines python environment to use and mapping of tasks to parameters. The mappings include for each device. Uses vLLM [benchmarks/benchmark_serving.py](https://github.com/vllm-project/vllm/blob/main/benchmarks/benchmark_serving.py).
+- **`BenchmarkTask`**: defines python environment to use and mapping of tasks to parameters for each device.
 - **`BenchmarkTaskParams`**: Defines how a benchmark should be run.
 - **`BENCHMARK_CONFIGS`**: Final dictionary mapping all internal model names to their BenchmarkConfig.
 
 ## Benchmark Targets
 
-The reference targets are based on theoretical peformance estimates for each model architecture and hardware combination, for example Llama-3.3-70B on T3K (TT-LoudBox). Model architecture is the set of weights with a common architecture that can be run interchangably (perhaps with small tweaks to hyperparameters), each model architecture is keyed by the 1st weight for the default implementation in `workflows/model_spec.py`.
+The reference targets are based on theoretical performance estimates for each model architecture and hardware combination, for example Llama-3.3-70B on T3K (TT-LoudBox). Model architecture is the set of weights with a common architecture that can be run interchangeably (perhaps with small tweaks to hyperparameters), each model architecture is keyed by the 1st weight for the default implementation in `workflows/model_spec.py`.
 
 For example, `Llama-3.3-70B` is the key for
 ```python
