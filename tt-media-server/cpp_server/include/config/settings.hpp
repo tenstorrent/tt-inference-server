@@ -109,6 +109,17 @@ size_t sessionEvictionCount();
  * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
 size_t maxTokensToPrefillOnDecode();
 
+/** Kafka broker addresses from KAFKA_BROKERS. Default:
+ * defaults::KAFKA_BROKERS. */
+std::string kafkaBrokers();
+
+/** Kafka topic name from KAFKA_TOPIC. Default: defaults::KAFKA_TOPIC. */
+std::string kafkaTopic();
+
+/** Kafka consumer group ID from KAFKA_GROUP_ID. Default:
+ * defaults::KAFKA_GROUP_ID. */
+std::string kafkaGroupId();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();

@@ -9,6 +9,7 @@
 #include <memory>
 #include <thread>
 
+#include "config/settings.hpp"
 #include "utils/logger.hpp"
 #include "worker/migration_worker.hpp"
 
@@ -70,15 +71,11 @@ int main(int argc, char* argv[]) {
   TT_LOG_INFO("=================================================");
 
   // Create MigrationWorker
-  auto worker = std::make_shared<
-      tt::worker::MigrationWorker>(tt::worker::MigrationWorkerConfig{
-      .brokers =
-          "localhost:9092",  // TODO: Move to config - hardcoded for local dev
-      .topic =
-          "session-offload",  // TODO: Move to config - hardcoded for local dev
-      .group_id =
-          "migration-workers"  // TODO: Move to config - hardcoded for local dev
-  });
+  auto worker = std::make_shared<tt::worker::MigrationWorker>(
+      tt::worker::MigrationWorkerConfig{
+          .brokers = tt::config::kafkaBrokers(),
+          .topic = tt::config::kafkaTopic(),
+          .group_id = tt::config::kafkaGroupId()});
 
   TT_LOG_INFO("[Consumer] Starting MigrationWorker...");
   worker->start();
