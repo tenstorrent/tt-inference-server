@@ -83,61 +83,8 @@ jobs:
       - name: Run tt-inference-server tests
         run: |
           echo "Running tests from tests/ directory..."
-          pytest tests/ -v --tb=short --continue-on-collection-errors > main_test_output.txt 2>&1 || echo "MAIN_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
-
-          # try to find final pytest summary line (robust)
-          SUMMARY_LINE=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" main_test_output.txt | tail -n 1 || true)
-          if [ -z "$SUMMARY_LINE" ]; then
-            SUMMARY_LINE=$(tail -n 5 main_test_output.txt | sed -n '/./,$p' | tail -n 1 || true)
-          fi
-
-          extract_number() {
-            line="$1"; token="$2"
-            echo "$line" | sed -nE "s/.* ([0-9]+) ${token}.*/\\1/p" || echo "0"
-          }
-
-          MAIN_PASSED=$(extract_number "$SUMMARY_LINE" "passed")
-          MAIN_FAILED=$(extract_number "$SUMMARY_LINE" "failed")
-          MAIN_SKIPPED=$(extract_number "$SUMMARY_LINE" "skipped")
-          MAIN_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) errors.*/\1/p' || true)
-          if [ -z "$MAIN_ERRORS" ]; then
-            MAIN_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) error.*/\1/p' || true)
-          fi
-          MAIN_ERRORS=${MAIN_ERRORS:-0}
-          MAIN_COLLECTED=$(extract_number "$SUMMARY_LINE" "collected")
-
-          # Try to detect collection-time errors like "X tests collected / Y errors"
-          MAIN_COLLECTION_ERRORS=$(
-            grep -oE "[0-9]+ tests collected / [0-9]+ errors" main_test_output.txt \
-              | sed -nE 's/.*\/ ([0-9]+) errors/\1/p' \
-              | tail -n1 || echo "0"
-          )
-          MAIN_COLLECTION_ERRORS=${MAIN_COLLECTION_ERRORS:-0}
-
-          # sanitize numeric-only
-          MAIN_PASSED=$(echo "$MAIN_PASSED" | tr -dc '0-9'); MAIN_PASSED=${MAIN_PASSED:-0}
-          MAIN_FAILED=$(echo "$MAIN_FAILED" | tr -dc '0-9'); MAIN_FAILED=${MAIN_FAILED:-0}
-          MAIN_SKIPPED=$(echo "$MAIN_SKIPPED" | tr -dc '0-9'); MAIN_SKIPPED=${MAIN_SKIPPED:-0}
-          MAIN_ERRORS=$(echo "$MAIN_ERRORS" | tr -dc '0-9'); MAIN_ERRORS=${MAIN_ERRORS:-0}
-          MAIN_COLLECTED=$(echo "$MAIN_COLLECTED" | tr -dc '0-9'); MAIN_COLLECTED=${MAIN_COLLECTED:-0}
-          MAIN_COLLECTION_ERRORS=$(echo "$MAIN_COLLECTION_ERRORS" | tr -dc '0-9'); MAIN_COLLECTION_ERRORS=${MAIN_COLLECTION_ERRORS:-0}
-
-          echo "MAIN_PASSED=$MAIN_PASSED" >> $GITHUB_ENV
-          echo "MAIN_FAILED=$MAIN_FAILED" >> $GITHUB_ENV
-          echo "MAIN_SKIPPED=$MAIN_SKIPPED" >> $GITHUB_ENV
-          echo "MAIN_ERRORS=$MAIN_ERRORS" >> $GITHUB_ENV
-          echo "MAIN_COLLECTED=$MAIN_COLLECTED" >> $GITHUB_ENV
-          echo "MAIN_COLLECTION_ERRORS=$MAIN_COLLECTION_ERRORS" >> $GITHUB_ENV
-
+          pytest tests/ -v --tb=short --continue-on-collection-errors > main_test_output.txt 2>&1 || true
           cat main_test_output.txt
-
-          # Fail this step if there's at least 1 failed test OR at least 1 error (including collection errors)
-          MAIN_TOTAL_FAILED=$(( MAIN_FAILED + MAIN_ERRORS + MAIN_COLLECTION_ERRORS ))
-          if [ "$MAIN_TOTAL_FAILED" -gt 0 ] || [ "${MAIN_PYTEST_EXIT_NONZERO:-}" = "true" ]; then
-            echo "MAIN_TESTS_FAILED=true" >> $GITHUB_ENV
-            # fail the step intentionally so PR will be blocked
-            exit 1
-          fi
 
       - name: Run tt-media-server tests
         if: always()
@@ -148,62 +95,8 @@ jobs:
         working-directory: tt-media-server
         run: |
           echo "Running tests from tt-media-server/tests/"
-          pytest tests/ -v --tb=short --continue-on-collection-errors > ../media_test_output.txt 2>&1 || echo "MEDIA_PYTEST_EXIT_NONZERO=true" >> $GITHUB_ENV
-
-          # parse final pytest summary line robustly
-          SUMMARY_LINE=$(grep -E "==+ .* in [0-9]+(\.[0-9]+)?s" ../media_test_output.txt | tail -n 1 || true)
-          if [ -z "$SUMMARY_LINE" ]; then
-            SUMMARY_LINE=$(tail -n 5 ../media_test_output.txt | sed -n '/./,$p' | tail -n 1 || true)
-          fi
-
-          extract_number() {
-            line="$1"; token="$2"
-            echo "$line" | sed -nE "s/.* ([0-9]+) ${token}.*/\\1/p" || echo "0"
-          }
-
-          MEDIA_PASSED=$(extract_number "$SUMMARY_LINE" "passed")
-          MEDIA_FAILED=$(extract_number "$SUMMARY_LINE" "failed")
-          MEDIA_SKIPPED=$(extract_number "$SUMMARY_LINE" "skipped")
-          MEDIA_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) errors.*/\1/p' || true)
-          if [ -z "$MEDIA_ERRORS" ]; then
-            MEDIA_ERRORS=$(echo "$SUMMARY_LINE" | sed -nE 's/.* ([0-9]+) error.*/\1/p' || true)
-          fi
-          MEDIA_ERRORS=${MEDIA_ERRORS:-0}
-          MEDIA_COLLECTED=$(extract_number "$SUMMARY_LINE" "collected")
-
-          # Try to detect collection-time errors like "X tests collected / Y errors"
-          MEDIA_COLLECTION_ERRORS=$(
-            grep -oE "[0-9]+ tests collected / [0-9]+ errors" ../media_test_output.txt \
-              | sed -nE 's/.*\/ ([0-9]+) errors/\1/p' \
-              | tail -n1 || echo "0"
-          )
-          MEDIA_COLLECTION_ERRORS=${MEDIA_COLLECTION_ERRORS:-0}
-
-          # sanitize numeric-only
-          MEDIA_PASSED=$(echo "$MEDIA_PASSED" | tr -dc '0-9'); MEDIA_PASSED=${MEDIA_PASSED:-0}
-          MEDIA_FAILED=$(echo "$MEDIA_FAILED" | tr -dc '0-9'); MEDIA_FAILED=${MEDIA_FAILED:-0}
-          MEDIA_SKIPPED=$(echo "$MEDIA_SKIPPED" | tr -dc '0-9'); MEDIA_SKIPPED=${MEDIA_SKIPPED:-0}
-          MEDIA_ERRORS=$(echo "$MEDIA_ERRORS" | tr -dc '0-9'); MEDIA_ERRORS=${MEDIA_ERRORS:-0}
-          MEDIA_COLLECTED=$(echo "$MEDIA_COLLECTED" | tr -dc '0-9'); MEDIA_COLLECTED=${MEDIA_COLLECTED:-0}
-          MEDIA_COLLECTION_ERRORS=$(echo "$MEDIA_COLLECTION_ERRORS" | tr -dc '0-9'); MEDIA_COLLECTION_ERRORS=${MEDIA_COLLECTION_ERRORS:-0}
-
-          # persist numeric envs (safe)
-          echo "MEDIA_PASSED=$MEDIA_PASSED" >> $GITHUB_ENV
-          echo "MEDIA_FAILED=$MEDIA_FAILED" >> $GITHUB_ENV
-          echo "MEDIA_SKIPPED=$MEDIA_SKIPPED" >> $GITHUB_ENV
-          echo "MEDIA_ERRORS=$MEDIA_ERRORS" >> $GITHUB_ENV
-          echo "MEDIA_COLLECTED=$MEDIA_COLLECTED" >> $GITHUB_ENV
-          echo "MEDIA_COLLECTION_ERRORS=$MEDIA_COLLECTION_ERRORS" >> $GITHUB_ENV
-
+          pytest tests/ -v --tb=short --continue-on-collection-errors > ../media_test_output.txt 2>&1 || true
           cat ../media_test_output.txt
-
-          # Track failures but don't exit yet - let summary run
-          MEDIA_TOTAL_FAILED=$(( MEDIA_FAILED + MEDIA_ERRORS + MEDIA_COLLECTION_ERRORS ))
-          echo "MEDIA_TOTAL_FAILED=$MEDIA_TOTAL_FAILED" >> $GITHUB_ENV
-          if [ "$MEDIA_TOTAL_FAILED" -gt 0 ] || [ "${MEDIA_PYTEST_EXIT_NONZERO:-}" = "true" ]; then
-            echo "MEDIA_TESTS_FAILED=true" >> $GITHUB_ENV
-            echo "⚠️ tt-media-server tests had failures, but continuing to summary..."
-          fi
 
       - name: Test Results Summary
         if: always()
@@ -212,7 +105,6 @@ jobs:
           echo "===== 🧪 Test Results Summary =====" >> $GITHUB_STEP_SUMMARY
           echo >> $GITHUB_STEP_SUMMARY
 
-          # --- Re-parse both outputs to guarantee correct numbers (avoid env contamination) ---
           parse_summary() {
             file="$1"
             # find final summary line
@@ -891,62 +783,59 @@ jobs:
             2>&1 | tee bench_split_output.txt
           echo "RESULT_FILE=$RESULT_FILE" >> $GITHUB_ENV
 
-      - name: Parse result and check thresholds
+      - name: Check benchmark thresholds
         run: |
-          RESULT_FILE="${{ env.RESULT_FILE }}"
-          if [ ! -f "$RESULT_FILE" ]; then
-            echo "❌ Result file not found: $RESULT_FILE"
-            exit 1
-          fi
-
-          COMPLETED=$(jq -r '.completed // 0' "$RESULT_FILE")
-          FAILED=$(jq -r '.failed // 0' "$RESULT_FILE")
-          if [ "$COMPLETED" -eq 0 ] && [ "$FAILED" -gt 0 ]; then
-            echo "❌ All requests failed (completed=0, failed=$FAILED)"
-            exit 1
-          fi
-
-          MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$RESULT_FILE")
-          MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$RESULT_FILE")
-          TPOT_THRESHOLD_MS="10"
-          TTFT_THRESHOLD_MS="650"
-
           FAIL=0
-          if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
-            if python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_THRESHOLD_MS else 1)"; then
-              :
-            else
-              echo "❌ mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_THRESHOLD_MS}ms"
-              FAIL=1
-            fi
-          fi
-          if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
-            if python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_THRESHOLD_MS else 1)"; then
-              :
-            else
-              echo "❌ mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_THRESHOLD_MS}ms"
-              FAIL=1
-            fi
-          fi
 
-          echo "MEAN_TPOT_MS=$MEAN_TPOT_MS" >> $GITHUB_ENV
-          echo "MEAN_TTFT_MS=$MEAN_TTFT_MS" >> $GITHUB_ENV
+          check_thresholds() {
+            local LABEL="$1" FILE="$2" TPOT_LIMIT="$3" TTFT_LIMIT="$4"
+            if [ ! -f "$FILE" ]; then
+              echo "❌ [$LABEL] Result file not found: $FILE"
+              FAIL=1
+              return
+            fi
+
+            local COMPLETED FAILED_REQ MEAN_TPOT_MS MEAN_TTFT_MS
+            COMPLETED=$(jq -r '.completed // 0' "$FILE")
+            FAILED_REQ=$(jq -r '.failed // 0' "$FILE")
+            MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
+            MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
+
+            if [ "$COMPLETED" -eq 0 ] && [ "$FAILED_REQ" -gt 0 ]; then
+              echo "❌ [$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
+              FAIL=1
+            fi
+
+            if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
+              if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_LIMIT else 1)"; then
+                echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
+                FAIL=1
+              fi
+            fi
+            if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
+              if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_LIMIT else 1)"; then
+                echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
+                FAIL=1
+              fi
+            fi
+
+            {
+              echo "## $LABEL"
+              echo ""
+              echo "| Metric | Value | Threshold |"
+              echo "|--------|-------|-----------|"
+              echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ ${TPOT_LIMIT}ms |"
+              echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ ${TTFT_LIMIT}ms |"
+              echo "| **completed** | $COMPLETED | - |"
+              echo "| **failed** | $FAILED_REQ | - |"
+              echo ""
+            } >> $GITHUB_STEP_SUMMARY
+          }
+
+          check_thresholds "C++ Server Prefill/Decode Split" \
+            "${{ env.RESULT_FILE }}" 10 650
+
           echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
-
-          {
-            echo "## 🔀 C++ Server Prefill/Decode Split Test"
-            echo ""
-            echo "| Metric | Value | Threshold |"
-            echo "|--------|-------|-----------|"
-            echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ ${TPOT_THRESHOLD_MS}ms |"
-            echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ ${TTFT_THRESHOLD_MS}ms |"
-            echo "| **completed** | $COMPLETED | - |"
-            echo "| **failed** | $FAILED | - |"
-          } >> $GITHUB_STEP_SUMMARY
-
-          if [ "$FAIL" -eq 1 ]; then
-            exit 1
-          fi
 
       - name: Stop servers
         if: always()
