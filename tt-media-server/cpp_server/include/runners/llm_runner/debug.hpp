@@ -23,7 +23,8 @@ inline std::mutex& log_mutex() {
 class LogBuf {
  public:
   explicit LogBuf(const char* component) : buf_() {
-    buf_ << "[" << elapsed_ms() << " ms llm_engine:" << component << "] ";
+    buf_ << "[" << elapsed_ms() << " ms runners.llm_engine:" << component
+         << "] ";
   }
   ~LogBuf() {
     std::lock_guard<std::mutex> lock(log_mutex());
