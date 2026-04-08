@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Union
 
 from evals.eval_utils import (
-    score_multilevel_keys_mean,
     score_task_keys_mean,
     score_task_single_key,
 )
@@ -1417,22 +1416,10 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    score_func=score_multilevel_keys_mean,
+                    score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            ("leaderboard_math_algebra_hard", "exact_match,none"),
-                            (
-                                "leaderboard_math_counting_and_prob_hard",
-                                "exact_match,none",
-                            ),
-                            ("leaderboard_math_geometry_hard", "exact_match,none"),
-                            (
-                                "leaderboard_math_intermediate_algebra_hard",
-                                "exact_match,none",
-                            ),
-                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
-                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
-                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                            "exact_match,none",
                         ],
                         "unit": "percent",
                     },
@@ -1507,22 +1494,10 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    score_func=score_multilevel_keys_mean,
+                    score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            ("leaderboard_math_algebra_hard", "exact_match,none"),
-                            (
-                                "leaderboard_math_counting_and_prob_hard",
-                                "exact_match,none",
-                            ),
-                            ("leaderboard_math_geometry_hard", "exact_match,none"),
-                            (
-                                "leaderboard_math_intermediate_algebra_hard",
-                                "exact_match,none",
-                            ),
-                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
-                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
-                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                            "exact_match,none",
                         ],
                         "unit": "percent",
                     },
@@ -2341,10 +2316,10 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=(100 - 3.91),
                     published_score_ref="https://huggingface.co/spaces/hf-audio/open_asr_leaderboard",
-                    score_func=score_multilevel_keys_mean,
+                    score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            ("librispeech_test_other", "wer,none"),
+                            "wer,none",
                         ],
                         "unit": "WER",
                     },
@@ -2371,10 +2346,10 @@ _eval_config_list = [
                     gpu_reference_score=(100 - 5.1208),
                     published_score_ref="https://huggingface.co/spaces/hf-audio/open_asr_leaderboard",
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/194#issuecomment-2791159501",
-                    score_func=score_multilevel_keys_mean,
+                    score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            ("librispeech_test_other", "wer,none"),
+                            "wer,none",
                         ],
                         "unit": "WER",
                     },
