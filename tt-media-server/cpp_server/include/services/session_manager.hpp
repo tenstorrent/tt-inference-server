@@ -80,14 +80,14 @@ class SessionManager {
   void retryFailedDeallocs();
   void handleMemoryResult(const domain::ManageMemoryResult& result);
 
-  mutable ConcurrentMap<std::string, domain::Session> sessions;
+  mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
 
   std::unique_ptr<ipc::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::MemoryResultQueue> memoryResultQueue;
 
-  ConcurrentMap<uint32_t, PendingAllocation> pendingAllocationsMap;
-  ConcurrentQueue<PendingAllocation> pendingAllocationsRetryQueue;
-  ConcurrentQueue<DeferredDealloc> deferredDeallocQueue;
+  utils::ConcurrentMap<uint32_t, PendingAllocation> pendingAllocationsMap;
+  utils::ConcurrentQueue<PendingAllocation> pendingAllocationsRetryQueue;
+  utils::ConcurrentQueue<DeferredDealloc> deferredDeallocQueue;
   std::atomic<bool> stopped{false};
   std::atomic<bool> evictionInProgress{false};
   std::thread drainThread;

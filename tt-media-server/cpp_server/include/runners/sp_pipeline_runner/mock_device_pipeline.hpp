@@ -18,7 +18,7 @@
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 
-namespace sp_pipeline {
+namespace tt::runners::sp_pipeline {
 
 struct MockDeviceConfig {
   size_t numStages = 64;
@@ -100,4 +100,4 @@ class MockDevicePipeline {
   std::thread pipelineThread;
 };
 
-}  // namespace sp_pipeline
+}  // namespace tt::runners::sp_pipeline

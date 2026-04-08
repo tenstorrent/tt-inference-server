@@ -143,30 +143,11 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 # cpp_server deps (apt + Rust if needed + Drogon)
 RUN cd ${TT_METAL_HOME}/server/cpp_server && ./install_dependencies.sh
 
-# add tt-blaze (clone using GitHub token from secret)
-RUN --mount=type=secret,id=github_token \
-    rm -rf ${TT_METAL_HOME}/server/cpp_server/tt-blaze \
-    && GITHUB_TOKEN=$(cat /run/secrets/github_token) \
-    && git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:" \
-    && git clone --depth 1 --branch asaigal/model_integration https://x-access-token:${GITHUB_TOKEN}@github.com/tenstorrent/tt-blaze.git ${TT_METAL_HOME}/server/cpp_server/tt-blaze \
-    && cd ${TT_METAL_HOME}/server/cpp_server/tt-blaze \
-    && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
-    # Set environment variables to point to tt-blaze's tt-metal for the build
-    && export TT_METAL_HOME=${TT_METAL_HOME}/server/cpp_server/tt-blaze/tt-metal \
-    && export PYTHONPATH=${TT_METAL_HOME}/server/cpp_server/tt-blaze/tt-metal \
-    && export PYTHON_ENV_DIR=${TT_METAL_HOME}/server/cpp_server/tt-blaze/tt-metal/python_env \
-    && export LD_LIBRARY_PATH=${TT_METAL_HOME}/server/cpp_server/tt-blaze/tt-metal/build_Release/lib \
-    && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
-    && CMAKE_BUILD_PARALLEL_LEVEL=4 ./install.sh  \
-    && ./pipeline_manager/setup.sh \
-    && git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf
-
 # Build C++ server (requires Rust for tokenizers-cpp)
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && export CARGO_HOME=${HOME_DIR}/.cargo \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
-    && export TT_METAL_HOME=${TT_METAL_HOME}/server/cpp_server/tt-blaze/tt-metal \
     && cd ${TT_METAL_HOME}/server/cpp_server \
     && ./build.sh"
 
@@ -192,11 +173,6 @@ RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/tt-metal/tt-train \
     && rm -rf ${HOME_DIR}/tt-metal/server/tests \
     && rm -rf ${HOME_DIR}/tt-metal/server/scripts \
-    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/tt-blaze \
-    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/include \
-    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/src \
-    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/tests \
-    && rm -rf ${HOME_DIR}/tt-metal/server/cpp_server/benchmarks \
     && rm -rf /usr/local/rustup \
     && rm -rf /usr/include
 

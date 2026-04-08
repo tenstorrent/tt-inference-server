@@ -33,7 +33,7 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
       .h2d_socket_id = tt::config::h2dSocketId(),
       .d2h_socket_id = tt::config::d2hSocketId(),
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
-      .use_deepseek_md_format = false};
+      .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =

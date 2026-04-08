@@ -79,7 +79,7 @@ class LLMService
 
   std::vector<std::thread> consumer_threads_;
 
-  ConcurrentMap<uint32_t, StreamCallbackEntry> stream_callbacks_;
+  utils::ConcurrentMap<uint32_t, StreamCallbackEntry> stream_callbacks_;
 
   std::atomic<size_t> pending_tasks_{0};
   std::atomic<bool> running_{false};
