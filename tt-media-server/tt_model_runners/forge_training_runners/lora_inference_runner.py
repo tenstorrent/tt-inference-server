@@ -11,7 +11,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from domain.completion_request import CompletionRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-from utils.adapter_resolver import AdapterInfo, resolve_model
+from utils.adapter_resolver import AdapterInfo, resolve_adapter
 from utils.decorators import log_execution_time
 
 
@@ -32,8 +32,12 @@ class LoraInferenceRunner(BaseDeviceRunner):
         max_cache_len: int = 128
         batch_size: int = 1
 
-        adapter_info = resolve_model(request.model)
-        self._load_model(adapter_info)
+        if request.adapter:
+            adapter_info = resolve_adapter(request.adapter)
+            self._load_adapter(adapter_info)
+        else:
+            base_name = request.model or self.settings.model_weights_path
+            self._load_base_model(base_name)
 
         compiled_model = self._get_compiled_model()
 
@@ -57,23 +61,16 @@ class LoraInferenceRunner(BaseDeviceRunner):
         )
         return ["".join(output_tokens)]
 
-    def _load_model(self, adapter_info: AdapterInfo):
+    def _load_adapter(self, adapter_info: AdapterInfo):
         if self._active_adapter == adapter_info:
             return
-
         self._load_base_model(adapter_info.base_model_name)
-
-        if adapter_info.use_adapter:
-            self._teardown_compiled()
-            self._active_model = PeftModel.from_pretrained(
-                self._base_model, adapter_info.adapter_path
-            )
-            self.logger.info(f"Loaded adapter from {adapter_info.adapter_path}")
-        else:
-            self._active_model = self._base_model
-            self.logger.info("Using base model for inference")
-
+        self._teardown_compiled()
+        self._active_model = PeftModel.from_pretrained(
+            self._base_model, adapter_info.adapter_path
+        )
         self._active_adapter = adapter_info
+        self.logger.info(f"Loaded adapter from {adapter_info.adapter_path}")
 
     def _load_base_model(self, model_name: str):
         if self._base_model is not None and self._base_model.name_or_path == model_name:
@@ -83,6 +80,7 @@ class LoraInferenceRunner(BaseDeviceRunner):
             model_name, use_cache=False
         )
         self._tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self._active_model = self._base_model
         self._active_adapter = None
         self.logger.info(f"Loaded base model: {model_name}")
 
