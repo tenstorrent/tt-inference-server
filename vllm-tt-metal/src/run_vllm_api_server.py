@@ -580,6 +580,7 @@ def start_trace_capture(
     model_spec_json, disable_trace_capture=False, service_port=None
 ):
     # Models with builtin warmup handle their own trace capture internally
+    disable_trace_capture = True
     if not disable_trace_capture and model_spec_json.get("has_builtin_warmup", False):
         disable_trace_capture = True
         logger.info(

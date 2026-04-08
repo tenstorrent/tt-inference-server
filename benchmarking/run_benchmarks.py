@@ -192,7 +192,7 @@ def main():
     # runtime config loaded from JSON
     device_str = runtime_config.device
     service_port = runtime_config.service_port
-    disable_trace_capture = runtime_config.disable_trace_capture
+    disable_trace_capture = True
 
     # Automatically control trace capture based on has_builtin_warmup
     # Only apply automatic logic if user hasn't explicitly set --disable-trace-capture
