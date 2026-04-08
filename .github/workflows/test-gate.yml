@@ -739,6 +739,125 @@ jobs:
       - name: Check benchmark result
         run: exit ${{ env.BENCH_FAIL }}
 
+  cpp-server-structured-output-streaming:
+    needs: [detect-changes, cpp-build]
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server Structured Output Streaming
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Download C++ build
+        uses: actions/download-artifact@v4
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Make binaries executable
+        run: chmod +x cpp_server/build/tt_media_server_cpp
+
+      - name: Start C++ server (mock mode)
+        run: |
+          cd cpp_server/build
+          LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 > ../../cpp_server.log 2>&1 &
+          echo $! > ../../cpp_server.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "Server ready."
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Server did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: 'pip'
+          cache-dependency-path: 'tt-media-server/requirements.txt'
+
+      - name: Install Python test dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run structured output streaming tests
+        env:
+          EXTERNAL_LLM_SERVER: '1'
+          SERVER_BASE_URL: 'http://127.0.0.1:8000'
+          STRUCTURED_OUTPUT_TPOT_MS: '2'
+          STRUCTURED_OUTPUT_TTFT_MS: '200'
+        run: |
+          pytest performance_tests/test_structured_output_streaming.py -sv 2>&1 | tee test_output.txt
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
+
+          # Extract CI reports
+          sed -n '/::CI_REPORT_START::/,/::CI_REPORT_END::/p' test_output.txt > ci_report.txt
+
+          TOKENS=$(grep '^tokens_received=' ci_report.txt | head -1 | cut -d= -f2 || echo "N/A")
+          TTFT=$(grep '^ttft_ms=' ci_report.txt | head -1 | cut -d= -f2 || echo "N/A")
+          TPOT=$(grep '^mean_tpot_ms=' ci_report.txt | head -1 | cut -d= -f2 || echo "N/A")
+          THROUGHPUT=$(grep '^throughput_tps=' ci_report.txt | head -1 | cut -d= -f2 || echo "N/A")
+
+          {
+            echo "## 🔒 C++ Server Structured Output Streaming"
+            echo ""
+            echo "| Metric | Value | Threshold |"
+            echo "|--------|-------|-----------|"
+            echo "| **mean_tpot_ms** | $TPOT | ≤ 2ms |"
+            echo "| **ttft_ms** | $TTFT | ≤ 200ms |"
+            echo "| **tokens_received** | $TOKENS | - |"
+            echo "| **throughput_tps** | $THROUGHPUT | - |"
+          } >> $GITHUB_STEP_SUMMARY
+
+          echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> $GITHUB_ENV
+
+      - name: Stop C++ server
+        if: always()
+        run: |
+          [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
+
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== C++ Server Logs ==="
+          if [ -f cpp_server.log ]; then
+            cat cpp_server.log
+          else
+            echo "No cpp_server.log file found"
+          fi
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-structured-output-logs
+          path: tt-media-server/cpp_server.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check test result
+        run: exit ${{ env.TEST_EXIT_CODE }}
+
   cpp-server-llm-streaming-mock-pipeline:
     needs: [detect-changes, cpp-build]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
@@ -1396,6 +1515,7 @@ jobs:
       - cpp-format-check
       - cpp-build
       - cpp-server-llm-streaming
+      - cpp-server-structured-output-streaming
       - cpp-server-llm-streaming-mock-pipeline
       - cpp-server-prefill-decode-split
     if: always()
@@ -1411,6 +1531,7 @@ jobs:
             [test-coverage]="${{ needs.test-coverage.result }}"
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
             [cpp-server-llm-streaming]="${{ needs.cpp-server-llm-streaming.result }}"
+            [cpp-server-structured-output-streaming]="${{ needs.cpp-server-structured-output-streaming.result }}"
             [cpp-server-llm-streaming-mock-pipeline]="${{ needs.cpp-server-llm-streaming-mock-pipeline.result }}"
             [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
           )
