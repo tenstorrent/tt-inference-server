@@ -1,4 +1,4 @@
-for i in {1..20}; do                                                                                                                                                                                
+for i in {1..120}; do                                                                                                                                                                                
     curl -X POST http://localhost:8000/v1/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer your-secret-key" \
       -d '{                                                                                                                                                                                           
         "messages": [{"role": "user", "content": "Test session '$i'"}],   
@@ -8,4 +8,4 @@ for i in {1..20}; do
   done    
                                                                                                                                                                                                       
   wait            
-  echo "Created 20 sessions"  
+  echo "Created 120 sessions"  

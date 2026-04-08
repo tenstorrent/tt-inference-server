@@ -60,7 +60,7 @@ class SessionManager {
   std::unique_ptr<tt::messaging::KafkaProducer> kafkaProducer;
   size_t maxSessions;
 
-  void checkAndSendOffloadRequest();
+  void checkAndSendOffloadRequest(const std::string& sessionId);
 };
 
 }  // namespace tt::services

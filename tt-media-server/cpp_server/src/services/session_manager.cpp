@@ -135,8 +135,8 @@ domain::Session SessionManager::createSession(std::optional<uint32_t> slotId,
   session.setInFlight(inFlight);
   sessions.insert(sessionId, session);
 
-  // LJUBICA : Checking if we need to send offload request 
-  checkAndSendOffloadRequest();
+  // LJUBICA : Checking if we need to send offload request
+  checkAndSendOffloadRequest(sessionId);
 
 
   TT_LOG_INFO("[SessionManager] Created session: {} with slot: {} inFlight: {}",
@@ -146,38 +146,39 @@ domain::Session SessionManager::createSession(std::optional<uint32_t> slotId,
   return session;
 }
 
-void SessionManager::checkAndSendOffloadRequest() {
+void SessionManager::checkAndSendOffloadRequest(const std::string& sessionId) {
   if (!kafkaProducer) return;
 
   size_t currentCount = sessions.size();
   size_t threshold = (maxSessions * 80)/100;  //LJUBICA TMP 10%
 
+  // Send message for EVERY session created when above threshold
   if (currentCount >= threshold) {
-    TT_LOG_INFO("[SessionManager] Current session count {} exceeds threshold {}. Sending offload request.", currentCount, threshold);
-    
+    TT_LOG_INFO("[SessionManager] Session {} - count {} exceeds threshold {}. Sending offload request.",
+                sessionId, currentCount, threshold);
+
     auto now = std::chrono::system_clock::now();
     auto us = std::chrono::duration_cast<std::chrono::microseconds>(
       now.time_since_epoch()).count();
 
     std::string message = fmt::format(
-      R"(
-      {{
+      R"({{
       "timestamp_us": {},
-      "action" : "offload",
+      "action": "offload",
+      "session_id": "{}",
       "current_session_count": {},
       "max_sessions": {}
-      }}
-      )",
-      us, currentCount, maxSessions
+      }})",
+      us, sessionId, currentCount, maxSessions
     );
 
     std::string err;
-    if (kafkaProducer->send_copy(message, &err)) {
-      TT_LOG_WARN("[SessionManager] Sent offload request: {}/{} sessions ({}%)", currentCount, maxSessions, (currentCount * 100)/maxSessions);
+    if (kafkaProducer->sendCopy(message, "", &err)) {  // Empty key for single partition
+      TT_LOG_WARN("[SessionManager] Sent offload request for session {}: {}/{} sessions ({}%)",
+                  sessionId, currentCount, maxSessions, (currentCount * 100)/maxSessions);
     } else {
       TT_LOG_ERROR("[SessionManager] Failed to send offload request: {}", err);
     }
-
   }
 }
 

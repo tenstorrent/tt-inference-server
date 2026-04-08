@@ -55,9 +55,10 @@ KafkaProducer::KafkaProducer(KafkaProducerConfig config) : impl_(std::make_uniqu
     return;
   }
 
-  // Force round-robin partitioning for better distribution
-  setConfigOrLog(conf, "partitioner", "murmur2_random");
-  setConfigOrLog(conf, "linger.ms", "0");  // Send immediately, don't batch
+  // Low-latency producer settings
+  setConfigOrLog(conf, "linger.ms", "0");
+  setConfigOrLog(conf, "compression.type", "none");
+  setConfigOrLog(conf, "socket.nagle.disable", "true");
 
   // rd_kafka_new() takes ownership of conf on success, leaves it on failure
   rd_kafka_t* kafka_handle =
@@ -83,25 +84,30 @@ KafkaProducer::KafkaProducer(KafkaProducerConfig config) : impl_(std::make_uniqu
 
 KafkaProducer::~KafkaProducer() = default;
 
-bool KafkaProducer::send_copy(std::string_view payload,
-                              std::string* error_message) {
+bool KafkaProducer::sendCopy(std::string_view payload, std::string_view key,
+                             std::string* errorMessage) {
   if (!impl_ || !impl_->kafka_handle || !impl_->topic_handle) {
-    if (error_message) {
-      *error_message = "Kafka producer not initialized";
+    if (errorMessage) {
+      *errorMessage = "Kafka producer not initialized";
     }
     return false;
   }
 
+  // If key is provided, Kafka will hash it to select partition for distribution
+  const void* keyPtr = key.empty() ? nullptr : key.data();
+  size_t keyLen = key.empty() ? 0 : key.size();
+
   if (rd_kafka_produce(
           impl_->topic_handle, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_COPY,
-          const_cast<char*>(payload.data()), payload.size(), nullptr, 0,
+          const_cast<char*>(payload.data()), payload.size(),
+          keyPtr, keyLen,
           nullptr) != 0) {
 
     std::string err = rd_kafka_err2str(rd_kafka_last_error());
 
     TT_LOG_ERROR("[Kafka] rd_kafka_produce failed: {}", err);
-    if (error_message) {
-      *error_message = std::move(err);
+    if (errorMessage) {
+      *errorMessage = std::move(err);
     }
     return false;
   }
@@ -130,11 +136,17 @@ KafkaConsumer::KafkaConsumer(KafkaConsumerConfig config)
     return;
   }
 
-  // LJUBICA Check other config options
+  // Low-latency consumer configuration for ~1ms overhead
   if (!setConfigOrLog(conf, "bootstrap.servers", config.brokers.c_str()) ||
       !setConfigOrLog(conf, "group.id", config.group_id.c_str()) ||
-      !setConfigOrLog(conf, "auto.offset.reset", "earliest") ||
-      !setConfigOrLog(conf, "enable.partition.eof", "false")) {
+      !setConfigOrLog(conf, "auto.offset.reset", "latest") ||  // Only read NEW messages, not old ones
+      !setConfigOrLog(conf, "enable.partition.eof", "false") ||
+      // Critical: reduce fetch wait from default 500ms to 1ms for low latency
+      !setConfigOrLog(conf, "fetch.wait.max.ms", "1") ||
+      !setConfigOrLog(conf, "fetch.min.bytes", "1") ||
+      // Auto-commit to reduce coordination overhead
+      !setConfigOrLog(conf, "enable.auto.commit", "true") ||
+      !setConfigOrLog(conf, "auto.commit.interval.ms", "100")) {
     rd_kafka_conf_destroy(conf);
     return;
   }
@@ -169,13 +181,13 @@ KafkaConsumer::KafkaConsumer(KafkaConsumerConfig config)
 
 KafkaConsumer::~KafkaConsumer() = default;
 
-std::optional<std::string> KafkaConsumer::poll_payload(int timeout_ms) {
+std::optional<std::string> KafkaConsumer::pollPayload(int timeoutMs) {
   if (!impl_ || !impl_->kafka_handle) {
     return std::nullopt;
   }
 
   rd_kafka_message_t* message =
-      rd_kafka_consumer_poll(impl_->kafka_handle, timeout_ms);
+      rd_kafka_consumer_poll(impl_->kafka_handle, timeoutMs);
   if (!message) {
     return std::nullopt;
   }

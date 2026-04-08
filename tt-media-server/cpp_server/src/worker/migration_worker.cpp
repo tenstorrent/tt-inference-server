@@ -74,9 +74,9 @@ void MigrationWorker::consumerLoop() {
 
   // Poll loop: runs until stopped
   while (running_.load(std::memory_order_relaxed)) {
-    // Poll with 1 second timeout
+    // Poll with 1ms timeout for low latency
     // Note: Must poll regularly to maintain consumer group membership
-    auto msg = consumer_->poll_payload(1000);
+    auto msg = consumer_->pollPayload(1);
 
     if (msg.has_value()) {
       // Message received - process it
@@ -109,12 +109,14 @@ void MigrationWorker::processOffloadRequest(const std::string& message, auto rec
 
     // Extract additional fields (optional, for logging)
     std::string action = json.value("action", "unknown");
+    std::string sessionId = json.value("session_id", "unknown");
     int currentCount = json.value("current_session_count", 0);
     int maxSessions = json.value("max_sessions", 0);
 
     // Log the offload request with overhead measurement
     TT_LOG_WARN("[MigrationWorker] ✅ OFFLOAD REQUEST RECEIVED");
     TT_LOG_WARN("[MigrationWorker]   Action:      {}", action);
+    TT_LOG_WARN("[MigrationWorker]   Session ID:  {}", sessionId);
     TT_LOG_WARN("[MigrationWorker]   Sessions:    {}/{} ({:.1f}%)",
                 currentCount, maxSessions,
                 maxSessions > 0 ? (currentCount * 100.0 / maxSessions) : 0.0);

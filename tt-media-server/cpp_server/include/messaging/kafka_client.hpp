@@ -23,8 +23,6 @@ class KafkaProducer {
  public:
 
   explicit KafkaProducer(KafkaProducerConfig config);
-
-
   ~KafkaProducer();
 
   KafkaProducer(const KafkaProducer&) = delete;
@@ -37,15 +35,17 @@ class KafkaProducer {
    * string after this call returns.
    *
    * @param payload Message content to send
-   * @param error_message Optional output parameter for error details. If provided
-   *                      and send fails, contains human-readable error description.
+   * @param key Message key for partition selection. Kafka hashes this to select partition.
+   * @param errorMessage Optional output parameter for error details. If provided
+   *                     and send fails, contains human-readable error description.
    *
    * @return true if message was successfully queued for sending, false otherwise
    *
    * @note This is asynchronous - the message may not have been delivered when
    *       this function returns. Use flush() or destructor for guaranteed delivery.
    */
-  bool send_copy(std::string_view payload, std::string* error_message = nullptr);
+  bool sendCopy(std::string_view payload, std::string_view key = "",
+                std::string* errorMessage = nullptr);
 
  private:
   struct Impl;
@@ -66,8 +66,6 @@ class KafkaConsumer {
  public:
 
   explicit KafkaConsumer(KafkaConsumerConfig config);
-
-
   ~KafkaConsumer();
 
   KafkaConsumer(const KafkaConsumer&) = delete;
@@ -79,7 +77,7 @@ class KafkaConsumer {
    * Blocks for up to timeout_ms milliseconds waiting for a message. Returns
    * immediately if a message is available.
    *
-   * @param timeout_ms Maximum time to wait for a message in milliseconds
+   * @param timeoutMs Maximum time to wait for a message in milliseconds
    *
    * @return Message payload as string if available, nullopt if:
    *         - Timeout occurred with no messages
@@ -90,7 +88,7 @@ class KafkaConsumer {
    * @note This method must be called regularly (at least every few seconds) to
    *       maintain the consumer's liveness in the consumer group.
    */
-  std::optional<std::string> poll_payload(int timeout_ms);
+  std::optional<std::string> pollPayload(int timeoutMs);
 
  private:
   struct Impl;
