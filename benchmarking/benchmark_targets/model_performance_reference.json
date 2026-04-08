@@ -1,24 +1,4 @@
 {
-    "Qwen3-VL-32B-Instruct": {
-        "t3k": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 512,
-                "image_width": 512,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 150,
-                        "tput_user": 38
-                    }
-                }
-            }
-        ]
-    },
     "Qwen2.5-VL-3B-Instruct": {
         "n150": [
             {
