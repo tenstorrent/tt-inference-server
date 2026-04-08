@@ -29,6 +29,8 @@ class LoraInferenceRunner(BaseDeviceRunner):
     @log_execution_time("Lora Inference")
     def run(self, requests: list[CompletionRequest]):
         request = requests[0]
+        self._validate_request(request)
+
         max_cache_len: int = 128
         batch_size: int = 1
 
@@ -54,12 +56,22 @@ class LoraInferenceRunner(BaseDeviceRunner):
             request.max_tokens or 16,
             max_cache_len - input_args["input_ids"].shape[1],
         )
+        if max_tokens < 1:
+            raise ValueError(
+                f"Prompt fills the entire context window ({max_cache_len} tokens), no room to generate"
+            )
         input_args = self._transfer_inputs_to_device(input_args, self.device)
 
         output_tokens = self._run_generate(
             compiled_model, input_args, self.device, max_tokens
         )
         return ["".join(output_tokens)]
+
+    def _validate_request(self, request: CompletionRequest):
+        if isinstance(request.prompt, str) and not request.prompt.strip():
+            raise ValueError("Prompt must not be empty")
+        if isinstance(request.prompt, list) and len(request.prompt) == 0:
+            raise ValueError("Prompt token list must not be empty")
 
     def _load_adapter(self, adapter_info: AdapterInfo):
         if self._active_adapter == adapter_info:
@@ -73,6 +85,8 @@ class LoraInferenceRunner(BaseDeviceRunner):
         self.logger.info(f"Loaded adapter from {adapter_info.adapter_path}")
 
     def _load_base_model(self, model_name: str):
+        if not model_name:
+            raise ValueError("No base model specified: set 'model' in the request or configure model_weights_path")
         if self._base_model is not None and self._base_model.name_or_path == model_name:
             return
         self._teardown_compiled()
