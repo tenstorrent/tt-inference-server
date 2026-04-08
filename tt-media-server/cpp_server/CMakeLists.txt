@@ -377,13 +377,7 @@ target_link_libraries(tokenizer_benchmark PRIVATE llm_engine)
 
 # Kafka messaging support (optional)
 if(KAFKA_ENABLED)
-    # nlohmann_json for JSON parsing (used by migration_worker)
-    FetchContent_Declare(
-        nlohmann_json
-        GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG        v3.11.3
-    )
-    FetchContent_MakeAvailable(nlohmann_json)
+    # JsonCpp (same as main server) for migration_worker JSON parsing
 
     # Kafka messaging library
     find_library(RDKAFKA_LIB rdkafka REQUIRED)
@@ -418,7 +412,7 @@ if(KAFKA_ENABLED)
     target_link_libraries(migration_worker PUBLIC
         messaging
         spdlog::spdlog
-        nlohmann_json::nlohmann_json
+        JsonCpp::JsonCpp
     )
 else()
     message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")

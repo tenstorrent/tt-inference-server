@@ -4,7 +4,8 @@
 #include "worker/migration_worker.hpp"
 
 #include <chrono>
-#include <nlohmann/json.hpp>
+#include <json/json.h>
+#include <sstream>
 
 #include "utils/logger.hpp"
 
@@ -12,43 +13,34 @@ namespace tt::worker {
 
 MigrationWorker::MigrationWorker(MigrationWorkerConfig config)
     : config_(std::move(config)) {
-  // Create Kafka consumer with the provided configuration
   consumer_ = std::make_unique<tt::messaging::KafkaConsumer>(
       tt::messaging::KafkaConsumerConfig{
           .brokers = config_.brokers,
           .topic = config_.topic,
-          .group_id = config_.group_id
+          .group_id = config_.group_id,
       });
 
   TT_LOG_INFO("[MigrationWorker] Initialized with brokers={}, topic={}, group={}",
               config_.brokers, config_.topic, config_.group_id);
 }
 
-MigrationWorker::~MigrationWorker() {
-  stop();
-}
+MigrationWorker::~MigrationWorker() { stop(); }
 
 void MigrationWorker::start() {
-  // Check if already running (CAS: compare-and-swap)
   bool expected = false;
   if (!running_.compare_exchange_strong(expected, true)) {
     TT_LOG_WARN("[MigrationWorker] Already running, ignoring start() call");
     return;
   }
-
-  // Launch worker thread
   workerThread_ = std::thread([this] { consumerLoop(); });
   TT_LOG_INFO("[MigrationWorker] Started consumer loop thread");
 }
 
 void MigrationWorker::stop() {
-  // Check if already stopped
   bool expected = true;
   if (!running_.compare_exchange_strong(expected, false)) {
-    return;  // Already stopped
+    return;
   }
-
-  // Wait for worker thread to finish
   if (workerThread_.joinable()) {
     workerThread_.join();
     TT_LOG_INFO("[MigrationWorker] Worker thread joined");
@@ -58,72 +50,60 @@ void MigrationWorker::stop() {
 void MigrationWorker::consumerLoop() {
   TT_LOG_INFO("[MigrationWorker] Entering consumer loop");
 
-  // Poll loop: runs until stopped
   while (running_.load(std::memory_order_relaxed)) {
-    // Poll with 1ms timeout for low latency
-    // Note: Must poll regularly to maintain consumer group membership
     auto msg = consumer_->pollPayload(1);
 
     if (msg.has_value()) {
-      // Message received - process it
-  // Capture receive timestamp immediately for accurate latency measurementm
-
       auto receiveTime = std::chrono::system_clock::now();
-
       processOffloadRequest(*msg, receiveTime);
     }
-    // If no message (timeout or error), loop continues
   }
 
   TT_LOG_INFO("[MigrationWorker] Exited consumer loop");
 }
 
-void MigrationWorker::processOffloadRequest(const std::string& message, auto receiveTime) {
-  auto receiveUs = std::chrono::duration_cast<std::chrono::microseconds>(
-      receiveTime.time_since_epoch()).count();
+void MigrationWorker::processOffloadRequest(
+    const std::string& message,
+    std::chrono::system_clock::time_point receiveTime) {
+  const auto receiveUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                             receiveTime.time_since_epoch())
+                             .count();
 
-  try {
-    // Parse JSON message
-    auto json = nlohmann::json::parse(message);
-
-    // Extract timestamp from producer
-    int64_t sentUs = json["timestamp_us"].get<int64_t>();
-
-    // Calculate overhead (latency)
-    int64_t overheadUs = receiveUs - sentUs;
-    double overheadMs = overheadUs / 1000.0;
-
-    // Extract additional fields (optional, for logging)
-    std::string action = json.value("action", "unknown");
-    std::string sessionId = json.value("session_id", "unknown");
-    int currentCount = json.value("current_session_count", 0);
-    int maxSessions = json.value("max_sessions", 0);
-
-    // Log the offload request with overhead measurement
-    TT_LOG_WARN("[MigrationWorker] ✅ OFFLOAD REQUEST RECEIVED");
-    TT_LOG_WARN("[MigrationWorker]   Action:      {}", action);
-    TT_LOG_WARN("[MigrationWorker]   Session ID:  {}", sessionId);
-    TT_LOG_WARN("[MigrationWorker]   Sessions:    {}/{} ({:.1f}%)",
-                currentCount, maxSessions,
-                maxSessions > 0 ? (currentCount * 100.0 / maxSessions) : 0.0);
-    TT_LOG_WARN("[MigrationWorker]   Sent at:     {} μs", sentUs);
-    TT_LOG_WARN("[MigrationWorker]   Received at: {} μs", receiveUs);
-    TT_LOG_WARN("[MigrationWorker]   ⏱️  OVERHEAD:  {} μs ({:.3f} ms)",
-                overheadUs, overheadMs);
-    TT_LOG_WARN("[MigrationWorker]   Raw payload: {}", message);
-
-  // TODO LJUBICA: actual implementation
-  // 1. Parse session properly
-  // 2. Allocate memory slot
-  // 3. Load KV cache
-  // etc. 
-
-  } catch (const nlohmann::json::exception& e) {
-    TT_LOG_ERROR("[MigrationWorker] Failed to parse JSON message: {}", e.what());
+  Json::Value root;
+  Json::CharReaderBuilder builder;
+  std::istringstream iss(message);
+  std::string parseErrors;
+  if (!Json::parseFromStream(builder, iss, &root, &parseErrors)) {
+    TT_LOG_ERROR("[MigrationWorker] JSON parse failed: {}", parseErrors);
     TT_LOG_ERROR("[MigrationWorker] Invalid message: {}", message);
-  } catch (const std::exception& e) {
-    TT_LOG_ERROR("[MigrationWorker] Error processing message: {}", e.what());
+    return;
   }
+
+  if (!root.isMember("timestamp_us") || !root["timestamp_us"].isIntegral()) {
+    TT_LOG_ERROR("[MigrationWorker] Missing or non-integral timestamp_us");
+    TT_LOG_ERROR("[MigrationWorker] Invalid message: {}", message);
+    return;
+  }
+
+  const Json::Int64 sentUs = root["timestamp_us"].asInt64();
+  const Json::Int64 overheadUs = receiveUs - sentUs;
+  const double overheadMs = static_cast<double>(overheadUs) / 1000.0;
+
+  const std::string action = root.get("action", Json::Value("unknown")).asString();
+  const std::string sessionId = root.get("session_id", Json::Value("unknown")).asString();
+  const int currentCount = root.get("current_session_count", Json::Value(0)).asInt();
+  const int maxSessions = root.get("max_sessions", Json::Value(0)).asInt();
+
+  TT_LOG_WARN("[MigrationWorker] ✅ OFFLOAD REQUEST RECEIVED");
+  TT_LOG_WARN("[MigrationWorker]   Action:      {}", action);
+  TT_LOG_WARN("[MigrationWorker]   Session ID:  {}", sessionId);
+  TT_LOG_WARN("[MigrationWorker]   Sessions:    {}/{} ({:.1f}%)",
+              currentCount, maxSessions,
+              maxSessions > 0 ? (currentCount * 100.0 / maxSessions) : 0.0);
+  TT_LOG_WARN("[MigrationWorker]   Sent at:     {} μs", sentUs);
+  TT_LOG_WARN("[MigrationWorker]   Received at: {} μs", receiveUs);
+  TT_LOG_WARN("[MigrationWorker]   ⏱️  OVERHEAD:  {} μs ({:.3f} ms)", overheadUs, overheadMs);
+  TT_LOG_WARN("[MigrationWorker]   Raw payload: {}", message);
 }
 
-}
+}  // namespace tt::worker
