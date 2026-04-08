@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "services/memory_manager.hpp"
+#include "services/memory_services/memory_manager.hpp"
 
 #include "utils/logger.hpp"
 
@@ -34,19 +34,6 @@ std::optional<domain::ManageMemoryTask> MemoryManager::getRequest() {
     return task;
   }
   return std::nullopt;
-}
-
-void MemoryManager::handleResponse(int slotId) {
-  domain::ManageMemoryResult result{};
-  result.status = domain::ManageMemoryStatus::SUCCESS;
-  result.slotIds = {static_cast<std::uint32_t>(slotId)};
-
-  TT_LOG_DEBUG("[MemoryManager] Sending response - SlotID: {}, Status: SUCCESS",
-               slotId);
-
-  resultQueue->push(result);
-
-  TT_LOG_DEBUG("[MemoryManager] Response sent successfully");
 }
 
 }  // namespace tt::services

@@ -1,3 +1,5 @@
+#pragma once
+
 #include "domain/llm_request.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
 

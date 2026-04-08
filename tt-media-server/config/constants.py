@@ -25,6 +25,7 @@ class SupportedModels(Enum):
     QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
+    LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B"
     LLAMA_3_1_70B = "meta-llama/Llama-3.1-70B"
     QWEN_3_4B = "Qwen/Qwen3-4B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
@@ -51,6 +52,7 @@ class ModelNames(Enum):
     MICROSOFT_RESNET_50 = "resnet-50"
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
+    YOLOV4 = "yolov4"
     EFFICIENTNET = "efficientnet"
     SEGFORMER = "segformer"
     UNET = "unet"
@@ -59,6 +61,7 @@ class ModelNames(Enum):
     QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
     LLAMA_3_2_3B = "Llama-3.2-3B"
+    LLAMA_3_1_8B = "Llama-3.1-8B"
     LLAMA_3_1_70B = "Llama-3.1-70B"
     QWEN_3_4B = "Qwen3-4B"
     SPEECHT5_TTS = "speecht5_tts"
@@ -79,6 +82,7 @@ class ModelRunners(Enum):
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
     VLLM = "vllm"
+    TT_YOLOV4 = "tt-yolov4"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
@@ -90,6 +94,7 @@ class ModelRunners(Enum):
     TT_XLA_SEGFORMER = "tt-xla-segformer"
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
+    TRAINING_LLAMA_LORA = "training-llama-lora"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     MOCK = "mock"
     SP_RUNNER = "sp_runner"
@@ -142,6 +147,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_SEGFORMER,
         ModelRunners.TT_XLA_UNET,
         ModelRunners.TT_XLA_VIT,
+        ModelRunners.TT_YOLOV4,
     },
     ModelServices.AUDIO: {
         ModelRunners.TT_WHISPER,
@@ -153,6 +159,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.TRAINING: {
         ModelRunners.TRAINING_GEMMA_LORA,
+        ModelRunners.TRAINING_LLAMA_LORA,
     },
     ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
@@ -191,6 +198,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
+    ModelRunners.TRAINING_LLAMA_LORA: {ModelNames.LLAMA_3_1_8B},
     ModelRunners.TT_XLA_SDXL: {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
         ModelNames.STABLE_DIFFUSION_XL_512,
@@ -210,6 +218,18 @@ class DeviceTypes(Enum):
     P150X8 = "p150x8"  # BH LoudBox - 8x P150 (2,4 mesh)
     P300X2 = "p300x2"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
     BLACKHOLE_GALAXY = "bh-galaxy"
+
+
+class TrainingMeshShapes(Enum):
+    N150 = (1, 1)
+    P150 = (1, 1)
+    P300 = (1, 2)
+
+
+TRAINING_RUNNER_SUPPORTED_DEVICES = {
+    ModelRunners.TRAINING_GEMMA_LORA: {DeviceTypes.P150, DeviceTypes.N150},
+    ModelRunners.TRAINING_LLAMA_LORA: {DeviceTypes.P300},
+}
 
 
 class QueueType(Enum):
@@ -275,6 +295,7 @@ class JobTypes(Enum):
 
 class DatasetLoaders(Enum):
     SST2 = "sst2"
+    ALPACA = "alpaca"
 
 
 class TrainingTrainers(Enum):
@@ -284,10 +305,15 @@ class TrainingTrainers(Enum):
 
 class ModelDisplayNames(Enum):
     GEMMA_1_1_2B_IT = "Gemma 1.1 2B Instruct"
+    LLAMA_3_1_8B = "Llama 3.1 8B"
 
 
 class TrainingOptimizers(Enum):
     ADAMW = "adamw"
+
+
+# Base directory for storing fine-tuned adapter outputs.
+TRAINING_STORE_ADAPTERS_DIR = "model_store/"
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports

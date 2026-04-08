@@ -30,6 +30,9 @@ LLMService::LLMService() : tokenizer_(&tt::utils::activeTokenizer()) {
   size_t numWorkers = tt::config::numWorkers();
   max_queue_size_ = tt::config::maxQueueSize();
 
+  const auto stopIds = tokenizer_->stopTokenIds();
+  stop_token_set_ = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
+
   worker_manager_ = std::make_unique<tt::worker::WorkerManager>(numWorkers);
   reasoning_parser_ = std::make_unique<ReasoningParser>();
 
@@ -67,6 +70,7 @@ std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
 
 void LLMService::preProcess(domain::LLMRequest& request) const {
   BaseService::preProcess(request);
+
   if (std::holds_alternative<std::string>(request.prompt)) {
     auto text = std::get<std::string>(request.prompt);
     static auto cfg = tt::utils::getTokenizerConfig();
@@ -135,9 +139,9 @@ std::string decodeToken(
                        std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>&
         decoders,
     const tt::utils::Tokenizer* tokenizer, uint32_t taskId, uint32_t tokenId,
-    bool isFinal) {
+    bool isFinal, bool skipSpecial) {
   auto& decoder = decoders[taskId];
-  if (!decoder) decoder = tokenizer->createStreamDecoder();
+  if (!decoder) decoder = tokenizer->createStreamDecoder(skipSpecial);
   std::string delta = decoder->step(static_cast<int>(tokenId));
   if (isFinal) delta += decoder->flush();
   return delta;
@@ -200,8 +204,8 @@ domain::LLMStreamChunk buildStreamChunk(
 
 }  // namespace
 
-std::optional<std::function<void(domain::LLMStreamChunk&, bool)>>
-LLMService::resolveCallback(uint32_t taskId, bool isFinal) {
+std::optional<LLMService::StreamCallbackEntry> LLMService::resolveCallback(
+    uint32_t taskId, bool isFinal) {
   if (isFinal) {
     auto val = stream_callbacks_.take(taskId);
     if (!val.has_value()) return std::nullopt;
@@ -226,10 +230,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     return;
   }
 
-  const auto stopIds = tokenizer_->stopTokenIds();
-  const std::unordered_set<int64_t> stopTokenSet(stopIds.begin(),
-                                                 stopIds.end());
-
   std::unordered_map<uint32_t,
                      std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>
       streamDecoders;
@@ -251,15 +251,16 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       uint32_t taskId = token.task_id;
       bool isFinal = token.isFinal();
 
-      auto callback = resolveCallback(taskId, isFinal);
-      if (!callback.has_value()) {
+      auto entry = resolveCallback(taskId, isFinal);
+      if (!entry.has_value()) {
         streamDecoders.erase(taskId);
         metricsSampling.erase(taskId);
         continue;
       }
 
-      std::string delta = decodeToken(streamDecoders, tokenizer_, taskId,
-                                      token.token_id, isFinal);
+      std::string delta =
+          decodeToken(streamDecoders, tokenizer_, taskId, token.token_id,
+                      isFinal, entry->skip_special_tokens);
       recordTokenMetrics(metricsSampling, taskId);
 
       TokenParseResult parseResult{ContentType::ANSWER, delta, true};
@@ -272,8 +273,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         continue;
       }
 
-      auto response = buildStreamChunk(token, parseResult, stopTokenSet);
-      callback.value()(response, isFinal);
+      auto response = buildStreamChunk(token, parseResult, stop_token_set_);
+      entry->callback(response, isFinal);
 
       if (isFinal) {
         streamDecoders.erase(taskId);
@@ -384,7 +385,8 @@ void LLMService::processStreamingRequest(
   tt::metrics::ServerMetrics::instance().setQueueDepth(
       static_cast<double>(pending_tasks_.load()));
 
-  stream_callbacks_.insert(taskId, std::move(callback));
+  StreamCallbackEntry entry{std::move(callback), request.skip_special_tokens};
+  stream_callbacks_.insert(taskId, std::move(entry));
 
   if (reasoning_parser_) {
     reasoning_parser_->initializeTask(taskId);
@@ -400,12 +402,12 @@ void LLMService::processStreamingRequest(
       taskId,
       static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
       std::move(tokenIds));
-  sequence->numPromptTokens = prompt.size();
+  sequence->setNumPromptTokens(prompt.size());
   if (request.slotId.has_value()) {
-    sequence->setKVCacheAddress(request.slotId.value());
+    sequence->setKVCacheSlot(request.slotId.value());
   }
-  sequence->samplingParams = std::make_unique<llm_engine::SamplingParams>(
-      tt::utils::mapper::mapSamplingParams(request));
+  sequence->setSamplingParams(std::make_unique<llm_engine::SamplingParams>(
+      tt::utils::mapper::mapSamplingParams(request)));
   queue_manager_->task_queue->push(*std::move(sequence));
 }
 
@@ -420,10 +422,11 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
     }
   }
 }
+
 void LLMService::abortRequest(uint32_t taskId) {
   // Atomically remove the stream callback and decrement pending_tasks_.
-  auto cb = stream_callbacks_.take(taskId);
-  if (cb.has_value()) {
+  auto entry = stream_callbacks_.take(taskId);
+  if (entry.has_value()) {
     pending_tasks_.fetch_sub(1);
     tt::metrics::ServerMetrics::instance().setQueueDepth(
         static_cast<double>(pending_tasks_.load()));
@@ -433,12 +436,12 @@ void LLMService::abortRequest(uint32_t taskId) {
   // (e.g. processRequest's cv.wait) is unblocked.  For streaming requests the
   // controller sets done=true BEFORE calling abortRequest, so the callback's
   // done->load() check returns immediately — no SSE data is sent.
-  if (cb.has_value()) {
+  if (entry.has_value()) {
     domain::LLMStreamChunk abortResponse{taskId};
     domain::LLMChoice choice;
     choice.finish_reason = "abort";
     abortResponse.choices.push_back(std::move(choice));
-    cb.value()(abortResponse, /*isFinal=*/true);
+    entry->callback(abortResponse, /*isFinal=*/true);
   }
 
   // Clean up any reasoning-parser state so task_states_ does not leak.

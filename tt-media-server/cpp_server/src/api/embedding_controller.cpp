@@ -15,6 +15,7 @@
 
 #include "api/embedding_controller.hpp"
 #include "api/error_response.hpp"
+#include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 #include "services/base_service.hpp"
@@ -74,7 +75,7 @@ class CallbackThreadPool {
 
 // Global thread pool for callbacks
 CallbackThreadPool& getCallbackPool() {
-  static CallbackThreadPool pool(16);  // 16 threads for handling callbacks
+  static CallbackThreadPool pool(tt::config::defaults::CALLBACK_POOL_THREADS);
   return pool;
 }
 }  // namespace

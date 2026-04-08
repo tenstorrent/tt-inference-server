@@ -14,13 +14,11 @@
 
 namespace tt::worker {
 
-using namespace std;
-
 struct WorkerConfig {
-  unordered_map<string, string> env_vars;
-  shared_ptr<llm_engine::ITaskQueue> task_queue;
-  shared_ptr<tt::ipc::TokenRingBuffer<65536>> result_queue;
-  shared_ptr<tt::ipc::ICancelQueue> cancel_queue;
+  std::unordered_map<std::string, std::string> env_vars;
+  std::shared_ptr<llm_engine::ITaskQueue> task_queue;
+  std::shared_ptr<tt::ipc::TokenRingBuffer<65536>> result_queue;
+  std::shared_ptr<tt::ipc::ICancelQueue> cancel_queue;
   int worker_id;
   tt::config::RunnerConfig runner_config;
 };
@@ -37,7 +35,6 @@ class SingleProcessWorker {
   void start();
   void stop();
 
-  // Public member variables for compatibility with existing LLMService
   pid_t pid{-1};
   bool is_ready{false};
   bool is_alive{true};
@@ -45,7 +42,7 @@ class SingleProcessWorker {
   WorkerConfig cfg;
 
  private:
-  unique_ptr<tt::runners::IRunner> runner_;
+  std::unique_ptr<tt::runners::IRunner> runner_;
 };
 
 }  // namespace tt::worker

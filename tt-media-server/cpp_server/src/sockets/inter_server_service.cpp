@@ -10,10 +10,7 @@
 
 namespace tt::sockets {
 
-InterServerService::InterServerService()
-    : socket_manager_(SocketManager::getInstance()) {
-  setupMessageHandlers();
-}
+InterServerService::InterServerService() { setupMessageHandlers(); }
 
 InterServerService::~InterServerService() { stop(); }
 

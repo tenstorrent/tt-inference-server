@@ -1,14 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+import os
+import io
+import zipfile
 from config.constants import JobTypes
+from config.settings import get_settings
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
-from utils.build_catalog import TRAINING_CATALOG
+from utils.build_catalog import build_training_catalog
 
 router = APIRouter()
 
@@ -21,7 +25,9 @@ async def get_catalog(api_key: str = Security(get_api_key)):
     Returns:
         JSONResponse: Full training catalog.
     """
-    return JSONResponse(content=TRAINING_CATALOG)
+    settings = get_settings()
+    catalog = build_training_catalog(settings.model_runner)
+    return JSONResponse(content=catalog)
 
 
 @router.post("/jobs")
@@ -103,16 +109,15 @@ async def get_training_metrics(
     Retrieve training metrics for a fine-tuning job.
 
     Returns:
-        JSONResponse: List of metric points recorded during training.
+        JSONResponse: Training metrics for the job.
 
     Raises:
         HTTPException: If job not found.
     """
-    job_data = service.get_job_metadata(job_id)
-    if not job_data:
+    try:
+        metrics = service.get_job_metrics(job_id)
+    except ValueError:
         raise HTTPException(404, "Job not found")
-
-    metrics = service.get_job_metrics(job_id)
     return JSONResponse(content=metrics)
 
 
@@ -147,25 +152,19 @@ async def list_fine_tuning_checkpoints(
     api_key: str = Security(get_api_key),
 ):
     """
-    List checkpoints for a fine-tuning job.
+    List available checkpoints for a fine-tuning job.
 
     Returns:
-        JSONResponse: List of model checkpoints.
+        JSONResponse: List of checkpoints for the job.
 
     Raises:
         HTTPException: If job not found.
     """
     try:
-        # TODO: Implement file retrieval instead of result path, and discuss if we return
-        # all checkpoints or just the last model weights state which is saved to result_path
-        result_path = service.get_job_result_path(job_id)
-        return JSONResponse(
-            content={"object": "string", "data": result_path, "has_more": False}
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get checkpoints: {str(e)}"
-        )
+        checkpoints = service.get_job_checkpoints(job_id)
+    except ValueError:
+        raise HTTPException(404, "Job not found")
+    return JSONResponse(content={"checkpoints": checkpoints})
 
 
 @router.get("/jobs/{job_id}/logs")
@@ -183,8 +182,49 @@ async def get_job_logs(
     Raises:
         HTTPException: If job not found.
     """
-    job_data = service.get_job_metadata(job_id)
-    if not job_data:
+    try:
+        logs = service.get_job_logs(job_id)
+    except ValueError:
         raise HTTPException(404, "Job not found")
-    logs = service.get_job_logs(job_id)
     return JSONResponse(content=logs)
+
+
+@router.get("/jobs/{job_id}/checkpoints/{checkpoint_id}")
+async def download_checkpoint(
+    job_id: str,
+    checkpoint_id: str,
+    service: BaseJobService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """
+    Download a checkpoint as a zip archive.
+
+    Returns:
+        StreamingResponse: Zip file containing the checkpoint adapter weights.
+
+    Raises:
+        HTTPException: If job or checkpoint not found.
+    """
+    try:
+        checkpoint_path = service.get_checkpoint_download_path(job_id, checkpoint_id)
+    except ValueError:
+        raise HTTPException(404, "Job not found")
+    if not checkpoint_path:
+        raise HTTPException(
+            404, "Checkpoint not found or no longer available for download"
+        )
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _, files in os.walk(checkpoint_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, checkpoint_path)
+                zf.write(file_path, arcname)
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename=adapter_{checkpoint_id}.zip"
+        },
+    )

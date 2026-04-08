@@ -6,16 +6,19 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
-#include <memory>
+#include <pipeline_manager/pipeline_manager_types.hpp>
 #include <thread>
 
 #include "config/settings.hpp"
+#include "domain/manage_memory.hpp"
 #include "ipc/token_push.hpp"
-#include "profiling/tracy.hpp"
-#include "services/contiguous_memory_manager.hpp"
+#include "llm_runner/sequence.hpp"
+#include "runners/sp_pipeline_runner/sp_pipeline_utils.hpp"
+#include "services/memory_services/sp_pipeline_memory_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
+namespace utils = sp_pipeline_utils;
 
 SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
                                    ipc::TokenRingBuffer<65536>* resultQueue,
@@ -23,88 +26,96 @@ SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
-      taskQueue(taskQueue),
-      decodeQueue(config.max_in_flight_count),
-      maxInFlightCount(config.max_in_flight_count * 30) {
-  if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY ||
-      tt::config::llmMode() == config::LLMMode::REGULAR) {
-    memoryManager = std::make_unique<services::ContiguousMemoryManager>();
-    memoryThread = std::thread([this] { memoryLoop(); });
-  }
-
-  auto decodeCb = [this](const llm_engine::TokenResult& result) {
-    while (!decodeQueue.push(result)) {
-      std::this_thread::yield();
-    }
-  };
-
-  modelRunner = sp_pipeline::makeModelRunner(config, std::move(decodeCb));
+      taskQueue(taskQueue) {
+  TT_LOG_INFO(
+      "SpPipelineRunner: Constructing PipelineManager with SocketConfig...");
+  pm::SocketConfig socketConfig{
+      .h2d_socket_id = tt::config::h2dSocketId(),
+      .d2h_socket_id = tt::config::d2hSocketId(),
+      .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
+      .use_deepseek_md_format = false};
+  pm::ManagerParams managerParams{
+      .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
+  pipelineManager =
+      std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
+  TT_LOG_INFO(
+      "SpPipelineRunner: PipelineManager constructed, calling start()...");
+  pipelineManager->start();
+  TT_LOG_INFO(
+      "SpPipelineRunner: PipelineManager started, creating MemoryManager...");
+  memoryManager = std::make_unique<tt::services::SpPipelineMemoryManager>(
+      *pipelineManager, [this](uint32_t slotId) { evictSlot(slotId); });
+  TT_LOG_INFO("SpPipelineRunner: Constructor complete");
 }
 
 SpPipelineRunner::~SpPipelineRunner() {
   stop();
-  if (memoryThread.joinable()) {
-    memoryThread.join();
-  }
-  if (modelRunner) {
-    modelRunner->exit();
+  if (pipelineManager) {
+    pipelineManager->stop();
   }
 }
 
 void SpPipelineRunner::run() {
   while (!stopped.load(std::memory_order_relaxed)) {
-    step();
+    try {
+      step();
+    } catch (const std::exception& e) {
+      TT_LOG_ERROR("SpPipelineRunner: Exception in run: {}", e.what());
+      throw;
+    }
   }
 }
 
 bool SpPipelineRunner::warmup() {
-  // Create a warmup sequence with a single token
   llm_engine::SamplingParams warmupParams;
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
-  std::vector<int64_t> warmupTokens = {1};  // Single token
-  uint32_t warmupTaskId = 0;                // Use 0 for warmup task
+  std::vector<int64_t> warmupTokens = {1};
+  uint32_t warmupTaskId = 0;
 
   auto warmupSeq = std::make_unique<llm_engine::Sequence>(
-      warmupTaskId,
-      1,  // block_size (doesn't matter for warmup)
-      warmupTokens, warmupParams);
+      warmupTaskId, 1, warmupTokens, warmupParams);
 
-  modelRunner->write(warmupSeq->taskId, warmupSeq->tokenIds, 1,
-                     sp_pipeline::RequestPhase::PREFILL);
+  TT_LOG_INFO("SpPipelineRunner: warmup - pushing ALLOCATE request...");
+  pipelineManager->push_request(utils::makeAllocateRequest(0));
 
-  // Wait for the response token (with timeout)
-  const int maxAttempts = 1000;  // ~10 seconds with 10ms sleep
+  TT_LOG_INFO("SpPipelineRunner: warmup - waiting for ALLOCATE response...");
+  pm::PMResponse response{};
+  while (!pipelineManager->try_pop_response(response)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  auto slotId = response.slot_id;
+  TT_LOG_INFO("SpPipelineRunner: warmup - got slot_id={}", slotId);
+  if (slotId == pm::INVALID_SLOT) {
+    TT_LOG_ERROR("SpPipelineRunner: Warmup failed with error");
+    return false;
+  }
+
+  TT_LOG_INFO("SpPipelineRunner: warmup - pushing SUBMIT request...");
+  pipelineManager->push_request(utils::makeSubmitRequest(slotId, *warmupSeq));
+  const int maxAttempts = 1000;
   int attempts = 0;
   bool receivedToken = false;
+  auto output = pm::OutputMessage{};
 
   while (attempts < maxAttempts && !receivedToken) {
-    std::vector<llm_engine::TokenResult> results;
-    decodeQueue.popMany(results, maxInFlightCount);
-    for (const auto& dr : results) {
-      if (dr.taskId == warmupTaskId) {
-        if (dr.isError) {
-          TT_LOG_ERROR("SpPipelineRunner: Warmup failed with error");
-          return false;
-        }
-        receivedToken = true;
-        break;
-      }
+    receivedToken = pipelineManager->try_pop_output(output);
+    if (receivedToken) {
+      break;
     }
-
-    if (!receivedToken) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      attempts++;
-    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    attempts++;
   }
 
   if (!receivedToken) {
-    TT_LOG_ERROR("SpPipelineRunner: Warmup timed out waiting for token");
+    TT_LOG_ERROR("[SpPipelineRunner] Warmup timed out waiting for token");
     return false;
   }
 
   TT_LOG_INFO("SpPipelineRunner: Warmup successful");
+  pipelineManager->push_request(utils::makeCancelRequest(slotId));
   return true;
 }
 
@@ -112,82 +123,102 @@ void SpPipelineRunner::stop() {
   stopped.store(true, std::memory_order_relaxed);
 }
 
-void SpPipelineRunner::memoryLoop() {
-  while (!stopped.load(std::memory_order_relaxed)) {
-    auto task = memoryManager->getRequest();
-    if (task) {
-      memoryManager->handleRequest(*task);
-    } else {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
+void SpPipelineRunner::step() {
+  auto memoryRequest = getMemoryRequest();
+  if (memoryRequest.has_value()) {
+    handleMemoryRequest(*memoryRequest);
+  }
+  auto response = getResponse();
+  if (response.has_value()) {
+    handleResponse(*response);
+  }
+  auto output = getOutput();
+  if (output.has_value()) {
+    handleOutput(*output);
+  }
+  auto request = getRequest();
+  if (request) {
+    handleRequest(std::move(request));
   }
 }
 
-void SpPipelineRunner::step() {
-  drainDecodeResults();
+std::optional<pm::PMResponse> SpPipelineRunner::getResponse() {
+  pm::PMResponse response;
+  if (pipelineManager->try_pop_response(response)) {
+    return response;
+  }
+  return std::nullopt;
+}
 
-  if (inFlightCount >= maxInFlightCount) {
+std::optional<pm::OutputMessage> SpPipelineRunner::getOutput() {
+  pm::OutputMessage output;
+  if (pipelineManager->try_pop_output(output)) {
+    return output;
+  }
+  return std::nullopt;
+}
+
+std::unique_ptr<llm_engine::Sequence> SpPipelineRunner::getRequest() {
+  auto req = taskQueue->tryPop();
+  if (!req) return nullptr;
+  return req;
+}
+
+inline void SpPipelineRunner::handleMemoryRequest(
+    const tt::domain::ManageMemoryTask& request) {
+  memoryManager->handleRequest(request);
+}
+
+inline void SpPipelineRunner::handleResponse(const pm::PMResponse& response) {
+  memoryManager->handleResponse(response.request_id, response.slot_id);
+}
+
+inline std::optional<tt::domain::ManageMemoryTask>
+SpPipelineRunner::getMemoryRequest() {
+  return memoryManager->getRequest();
+}
+
+void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
+  auto it = running.find(output.slot_id);
+  if (it == running.end()) {
+    TT_LOG_ERROR("SpPipelineRunner: Output for unknown slot");
     return;
   }
-
-  auto seq = taskQueue->tryPop();
-  if (!seq) return;
-
-  {
-    ZoneScopedN("SpPipelineRunner::write_to_device");
-    uint32_t taskId = seq->taskId;
-
-    if (!seq->samplingParams->max_tokens.has_value()) {
-      seq->samplingParams->max_tokens =
-          static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
-    }
-
-    modelRunner->write(taskId, seq->tokenIds,
-                       seq->samplingParams->max_tokens.value(),
-                       sp_pipeline::RequestPhase::PREFILL);
-
-    activeSequences.emplace(taskId, std::move(seq));
-    ++inFlightCount;
-  }
+  auto& seq = *it->second;
+  seq.appendToken(output.token_id);
+  bool finished = output.is_complete || stopTokenIds.count(output.token_id);
+  ipc::pushToken(*resultQueue, seq.taskId, output.token_id, finished);
 }
 
-void SpPipelineRunner::drainDecodeResults() {
-  std::vector<llm_engine::TokenResult> results;
-  decodeQueue.popMany(results, maxInFlightCount);
-  for (const auto& dr : results) {
-    auto it = activeSequences.find(dr.taskId);
-    if (it == activeSequences.end()) {  // safeguard for too many decode results
-      TT_LOG_WARN(
-          "SpPipelineRunner: task_id not found in active_sequences_: {}",
-          dr.taskId);
-      continue;
-    }
-    llm_engine::Sequence* seq = it->second.get();
+inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
+  running.erase(slotId);
+}
 
-    if (dr.isError) {
-      ipc::pushErrorToken(*resultQueue, dr.taskId);
-      activeSequences.erase(it);
-      --inFlightCount;
-      continue;
-    }
+void SpPipelineRunner::handleRequest(
+    std::unique_ptr<llm_engine::Sequence> request) {
+  auto slotId = request->getKVCacheSlot();
+  assert(slotId != tt::domain::INVALID_SLOT_ID);
 
-    seq->appendToken(static_cast<int64_t>(dr.tokenId));
+  auto it = running.find(slotId);
+  bool isNew = (it == running.end());
 
-    bool isStop = stopTokenIds.count(static_cast<int64_t>(dr.tokenId)) > 0;
-    bool reachedMaxTokens =
-        seq->samplingParams->max_tokens.has_value() &&
-        seq->numCompletionTokens() >=
-            static_cast<size_t>(seq->samplingParams->max_tokens.value());
-    bool finished =
-        (!seq->samplingParams->ignore_eos && isStop) || reachedMaxTokens;
-
-    ipc::pushToken(*resultQueue, dr.taskId, dr.tokenId, finished);
-
-    if (finished) {
-      activeSequences.erase(it);
-      --inFlightCount;
-    }
+  if (!isNew && it->second->taskId != request->taskId) {
+    TT_LOG_INFO(
+        "SpPipelineRunner::handleRequest slot={} reused by new task {} "
+        "(was task {}), treating as new SUBMIT",
+        slotId, request->taskId, it->second->taskId);
+    pipelineManager->push_request(utils::makeCancelRequest(slotId));
+    running.erase(it);
+    isNew = true;
   }
+
+  if (isNew) {
+    pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
+    running[slotId] = std::move(request);
+    return;
+  }
+  pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
+  running[slotId] = std::move(request);
 }
 
 }  // namespace tt::runners

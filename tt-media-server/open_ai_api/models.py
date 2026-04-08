@@ -38,7 +38,10 @@ def list_models():
     List current model. OpenAI-compatible endpoint.
     See: https://platform.openai.com/docs/api-reference/models/list
     """
-    model_id = settings.model_weights_path
+    if settings.model_service == "llm":
+        model_id = settings.vllm.model
+    else:
+        model_id = settings.model_weights_path
     if not model_id:
         return {"object": "list", "data": []}
 

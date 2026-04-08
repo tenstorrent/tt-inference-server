@@ -86,7 +86,10 @@ class LLMController : public drogon::HttpController<LLMController> {
    * Validate/create session, assign slot, populate request fields.
    * Throws std::runtime_error if session creation fails.
    */
-  SessionInfo resolveSession(domain::LLMRequest& req) const;
+  void resolveSession(std::shared_ptr<domain::LLMRequest> req,
+                      trantor::EventLoop* loop,
+                      std::function<void(SessionInfo)> onResolved,
+                      std::function<void(std::string_view)> onError) const;
 
   /**
    * Determine if disaggregated prefill should be used for this request.
