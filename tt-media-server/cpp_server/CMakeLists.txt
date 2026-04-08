@@ -429,4 +429,111 @@ set(SOURCES
     src/services/session_manager.cpp
     src/domain/session.cpp
     src/worker/single_process_worker.cpp
-    src/worker/worker_
+    src/worker/worker_manager.cpp
+    src/utils/service_factory.cpp
+    src/utils/service_container.cpp
+    src/utils/runner_factory.cpp
+    src/utils/mapper.cpp
+    src/api/embedding_controller.cpp
+    src/runners/embedding_runner.cpp
+    src/services/embedding_service.cpp
+    src/services/disaggregation_service.cpp
+    src/sockets/socket_manager.cpp
+    src/sockets/inter_server_service.cpp
+    src/metrics/metrics.cpp
+    src/api/metrics_controller.cpp
+)
+
+# Create executable
+add_executable(${PROJECT_NAME} ${SOURCES})
+
+# Include directories
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${rapidjson_SOURCE_DIR}/include
+    ${TT_METAL_INCLUDE_DIRS}
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
+# Link Drogon, llm_engine, and prometheus-cpp core
+if(USE_EXTERNAL_FMT)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog fmt::fmt prometheus-cpp::core)
+else()
+    target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog prometheus-cpp::core)
+endif()
+
+# Link Kafka messaging if enabled
+if(KAFKA_ENABLED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE messaging)
+endif()
+if(ENABLE_TRACY)
+    target_sources(${PROJECT_NAME} PRIVATE src/profiling/tracy_alloc.cpp)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE TT_ENABLE_TRACY)
+endif()
+target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
+
+# Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
+target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
+
+# Compiler warnings
+target_compile_options(${PROJECT_NAME} PRIVATE
+    -Wall
+    -Wextra
+    -Wpedantic
+)
+
+# Release optimizations
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    target_compile_options(${PROJECT_NAME} PRIVATE -O3)
+endif()
+
+
+# Consumer executable (separate Drogon instance for Kafka consumption)
+if(KAFKA_ENABLED)
+    add_executable(tt_consumer
+        src/consumer_main.cpp
+    )
+    target_include_directories(tt_consumer PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    )
+    target_link_libraries(tt_consumer PRIVATE
+        Drogon::Drogon
+        llm_engine
+        migration_worker
+        messaging
+    )
+    if(USE_EXTERNAL_FMT)
+        target_link_libraries(tt_consumer PRIVATE spdlog::spdlog fmt::fmt)
+    else()
+        target_link_libraries(tt_consumer PRIVATE spdlog::spdlog)
+    endif()
+    target_compile_options(tt_consumer PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
+# AddressSanitizer for executables (must be after all add_executable calls)
+if(SANITIZE_ADDRESS)
+    set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
+    set(ASAN_TARGETS
+        ${PROJECT_NAME}
+        scheduler_test
+        llm_runner_test
+        sequence_test
+        lockfree_queue_test
+        ipc_scheduler_smoke_test
+        cancel_queue_test
+        cancellation_test
+    )
+    if(KAFKA_ENABLED)
+        list(APPEND ASAN_TARGETS tt_consumer)
+    endif()
+    foreach(target IN LISTS ASAN_TARGETS)
+        target_compile_options(${target} PRIVATE ${ASAN_FLAGS})
+        target_link_options(${target} PRIVATE -fsanitize=address)
+    endforeach()
+endif()
