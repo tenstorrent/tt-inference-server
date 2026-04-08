@@ -103,6 +103,9 @@ find_package(Boost 1.71 REQUIRED)
 # Option for Tracy support
 option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
 
+# Option for Kafka support
+option(KAFKA_ENABLED "Enable Kafka messaging support" OFF)
+
 if(ENABLE_TRACY)
     FetchContent_Declare(
         tracy
@@ -372,6 +375,55 @@ set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 60)
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
 target_link_libraries(tokenizer_benchmark PRIVATE llm_engine)
 
+# Kafka messaging support (optional)
+if(KAFKA_ENABLED)
+    # nlohmann_json for JSON parsing (used by migration_worker)
+    FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG        v3.11.3
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+
+    # Kafka messaging library
+    find_library(RDKAFKA_LIB rdkafka REQUIRED)
+    find_library(RDKAFKACPP_LIB rdkafka++ REQUIRED)
+    find_path(RDKAFKA_INCLUDE_DIR librdkafka/rdkafka.h REQUIRED)
+
+    message(STATUS "Kafka support enabled")
+    message(STATUS "  librdkafka: ${RDKAFKA_LIB}")
+    message(STATUS "  librdkafka++: ${RDKAFKACPP_LIB}")
+    message(STATUS "  include: ${RDKAFKA_INCLUDE_DIR}")
+
+    add_library(messaging
+        src/messaging/kafka_client.cpp
+    )
+    target_include_directories(messaging PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${RDKAFKA_INCLUDE_DIR}
+    )
+    target_link_libraries(messaging PUBLIC
+        ${RDKAFKA_LIB}
+        ${RDKAFKACPP_LIB}
+        spdlog::spdlog
+    )
+
+    # Migration worker library (for consumer instances)
+    add_library(migration_worker
+        src/worker/migration_worker.cpp
+    )
+    target_include_directories(migration_worker PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(migration_worker PUBLIC
+        messaging
+        spdlog::spdlog
+        nlohmann_json::nlohmann_json
+    )
+else()
+    message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")
+endif()
+
 # Source files that aren't provided by llm_engine
 set(SOURCES
     src/main.cpp
@@ -418,6 +470,11 @@ if(USE_EXTERNAL_FMT)
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_engine cereal::cereal spdlog::spdlog prometheus-cpp::core)
 endif()
+
+# Link Kafka messaging if enabled
+if(KAFKA_ENABLED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE messaging)
+endif()
 if(ENABLE_TRACY)
     target_sources(${PROJECT_NAME} PRIVATE src/profiling/tracy_alloc.cpp)
     target_compile_definitions(${PROJECT_NAME} PRIVATE TT_ENABLE_TRACY)
@@ -439,6 +496,34 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(${PROJECT_NAME} PRIVATE -O3)
 endif()
 
+
+# Consumer executable (separate Drogon instance for Kafka consumption)
+if(KAFKA_ENABLED)
+    add_executable(tt_consumer
+        src/consumer_main.cpp
+    )
+    target_include_directories(tt_consumer PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    )
+    target_link_libraries(tt_consumer PRIVATE
+        Drogon::Drogon
+        llm_engine
+        migration_worker
+        messaging
+    )
+    if(USE_EXTERNAL_FMT)
+        target_link_libraries(tt_consumer PRIVATE spdlog::spdlog fmt::fmt)
+    else()
+        target_link_libraries(tt_consumer PRIVATE spdlog::spdlog)
+    endif()
+    target_compile_options(tt_consumer PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
 # AddressSanitizer for executables (must be after all add_executable calls)
 if(SANITIZE_ADDRESS)
     set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
@@ -452,6 +537,9 @@ if(SANITIZE_ADDRESS)
         cancel_queue_test
         cancellation_test
     )
+    if(KAFKA_ENABLED)
+        list(APPEND ASAN_TARGETS tt_consumer)
+    endif()
     foreach(target IN LISTS ASAN_TARGETS)
         target_compile_options(${target} PRIVATE ${ASAN_FLAGS})
         target_link_options(${target} PRIVATE -fsanitize=address)
