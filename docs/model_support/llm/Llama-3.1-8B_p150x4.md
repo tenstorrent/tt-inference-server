@@ -37,7 +37,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-e867533-22be241 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-55fd115-aa4ae1e \
   --model Llama-3.1-8B \
   --tt-device p150x4
 ```
@@ -57,7 +57,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🟢 Complete |
 | Max Batch Size | 128 |
 | Max Context Length | 131072 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers) |
-| tt-metal Commit | `e867533` |
-| vLLM Commit | `22be241` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-e867533-22be241` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers) |
+| tt-metal Commit | `55fd115` |
+| vLLM Commit | `aa4ae1e` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-55fd115-aa4ae1e` |
