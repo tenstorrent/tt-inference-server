@@ -33,5 +33,3 @@ def score_task_keys_mean(results, task_name, kwargs):
     if kwargs["unit"] == "percent":
         score *= 100.0
     return score
-
-

@@ -2235,7 +2235,9 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                                 results, task_name=t_key, kwargs=kwargs
                             )
                         except Exception as e:
-                            logger.warning(f"  Could not calculate score for {t_key}: {e}")
+                            logger.warning(
+                                f"  Could not calculate score for {t_key}: {e}"
+                            )
                             score = 100.0 if kwargs.get("unit") == "WER" else 0.0
                     else:
                         logger.warning(
