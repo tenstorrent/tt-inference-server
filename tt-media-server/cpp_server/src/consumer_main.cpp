@@ -23,7 +23,7 @@ void signalHandler(int signal) {
   drogon::app().quit();
 }
 
-}
+}  // namespace
 
 int main(int argc, char* argv[]) {
   std::string host = "0.0.0.0";
@@ -39,16 +39,16 @@ int main(int argc, char* argv[]) {
     } else if ((arg == "-t" || arg == "--threads") && i + 1 < argc) {
       threads = std::stoi(argv[++i]);
     } else if (arg == "--help") {
-      std::cout
-          << "TT Media Server - Consumer Instance\n"
-          << "Usage: " << argv[0] << " [options]\n"
-          << "Options:\n"
-          << "  -h, --host HOST     Listen host (default: 0.0.0.0)\n"
-          << "  -p, --port PORT     Listen port (default: 8001)\n"
-          << "  -t, --threads N     Number of IO threads (default: 2)\n"
-          << "  --help              Show this help message\n"
-          << "\nThis is a Kafka consumer instance that listens for offload requests.\n"
-          << "It does NOT serve HTTP API endpoints.\n";
+      std::cout << "TT Media Server - Consumer Instance\n"
+                << "Usage: " << argv[0] << " [options]\n"
+                << "Options:\n"
+                << "  -h, --host HOST     Listen host (default: 0.0.0.0)\n"
+                << "  -p, --port PORT     Listen port (default: 8001)\n"
+                << "  -t, --threads N     Number of IO threads (default: 2)\n"
+                << "  --help              Show this help message\n"
+                << "\nThis is a Kafka consumer instance that listens for "
+                   "offload requests.\n"
+                << "It does NOT serve HTTP API endpoints.\n";
       return 0;
     }
   }
@@ -70,12 +70,15 @@ int main(int argc, char* argv[]) {
   TT_LOG_INFO("=================================================");
 
   // Create MigrationWorker
-  auto worker = std::make_shared<tt::worker::MigrationWorker>(
-      tt::worker::MigrationWorkerConfig{
-          .brokers = "localhost:9092", // TODO: Move to config - hardcoded for local dev
-          .topic = "session-offload", // TODO: Move to config - hardcoded for local dev
-          .group_id = "migration-workers" // TODO: Move to config - hardcoded for local dev
-      });
+  auto worker = std::make_shared<
+      tt::worker::MigrationWorker>(tt::worker::MigrationWorkerConfig{
+      .brokers =
+          "localhost:9092",  // TODO: Move to config - hardcoded for local dev
+      .topic =
+          "session-offload",  // TODO: Move to config - hardcoded for local dev
+      .group_id =
+          "migration-workers"  // TODO: Move to config - hardcoded for local dev
+  });
 
   TT_LOG_INFO("[Consumer] Starting MigrationWorker...");
   worker->start();

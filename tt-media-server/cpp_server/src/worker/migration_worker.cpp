@@ -3,8 +3,9 @@
 
 #include "worker/migration_worker.hpp"
 
-#include <chrono>
 #include <json/json.h>
+
+#include <chrono>
 #include <sstream>
 
 #include "utils/logger.hpp"
@@ -20,8 +21,9 @@ MigrationWorker::MigrationWorker(MigrationWorkerConfig config)
           .group_id = config_.group_id,
       });
 
-  TT_LOG_INFO("[MigrationWorker] Initialized with brokers={}, topic={}, group={}",
-              config_.brokers, config_.topic, config_.group_id);
+  TT_LOG_INFO(
+      "[MigrationWorker] Initialized with brokers={}, topic={}, group={}",
+      config_.brokers, config_.topic, config_.group_id);
 }
 
 MigrationWorker::~MigrationWorker() { stop(); }
@@ -89,21 +91,25 @@ void MigrationWorker::processOffloadRequest(
   const Json::Int64 overheadUs = receiveUs - sentUs;
   const double overheadMs = static_cast<double>(overheadUs) / 1000.0;
 
-  const std::string action = root.get("action", Json::Value("unknown")).asString();
-  const std::string sessionId = root.get("session_id", Json::Value("unknown")).asString();
-  const int currentCount = root.get("current_session_count", Json::Value(0)).asInt();
+  const std::string action =
+      root.get("action", Json::Value("unknown")).asString();
+  const std::string sessionId =
+      root.get("session_id", Json::Value("unknown")).asString();
+  const int currentCount =
+      root.get("current_session_count", Json::Value(0)).asInt();
   const int maxSessions = root.get("max_sessions", Json::Value(0)).asInt();
 
   TT_LOG_WARN("[MigrationWorker] ✅ OFFLOAD REQUEST RECEIVED");
   TT_LOG_WARN("[MigrationWorker]   Action:      {}", action);
   TT_LOG_WARN("[MigrationWorker]   Session ID:  {}", sessionId);
-  TT_LOG_WARN("[MigrationWorker]   Sessions:    {}/{} ({:.1f}%)",
-              currentCount, maxSessions,
+  TT_LOG_WARN("[MigrationWorker]   Sessions:    {}/{} ({:.1f}%)", currentCount,
+              maxSessions,
               maxSessions > 0 ? (currentCount * 100.0 / maxSessions) : 0.0);
   TT_LOG_WARN("[MigrationWorker]   Sent at:     {} μs", sentUs);
   TT_LOG_WARN("[MigrationWorker]   Received at: {} μs", receiveUs);
-  TT_LOG_WARN("[MigrationWorker]   ⏱️  OVERHEAD:  {} μs ({:.3f} ms)", overheadUs, overheadMs);
+  TT_LOG_WARN("[MigrationWorker]   ⏱️  OVERHEAD:  {} μs ({:.3f} ms)", overheadUs,
+              overheadMs);
   TT_LOG_WARN("[MigrationWorker]   Raw payload: {}", message);
 }
 
-}
+}  // namespace tt::worker

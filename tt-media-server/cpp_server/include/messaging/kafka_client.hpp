@@ -18,10 +18,8 @@ struct KafkaProducerConfig {
   std::string topic;
 };
 
-
 class KafkaProducer {
  public:
-
   explicit KafkaProducer(KafkaProducerConfig config);
   ~KafkaProducer();
 
@@ -35,16 +33,17 @@ class KafkaProducer {
    * string after this call returns.
    *
    * @param payload Message content to send
-   * @param errorMessage Optional output parameter for error details. If provided
-   *                     and send fails, contains human-readable error description.
+   * @param errorMessage Optional output parameter for error details. If
+   * provided and send fails, contains human-readable error description.
    *
-   * @return true if message was successfully queued for sending, false otherwise
+   * @return true if message was successfully queued for sending, false
+   * otherwise
    *
    * @note This is asynchronous - the message may not have been delivered when
-   *       this function returns. Use flush() or destructor for guaranteed delivery.
+   *       this function returns. Use flush() or destructor for guaranteed
+   * delivery.
    */
-  bool sendCopy(std::string_view payload,
-                std::string* errorMessage = nullptr);
+  bool sendCopy(std::string_view payload, std::string* errorMessage = nullptr);
 
  private:
   struct Impl;
@@ -55,15 +54,13 @@ class KafkaProducer {
  * Configuration for Kafka consumer.
  */
 struct KafkaConsumerConfig {
-  std::string brokers; 
+  std::string brokers;
   std::string topic;
   std::string group_id;
 };
 
-
 class KafkaConsumer {
  public:
-
   explicit KafkaConsumer(KafkaConsumerConfig config);
   ~KafkaConsumer();
 
@@ -83,7 +80,8 @@ class KafkaConsumer {
    *         - Non-fatal error (e.g., partition EOF)
    *         - Message has no payload
    *
-   * @note Fatal errors are logged but also return nullopt. Check logs for details.
+   * @note Fatal errors are logged but also return nullopt. Check logs for
+   * details.
    * @note This method must be called regularly (at least every few seconds) to
    *       maintain the consumer's liveness in the consumer group.
    */
@@ -91,7 +89,7 @@ class KafkaConsumer {
 
  private:
   struct Impl;
-  std::unique_ptr<Impl> impl_; 
+  std::unique_ptr<Impl> impl_;
 };
 
-}
+}  // namespace tt::messaging

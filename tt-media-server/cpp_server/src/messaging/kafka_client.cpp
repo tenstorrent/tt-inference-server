@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-
 #include "messaging/kafka_client.hpp"
 
 #include <librdkafka/rdkafka.h>
@@ -15,8 +14,8 @@ namespace {
 // Thread-local error buffer for librdkafka API calls
 char errstr[512];
 
-
-bool setConfigOrLog(rd_kafka_conf_t* conf, const char* name, const char* value) {
+bool setConfigOrLog(rd_kafka_conf_t* conf, const char* name,
+                    const char* value) {
   if (rd_kafka_conf_set(conf, name, value, errstr, sizeof(errstr)) !=
       RD_KAFKA_CONF_OK) {
     TT_LOG_ERROR("[Kafka] config {}={} failed: {}", name, value, errstr);
@@ -25,12 +24,11 @@ bool setConfigOrLog(rd_kafka_conf_t* conf, const char* name, const char* value) 
   return true;
 }
 
-}
+}  // namespace
 
 struct KafkaProducer::Impl {
   rd_kafka_t* kafka_handle{nullptr};
   rd_kafka_topic_t* topic_handle{nullptr};
-
 
   ~Impl() {
     if (topic_handle) {
@@ -45,7 +43,8 @@ struct KafkaProducer::Impl {
   }
 };
 
-KafkaProducer::KafkaProducer(KafkaProducerConfig config) : impl_(std::make_unique<Impl>()) {
+KafkaProducer::KafkaProducer(KafkaProducerConfig config)
+    : impl_(std::make_unique<Impl>()) {
   rd_kafka_conf_t* conf = rd_kafka_conf_new();
   if (!conf) {
     TT_LOG_ERROR("[Kafka] rd_kafka_conf_new failed");
@@ -67,7 +66,8 @@ KafkaProducer::KafkaProducer(KafkaProducerConfig config) : impl_(std::make_uniqu
     rd_kafka_conf_destroy(conf);
     return;
   }
-  rd_kafka_topic_t* topic_handle = rd_kafka_topic_new(kafka_handle, config.topic.c_str(), nullptr);
+  rd_kafka_topic_t* topic_handle =
+      rd_kafka_topic_new(kafka_handle, config.topic.c_str(), nullptr);
   if (!topic_handle) {
     TT_LOG_ERROR("[Kafka] rd_kafka_topic_new failed: {}",
                  rd_kafka_err2str(rd_kafka_last_error()));
@@ -81,7 +81,8 @@ KafkaProducer::KafkaProducer(KafkaProducerConfig config) : impl_(std::make_uniqu
 
 KafkaProducer::~KafkaProducer() = default;
 
-bool KafkaProducer::sendCopy(std::string_view payload, std::string* errorMessage) {
+bool KafkaProducer::sendCopy(std::string_view payload,
+                             std::string* errorMessage) {
   if (!impl_ || !impl_->kafka_handle || !impl_->topic_handle) {
     if (errorMessage) {
       *errorMessage = "Kafka producer not initialized";
@@ -89,12 +90,9 @@ bool KafkaProducer::sendCopy(std::string_view payload, std::string* errorMessage
     return false;
   }
 
-  if (rd_kafka_produce(
-          impl_->topic_handle, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_COPY,
-          const_cast<char*>(payload.data()), payload.size(),
-          nullptr, 0,
-          nullptr) != 0) {
-
+  if (rd_kafka_produce(impl_->topic_handle, RD_KAFKA_PARTITION_UA,
+                       RD_KAFKA_MSG_F_COPY, const_cast<char*>(payload.data()),
+                       payload.size(), nullptr, 0, nullptr) != 0) {
     std::string err = rd_kafka_err2str(rd_kafka_last_error());
 
     TT_LOG_ERROR("[Kafka] rd_kafka_produce failed: {}", err);
@@ -150,7 +148,8 @@ KafkaConsumer::KafkaConsumer(KafkaConsumerConfig config)
 
   rd_kafka_poll_set_consumer(kafka_handle);
 
-  rd_kafka_topic_partition_list_t* subscription_list = rd_kafka_topic_partition_list_new(1);
+  rd_kafka_topic_partition_list_t* subscription_list =
+      rd_kafka_topic_partition_list_new(1);
   rd_kafka_topic_partition_list_add(subscription_list, config.topic.c_str(),
                                     RD_KAFKA_PARTITION_UA);
   rd_kafka_resp_err_t err = rd_kafka_subscribe(kafka_handle, subscription_list);
@@ -200,4 +199,4 @@ std::optional<std::string> KafkaConsumer::pollPayload(int timeoutMs) {
   return std::string(static_cast<const char*>(message->payload), message->len);
 }
 
-}
+}  // namespace tt::messaging

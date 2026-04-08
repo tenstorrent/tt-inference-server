@@ -23,7 +23,6 @@ struct MigrationWorkerConfig {
 
 class MigrationWorker {
  public:
-
   explicit MigrationWorker(MigrationWorkerConfig config);
 
   ~MigrationWorker();
@@ -77,4 +76,4 @@ class MigrationWorker {
   std::atomic<bool> running_{false};
   std::thread workerThread_;
 };
-}
+}  // namespace tt::worker
