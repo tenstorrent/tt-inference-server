@@ -140,7 +140,7 @@ def _expand_image_sweep_params(
         model_max_concurrency,
         vision_tokens=vision_tokens,
     )
-    concurrencies = [1]
+    concurrencies = []
     if allowed_max_concurrency > 1:
         concurrencies.append(allowed_max_concurrency)
 
