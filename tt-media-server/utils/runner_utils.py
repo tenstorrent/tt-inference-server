@@ -65,7 +65,7 @@ def setup_runner_environment(
         ModelRunners.TT_SDXL_EDIT.value,
         ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value,
     }
-    if settings.is_galaxy and settings.model_runner in _RUNNERS_REQUIRING_GRID_OVERRIDE:
+    if settings.model_runner in _RUNNERS_REQUIRING_GRID_OVERRIDE:
         _setup_grid_override(settings.device)
 
 
