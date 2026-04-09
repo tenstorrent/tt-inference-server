@@ -45,8 +45,9 @@ class ConcurrentQueue {
 
 namespace detail {
 
-// Fixed size avoids -Winterference-size (std::hardware_destructive_interference_size
-// is not stable across compiler/tuning); 64 matches typical x86/ARM cache lines.
+// Fixed size avoids -Winterference-size
+// (std::hardware_destructive_interference_size is not stable across
+// compiler/tuning); 64 matches typical x86/ARM cache lines.
 inline constexpr size_t CACHE_LINE_SIZE = 64;
 
 inline size_t nextPowerOfTwo(size_t n) { return std::bit_ceil(n); }
