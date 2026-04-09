@@ -8,7 +8,7 @@
 
 #include <iostream>
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 using Config = tt::config::LLMConfig;
 using ModelRunnerType = tt::config::ModelRunnerType;
@@ -34,4 +34,4 @@ std::unique_ptr<IModelRunner> makeModelRunner(const Config& config,
   }
 }
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

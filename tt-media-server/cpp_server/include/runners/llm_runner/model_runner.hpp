@@ -7,7 +7,7 @@
 #include "config/runner_config.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 using DecodeCallback = std::function<void(const TokenResult&)>;
 
@@ -21,4 +21,4 @@ class IModelRunner {
 std::unique_ptr<IModelRunner> makeModelRunner(
     const tt::config::LLMConfig& config, DecodeCallback callback);
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

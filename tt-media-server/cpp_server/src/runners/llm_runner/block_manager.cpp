@@ -8,7 +8,7 @@
 #include "runners/llm_runner/debug.hpp"
 #include "runners/llm_runner/hash.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 Block::Block(int blockId) : block_id(blockId) {}
 
@@ -177,4 +177,4 @@ void BlockManager::mayAppend(Sequence& seq) {
   }
 }
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

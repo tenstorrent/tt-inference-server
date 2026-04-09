@@ -15,7 +15,7 @@
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 /**
  * Schedules prefill and decode batches. Each step returns either a prefill-only
@@ -124,4 +124,4 @@ std::unique_ptr<Scheduler> makeScheduler(const tt::config::LLMConfig& config,
                                          ITaskQueue* taskQueue,
                                          size_t maxInFlightCount);
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

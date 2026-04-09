@@ -7,7 +7,7 @@
 #include "config/runner_config.hpp"
 #include "llm_runner/sampling_params.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 using Config = tt::config::LLMConfig;
 
@@ -102,4 +102,4 @@ Sequence Sequence::deserialize(std::istream& is) {
   return seq;
 }
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

@@ -14,7 +14,7 @@
 
 namespace py = pybind11;
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 using Config = tt::config::LLMConfig;
 
@@ -200,4 +200,4 @@ std::unique_ptr<IModelRunner> makeLlamaModelRunner(const Config& config,
   return runner;
 }
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

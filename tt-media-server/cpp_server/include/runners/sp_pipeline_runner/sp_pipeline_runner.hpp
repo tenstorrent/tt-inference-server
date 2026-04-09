@@ -19,13 +19,13 @@
 #include "services/memory_services/async_memory_manager.hpp"
 namespace tt::runners {
 
-namespace pm = tt_blaze::pipeline_manager;
+namespace pm = ::pipeline_manager;
 
 class SpPipelineRunner : public IRunner {
  public:
   SpPipelineRunner(const tt::config::LLMConfig& config,
                    ipc::TokenRingBuffer<65536>* resultQueue,
-                   llm_engine::ITaskQueue* taskQueue);
+                   tt::runners::llm_engine::ITaskQueue* taskQueue);
   ~SpPipelineRunner() override;
 
   void run() override;
@@ -42,16 +42,19 @@ class SpPipelineRunner : public IRunner {
   inline void handleMemoryRequest(const tt::domain::ManageMemoryTask& request);
   inline void handleResponse(const pm::PMResponse& response);
   void handleOutput(const pm::OutputMessage& output);
-  std::unique_ptr<llm_engine::Sequence> getRequest();
-  void handleRequest(std::unique_ptr<llm_engine::Sequence> request);
+  std::unique_ptr<tt::runners::llm_engine::Sequence> getRequest();
+  void handleRequest(
+      std::unique_ptr<tt::runners::llm_engine::Sequence> request);
   void evictSlot(uint32_t slotId);
 
   tt::config::LLMConfig config;
   std::unordered_set<int64_t> stopTokenIds;
   ipc::TokenRingBuffer<65536>* resultQueue;
-  llm_engine::ITaskQueue* taskQueue;
+  tt::runners::llm_engine::ITaskQueue* taskQueue;
   std::unique_ptr<pm::PipelineManager> pipelineManager;
-  std::unordered_map<uint32_t, std::unique_ptr<llm_engine::Sequence>> running;
+  std::unordered_map<uint32_t,
+                     std::unique_ptr<tt::runners::llm_engine::Sequence>>
+      running;
   std::atomic<bool> stopped{false};
   std::unique_ptr<tt::services::AsyncMemoryManager> memoryManager;
 };

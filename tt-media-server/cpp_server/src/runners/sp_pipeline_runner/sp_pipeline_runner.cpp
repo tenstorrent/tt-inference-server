@@ -20,9 +20,9 @@
 namespace tt::runners {
 namespace utils = sp_pipeline_utils;
 
-SpPipelineRunner::SpPipelineRunner(const config::LLMConfig& config,
-                                   ipc::TokenRingBuffer<65536>* resultQueue,
-                                   llm_engine::ITaskQueue* taskQueue)
+SpPipelineRunner::SpPipelineRunner(
+    const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* resultQueue,
+    tt::runners::llm_engine::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
@@ -67,14 +67,14 @@ void SpPipelineRunner::run() {
 }
 
 bool SpPipelineRunner::warmup() {
-  llm_engine::SamplingParams warmupParams;
+  tt::runners::llm_engine::SamplingParams warmupParams;
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
   std::vector<int64_t> warmupTokens = {1};
   uint32_t warmupTaskId = 0;
 
-  auto warmupSeq = std::make_unique<llm_engine::Sequence>(
+  auto warmupSeq = std::make_unique<tt::runners::llm_engine::Sequence>(
       warmupTaskId, 1, warmupTokens, warmupParams);
 
   TT_LOG_INFO("SpPipelineRunner: warmup - pushing ALLOCATE request...");
@@ -158,7 +158,8 @@ std::optional<pm::OutputMessage> SpPipelineRunner::getOutput() {
   return std::nullopt;
 }
 
-std::unique_ptr<llm_engine::Sequence> SpPipelineRunner::getRequest() {
+std::unique_ptr<tt::runners::llm_engine::Sequence>
+SpPipelineRunner::getRequest() {
   auto req = taskQueue->tryPop();
   if (!req) return nullptr;
   return req;
@@ -195,7 +196,7 @@ inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
 }
 
 void SpPipelineRunner::handleRequest(
-    std::unique_ptr<llm_engine::Sequence> request) {
+    std::unique_ptr<tt::runners::llm_engine::Sequence> request) {
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
 
