@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-#include "runners/embedding_runner.hpp"
+#include "runners/embedding_runner/embedding_runner.hpp"
 
 #include <Python.h>
 

@@ -3,8 +3,8 @@
 
 #include "utils/runner_factory.hpp"
 
-#include "runners/embedding_runner.hpp"
-#include "runners/llm_runner.hpp"
+#include "runners/embedding_runner/embedding_runner.hpp"
+#include "runners/llm_runner/llm_runner.hpp"
 #include "runners/sp_prefill_runner/sp_prefill_runner.hpp"
 #include "sp_pipeline_runner/sp_pipeline_runner_demo.hpp"
 #ifdef ENABLE_BLAZE

@@ -84,13 +84,7 @@ Available log levels (from most to least verbose):
 
 ## LLM engine
 
-The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runners/llm_engine/` (sources). The engine uses the server's logging (`[DEBUG] [llm_engine:...]`) instead of its own.dia Server - C++ Drogon Implementation
-
-A high-performance C++ implementation of the TT Media Server using the Drogon web framework. This implementation is designed to benchmark the overhead of the Python FastAPI server by providing an identical API with minimal overhead.
-
-## LLM engine
-
-The LLM engine lives under `include/runners/llm_runner/` (headers) and `src/runners/llm_runner/` (sources). The engine uses the server’s logging (`[DEBUG] [llm_engine:...]`) instead of its own.
+The LLM engine lives under `include/runners/llm_runner/` (headers) and `src/runners/llm_runner/` (sources). The engine uses the server's logging (`[DEBUG] [llm_engine:...]`) instead of its own.
 
 ### Main features
 
@@ -532,18 +526,23 @@ cpp_server/
 │   │   ├── chat_completion_*.hpp
 │   │   └── embedding_*.hpp
 │   ├── runners/
-│   │   ├── llm_runner.hpp           # LLMRunner (scheduler + model runner)
-│   │   ├── llm_runner/              # LLM engine (config, scheduler, block manager, model_runner)
-│   │   │   ├── config.hpp           # Config, DeviceBackend, ModelRunnerType
-│   │   │   ├── model_runner.hpp     # IModelRunner, make_model_runner()
-│   │   │   ├── device_backend.hpp  # IDeviceBackend, make_device_backend()
+│   │   ├── runner_interface.hpp
+│   │   ├── embedding_runner/
+│   │   │   └── embedding_runner.hpp
+│   │   ├── llm_runner/
+│   │   │   ├── llm_runner.hpp       # LLMRunner (scheduler + model runner)
+│   │   │   ├── scheduler.hpp        # Scheduler, makeScheduler()
+│   │   │   ├── block_manager.hpp
+│   │   │   ├── sequence.hpp
+│   │   │   ├── model_runners/       # IModelRunner implementations
+│   │   │   │   ├── model_runner.hpp # IModelRunner, makeModelRunner()
+│   │   │   │   └── llama_model_runner.hpp  # LlamaModelRunner (pybind11)
 │   │   │   └── ...
-│   │   ├── llama_model_runner.hpp   # LlamaModelRunner (pybind11 in-process)
-│   │   ├── embedding_runner.hpp
-│   │   └── runner_interface.hpp
+│   │   ├── sp_pipeline_runner/      # SP pipeline runner
+│   │   └── sp_prefill_runner/       # SP prefill runner
 │   ├── utils/
 │   │   ├── runner_factory.hpp       # create_runner() (env-based selection)
-│   │   └── tokenizer_strategy.hpp  # LLM_DEVICE_BACKEND → tokenizer
+│   │   └── tokenizer_strategy.hpp   # LLM_DEVICE_BACKEND → tokenizer
 │   ├── services/
 │   │   ├── llm_service.hpp
 │   │   └── embedding_service.hpp
@@ -553,10 +552,19 @@ cpp_server/
 │   ├── api/
 │   ├── config/
 │   ├── runners/
-│   │   ├── llm_runner.cpp
-│   │   ├── llm_runner/              # model_runner, device_backend, scheduler, ...
-│   │   ├── llama_model_runner.cpp
-│   │   └── embedding_runner.cpp
+│   │   ├── embedding_runner/
+│   │   │   └── embedding_runner.cpp
+│   │   ├── llm_runner/
+│   │   │   ├── llm_runner.cpp
+│   │   │   ├── scheduler.cpp
+│   │   │   ├── block_manager.cpp
+│   │   │   ├── model_runners/       # IModelRunner implementations
+│   │   │   │   ├── model_runner.cpp
+│   │   │   │   ├── mock_model_runner.cpp
+│   │   │   │   └── llama_model_runner.cpp
+│   │   │   └── ...
+│   │   ├── sp_pipeline_runner/
+│   │   └── sp_prefill_runner/
 │   ├── utils/
 │   │   └── runner_factory.cpp       # create_runner() → LLMRunner or EmbeddingRunner
 │   ├── services/
@@ -581,7 +589,7 @@ cpp_server/
 - `LLMService`: LLM-specific service implementation
 
 ### Runners
-- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`. For LLM, builds `tt::config::LLMConfig` (via `llm_engine_config()` from `config/runner_config.hpp`) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/model_runner.hpp` and `model_runner.cpp`).
+- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`. For LLM, builds `tt::config::LLMConfig` (via `llm_engine_config()` from `config/runner_config.hpp`) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/model_runners/model_runner.hpp` and `model_runners/model_runner.cpp`).
 
 ### API
 - `LLMController`: Drogon HTTP controller with OpenAI-compatible endpoints

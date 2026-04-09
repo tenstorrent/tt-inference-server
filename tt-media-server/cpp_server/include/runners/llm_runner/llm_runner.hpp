@@ -8,7 +8,7 @@
 #include "ipc/boost_ipc_queue.hpp"
 #include "ipc/cancel_queue.hpp"
 #include "ipc/token_ring_buffer.hpp"
-#include "runners/llm_runner/model_runner.hpp"
+#include "runners/llm_runner/model_runners/model_runner.hpp"
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"

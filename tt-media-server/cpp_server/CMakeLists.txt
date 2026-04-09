@@ -225,9 +225,9 @@ endif()
 set(LLM_ENGINE_SOURCES
     src/runners/llm_runner/block_manager.cpp
     src/runners/llm_runner/hash.cpp
-    src/runners/llm_runner.cpp
-    src/runners/llm_runner/model_runner.cpp
-    src/runners/llm_runner/mock_model_runner.cpp
+    src/runners/llm_runner/llm_runner.cpp
+    src/runners/llm_runner/model_runners/model_runner.cpp
+    src/runners/llm_runner/model_runners/mock_model_runner.cpp
     src/runners/llm_runner/scheduler.cpp
     src/runners/llm_runner/sequence.cpp
     src/runners/llm_runner/sampling_params.cpp
@@ -262,7 +262,7 @@ endif()
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     list(APPEND LLM_ENGINE_SOURCES
-        src/runners/llama_model_runner.cpp
+        src/runners/llm_runner/model_runners/llama_model_runner.cpp
     )
     message(STATUS "LLM engine: building with tt-metal socket integration")
 else()
@@ -437,7 +437,7 @@ set(SOURCES
     src/utils/runner_factory.cpp
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
-    src/runners/embedding_runner.cpp
+    src/runners/embedding_runner/embedding_runner.cpp
     src/services/embedding_service.cpp
     src/services/disaggregation_service.cpp
     src/sockets/socket_manager.cpp
