@@ -47,7 +47,7 @@ class VideoManager:
         _VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(_VIDEO_OUTPUT_DIR / f"{uuid.uuid4()}.mp4")
 
-        crf = int(os.environ.get("TT_VIDEO_EXPORT_CRF", "0"))
+        crf = int(os.environ.get("TT_VIDEO_EXPORT_CRF", "23"))
         crf = max(_MIN_CRF, min(_MAX_CRF, crf))
         preset = os.environ.get("TT_VIDEO_EXPORT_PRESET", "medium").strip()
 
