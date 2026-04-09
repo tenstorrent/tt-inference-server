@@ -9,6 +9,7 @@
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 
@@ -123,6 +124,29 @@ bool WorkerManager::checkWorkerAlive(size_t workerIdx) {
   }
   if (result == w->pid) {
     w->is_alive = false;
+    if (WIFSIGNALED(status)) {
+      int sig = WTERMSIG(status);
+      TT_LOG_CRITICAL(
+          "[WorkerManager] Worker {} (PID {}) killed by signal {} ({})"
+          "{}",
+          workerIdx, w->pid, sig, strsignal(sig),
+          WCOREDUMP(status) ? " -- core dumped" : "");
+    } else if (WIFEXITED(status)) {
+      int exitCode = WEXITSTATUS(status);
+      if (exitCode != 0) {
+        TT_LOG_CRITICAL(
+            "[WorkerManager] Worker {} (PID {}) exited with code {}",
+            workerIdx, w->pid, exitCode);
+      } else {
+        TT_LOG_WARN(
+            "[WorkerManager] Worker {} (PID {}) exited normally (code 0)",
+            workerIdx, w->pid);
+      }
+    } else {
+      TT_LOG_CRITICAL(
+          "[WorkerManager] Worker {} (PID {}) terminated, raw status=0x{:x}",
+          workerIdx, w->pid, status);
+    }
     return false;
   }
   return true;  // waitpid error -- assume alive
