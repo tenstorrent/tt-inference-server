@@ -145,9 +145,6 @@ void SessionManager::setSessionInFlight(const std::string& sessionId,
 void SessionManager::evictOldSessions() {
   bool expected = false;
   if (!evictionInProgress.compare_exchange_strong(expected, true)) {
-    while (evictionInProgress.load(std::memory_order_acquire)) {
-      std::this_thread::yield();
-    }
     return;
   }
 
@@ -397,7 +394,7 @@ void SessionManager::handleMemoryResult(
         pendingAllocation.session.getSessionId());
     pendingAllocation.eventLoop->queueInLoop(
         [onError = std::move(pendingAllocation.onError)]() {
-          onError("Failed to allocate: IPC queue full after all attempts");
+          onError("Failed to allocate slot id: All attemps have failed");
         });
   }
 }

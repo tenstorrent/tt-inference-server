@@ -15,8 +15,9 @@ class SpPipelineMemoryManager : public AsyncMemoryManager {
   using onEvictCb = std::function<void(uint32_t slotId)>;
 
  public:
-  SpPipelineMemoryManager(tt_blaze::pipeline_manager::PipelineManager& pipelineManager,
-                          onEvictCb onEvict);
+  SpPipelineMemoryManager(
+      tt_blaze::pipeline_manager::PipelineManager& pipelineManager,
+      onEvictCb onEvict);
   ~SpPipelineMemoryManager() = default;
 
   void handleRequest(const domain::ManageMemoryTask& request) override;

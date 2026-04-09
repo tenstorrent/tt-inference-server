@@ -7,7 +7,8 @@ namespace tt::services {
 namespace utils = tt::runners::sp_pipeline_utils;
 
 SpPipelineMemoryManager::SpPipelineMemoryManager(
-    tt_blaze::pipeline_manager::PipelineManager& pipelineManager, onEvictCb onEvict)
+    tt_blaze::pipeline_manager::PipelineManager& pipelineManager,
+    onEvictCb onEvict)
     : pipelineManager(pipelineManager), onEvict(onEvict) {}
 
 void SpPipelineMemoryManager::handleRequest(

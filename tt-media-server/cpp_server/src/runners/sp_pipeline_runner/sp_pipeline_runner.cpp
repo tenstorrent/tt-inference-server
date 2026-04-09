@@ -234,28 +234,21 @@ void SpPipelineRunner::handleRequest(
 
   if (!isNew && it->second->taskId != request->taskId) {
     TT_LOG_INFO(
-        "SpPipelineRunner::handleRequest slot={} continued by new task {} "
-        "(was task {})",
+        "SpPipelineRunner::handleRequest slot={} reused by new task {} "
+        "(was task {}), treating as new SUBMIT",
         slotId, request->taskId, it->second->taskId);
+    pipelineManager->push_request(utils::makeCancelRequest(slotId));
+    running.erase(it);
+    isNew = true;
   }
-
-  TT_LOG_DEBUG(
-      "[SpPipelineRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
-      "numPromptTokens={}, runningSlots={}",
-      request->taskId, slotId, isNew, request->getNumPromptTokens(),
-      running.size());
 
   if (isNew) {
     TT_LOG_DEBUG(
         "[SpPipelineRunner] handleRequest: SUBMIT taskId={}, slotId={}",
         request->taskId, slotId);
     pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
-  } else {
-    TT_LOG_DEBUG("[SpPipelineRunner] handleRequest: CONTINUE taskId={}, "
-                 "slotId={}",
-                 request->taskId, slotId);
-    pipelineManager->push_request(
-        utils::makeContinueRequest(slotId, *request));
+    running[slotId] = std::move(request);
+    return;
   }
   TT_LOG_DEBUG(
       "[SpPipelineRunner] handleRequest: CONTINUE taskId={}, slotId={}",
