@@ -240,23 +240,23 @@ set(LLM_ENGINE_SOURCES
     src/services/memory_services/memory_manager.cpp
     src/services/memory_services/paged_memory_manager.cpp
     src/services/memory_services/contiguous_memory_manager.cpp
+    src/runners/sp_pipeline_runner/sp_pipeline_runner_demo.cpp
+    src/runners/sp_pipeline_runner/i_sp_pipeline_model_runner.cpp
+    src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
+    src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
+    src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
+    src/runners/sp_prefill_runner/sp_prefill_runner.cpp
+    src/runners/sp_prefill_runner/i_sp_prefill_model_runner.cpp
+    src/runners/sp_prefill_runner/sp_prefill_model_runner.cpp
 )
 
-# Add pipeline runner sources only when ENABLE_BLAZE is ON
+# Add pipeline_manager-dependent sources only when ENABLE_BLAZE is ON
 if(ENABLE_BLAZE)
     list(APPEND LLM_ENGINE_SOURCES
         src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
-        src/runners/sp_pipeline_runner/sp_pipeline_runner_demo.cpp
-        src/runners/sp_pipeline_runner/i_sp_pipeline_model_runner.cpp
-        src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
-        src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
-        src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
-        src/runners/sp_prefill_runner/sp_prefill_runner.cpp
-        src/runners/sp_prefill_runner/i_sp_prefill_model_runner.cpp
-        src/runners/sp_prefill_runner/sp_prefill_model_runner.cpp
         src/services/memory_services/sp_pipeline_memory_manager.cpp
     )
-    message(STATUS "LLM engine: including pipeline runner sources (ENABLE_BLAZE=ON)")
+    message(STATUS "LLM engine: including pipeline_manager-dependent sources (ENABLE_BLAZE=ON)")
 endif()
 
 # Add socket backend when tt-metal is available
