@@ -799,9 +799,7 @@ class TestSpecTestsBehavior:
 
         with patch.object(spec_tests_run, "_configure_logging"), patch.object(
             spec_tests_run, "parse_args", return_value=args
-        ), patch.object(
-            spec_tests_run, "_apply_filters", return_value=[]
-        ):
+        ), patch.object(spec_tests_run, "_apply_filters", return_value=[]):
             result = spec_tests_run.main()
 
         assert result == 1
