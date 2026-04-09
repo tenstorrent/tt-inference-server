@@ -1402,9 +1402,13 @@ llm_templates = [
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
-                max_concurrency=16,
+                max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "limit-mm-per-prompt": json.dumps({"image": 1}),
+                    "disable_mm_preprocessor_cache": True,
+                },
             ),
         ],
         model_type=ModelType.VLM,

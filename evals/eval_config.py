@@ -1171,23 +1171,25 @@ _eval_config_list = [
         hf_model_repo="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
         tasks=[
             EvalTask(
-                task_name="mmlu_pro",
+                task_name="gpqa_diamond_generative_n_shot",
                 num_fewshot=5,
                 max_concurrent=8,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=66.76,
-                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+                    published_score=45.96,
+                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503#instruction-evals",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "exact_match,custom-extract",
+                            "exact_match,flexible-extract",
                         ],
                         "unit": "percent",
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.02,
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
