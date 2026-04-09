@@ -24,7 +24,7 @@
 #include "services/embedding_codec.hpp"
 #include "services/embedding_service.hpp"
 #include "utils/logger.hpp"
-#include "utils/unique_fd.hpp"
+#include "utils/scoped_fd.hpp"
 
 namespace tt::services {
 
@@ -75,8 +75,8 @@ std::string pipeReadString(int fd) {
 struct WorkerProcess {
   int worker_id = -1;
   pid_t pid = -1;
-  tt::utils::UniqueFd write_fd;  // parent → child (request pipe write end)
-  tt::utils::UniqueFd read_fd;   // child → parent (response pipe read end)
+  tt::utils::ScopedFd write_fd;  // parent → child (request pipe write end)
+  tt::utils::ScopedFd read_fd;   // child → parent (response pipe read end)
   std::atomic<bool> is_ready{false};
   std::atomic<bool> running{false};
   std::unique_ptr<std::thread> dispatch_thread;
@@ -91,7 +91,7 @@ struct WorkerProcess {
                    workerId);
       return false;
     }
-    tt::utils::UniqueFd reqRead(reqRaw[0]), reqWrite(reqRaw[1]);
+    tt::utils::ScopedFd reqRead(reqRaw[0]), reqWrite(reqRaw[1]);
 
     int respRaw[2] = {-1, -1};
     if (pipe(respRaw) < 0) {
@@ -99,7 +99,7 @@ struct WorkerProcess {
                    workerId);
       return false;  // reqRead + reqWrite auto-close
     }
-    tt::utils::UniqueFd respRead(respRaw[0]), respWrite(respRaw[1]);
+    tt::utils::ScopedFd respRead(respRaw[0]), respWrite(respRaw[1]);
 
     pid_t child = fork();
     if (child < 0) {
