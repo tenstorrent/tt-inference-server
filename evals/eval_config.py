@@ -1252,7 +1252,7 @@ _eval_config_list = [
                     "max_gen_toks": "256",
                     "do_sample": "false",
                     "stream": "false",
-                }, 
+                },
             ),
         ],
     ),
