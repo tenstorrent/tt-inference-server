@@ -19,7 +19,7 @@ namespace tt::runners {
 
 SpPipelineRunnerDemo::SpPipelineRunnerDemo(
     const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* resultQueue,
-    llm_engine::ITaskQueue* taskQueue)
+    tt::runners::llm_engine::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
@@ -32,7 +32,7 @@ SpPipelineRunnerDemo::SpPipelineRunnerDemo(
     memoryThread = std::thread([this] { memoryLoop(); });
   }
 
-  auto decodeCb = [this](const llm_engine::TokenResult& result) {
+  auto decodeCb = [this](const tt::runners::llm_engine::TokenResult& result) {
     while (!decodeQueue.push(result)) {
       std::this_thread::yield();
     }
@@ -59,14 +59,14 @@ void SpPipelineRunnerDemo::run() {
 
 bool SpPipelineRunnerDemo::warmup() {
   // Create a warmup sequence with a single token
-  llm_engine::SamplingParams warmupParams;
+  tt::runners::llm_engine::SamplingParams warmupParams;
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
   std::vector<int64_t> warmupTokens = {1};  // Single token
   uint32_t warmupTaskId = 0;                // Use 0 for warmup task
 
-  auto warmupSeq = std::make_unique<llm_engine::Sequence>(
+  auto warmupSeq = std::make_unique<tt::runners::llm_engine::Sequence>(
       warmupTaskId,
       1,  // block_size (doesn't matter for warmup)
       warmupTokens, warmupParams);
@@ -80,7 +80,7 @@ bool SpPipelineRunnerDemo::warmup() {
   bool receivedToken = false;
 
   while (attempts < maxAttempts && !receivedToken) {
-    std::vector<llm_engine::TokenResult> results;
+    std::vector<tt::runners::llm_engine::TokenResult> results;
     decodeQueue.popMany(results, maxInFlightCount);
     for (const auto& dr : results) {
       if (dr.taskId == warmupTaskId) {
@@ -152,7 +152,7 @@ void SpPipelineRunnerDemo::step() {
 }
 
 void SpPipelineRunnerDemo::drainDecodeResults() {
-  std::vector<llm_engine::TokenResult> results;
+  std::vector<tt::runners::llm_engine::TokenResult> results;
   decodeQueue.popMany(results, maxInFlightCount);
   for (const auto& dr : results) {
     auto it = activeSequences.find(dr.taskId);
@@ -162,7 +162,7 @@ void SpPipelineRunnerDemo::drainDecodeResults() {
           dr.taskId);
       continue;
     }
-    llm_engine::Sequence* seq = it->second.get();
+    tt::runners::llm_engine::Sequence* seq = it->second.get();
 
     if (dr.isError) {
       ipc::pushErrorToken(*resultQueue, dr.taskId);

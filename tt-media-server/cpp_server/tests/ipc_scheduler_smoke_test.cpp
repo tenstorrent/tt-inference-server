@@ -35,7 +35,7 @@ static constexpr size_t MAX_NUM_MSGS = 64;
 static constexpr size_t MAX_MSG_SIZE = 4096;
 
 int main() {
-  using namespace llm_engine;
+  using namespace tt::runners::llm_engine;
   using Config = tt::config::LLMConfig;
 
   // Clean up any leftover queue from a previous failed run.

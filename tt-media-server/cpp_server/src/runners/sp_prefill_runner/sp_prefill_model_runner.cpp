@@ -15,8 +15,9 @@ SpPrefillModelRunner::SpPrefillModelRunner()
 
 SpPrefillModelRunner::~SpPrefillModelRunner() { exit(); }
 
-std::optional<llm_engine::TokenResult> SpPrefillModelRunner::forward(
-    uint32_t taskId, const std::vector<int64_t>& tokenIds) {
+std::optional<tt::runners::llm_engine::TokenResult>
+SpPrefillModelRunner::forward(uint32_t taskId,
+                              const std::vector<int64_t>& tokenIds) {
   TT_LOG_DEBUG(
       "SpPrefillModelRunner: Writing into shared memory input task_id={}, "
       "token count={}",
@@ -34,7 +35,7 @@ std::optional<llm_engine::TokenResult> SpPrefillModelRunner::forward(
           "SpPrefillModelRunner: Read from shared memory output task_id={}, "
           "token_id={}, token count={}",
           taskId, tokenId, readBuf.tokenIds.size());
-      return llm_engine::TokenResult(readBuf.taskId, tokenId);
+      return tt::runners::llm_engine::TokenResult(readBuf.taskId, tokenId);
     }
     TT_LOG_DEBUG("SpPrefillModelRunner: Shared memory read failed");
     std::this_thread::yield();
