@@ -78,9 +78,11 @@ resources:
   limits:
     cpu: "8"
     memory: 128Gi
+    hugepages-1Gi: 32Gi
   requests:
     cpu: "6"
     memory: 64Gi
+    hugepages-1Gi: 32Gi
 
 # -- @section Storage
 cache:
