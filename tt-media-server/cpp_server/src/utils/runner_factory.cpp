@@ -36,7 +36,8 @@ std::unique_ptr<runners::IRunner> createRunner(
 
 #ifdef ENABLE_BLAZE
       if (cfg.runner_type == config::ModelRunnerType::PIPELINE_MANAGER) {
-        TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner (pipeline_manager)");
+        TT_LOG_INFO(
+            "[RunnerFactory] Creating SP Pipeline runner (pipeline_manager)");
         return std::make_unique<runners::SpPipelineRunner>(cfg, resultQueue,
                                                            taskQueue);
       }
