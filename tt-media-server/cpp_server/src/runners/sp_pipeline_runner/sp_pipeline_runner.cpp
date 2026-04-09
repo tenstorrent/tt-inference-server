@@ -257,6 +257,9 @@ void SpPipelineRunner::handleRequest(
     pipelineManager->push_request(
         utils::makeContinueRequest(slotId, *request));
   }
+  TT_LOG_DEBUG(
+      "[SpPipelineRunner] handleRequest: CONTINUE taskId={}, slotId={}",
+      request->taskId, slotId);
   pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
   running[slotId] = std::move(request);
 }
