@@ -30,7 +30,6 @@ This module provides:
 
 3. **Install forge dependencies:**
    ```bash
-   export VLLM_TARGET_DEVICE="empty" # Fixes the vllm installation error "CUDA_HOME is not set"
    pip install -r tt_model_runners/forge_runners/requirements.txt
    ```
 
@@ -126,10 +125,10 @@ Model should first be tested locally:
 
 1. In tt-media-server, in `config/vllm_settings`, choose the desired model from the `SupportedModels` enum
 2. In `config/settings.py`, set your device id(s), `is_galaxy` bool, and most importantly, `model_runner` to `ModelRunners.VLLM.value`
-3. Create a python3.11 venv with the forge vllm plugin and activate
+3. Create a python3.12 venv with the forge vllm plugin and activate
 4. Do a `pip install -r` in both tt-inference-server and tt-media-server
 5. Do `export VLLM_TARGET_DEVICE="empty"`
-6. Run the tt-media-server with python3.11 venv (exec the `run_uvicorn.sh`)
+6. Run the tt-media-server with python3.12 venv (exec the `run_uvicorn.sh`)
 7. You can send completion requests via `localhost:8000/docs` page
 
 ### CI
