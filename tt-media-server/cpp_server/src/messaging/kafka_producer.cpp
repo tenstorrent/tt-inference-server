@@ -92,4 +92,23 @@ bool KafkaProducer::send(std::string_view payload, std::string* errorMessage) {
   return true;
 }
 
+bool KafkaProducer::flush(int timeoutMs, std::string* errorMessage) {
+  if (!impl_ || !impl_->kafka_handle) {
+    if (errorMessage) {
+      *errorMessage = "Kafka producer not initialized";
+    }
+    return false;
+  }
+
+  const auto flushErr = rd_kafka_flush(impl_->kafka_handle, timeoutMs);
+  if (flushErr != RD_KAFKA_RESP_ERR_NO_ERROR) {
+    if (errorMessage) {
+      *errorMessage = rd_kafka_err2str(flushErr);
+    }
+    TT_LOG_ERROR("[Kafka] rd_kafka_flush failed: {}", rd_kafka_err2str(flushErr));
+    return false;
+  }
+  return true;
+}
+
 }  // namespace tt::messaging

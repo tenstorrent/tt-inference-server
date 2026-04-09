@@ -40,6 +40,14 @@ class KafkaProducer {
    * delivery.
    */
   bool send(std::string_view payload, std::string* errorMessage = nullptr);
+  /**
+   * Flushes queued messages and waits for delivery.
+   *
+   * @param timeoutMs Maximum time to wait in milliseconds.
+   * @param errorMessage Optional output parameter for error details.
+   * @return true when all queued messages are delivered before timeout.
+   */
+  bool flush(int timeoutMs = 10 * 1000, std::string* errorMessage = nullptr);
 
  private:
   struct Impl;
