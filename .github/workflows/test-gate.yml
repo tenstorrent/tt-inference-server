@@ -445,6 +445,21 @@ jobs:
         with:
           token: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
 
+      - name: Check TT_BLAZE_RO_CONTENTS token
+        env:
+          GITHUB_TOKEN: ${{ secrets.TT_BLAZE_RO_CONTENTS }}
+        run: |
+          if [ -z "$GITHUB_TOKEN" ]; then
+            echo "❌ GITHUB_TOKEN is empty — TT_BLAZE_RO_CONTENTS secret may not be configured"
+            exit 1
+          fi
+          echo "✅ GITHUB_TOKEN is set (length: ${#GITHUB_TOKEN})"
+
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/tenstorrent/tt-blaze)
+          echo "tt-blaze repo access check: HTTP $HTTP_STATUS"
+
       - name: Configure git for private submodules
         run: git config --global url."https://x-access-token:${{ secrets.TT_BLAZE_RO_CONTENTS }}@github.com/".insteadOf "https://github.com/"
 
