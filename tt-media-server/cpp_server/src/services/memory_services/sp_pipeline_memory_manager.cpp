@@ -7,7 +7,8 @@ namespace tt::services {
 namespace utils = tt::runners::sp_pipeline_utils;
 
 SpPipelineMemoryManager::SpPipelineMemoryManager(
-    ::pipeline_manager::PipelineManager& pipelineManager, onEvictCb onEvict)
+    tt_blaze::pipeline_manager::PipelineManager& pipelineManager,
+    onEvictCb onEvict)
     : pipelineManager(pipelineManager), onEvict(onEvict) {}
 
 void SpPipelineMemoryManager::handleRequest(
@@ -61,13 +62,13 @@ void SpPipelineMemoryManager::handleResponse(uint32_t requestId,
       requestId, taskId, slotId, allocating.size());
   domain::ManageMemoryResult result;
   result.taskId = taskId;
-  if (slotId == ::pipeline_manager::INVALID_SLOT) {
+  if (slotId == tt_blaze::pipeline_manager::INVALID_SLOT) {
     TT_LOG_DEBUG(
         "[SpPipelineMemoryManager] handleResponse: FAILURE (INVALID_SLOT) "
         "for taskId={}",
         taskId);
     result.status = domain::ManageMemoryStatus::FAILURE;
-    result.slotIds = {::pipeline_manager::INVALID_SLOT};
+    result.slotIds = {tt_blaze::pipeline_manager::INVALID_SLOT};
     resultQueue->push(result);
     return;
   }

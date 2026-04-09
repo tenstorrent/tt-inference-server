@@ -326,10 +326,12 @@ void SessionManager::sendAsyncAllocationRequest(
 
 void SessionManager::retryFailedAllocations() {
   auto pendingAllocations = pendingAllocationsRetryQueue.drain();
-  if (!pendingAllocations.empty()) {
-    TT_LOG_DEBUG("[SessionManager] retryFailedAllocations: {} pending retries",
-                 pendingAllocations.size());
+  if (pendingAllocations.empty()) {
+    return;
   }
+  TT_LOG_DEBUG("[SessionManager] retryFailedAllocations: {} pending retries",
+               pendingAllocations.size());
+  evictOldSessions();
   auto now = std::chrono::steady_clock::now();
   for (auto& pendingAllocation : pendingAllocations) {
     if (now >= pendingAllocation.retryAt) {

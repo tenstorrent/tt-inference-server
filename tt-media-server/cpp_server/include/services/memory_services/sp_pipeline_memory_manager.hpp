@@ -15,8 +15,9 @@ class SpPipelineMemoryManager : public AsyncMemoryManager {
   using onEvictCb = std::function<void(uint32_t slotId)>;
 
  public:
-  SpPipelineMemoryManager(::pipeline_manager::PipelineManager& pipelineManager,
-                          onEvictCb onEvict);
+  SpPipelineMemoryManager(
+      tt_blaze::pipeline_manager::PipelineManager& pipelineManager,
+      onEvictCb onEvict);
   ~SpPipelineMemoryManager() = default;
 
   void handleRequest(const domain::ManageMemoryTask& request) override;
@@ -24,7 +25,7 @@ class SpPipelineMemoryManager : public AsyncMemoryManager {
   void handleResponse(uint32_t requestId, uint32_t slotId) override;
 
  private:
-  ::pipeline_manager::PipelineManager& pipelineManager;
+  tt_blaze::pipeline_manager::PipelineManager& pipelineManager;
   std::unordered_map<uint32_t, uint32_t> allocating;
   uint32_t nextRequestID{0};
   onEvictCb onEvict;
