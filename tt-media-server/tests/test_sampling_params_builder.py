@@ -249,3 +249,49 @@ class TestBuildSamplingParamsDirectPassthrough:
 
             kwargs = mock_sp.call_args.kwargs
             assert kwargs["skip_special_tokens"] is False
+
+
+class TestBuildSamplingParamsRunnerOverrides:
+    """Test that runner-level defaults override global defaults."""
+
+    def test_runner_defaults_override_global(self):
+        with patch("utils.sampling_params_builder.SamplingParams") as mock_sp:
+            from utils.sampling_params_builder import build_sampling_params
+
+            runner_defaults = {"temperature": 0.6, "repetition_penalty": 1.1}
+            request = CompletionRequest(prompt="test")
+            build_sampling_params(request, defaults=runner_defaults)
+
+            kwargs = mock_sp.call_args.kwargs
+            assert kwargs["temperature"] == 0.6
+            assert kwargs["repetition_penalty"] == 1.1
+
+    def test_runner_defaults_preserve_unoverridden_globals(self):
+        with patch("utils.sampling_params_builder.SamplingParams") as mock_sp:
+            from utils.sampling_params_builder import build_sampling_params
+
+            runner_defaults = {"temperature": 0.6}
+            request = CompletionRequest(prompt="test")
+            build_sampling_params(request, defaults=runner_defaults)
+
+            kwargs = mock_sp.call_args.kwargs
+            assert kwargs["temperature"] == 0.6
+            # Global defaults still apply for non-overridden params
+            assert (
+                kwargs["repetition_penalty"]
+                == _DEFAULT_SAMPLING_PARAMS["repetition_penalty"]
+            )
+
+    def test_request_values_override_runner_defaults(self):
+        with patch("utils.sampling_params_builder.SamplingParams") as mock_sp:
+            from utils.sampling_params_builder import build_sampling_params
+
+            runner_defaults = {"temperature": 0.6, "repetition_penalty": 1.1}
+            request = CompletionRequest(prompt="test", temperature=0.9)
+            build_sampling_params(request, defaults=runner_defaults)
+
+            kwargs = mock_sp.call_args.kwargs
+            # Request value wins over runner default
+            assert kwargs["temperature"] == 0.9
+            # Runner default still applies when request doesn't specify
+            assert kwargs["repetition_penalty"] == 1.1

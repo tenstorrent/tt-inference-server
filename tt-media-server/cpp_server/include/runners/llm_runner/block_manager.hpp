@@ -9,7 +9,7 @@
 
 #include "runners/llm_runner/sequence.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 class Block {
  public:
@@ -51,4 +51,4 @@ class BlockManager {
   mutable std::mutex mutex;
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

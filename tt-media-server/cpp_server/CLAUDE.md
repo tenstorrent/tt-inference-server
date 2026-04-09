@@ -46,7 +46,7 @@ cd build && ctest --output-on-failure
 
 # Individual test binaries
 ./build/scheduler_test        # LLM engine scheduler tests
-./build/llm_engine_test      # LLM engine integration tests
+./build/llm_runner_test       # LLM runner integration tests
 ./build/sequence_test        # Sequence management tests
 ./build/test_tokenizer       # Tokenizer functionality tests
 
@@ -73,13 +73,13 @@ The server follows a layered architecture mirroring the Python implementation:
 - **API Layer**: Drogon HTTP controllers (`api/`) providing OpenAI-compatible endpoints
 - **Services Layer**: Business logic (`services/`) handling request processing and validation
 - **Workers**: Multiprocess worker architecture (`worker/`) with IPC communication
-- **LLM Engine**: Sophisticated inference engine (`runners/llm_engine/`) with paged attention
+- **LLM engine**: Inference engine (`runners/llm_runner/`; namespace `tt::runners::llm_engine`) with paged attention; CMake target `llm_runner_lib`
 - **Runners**: Multiple runner implementations (`runners/`) for different backends
 - **Domain Objects**: Request/response models (`domain/`) matching OpenAI API spec
 
 ### LLM Engine Features
 
-The core LLM engine (`include/runners/llm_engine/`) provides:
+The core LLM engine (`include/runners/llm_runner/`) provides:
 - **Paged Attention**: KV cache managed in fixed-size blocks with block tables
 - **Prefix Caching**: Content-addressable blocks for sharing common prefixes
 - **Prefill/Decode Separation**: Separate batch types, prefill prioritized over decode
@@ -139,7 +139,7 @@ The project uses modern C++20 with strict compiler warnings and sanitizer suppor
 ### Logging
 
 - Main server uses Drogon logging (in `./logs/` directory)
-- LLM engine uses structured logging with `[DEBUG] [llm_engine:...]` prefix
+- LLM engine uses structured logging with a `runners.llm_engine:` tag in `LLM_ENGINE_LOG` output when `LLM_ENGINE_DEBUG_BUILD` is enabled
 - Enable LLM engine debug logging with `-DLLM_ENGINE_DEBUG_BUILD=ON`
 
 ## Dependencies and Prerequisites
