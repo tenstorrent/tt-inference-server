@@ -45,11 +45,6 @@ void setSocketKeepAlive(int socketFd) {
 }
 }  // namespace
 
-SocketManager& SocketManager::getInstance() {
-  static SocketManager instance;
-  return instance;
-}
-
 SocketManager::~SocketManager() { stop(); }
 
 bool SocketManager::initializeAsServer(uint16_t port) {

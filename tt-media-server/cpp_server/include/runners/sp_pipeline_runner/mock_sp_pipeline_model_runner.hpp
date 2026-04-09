@@ -12,7 +12,7 @@
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 #include "runners/sp_pipeline_runner/mock_device_pipeline.hpp"
 
-namespace sp_pipeline {
+namespace tt::runners::sp_pipeline {
 
 /// Drop-in replacement for SpPipelineModelRunner that uses a simulated
 /// device pipeline instead of shared memory + an external Python process.
@@ -39,4 +39,4 @@ class MockSpPipelineModelRunner : public ISpPipelineModelRunner {
   std::thread reader_thread_;
 };
 
-}  // namespace sp_pipeline
+}  // namespace tt::runners::sp_pipeline

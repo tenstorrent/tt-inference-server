@@ -26,8 +26,11 @@ class SupportedModels(Enum):
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
     LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B"
+    LLAMA_3_2_3B_INSTRUCT = "meta-llama/Llama-3.2-3B-Instruct"
+    LLAMA_3_1_8B_INSTRUCT = "meta-llama/Llama-3.1-8B-Instruct"
     LLAMA_3_1_70B = "meta-llama/Llama-3.1-70B"
     QWEN_3_4B = "Qwen/Qwen3-4B"
+    QWEN_3_8B = "Qwen/Qwen3-8B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
 
@@ -62,8 +65,11 @@ class ModelNames(Enum):
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
     LLAMA_3_2_3B = "Llama-3.2-3B"
     LLAMA_3_1_8B = "Llama-3.1-8B"
+    LLAMA_3_2_3B_INSTRUCT = "Llama-3.2-3B-Instruct"
+    LLAMA_3_1_8B_INSTRUCT = "Llama-3.1-8B-Instruct"
     LLAMA_3_1_70B = "Llama-3.1-70B"
     QWEN_3_4B = "Qwen3-4B"
+    QWEN_3_8B = "Qwen3-8B"
     SPEECHT5_TTS = "speecht5_tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
 
@@ -81,7 +87,7 @@ class ModelRunners(Enum):
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
-    VLLM = "vllm"
+    VLLMForge = "vllm_forge"
     TT_YOLOV4 = "tt-yolov4"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
@@ -130,7 +136,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_XLA_SDXL,
     },
     ModelServices.LLM: {
-        ModelRunners.VLLM,
+        ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_LLAMA_70B,
         ModelRunners.LLM_TEST,
         ModelRunners.LLAMA_RUNNER,
@@ -197,7 +203,13 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
-    ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
+    ModelRunners.VLLMForge: {
+        ModelNames.LLAMA_3_2_3B,
+        ModelNames.LLAMA_3_2_3B_INSTRUCT,
+        ModelNames.LLAMA_3_1_8B_INSTRUCT,
+        ModelNames.QWEN_3_4B,
+        ModelNames.QWEN_3_8B,
+    },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TRAINING_LLAMA_LORA: {ModelNames.LLAMA_3_1_8B},
@@ -966,28 +978,46 @@ ModelConfigs = {
         "default_throttle_level": 0,
         "use_queue_per_worker": True,
     },
-    (ModelRunners.VLLM, DeviceTypes.N150): {
+    (ModelRunners.VLLMForge, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.VLLM, DeviceTypes.N300): {
+    (ModelRunners.VLLMForge, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.VLLM, DeviceTypes.T3K): {
+    (ModelRunners.VLLMForge, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.VLLM, DeviceTypes.GALAXY): {
+    (ModelRunners.VLLMForge, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_XLA_SDXL, DeviceTypes.P150X4): {
@@ -1023,6 +1053,13 @@ for runner in [
         "device_mesh_shape": (1, 1),
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
     }
+
+
+# Per-model overrides applied after device config (keyed by ModelNames enum value)
+MODEL_NAME_OVERRIDES = {
+    ModelNames.QWEN_3_4B: {"chat_template_kwargs": {"enable_thinking": False}},
+    ModelNames.QWEN_3_8B: {"chat_template_kwargs": {"enable_thinking": False}},
+}
 
 
 # Default sampling parameters for vLLM inference

@@ -3,6 +3,7 @@
 
 #include "services/memory_services/paged_memory_manager.hpp"
 
+#include <algorithm>
 #include <utility>
 
 #include "config/settings.hpp"
@@ -32,8 +33,7 @@ PagedMemoryManager::PagedMemoryManager(llm_engine::BlockManager& bm)
 
 ManageMemoryStatus PagedMemoryManager::allocateKv(
     const ManageMemoryTask& task, std::vector<int>& outSlotIds) {
-  std::vector<int64_t> placeholderTokens(static_cast<size_t>(task.inputSeqLen),
-                                         0);
+  std::vector<int64_t> placeholderTokens(1, 0);  // Hardcoded to use one block
   llm_engine::Sequence seq(task.taskId, blockManager->blockSize(),
                            std::move(placeholderTokens));
 

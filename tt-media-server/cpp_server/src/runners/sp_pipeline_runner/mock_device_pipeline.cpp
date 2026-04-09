@@ -9,7 +9,7 @@
 #include "profiling/tracy.hpp"
 #include "runners/llm_runner/debug.hpp"
 
-namespace sp_pipeline {
+namespace tt::runners::sp_pipeline {
 
 namespace {
 constexpr uint64_t FALLBACK_TOKEN_ID = 12345;
@@ -194,4 +194,4 @@ void MockDevicePipeline::pipelineLoop() {
   }
 }
 
-}  // namespace sp_pipeline
+}  // namespace tt::runners::sp_pipeline
