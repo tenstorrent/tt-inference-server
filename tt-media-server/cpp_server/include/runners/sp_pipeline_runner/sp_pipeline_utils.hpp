@@ -9,7 +9,7 @@
 
 namespace tt::runners::sp_pipeline_utils {
 
-namespace pm = pipeline_manager;
+namespace pm = tt_blaze::pipeline_manager;
 
 inline pm::ISRequest makeAllocateRequest(uint32_t requestId) {
   return {
