@@ -75,6 +75,7 @@ class Settings(BaseSettings):
 
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
+    weights_distribution_timeout_seconds: int = 1200
 
     # Job management settings
     max_jobs: int = 10000
