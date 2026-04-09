@@ -391,8 +391,8 @@ class JobManager:
                     and job.completed_at < cutoff_time
                 )
                 is_stuck = (
-                    (job.is_in_progress() or job.is_cancelling()) and job.created_at < stuck_cutoff_time
-                )
+                    job.is_in_progress() or job.is_cancelling()
+                ) and job.created_at < stuck_cutoff_time
                 if is_old_terminal or is_stuck:
                     jobs_to_remove.append(job)
 

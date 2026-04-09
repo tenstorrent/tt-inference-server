@@ -158,7 +158,9 @@ class TestBuildTrainingCatalog:
         assert "adamw" in catalog["supported"]["optimizers"]
 
     def test_invalid_runner_has_empty_models_and_clusters(self):
-        catalog = build_training_catalog("nonexistent-runner", "nonexistent-device", (1, 1), 1)
+        catalog = build_training_catalog(
+            "nonexistent-runner", "nonexistent-device", (1, 1), 1
+        )
         assert catalog["models"] == []
         assert catalog["clusters"] == []
         assert len(catalog["datasets"]) > 0
