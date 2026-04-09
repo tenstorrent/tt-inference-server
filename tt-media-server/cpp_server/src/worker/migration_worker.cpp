@@ -99,17 +99,17 @@ void MigrationWorker::processOffloadRequest(
       root.get("current_session_count", Json::Value(0)).asInt();
   const int maxSessions = root.get("max_sessions", Json::Value(0)).asInt();
 
-  TT_LOG_WARN("[MigrationWorker] ✅ OFFLOAD REQUEST RECEIVED");
-  TT_LOG_WARN("[MigrationWorker]   Action:      {}", action);
-  TT_LOG_WARN("[MigrationWorker]   Session ID:  {}", sessionId);
-  TT_LOG_WARN("[MigrationWorker]   Sessions:    {}/{} ({:.1f}%)", currentCount,
-              maxSessions,
-              maxSessions > 0 ? (currentCount * 100.0 / maxSessions) : 0.0);
-  TT_LOG_WARN("[MigrationWorker]   Sent at:     {} μs", sentUs);
-  TT_LOG_WARN("[MigrationWorker]   Received at: {} μs", receiveUs);
-  TT_LOG_WARN("[MigrationWorker]   ⏱️  OVERHEAD:  {} μs ({:.3f} ms)", overheadUs,
-              overheadMs);
-  TT_LOG_WARN("[MigrationWorker]   Raw payload: {}", message);
+  TT_LOG_DEBUG("[MigrationWorker] ✅ OFFLOAD REQUEST RECEIVED");
+  TT_LOG_DEBUG("[MigrationWorker]   Action:      {}", action);
+  TT_LOG_DEBUG("[MigrationWorker]   Session ID:  {}", sessionId);
+  TT_LOG_DEBUG("[MigrationWorker]   Sessions:    {}/{} ({:.1f}%)", currentCount,
+               maxSessions,
+               maxSessions > 0 ? (currentCount * 100.0 / maxSessions) : 0.0);
+  TT_LOG_DEBUG("[MigrationWorker]   Sent at:     {} μs", sentUs);
+  TT_LOG_DEBUG("[MigrationWorker]   Received at: {} μs", receiveUs);
+  TT_LOG_DEBUG("[MigrationWorker]   ⏱️  OVERHEAD:  {} μs ({:.3f} ms)",
+               overheadUs, overheadMs);
+  TT_LOG_DEBUG("[MigrationWorker]   Raw payload: {}", message);
 }
 
 }  // namespace tt::worker
