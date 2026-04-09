@@ -10,7 +10,7 @@ import torch.nn as nn
 
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
-from vllm.multimodal.inputs import MultiModalKwargs
+from vllm.multimodal.inputs import MultiModalFeatureSpec, MultiModalKwargs
 from vllm.sequence import IntermediateTensors
 from vllm.utils import LayerBlockType, cdiv
 from vllm.v1.kv_cache_interface import AttentionSpec, KVCacheConfig
@@ -41,6 +41,20 @@ if TYPE_CHECKING:
 import numpy as np
 
 logger = init_logger("vllm.tt_vllm_plugin.v1.worker.tt_model_runner")
+
+# Molmo2 / Qwen-VL multimodal keys forwarded to ``prefill_forward(**kwargs)``.
+_MOLMO2_MM_KWARG_KEYS = (
+    "pixel_values",
+    "image_grid_thw",
+    "image_grids",
+    "image_num_crops",
+    "image_token_pooling",
+    "pixel_values_videos",
+    "video_grid_thw",
+    "video_token_pooling",
+    "mm_token_type_ids",
+    "mm_attention_mask",
+)
 
 
 class TTModelRunner:
@@ -234,6 +248,7 @@ class TTModelRunner:
             self.requests[req_id] = CachedRequestState(
                 req_id=req_id,
                 prompt_token_ids=new_req_data.prompt_token_ids,
+                mm_features=new_req_data.mm_features,
                 sampling_params=sampling_params,
                 pooling_params=None,
                 generator=None,
@@ -241,8 +256,7 @@ class TTModelRunner:
                 num_computed_tokens=new_req_data.num_computed_tokens,
                 output_token_ids=[],
                 lora_request=new_req_data.lora_request,
-                mm_kwargs=getattr(new_req_data, "mm_kwargs", []),
-                mm_positions=getattr(new_req_data, "mm_positions", []),
+                prompt_embeds=new_req_data.prompt_embeds,
             )
 
             req_ids_to_add.append(req_id)
@@ -295,45 +309,126 @@ class TTModelRunner:
         if removed_req_indices:
             self.input_batch.condense(removed_req_indices)
 
-    def _validate_mm_input(self, mm_input: MultiModalKwargs) -> None:
-        """Validate multi-modal input supports only single images."""
-        if list(mm_input.modalities) != ["image"]:
-            raise NotImplementedError("Only images are supported for now")
-        assert mm_input.get_item_count("image") == 1, (
-            "Request can contain multiple inputs, \
-            but each input can contain only one image!"
-        )
+    def _validate_mm_feature(self, mm_feature: MultiModalFeatureSpec) -> None:
+        if mm_feature.modality not in ("image", "video"):
+            raise NotImplementedError(
+                f"Only images and videos are supported, got: {mm_feature.modality}"
+            )
 
-    def _gather_multi_modal_inputs(self, scheduler_output) -> dict:
-        """
-        Gather and batch multi-modal inputs from scheduled requests.
-        #TODO: Currently only supports image inputs in the "pixel_values" field.
+    def _gather_multi_modal_inputs(self) -> dict[str, Any]:
+        """Align multimodal kwargs with persistent batch order (matches vLLM TT runner)."""
+        multi_modal_kwargs: MultiModalKwargs = {
+            "pixel_values": [],
+            "image_grid_thw": [],
+            "image_grids": [],
+            "image_num_crops": [],
+            "image_token_pooling": [],
+            "pixel_values_videos": [],
+            "video_grid_thw": [],
+            "video_token_pooling": [],
+            "mm_token_type_ids": [],
+            "mm_attention_mask": [],
+        }
 
-        Creates a list of pixel values for each request.
-        Example:
-        [
-          None, # for requests without mm_inputs
-          [pixel_values_1], # with single mm_input
-          [pixel_values_2, pixel_values_3, ...], # with multiple mm_inputs
-        ]
-        """
-
-        multi_modal_kwargs: MultiModalKwargs = {"pixel_values": []}
-
-        for new_req_data in scheduler_output.scheduled_new_reqs:
-            req_id = new_req_data.req_id
+        num_reqs = self.input_batch.num_reqs
+        for req_id in self.input_batch.req_ids[:num_reqs]:
             req_state = self.requests[req_id]
 
-            if not req_state.mm_inputs:
-                multi_modal_kwargs["pixel_values"].append(None)
+            if not req_state.mm_features:
+                for k in multi_modal_kwargs:
+                    multi_modal_kwargs[k].append(None)
                 continue
 
-            pv_array = []
-            for mm_input in req_state.mm_inputs:
-                self._validate_mm_input(mm_input)
-                pv_array.append(mm_input["pixel_values"])
+            pv_array: list[torch.Tensor | None] = []
+            image_grid_thw_array: list[torch.Tensor | None] = []
+            image_grids_array: list[torch.Tensor | None] = []
+            image_num_crops_array: list[torch.Tensor | None] = []
+            image_token_pooling_array: list[torch.Tensor | None] = []
+            pvv_array: list[torch.Tensor | None] = []
+            video_grid_thw_array: list[torch.Tensor | None] = []
+            video_token_pooling_array: list[torch.Tensor | None] = []
+            mm_token_type_ids_array: list[torch.Tensor | None] = []
+            mm_attention_mask_array: list[torch.Tensor | None] = []
+
+            for mm_feature in req_state.mm_features:
+                self._validate_mm_feature(mm_feature)
+                item = mm_feature.data
+                is_video = mm_feature.modality == "video"
+
+                if item is None:
+                    pv_array.append(None)
+                    image_grid_thw_array.append(None)
+                    image_grids_array.append(None)
+                    image_num_crops_array.append(None)
+                    image_token_pooling_array.append(None)
+                    pvv_array.append(None)
+                    video_grid_thw_array.append(None)
+                    video_token_pooling_array.append(None)
+                    mm_token_type_ids_array.append(None)
+                    mm_attention_mask_array.append(None)
+                    continue
+
+                if is_video:
+                    pvv_array.append(
+                        item["pixel_values_videos"].data
+                        if "pixel_values_videos" in item
+                        else None
+                    )
+                    video_grid_thw_array.append(
+                        item["video_grid_thw"].data if "video_grid_thw" in item else None
+                    )
+                    video_token_pooling_array.append(
+                        item["video_token_pooling"].data
+                        if "video_token_pooling" in item
+                        else None
+                    )
+                    mm_token_type_ids_array.append(
+                        item["mm_token_type_ids"].data
+                        if "mm_token_type_ids" in item
+                        else None
+                    )
+                    mm_attention_mask_array.append(
+                        item["mm_attention_mask"].data
+                        if "mm_attention_mask" in item
+                        else None
+                    )
+                    pv_array.append(None)
+                    image_grid_thw_array.append(None)
+                    image_grids_array.append(None)
+                    image_num_crops_array.append(None)
+                    image_token_pooling_array.append(None)
+                else:
+                    pv_array.append(item["pixel_values"].data)
+                    image_grid_thw_array.append(
+                        item["image_grid_thw"].data if "image_grid_thw" in item else None
+                    )
+                    image_grids_array.append(
+                        item["image_grids"].data if "image_grids" in item else None
+                    )
+                    image_num_crops_array.append(
+                        item["image_num_crops"].data if "image_num_crops" in item else None
+                    )
+                    image_token_pooling_array.append(
+                        item["image_token_pooling"].data
+                        if "image_token_pooling" in item
+                        else None
+                    )
+                    pvv_array.append(None)
+                    video_grid_thw_array.append(None)
+                    video_token_pooling_array.append(None)
+                    mm_token_type_ids_array.append(None)
+                    mm_attention_mask_array.append(None)
 
             multi_modal_kwargs["pixel_values"].append(pv_array)
+            multi_modal_kwargs["image_grid_thw"].append(image_grid_thw_array)
+            multi_modal_kwargs["image_grids"].append(image_grids_array)
+            multi_modal_kwargs["image_num_crops"].append(image_num_crops_array)
+            multi_modal_kwargs["image_token_pooling"].append(image_token_pooling_array)
+            multi_modal_kwargs["pixel_values_videos"].append(pvv_array)
+            multi_modal_kwargs["video_grid_thw"].append(video_grid_thw_array)
+            multi_modal_kwargs["video_token_pooling"].append(video_token_pooling_array)
+            multi_modal_kwargs["mm_token_type_ids"].append(mm_token_type_ids_array)
+            multi_modal_kwargs["mm_attention_mask"].append(mm_attention_mask_array)
 
         return multi_modal_kwargs
 
@@ -514,23 +609,23 @@ class TTModelRunner:
 
         if self.model_config.is_multimodal_model and is_prompt_for_mm:
             # Gather multimodal inputs for prefill requests
-            prefill_mm_kwargs = self._gather_multi_modal_inputs(scheduler_output)
+            prefill_mm_kwargs = self._gather_multi_modal_inputs()
 
             if is_mixed:
                 # For mixed batches, create multimodal kwargs for all requests
                 # Prefill requests get their mm inputs, decode requests get None
-                multi_modal_kwargs: MultiModalKwargs = {"pixel_values": []}
+                multi_modal_kwargs = {k: [] for k in _MOLMO2_MM_KWARG_KEYS}
                 prefill_mm_idx = 0
                 for req_idx in range(num_reqs):
                     if is_prefill_list[req_idx]:
-                        # Prefill request: use gathered mm input
-                        multi_modal_kwargs["pixel_values"].append(
-                            prefill_mm_kwargs["pixel_values"][prefill_mm_idx]
-                        )
+                        for k in _MOLMO2_MM_KWARG_KEYS:
+                            multi_modal_kwargs[k].append(
+                                prefill_mm_kwargs[k][prefill_mm_idx]
+                            )
                         prefill_mm_idx += 1
                     else:
-                        # Decode request: no mm input
-                        multi_modal_kwargs["pixel_values"].append(None)
+                        for k in _MOLMO2_MM_KWARG_KEYS:
+                            multi_modal_kwargs[k].append(None)
             else:
                 # Pure prefill batch: use gathered mm kwargs directly
                 multi_modal_kwargs = prefill_mm_kwargs
@@ -771,12 +866,15 @@ class TTModelRunner:
         sampling_metadata = None
 
         if self.model_config.is_multimodal_model and not is_decode:
-            # Gather multi-modal inputs from all DP ranks
-            multi_modal_kwargs: MultiModalKwargs = {"pixel_values": []}
+            multi_modal_kwargs = {k: [] for k in _MOLMO2_MM_KWARG_KEYS}
             for mi in inputs:
-                multi_modal_kwargs["pixel_values"].append(
-                    mi.multi_modal_kwargs["pixel_values"]
-                )
+                if mi is None:
+                    for k in _MOLMO2_MM_KWARG_KEYS:
+                        multi_modal_kwargs[k].append(None)
+                    continue
+                mm = mi.multi_modal_kwargs
+                for k in _MOLMO2_MM_KWARG_KEYS:
+                    multi_modal_kwargs[k].append(mm.get(k))
         else:
             multi_modal_kwargs = {}
 
@@ -868,16 +966,15 @@ class TTModelRunner:
             }
 
             # Add multimodal kwargs for prefill (filter to only prefill requests)
-            if (
-                model_input.multi_modal_kwargs
-                and "pixel_values" in model_input.multi_modal_kwargs
-            ):
-                prefill_mm_kwargs = {"pixel_values": []}
-                for idx in prefill_indices:
-                    prefill_mm_kwargs["pixel_values"].append(
-                        model_input.multi_modal_kwargs["pixel_values"][idx]
-                    )
-                prefill_kwargs.update(prefill_mm_kwargs)
+            if model_input.multi_modal_kwargs:
+                prefill_mm_kwargs = {}
+                for key in _MOLMO2_MM_KWARG_KEYS:
+                    if key not in model_input.multi_modal_kwargs:
+                        continue
+                    seq = model_input.multi_modal_kwargs[key]
+                    prefill_mm_kwargs[key] = [seq[int(i)] for i in prefill_indices]
+                if prefill_mm_kwargs:
+                    prefill_kwargs.update(prefill_mm_kwargs)
 
             # Handle empty_slots for DP if needed
             if len(batch_size_per_dp) > 1:
