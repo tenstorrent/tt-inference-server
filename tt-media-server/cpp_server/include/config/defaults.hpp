@@ -35,4 +35,19 @@ constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 100;
 constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_TOPIC = "session-offload";
 constexpr const char* KAFKA_GROUP_ID = "migration-workers";
+
+constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 10;
+
+constexpr const char* SERVER_HOST = "0.0.0.0";
+constexpr uint16_t SERVER_PORT = 8000;
+constexpr size_t MAX_CONNECTIONS = 100000;
+constexpr size_t IDLE_CONNECTION_TIMEOUT_S = 300;
+constexpr size_t CLIENT_MAX_BODY_BYTES = 100 * 1024 * 1024;  // 100 MB
+constexpr size_t LOG_FILE_MAX_BYTES = 50 * 1024 * 1024;      // 50 MB
+constexpr size_t LOG_FILE_MAX_COUNT = 5;
+constexpr size_t EMBEDDING_MAX_PIPE_BYTES = 100 * 1024 * 1024;  // 100 MB
+constexpr int CALLBACK_POOL_THREADS = 16;
+constexpr unsigned WORKER_STOP_TIMEOUT_MS = 500;
+constexpr unsigned SHUTDOWN_POLL_MS = 50;
+
 }  // namespace tt::config::defaults

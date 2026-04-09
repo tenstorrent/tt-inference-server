@@ -35,8 +35,9 @@ class Sequence {
            const SamplingParams& samplingParams = SamplingParams());
 
   void serialize(std::ostream& os) const;
-
   static Sequence deserialize(std::istream& is);
+
+  uint32_t taskId;
 
   size_t size() const { return tokenIds.size(); }
   int64_t operator[](size_t i) const { return tokenIds[i]; }
@@ -55,16 +56,37 @@ class Sequence {
            static_cast<int>(numBlocks() - 1) * blockSize;
   }
 
-  void setKVCacheAddress(uint64_t address) { this->address = address; }
-
-  uint64_t getKVCacheAddress() const { return this->address; }
+  void setKVCacheAddress(uint64_t addr) { address = addr; }
+  uint64_t getKVCacheAddress() const { return address; }
 
   std::vector<int64_t> block(size_t i) const;
   std::vector<int64_t> completionTokenIds() const;
-
   void appendToken(int64_t tokenId);
 
-  uint32_t taskId;
+  SequenceStatus getStatus() const { return status; }
+  void setStatus(SequenceStatus s) { status = s; }
+
+  const std::vector<int64_t>& getTokenIds() const { return tokenIds; }
+
+  int64_t getLastToken() const { return lastToken; }
+  void setLastToken(int64_t t) { lastToken = t; }
+
+  size_t getNumPromptTokens() const { return numPromptTokens; }
+  void setNumPromptTokens(size_t n) { numPromptTokens = n; }
+
+  size_t getNumCachedTokens() const { return numCachedTokens; }
+  void setNumCachedTokens(size_t n) { numCachedTokens = n; }
+
+  const std::vector<int>& getBlockTable() const { return blockTable; }
+  std::vector<int>& getMutableBlockTable() { return blockTable; }
+
+  const SamplingParams& getSamplingParams() const { return *samplingParams; }
+  SamplingParams& getMutableSamplingParams() { return *samplingParams; }
+  void setSamplingParams(std::unique_ptr<SamplingParams> p) {
+    samplingParams = std::move(p);
+  }
+
+ private:
   SequenceStatus status = SequenceStatus::WAITING;
   std::vector<int64_t> tokenIds;
   int64_t lastToken = 0;
@@ -72,9 +94,6 @@ class Sequence {
   size_t numCachedTokens = 0;
   std::vector<int> blockTable;
   std::unique_ptr<SamplingParams> samplingParams;
-
- private:
-  size_t numTokens() const { return tokenIds.size(); }
   int blockSize;
   uint64_t address = 0x0;
 };

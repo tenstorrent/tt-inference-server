@@ -144,7 +144,13 @@ def _setup_openai_api_key(args, logger):
         args: Parsed command line arguments
         logger: Logger instance
     """
-    api_key = args.jwt_secret or os.getenv("API_KEY", "your-secret-key")
+    api_key = os.getenv("API_KEY")
+    if not api_key:
+        api_key = "your-secret-key"
+        logger.warning(
+            "API_KEY is not set. Using a default key for media server auth. "
+            "Set API_KEY in .env or as an environment variable."
+        )
     os.environ["OPENAI_API_KEY"] = api_key
     logger.info("OPENAI_API_KEY environment variable set.")
 

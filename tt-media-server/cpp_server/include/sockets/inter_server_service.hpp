@@ -135,7 +135,7 @@ class InterServerService {
  private:
   void setupMessageHandlers();
 
-  SocketManager& socket_manager_;
+  SocketManager socket_manager_;
   PrefillRequestedCallback prefill_requested_callback_;
   PrefillCompleteCallback prefill_complete_callback_;
   HealthCallback health_check_callback_;

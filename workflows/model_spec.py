@@ -2048,8 +2048,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="555f240",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2938,7 +2938,7 @@ image_templates = [
 audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="bac8b34",
+        tt_metal_commit="2508216",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2974,7 +2974,7 @@ audio_tts_templates = [
     ),
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="e4a2dea",
+        tt_metal_commit="2508216",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -3013,7 +3013,7 @@ audio_tts_templates = [
     ),
     ModelSpecTemplate(
         weights=["microsoft/speecht5_tts"],
-        tt_metal_commit="e4a2dea",
+        tt_metal_commit="2508216",
         impl=speecht5_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -3037,7 +3037,7 @@ audio_tts_templates = [
     ),
     ModelSpecTemplate(
         weights=["microsoft/speecht5_tts"],
-        tt_metal_commit="e4a2dea",
+        tt_metal_commit="2508216",
         impl=speecht5_impl,
         min_disk_gb=15,
         min_ram_gb=6,

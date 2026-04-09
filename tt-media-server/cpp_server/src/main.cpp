@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
@@ -14,8 +15,8 @@
 #include <thread>
 
 #include "api/error_response.hpp"
+#include "config/defaults.hpp"
 #include "config/settings.hpp"
-#include "filters/security_filter.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
@@ -47,7 +48,8 @@ int main(int argc, char* argv[]) {
 
     std::thread shutdownMonitor([&worker] {
       while (!workerShutdown.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
       }
       worker.stop();
     });
@@ -58,9 +60,10 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 
-  // Parse command line arguments
-  std::string host = "0.0.0.0";
-  uint16_t port = 8000;
+  namespace defs = tt::config::defaults;
+
+  std::string host = defs::SERVER_HOST;
+  uint16_t port = defs::SERVER_PORT;
   int threads = std::thread::hardware_concurrency();
   tt::utils::service_factory::initializeServices();
 
@@ -106,54 +109,59 @@ int main(int argc, char* argv[]) {
   TT_LOG_INFO("  Model Service: {}", serviceName);
   TT_LOG_INFO("=================================================");
 
-  // Ensure log directory exists (Drogon requires it)
-  mkdir("./logs", 0755);
+  if (mkdir("./logs", 0755) != 0 && errno != EEXIST) {
+    TT_LOG_WARN("[Main] Failed to create log directory: {}", strerror(errno));
+  }
 
-  // Initialize the security token (lazy init happens on first check)
-  SecurityFilter::initToken();
+  const char* envToken = std::getenv("OPENAI_API_KEY");
+  std::string apiKey =
+      (envToken && envToken[0] != '\0') ? envToken : "your-secret-key";
+  if (apiKey == "your-secret-key") {
+    TT_LOG_WARN("[SecurityFilter] OPENAI_API_KEY not set, using default key");
+  }
 
-  // Register pre-handling advice for bearer token authentication
-  drogon::app().registerPreHandlingAdvice([](const drogon::HttpRequestPtr& req,
-                                             drogon::AdviceCallback&& callback,
-                                             drogon::AdviceChainCallback&&
-                                                 chainCallback) {
-    const std::string& path = req->path();
+  drogon::app().registerPreHandlingAdvice(
+      [apiKey](const drogon::HttpRequestPtr& req,
+               drogon::AdviceCallback&& callback,
+               drogon::AdviceChainCallback&& chainCallback) {
+        const std::string& path = req->path();
 
-    // Skip authentication for health, tt-liveness, docs, and openapi endpoints
-    if (path == "/health" || path == "/tt-liveness" || path == "/docs" ||
-        path == "/swagger" || path == "/openapi.json" || path == "/metrics") {
-      chainCallback();
-      return;
-    }
+        if (path == "/health" || path == "/tt-liveness" || path == "/docs" ||
+            path == "/swagger" || path == "/openapi.json" ||
+            path == "/metrics") {
+          chainCallback();
+          return;
+        }
 
-    // Check for Bearer token on protected endpoints
-    const std::string& authHeader = req->getHeader("Authorization");
-    constexpr std::string_view bearerPrefix = "Bearer ";
+        const std::string& authHeader = req->getHeader("Authorization");
+        constexpr std::string_view bearerPrefix = "Bearer ";
 
-    if (authHeader.size() <= bearerPrefix.size() ||
-        authHeader.compare(0, bearerPrefix.size(), bearerPrefix) != 0) {
-      auto resp = tt::api::errorResponse(
-          drogon::k401Unauthorized,
-          "Missing or invalid Authorization header. Expected: Bearer <token>",
-          "authentication_error");
-      resp->addHeader("WWW-Authenticate", "Bearer");
-      callback(resp);
-      return;
-    }
+        if (authHeader.size() <= bearerPrefix.size() ||
+            authHeader.compare(0, bearerPrefix.size(), bearerPrefix) != 0) {
+          auto resp = tt::api::errorResponse(
+              drogon::k401Unauthorized,
+              "Missing or invalid Authorization header. Expected: Bearer "
+              "<token>",
+              "authentication_error");
+          resp->addHeader("WWW-Authenticate", "Bearer");
+          callback(resp);
+          return;
+        }
 
-    std::string_view providedToken(authHeader.data() + bearerPrefix.size(),
-                                   authHeader.size() - bearerPrefix.size());
+        std::string_view providedToken(authHeader.data() + bearerPrefix.size(),
+                                       authHeader.size() - bearerPrefix.size());
 
-    if (providedToken != SecurityFilter::getExpectedToken()) {
-      auto resp = tt::api::errorResponse(
-          drogon::k401Unauthorized, "Invalid API key", "authentication_error");
-      resp->addHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
-      callback(resp);
-      return;
-    }
+        if (providedToken != apiKey) {
+          auto resp =
+              tt::api::errorResponse(drogon::k401Unauthorized,
+                                     "Invalid API key", "authentication_error");
+          resp->addHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
+          callback(resp);
+          return;
+        }
 
-    chainCallback();
-  });
+        chainCallback();
+      });
 
   // Configure Drogon
   drogon::app()
@@ -163,14 +171,16 @@ int main(int argc, char* argv[]) {
       .setThreadNum(threads)
       .setAfterAcceptSockOptCallback([](int fd) {
         int one = 1;
-        setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) < 0) {
+          TT_LOG_WARN("[Main] Failed to set TCP_NODELAY: {}", strerror(errno));
+        }
       })
-      .setMaxConnectionNum(100000)
-      .setMaxConnectionNumPerIP(0)  // No limit per IP
-      .setIdleConnectionTimeout(300)
-      .setKeepaliveRequestsNumber(0)            // No limit
-      .setClientMaxBodySize(100 * 1024 * 1024)  // 100MB max body
-      .setClientMaxMemoryBodySize(100 * 1024 * 1024)
+      .setMaxConnectionNum(defs::MAX_CONNECTIONS)
+      .setMaxConnectionNumPerIP(0)
+      .setIdleConnectionTimeout(defs::IDLE_CONNECTION_TIMEOUT_S)
+      .setKeepaliveRequestsNumber(0)
+      .setClientMaxBodySize(defs::CLIENT_MAX_BODY_BYTES)
+      .setClientMaxMemoryBodySize(defs::CLIENT_MAX_BODY_BYTES)
       .setStaticFilesCacheTime(0);
 
   TT_LOG_INFO("[Main] Starting Drogon server at http://{}:{}", host, port);

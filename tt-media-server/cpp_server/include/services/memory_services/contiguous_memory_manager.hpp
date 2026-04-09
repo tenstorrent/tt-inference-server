@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "services/memory_manager.hpp"
+#include "services/memory_services/memory_manager.hpp"
 
 namespace tt::services {
 

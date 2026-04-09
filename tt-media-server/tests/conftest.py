@@ -36,6 +36,7 @@ mock_modules = [
     "torch_xla",
     "datasets",
     "pytorchcv",
+    "peft",
 ]
 
 # Add mocks to sys.modules before any imports
@@ -297,6 +298,9 @@ submodules = {
     "torch_xla.core": MagicMock(),
     "torch_xla.core.xla_model": MagicMock(),
     "torch_xla.runtime": MagicMock(),
+    "torch_xla.distributed": MagicMock(),
+    "torch_xla.distributed.spmd": MagicMock(),
+    "peft": sys.modules.get("peft", MagicMock()),
     "vllm.sampling_params": sys.modules["vllm"].sampling_params
     if "vllm" in sys.modules
     else MagicMock(),

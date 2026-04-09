@@ -120,6 +120,11 @@ std::string kafkaTopic();
  * defaults::KAFKA_GROUP_ID. */
 std::string kafkaGroupId();
 
+/** Max retries for session slot allocation from
+ * SESSION_ALLOCATION_MAX_RETRIES. Default:
+ * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
+unsigned sessionAllocationMaxRetries();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();
