@@ -106,11 +106,19 @@ FetchContent_MakeAvailable(spdlog)
 # Boost (header-only Boost.Interprocess for IPC message queue)
 find_package(Boost 1.71 REQUIRED)
 
-# tt-blaze pipeline_manager (core-only at compile time; use LD_PRELOAD with
-# the pre-built Full .so at runtime for SocketPipeline support)
-set(PM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(PM_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
-add_subdirectory(tt-blaze/pipeline_manager)
+# Option to enable tt-blaze pipeline_manager
+option(ENABLE_BLAZE "Enable tt-blaze pipeline_manager support" OFF)
+
+if(ENABLE_BLAZE)
+    # tt-blaze pipeline_manager (core-only at compile time; use LD_PRELOAD with
+    # the pre-built Full .so at runtime for SocketPipeline support)
+    set(PM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(PM_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(tt-blaze/pipeline_manager)
+    message(STATUS "tt-blaze pipeline_manager: ENABLED")
+else()
+    message(STATUS "tt-blaze pipeline_manager: DISABLED (use -DENABLE_BLAZE=ON to enable)")
+endif()
 
 # Option for Tracy support
 option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
@@ -229,20 +237,28 @@ set(LLM_ENGINE_SOURCES
     src/utils/deepseek_tokenizer.cpp
     src/utils/llama_tokenizer.cpp
     src/utils/tokenizer_config_loader.cpp
-    src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
-    src/runners/sp_pipeline_runner/sp_pipeline_runner_demo.cpp
-    src/runners/sp_pipeline_runner/i_sp_pipeline_model_runner.cpp
-    src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
-    src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
-    src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
-    src/runners/sp_prefill_runner/sp_prefill_runner.cpp
-    src/runners/sp_prefill_runner/i_sp_prefill_model_runner.cpp
-    src/runners/sp_prefill_runner/sp_prefill_model_runner.cpp
-    src/services/memory_services/sp_pipeline_memory_manager.cpp
     src/services/memory_services/memory_manager.cpp
     src/services/memory_services/paged_memory_manager.cpp
     src/services/memory_services/contiguous_memory_manager.cpp
 )
+
+# Add pipeline runner sources only when ENABLE_BLAZE is ON
+if(ENABLE_BLAZE)
+    list(APPEND LLM_ENGINE_SOURCES
+        src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
+        src/runners/sp_pipeline_runner/sp_pipeline_runner_demo.cpp
+        src/runners/sp_pipeline_runner/i_sp_pipeline_model_runner.cpp
+        src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
+        src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
+        src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
+        src/runners/sp_prefill_runner/sp_prefill_runner.cpp
+        src/runners/sp_prefill_runner/i_sp_prefill_model_runner.cpp
+        src/runners/sp_prefill_runner/sp_prefill_model_runner.cpp
+        src/services/memory_services/sp_pipeline_memory_manager.cpp
+    )
+    message(STATUS "LLM engine: including pipeline runner sources (ENABLE_BLAZE=ON)")
+endif()
+
 # Add socket backend when tt-metal is available
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     list(APPEND LLM_ENGINE_SOURCES
@@ -259,13 +275,23 @@ target_include_directories(llm_engine PUBLIC
     ${TT_METAL_INCLUDE_DIRS}
 )
 # Link tokenizers_cpp and JsonCpp since settings.cpp depends on tokenizer.hpp
+target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp)
+
 # Use PipelineManager::Full (with SocketPipeline + TT::Metalium) when available,
 # otherwise fall back to PipelineManager::Core (mock pipeline only).
-if(TARGET PipelineManager::Full)
-    target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp PipelineManager::Full)
+if(ENABLE_BLAZE)
+    if(TARGET PipelineManager::Full)
+        target_link_libraries(llm_engine PUBLIC PipelineManager::Full)
+        message(STATUS "Linking llm_engine against PipelineManager::Full")
+    elseif(TARGET PipelineManager::Core)
+        target_link_libraries(llm_engine PUBLIC PipelineManager::Core)
+        message(STATUS "Linking llm_engine against PipelineManager::Core")
+    endif()
+    target_compile_definitions(llm_engine PUBLIC ENABLE_BLAZE)
 else()
-    target_link_libraries(llm_engine PUBLIC tokenizers_cpp JsonCpp::JsonCpp PipelineManager::Core)
+    message(STATUS "Skipping PipelineManager linking (ENABLE_BLAZE=OFF)")
 endif()
+
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     target_compile_definitions(llm_engine PUBLIC USE_METAL_CPP_LIB)
     # Find tt_metal library directory
