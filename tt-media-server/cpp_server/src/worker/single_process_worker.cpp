@@ -19,7 +19,8 @@ namespace tt::worker {
 
 namespace {
 
-volatile sig_atomic_t gWorkerId = -1;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+volatile sig_atomic_t gWorkerId =
+    -1;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 void fatalSignalHandler(int sig) {
   const char prefix[] = "[SingleProcessWorker] Worker ";
@@ -56,7 +57,7 @@ void fatalSignalHandler(int sig) {
 }
 
 void installFatalSignalHandlers() {
-  struct sigaction sa {};
+  struct sigaction sa{};
   sa.sa_handler = fatalSignalHandler;
   sigemptyset(&sa.sa_mask);
   sa.sa_flags = SA_RESETHAND;

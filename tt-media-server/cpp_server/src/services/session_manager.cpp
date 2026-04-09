@@ -103,8 +103,9 @@ uint32_t SessionManager::getSlotIdBySessionId(
     s.updateActivityTime();
     result = s.getSlotId();
   });
-  TT_LOG_DEBUG("[SessionManager] getSlotIdBySessionId sessionId={} -> slotId={}",
-               sessionId, result);
+  TT_LOG_DEBUG(
+      "[SessionManager] getSlotIdBySessionId sessionId={} -> slotId={}",
+      sessionId, result);
   return result;
 }
 
@@ -115,9 +116,8 @@ uint32_t SessionManager::acquireSessionSlot(const std::string& sessionId) {
     s.setInFlight(true);
     result = s.getSlotId();
   });
-  TT_LOG_DEBUG(
-      "[SessionManager] acquireSessionSlot sessionId={} -> slotId={}", sessionId,
-      result);
+  TT_LOG_DEBUG("[SessionManager] acquireSessionSlot sessionId={} -> slotId={}",
+               sessionId, result);
   return result;
 }
 
@@ -327,9 +327,8 @@ void SessionManager::sendAsyncAllocationRequest(
 void SessionManager::retryFailedAllocations() {
   auto pendingAllocations = pendingAllocationsRetryQueue.drain();
   if (!pendingAllocations.empty()) {
-    TT_LOG_DEBUG(
-        "[SessionManager] retryFailedAllocations: {} pending retries",
-        pendingAllocations.size());
+    TT_LOG_DEBUG("[SessionManager] retryFailedAllocations: {} pending retries",
+                 pendingAllocations.size());
   }
   auto now = std::chrono::steady_clock::now();
   for (auto& pendingAllocation : pendingAllocations) {

@@ -135,8 +135,8 @@ bool WorkerManager::checkWorkerAlive(size_t workerIdx) {
       int exitCode = WEXITSTATUS(status);
       if (exitCode != 0) {
         TT_LOG_CRITICAL(
-            "[WorkerManager] Worker {} (PID {}) exited with code {}",
-            workerIdx, w->pid, exitCode);
+            "[WorkerManager] Worker {} (PID {}) exited with code {}", workerIdx,
+            w->pid, exitCode);
       } else {
         TT_LOG_WARN(
             "[WorkerManager] Worker {} (PID {}) exited normally (code 0)",
