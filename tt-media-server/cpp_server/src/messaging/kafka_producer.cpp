@@ -4,6 +4,7 @@
 #include "messaging/kafka_producer.hpp"
 
 #include <librdkafka/rdkafka.h>
+
 #include <string>
 
 #include "messaging/utils/kafka_utils.hpp"
@@ -35,7 +36,8 @@ KafkaProducer::KafkaProducer(KafkaProducerConfig config)
     TT_LOG_ERROR("[Kafka] rd_kafka_conf_new failed");
     return;
   }
-  if (!kafka_utils::setConfigOrLog(conf, "bootstrap.servers", config.brokers.c_str())) {
+  if (!kafka_utils::setConfigOrLog(conf, "bootstrap.servers",
+                                   config.brokers.c_str())) {
     rd_kafka_conf_destroy(conf);
     return;
   }
@@ -76,9 +78,9 @@ bool KafkaProducer::send(std::string_view payload, std::string* errorMessage) {
     return false;
   }
 
-  if (rd_kafka_produce(impl_->topic_handle, RD_KAFKA_PARTITION_UA, RD_KAFKA_MSG_F_COPY,
-                       const_cast<char*>(payload.data()), payload.size(), nullptr, 0,
-                       nullptr) != 0) {
+  if (rd_kafka_produce(impl_->topic_handle, RD_KAFKA_PARTITION_UA,
+                       RD_KAFKA_MSG_F_COPY, const_cast<char*>(payload.data()),
+                       payload.size(), nullptr, 0, nullptr) != 0) {
     std::string err = rd_kafka_err2str(rd_kafka_last_error());
 
     TT_LOG_ERROR("[Kafka] rd_kafka_produce failed: {}", err);
@@ -105,7 +107,8 @@ bool KafkaProducer::flush(int timeoutMs, std::string* errorMessage) {
     if (errorMessage) {
       *errorMessage = rd_kafka_err2str(flushErr);
     }
-    TT_LOG_ERROR("[Kafka] rd_kafka_flush failed: {}", rd_kafka_err2str(flushErr));
+    TT_LOG_ERROR("[Kafka] rd_kafka_flush failed: {}",
+                 rd_kafka_err2str(flushErr));
     return false;
   }
   return true;

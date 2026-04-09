@@ -4,6 +4,7 @@
 #include "messaging/kafka_consumer.hpp"
 
 #include <librdkafka/rdkafka.h>
+
 #include <string>
 
 #include "messaging/utils/kafka_utils.hpp"
@@ -31,7 +32,8 @@ KafkaConsumer::KafkaConsumer(KafkaConsumerConfig config)
     return;
   }
 
-  if (!kafka_utils::setConfigOrLog(conf, "bootstrap.servers", config.brokers.c_str()) ||
+  if (!kafka_utils::setConfigOrLog(conf, "bootstrap.servers",
+                                   config.brokers.c_str()) ||
       !kafka_utils::setConfigOrLog(conf, "group.id", config.group_id.c_str()) ||
       !kafka_utils::setConfigOrLog(conf, "auto.offset.reset", "latest") ||
       !kafka_utils::setConfigOrLog(conf, "enable.partition.eof", "false") ||
@@ -54,7 +56,8 @@ KafkaConsumer::KafkaConsumer(KafkaConsumerConfig config)
 
   rd_kafka_poll_set_consumer(kafkaHandle);
 
-  rd_kafka_topic_partition_list_t* subscriptionList = rd_kafka_topic_partition_list_new(1);
+  rd_kafka_topic_partition_list_t* subscriptionList =
+      rd_kafka_topic_partition_list_new(1);
   rd_kafka_topic_partition_list_add(subscriptionList, config.topic.c_str(),
                                     RD_KAFKA_PARTITION_UA);
   rd_kafka_resp_err_t err = rd_kafka_subscribe(kafkaHandle, subscriptionList);

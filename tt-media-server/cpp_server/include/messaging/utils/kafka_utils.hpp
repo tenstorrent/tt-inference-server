@@ -3,11 +3,11 @@
 
 #pragma once
 
+#include <librdkafka/rdkafka.h>
+
 #include <cstddef>
 #include <cstring>
 #include <string>
-
-#include <librdkafka/rdkafka.h>
 
 #include "utils/logger.hpp"
 
@@ -15,11 +15,15 @@ namespace tt::messaging::kafka_utils {
 
 inline constexpr std::size_t kRdkafkaErrstrBytes = 512;
 
-inline void trimNullTerminated(std::string& s) { s.resize(std::strlen(s.c_str())); }
+inline void trimNullTerminated(std::string& s) {
+  s.resize(std::strlen(s.c_str()));
+}
 
-inline bool setConfigOrLog(rd_kafka_conf_t* conf, const char* name, const char* value) {
+inline bool setConfigOrLog(rd_kafka_conf_t* conf, const char* name,
+                           const char* value) {
   char errstr[kRdkafkaErrstrBytes];
-  if (rd_kafka_conf_set(conf, name, value, errstr, sizeof(errstr)) != RD_KAFKA_CONF_OK) {
+  if (rd_kafka_conf_set(conf, name, value, errstr, sizeof(errstr)) !=
+      RD_KAFKA_CONF_OK) {
     TT_LOG_ERROR("[Kafka] config {}={} failed: {}", name, value, errstr);
     return false;
   }
