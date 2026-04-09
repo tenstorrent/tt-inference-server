@@ -220,18 +220,6 @@ class DeviceTypes(Enum):
     BLACKHOLE_GALAXY = "bh-galaxy"
 
 
-class TrainingMeshShapes(Enum):
-    N150 = (1, 1)
-    P150 = (1, 1)
-    P300 = (1, 2)
-
-
-TRAINING_RUNNER_SUPPORTED_DEVICES = {
-    ModelRunners.TRAINING_GEMMA_LORA: {DeviceTypes.P150, DeviceTypes.N150},
-    ModelRunners.TRAINING_LLAMA_LORA: {DeviceTypes.P300},
-}
-
-
 class QueueType(Enum):
     MemoryQueue = "MemoryQueue"
     FasterFifo = "FasterFifo"
@@ -294,8 +282,8 @@ class JobTypes(Enum):
 
 
 class DatasetLoaders(Enum):
-    SST2 = "sst2"
-    ALPACA = "alpaca"
+    SST2 = "SST2"
+    ALPACA = "Alpaca"
 
 
 class TrainingTrainers(Enum):
