@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "runners/llama_model_runner.hpp"
+#include "runners/llm_runner/model_runners/llama_model_runner.hpp"
 
 #include <pybind11/embed.h>
 #include <pybind11/stl.h>

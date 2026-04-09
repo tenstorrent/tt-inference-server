@@ -1,6 +1,6 @@
 #include "profiling/tracy.hpp"
 #include "runners/llm_runner/debug.hpp"
-#include "runners/llm_runner/model_runner.hpp"
+#include "runners/llm_runner/model_runners/model_runner.hpp"
 
 namespace llm_engine {
 

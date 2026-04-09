@@ -1,9 +1,9 @@
-#include "runners/llm_runner/model_runner.hpp"
+#include "runners/llm_runner/model_runners/model_runner.hpp"
 
 #include <stdexcept>
 
 #ifdef USE_METAL_CPP_LIB
-#include "runners/llama_model_runner.hpp"
+#include "runners/llm_runner/model_runners/llama_model_runner.hpp"
 #endif
 
 #include <iostream>

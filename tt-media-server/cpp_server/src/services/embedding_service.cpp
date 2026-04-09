@@ -20,7 +20,7 @@
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
-#include "runners/embedding_runner.hpp"
+#include "runners/embedding_runner/embedding_runner.hpp"
 #include "services/embedding_codec.hpp"
 #include "services/embedding_service.hpp"
 #include "utils/logger.hpp"
