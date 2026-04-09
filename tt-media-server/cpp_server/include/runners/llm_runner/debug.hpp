@@ -7,7 +7,7 @@
 
 #ifdef LLM_ENGINE_DEBUG
 
-namespace llm_engine::detail {
+namespace tt::runners::llm_engine::detail {
 
 inline double elapsed_ms() {
   static const auto start = std::chrono::steady_clock::now();
@@ -23,7 +23,8 @@ inline std::mutex& log_mutex() {
 class LogBuf {
  public:
   explicit LogBuf(const char* component) : buf_() {
-    buf_ << "[" << elapsed_ms() << " ms llm_engine:" << component << "] ";
+    buf_ << "[" << elapsed_ms() << " ms runners.llm_engine:" << component
+         << "] ";
   }
   ~LogBuf() {
     std::lock_guard<std::mutex> lock(log_mutex());
@@ -43,9 +44,10 @@ class LogBuf {
   std::ostringstream buf_;
 };
 
-}  // namespace llm_engine::detail
+}  // namespace tt::runners::llm_engine::detail
 
-#define LLM_ENGINE_LOG(component) llm_engine::detail::LogBuf(component)
+#define LLM_ENGINE_LOG(component) \
+  tt::runners::llm_engine::detail::LogBuf(component)
 #else
 #define LLM_ENGINE_LOG(component) \
   if (false) std::cerr

@@ -104,6 +104,7 @@ class TTLogger:
 
         self.logger = logging.getLogger(name)
         self.logger.setLevel(level)
+        self.logger.propagate = False
 
         # Avoid adding duplicate handlers if the logger is reused.
         if not self.logger.handlers:

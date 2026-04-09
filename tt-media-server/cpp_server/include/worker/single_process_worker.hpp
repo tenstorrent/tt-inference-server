@@ -16,7 +16,7 @@ namespace tt::worker {
 
 struct WorkerConfig {
   std::unordered_map<std::string, std::string> env_vars;
-  std::shared_ptr<llm_engine::ITaskQueue> task_queue;
+  std::shared_ptr<tt::runners::llm_engine::ITaskQueue> task_queue;
   std::shared_ptr<tt::ipc::TokenRingBuffer<65536>> result_queue;
   std::shared_ptr<tt::ipc::ICancelQueue> cancel_queue;
   int worker_id;

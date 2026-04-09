@@ -11,7 +11,7 @@
 #include "domain/slot_types.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED, ABORTED };
 
@@ -99,4 +99,4 @@ class Sequence {
   uint32_t kvCacheSlot = tt::domain::INVALID_SLOT_ID;
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

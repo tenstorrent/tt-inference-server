@@ -2,7 +2,7 @@
 #include "runners/llm_runner/debug.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 using Config = tt::config::LLMConfig;
 
@@ -50,4 +50,4 @@ std::unique_ptr<IModelRunner> makeMockModelRunner(const Config& config,
   return std::make_unique<MockModelRunner>(config, std::move(callback));
 }
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

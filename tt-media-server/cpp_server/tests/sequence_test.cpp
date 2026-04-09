@@ -11,7 +11,7 @@
 #include "runners/llm_runner/sampling_params.hpp"
 #include "utils/id_generator.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 namespace {
 
 TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
@@ -195,4 +195,4 @@ TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
 }
 
 }  // namespace
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine
