@@ -14,6 +14,7 @@
 #include "domain/chat_message.hpp"
 #include "domain/json_field.hpp"
 #include "domain/llm_request.hpp"
+#include "domain/tool.hpp"
 #include "utils/tokenizer.hpp"
 
 namespace tt::domain {
@@ -75,6 +76,11 @@ struct ChatCompletionRequest : BaseRequest {
 
   // Session management
   std::optional<std::string> sessionId;
+
+  // Tool calling support
+  std::optional<std::vector<Tool>> tools;
+  std::optional<ToolChoice> tool_choice;
+  bool parallel_tool_calls = true;
 
   static ChatCompletionRequest fromJson(const Json::Value& json,
                                         uint32_t taskId) {
@@ -175,6 +181,26 @@ struct ChatCompletionRequest : BaseRequest {
 
     if (json.isMember("session_id") && !json["session_id"].isNull())
       req.sessionId = getString(json["session_id"], "session_id");
+
+    // Parse tools
+    if (json.isMember("tools") && json["tools"].isArray()) {
+      std::vector<Tool> toolList;
+      for (const auto& t : json["tools"]) {
+        toolList.push_back(Tool::fromJson(t));
+      }
+      req.tools = std::move(toolList);
+    }
+
+    // Parse tool_choice
+    if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
+      req.tool_choice = ToolChoice::fromJson(json["tool_choice"]);
+    }
+
+    // Parse parallel_tool_calls
+    if (json.isMember("parallel_tool_calls")) {
+      req.parallel_tool_calls =
+          getBool(json["parallel_tool_calls"], "parallel_tool_calls");
+    }
 
     return req;
   }
