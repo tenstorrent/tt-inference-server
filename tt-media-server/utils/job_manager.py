@@ -73,6 +73,9 @@ class Job:
     def is_in_progress(self) -> bool:
         return self.status == JobStatus.IN_PROGRESS
 
+    def is_cancelling(self) -> bool:
+        return self.status == JobStatus.CANCELLING
+
     def is_completed(self) -> bool:
         return self.status == JobStatus.COMPLETED
 
@@ -373,7 +376,7 @@ class JobManager:
         self._logger.info("Job cleanup task started")
 
     def _cleanup_old_jobs(self):
-        """Remove old completed/failed/cancelled and stuck in-progress jobs."""
+        """Remove old completed/failed/cancelled, stuck in-progress, and stale cancelling jobs."""
         current_time = time.time()
         cutoff_time = current_time - self._settings.job_retention_seconds
         stuck_cutoff_time = current_time - self._settings.job_max_stuck_time_seconds
@@ -382,21 +385,36 @@ class JobManager:
 
         with self._jobs_lock:
             for job_id, job in self._jobs.items():
-                if (
+                is_old_terminal = (
                     job.is_terminal()
                     and job.completed_at
                     and job.completed_at < cutoff_time
-                ) or (job.is_in_progress() and job.created_at < stuck_cutoff_time):
+                )
+                is_stuck = (
+                    (job.is_in_progress() or job.is_cancelling()) and job.created_at < stuck_cutoff_time
+                )
+                if is_old_terminal or is_stuck:
                     jobs_to_remove.append(job)
 
         if not jobs_to_remove:
             return
 
         for job in jobs_to_remove:
-            if job.is_in_progress():
-                job.mark_cancelling()
+            if job.is_in_progress() or job.status == JobStatus.CANCELLING:
+                if job.is_in_progress():
+                    self._logger.warning(
+                        f"Force-cancelling stuck in-progress job {job.id}"
+                    )
+                else:
+                    self._logger.warning(
+                        f"Force-cancelling stale cancelling job {job.id}"
+                    )
+                self._cleanup_job(job, force=True)
+                job.mark_failed(
+                    error_code="stale_job",
+                    error_message="Job was stuck and force-cancelled by cleanup",
+                )
                 self._sync_status_to_db(job)
-            self._cleanup_job(job)
             if job.result_path and isinstance(job.result_path, str):
                 try:
                     if os.path.exists(job.result_path):

@@ -52,6 +52,14 @@ async def submit_fine_tuning_request(
         service.scheduler.check_is_model_ready()
     except Exception:
         raise HTTPException(status_code=405, detail="Model is not ready")
+
+    settings = get_settings()
+    if request.device_type != settings.device:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Request device '{request.device_type}' does not match server device '{settings.device}'",
+        )
+
     try:
         job_data = await service.create_job(JobTypes.TRAINING, request)
         return JSONResponse(content=job_data, status_code=201)
