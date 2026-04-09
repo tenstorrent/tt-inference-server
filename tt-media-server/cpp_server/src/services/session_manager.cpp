@@ -311,7 +311,7 @@ void SessionManager::handleMemoryResult(
         pendingAllocation.session.getSessionId());
     pendingAllocation.eventLoop->queueInLoop(
         [onError = std::move(pendingAllocation.onError)]() {
-          onError("Failed to allocate: IPC queue full after all attempts");
+          onError("Failed to allocate slot id: All attemps have failed");
         });
   }
 }
