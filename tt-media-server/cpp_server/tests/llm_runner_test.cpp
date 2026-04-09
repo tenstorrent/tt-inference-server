@@ -11,8 +11,8 @@
 
 #include "config/runner_config.hpp"
 #include "ipc/token_ring_buffer.hpp"
-#include "runners/llm_runner/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
+#include "runners/llm_runner/llm_runner.hpp"
 #include "runners/llm_runner/sequence.hpp"
 namespace llm_engine {
 
