@@ -5273,17 +5273,12 @@
             {
                 "isl": 128,
                 "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
+                "max_concurrency": 32,
+                "num_prompts": 256,
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 15,
-                        "tput_user": 125,
-                        "tput": 125
+                        "tput_user": 125
                     }
                 }
             }
