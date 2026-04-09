@@ -51,20 +51,19 @@ bool SocketManager::initializeAsServer(uint16_t port) {
   mode_ = Mode::SERVER;
   port_ = port;
 
-  server_socket_ = socket(AF_INET, SOCK_STREAM, 0);
-  if (server_socket_ < 0) {
+  server_socket_.reset(socket(AF_INET, SOCK_STREAM, 0));
+  if (!server_socket_) {
     TT_LOG_ERROR("[SocketManager] Failed to create server socket: {}",
                  strerror(errno));
     return false;
   }
 
-  // Set socket options
   int opt = 1;
-  if (setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) <
-      0) {
+  if (setsockopt(server_socket_.get(), SOL_SOCKET, SO_REUSEADDR, &opt,
+                 sizeof(opt)) < 0) {
     TT_LOG_ERROR("[SocketManager] Failed to set SO_REUSEADDR: {}",
                  strerror(errno));
-    close(server_socket_);
+    server_socket_.reset();
     return false;
   }
 
@@ -73,16 +72,17 @@ bool SocketManager::initializeAsServer(uint16_t port) {
   address.sin_addr.s_addr = INADDR_ANY;
   address.sin_port = htons(port_);
 
-  if (bind(server_socket_, (struct sockaddr*)&address, sizeof(address)) < 0) {
+  if (bind(server_socket_.get(), (struct sockaddr*)&address, sizeof(address)) <
+      0) {
     TT_LOG_ERROR("[SocketManager] Failed to bind to port {}: {}", port_,
                  strerror(errno));
-    close(server_socket_);
+    server_socket_.reset();
     return false;
   }
 
-  if (listen(server_socket_, 1) < 0) {
+  if (listen(server_socket_.get(), 1) < 0) {
     TT_LOG_ERROR("[SocketManager] Failed to listen: {}", strerror(errno));
-    close(server_socket_);
+    server_socket_.reset();
     return false;
   }
 
@@ -124,20 +124,12 @@ void SocketManager::stop() {
   running_ = false;
   connected_ = false;
 
-  if (peer_socket_ >= 0) {
-    close(peer_socket_);
-    peer_socket_ = -1;
-  }
+  // peer_socket_ is non-owning; just clear the reference.
+  // The owning UniqueFd (server_socket_ or client_socket_) handles the close.
+  peer_socket_ = -1;
 
-  if (client_socket_ >= 0) {
-    close(client_socket_);
-    client_socket_ = -1;
-  }
-
-  if (server_socket_ >= 0) {
-    close(server_socket_);
-    server_socket_ = -1;
-  }
+  client_socket_.reset();
+  server_socket_.reset();
 
   if (server_thread_.joinable()) {
     server_thread_.join();
@@ -157,37 +149,34 @@ void SocketManager::serverLoop() {
     struct sockaddr_in clientAddr;
     socklen_t clientLen = sizeof(clientAddr);
 
-    int newSocket =
-        accept(server_socket_, (struct sockaddr*)&clientAddr, &clientLen);
-    if (newSocket < 0) {
+    tt::utils::UniqueFd accepted(
+        accept(server_socket_.get(), (struct sockaddr*)&clientAddr, &clientLen));
+    if (!accepted) {
       if (running_) {
         TT_LOG_ERROR("[SocketManager] Accept failed: {}", strerror(errno));
       }
       break;
     }
 
-    int flags = fcntl(newSocket, F_GETFL, 0);
-    if (flags < 0 || fcntl(newSocket, F_SETFL, flags | O_NONBLOCK) < 0) {
+    int flags = fcntl(accepted.get(), F_GETFL, 0);
+    if (flags < 0 || fcntl(accepted.get(), F_SETFL, flags | O_NONBLOCK) < 0) {
       TT_LOG_WARN("[SocketManager] Failed to set non-blocking: {}",
                   strerror(errno));
     }
-    setSocketKeepAlive(newSocket);
+    setSocketKeepAlive(accepted.get());
 
-    peer_socket_ = newSocket;
+    peer_socket_ = accepted.get();
     connected_ = true;
 
     TT_LOG_INFO("[SocketManager] Client connected from {}:{}",
                 inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
 
-    // Wait until disconnected
     while (running_ && connected_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    if (peer_socket_ >= 0) {
-      close(peer_socket_);
-      peer_socket_ = -1;
-    }
+    accepted.reset();
+    peer_socket_ = -1;
     bool wasConnected = connected_.exchange(false);
     if (wasConnected && connection_lost_callback_) {
       connection_lost_callback_();
@@ -199,8 +188,8 @@ void SocketManager::serverLoop() {
 
 void SocketManager::clientLoop() {
   while (running_) {
-    client_socket_ = socket(AF_INET, SOCK_STREAM, 0);
-    if (client_socket_ < 0) {
+    client_socket_.reset(socket(AF_INET, SOCK_STREAM, 0));
+    if (!client_socket_) {
       TT_LOG_ERROR("[SocketManager] Failed to create client socket: {}",
                    strerror(errno));
       std::this_thread::sleep_for(std::chrono::seconds(5));
@@ -213,43 +202,40 @@ void SocketManager::clientLoop() {
 
     if (inet_pton(AF_INET, host_.c_str(), &serverAddr.sin_addr) <= 0) {
       TT_LOG_ERROR("[SocketManager] Invalid address: {}", host_);
-      close(client_socket_);
+      client_socket_.reset();
       std::this_thread::sleep_for(std::chrono::seconds(5));
       continue;
     }
 
     TT_LOG_INFO("[SocketManager] Attempting to connect to {}:{}", host_, port_);
 
-    if (connect(client_socket_, (struct sockaddr*)&serverAddr,
+    if (connect(client_socket_.get(), (struct sockaddr*)&serverAddr,
                 sizeof(serverAddr)) < 0) {
       TT_LOG_ERROR("[SocketManager] Connection failed: {}", strerror(errno));
-      close(client_socket_);
+      client_socket_.reset();
       std::this_thread::sleep_for(std::chrono::seconds(5));
       continue;
     }
 
-    int flags = fcntl(client_socket_, F_GETFL, 0);
-    if (flags < 0 || fcntl(client_socket_, F_SETFL, flags | O_NONBLOCK) < 0) {
+    int flags = fcntl(client_socket_.get(), F_GETFL, 0);
+    if (flags < 0 ||
+        fcntl(client_socket_.get(), F_SETFL, flags | O_NONBLOCK) < 0) {
       TT_LOG_WARN("[SocketManager] Failed to set non-blocking: {}",
                   strerror(errno));
     }
-    setSocketKeepAlive(client_socket_);
+    setSocketKeepAlive(client_socket_.get());
 
-    peer_socket_ = client_socket_;
+    peer_socket_ = client_socket_.get();
     connected_ = true;
 
     TT_LOG_INFO("[SocketManager] Connected to server");
 
-    // Wait until disconnected
     while (running_ && connected_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    if (client_socket_ >= 0) {
-      close(client_socket_);
-      client_socket_ = -1;
-    }
     peer_socket_ = -1;
+    client_socket_.reset();
     bool wasConnected = connected_.exchange(false);
     if (wasConnected && connection_lost_callback_) {
       connection_lost_callback_();

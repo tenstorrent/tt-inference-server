@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "utils/logger.hpp"
+#include "utils/unique_fd.hpp"
 
 namespace tt::sockets {
 
@@ -116,9 +117,9 @@ class SocketManager {
   std::string host_;
   uint16_t port_;
 
-  int server_socket_ = -1;
-  int client_socket_ = -1;
-  int peer_socket_ = -1;  // Active connection socket
+  tt::utils::UniqueFd server_socket_;
+  tt::utils::UniqueFd client_socket_;
+  int peer_socket_ = -1;  // Non-owning view of active connection FD
 
   std::atomic<bool> running_{false};
   std::atomic<bool> connected_{false};
