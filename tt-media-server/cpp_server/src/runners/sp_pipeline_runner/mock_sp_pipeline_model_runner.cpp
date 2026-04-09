@@ -5,7 +5,7 @@
 
 #include "profiling/tracy.hpp"
 
-namespace sp_pipeline {
+namespace tt::runners::sp_pipeline {
 
 MockSpPipelineModelRunner::MockSpPipelineModelRunner(DecodeCallback callback,
                                                      MockDeviceConfig config)
@@ -40,4 +40,4 @@ void MockSpPipelineModelRunner::reader_loop() {
   }
 }
 
-}  // namespace sp_pipeline
+}  // namespace tt::runners::sp_pipeline

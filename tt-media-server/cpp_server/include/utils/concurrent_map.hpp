@@ -8,6 +8,8 @@
 
 #include "profiling/tracy.hpp"
 
+namespace tt::utils {
+
 template <typename Key, typename Value>
 class ConcurrentMap {
  public:
@@ -88,3 +90,5 @@ class ConcurrentMap {
   std::unordered_map<Key, Value> map_;
   mutable TRACY_LOCKABLE(std::mutex, mutex);
 };
+
+}  // namespace tt::utils
