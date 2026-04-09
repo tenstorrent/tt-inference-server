@@ -41,7 +41,7 @@ class KafkaConsumer {
    * @note This method must be called regularly (at least every few seconds) to
    *       maintain the consumer's liveness in the consumer group.
    */
-  std::optional<std::string> pollPayload(int timeoutMs);
+  std::optional<std::string> receive(int timeoutMs);
 
  private:
   struct Impl;

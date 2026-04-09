@@ -53,7 +53,7 @@ void MigrationWorker::consumerLoop() {
   TT_LOG_INFO("[MigrationWorker] Entering consumer loop");
 
   while (running_.load(std::memory_order_relaxed)) {
-    auto msg = consumer_->pollPayload(1);
+    auto msg = consumer_->receive(1);
 
     if (msg.has_value()) {
       auto receiveTime = std::chrono::system_clock::now();

@@ -72,7 +72,7 @@ KafkaConsumer::KafkaConsumer(KafkaConsumerConfig config)
 
 KafkaConsumer::~KafkaConsumer() = default;
 
-std::optional<std::string> KafkaConsumer::pollPayload(int timeoutMs) {
+std::optional<std::string> KafkaConsumer::receive(int timeoutMs) {
   if (!impl_ || !impl_->kafka_handle) {
     return std::nullopt;
   }

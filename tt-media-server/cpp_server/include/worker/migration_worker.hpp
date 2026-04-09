@@ -34,7 +34,6 @@ class MigrationWorker {
   /**
    * Starts the worker thread that polls Kafka for messages.
    *
-   * Creates a background thread that continuously polls the Kafka topic.
    * Safe to call multiple times (subsequent calls are no-ops).
    */
   void start();

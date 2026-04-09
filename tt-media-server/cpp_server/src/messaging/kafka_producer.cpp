@@ -68,7 +68,7 @@ KafkaProducer::KafkaProducer(KafkaProducerConfig config)
 
 KafkaProducer::~KafkaProducer() = default;
 
-bool KafkaProducer::sendCopy(std::string_view payload, std::string* errorMessage) {
+bool KafkaProducer::send(std::string_view payload, std::string* errorMessage) {
   if (!impl_ || !impl_->kafka_handle || !impl_->topic_handle) {
     if (errorMessage) {
       *errorMessage = "Kafka producer not initialized";

@@ -39,7 +39,7 @@ class KafkaProducer {
    *       this function returns. Use flush() or destructor for guaranteed
    * delivery.
    */
-  bool sendCopy(std::string_view payload, std::string* errorMessage = nullptr);
+  bool send(std::string_view payload, std::string* errorMessage = nullptr);
 
  private:
   struct Impl;
