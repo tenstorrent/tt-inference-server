@@ -126,10 +126,16 @@ void SpPipelineRunner::stop() {
 void SpPipelineRunner::step() {
   auto memoryRequest = getMemoryRequest();
   if (memoryRequest.has_value()) {
+    TT_LOG_DEBUG(
+        "[SpPipelineRunner] step: got memoryRequest taskId={}, action={}",
+        memoryRequest->taskId, static_cast<int>(memoryRequest->action));
     handleMemoryRequest(*memoryRequest);
   }
   auto response = getResponse();
   if (response.has_value()) {
+    TT_LOG_DEBUG(
+        "[SpPipelineRunner] step: got PMResponse request_id={}, slot_id={}",
+        response->request_id, response->slot_id);
     handleResponse(*response);
   }
   auto output = getOutput();
@@ -138,6 +144,11 @@ void SpPipelineRunner::step() {
   }
   auto request = getRequest();
   if (request) {
+    TT_LOG_DEBUG(
+        "[SpPipelineRunner] step: got Sequence taskId={}, slotId={}, "
+        "numPromptTokens={}, totalTokens={}",
+        request->taskId, request->getKVCacheSlot(),
+        request->getNumPromptTokens(), request->getTokenIds().size());
     handleRequest(std::move(request));
   }
 }
@@ -182,7 +193,10 @@ SpPipelineRunner::getMemoryRequest() {
 void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
   auto it = running.find(output.slot_id);
   if (it == running.end()) {
-    TT_LOG_ERROR("SpPipelineRunner: Output for unknown slot");
+    TT_LOG_ERROR(
+        "[SpPipelineRunner] handleOutput: output for unknown slot_id={}, "
+        "token_id={}, is_complete={}",
+        output.slot_id, output.token_id, output.is_complete);
     return;
   }
   auto& seq = *it->second;
@@ -192,6 +206,15 @@ void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
 }
 
 inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
+  auto it = running.find(slotId);
+  if (it != running.end()) {
+    TT_LOG_DEBUG(
+        "[SpPipelineRunner] evictSlot: slotId={}, was running taskId={}",
+        slotId, it->second->taskId);
+  } else {
+    TT_LOG_DEBUG("[SpPipelineRunner] evictSlot: slotId={} (not in running map)",
+                 slotId);
+  }
   running.erase(slotId);
 }
 
@@ -202,6 +225,12 @@ void SpPipelineRunner::handleRequest(
 
   auto it = running.find(slotId);
   bool isNew = (it == running.end());
+
+  TT_LOG_DEBUG(
+      "[SpPipelineRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
+      "numPromptTokens={}, totalTokens={}, runningSlots={}",
+      request->taskId, slotId, isNew, request->getNumPromptTokens(),
+      request->getTokenIds().size(), running.size());
 
   if (!isNew && it->second->taskId != request->taskId) {
     TT_LOG_INFO(
@@ -214,10 +243,16 @@ void SpPipelineRunner::handleRequest(
   }
 
   if (isNew) {
+    TT_LOG_DEBUG(
+        "[SpPipelineRunner] handleRequest: SUBMIT taskId={}, slotId={}",
+        request->taskId, slotId);
     pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
     running[slotId] = std::move(request);
     return;
   }
+  TT_LOG_DEBUG(
+      "[SpPipelineRunner] handleRequest: CONTINUE taskId={}, slotId={}",
+      request->taskId, slotId);
   pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
   running[slotId] = std::move(request);
 }
