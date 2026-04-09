@@ -197,6 +197,12 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
         request: TrainingRequest = training_requests[0]
 
+        if request.device_type != self.settings.device:
+            raise ValueError(
+                f"Request device '{request.device_type}' does not match "
+                f"server device '{self.settings.device}'"
+            )
+
         log_handler = None
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
