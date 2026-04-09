@@ -8,8 +8,8 @@
 #ifdef ENABLE_BLAZE
 #include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
 #include "runners/sp_prefill_runner/sp_prefill_runner.hpp"
-#include "sp_pipeline_runner/sp_pipeline_runner_demo.hpp"
 #endif
+#include "sp_pipeline_runner/sp_pipeline_runner_demo.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::utils::runner_factory {
