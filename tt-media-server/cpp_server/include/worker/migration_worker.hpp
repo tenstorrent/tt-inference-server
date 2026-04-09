@@ -4,11 +4,12 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <thread>
 
-#include "messaging/kafka_client.hpp"
+#include "messaging/kafka_consumer.hpp"
 
 namespace tt::worker {
 
@@ -69,7 +70,8 @@ class MigrationWorker {
    *
    * @param message JSON string containing offload request
    */
-  void processOffloadRequest(const std::string& message, auto receiveTime);
+  void processOffloadRequest(const std::string& message,
+                             std::chrono::system_clock::time_point receiveTime);
 
   MigrationWorkerConfig config_;
   std::unique_ptr<tt::messaging::KafkaConsumer> consumer_;

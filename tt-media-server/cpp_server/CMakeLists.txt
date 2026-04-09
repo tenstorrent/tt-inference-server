@@ -388,7 +388,8 @@ if(KAFKA_ENABLED)
     message(STATUS "  include: ${RDKAFKA_INCLUDE_DIR}")
 
     add_library(messaging
-        src/messaging/kafka_client.cpp
+        src/messaging/kafka_producer.cpp
+        src/messaging/kafka_consumer.cpp
     )
     target_include_directories(messaging PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
