@@ -1173,7 +1173,6 @@ _eval_config_list = [
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
                 num_fewshot=5,
-                max_concurrent=8,
                 use_chat_api=True,
                 score=EvalTaskScore(
                     published_score=45.96,
@@ -1188,9 +1187,6 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                model_kwargs={
-                    "fix_mistral_regex": True,
-                },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
@@ -1198,7 +1194,6 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="humaneval_instruct",
-                max_concurrent=8,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=88.41,
@@ -1215,10 +1210,6 @@ _eval_config_list = [
                 ),
                 apply_chat_template=False,
                 batch_size=16,
-                model_kwargs={
-                    "fix_mistral_regex": True,
-                    "max_length": 65536,
-                },
                 gen_kwargs={
                     "max_gen_toks": "256",
                     "do_sample": "false",
@@ -1232,7 +1223,6 @@ _eval_config_list = [
             EvalTask(
                 eval_class="openai_compatible",
                 task_name="chartqa",
-                max_concurrent=8,
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
                 apply_chat_template=False,
                 use_chat_api=True,
