@@ -1868,7 +1868,7 @@ llm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "data_parallel_size": 8,
+                    "data_parallel_size": 1,
                 },
                 override_tt_config={
                     "sample_on_device_mode": "decode_only",
