@@ -135,7 +135,9 @@ class TestFilter:
         """
         template_name = test_case.get("template")
         if not template_name:
-            logger.info(f"Direct test case (no template): {test_case.get('name', 'unknown')}")
+            logger.info(
+                f"Direct test case (no template): {test_case.get('name', 'unknown')}"
+            )
             return test_case
 
         template = self.test_templates.get(template_name, {})
@@ -265,7 +267,9 @@ class TestFilter:
         Returns:
             List of expanded prerequisite test dicts.
         """
-        logger.info(f"Getting prerequisite tests for suite: {suite.get('id', 'unknown')}")
+        logger.info(
+            f"Getting prerequisite tests for suite: {suite.get('id', 'unknown')}"
+        )
         prereqs = []
         for prereq in self.prerequisite_tests:
             expanded = self._expand_prerequisite_test(prereq, suite)
