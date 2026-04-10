@@ -1044,7 +1044,7 @@ ModelConfigs = {
         "default_throttle_level": 0,
         "use_queue_per_worker": True,
     },
-    (ModelRunners.VLLM, DeviceTypes.N150): {
+    (ModelRunners.VLLMForge, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
