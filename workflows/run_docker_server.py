@@ -47,10 +47,11 @@ def get_media_server_docker_env_vars(model_spec):
     env_vars = {
         "MODEL": model_spec.model_name,
         "DEVICE": model_spec.device_type.name.lower(),
+        "SERVICE_PORT": str(model_spec.cli_args.service_port),
     }
 
     logger.info(
-        f"Media server environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}"
+        f"Media server environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}, SERVICE_PORT={model_spec.cli_args.service_port}"
     )
     return env_vars
 
@@ -158,7 +159,8 @@ def run_docker_server(model_spec, setup_config, json_fpath):
         "--mount", f"type=bind,src={setup_config.host_model_volume_root},dst={setup_config.cache_root}",
         "--mount", f"type=bind,src={json_fpath},dst={docker_json_fpath},readonly",
         "--shm-size", "32G",
-        "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",  # map host port 8000 to container port 8000
+        # note: host:container port must match SERVICE_PORT in env so uvicorn binds the exposed port
+        "--publish", f"{model_spec.cli_args.service_port}:{model_spec.cli_args.service_port}",
     ]
     # mount model weights only if model source requires it
     if setup_config.model_source != ModelSource.NOACTION.value:
