@@ -2144,20 +2144,29 @@ def extract_eval_json_data(json_path: Path):
     results = data.get("results", {})
     configs = data.get("configs", {})
 
-    extracted = []
-    for key, key_results in results.items():
-        extracted_metrics = {
-            k: v
-            for k, v in key_results.items()
-            if "alias" not in k and "_stderr" not in k
-        }
-        extracted.append({key: extracted_metrics})
+    first_key = list(results.keys())[0]
 
-    dataset_path = None
-    if configs:
-        dataset_path = list(configs.values())[0].get("dataset_path")
+    # extract first results' metrics
+    first_results = results[first_key]
+    extracted_metrics = {
+        k: v
+        for k, v in first_results.items()
+        if "alias" not in k and "_stderr" not in k
+    }
+    extracted = [{first_key: extracted_metrics}]
 
-    meta_data = {"dataset_path": dataset_path}
+    config = configs.get(first_key, {})
+    task_name = config.get("task", first_key)
+
+    # assert that all configs have the same dataset path
+    dataset_path = list(configs.values())[0]["dataset_path"]  # first_dataset_path
+    for config in configs.values():
+        config_dataset_path = config.get("dataset_path")
+        assert dataset_path == config_dataset_path
+
+    assert task_name == first_key, f"Task name mismatch: {task_name} != {first_key}"
+
+    meta_data = {"task_name": task_name, "dataset_path": dataset_path}
 
     return extracted, meta_data
 
@@ -2211,13 +2220,12 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 kwargs = dict(task.score.score_func_kwargs)
                 # Update task_name so the score function looks up the specific subtask (e.g. longbench_2wikimqa)
                 kwargs["task_name"] = t_key
-                try:
-                    score = task.score.score_func(
-                        results, task_name=t_key, kwargs=kwargs
-                    )
-                except (KeyError, AssertionError):
-                    # Auto-detect: find numeric metric keys and retry
-                    actual_data = results.get(t_key, {})
+                configured_keys = kwargs.get("result_keys", [])
+                actual_data = results.get(t_key, {})
+
+                key_found = any(k in actual_data for k in configured_keys)
+
+                if not key_found:
                     valid_candidates = [
                         k
                         for k, v in actual_data.items()
@@ -2225,28 +2233,24 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                         and "stderr" not in k
                         and "alias" not in k
                     ]
+
                     if valid_candidates:
                         logger.info(
                             f"  Metric mismatch for {t_key}. Auto-detected replacement: {valid_candidates[0]}"
                         )
                         kwargs["result_keys"] = [valid_candidates[0]]
-                        try:
-                            score = task.score.score_func(
-                                results, task_name=t_key, kwargs=kwargs
-                            )
-                        except Exception as e:
-                            logger.warning(
-                                f"  Could not calculate score for {t_key}: {e}"
-                            )
-                            score = 100.0 if kwargs.get("unit") == "WER" else 0.0
-                    else:
-                        logger.warning(
-                            f"  Could not calculate score for {t_key}: no valid metric keys found"
-                        )
-                        score = 100.0 if kwargs.get("unit") == "WER" else 0.0
+                try:
+                    score = task.score.score_func(
+                        results, task_name=t_key, kwargs=kwargs
+                    )
                 except Exception as e:
                     logger.warning(f"  Could not calculate score for {t_key}: {e}")
-                    score = 100.0 if kwargs.get("unit") == "WER" else 0.0
+                    if kwargs.get("unit") == "WER":
+                        # WER=100 is worst-case (100% word error rate). Using score=0.0 here
+                        # would be transformed to 100-0=100 and incorrectly pass the tolerance check.
+                        score = 100.0
+                    else:
+                        score = 0.0
                 if kwargs.get("unit") == "WER":
                     score = 100 - score
 

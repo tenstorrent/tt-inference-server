@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Union
 
 from evals.eval_utils import (
+    score_multilevel_keys_mean,
     score_task_keys_mean,
     score_task_single_key,
 )
@@ -1416,10 +1417,22 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    score_func=score_task_single_key,
+                    score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
-                            "exact_match,none",
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
                         ],
                         "unit": "percent",
                     },
@@ -1494,10 +1507,22 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    score_func=score_task_single_key,
+                    score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
-                            "exact_match,none",
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
                         ],
                         "unit": "percent",
                     },
