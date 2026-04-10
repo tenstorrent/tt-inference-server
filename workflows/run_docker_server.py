@@ -49,10 +49,11 @@ def get_media_server_docker_env_vars(model_spec):
         "CACHE_ROOT": "/home/container_app_user/cache_root",  # TODO: remove this
         "MODEL": model_spec.model_name,
         "DEVICE": model_spec.device_type.name.lower(),
+        "SERVICE_PORT": str(model_spec.cli_args.service_port),
     }
 
     logger.info(
-        f"Media server environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}"
+        f"Media server environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}, SERVICE_PORT={model_spec.cli_args.service_port}"
     )
     return env_vars
 
