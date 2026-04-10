@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import time
+import unicodedata
 from datetime import datetime
 from typing import List
 
@@ -179,6 +180,57 @@ class ServerRunner:
         with open(filename, "w") as f:
             json.dump(report_data, f, indent=2, default=str)
 
+    @staticmethod
+    def _display_width(text: str) -> int:
+        """Calculate display width accounting for wide (e.g. emoji) characters."""
+        width = 0
+        for ch in text:
+            if unicodedata.east_asian_width(ch) in ("F", "W"):
+                width += 2
+            else:
+                width += 1
+        return width
+
+    @classmethod
+    def _format_markdown_table(
+        cls,
+        headers: List[str],
+        rows: List[List[str]],
+        centered_columns: set[int] | None = None,
+    ) -> List[str]:
+        """Build a Markdown table with columns padded to equal display width.
+
+        Args:
+            headers:          Column header strings.
+            rows:             List of row data (each row is a list of cell strings).
+            centered_columns: Optional set of column indices to center.
+        """
+        centered = centered_columns or set()
+        col_count = len(headers)
+        col_widths = [cls._display_width(h) for h in headers]
+        for row in rows:
+            for i in range(col_count):
+                col_widths[i] = max(col_widths[i], cls._display_width(row[i]))
+        col_widths = [max(w, 3) for w in col_widths]
+
+        def pad(text, width, center=False):
+            gap = max(0, width - cls._display_width(text))
+            if center:
+                left = gap // 2
+                return " " * left + text + " " * (gap - left)
+            return text + " " * gap
+
+        def format_row(cells):
+            parts = [pad(cells[i], col_widths[i], i in centered) for i in range(col_count)]
+            return "| " + " | ".join(parts) + " |"
+
+        lines = [format_row(headers)]
+        seps = ["-" * col_widths[i] for i in range(col_count)]
+        lines.append("| " + " | ".join(seps) + " |")
+        for row in rows:
+            lines.append(format_row(row))
+        return lines
+
     def _generate_markdown_report(self, filename: str):
         """Generate Markdown report with enhanced information"""
         total = len(self.test_cases)
@@ -190,33 +242,43 @@ class ServerRunner:
         total_duration = sum(r.duration for r in self.reports)
         total_attempts = sum(r.attempts for r in self.reports)
 
-        lines = [
-            "# 📊 Test Execution Report",
-            "",
-            "## 📋 Summary",
-            "| Metric | Value |",
-            "|:-------|------:|",
-            f"| Total Tests | {total} |",
-            f"| Passed | {passed} |",
-            f"| Failed | {failed} |",
-            f"| Skipped | {skipped} |",
-            f"| Attempted | {attempted} |",
-            f"| Success Rate | {success_rate:.1f}% |",
-            f"| Total Duration | {total_duration:.2f}s |",
-            f"| Total Attempts | {total_attempts} |",
-            f"| Generated | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} |",
-            "",
-            "## 🧪 Test Results",
-            "| Status | Test Name | Duration | Attempts | Description |",
-            "|:------:|:----------|----------:|---------:|:------------|",
+        summary_rows = [
+            ["Total Tests", str(total)],
+            ["Passed", str(passed)],
+            ["Failed", str(failed)],
+            ["Skipped", str(skipped)],
+            ["Attempted", str(attempted)],
+            ["Success Rate", f"{success_rate:.1f}%"],
+            ["Total Duration", f"{total_duration:.2f}s"],
+            ["Total Attempts", str(total_attempts)],
+            ["Generated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
         ]
 
+        lines = ["# 📊 Test Execution Report", "", "## 📋 Summary"]
+        lines.extend(
+            self._format_markdown_table(["Metric", "Value"], summary_rows)
+        )
+
+        results_rows = []
         for report in self.reports:
             status = "✅" if report.success else "❌"
-            description = report.description or "-"
-            lines.append(
-                f"| {status} | {report.test_name} | {report.duration:.2f}s | {report.attempts} | {description} |"
+            results_rows.append([
+                status,
+                report.test_name,
+                f"{report.duration:.2f}s",
+                str(report.attempts),
+                report.description or "-",
+            ])
+
+        lines.append("")
+        lines.append("## 🧪 Test Results")
+        lines.extend(
+            self._format_markdown_table(
+                ["Status", "Test Name", "Duration", "Attempts", "Description"],
+                results_rows,
+                centered_columns={0},
             )
+        )
 
         lines.append("")
         lines.append("## 📝 Detailed Results")
