@@ -2524,7 +2524,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score="",
                     published_score_ref="",
-                    gpu_reference_score=0.79,
+                    gpu_reference_score=0.7873,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/2892",
                     score_func=lambda results: 0.0,
                 ),
             ),
