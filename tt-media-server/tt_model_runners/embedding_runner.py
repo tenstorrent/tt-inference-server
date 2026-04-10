@@ -128,53 +128,18 @@ class BGEM3Runner(EmbeddingRunner):
             "trace_region_size": self.settings.trace_region_size,
         }
 
-    def _pool_bgem3_embeddings(
-        self,
-        result: torch.Tensor,
-        attention_mask: torch.Tensor | None,
-        num_requests: int,
-        token_counts: list[int] | None = None,
-    ) -> torch.Tensor | list[torch.Tensor]:
-        embeddings = result[:num_requests]
-        if embeddings.dim() <= 2:
-            return embeddings
-        if attention_mask is None:
-            return embeddings.mean(dim=1)
-
-        if attention_mask.shape[1] != embeddings.shape[1]:
-            counts = (token_counts or [embeddings.shape[1]] * num_requests)[
-                :num_requests
-            ]
-            return [
-                embeddings[idx, : max(int(count), 1)].mean(dim=0)
-                for idx, count in enumerate(counts)
-            ]
-
-        valid_mask = attention_mask[:num_requests, : embeddings.shape[1]].unsqueeze(-1)
-        valid_mask = valid_mask.to(embeddings.dtype)
-        summed = (embeddings * valid_mask).sum(dim=1)
-        counts = valid_mask.sum(dim=1).clamp(min=1)
-        return summed / counts
-
     def run(self, requests: list[TextEmbeddingRequest]):
         self._validate_requests(requests)
         text_inputs = [req.input for req in requests]
         num_requests = len(requests)
         tokenized = self.tokenizer.tokenize(text_inputs, self.max_model_len)
         token_counts = self.tokenizer.calculate_token_counts(tokenized, num_requests)
-        attention_mask = tokenized.get("attention_mask")
         result = self.model.forward(
             tokenized["input_ids"],
-            attention_mask=attention_mask,
+            attention_mask=tokenized.get("attention_mask"),
         )
         ttnn.synchronize_device(self.ttnn_device)
-        pooled_result = self._pool_bgem3_embeddings(
-            result,
-            attention_mask,
-            num_requests,
-            token_counts,
-        )
-        return super()._process_result(pooled_result, requests, token_counts)
+        return super()._process_result(result["dense_vecs"], requests, token_counts)
 
     def _load_model(self):
         self.logger.info(f"Device {self.device_id}: Loading model...")
@@ -184,7 +149,7 @@ class BGEM3Runner(EmbeddingRunner):
             device=self.ttnn_device,
             max_batch_size=self.settings.max_batch_size,
             max_seq_len=self.max_model_len,
-            dtype=ttnn.bfloat16,
+            dtype=ttnn.bfloat8_b,
             model_name=self.model_name,
         )
         self.logger.info(f"Device {self.device_id}: Model loaded successfully")
