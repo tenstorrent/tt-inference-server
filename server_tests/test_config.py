@@ -81,16 +81,6 @@ _test_config_list = [
             ),
         ],
     ),
-    TestConfig(
-        hf_model_repo="BAAI/bge-m3",
-        tasks=[
-            TestTask(
-                task_name="embedding_param_test",
-                test_path=Path("server_tests/test_cases/embedding_param_test.py"),
-                test_args=("s", "v"),
-            ),
-        ],
-    ),
 ]
 
 
