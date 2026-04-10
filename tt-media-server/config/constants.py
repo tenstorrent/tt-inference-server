@@ -95,7 +95,7 @@ class ModelRunners(Enum):
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
     BGELargeEN_V1_5 = "bge_large_en_v1_5"
-    BGEM3 = "bge_m3"
+    BGEM3 = "bge-m3"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
