@@ -221,7 +221,9 @@ class ServerRunner:
             return text + " " * gap
 
         def format_row(cells):
-            parts = [pad(cells[i], col_widths[i], i in centered) for i in range(col_count)]
+            parts = [
+                pad(cells[i], col_widths[i], i in centered) for i in range(col_count)
+            ]
             return "| " + " | ".join(parts) + " |"
 
         lines = [format_row(headers)]
@@ -255,20 +257,20 @@ class ServerRunner:
         ]
 
         lines = ["# 📊 Test Execution Report", "", "## 📋 Summary"]
-        lines.extend(
-            self._format_markdown_table(["Metric", "Value"], summary_rows)
-        )
+        lines.extend(self._format_markdown_table(["Metric", "Value"], summary_rows))
 
         results_rows = []
         for report in self.reports:
             status = "✅" if report.success else "❌"
-            results_rows.append([
-                status,
-                report.test_name,
-                f"{report.duration:.2f}s",
-                str(report.attempts),
-                report.description or "-",
-            ])
+            results_rows.append(
+                [
+                    status,
+                    report.test_name,
+                    f"{report.duration:.2f}s",
+                    str(report.attempts),
+                    report.description or "-",
+                ]
+            )
 
         lines.append("")
         lines.append("## 🧪 Test Results")
