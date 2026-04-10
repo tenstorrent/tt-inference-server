@@ -140,6 +140,22 @@
                 "mock_mode": false
             },
             "_comment": "retry_attempts and num_of_devices derived from hardware_defaults"
+        },
+        {
+            "name": "LoggerForkSafetyTest",
+            "module": "server_tests.test_cases.logger_fork_safety_test",
+            "description": "Test for logging fork safety to prevent deadlocks",
+            "markers": [
+                "fast",
+                "prerequisite"
+            ],
+            "test_config": {
+                "test_timeout": 60,
+                "retry_attempts": 1,
+                "retry_delay": 5,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
         }
     ],
     "test_templates": {
