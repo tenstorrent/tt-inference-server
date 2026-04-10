@@ -3082,11 +3082,11 @@ audio_tts_templates = [
 embedding_templates = [
     ModelSpecTemplate(
         weights=["BAAI/bge-large-en-v1.5"],
-        tt_metal_commit="",
+        tt_metal_commit="65718bb",
         impl=tt_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="",
+        docker_image="ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
         model_type=ModelType.EMBEDDING,
         inference_engine=InferenceEngine.MEDIA.value,
         device_model_specs=[
