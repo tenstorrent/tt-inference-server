@@ -98,14 +98,7 @@ def _load_test_instances_from_suites(test_suites: List[dict]) -> List:
                 test_instance.suite_id = suite_id
 
                 test_cases.append(test_instance)
-
-                markers_str = ", ".join(test_case_data.get("markers", []))
                 logger.info(f"  Loaded: {class_name} - {description}")
-                logger.info(f"     Markers: [{markers_str}]")
-                logger.info(
-                    f"     Config: timeout={config.get('test_timeout')}, retries={config.get('retry_attempts')}"
-                )
-                logger.info(f"     Targets: {targets}")
 
             except Exception as e:
                 logger.error(f"  Failed to load test {test_case_data.get('name')}: {e}")
@@ -157,7 +150,7 @@ def _apply_filters(args) -> List[dict]:
         test_filter.include_prerequisites(False)
 
     test_suites = test_filter.get_tests()
-    test_filter.print_summary()
+    test_filter.print_summary(suites=test_suites)
 
     return test_suites
 

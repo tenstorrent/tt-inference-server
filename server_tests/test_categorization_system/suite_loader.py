@@ -39,8 +39,6 @@ def load_suite_files() -> list[dict]:
     logger.info(f"Loading suite files from {SUITES_DIR}")
     if not SUITES_DIR.exists():
         raise FileNotFoundError(f"test_suites directory not found: {SUITES_DIR}")
-
-    logger.info(f"Auto-discovering all suite files in {SUITES_DIR}")
     suite_files = list(SUITES_DIR.glob("*.json"))
 
     test_suites = []
@@ -88,8 +86,6 @@ def load_suite_files_by_category(category: str) -> list[dict]:
         raise FileNotFoundError(
             f"Suite file not found: {suite_file}. Available categories: {available}"
         )
-
-    logger.info(f"Loading suite file for category: {category}")
     with open(suite_file, "r") as f:
         suite_data = json.load(f)
 

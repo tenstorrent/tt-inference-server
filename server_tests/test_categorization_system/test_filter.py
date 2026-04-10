@@ -65,7 +65,7 @@ class TestFilter:
         self.prerequisite_tests = self.config.get("prerequisite_tests", [])
 
         if suites is None:
-            logger.info("Load test suites")
+            logger.info("Loading test suites from discovery")
             self.test_suites = load_suite_files()
         else:
             logger.info(f"Using {len(suites)} pre-loaded test suites")
@@ -77,7 +77,7 @@ class TestFilter:
             for model in models:
                 self._model_to_category[model] = category
 
-        logger.info("Expanding all test suites")
+        logger.info(f"Expanding {len(self.test_suites)} test suites")
         self.expanded_suites = self._expand_all_suites()
         self.filtered_suites = list(self.expanded_suites)
 
@@ -135,7 +135,7 @@ class TestFilter:
         """
         template_name = test_case.get("template")
         if not template_name:
-            logger.info(f"Direct test case definition: {test_case}")
+            logger.info(f"Direct test case (no template): {test_case.get('name', 'unknown')}")
             return test_case
 
         template = self.test_templates.get(template_name, {})
@@ -192,7 +192,7 @@ class TestFilter:
 
     def _expand_prerequisite_test(self, prereq: Dict, suite: Dict) -> Dict:
         """Expand a prerequisite test with hardware-specific values."""
-        logger.info(f"Expanding prerequisite test: {prereq}")
+        logger.info(f"Expanding prerequisite test: {prereq.get('name', 'unknown')}")
         expanded = deepcopy(prereq)
         device = suite.get("device", "")
         hw_defaults = self.hardware_defaults.get(device, {})
@@ -265,7 +265,7 @@ class TestFilter:
         Returns:
             List of expanded prerequisite test dicts.
         """
-        logger.info(f"Getting prerequisite tests for suite: {suite}")
+        logger.info(f"Getting prerequisite tests for suite: {suite.get('id', 'unknown')}")
         prereqs = []
         for prereq in self.prerequisite_tests:
             expanded = self._expand_prerequisite_test(prereq, suite)
@@ -486,14 +486,15 @@ class TestFilter:
                 tests.append(test_copy)
         return tests
 
-    def print_summary(self):
+    def print_summary(self, suites: List[Dict] = None):
         """Print a summary of filtered tests."""
-        suites = self.get_tests()
-        flat_tests = self.get_flat_tests()
+        if suites is None:
+            suites = self.get_tests()
+        total_tests = sum(len(s.get("test_cases", [])) for s in suites)
 
         logger.info("Filtered Test Summary:")
         logger.info(f"Total test suites: {len(suites)}")
-        logger.info(f"Total individual tests: {len(flat_tests)}")
+        logger.info(f"Total individual tests: {total_tests}")
         logger.info("Test breakdown:")
 
         for suite in suites:
