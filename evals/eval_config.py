@@ -1174,7 +1174,7 @@ _eval_config_list = [
                 task_name="gpqa_diamond_generative_n_shot",
                 num_fewshot=5,
                 max_concurrent=8,
-                apply_chat_template=False,
+                use_chat_api=True,
                 score=EvalTaskScore(
                     published_score=45.96,
                     published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503#instruction-evals",
@@ -1230,9 +1230,12 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
+                eval_class="openai_compatible",
                 task_name="chartqa",
                 max_concurrent=8,
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
                 score=EvalTaskScore(
                     published_score=86.24,
                     published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503",
@@ -1241,17 +1244,25 @@ _eval_config_list = [
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            "exact_match,none",
+                            "relaxed_overall,none",
                         ],
                         "unit": "percent",
                     },
                 ),
-                apply_chat_template=False,
-                batch_size=16,
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
                 gen_kwargs={
-                    "max_gen_toks": "256",
-                    "do_sample": "false",
-                    "stream": "false",
+                    "stop": "</s>",
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
