@@ -9,14 +9,13 @@ import time
 from pathlib import Path
 
 import aiohttp
+
 from server_tests.base_test import BaseTest
 
 logger = logging.getLogger(__name__)
 
 # Path to test payloads
-TEST_PAYLOADS_PATH = (
-    Path(__file__).parent.parent.parent / "utils" / "test_payloads"
-)
+TEST_PAYLOADS_PATH = Path(__file__).parent.parent.parent / "utils" / "test_payloads"
 
 # IMG2IMG specific constants
 PROMPT = "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k"
