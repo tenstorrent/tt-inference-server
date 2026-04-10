@@ -1188,6 +1188,9 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                model_kwargs={
+                    "fix_mistral_regex": True,
+                },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
@@ -1213,11 +1216,8 @@ _eval_config_list = [
                 apply_chat_template=False,
                 batch_size=16,
                 model_kwargs={
-                    "model": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-                    "tokenizer_backend": "huggingface",
                     "fix_mistral_regex": True,
                     "max_length": 65536,
-                    "timeout": "3600",
                 },
                 gen_kwargs={
                     "max_gen_toks": "256",
