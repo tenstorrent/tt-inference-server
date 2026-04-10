@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Path to test payloads
 TEST_PAYLOADS_PATH = (
-    Path(__file__).parent.parent.parent.parent / "utils" / "test_payloads"
+    Path(__file__).parent.parent.parent / "utils" / "test_payloads"
 )
 
 # IMG2IMG specific constants
