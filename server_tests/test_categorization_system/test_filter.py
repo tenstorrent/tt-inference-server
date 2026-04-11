@@ -120,6 +120,15 @@ class TestFilter:
             return category.lower()
         return None
 
+    def _get_num_of_devices(self, suite: Dict) -> Optional[int]:
+        """Get num_of_devices for a suite, preferring suite-level override over hardware default."""
+        suite_override = suite.get(NUM_OF_DEVICES)
+        if suite_override is not None:
+            return suite_override
+        device = suite.get("device", "")
+        hw_defaults = self.hardware_defaults.get(device, {})
+        return hw_defaults.get(NUM_OF_DEVICES)
+
     def _expand_test_case(self, test_case: Dict, suite: Dict) -> Dict:
         """Expand a test case by merging template defaults with overrides.
 
@@ -158,13 +167,10 @@ class TestFilter:
         if TEST_CONFIG in test_case:
             expanded["test_config"].update(test_case["test_config"])
 
-        # Set targets with hardware defaults
-        device = suite.get("device", "")
-        hw_defaults = self.hardware_defaults.get(device, {})
-
-        # Start with hardware default num_of_devices
-        if NUM_OF_DEVICES in hw_defaults:
-            expanded["targets"]["num_of_devices"] = hw_defaults["num_of_devices"]
+        # Set num_of_devices: suite-level override > hardware default
+        num_devices = self._get_num_of_devices(suite)
+        if num_devices is not None:
+            expanded["targets"]["num_of_devices"] = num_devices
 
         # Override with test case specific targets
         if TARGETS in test_case:
@@ -185,6 +191,7 @@ class TestFilter:
             markers.add(model_marker)
 
         # Add hardware marker
+        device = suite.get("device", "")
         if device:
             markers.add(device.lower())
 
@@ -207,11 +214,12 @@ class TestFilter:
                 "liveness_retry_attempts"
             ]
 
-        # Set num_of_devices from hardware defaults
+        # Set num_of_devices: suite-level override > hardware default
         if "targets" not in expanded:
             expanded["targets"] = {}
-        if "num_of_devices" in hw_defaults:
-            expanded["targets"]["num_of_devices"] = hw_defaults["num_of_devices"]
+        num_devices = self._get_num_of_devices(suite)
+        if num_devices is not None:
+            expanded["targets"]["num_of_devices"] = num_devices
 
         # Add markers for model category, model marker, and hardware
         markers = set(expanded.get("markers", []))
@@ -248,6 +256,8 @@ class TestFilter:
                 "model_marker": suite.get("model_marker", ""),
                 "test_cases": [],
             }
+            if NUM_OF_DEVICES in suite:
+                expanded_suite[NUM_OF_DEVICES] = suite[NUM_OF_DEVICES]
 
             # Expand each test case
             for test_case in suite.get("test_cases", []):

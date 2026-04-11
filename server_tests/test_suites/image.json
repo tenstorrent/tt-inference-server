@@ -278,6 +278,7 @@
                 "stable-diffusion-xl-base-1.0"
             ],
             "device": "n300",
+            "num_of_devices": 1,
             "model_marker": "sdxl",
             "test_cases": [
                 {
@@ -320,6 +321,7 @@
                 "stable-diffusion-xl-base-1.0"
             ],
             "device": "p150x8",
+            "num_of_devices": 4,
             "model_marker": "sdxl",
             "test_cases": [
                 {
@@ -362,6 +364,7 @@
                 "stable-diffusion-xl-base-1.0"
             ],
             "device": "p300x2",
+            "num_of_devices": 2,
             "model_marker": "sdxl",
             "test_cases": [
                 {
@@ -494,6 +497,7 @@
                 "stable-diffusion-3.5-large"
             ],
             "device": "t3k",
+            "num_of_devices": 1,
             "model_marker": "sd35",
             "test_cases": [
                 {
@@ -536,6 +540,7 @@
                 "stable-diffusion-3.5-large"
             ],
             "device": "galaxy",
+            "num_of_devices": 1,
             "model_marker": "sd35",
             "test_cases": [
                 {
@@ -578,6 +583,7 @@
                 "FLUX.1-dev"
             ],
             "device": "t3k",
+            "num_of_devices": 1,
             "model_marker": "flux_dev",
             "test_cases": [
                 {
@@ -623,6 +629,7 @@
                 "FLUX.1-dev"
             ],
             "device": "galaxy",
+            "num_of_devices": 1,
             "model_marker": "flux_dev",
             "test_cases": [
                 {
@@ -668,6 +675,7 @@
                 "FLUX.1-dev"
             ],
             "device": "p150x4",
+            "num_of_devices": 1,
             "model_marker": "flux_dev",
             "test_cases": [
                 {
@@ -713,6 +721,7 @@
                 "FLUX.1-dev"
             ],
             "device": "p150x8",
+            "num_of_devices": 1,
             "model_marker": "flux_dev",
             "test_cases": [
                 {
@@ -758,6 +767,7 @@
                 "FLUX.1-dev"
             ],
             "device": "p300",
+            "num_of_devices": 1,
             "model_marker": "flux_dev",
             "test_cases": [
                 {
@@ -803,6 +813,7 @@
                 "FLUX.1-dev"
             ],
             "device": "p300x2",
+            "num_of_devices": 1,
             "model_marker": "flux_dev",
             "test_cases": [
                 {
@@ -848,6 +859,7 @@
                 "FLUX.1-schnell"
             ],
             "device": "t3k",
+            "num_of_devices": 1,
             "model_marker": "flux_schnell",
             "test_cases": [
                 {
@@ -893,6 +905,7 @@
                 "FLUX.1-schnell"
             ],
             "device": "galaxy",
+            "num_of_devices": 1,
             "model_marker": "flux_schnell",
             "test_cases": [
                 {
@@ -938,6 +951,7 @@
                 "FLUX.1-schnell"
             ],
             "device": "p150x4",
+            "num_of_devices": 1,
             "model_marker": "flux_schnell",
             "test_cases": [
                 {
@@ -983,6 +997,7 @@
                 "FLUX.1-schnell"
             ],
             "device": "p150x8",
+            "num_of_devices": 1,
             "model_marker": "flux_schnell",
             "test_cases": [
                 {
@@ -1028,6 +1043,7 @@
                 "FLUX.1-schnell"
             ],
             "device": "p300",
+            "num_of_devices": 1,
             "model_marker": "flux_schnell",
             "test_cases": [
                 {
@@ -1073,6 +1089,7 @@
                 "FLUX.1-schnell"
             ],
             "device": "p300x2",
+            "num_of_devices": 1,
             "model_marker": "flux_schnell",
             "test_cases": [
                 {
@@ -1118,6 +1135,7 @@
                 "Motif-Image-6B-Preview"
             ],
             "device": "t3k",
+            "num_of_devices": 1,
             "model_marker": "motif",
             "test_cases": [
                 {
@@ -1163,6 +1181,7 @@
                 "Motif-Image-6B-Preview"
             ],
             "device": "galaxy",
+            "num_of_devices": 1,
             "model_marker": "motif",
             "test_cases": [
                 {
@@ -1208,6 +1227,7 @@
                 "Motif-Image-6B-Preview"
             ],
             "device": "p150x4",
+            "num_of_devices": 1,
             "model_marker": "motif",
             "test_cases": [
                 {
@@ -1253,6 +1273,7 @@
                 "Motif-Image-6B-Preview"
             ],
             "device": "p150x8",
+            "num_of_devices": 1,
             "model_marker": "motif",
             "test_cases": [
                 {
@@ -1298,6 +1319,7 @@
                 "Motif-Image-6B-Preview"
             ],
             "device": "p300x2",
+            "num_of_devices": 1,
             "model_marker": "motif",
             "test_cases": [
                 {

@@ -6,6 +6,7 @@
             "id": "wan-t3k",
             "weights": ["Wan2.2-T2V-A14B-Diffusers"],
             "device": "t3k",
+            "num_of_devices": 1,
             "model_marker": "wan",
             "test_cases": [
                 {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 370}},
@@ -16,6 +17,7 @@
             "id": "wan-galaxy",
             "weights": ["Wan2.2-T2V-A14B-Diffusers"],
             "device": "galaxy",
+            "num_of_devices": 1,
             "model_marker": "wan",
             "test_cases": [
                 {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 370}},
@@ -26,6 +28,7 @@
             "id": "wan-p150x8",
             "weights": ["Wan2.2-T2V-A14B-Diffusers"],
             "device": "p150x8",
+            "num_of_devices": 1,
             "model_marker": "wan",
             "test_cases": [
                 {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 370}},
@@ -36,6 +39,7 @@
             "id": "wan-p300x2",
             "weights": ["Wan2.2-T2V-A14B-Diffusers"],
             "device": "p300x2",
+            "num_of_devices": 1,
             "model_marker": "wan",
             "test_cases": [
                 {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 370}},
@@ -46,6 +50,7 @@
             "id": "mochi-t3k",
             "weights": ["mochi-1-preview"],
             "device": "t3k",
+            "num_of_devices": 1,
             "model_marker": "mochi",
             "test_cases": [
                 {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 480, "num_inference_steps": 50}},
@@ -56,6 +61,7 @@
             "id": "mochi-galaxy",
             "weights": ["mochi-1-preview"],
             "device": "galaxy",
+            "num_of_devices": 1,
             "model_marker": "mochi",
             "test_cases": [
                 {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 480, "num_inference_steps": 50}},
@@ -66,6 +72,7 @@
             "id": "mochi-p150x8",
             "weights": ["mochi-1-preview"],
             "device": "p150x8",
+            "num_of_devices": 1,
             "model_marker": "mochi",
             "test_cases": [
                 {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 480, "num_inference_steps": 50}},

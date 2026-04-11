@@ -30,6 +30,7 @@
             "id": "mobilenetv2-n300",
             "weights": ["mobilenetv2"],
             "device": "n300",
+            "num_of_devices": 1,
             "model_marker": "mobilenetv2",
             "test_cases": [
                 {
