@@ -25,6 +25,17 @@
             ]
         },
         {
+            "id": "wan-p150x4",
+            "weights": ["Wan2.2-T2V-A14B-Diffusers"],
+            "device": "p150x4",
+            "num_of_devices": 1,
+            "model_marker": "wan",
+            "test_cases": [
+                {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 370}},
+                {"template": "VideoGenerationParamTest", "enabled": true, "description": "Video generation param test"}
+            ]
+        },
+        {
             "id": "wan-p150x8",
             "weights": ["Wan2.2-T2V-A14B-Diffusers"],
             "device": "p150x8",
@@ -43,6 +54,28 @@
             "model_marker": "wan",
             "test_cases": [
                 {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 370}},
+                {"template": "VideoGenerationParamTest", "enabled": true, "description": "Video generation param test"}
+            ]
+        },
+        {
+            "id": "mochi-p150x4",
+            "weights": ["mochi-1-preview"],
+            "device": "p150x4",
+            "num_of_devices": 1,
+            "model_marker": "mochi",
+            "test_cases": [
+                {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 480, "num_inference_steps": 50}},
+                {"template": "VideoGenerationParamTest", "enabled": true, "description": "Video generation param test"}
+            ]
+        },
+        {
+            "id": "mochi-p300x2",
+            "weights": ["mochi-1-preview"],
+            "device": "p300x2",
+            "num_of_devices": 1,
+            "model_marker": "mochi",
+            "test_cases": [
+                {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 480, "num_inference_steps": 50}},
                 {"template": "VideoGenerationParamTest", "enabled": true, "description": "Video generation param test"}
             ]
         },
