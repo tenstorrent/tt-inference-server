@@ -2128,7 +2128,8 @@
                     "model": "BAAI/bge-m3"
                 },
                 "targets": {
-                    "num_of_devices": 32
+                    "num_of_devices": 32,
+                    "embedding_time": 10
                 }
             },
             {
@@ -2159,7 +2160,7 @@
                 },
                 "targets": {
                     "num_of_devices": 32,
-                    "embedding_time": 1
+                    "embedding_time": 10
                 }
             }
         ]

@@ -6050,7 +6050,7 @@
                     "theoretical": {
                         "tput_user": 5750,
                         "tput_prefill": 46000,
-                        "e2el_ms": 5000
+                        "e2el_ms": 8300
                     }
                 }
             }
@@ -6143,7 +6143,7 @@
                     "theoretical": {
                         "tput_user": 5750,
                         "tput_prefill": 46000,
-                        "e2el_ms": 5000
+                        "e2el_ms": 8300
                     }
                 }
             }
