@@ -3,6 +3,7 @@ import subprocess
 import sys
 from argparse import Namespace
 from collections import defaultdict
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -155,6 +156,7 @@ def make_release_report(
 ):
     report = {
         "metadata": {
+            "report_id": "demo_model_2026-03-27_10-00-00",
             "model_id": "demo_model",
             "model_name": "DemoModel",
             "device": "n150",
@@ -171,7 +173,11 @@ def make_release_report(
                 "tput_user": 12.0,
             }
         ],
+        "aiperf_benchmarks": [],
         "evals": [{"task_name": "demo_eval", "accuracy_check": 2, "score": 1.0}],
+        "stress_tests": None,
+        "benchmarks": [{"model_id": "demo_model", "device": "n150"}],
+        "aiperf_benchmarks_detailed": [],
         "parameter_support_tests": {
             "results": {
                 "test_smoke": [
@@ -196,6 +202,11 @@ def make_release_report(
             "next_status_failures": [],
             "errors": [],
         },
+        "acceptance_criteria": parameter_status == "passed"
+        and (spec_test_success is not False),
+        "acceptance_blockers": {},
+        "acceptance_summary_markdown": "### Acceptance Criteria\n\n- Acceptance status: `PASS`",
+        "spec_tests": {"results": []},
     }
     if spec_test_success is not None:
         report["spec_tests"] = {
@@ -236,6 +247,9 @@ def test_load_ci_data_from_report_data_json_uses_checked_in_model_spec(tmp_path)
 
     assert list(ci_data.keys()) == ["demo_model"]
     assert ci_data["demo_model"]["docker_image"] == checked_in_spec.docker_image
+    assert ci_data["demo_model"]["release_report_json_path"] == str(
+        report_path.resolve()
+    )
     assert (
         ci_data["demo_model"]["release_report"]["metadata"]["runtime_model_spec_json"]
         == "/tmp/ignored_runtime.json"
@@ -251,6 +265,23 @@ def test_load_ci_data_from_report_data_json_fails_for_unknown_model_id(tmp_path)
     with patch.object(gra, "MODEL_SPECS", {}):
         with pytest.raises(ValueError, match="unknown_model"):
             gra.load_ci_data_from_report_data_json(report_path)
+
+
+def test_build_merged_spec_from_report_data_json_reuses_loader_and_merger(tmp_path):
+    report_path = tmp_path / "report_data_demo.json"
+    report_path.write_text(json.dumps(make_release_report()))
+    merged_spec = {"demo_model": make_record("demo_model", make_image("demo"))}
+
+    with patch.object(
+        gra, "load_ci_data_from_report_data_json", return_value={"demo_model": {}}
+    ) as load_report_mock, patch.object(
+        gra, "merge_specs_with_ci_data", return_value=merged_spec
+    ) as merge_mock:
+        result = gra.build_merged_spec_from_report_data_json(report_path, is_dev=False)
+
+    assert result == merged_spec
+    load_report_mock.assert_called_once_with(report_path)
+    merge_mock.assert_called_once_with({"demo_model": {}}, is_dev=False)
 
 
 def test_merge_specs_with_ci_data_derives_dev_image_without_mutating_model_specs():
@@ -658,17 +689,24 @@ def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
     )
 
     release_performance_module = sys.modules[
-        gra.build_release_performance_data.__module__
+        gra.update_release_performance_outputs.__module__
     ]
 
     with patch.object(
         gra, "get_release_performance_path", return_value=baseline_path
     ), patch.object(
         release_performance_module, "get_perf_target", return_value=perf_target
-    ):
+    ), patch.object(
+        gra,
+        "update_release_performance_outputs",
+        wraps=gra.update_release_performance_outputs,
+    ) as update_mock:
         release_performance_data = gra.write_release_performance_outputs(
             merged_spec, output_dir, dry_run=False
         )
+
+    update_kwargs = update_mock.call_args.kwargs
+    assert update_kwargs["mode"] == gra.ReleasePerformanceWriteMode.REPLACE
 
     entry = release_performance_data["models"]["DemoModel"]["n150"]["demo_impl"]["vLLM"]
     assert entry["release_version"] == "0.10.0"
@@ -680,12 +718,12 @@ def test_write_release_performance_outputs_returns_raw_data_and_writes_baseline(
     ]
     assert entry["perf_target_results"][0]["is_summary_data_point"] is True
     assert entry["perf_target_results"][0]["measured_metrics"]["ttft"] == 45.0
+    assert entry["report_data"]["metadata"]["release_version"] == "0.10.0"
     assert not (output_dir / "release_performance.md").exists()
     baseline = json.loads(baseline_path.read_text())
     baseline_entry = baseline["models"]["DemoModel"]["n150"]["demo_impl"]["vLLM"]
     assert list(baseline_entry.keys())[:2] == ["perf_status", "release_version"]
     assert baseline_entry["release_version"] == "0.10.0"
-    assert "benchmarks_summary" not in baseline_entry
     assert baseline_entry["perf_target_results"][0]["config"]["isl"] == 128
     assert "targets" not in baseline_entry["perf_target_results"][0]
     assert "benchmark_summary" not in baseline_entry["perf_target_results"][0]
@@ -1034,6 +1072,96 @@ def test_write_release_notes_uses_raw_json_inputs(tmp_path):
     assert "### DemoModel on n150 (demo_impl, vLLM)" in notes
 
 
+def test_render_release_report_markdown_outputs_validates_before_render(tmp_path):
+    release_report = make_release_report()
+    release_report["benchmarks_markdown"] = (
+        "### Performance Benchmark Sweeps for DemoModel on n150\n\n"
+        "#### vLLM Text-to-Text Performance Benchmark Sweeps for DemoModel on n150\n\n"
+        "Canonical benchmark summary."
+    )
+    release_report["aiperf_benchmarks_markdown"] = (
+        "### Benchmark Performance Results for DemoModel on n150\n\n"
+        "#### AIPerf Text Benchmarks - Detailed Percentiles\n\n"
+        "Canonical AIPerf detailed benchmark content."
+    )
+    release_report["genai_perf_benchmarks_markdown"] = (
+        "### GenAI-Perf Benchmark Performance Results for DemoModel on n150\n\n"
+        "#### GenAI-Perf Text Benchmarks - Detailed Percentiles\n\n"
+        "Canonical GenAI-Perf detailed benchmark content."
+    )
+    release_performance_data = {
+        "schema_version": "0.1.0",
+        "models": {
+            "DemoModel": {
+                "n150": {
+                    "demo_impl": {
+                        "vLLM": {
+                            "perf_status": "target",
+                            "release_version": "0.10.0",
+                            "ci_run_url": "https://example.com/runs/123",
+                            "ci_job_url": "https://example.com/jobs/456",
+                            "perf_target_results": [],
+                            "report_data": release_report,
+                        }
+                    }
+                }
+            }
+        },
+    }
+    observed_calls = []
+
+    def validate_hook(report_file):
+        report_data = json.loads(Path(report_file).read_text(encoding="utf-8"))
+        observed_calls.append(
+            (
+                "validate",
+                Path(report_file).exists(),
+                "benchmarks_markdown" in report_data,
+                "aiperf_benchmarks_markdown" in report_data,
+                "genai_perf_benchmarks_markdown" in report_data,
+            )
+        )
+
+    def render_hook(report_file):
+        observed_calls.append(("render", Path(report_file).exists()))
+        return "## Rendered Release Report"
+
+    with patch.object(
+        gra, "validate_report_file", side_effect=validate_hook
+    ), patch.object(gra, "build_release_report_markdown", side_effect=render_hook):
+        generated_paths = gra.render_release_report_markdown_outputs(
+            release_performance_data, tmp_path
+        )
+
+    materialized_json = next(
+        (tmp_path / gra.REPORT_RENDERER_DIRNAME / "release" / "data").glob(
+            "report_data_*.json"
+        )
+    )
+    materialized_report = json.loads(materialized_json.read_text(encoding="utf-8"))
+    rendered_entry = release_performance_data["models"]["DemoModel"]["n150"][
+        "demo_impl"
+    ]["vLLM"]
+
+    assert observed_calls == [
+        ("validate", True, False, False, False),
+        ("render", True),
+    ]
+    assert (
+        materialized_report["metadata"]["report_id"] == "demo_model_2026-03-27_10-00-00"
+    )
+    assert "benchmarks_markdown" not in materialized_report
+    assert rendered_entry["report_markdown"] == "## Rendered Release Report"
+    assert len(generated_paths) == 1
+    assert Path(generated_paths[0]).exists()
+    assert (
+        tmp_path
+        / gra.REPORT_RENDERER_DIRNAME
+        / "benchmarks"
+        / "benchmark_display_demo_model_2026-03-27_10-00-00.md"
+    ).exists()
+
+
 def test_generate_release_artifact_outputs_runs_release_only_steps(tmp_path):
     output_dir = tmp_path / "release_logs" / "v0.10.0"
     request = gra.ReleaseArtifactsRequest(
@@ -1059,6 +1187,10 @@ def test_generate_release_artifact_outputs_runs_release_only_steps(tmp_path):
         return_value={"schema_version": "0.1.0", "models": {}},
     ) as performance_mock, patch.object(
         gra,
+        "render_release_report_markdown_outputs",
+        return_value=(),
+    ) as render_reports_mock, patch.object(
+        gra,
         "write_release_performance_diff_output",
         return_value=output_dir / "release_performance_diff.json",
     ) as diff_mock, patch.object(
@@ -1075,6 +1207,10 @@ def test_generate_release_artifact_outputs_runs_release_only_steps(tmp_path):
         False,
     )
     performance_mock.assert_called_once_with(request.merged_spec, output_dir, False)
+    render_reports_mock.assert_called_once_with(
+        {"schema_version": "0.1.0", "models": {}},
+        output_dir,
+    )
     diff_mock.assert_called_once_with(
         output_dir, {"schema_version": "0.1.0", "models": {}}
     )
@@ -1227,13 +1363,13 @@ def test_run_from_args_report_data_json_dispatches_and_builds_release_request(tm
     with patch.object(
         gra, "resolve_release_output_dir", return_value=output_dir
     ), patch.object(gra, "get_version", return_value="0.10.0"), patch.object(
-        gra, "load_ci_data_from_report_data_json", return_value={"demo_model": {}}
-    ) as load_report_mock, patch.object(
-        gra, "merge_specs_with_ci_data", return_value=merged_spec
-    ), patch.object(gra, "generate_release_artifact_outputs") as outputs_mock:
+        gra, "build_merged_spec_from_report_data_json", return_value=merged_spec
+    ) as build_merged_mock, patch.object(gra, "merge_specs_with_ci_data"), patch.object(
+        gra, "generate_release_artifact_outputs"
+    ) as outputs_mock:
         assert gra.run_from_args(args) == 0
 
-    load_report_mock.assert_called_once_with(report_path)
+    build_merged_mock.assert_called_once_with(report_path, is_dev=False)
     outputs_mock.assert_called_once()
     request = outputs_mock.call_args.args[0]
     assert request.release is True

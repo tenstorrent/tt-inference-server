@@ -33,6 +33,88 @@ def make_benchmark_target_evaluation():
     }
 
 
+BENCHMARKS_MARKDOWN = """### Performance Benchmark Sweeps for DemoModel on N150
+
+#### vLLM Text-to-Text Performance Benchmark Sweeps for DemoModel on N150
+
+| ISL | OSL | Concurrency | TTFT (ms) | Tput User (TPS) | Tput Decode (TPS) |
+| --- | --- | --- | --- | --- | --- |
+| 128 | 128 | 1 | 60.0 | 15.0 | 30.0 |
+
+Note: all metrics are means across benchmark run unless otherwise stated.
+> ISL: Input Sequence Length (tokens)
+> OSL: Output Sequence Length (tokens)
+> Concurrency: number of concurrent requests (batch size)
+> TTFT: Time To First Token (ms)
+> Tput User: Throughput per user (TPS)
+> Tput Decode: Throughput for decode tokens, across all users (TPS)
+
+#### AIPerf Text-to-Text Performance Benchmark Sweeps for DemoModel on N150
+
+| ISL | OSL | Concurrency | TTFT (ms) | Tput User (TPS) | Tput Decode (TPS) |
+| --- | --- | --- | --- | --- | --- |
+| 128 | 128 | 1 | 62.0 | 14.0 | 28.0 |
+
+Note: all metrics are means across benchmark run unless otherwise stated.
+
+#### GenAI-Perf Text-to-Text Performance Benchmark Sweeps for DemoModel on N150
+
+| ISL | OSL | Concurrency | TTFT (ms) | Tput User (TPS) | Tput Decode (TPS) |
+| --- | --- | --- | --- | --- | --- |
+| 128 | 128 | 1 | 64.0 | 13.0 | 26.0 |
+
+Note: all metrics are means across benchmark run unless otherwise stated.
+"""
+
+EVALS_MARKDOWN = """### Accuracy Evaluations for DemoModel on N150
+
+#### Canonical Evals Summary
+
+| Task Name | Score |
+| --- | --- |
+| hellaswag | 0.77 |
+"""
+
+PARAMETER_SUPPORT_TESTS_MARKDOWN = """### Test Results for DemoModel on N150
+
+#### Canonical Parameter Support
+
+| Test Case | Status |
+| --- | --- |
+| `test_temperature` | PASS |
+"""
+
+STRESS_TESTS_MARKDOWN = """### Stress Test Results for DemoModel on N150
+
+#### Canonical Stress Summary
+
+| ISL | OSL | Concurrency |
+| --- | --- | --- |
+| 128 | 32 | 1 |
+"""
+
+SERVER_TESTS_MARKDOWN = """### Server Test Results for DemoModel on N150
+
+#### smoke_suite
+
+All canonical server checks passed.
+"""
+
+AIPERF_BENCHMARKS_MARKDOWN = """### Benchmark Performance Results for DemoModel on N150
+
+#### AIPerf Text Benchmarks - Detailed Percentiles
+
+Canonical AIPerf detailed benchmark content.
+"""
+
+GENAI_PERF_BENCHMARKS_MARKDOWN = """### GenAI-Perf Benchmark Performance Results for DemoModel on N150
+
+#### GenAI-Perf Text Benchmarks - Detailed Percentiles
+
+Canonical GenAI-Perf detailed benchmark content.
+"""
+
+
 def make_report_data():
     return {
         "metadata": {
@@ -150,6 +232,15 @@ def _install_main_monkeypatches(
         generate_report_schema=generate_report_schema,
         original_run_command=original_run_command,
     )
+    report_data = make_report_data()
+
+    def write_companion_markdown(
+        relative_dir: str, filename: str, content: str
+    ) -> Path:
+        output_path = Path(args.output_path) / relative_dir / filename
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(content, encoding="utf-8")
+        return output_path
 
     monkeypatch.setattr(run_reports, "parse_args", lambda: args)
     monkeypatch.setattr(
@@ -165,37 +256,64 @@ def _install_main_monkeypatches(
         "from_json",
         staticmethod(lambda _: runtime_config),
     )
+
+    def benchmark_report_hook(*_, **kwargs):
+        report_id = kwargs["report_id"]
+        return (
+            BENCHMARKS_MARKDOWN,
+            report_data["benchmarks_summary"],
+            write_companion_markdown(
+                "benchmarks",
+                f"benchmark_display_{report_id}.md",
+                BENCHMARKS_MARKDOWN,
+            ),
+            None,
+        )
+
+    def aiperf_report_hook(*_, **kwargs):
+        report_id = kwargs["report_id"]
+        return (
+            AIPERF_BENCHMARKS_MARKDOWN,
+            [],
+            write_companion_markdown(
+                "benchmarks_aiperf",
+                f"aiperf_benchmark_display_{report_id}.md",
+                AIPERF_BENCHMARKS_MARKDOWN,
+            ),
+            None,
+        )
+
+    def genai_perf_report_hook(*_, **kwargs):
+        report_id = kwargs["report_id"]
+        return (
+            GENAI_PERF_BENCHMARKS_MARKDOWN,
+            [],
+            write_companion_markdown(
+                "benchmarks_genai_perf",
+                f"genai_perf_benchmark_display_{report_id}.md",
+                GENAI_PERF_BENCHMARKS_MARKDOWN,
+            ),
+            None,
+        )
+
+    monkeypatch.setattr(run_reports, "benchmark_generate_report", benchmark_report_hook)
     monkeypatch.setattr(
-        run_reports,
-        "benchmark_generate_report",
-        lambda *_, **__: (
-            "benchmarks",
-            make_report_data()["benchmarks_summary"],
-            None,
-            None,
-        ),
+        run_reports, "aiperf_benchmark_generate_report", aiperf_report_hook
     )
     monkeypatch.setattr(
-        run_reports,
-        "aiperf_benchmark_generate_report",
-        lambda *_, **__: ("", [], None, None),
-    )
-    monkeypatch.setattr(
-        run_reports,
-        "genai_perf_benchmark_generate_report",
-        lambda *_, **__: ("", [], None, None),
+        run_reports, "genai_perf_benchmark_generate_report", genai_perf_report_hook
     )
     monkeypatch.setattr(
         run_reports,
         "evals_generate_report",
-        lambda *_, **__: ("evals", make_report_data()["evals"], None, None),
+        lambda *_, **__: (EVALS_MARKDOWN, report_data["evals"], None, None),
     )
     monkeypatch.setattr(
         run_reports,
         "generate_tests_report",
         lambda *_, **__: (
-            "tests",
-            make_report_data()["parameter_support_tests"],
+            PARAMETER_SUPPORT_TESTS_MARKDOWN,
+            report_data["parameter_support_tests"],
             None,
             None,
         ),
@@ -203,12 +321,20 @@ def _install_main_monkeypatches(
     monkeypatch.setattr(
         run_reports,
         "stress_test_generate_report",
-        lambda *_, **__: ("", None, None, None),
+        lambda *_, **__: (
+            STRESS_TESTS_MARKDOWN,
+            report_data["stress_tests"],
+            None,
+            None,
+        ),
     )
     monkeypatch.setattr(
         run_reports,
         "server_tests_generate_report",
-        lambda *_, **__: ("", make_report_data()["spec_tests"]["reports"]),
+        lambda *_, **__: (
+            SERVER_TESTS_MARKDOWN,
+            report_data["spec_tests"]["reports"],
+        ),
     )
     monkeypatch.setattr(
         run_reports,
@@ -333,6 +459,35 @@ def test_run_reports_main_validates_generated_raw_report(tmp_path, monkeypatch):
         report_data["metadata"]["run_command"]
         == "python run.py --model demo-model --tt-device N150 --workflow release"
     )
+    assert "benchmarks_markdown" not in report_data
+    assert "aiperf_benchmarks_markdown" not in report_data
+    assert "genai_perf_benchmarks_markdown" not in report_data
+    assert "evals_markdown" not in report_data
+    assert "parameter_support_tests_markdown" not in report_data
+    assert "stress_tests_markdown" not in report_data
+    assert "server_tests_markdown" not in report_data
+    release_reports = list((output_path / "release").glob("report_*.md"))
+    assert len(release_reports) == 1
+    release_markdown = release_reports[0].read_text(encoding="utf-8")
+    assert "## Tenstorrent Model Release Summary: DemoModel on N150" in release_markdown
+    assert "### Acceptance Criteria" in release_markdown
+    assert (
+        "#### vLLM Text-to-Text Performance Benchmark Sweeps for DemoModel on N150"
+        in release_markdown
+    )
+    assert (
+        "#### AIPerf Text-to-Text Performance Benchmark Sweeps for DemoModel on N150"
+        in release_markdown
+    )
+    assert (
+        "#### GenAI-Perf Text-to-Text Performance Benchmark Sweeps for DemoModel on N150"
+        in release_markdown
+    )
+    assert "#### AIPerf Text Benchmarks - Detailed Percentiles" in release_markdown
+    assert "#### GenAI-Perf Text Benchmarks - Detailed Percentiles" in release_markdown
+    assert "### Accuracy Evaluations for DemoModel on N150" in release_markdown
+    assert "#### LLM API Test Metadata" in release_markdown
+    assert "#### Parameter Conformance Summary" in release_markdown
 
 
 def test_run_reports_main_raises_after_writing_raw_report_on_validation_failure(
@@ -417,4 +572,35 @@ def test_run_reports_main_generates_schema_from_raw_report_before_validation(
     assert observed_calls == [
         ("generate", True, True, "demo-model"),
         ("validate", True),
+    ]
+
+
+def test_run_reports_main_validates_before_rendering_markdown(tmp_path, monkeypatch):
+    observed_calls = []
+
+    def validate_hook(report_file: Path):
+        observed_calls.append(("validate", report_file.exists()))
+
+    _install_main_monkeypatches(monkeypatch, tmp_path, validate_hook)
+
+    def render_hook(report_file: Path):
+        report_data = json.loads(report_file.read_text(encoding="utf-8"))
+        observed_calls.append(
+            (
+                "render",
+                report_file.exists(),
+                "benchmarks_markdown" in report_data,
+                "aiperf_benchmarks_markdown" in report_data,
+            )
+        )
+        return "## Rendered Release Report"
+
+    monkeypatch.setattr(run_reports, "build_release_report_markdown", render_hook)
+
+    return_code = run_reports.main()
+
+    assert return_code == 0
+    assert observed_calls == [
+        ("validate", True),
+        ("render", True, False, False),
     ]

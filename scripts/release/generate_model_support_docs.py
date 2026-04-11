@@ -302,6 +302,47 @@ def get_page_group_status_link(
     return f"[{best_status.display_string}]({filename})"
 
 
+def get_release_lookup_model_names(
+    model_name: str, template: Optional[ModelSpecTemplate]
+) -> List[str]:
+    candidate_names = [model_name]
+    if template is not None:
+        candidate_names.extend(
+            model_weights_to_model_name(weight) for weight in template.weights
+        )
+
+    deduped_names = []
+    seen = set()
+    for candidate_name in candidate_names:
+        if candidate_name in seen:
+            continue
+        seen.add(candidate_name)
+        deduped_names.append(candidate_name)
+    return deduped_names
+
+
+def get_release_performance_entry_for_template(
+    model_name: str,
+    template: Optional[ModelSpecTemplate],
+    device: Optional[DeviceTypes],
+    release_performance_data: Optional[Dict[str, object]],
+) -> Optional[Dict[str, object]]:
+    if not release_performance_data or template is None or device is None:
+        return None
+
+    for candidate_name in get_release_lookup_model_names(model_name, template):
+        entry = get_release_performance_entry(
+            release_performance_data,
+            candidate_name,
+            device,
+            template.impl.impl_id,
+            template.inference_engine,
+        )
+        if entry:
+            return entry
+    return None
+
+
 def _template_supports_device(template: ModelSpecTemplate, device: DeviceTypes) -> bool:
     return any(dev_spec.device == device for dev_spec in template.device_model_specs)
 
@@ -338,6 +379,36 @@ def get_page_group_template_for_model(
     return best_template
 
 
+def get_page_group_release_context(
+    model_name: str,
+    model_templates: List[ModelSpecTemplate],
+    group: HardwarePageGroup,
+    release_performance_data: Optional[Dict[str, object]],
+) -> Tuple[
+    Optional[ModelSpecTemplate], Optional[DeviceTypes], Optional[Dict[str, object]]
+]:
+    fallback_template = get_page_group_template_for_model(model_templates, group)
+    fallback_device = get_summary_device_for_group_template(fallback_template, group)
+
+    if not release_performance_data:
+        return fallback_template, fallback_device, None
+
+    for device in group.device_ordering:
+        for template in model_templates:
+            if not _template_supports_device(template, device):
+                continue
+            entry = get_release_performance_entry_for_template(
+                model_name,
+                template,
+                device,
+                release_performance_data,
+            )
+            if entry:
+                return template, device, entry
+
+    return fallback_template, fallback_device, None
+
+
 def _format_perf_value(value: Optional[float]) -> Optional[str]:
     if value is None:
         return None
@@ -347,22 +418,22 @@ def _format_perf_value(value: Optional[float]) -> Optional[str]:
     return f"{rounded:.1f}"
 
 
-def _format_perf_summary(
+def _format_perf_summary_parts(
     metrics: Optional[Dict[str, object]],
     *,
     throughput_key: str,
     throughput_label: Optional[str],
     throughput_units: str,
-) -> str:
+) -> List[str]:
     if not metrics:
-        return "-"
+        return []
 
     throughput_value = metrics.get(throughput_key)
     ttft_value = metrics.get("ttft")
     if throughput_value is None and throughput_key != "tput_user":
         throughput_value = metrics.get("tput_user")
     if throughput_value is None and ttft_value is None:
-        return "-"
+        return []
 
     parts = []
     throughput_display = _format_perf_value(throughput_value)
@@ -378,7 +449,85 @@ def _format_perf_summary(
     if ttft_display is not None:
         parts.append(f"TTFT: {ttft_display} (ms)")
 
+    return parts
+
+
+def _format_perf_summary(
+    metrics: Optional[Dict[str, object]],
+    *,
+    throughput_key: str,
+    throughput_label: Optional[str],
+    throughput_units: str,
+) -> str:
+    parts = _format_perf_summary_parts(
+        metrics,
+        throughput_key=throughput_key,
+        throughput_label=throughput_label,
+        throughput_units=throughput_units,
+    )
     return ", ".join(parts) if parts else "-"
+
+
+def _format_llm_readme_perf_summary(metrics: Optional[Dict[str, object]]) -> str:
+    parts = _format_perf_summary_parts(
+        metrics,
+        throughput_key="tput",
+        throughput_label="Output Tput",
+        throughput_units="tok/s",
+    )
+    return "<br>".join(parts) if parts else "-"
+
+
+def get_status_emoji(status: ModelStatusTypes) -> str:
+    return {
+        ModelStatusTypes.EXPERIMENTAL: "🛠️",
+        ModelStatusTypes.FUNCTIONAL: "🟡",
+        ModelStatusTypes.COMPLETE: "🟢",
+        ModelStatusTypes.TOP_PERF: "🚀",
+    }[status]
+
+
+def get_release_version_display(entry: Optional[Dict[str, object]]) -> Optional[str]:
+    if not entry:
+        return None
+
+    release_version = entry.get("release_version")
+    return normalize_release_version_display(release_version)
+
+
+def normalize_release_version_display(
+    release_version: Optional[object],
+) -> Optional[str]:
+    if release_version is None:
+        return None
+
+    release_version_text = str(release_version).strip()
+    if not release_version_text:
+        return None
+    if not release_version_text.startswith("v"):
+        release_version_text = f"v{release_version_text}"
+    return release_version_text
+
+
+def format_release_status_badge(
+    status: ModelStatusTypes, entry: Optional[Dict[str, object]]
+) -> str:
+    release_version = get_release_version_display(entry)
+    if release_version is None:
+        return "-"
+    return f"{get_status_emoji(status)} {release_version}"
+
+
+def format_template_release_status_badge(
+    template: Optional[ModelSpecTemplate], status: ModelStatusTypes
+) -> str:
+    if template is None:
+        return "-"
+
+    release_version = normalize_release_version_display(template.release_version)
+    if release_version is None:
+        return "-"
+    return f"{get_status_emoji(status)} {release_version}"
 
 
 def get_release_summary_metrics_for_template(
@@ -387,15 +536,11 @@ def get_release_summary_metrics_for_template(
     device: Optional[DeviceTypes],
     release_performance_data: Optional[Dict[str, object]],
 ) -> Optional[Dict[str, object]]:
-    if not release_performance_data or template is None or device is None:
-        return None
-
-    entry = get_release_performance_entry(
-        release_performance_data,
+    entry = get_release_performance_entry_for_template(
         model_name,
+        template,
         device,
-        template.impl.impl_id,
-        template.inference_engine,
+        release_performance_data,
     )
     if not entry:
         return None
@@ -668,6 +813,12 @@ def generate_model_page_group_page(
     for idx, device in enumerate(supported_devices_in_group):
         target_template, target_dev_spec = device_template_map[device]
         product_name = device.to_product_str()
+        release_entry = get_release_performance_entry_for_template(
+            model_name,
+            target_template,
+            device,
+            release_performance_data,
+        )
 
         # Section header for secondary devices
         if idx > 0:
@@ -768,6 +919,12 @@ def generate_model_page_group_page(
                 weights_links.append(f"[{weight}]({hf_url})")
             lines.append(f"| Weights | {', '.join(weights_links)} |")
 
+        release_status_badge = format_release_status_badge(
+            target_template.status, release_entry
+        )
+        if release_status_badge != "-":
+            lines.append(f"| Release Support | {release_status_badge} |")
+
         # Model status
         lines.append(f"| Model Status | {target_template.status.display_string} |")
 
@@ -789,15 +946,6 @@ def generate_model_page_group_page(
         lines.append(f"| Docker Image | `{docker_image}` |")
         lines.append("")
 
-        release_entry = None
-        if release_performance_data:
-            release_entry = get_release_performance_entry(
-                release_performance_data,
-                model_name,
-                device,
-                target_template.impl.impl_id,
-                target_template.inference_engine,
-            )
         if release_entry:
             release_report_section = render_release_report_section(
                 release_entry,
@@ -897,28 +1045,50 @@ def generate_model_type_table(
 
         # Page group status columns - link to combined page group page
         for group in page_groups:
-            status_link = get_page_group_status_link(model_name, model_templates, group)
-            if model_type == ModelType.LLM and status_link != "-":
-                summary_template = get_page_group_template_for_model(
-                    model_templates, group
-                )
-                summary_device = get_summary_device_for_group_template(
-                    summary_template, group
-                )
-                summary_metrics = get_release_summary_metrics_for_template(
+            if model_type == ModelType.LLM:
+                status_link = "-"
+                summary_template, _, release_entry = get_page_group_release_context(
                     model_name,
-                    summary_template,
-                    summary_device,
+                    model_templates,
+                    group,
                     release_performance_data,
                 )
-                summary_text = _format_perf_summary(
-                    summary_metrics,
-                    throughput_key="tput",
-                    throughput_label="Output Tput",
-                    throughput_units="tok/s",
+                badge_status = (
+                    summary_template.status
+                    if summary_template is not None
+                    else get_page_group_status_for_model(model_templates, group)
                 )
+                if badge_status is not None:
+                    if release_entry:
+                        release_badge = format_release_status_badge(
+                            badge_status, release_entry
+                        )
+                    else:
+                        release_badge = format_template_release_status_badge(
+                            summary_template, badge_status
+                        )
+                    if release_badge != "-":
+                        group_filename = get_model_page_group_filename(
+                            model_name, group
+                        )
+                        status_link = f"[{release_badge}]({group_filename})"
+
+                summary_metrics = (
+                    get_release_performance_summary_metrics(release_entry)
+                    if release_entry
+                    else None
+                )
+                summary_text = _format_llm_readme_perf_summary(summary_metrics)
+                cell_parts = []
+                if status_link != "-":
+                    cell_parts.append(status_link)
                 if summary_text != "-":
-                    status_link = f"{status_link} {summary_text}"
+                    cell_parts.append(summary_text)
+                status_link = "<br>".join(cell_parts) if cell_parts else "-"
+            else:
+                status_link = get_page_group_status_link(
+                    model_name, model_templates, group
+                )
             row.append(status_link)
 
         lines.append("| " + " | ".join(row) + " |")
@@ -1100,21 +1270,22 @@ def generate_models_by_hardware_page(
         )
 
         # Table header
-        lines.append("| Status | Type | Model | Performance Summary |")
+        lines.append("| Release | Type | Model | Performance Summary |")
         lines.append("|--------|------|-------|---------------------|")
 
         for model_name, status_enum, model_type, model_templates in device_models:
             subdir = get_model_subdir(model_type)
             filename = get_model_device_filename(model_name, device)
             summary_template = get_device_template_for_model(model_templates, device)
+            release_entry = get_release_performance_entry_for_template(
+                model_name,
+                summary_template,
+                device,
+                release_performance_data,
+            )
             summary_metrics = (
-                get_release_summary_metrics_for_template(
-                    model_name,
-                    summary_template,
-                    device,
-                    release_performance_data,
-                )
-                if model_type == ModelType.LLM
+                get_release_performance_summary_metrics(release_entry)
+                if model_type == ModelType.LLM and release_entry
                 else None
             )
             performance_summary = (
@@ -1130,7 +1301,11 @@ def generate_models_by_hardware_page(
 
             model_link = f"[{model_name}]({subdir}/{filename})"
             type_short = model_type.short_name
-            status_display = status_enum.display_string
+            status_display = format_release_status_badge(status_enum, release_entry)
+            if status_display == "-":
+                status_display = format_template_release_status_badge(
+                    summary_template, status_enum
+                )
 
             lines.append(
                 f"| {status_display} | {type_short} | {model_link} | {performance_summary} |"

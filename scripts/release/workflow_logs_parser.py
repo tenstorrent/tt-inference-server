@@ -72,6 +72,29 @@ def load_model_spec_json(model_specs_dir: Path) -> Tuple[Optional[dict], Optiona
     return model_spec_json, model_id
 
 
+def find_report_data_json_path(reports_root: Path, model_id: str) -> Optional[Path]:
+    """Locate the newest report_data JSON for a model inside reports_output."""
+    if not reports_root.exists():
+        logger.debug(f"Reports root does not exist: {reports_root}")
+        return None
+
+    for workflow_dir in reports_root.iterdir():
+        if not workflow_dir.is_dir():
+            continue
+        data_dir = workflow_dir / "data"
+        if not data_dir.is_dir():
+            continue
+
+        report_file = latest_json_by_mtime(data_dir, f"report_data_{model_id}_*.json")
+        if not report_file:
+            report_file = latest_json_by_mtime(data_dir, "report_data_*.json")
+        if report_file:
+            return report_file
+
+    logger.debug(f"No report data found for model_id: {model_id}")
+    return None
+
+
 def load_report_data_json(reports_root: Path, model_id: str) -> Optional[dict]:
     """Load report_data JSON from reports_output directory.
 
@@ -82,36 +105,15 @@ def load_report_data_json(reports_root: Path, model_id: str) -> Optional[dict]:
     Returns:
         Report data dict or None if not found
     """
-    if not reports_root.exists():
-        logger.debug(f"Reports root does not exist: {reports_root}")
+    report_file = find_report_data_json_path(reports_root, model_id)
+    if not report_file:
         return None
-
-    # Workflow subdirectory can vary (release, benchmarks, evals)
-    for workflow_dir in reports_root.iterdir():
-        if not workflow_dir.is_dir():
-            continue
-        data_dir = workflow_dir / "data"
-        if not data_dir.is_dir():
-            continue
-
-        # Try model-specific report first
-        report_file = latest_json_by_mtime(data_dir, f"report_data_{model_id}_*.json")
-        if not report_file:
-            # Fallback: any report_data_*.json
-            report_file = latest_json_by_mtime(data_dir, "report_data_*.json")
-
-        if report_file:
-            try:
-                logger.info(f"Reading report data JSON: {report_file}")
-                return json.loads(report_file.read_text())
-            except Exception as e:
-                logger.warning(
-                    f"Failed to parse report data JSON from {report_file}: {e}"
-                )
-                continue
-
-    logger.debug(f"No report data found for model_id: {model_id}")
-    return None
+    try:
+        logger.info(f"Reading report data JSON: {report_file}")
+        return json.loads(report_file.read_text())
+    except Exception as e:
+        logger.warning(f"Failed to parse report data JSON from {report_file}: {e}")
+        return None
 
 
 def parse_perf_status(report_data: dict) -> str:
@@ -228,6 +230,7 @@ def build_parsed_workflow_logs_data(
     *,
     resolved_model_spec: Optional[Any] = None,
     prefer_report_benchmark_target_evaluation: bool = True,
+    report_data_json_path: Optional[Path] = None,
 ) -> Optional[dict]:
     """Build parsed workflow-log style data from already-loaded JSON payloads."""
     model_id = model_spec_json.get("model_id")
@@ -287,6 +290,9 @@ def build_parsed_workflow_logs_data(
         },
         "model_specs": model_spec_json,
         "reports_output": report_data_json,
+        "report_data_json_path": str(report_data_json_path)
+        if report_data_json_path
+        else None,
         "tt_smi_output": None,
     }
 
@@ -358,13 +364,27 @@ def parse_workflow_logs_dir(
 
     # Load report data
     reports_root = workflow_logs_dir / "reports_output"
-    report_data_json = load_report_data_json(reports_root, model_id)
+    report_data_json_path = find_report_data_json_path(reports_root, model_id)
+    if not report_data_json_path:
+        logger.warning(f"Could not find report data in {workflow_logs_dir}")
+        return None
+    try:
+        logger.info(f"Reading report data JSON: {report_data_json_path}")
+        report_data_json = json.loads(report_data_json_path.read_text())
+    except Exception as exc:
+        logger.warning(
+            f"Failed to parse report data JSON from {report_data_json_path}: {exc}"
+        )
+        return None
     if not report_data_json:
         logger.warning(f"Could not find report data in {workflow_logs_dir}")
         return None
 
     return build_parsed_workflow_logs_data(
-        workflow_logs_dir.name, model_spec_json, report_data_json
+        workflow_logs_dir.name,
+        model_spec_json,
+        report_data_json,
+        report_data_json_path=report_data_json_path,
     )
 
 

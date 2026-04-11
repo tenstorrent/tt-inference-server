@@ -23,10 +23,12 @@ Usage:
 import argparse
 import json
 import logging
+import re
 import shutil
 import subprocess
 import sys
 from collections import defaultdict
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
@@ -53,10 +55,12 @@ try:
         load_optional_json,
     )
     from release_performance import (
-        build_release_performance_data,
         build_release_performance_diff_data,
         get_release_performance_path,
+        iter_release_performance_items,
         load_release_performance_data,
+        ReleasePerformanceWriteMode,
+        update_release_performance_outputs,
         write_release_performance_diff_data,
         write_release_performance_data,
     )
@@ -70,6 +74,8 @@ try:
         process_run_directory as process_ci_run_directory,
     )
     from workflow_logs_parser import build_parsed_workflow_logs_data
+    from workflows.release_report_markdown import build_release_report_markdown
+    from workflows.reports_schema import validate_report_file
 except ImportError:
     from scripts.release.generate_model_support_docs import (
         regenerate_model_support_docs_and_update_readme,
@@ -80,10 +86,12 @@ except ImportError:
         load_optional_json,
     )
     from scripts.release.release_performance import (
-        build_release_performance_data,
         build_release_performance_diff_data,
         get_release_performance_path,
+        iter_release_performance_items,
         load_release_performance_data,
+        ReleasePerformanceWriteMode,
+        update_release_performance_outputs,
         write_release_performance_diff_data,
         write_release_performance_data,
     )
@@ -100,6 +108,8 @@ except ImportError:
         process_run_directory as process_ci_run_directory,
     )
     from scripts.release.workflow_logs_parser import build_parsed_workflow_logs_data
+    from workflows.release_report_markdown import build_release_report_markdown
+    from workflows.reports_schema import validate_report_file
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +123,16 @@ IMAGE_STATUS_COPIED = "copied"
 IMAGE_STATUS_NEEDS_BUILD = "needs_build"
 RELEASE_WORKFLOW_FILE = "release.yml"
 CommitPair = Tuple[Optional[str], Optional[str]]
+REPORT_RENDERER_DIRNAME = "release_report_renderer"
+LEGACY_REPORT_SECTION_MARKDOWN_FIELDS = (
+    "benchmarks_markdown",
+    "aiperf_benchmarks_markdown",
+    "genai_perf_benchmarks_markdown",
+    "evals_markdown",
+    "parameter_support_tests_markdown",
+    "stress_tests_markdown",
+    "server_tests_markdown",
+)
 
 
 @dataclass(frozen=True)
@@ -242,6 +262,7 @@ def _flatten_raw_ci_entry(raw_entry: Optional[Dict[str, Any]]) -> Dict[str, Any]
     workflow_logs = raw_entry.get("workflow_logs") or {}
     workflow_summary = workflow_logs.get("summary") or {}
     release_report = workflow_logs.get("reports_output") or {}
+    report_data_json_path = workflow_logs.get("report_data_json_path")
     ci_metadata = raw_entry.get("ci_metadata") or {}
     ci_job_metadata = ci_metadata.get("ci_job_metadata") or {}
     ci_logs = raw_entry.get("ci_logs") or {}
@@ -270,6 +291,7 @@ def _flatten_raw_ci_entry(raw_entry: Optional[Dict[str, Any]]) -> Dict[str, Any]
         "firmware_bundle": ci_logs.get("firmware_bundle"),
         "driver_version": ci_logs.get("kmd_version"),
         "release_report": release_report if isinstance(release_report, dict) else {},
+        "release_report_json_path": report_data_json_path,
     }
 
 
@@ -404,6 +426,7 @@ def _build_report_only_ci_entry(
         report_data,
         resolved_model_spec=model_spec,
         prefer_report_benchmark_target_evaluation=False,
+        report_data_json_path=report_path,
     )
     if not parsed_workflow_logs:
         raise ValueError(f"Could not parse standalone report data: {report_path}")
@@ -413,6 +436,9 @@ def _build_report_only_ci_entry(
             "workflow_logs": {
                 "summary": parsed_workflow_logs.get("summary") or {},
                 "reports_output": parsed_workflow_logs.get("reports_output") or {},
+                "report_data_json_path": parsed_workflow_logs.get(
+                    "report_data_json_path"
+                ),
             },
             "ci_metadata": {},
             "ci_logs": {},
@@ -444,6 +470,16 @@ def load_ci_data_from_report_data_json(
             report_data_json_path, model_spec, report_data
         )
     }
+
+
+def build_merged_spec_from_report_data_json(
+    report_data_json_path: Path, is_dev: bool
+) -> Dict[str, MergedModelRecord]:
+    """Build merged Step-5 inputs from one standalone report_data JSON file."""
+    return merge_specs_with_ci_data(
+        load_ci_data_from_report_data_json(report_data_json_path),
+        is_dev=is_dev,
+    )
 
 
 def merge_specs_with_ci_data(
@@ -1084,11 +1120,16 @@ def write_release_performance_outputs(
     output_dir: Path,
     dry_run: bool,
 ) -> Dict[str, Any]:
-    """Write the release-performance baseline and return its raw data."""
-    release_performance_data = build_release_performance_data(merged_spec.values())
+    """Write the schema-valid baseline and return rich data for downstream docs."""
+    update_result = update_release_performance_outputs(
+        merged_spec.values(),
+        mode=ReleasePerformanceWriteMode.REPLACE,
+    )
+    release_performance_data = update_result.artifacts.rich_data
+    baseline_release_performance_data = update_result.final_baseline_data
 
     release_performance_path = get_release_performance_path()
-    if not release_performance_data.get("models"):
+    if not baseline_release_performance_data.get("models"):
         logger.warning(
             "Skipping checked-in release performance baseline update because no release data was found"
         )
@@ -1098,13 +1139,175 @@ def write_release_performance_outputs(
         )
     else:
         write_release_performance_data(
-            release_performance_data, path=release_performance_path
+            baseline_release_performance_data, path=release_performance_path
         )
         logger.info(
             f"Written checked-in release performance baseline to {release_performance_path}"
         )
 
     return release_performance_data
+
+
+def _sanitize_report_identifier(value: str) -> str:
+    sanitized_value = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._")
+    return sanitized_value or "report"
+
+
+def _build_release_report_id(
+    entry: Dict[str, Any],
+    model_name: str,
+    device: str,
+    impl_id: str,
+    inference_engine: str,
+) -> str:
+    report_data = entry.get("report_data")
+    metadata = report_data.get("metadata") if isinstance(report_data, dict) else {}
+    if isinstance(metadata, dict):
+        report_id = str(metadata.get("report_id") or "").strip()
+        if report_id:
+            return _sanitize_report_identifier(report_id)
+    return _sanitize_report_identifier(
+        f"{model_name}_{device}_{impl_id}_{inference_engine}_release_report"
+    )
+
+
+def _has_legacy_report_section_markdown(report_data: Dict[str, Any]) -> bool:
+    return any(
+        str(report_data.get(field_name) or "").strip()
+        for field_name in LEGACY_REPORT_SECTION_MARKDOWN_FIELDS
+    )
+
+
+def _write_report_companion_markdown(
+    renderer_root: Path,
+    report_id: str,
+    *,
+    subdir: str,
+    filename_template: str,
+    markdown: str,
+) -> None:
+    markdown_text = str(markdown or "").strip()
+    if not markdown_text:
+        return
+    output_dir = renderer_root / subdir
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / filename_template.format(report_id=report_id)
+    output_path.write_text(markdown_text, encoding="utf-8")
+
+
+def _materialize_release_report_json(
+    output_dir: Path,
+    entry: Dict[str, Any],
+    model_name: str,
+    device: str,
+    impl_id: str,
+    inference_engine: str,
+) -> Path:
+    report_data = entry.get("report_data")
+    if not isinstance(report_data, dict) or not report_data:
+        raise ValueError("release performance entry is missing report_data")
+
+    renderer_root = output_dir / REPORT_RENDERER_DIRNAME
+    release_data_dir = renderer_root / "release" / "data"
+    release_data_dir.mkdir(parents=True, exist_ok=True)
+
+    report_id = _build_release_report_id(
+        entry, model_name, device, impl_id, inference_engine
+    )
+    materialized_report_data = deepcopy(report_data)
+    legacy_markdown = {
+        field_name: str(materialized_report_data.pop(field_name, "") or "").strip()
+        for field_name in LEGACY_REPORT_SECTION_MARKDOWN_FIELDS
+    }
+
+    _write_report_companion_markdown(
+        renderer_root,
+        report_id,
+        subdir="benchmarks",
+        filename_template="benchmark_display_{report_id}.md",
+        markdown=legacy_markdown.get("benchmarks_markdown", ""),
+    )
+    _write_report_companion_markdown(
+        renderer_root,
+        report_id,
+        subdir="benchmarks_aiperf",
+        filename_template="aiperf_benchmark_display_{report_id}.md",
+        markdown=legacy_markdown.get("aiperf_benchmarks_markdown", ""),
+    )
+    _write_report_companion_markdown(
+        renderer_root,
+        report_id,
+        subdir="benchmarks_genai_perf",
+        filename_template="genai_perf_benchmark_display_{report_id}.md",
+        markdown=legacy_markdown.get("genai_perf_benchmarks_markdown", ""),
+    )
+
+    report_json_path = release_data_dir / f"report_data_{report_id}.json"
+    report_json_path.write_text(
+        json.dumps(materialized_report_data, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return report_json_path
+
+
+def _resolve_release_report_json_path(
+    output_dir: Path,
+    entry: Dict[str, Any],
+    model_name: str,
+    device: str,
+    impl_id: str,
+    inference_engine: str,
+) -> Optional[Path]:
+    report_data = entry.get("report_data")
+    report_data_json_path = entry.get("report_data_json_path")
+    if (
+        isinstance(report_data_json_path, str)
+        and report_data_json_path
+        and isinstance(report_data, dict)
+        and not _has_legacy_report_section_markdown(report_data)
+    ):
+        candidate_path = Path(report_data_json_path)
+        if candidate_path.exists():
+            return candidate_path
+    if isinstance(report_data, dict) and report_data:
+        return _materialize_release_report_json(
+            output_dir, entry, model_name, device, impl_id, inference_engine
+        )
+    return None
+
+
+def render_release_report_markdown_outputs(
+    release_performance_data: Dict[str, Any],
+    output_dir: Path,
+) -> Tuple[str, ...]:
+    """Render report markdown for rich release-performance entries."""
+    generated_paths: List[str] = []
+    renderer_release_dir = output_dir / REPORT_RENDERER_DIRNAME / "release"
+    renderer_release_dir.mkdir(parents=True, exist_ok=True)
+
+    for (
+        model_name,
+        device,
+        impl_id,
+        inference_engine,
+        entry,
+    ) in iter_release_performance_items(release_performance_data):
+        report_json_path = _resolve_release_report_json_path(
+            output_dir, entry, model_name, device, impl_id, inference_engine
+        )
+        if not report_json_path:
+            continue
+
+        validate_report_file(report_json_path)
+        report_markdown = build_release_report_markdown(report_json_path)
+        entry["report_markdown"] = report_markdown
+
+        report_id = report_json_path.stem.replace("report_data_", "", 1)
+        report_markdown_path = renderer_release_dir / f"report_{report_id}.md"
+        report_markdown_path.write_text(report_markdown, encoding="utf-8")
+        generated_paths.append(str(report_markdown_path))
+
+    return tuple(generated_paths)
 
 
 def build_acceptance_warnings(
@@ -1454,6 +1657,9 @@ def generate_release_artifact_outputs(
         request.output_dir,
         request.dry_run,
     )
+    report_markdown_artifacts = render_release_report_markdown_outputs(
+        release_performance_data, request.output_dir
+    )
 
     logger.info("\nStep 4: Writing release performance diff output...")
     release_performance_diff_path = write_release_performance_diff_output(
@@ -1477,11 +1683,14 @@ def generate_release_artifact_outputs(
     )
 
     generated_artifacts = tuple(
-        build_generated_artifact_paths(
-            output_dir=request.output_dir,
-            release_model_spec_path=request.release_model_spec_path,
-            readme_path=request.readme_path,
-        )
+        [
+            *build_generated_artifact_paths(
+                output_dir=request.output_dir,
+                release_model_spec_path=request.release_model_spec_path,
+                readme_path=request.readme_path,
+            ),
+            *report_markdown_artifacts,
+        ]
     )
     return ReleaseArtifactsResult(
         generated_artifacts=generated_artifacts,
@@ -1495,6 +1704,7 @@ def generate_release_artifact_outputs(
 def run_from_args(args: argparse.Namespace) -> int:
     """Run the release-artifact flow from parsed CLI arguments."""
     ci_data: Dict[str, Dict[str, Any]]
+    merged_spec: Dict[str, MergedModelRecord]
 
     if args.models_ci_run_id is not None:
         ci_data = load_ci_data_from_run_id(
@@ -1502,10 +1712,20 @@ def run_from_args(args: argparse.Namespace) -> int:
             resolve_release_output_dir(args.out_root),
             workflow_file=RELEASE_WORKFLOW_FILE if args.release else "on-nightly.yml",
         )
+        merged_spec = merge_specs_with_ci_data(ci_data, args.dev)
     elif args.report_data_json:
-        ci_data = load_ci_data_from_report_data_json(Path(args.report_data_json))
+        merged_spec = build_merged_spec_from_report_data_json(
+            Path(args.report_data_json),
+            is_dev=args.dev,
+        )
+        ci_data = {
+            model_id: record.ci_data
+            for model_id, record in merged_spec.items()
+            if record.ci_data
+        }
     else:
         ci_data = load_ci_data_from_artifacts_path(Path(args.ci_artifacts_path))
+        merged_spec = merge_specs_with_ci_data(ci_data, args.dev)
 
     output_dir = resolve_release_output_dir(args.output_dir)
     run_target = "dev" if args.dev else "release"
@@ -1520,7 +1740,6 @@ def run_from_args(args: argparse.Namespace) -> int:
     logger.info("=" * 80 + "\n")
 
     logger.info("\nStep 1: Merging CI data with MODEL_SPECS...")
-    merged_spec = merge_specs_with_ci_data(ci_data, args.dev)
     request = build_release_artifacts_request(args, merged_spec)
     result = generate_release_artifact_outputs(request)
 

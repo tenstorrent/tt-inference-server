@@ -36,6 +36,7 @@ from workflows.acceptance_criteria import (
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import MODEL_SPECS, ModelSpec
 from workflows.perf_targets import get_perf_target_rows
+from workflows.release_report_markdown import build_release_report_markdown
 from workflows.reports_schema import validate_report_file, write_reports_schema
 from workflows.runtime_config import RuntimeConfig
 from workflows.utils import (
@@ -2850,7 +2851,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
     save_markdown_table(release_str, disp_md_path)
 
     release_raw = all_tool_results
-    return "", release_raw, disp_md_path, stats_file_path
+    return release_str, release_raw, disp_md_path, stats_file_path
 
 
 def extract_eval_json_data(json_path: Path):
@@ -4174,9 +4175,6 @@ def main():
         "run_command": run_cmd,
     }
 
-    json_str = json.dumps(metadata, indent=4)
-    metadata_str = f"### Metadata: {model_spec.model_name} on {device_str}\n```json\n{json_str}\n```"
-
     # Create a simple args object for the report generation functions
     class SimpleArgs:
         def __init__(
@@ -4207,7 +4205,7 @@ def main():
     (
         benchmarks_release_str,
         benchmarks_release_data,
-        benchmarks_disp_md_path,
+        _,
         benchmarks_data_file_path,
     ) = benchmark_generate_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
@@ -4217,7 +4215,7 @@ def main():
     (
         aiperf_release_str,
         aiperf_release_data,
-        aiperf_disp_md_path,
+        _,
         aiperf_data_file_path,
     ) = aiperf_benchmark_generate_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
@@ -4226,26 +4224,24 @@ def main():
     # generate GenAI-Perf benchmarks report (separate detailed report)
     (
         genai_perf_release_str,
-        genai_perf_release_data,
-        genai_perf_disp_md_path,
-        genai_perf_data_file_path,
+        _,
+        _,
+        _,
     ) = genai_perf_benchmark_generate_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
     # generate evals report
-    evals_release_str, evals_release_data, evals_disp_md_path, evals_data_file_path = (
-        evals_generate_report(
-            simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
-        )
+    evals_release_str, evals_release_data, _, _ = evals_generate_report(
+        simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
     # generate tests report
     (
         tests_release_str,
         tests_release_data,
-        tests_disp_md_path,
-        tests_data_file_path,
+        _,
+        _,
     ) = generate_tests_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
@@ -4253,42 +4249,18 @@ def main():
     (
         stress_tests_release_str,
         stress_tests_release_data,
-        stress_tests_disp_md_path,
-        stress_tests_data_file_path,
+        _,
+        _,
     ) = stress_test_generate_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
     # generate server tests report
-    server_tests_release_str, server_tests_release_data = server_tests_generate_report(
+    server_tests_release_str, _ = server_tests_generate_report(
         simple_args, server_mode, model_spec, report_id=report_id, metadata=metadata
     )
 
-    # Collect benchmark display content
-    benchmarks_disp_md_str = ""
-    try:
-        if benchmarks_disp_md_path:
-            with open(benchmarks_disp_md_path, "r", encoding="utf-8") as f:
-                benchmarks_disp_md_str = f.read()
-    except (TypeError, FileNotFoundError):
-        pass
-
     logging.info("Release Summary\n\n")
-
-    release_header = (
-        f"## Tenstorrent Model Release Summary: {model_spec.model_name} on {device_str}"
-    )
-
-    # Combine all benchmark sections
-    all_benchmarks_str = ""
-    if benchmarks_disp_md_str:
-        all_benchmarks_str += benchmarks_disp_md_str + "\n\n"
-    if benchmarks_release_str:
-        all_benchmarks_str += benchmarks_release_str + "\n\n"
-    if aiperf_release_str:
-        all_benchmarks_str += aiperf_release_str + "\n\n"
-    if genai_perf_release_str:
-        all_benchmarks_str += genai_perf_release_str + "\n\n"
 
     release_output_dir = Path(args.output_path) / "release"
     release_output_dir.mkdir(parents=True, exist_ok=True)
@@ -4387,14 +4359,6 @@ def main():
         output_data["acceptance_blockers"] = acceptance_blockers
         output_data["acceptance_summary_markdown"] = acceptance_summary_markdown
 
-        release_str = (
-            f"{release_header}\n\n{metadata_str}\n\n"
-            f"{acceptance_summary_markdown}\n\n{all_benchmarks_str}"
-            f"{evals_release_str}\n\n{tests_release_str}\n\n"
-            f"{stress_tests_release_str}\n\n{server_tests_release_str}"
-        )
-        print(release_str)
-
         json.dump(output_data, f, indent=4)
 
     if runtime_config.generate_report_schema:
@@ -4402,6 +4366,8 @@ def main():
         logger.info(f"Generated report schema at: {schema_path}")
 
     validate_report_file(raw_file)
+    release_str = build_release_report_markdown(raw_file)
+    print(release_str)
 
     with release_file.open("w", encoding="utf-8") as f:
         f.write(release_str)

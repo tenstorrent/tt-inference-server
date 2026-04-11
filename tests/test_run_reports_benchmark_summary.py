@@ -330,11 +330,14 @@ def test_benchmark_generate_report_writes_combined_artifacts_in_backend_order(
     markdown = disp_md_path.read_text(encoding="utf-8")
 
     assert len(release_raw) == 3
-    assert release_str == ""
+    assert release_str == markdown
     assert stats_file_path.name == "benchmark_stats_demo-report.csv"
     assert disp_md_path.name == "benchmark_display_demo-report.md"
     assert stats_file_path.exists()
     assert disp_md_path.exists()
+    assert markdown.startswith(
+        "### Performance Benchmark Sweeps for Demo Model on N150"
+    )
     assert markdown.index(
         "#### vLLM Text-to-Text Performance Benchmark Sweeps"
     ) < markdown.index("#### AIPerf Text-to-Text Performance Benchmark Sweeps")

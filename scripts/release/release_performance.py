@@ -9,7 +9,10 @@ import json
 import re
 import unicodedata
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -25,12 +28,97 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 RELEASE_PERFORMANCE_PATH = (
     PROJECT_ROOT / "benchmarking" / "benchmark_targets" / "release_performance.json"
 )
+RELEASE_PERFORMANCE_SCHEMA_PATH = (
+    PROJECT_ROOT
+    / "benchmarking"
+    / "benchmark_targets"
+    / "release_performance_schema.json"
+)
 RELEASE_PERFORMANCE_SCHEMA_VERSION = "0.1.0"
+
+
+@dataclass(frozen=True)
+class ReleasePerformanceRecordArtifacts:
+    """Rich and stripped release-performance entries for one merged record."""
+
+    model_spec: Any
+    rich_entry: Dict[str, Any]
+    baseline_entry: Dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ReleasePerformanceArtifacts:
+    """Release-performance payloads shared across write modes."""
+
+    rich_data: Dict[str, Any]
+    baseline_data: Dict[str, Any]
+    records_with_entries: Tuple[ReleasePerformanceRecordArtifacts, ...]
+
+
+@dataclass(frozen=True)
+class ReleasePerformanceUpdateResult:
+    """Shared updater result for Step-5 and backfill callers."""
+
+    artifacts: ReleasePerformanceArtifacts
+    final_baseline_data: Dict[str, Any]
+    updated_count: int
+
+
+class ReleasePerformanceWriteMode(str, Enum):
+    """Persistence strategy for the checked-in release baseline."""
+
+    REPLACE = "replace"
+    MERGE_NEWER_ONLY = "merge_newer_only"
+
+
+def _empty_release_performance_data() -> Dict[str, Any]:
+    return {
+        "schema_version": RELEASE_PERFORMANCE_SCHEMA_VERSION,
+        "models": {},
+    }
 
 
 def get_release_performance_path() -> Path:
     """Return the checked-in release performance baseline path."""
     return RELEASE_PERFORMANCE_PATH
+
+
+def _import_jsonschema():
+    try:
+        import jsonschema
+    except ImportError as exc:
+        raise RuntimeError(
+            "Release performance schema validation requires the 'jsonschema' "
+            "package. Install the workflow dependencies that include it before "
+            "writing benchmarking/benchmark_targets/release_performance.json."
+        ) from exc
+    return jsonschema
+
+
+@lru_cache(maxsize=1)
+def load_release_performance_schema() -> Dict[str, Any]:
+    with RELEASE_PERFORMANCE_SCHEMA_PATH.open("r", encoding="utf-8") as schema_file:
+        return json.load(schema_file)
+
+
+def _format_release_performance_validation_error(error: Exception) -> str:
+    absolute_path = getattr(error, "absolute_path", [])
+    location = " -> ".join(str(part) for part in absolute_path) or "<root>"
+    message = getattr(error, "message", str(error))
+    return f"release_performance schema validation failed at {location}: {message}"
+
+
+def validate_release_performance_data(
+    release_performance_data: Dict[str, Any],
+    schema: Optional[Dict[str, Any]] = None,
+) -> None:
+    jsonschema = _import_jsonschema()
+    active_schema = load_release_performance_schema() if schema is None else schema
+
+    try:
+        jsonschema.validate(instance=release_performance_data, schema=active_schema)
+    except jsonschema.ValidationError as exc:
+        raise RuntimeError(_format_release_performance_validation_error(exc)) from exc
 
 
 def normalize_device_name(device: Any) -> str:
@@ -51,19 +139,13 @@ def load_release_performance_data(path: Optional[Path] = None) -> Dict[str, Any]
     """Load the checked-in release performance baseline if it exists."""
     data_path = path or get_release_performance_path()
     if not data_path.exists():
-        return {
-            "schema_version": RELEASE_PERFORMANCE_SCHEMA_VERSION,
-            "models": {},
-        }
+        return _empty_release_performance_data()
 
     with data_path.open("r", encoding="utf-8") as file:
         data = json.load(file)
 
     if "models" not in data or not isinstance(data["models"], dict):
-        return {
-            "schema_version": RELEASE_PERFORMANCE_SCHEMA_VERSION,
-            "models": {},
-        }
+        return _empty_release_performance_data()
     return data
 
 
@@ -71,6 +153,7 @@ def write_release_performance_data(
     release_performance_data: Dict[str, Any], path: Optional[Path] = None
 ) -> Path:
     """Write the release performance baseline with deterministic formatting."""
+    validate_release_performance_data(release_performance_data)
     data_path = path or get_release_performance_path()
     data_path.parent.mkdir(parents=True, exist_ok=True)
     data_path.write_text(
@@ -172,6 +255,16 @@ def _build_perf_target_results(
     return results
 
 
+def _has_non_null_measured_metrics(perf_target_results: List[Dict[str, Any]]) -> bool:
+    for result in perf_target_results:
+        measured_metrics = result.get("measured_metrics")
+        if not isinstance(measured_metrics, dict):
+            continue
+        if any(value is not None for value in measured_metrics.values()):
+            return True
+    return False
+
+
 def _benchmark_identity_key(row: Dict[str, Any]) -> Tuple[Any, ...]:
     """Build a stable identity for one benchmark datapoint row."""
 
@@ -239,7 +332,10 @@ def _filter_report_benchmark_rows(
 
 
 def build_release_performance_entry(
-    model_spec: Any, ci_data: Dict[str, Any]
+    model_spec: Any,
+    ci_data: Dict[str, Any],
+    *,
+    include_report_data: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Build one release-performance entry from merged CI/model-spec data."""
     report_data = _normalize_release_report_json(ci_data.get("release_report") or {})
@@ -249,13 +345,19 @@ def build_release_performance_entry(
     release_version = (
         metadata.get("release_version") if isinstance(metadata, dict) else None
     )
+    report_data_json_path = ci_data.get("release_report_json_path")
+    normalized_release_version = normalize_release_version(release_version)
+    if normalized_release_version is not None:
+        release_version = normalized_release_version
     benchmarks_summary = report_data.get("benchmarks_summary", [])
     perf_target_results = _build_perf_target_results(
         model_name=model_spec.model_name,
         device=normalize_device_name(model_spec.device_type),
         benchmarks_summary=benchmarks_summary,
     )
-    return {
+    if perf_target_results and not _has_non_null_measured_metrics(perf_target_results):
+        return None
+    entry = {
         "perf_status": ci_data.get("perf_status"),
         "release_version": release_version,
         "ci_run_number": ci_data.get("ci_run_number"),
@@ -263,6 +365,11 @@ def build_release_performance_entry(
         "ci_job_url": ci_data.get("ci_job_url"),
         "perf_target_results": perf_target_results,
     }
+    if include_report_data:
+        entry["report_data"] = report_data
+        if report_data_json_path:
+            entry["report_data_json_path"] = report_data_json_path
+    return entry
 
 
 def _set_release_performance_entry(
@@ -278,10 +385,8 @@ def _set_release_performance_entry(
     ] = entry
 
 
-def build_release_performance_data(records: Iterable[Any]) -> Dict[str, Any]:
-    """Build the checked-in release performance baseline from merged model records."""
-    models: Dict[str, Any] = {}
-    sorted_records = sorted(
+def _sort_release_performance_records(records: Iterable[Any]) -> List[Any]:
+    return sorted(
         records,
         key=lambda record: (
             getattr(record.model_spec, "model_name", ""),
@@ -294,23 +399,255 @@ def build_release_performance_data(records: Iterable[Any]) -> Dict[str, Any]:
         ),
     )
 
-    for record in sorted_records:
-        entry = build_release_performance_entry(record.model_spec, record.ci_data)
-        if not entry:
+
+def _build_release_performance_record_artifacts(
+    record: Any,
+) -> Optional[ReleasePerformanceRecordArtifacts]:
+    rich_entry = build_release_performance_entry(
+        record.model_spec,
+        record.ci_data,
+        include_report_data=True,
+    )
+    if not rich_entry:
+        return None
+    baseline_entry = deepcopy(rich_entry)
+    baseline_entry.pop("report_data", None)
+    baseline_entry.pop("report_data_json_path", None)
+    baseline_entry.pop("report_markdown", None)
+    return ReleasePerformanceRecordArtifacts(
+        model_spec=record.model_spec,
+        rich_entry=rich_entry,
+        baseline_entry=baseline_entry,
+    )
+
+
+def build_release_performance_artifacts(
+    records: Iterable[Any],
+) -> ReleasePerformanceArtifacts:
+    """Build shared rich/baseline release-performance payloads."""
+    rich_models: Dict[str, Any] = {}
+    baseline_models: Dict[str, Any] = {}
+    record_artifacts: List[ReleasePerformanceRecordArtifacts] = []
+
+    for record in _sort_release_performance_records(records):
+        record_artifacts_entry = _build_release_performance_record_artifacts(record)
+        if record_artifacts_entry is None:
             continue
+        record_artifacts.append(record_artifacts_entry)
         _set_release_performance_entry(
-            models,
+            rich_models,
             record.model_spec.model_name,
             normalize_device_name(record.model_spec.device_type),
             record.model_spec.impl.impl_id,
             normalize_inference_engine_name(record.model_spec.inference_engine),
-            entry,
+            deepcopy(record_artifacts_entry.rich_entry),
+        )
+        _set_release_performance_entry(
+            baseline_models,
+            record.model_spec.model_name,
+            normalize_device_name(record.model_spec.device_type),
+            record.model_spec.impl.impl_id,
+            normalize_inference_engine_name(record.model_spec.inference_engine),
+            deepcopy(record_artifacts_entry.baseline_entry),
         )
 
-    return {
-        "schema_version": RELEASE_PERFORMANCE_SCHEMA_VERSION,
-        "models": models,
-    }
+    return ReleasePerformanceArtifacts(
+        rich_data={
+            "schema_version": RELEASE_PERFORMANCE_SCHEMA_VERSION,
+            "models": rich_models,
+        },
+        baseline_data={
+            "schema_version": RELEASE_PERFORMANCE_SCHEMA_VERSION,
+            "models": baseline_models,
+        },
+        records_with_entries=tuple(record_artifacts),
+    )
+
+
+def apply_release_performance_updates(
+    existing_baseline_data: Optional[Dict[str, Any]],
+    artifacts: ReleasePerformanceArtifacts,
+    mode: ReleasePerformanceWriteMode,
+) -> ReleasePerformanceUpdateResult:
+    """Apply the requested baseline update strategy without writing to disk."""
+    if mode == ReleasePerformanceWriteMode.REPLACE:
+        return ReleasePerformanceUpdateResult(
+            artifacts=artifacts,
+            final_baseline_data=deepcopy(artifacts.baseline_data),
+            updated_count=len(artifacts.records_with_entries),
+        )
+
+    if mode != ReleasePerformanceWriteMode.MERGE_NEWER_ONLY:
+        raise ValueError(f"Unsupported release performance write mode: {mode}")
+
+    final_baseline_data = deepcopy(
+        existing_baseline_data
+        if existing_baseline_data is not None
+        else _empty_release_performance_data()
+    )
+    final_baseline_data.setdefault("schema_version", RELEASE_PERFORMANCE_SCHEMA_VERSION)
+    final_baseline_data.setdefault("models", {})
+
+    updated_count = 0
+    for record_artifacts in artifacts.records_with_entries:
+        if merge_release_performance_entry(
+            final_baseline_data,
+            record_artifacts.model_spec,
+            deepcopy(record_artifacts.baseline_entry),
+        ):
+            updated_count += 1
+
+    return ReleasePerformanceUpdateResult(
+        artifacts=artifacts,
+        final_baseline_data=final_baseline_data,
+        updated_count=updated_count,
+    )
+
+
+def update_release_performance_outputs(
+    records: Iterable[Any],
+    *,
+    mode: ReleasePerformanceWriteMode,
+    existing_baseline_data: Optional[Dict[str, Any]] = None,
+) -> ReleasePerformanceUpdateResult:
+    """Build shared release-performance artifacts and apply the chosen mode."""
+    artifacts = build_release_performance_artifacts(records)
+    return apply_release_performance_updates(
+        existing_baseline_data, artifacts, mode=mode
+    )
+
+
+def build_release_performance_data(
+    records: Iterable[Any],
+    *,
+    include_report_data: bool = False,
+) -> Dict[str, Any]:
+    """Build release performance data from merged model records."""
+    artifacts = build_release_performance_artifacts(records)
+    if include_report_data:
+        return deepcopy(artifacts.rich_data)
+    return deepcopy(artifacts.baseline_data)
+
+
+def strip_release_report_data(
+    release_performance_data: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Return a copy of release performance data without embedded report payloads."""
+    stripped_data = deepcopy(release_performance_data)
+    models = stripped_data.get("models")
+    if not isinstance(models, dict):
+        return stripped_data
+
+    for model_devices in models.values():
+        if not isinstance(model_devices, dict):
+            continue
+        for device_impls in model_devices.values():
+            if not isinstance(device_impls, dict):
+                continue
+            for impl_engines in device_impls.values():
+                if not isinstance(impl_engines, dict):
+                    continue
+                for entry in impl_engines.values():
+                    if isinstance(entry, dict):
+                        entry.pop("report_data", None)
+                        entry.pop("report_data_json_path", None)
+                        entry.pop("report_markdown", None)
+
+    return stripped_data
+
+
+def parse_release_version(value: Any) -> Optional[Tuple[int, int, int]]:
+    """Parse a release version string like `v0.11.0` or `0.11.0`."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.startswith("v"):
+        text = text[1:]
+
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", text)
+    if match is None:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
+def normalize_release_version(value: Any) -> Optional[str]:
+    """Return a canonical `major.minor.patch` release version string."""
+    parsed_version = parse_release_version(value)
+    if parsed_version is None:
+        return None
+    return ".".join(str(part) for part in parsed_version)
+
+
+def is_incoming_release_version_newer(
+    existing_version: Any, incoming_version: Any
+) -> bool:
+    """Return whether an incoming release version is newer than an existing one."""
+    parsed_incoming_version = parse_release_version(incoming_version)
+    if parsed_incoming_version is None:
+        return False
+
+    parsed_existing_version = parse_release_version(existing_version)
+    if parsed_existing_version is None:
+        return True
+
+    return parsed_incoming_version > parsed_existing_version
+
+
+def get_release_performance_identity(model_spec: Any) -> Tuple[str, str, str, str]:
+    """Return the nested release-performance key for one model spec."""
+    return (
+        model_spec.model_name,
+        normalize_device_name(model_spec.device_type),
+        model_spec.impl.impl_id,
+        normalize_inference_engine_name(model_spec.inference_engine),
+    )
+
+
+def should_replace_release_performance_entry(
+    existing_entry: Optional[Dict[str, Any]], incoming_entry: Dict[str, Any]
+) -> bool:
+    """Allow updates only when the incoming entry is for a newer release."""
+    if existing_entry is None:
+        return True
+    return is_incoming_release_version_newer(
+        existing_entry.get("release_version"),
+        incoming_entry.get("release_version"),
+    )
+
+
+def merge_release_performance_entry(
+    release_performance_data: Dict[str, Any],
+    model_spec: Any,
+    incoming_entry: Dict[str, Any],
+) -> bool:
+    """Merge one release-performance entry in place when it is newer."""
+    release_performance_data.setdefault(
+        "schema_version", RELEASE_PERFORMANCE_SCHEMA_VERSION
+    )
+    models = release_performance_data.setdefault("models", {})
+
+    model_name, device, impl_id, inference_engine = get_release_performance_identity(
+        model_spec
+    )
+    existing_entry = get_release_performance_entry(
+        release_performance_data,
+        model_name,
+        device,
+        impl_id,
+        inference_engine,
+    )
+    if not should_replace_release_performance_entry(existing_entry, incoming_entry):
+        return False
+
+    _set_release_performance_entry(
+        models,
+        model_name,
+        device,
+        impl_id,
+        inference_engine,
+        incoming_entry,
+    )
+    return True
 
 
 def get_release_performance_entry(
@@ -1095,12 +1432,44 @@ def render_test_results_markdown(entry: Dict[str, Any], heading_level: int = 3) 
     return ""
 
 
-def render_release_report_section(
-    entry: Dict[str, Any],
-    section_heading_level: int = 2,
-    title: str = "Release Report",
+def get_release_report_data(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    report_data = entry.get("report_data")
+    if isinstance(report_data, dict) and report_data:
+        return report_data
+    return None
+
+
+def _format_release_report_source_line(entry: Dict[str, Any]) -> Optional[str]:
+    ci_run_url = entry.get("ci_run_url")
+    ci_job_url = entry.get("ci_job_url")
+    source_links = []
+    if ci_run_url:
+        source_links.append(f"[CI run]({ci_run_url})")
+    if ci_job_url:
+        source_links.append(f"[CI job]({ci_job_url})")
+    if not source_links:
+        return None
+    return f"Source: {', '.join(source_links)}"
+
+
+def _inject_release_report_source_line(
+    report_markdown: str, source_line: Optional[str]
 ) -> str:
-    """Render the combined release report section for one entry."""
+    if not report_markdown or not source_line:
+        return report_markdown
+
+    lines = report_markdown.splitlines()
+    if len(lines) >= 2 and lines[1] == "":
+        return "\n".join([lines[0], "", source_line, ""] + lines[2:]).strip()
+    return "\n".join([lines[0], "", source_line, ""] + lines[1:]).strip()
+
+
+def _render_legacy_release_report_section(
+    entry: Dict[str, Any],
+    section_heading_level: int,
+    title: str,
+) -> str:
+    """Preserve the old perf-target-only renderer for legacy baseline entries."""
     sections = []
     benchmark_markdown = render_benchmark_summary_markdown(
         entry, heading_level=section_heading_level + 1
@@ -1117,20 +1486,26 @@ def render_release_report_section(
 
     heading_prefix = "#" * section_heading_level
     report_lines = [f"{heading_prefix} {title}", ""]
-
-    ci_run_url = entry.get("ci_run_url")
-    ci_job_url = entry.get("ci_job_url")
-    source_links = []
-    if ci_run_url:
-        source_links.append(f"[CI run]({ci_run_url})")
-    if ci_job_url:
-        source_links.append(f"[CI job]({ci_job_url})")
-    if source_links:
-        report_lines.append(f"Source: {', '.join(source_links)}")
+    source_line = _format_release_report_source_line(entry)
+    if source_line:
+        report_lines.append(source_line)
         report_lines.append("")
-
     report_lines.append("\n\n".join(sections))
     return "\n".join(report_lines).strip()
+
+
+def render_release_report_section(
+    entry: Dict[str, Any],
+    section_heading_level: int = 2,
+    title: str = "Release Report",
+) -> str:
+    """Render the combined release report section for one entry."""
+    report_markdown = str(entry.get("report_markdown") or "").strip()
+    if report_markdown:
+        return _inject_release_report_source_line(
+            report_markdown, _format_release_report_source_line(entry)
+        )
+    return _render_legacy_release_report_section(entry, section_heading_level, title)
 
 
 def render_release_notes_performance_markdown(

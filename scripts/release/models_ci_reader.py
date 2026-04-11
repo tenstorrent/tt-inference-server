@@ -1003,7 +1003,10 @@ def _parse_report_artifact_dir(report_artifact_dir: Path) -> Optional[dict]:
         return None
 
     return build_parsed_workflow_logs_data(
-        report_artifact_dir.name, model_spec_json, report_data_json
+        report_artifact_dir.name,
+        model_spec_json,
+        report_data_json,
+        report_data_json_path=report_json_path,
     )
 
 
