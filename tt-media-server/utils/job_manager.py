@@ -400,7 +400,7 @@ class JobManager:
             return
 
         for job in jobs_to_remove:
-            if job.is_in_progress() or job.status == JobStatus.CANCELLING:
+            if job.is_in_progress() or job.is_cancelling():
                 if job.is_in_progress():
                     self._logger.warning(
                         f"Force-cancelling stuck in-progress job {job.id}"
