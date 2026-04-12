@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "utils/logger.hpp"
+#include "utils/scoped_fd.hpp"
 
 namespace tt::sockets {
 
@@ -38,10 +39,12 @@ class SocketManager {
     CLIENT   // Connect to remote server
   };
 
-  /**
-   * @brief Get singleton instance
-   */
-  static SocketManager& getInstance();
+  SocketManager() = default;
+  SocketManager(const SocketManager&) = delete;
+  SocketManager& operator=(const SocketManager&) = delete;
+  SocketManager(SocketManager&&) = delete;
+  SocketManager& operator=(SocketManager&&) = delete;
+  ~SocketManager();
 
   /**
    * @brief Initialize as server (listening mode)
@@ -102,14 +105,7 @@ class SocketManager {
    */
   void setConnectionLostCallback(std::function<void()> callback);
 
-  // Disable copy/move for singleton
-  SocketManager(const SocketManager&) = delete;
-  SocketManager& operator=(const SocketManager&) = delete;
-
  private:
-  SocketManager() = default;
-  ~SocketManager();
-
   void serverLoop();
   void clientLoop();
   void messageLoop();
@@ -121,9 +117,9 @@ class SocketManager {
   std::string host_;
   uint16_t port_;
 
-  int server_socket_ = -1;
-  int client_socket_ = -1;
-  int peer_socket_ = -1;  // Active connection socket
+  tt::utils::ScopedFd serverSocket;
+  tt::utils::ScopedFd clientSocket;
+  int peerSocket = -1;  // Non-owning view of active connection FD
 
   std::atomic<bool> running_{false};
   std::atomic<bool> connected_{false};

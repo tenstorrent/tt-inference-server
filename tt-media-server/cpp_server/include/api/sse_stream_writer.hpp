@@ -61,7 +61,7 @@ class SseStreamWriter : public std::enable_shared_from_this<SseStreamWriter> {
       std::make_shared<drogon::ResponseStreamPtr>();
   std::shared_ptr<std::vector<std::string>> early_buffer_ =
       std::make_shared<std::vector<std::string>>();
-  std::shared_ptr<ConcurrentQueue<std::string>> accumulator_;
+  std::shared_ptr<tt::utils::ConcurrentQueue<std::string>> accumulator_;
   std::atomic<bool> done_{false};
 
   std::atomic<int> completion_tokens_{0};

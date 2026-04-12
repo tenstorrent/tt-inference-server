@@ -20,7 +20,7 @@ class ISpPrefillModelRunner {
 
   // Prefill runner always does prefill, returns the single result token
   // (nullopt if stopped before result arrives)
-  virtual std::optional<llm_engine::TokenResult> forward(
+  virtual std::optional<tt::runners::llm_engine::TokenResult> forward(
       uint32_t taskId, const std::vector<int64_t>& tokenIds) = 0;
   virtual void exit() = 0;
 };
