@@ -31,7 +31,7 @@ from workflows.run_docker_server import (
     generate_docker_run_command,
 )
 from workflows.runtime_config import RuntimeConfig
-from workflows.workflow_types import DeviceTypes
+from workflows.workflow_types import DeviceTypes, InferenceEngine, ModelType
 
 
 @pytest.fixture
@@ -1003,6 +1003,37 @@ class TestOverrideArgsIntegration:
                     assert not env_setting.startswith("CACHE_ROOT=")
                     assert not env_setting.startswith("TT_MODEL_SPEC_JSON_PATH=")
                     assert not env_setting.startswith("RUNTIME_MODEL_SPEC_JSON_PATH=")
+
+    def test_generate_docker_run_command_media_service_port(self):
+        """Test that generate_docker_run_command passes SERVICE_PORT for media engine containers."""
+        mock_model_spec = self._make_mock_model_spec()
+        mock_model_spec.inference_engine = "media"
+        mock_model_spec.model_type = ModelType.AUDIO
+        mock_model_spec.device_type = MagicMock()
+        mock_model_spec.device_type.name.lower.return_value = "n150"
+        mock_runtime_config = self._make_mock_runtime_config()
+        mock_runtime_config.service_port = "7001"
+
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
+        ), patch("workflows.run_docker_server.DeviceTypes"), patch(
+            "workflows.run_docker_server.short_uuid", return_value="test123"
+        ):
+            docker_command, container_name = generate_docker_run_command(
+                mock_model_spec, mock_runtime_config
+            )
+
+            assert container_name == "tt-inference-server-test123"
+            # Verify SERVICE_PORT is passed as an environment variable
+            service_port_found = False
+            for i, arg in enumerate(docker_command):
+                if arg == "-e" and i + 1 < len(docker_command):
+                    if docker_command[i + 1] == "SERVICE_PORT=7001":
+                        service_port_found = True
+                        break
+            assert service_port_found, (
+                "SERVICE_PORT=7001 should be set in docker environment variables"
+            )
 
 
 class TestSecretsHandling:

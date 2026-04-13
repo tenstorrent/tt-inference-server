@@ -43,16 +43,17 @@ def short_uuid():
     return str(uuid.uuid4())[:8]
 
 
-def get_media_server_docker_env_vars(model_spec):
+def get_media_server_docker_env_vars(model_spec, runtime_config):
     """Get media server environment variables for Docker container."""
     env_vars = {
         "CACHE_ROOT": "/home/container_app_user/cache_root",  # TODO: remove this
         "MODEL": model_spec.model_name,
         "DEVICE": model_spec.device_type.name.lower(),
+        "SERVICE_PORT": str(runtime_config.service_port),
     }
 
     logger.info(
-        f"Media server environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}"
+        f"Media server environment variables: MODEL={model_spec.model_name}, DEVICE={model_spec.device_type.name.lower()}, SERVICE_PORT={runtime_config.service_port}"
     )
     return env_vars
 
@@ -216,7 +217,7 @@ def generate_docker_run_command(
         model_spec.inference_engine == InferenceEngine.FORGE.value
         or model_spec.inference_engine == InferenceEngine.MEDIA.value
     ):
-        docker_env_vars.update(get_media_server_docker_env_vars(model_spec))
+        docker_env_vars.update(get_media_server_docker_env_vars(model_spec, runtime_config))
         api_key = os.getenv("API_KEY")
         if api_key:
             docker_env_vars["API_KEY"] = api_key
