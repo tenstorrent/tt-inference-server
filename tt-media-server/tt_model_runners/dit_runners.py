@@ -347,7 +347,7 @@ class TTWan22Runner(TTDiTRunner):
             "guidance_scale": 4.0,
             "guidance_scale_2": 3.0,
             "seed": int(request.seed or 0),
-            "traced":True
+            "traced": True,
         }
         # Only include negative_prompt if it's not empty. Otherwise, implicitly trigger the pipeline default.
         if bool(request.negative_prompt):
