@@ -296,11 +296,6 @@
             "N300",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
         }
       }
     },
