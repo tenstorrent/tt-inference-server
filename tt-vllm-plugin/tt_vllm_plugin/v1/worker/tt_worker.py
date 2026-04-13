@@ -9,7 +9,7 @@ import torch.nn as nn
 
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
-from vllm.utils import STR_DTYPE_TO_TORCH_DTYPE
+from vllm.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase
@@ -25,6 +25,7 @@ from tt_vllm_plugin.worker.tt_worker import (
     open_mesh_device,
 )
 from vllm.tasks import SupportedTask
+from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT
 
 if TYPE_CHECKING:
     from vllm.v1.core.sched.output import SchedulerOutput
@@ -62,6 +63,7 @@ class TTWorker(WorkerBase):
                 f"Invalid {trace_key}: {override_tt_config[trace_key]}"
             )
             self.trace_mode = override_tt_config[trace_key]
+        self.last_output: Optional[ModelRunnerOutput] = None
 
     def init_device(self) -> None:
         logger.info("Initializing TT device...")
@@ -193,7 +195,7 @@ class TTWorker(WorkerBase):
             num_kv_heads=total_num_kv_heads,
             head_size=head_size,
             dtype=dtype,
-            use_mla=model_config.use_mla,
+            #use_mla=model_config.use_mla,
             sliding_window=model_config.get_sliding_window(),
         )
         kv_cache_spec: dict[str, KVCacheSpec] = {"foo": attn_spec}
@@ -244,8 +246,11 @@ class TTWorker(WorkerBase):
         assert self.model_runner is not None, (
             "Model runner not initialized. Call load_model() first."
         )
-        output = self.model_runner.execute_model(scheduler_output)
-        return output
+        if scheduler_output.total_num_scheduled_tokens == 0:
+            self.last_output = EMPTY_MODEL_RUNNER_OUTPUT
+            return EMPTY_MODEL_RUNNER_OUTPUT
+        self.last_output = self.model_runner.execute_model(scheduler_output)
+        return None
 
     def check_health(self) -> None:
         # Worker will always be healthy as long as it's running.
@@ -399,3 +404,8 @@ class TTWorker(WorkerBase):
             "Model runner not initialized. Call load_model() first."
         )
         return self.model_runner.get_model()
+
+    def sample_tokens(self, grammar_output) -> ModelRunnerOutput:
+        output = self.last_output
+        self.last_output = None
+        return output

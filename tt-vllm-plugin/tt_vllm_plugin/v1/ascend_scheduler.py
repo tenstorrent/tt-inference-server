@@ -14,7 +14,7 @@ from vllm.config import VllmConfig
 from vllm.distributed.kv_events import KVEventBatch
 from vllm.logger import init_logger
 from vllm.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
-from vllm.utils import cdiv
+from vllm.utils.math_utils import cdiv
 from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.engine import EngineCoreEventType, EngineCoreOutputs
@@ -35,6 +35,7 @@ class AscendScheduler(Scheduler):
         vllm_config: VllmConfig,
         kv_cache_config: KVCacheConfig,
         structured_output_manager: StructuredOutputManager,
+        block_size: int,
         mm_registry: MultiModalRegistry = MULTIMODAL_REGISTRY,
         include_finished_set: bool = False,
         log_stats: bool = False,
@@ -43,6 +44,7 @@ class AscendScheduler(Scheduler):
             vllm_config,
             kv_cache_config,
             structured_output_manager,
+            vllm_config.cache_config.block_size,
             mm_registry,
             include_finished_set,
             log_stats,
@@ -75,7 +77,7 @@ class AscendScheduler(Scheduler):
         # uses structured decoding.
         structured_output_request_ids: dict[str, int] = {}
 
-        req_to_new_block_ids: dict[str, tuple[list[int], ...]] = {}
+        req_to_new_block_ids: dict[str, KVCacheBlocks] = {}
         num_scheduled_tokens: dict[str, int] = {}
         token_budget = self.max_num_scheduled_tokens
         # Spec decode-related.
@@ -271,7 +273,7 @@ class AscendScheduler(Scheduler):
             if self.lora_config and request.lora_request:
                 scheduled_loras.add(request.lora_request.lora_int_id)
             req_to_new_block_ids[request.request_id] = (
-                self.kv_cache_manager.get_block_ids(request.request_id)
+                self.kv_cache_manager.get_blocks(request.request_id)
             )
             # Update request info.
             num_scheduled_tokens[request.request_id] = num_new_tokens
@@ -380,7 +382,7 @@ class AscendScheduler(Scheduler):
                 if request.use_structured_output:
                     structured_output_request_ids[request.request_id] = req_index
                 self.scheduled_req_ids.add(request.request_id)
-                req_to_new_block_ids[request.request_id] = new_blocks.get_block_ids()
+                req_to_new_block_ids[request.request_id] = new_blocks
                 num_scheduled_tokens[request.request_id] = num_new_tokens
                 token_budget -= num_new_tokens
                 req_index += 1
@@ -421,9 +423,8 @@ class AscendScheduler(Scheduler):
             any_request = self.running[0]
             num_common_prefix_blocks = (
                 self.kv_cache_manager.get_num_common_prefix_blocks(
-                    any_request, len(self.running)
+                    any_request)
                 )
-            )
 
         # Generate grammar bitmask for structured output requests
         grammar_bitmask = self.structured_output_manager.grammar_bitmask(
@@ -434,7 +435,7 @@ class AscendScheduler(Scheduler):
 
         # Construct the scheduler output.
         new_reqs_data = [
-            NewRequestData.from_request(req, req_to_new_block_ids[req.request_id])
+            NewRequestData.from_request(req, req_to_new_block_ids[req.request_id].get_block_ids())
             for req in scheduled_new_reqs
         ]
 
@@ -460,9 +461,7 @@ class AscendScheduler(Scheduler):
             # It contains the request IDs that are finished in between
             # the previous and the current steps.
             finished_req_ids=self.finished_req_ids,  # type: ignore
-            free_encoder_input_ids=self.encoder_cache_manager.get_freed_ids(),
-            structured_output_request_ids=structured_output_request_ids,
-            grammar_bitmask=grammar_bitmask,
+            free_encoder_mm_hashes=self.encoder_cache_manager.get_freed_mm_hashes(),
         )
 
         # NOTE(Kuntai): this function is designed for multiple purposes:
@@ -532,10 +531,10 @@ class AscendScheduler(Scheduler):
             self.scheduler_config.chunked_prefill_enabled
             and not self.scheduler_config.is_multi_step
         ):
-            prompt_limit = self.scheduler_config.max_model_len
+            prompt_limit = self.vllm_config.model_config.max_model_len
         else:
             prompt_limit = min(
-                self.scheduler_config.max_model_len,
+                self.vllm_config.model_config.max_model_len,
                 self.scheduler_config.max_num_batched_tokens,
             )
 
@@ -556,7 +555,7 @@ class AscendScheduler(Scheduler):
         For example, the API server can abort a request when the client
         disconnects.
         """
-        for req_id in request_ids:
+        for req_id in (request_ids or []):
             request = self.requests.get(req_id)
             if request is None:
                 # Invalid request ID.
