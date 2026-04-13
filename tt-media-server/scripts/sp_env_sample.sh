@@ -21,9 +21,11 @@ export TT_DIT_CACHE_DIR=/data/sadesoye/tt_dit_cache
 
 #Fabric Vars copied over from original performance testing. May not be needed.
 export TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS=120000
-export TT_METAL_OPERATION_TIMEOUT_SECONDS=25
+export TT_METAL_OPERATION_TIMEOUT_SECONDS=120
 
 #inference server Vars. These must be the same as used for SPPRunner. 
 export TT_VIDEO_SHM_INPUT=tt_video_in
 export TT_VIDEO_SHM_OUTPUT=tt_video_out
 export MODEL_RUNNER=tt-wan2.2
+export TT_VIDEO_EXPORT_CRF=23
+export USE_GREEDY_BASED_ALLOCATION=false

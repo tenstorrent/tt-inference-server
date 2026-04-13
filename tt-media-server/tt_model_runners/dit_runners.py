@@ -347,6 +347,7 @@ class TTWan22Runner(TTDiTRunner):
             "guidance_scale": 4.0,
             "guidance_scale_2": 3.0,
             "seed": int(request.seed or 0),
+            "traced":True
         }
         # Only include negative_prompt if it's not empty. Otherwise, implicitly trigger the pipeline default.
         if bool(request.negative_prompt):
@@ -366,6 +367,7 @@ class TTWan22Runner(TTDiTRunner):
         if mesh_size >= 32:  # i.e GLX: ((4, 8), (4, 32))
             device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
             if is_blackhole():
+                device_params["trace_region_size"] = 120000000
                 config = ttnn.FabricRouterConfig()
                 config.max_packet_payload_size_bytes = 8192
                 device_params["fabric_router_config"] = config

@@ -196,7 +196,7 @@ class Settings(BaseSettings):
             return
 
         dm = DeviceManager()
-        devices = None
+        devices = []
         mesh = self.device_mesh_shape
 
         try:
