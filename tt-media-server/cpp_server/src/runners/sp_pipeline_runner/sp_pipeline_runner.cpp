@@ -201,7 +201,8 @@ void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
   }
   auto& seq = *it->second;
   seq.appendToken(output.token_id);
-  bool finished = output.is_complete || stopTokenIds.count(output.token_id);
+  bool hitStop = !seq.getSamplingParams().ignore_eos && stopTokenIds.count(output.token_id) > 0;
+  bool finished = output.is_complete || hitStop;
   auto taskId = seq.taskId;
   if (finished) {
     cached.insert(seq.getKVCacheSlot());
