@@ -26,7 +26,8 @@
         "EMBEDDING": [
             "bge-large-en-v1.5",
             "Qwen3-Embedding-4B",
-            "Qwen3-Embedding-8B"
+            "Qwen3-Embedding-8B",
+            "bge-m3"
         ],
         "TTS": [
             "speecht5_tts"
@@ -83,7 +84,8 @@
             "speecht5": "SpeechT5 TTS model tests",
             "wan": "Wan video generation model tests",
             "mochi": "Mochi video generation model tests",
-            "mobilenetv2": "MobileNetV2 CNN model tests"
+            "mobilenetv2": "MobileNetV2 CNN model tests",
+            "bge_m3": "BGE-M3 embedding model tests"
         }
     },
     "hardware_defaults": {

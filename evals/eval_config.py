@@ -2513,6 +2513,25 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="BAAI/bge-m3",
+        tasks=[
+            EvalTask(
+                task_name="embedding",
+                workflow_venv_type=WorkflowVenvType.EVALS_EMBEDDING,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score="",
+                    published_score_ref="",
+                    gpu_reference_score=0.7873,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/2892",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/Qwen3-Embedding-8B",
         tasks=[
             EvalTask(
