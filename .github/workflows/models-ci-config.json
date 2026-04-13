@@ -286,6 +286,24 @@
         }
       }
     },
+    "bge-m3": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "GALAXY",
+            "N150",
+            "N300",
+            "T3K"
+          ]
+        },
+        "release": {
+          "devices": [
+            "GALAXY"
+          ]
+        }
+      }
+    },
     "Wan2.2-T2V-A14B-Diffusers": {
       "inference_engine": "MEDIA",
       "ci": {
