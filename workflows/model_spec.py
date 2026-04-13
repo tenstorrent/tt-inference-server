@@ -2066,7 +2066,7 @@ vlm_templates = [
             "Qwen/Qwen2.5-VL-7B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="f2cf1f4d9ac",
+        tt_metal_commit="a0237528981",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
@@ -2128,7 +2128,7 @@ vlm_templates = [
             "allenai/olmOCR-2-7B-1025",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="f2cf1f4d9ac",
+        tt_metal_commit="a0237528981",
         vllm_commit="b2894d3",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
@@ -2145,7 +2145,7 @@ vlm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 10000000,
+                    "trace_region_size": 60000000,
                 },
             ),
             DeviceModelSpec(
@@ -2153,6 +2153,9 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 60000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -2164,7 +2167,7 @@ vlm_templates = [
                 },
                 override_tt_config={
                     "data_parallel": 4,
-                    "trace_region_size": 50000000,
+                    "trace_region_size": 60000000,
                     "sample_on_device_mode": "decode_only",
                 },
                 env_vars={"TT_MM_THROTTLE_PERF": 5},

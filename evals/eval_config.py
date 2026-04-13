@@ -819,6 +819,139 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="allenai/olmOCR-2-7B-1025",
+        tasks=[
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="chartqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=83.0,
+                    published_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    gpu_reference_score=83.0,
+                    gpu_reference_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["relaxed_overall,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|im_end|>",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="docvqa_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=93.9,
+                    published_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    gpu_reference_score=93.9,
+                    gpu_reference_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["anls,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|im_end|>",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="textvqa_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=82.05,
+                    published_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    gpu_reference_score=82.05,
+                    gpu_reference_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|im_end|>",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="infovqa_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=78.64,
+                    published_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    gpu_reference_score=78.64,
+                    gpu_reference_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["anls,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|im_end|>",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/Qwen3-8B",
         tasks=[
             EvalTask(

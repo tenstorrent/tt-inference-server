@@ -342,7 +342,7 @@ def main():
     assert device == model_spec.device_type
 
     # Setup authentication based on model type
-    if model_spec.model_type in EVAL_TASK_TYPES:
+    if model_spec.model_type in EVAL_TASK_TYPES or model_spec.model_type == ModelType.VLM:
         _setup_openai_api_key(args, logger)
     elif args.jwt_secret:
         # For LLM models, generate JWT token from jwt_secret
