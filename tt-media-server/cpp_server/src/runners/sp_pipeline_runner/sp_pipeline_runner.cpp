@@ -224,7 +224,6 @@ void SpPipelineRunner::handleRequest(
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
 
-  auto it = running.find(slotId);
   bool isNew = !request->isContinuation();
 
   TT_LOG_DEBUG(
