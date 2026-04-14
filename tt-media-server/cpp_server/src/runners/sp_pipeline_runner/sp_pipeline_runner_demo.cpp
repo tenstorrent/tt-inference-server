@@ -18,7 +18,7 @@
 namespace tt::runners {
 
 SpPipelineRunnerDemo::SpPipelineRunnerDemo(
-    const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* resultQueue,
+    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
     tt::runners::llm_engine::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),

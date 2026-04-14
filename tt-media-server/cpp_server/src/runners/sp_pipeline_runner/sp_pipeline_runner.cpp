@@ -21,7 +21,7 @@ namespace tt::runners {
 namespace utils = sp_pipeline_utils;
 
 SpPipelineRunner::SpPipelineRunner(
-    const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* resultQueue,
+    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
     tt::runners::llm_engine::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
@@ -34,10 +34,11 @@ SpPipelineRunner::SpPipelineRunner(
       .d2h_socket_id = tt::config::d2hSocketId(),
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
+  pm::MockConfig mockConfig{};
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
-      std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
+      std::make_unique<pm::PipelineManager>(mockConfig, managerParams);
   TT_LOG_INFO(
       "SpPipelineRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();

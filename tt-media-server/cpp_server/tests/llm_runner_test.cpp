@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
-#include "ipc/token_ring_buffer.hpp"
+#include "ipc/boost_ipc_result_queue.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 #include "runners/llm_runner/sequence.hpp"
@@ -49,7 +49,8 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   int totalRequests = static_cast<int>(requests.size());
   auto taskQueue = makeQueue();
 
-  tt::ipc::TokenRingBuffer<65536> resultQueue("/test_llm_runner_tokens", true);
+  tt::ipc::BoostIpcResultQueue resultQueue("test_llm_runner_tokens",
+                                           tt::ipc::RESULT_QUEUE_CAPACITY);
 
   tt::runners::LLMRunner engine{config, &resultQueue, taskQueue.get()};
 
@@ -68,7 +69,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   std::thread consumer([&]() {
     tt::ipc::SharedToken token;
     while (finishedCount.load() < totalRequests) {
-      if (resultQueue.pop(token)) {
+      if (resultQueue.tryPop(token)) {
         uint32_t tid = token.task_id;
         receivedTokens[tid].push_back(static_cast<int64_t>(token.token_id));
         if (token.isFinal()) {
@@ -103,6 +104,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   EXPECT_EQ(receivedTokens[taskIds[2]], expectedSeq2);
 
   resultQueue.shutdown();
+  resultQueue.remove();
 }
 
 }  // namespace
