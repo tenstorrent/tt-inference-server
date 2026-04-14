@@ -16,7 +16,8 @@ class LlamaTokenizer final : public Tokenizer {
 
   std::string applyChatTemplate(
       const std::vector<domain::ChatMessage>& messages,
-      bool addGenerationPrompt) const;
+      bool addGenerationPrompt = true,
+      const std::optional<std::vector<domain::Tool>>& tools = std::nullopt) const override;
 };
 
 }  // namespace tt::utils
