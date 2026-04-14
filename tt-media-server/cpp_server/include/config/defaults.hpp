@@ -34,11 +34,13 @@ constexpr size_t SESSION_EVICTION_COUNT = 10;
 constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 100;
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 10;
 
-constexpr const char* H2D_SOCKET_ID = "deepseek_h2d";
-constexpr const char* D2H_SOCKET_ID = "deepseek_d2h";
+constexpr const char* H2D_SOCKET_ID = "h2d_socket";
+constexpr const char* D2H_SOCKET_ID = "d2h_socket";
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 64;
-constexpr bool USE_DEEPSEEK_MD_FORMAT = true;
+constexpr bool USE_DEEPSEEK_MD_FORMAT = false;
+
+constexpr size_t MOCK_SLOT_POOL_SIZE = 64;
 
 constexpr const char* SERVER_HOST = "0.0.0.0";
 constexpr uint16_t SERVER_PORT = 8000;

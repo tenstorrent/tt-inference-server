@@ -190,6 +190,7 @@ void SessionManager::evictOldSessions() {
 
   TT_LOG_DEBUG("[SessionManager] evictOldSessions: {} candidates for eviction",
                heap.size());
+
   size_t evicted = 0;
   for (const auto& [_, sessionId] : heap) {
     auto session = sessions.take(sessionId);
@@ -252,6 +253,7 @@ void SessionManager::createSession(
       "[SessionManager] createSession called, slotId={}, activeSessions={}",
       slotId.has_value() ? std::to_string(slotId.value()) : "none",
       sessions.size());
+
   evictOldSessions();
 
   if (slotId.has_value()) {
@@ -386,12 +388,14 @@ void SessionManager::handleMemoryResult(
         "retrying in 500ms, attemptsRemaining={}",
         pendingAllocation.session.getSessionId(),
         pendingAllocation.attemptsRemaining);
+
     pendingAllocationsRetryQueue.push(std::move(pendingAllocation));
   } else {
     TT_LOG_ERROR(
         "[SessionManager] Async: failed to allocate slot for "
         "session {} after all attempts",
         pendingAllocation.session.getSessionId());
+
     pendingAllocation.eventLoop->queueInLoop(
         [onError = std::move(pendingAllocation.onError)]() {
           onError("Failed to allocate slot id: All attemps have failed");

@@ -291,4 +291,9 @@ unsigned sessionAllocationMaxRetries() {
                defaults::SESSION_ALLOCATION_MAX_RETRIES));
 }
 
+size_t mockSlotPoolSize() {
+  return static_cast<size_t>(
+      envUlong("MOCK_SLOT_POOL_SIZE", defaults::MOCK_SLOT_POOL_SIZE));
+}
+
 }  // namespace tt::config

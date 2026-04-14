@@ -12,7 +12,7 @@
 #include "config/settings.hpp"
 #include "ipc/token_push.hpp"
 #include "profiling/tracy.hpp"
-#include "services/memory_services/contiguous_memory_manager.hpp"
+#include "services/memory_services/slot_pool_memory_manager.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners {
@@ -28,7 +28,8 @@ SpPipelineRunnerDemo::SpPipelineRunnerDemo(
       maxInFlightCount(config.max_in_flight_count * 30) {
   if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY ||
       tt::config::llmMode() == config::LLMMode::REGULAR) {
-    memoryManager = std::make_unique<services::ContiguousMemoryManager>();
+    memoryManager = std::make_unique<services::SlotPoolMemoryManager>(
+        static_cast<uint32_t>(tt::config::mockSlotPoolSize()));
     memoryThread = std::thread([this] { memoryLoop(); });
   }
 

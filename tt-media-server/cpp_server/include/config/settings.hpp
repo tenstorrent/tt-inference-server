@@ -114,6 +114,10 @@ size_t maxTokensToPrefillOnDecode();
  * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
 unsigned sessionAllocationMaxRetries();
 
+/** Mock slot pool size from MOCK_SLOT_POOL_SIZE. Default:
+ * defaults::MOCK_SLOT_POOL_SIZE. */
+size_t mockSlotPoolSize();
+
 /** H2D socket ID from H2D_SOCKET_ID. Default: defaults::H2D_SOCKET_ID. */
 std::string h2dSocketId();
 
