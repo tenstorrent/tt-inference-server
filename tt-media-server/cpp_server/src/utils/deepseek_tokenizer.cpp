@@ -42,6 +42,31 @@ static const char* dsToolCallsEnd =
     "tool\xE2\x96\x81"
     "calls\xE2\x96\x81"
     "end\xEF\xBD\x9C>";
+static const char* dsToolOutputsBegin =
+    "<\xEF\xBD\x9C"
+    "tool\xE2\x96\x81"
+    "outputs\xE2\x96\x81"
+    "begin\xEF\xBD\x9C>";
+static const char* dsToolOutputBegin =
+    "<\xEF\xBD\x9C"
+    "tool\xE2\x96\x81"
+    "output\xE2\x96\x81"
+    "begin\xEF\xBD\x9C>";
+static const char* dsToolOutputEnd =
+    "<\xEF\xBD\x9C"
+    "tool\xE2\x96\x81"
+    "output\xE2\x96\x81"
+    "end\xEF\xBD\x9C>";
+static const char* dsToolOutputsEnd =
+    "<\xEF\xBD\x9C"
+    "tool\xE2\x96\x81"
+    "outputs\xE2\x96\x81"
+    "end\xEF\xBD\x9C>";
+static const char* dsEndOfSentence =
+    "<\xEF\xBD\x9C"
+    "end\xE2\x96\x81"
+    "of\xE2\x96\x81"
+    "sentence\xEF\xBD\x9C>";
 
 std::string DeepseekTokenizer::applyChatTemplate(
     const std::vector<domain::ChatMessage>& messages,
@@ -91,14 +116,67 @@ std::string DeepseekTokenizer::applyChatTemplate(
            "or spaces\n";
   }
 
+  // Track if we're inside tool outputs section
+  bool inToolOutputs = false;
+  bool isFirstToolOutput = true;
+
   for (const auto& m : messages) {
     if (m.role == "system") continue;
+
     if (m.role == "user") {
+      // Close tool outputs if we were in that section
+      if (inToolOutputs) {
+        out << dsToolOutputsEnd;
+        inToolOutputs = false;
+      }
       out << dsUserTag << m.content;
     } else if (m.role == "assistant") {
-      out << dsAssistantTag << m.content;
-      if (cfg_.add_eos_token) out << cfg_.eos_token;
+      // Close tool outputs if we were in that section
+      if (inToolOutputs) {
+        out << dsToolOutputsEnd;
+        inToolOutputs = false;
+      }
+
+      // Check if this assistant message has tool calls
+      if (m.tool_calls.has_value() && !m.tool_calls->empty()) {
+        // Output content first if present
+        if (!m.content.empty()) {
+          out << dsAssistantTag << m.content;
+        }
+
+        // Format tool calls
+        out << dsToolCallsBegin;
+        for (const auto& tc : m.tool_calls.value()) {
+          out << dsToolCallBegin << "function" << dsToolSep
+              << tc.function.name << "\n```json\n"
+              << tc.function.arguments  // Already JSON-encoded string
+              << "\n```" << dsToolCallEnd;
+        }
+        out << dsToolCallsEnd << dsEndOfSentence;
+      } else {
+        // Regular assistant message without tool calls
+        out << dsAssistantTag << m.content;
+        if (cfg_.add_eos_token) out << cfg_.eos_token;
+      }
+    } else if (m.role == "tool") {
+      // Tool result message
+      if (!inToolOutputs) {
+        out << dsToolOutputsBegin;
+        inToolOutputs = true;
+        isFirstToolOutput = true;
+      }
+
+      if (!isFirstToolOutput) {
+        out << "\n";
+      }
+      out << dsToolOutputBegin << m.content << dsToolOutputEnd;
+      isFirstToolOutput = false;
     }
+  }
+
+  // Close tool outputs if we're still in that section
+  if (inToolOutputs) {
+    out << dsToolOutputsEnd;
   }
 
   if (addGenerationPrompt) {
