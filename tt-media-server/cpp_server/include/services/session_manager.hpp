@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 
@@ -20,6 +21,14 @@
 #include "utils/concurrent_queue.hpp"
 
 namespace tt::services {
+
+class SessionInFlightException : public std::runtime_error {
+ public:
+  SessionInFlightException()
+      : std::runtime_error(
+            "Session already has a request in flight. Multiple concurrent "
+            "requests per session are not supported.") {}
+};
 
 class SessionManager {
  public:

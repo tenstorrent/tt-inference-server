@@ -49,16 +49,23 @@ void LLMController::resolveSession(
   SessionInfo info;
 
   if (req->sessionId.has_value() && sessionManager) {
-    auto slotId = sessionManager->acquireSessionSlot(req->sessionId.value());
-    if (slotId != domain::INVALID_SLOT_ID) {
-      req->slotId = slotId;
-      info.validSessionFound = true;
-      onResolved(info);
+    try {
+      auto slotId = sessionManager->acquireSessionSlot(req->sessionId.value());
+      if (slotId != domain::INVALID_SLOT_ID) {
+        req->slotId = slotId;
+        info.validSessionFound = true;
+        onResolved(info);
+        return;
+      } else {
+        TT_LOG_INFO(
+            "Received request with non existing session, resetting session id");
+        req->sessionId.reset();
+      }
+    } catch (const services::SessionInFlightException& e) {
+      TT_LOG_WARN("[LLMController] Session {} already in flight: {}",
+                  req->sessionId.value(), e.what());
+      onError(e.what());
       return;
-    } else {
-      TT_LOG_INFO(
-          "Received request with non existing session, resetting session id");
-      req->sessionId.reset();
     }
   }
 
@@ -180,12 +187,18 @@ void LLMController::chatCompletions(
           }
         },
         [cb](std::string_view err) {
-          TT_LOG_ERROR("[LLMController] Session creation failed: {}", err);
-          (*cb)(errorResponse(
-              drogon::k503ServiceUnavailable,
-              std::string("Failed to allocate memory resources: ") +
-                  std::string(err),
-              "service_unavailable"));
+          TT_LOG_ERROR("[LLMController] Session resolution failed: {}", err);
+          // Check if this is a session-in-flight error
+          std::string errStr(err);
+          if (errStr.find("already has a request in flight") != std::string::npos) {
+            (*cb)(errorResponse(drogon::k429TooManyRequests, errStr,
+                                "rate_limit_exceeded"));
+          } else {
+            (*cb)(errorResponse(
+                drogon::k503ServiceUnavailable,
+                std::string("Failed to allocate memory resources: ") + errStr,
+                "service_unavailable"));
+          }
         });
   }
 }
@@ -265,12 +278,19 @@ void LLMController::handleStreaming(
         (*cb)(writer->buildResponse());
       },
       [cb](std::string_view err) {
-        TT_LOG_ERROR("[LLMController] Failed to create session: {}", err);
-        (*cb)(
-            errorResponse(drogon::k503ServiceUnavailable,
-                          std::string("Failed to allocate memory resources: ") +
-                              std::string(err),
-                          "service_unavailable"));
+        TT_LOG_ERROR("[LLMController] Session resolution failed: {}", err);
+        // Check if this is a session-in-flight error
+        std::string errStr(err);
+        if (errStr.find("already has a request in flight") != std::string::npos) {
+          (*cb)(errorResponse(drogon::k429TooManyRequests, errStr,
+                              "rate_limit_exceeded"));
+        } else {
+          (*cb)(
+              errorResponse(drogon::k503ServiceUnavailable,
+                            std::string("Failed to allocate memory resources: ") +
+                                errStr,
+                            "service_unavailable"));
+        }
       });
 }
 
