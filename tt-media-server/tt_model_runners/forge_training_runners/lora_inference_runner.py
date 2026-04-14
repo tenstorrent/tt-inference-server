@@ -114,7 +114,7 @@ class LoraInferenceRunner(BaseDeviceRunner):
             self.logger.info(f"Switching base model: {self._base_model.name_or_path} -> {model_name}")
         self._teardown_compiled()
         self._base_model = AutoModelForCausalLM.from_pretrained(
-            model_name, torch_dtype=torch.bfloat16, use_cache=True
+            model_name, dtype=torch.bfloat16, use_cache=True
         )
         self._tokenizer = AutoTokenizer.from_pretrained(model_name)
         self._tokenizer.pad_token = self._tokenizer.eos_token 
