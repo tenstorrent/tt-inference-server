@@ -38,6 +38,8 @@ dit_runner_log_map = {
     ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 
+DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 6000
+
 
 class TTDiTRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
@@ -90,8 +92,10 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         def distribute_block():
             self.pipeline = self.create_pipeline()
 
-        # 20 minutes to distribute the model on device
-        weights_distribution_timeout = 1200
+        weights_distribution_timeout = max(
+            self.settings.weights_distribution_timeout_seconds,
+            DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS,
+        )
         try:
             await asyncio.wait_for(
                 asyncio.to_thread(distribute_block),

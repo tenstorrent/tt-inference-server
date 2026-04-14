@@ -10,7 +10,7 @@
 #include "runners/llm_runner/max_occupancy_scheduler.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 using Config = tt::config::LLMConfig;
 using SchedulingPolicy = tt::config::SchedulingPolicy;
@@ -212,4 +212,4 @@ void Scheduler::abortRequest(uint32_t taskId) {
                 [&](Sequence* s) { return s->taskId == taskId; });
   sequences_.erase(taskId);
 }
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine
