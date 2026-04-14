@@ -33,9 +33,7 @@ def resolve_adapter(adapter: str) -> AdapterInfo:
 
     config_path = os.path.join(adapter_path, "adapter_config.json")
     if not os.path.isfile(config_path):
-        raise FileNotFoundError(
-            f"adapter_config.json not found at {adapter_path}"
-        )
+        raise FileNotFoundError(f"adapter_config.json not found at {adapter_path}")
 
     with open(config_path) as f:
         config = json.load(f)

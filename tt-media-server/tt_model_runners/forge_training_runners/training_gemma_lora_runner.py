@@ -137,7 +137,9 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         self._peft_model = get_peft_model(self.hf_model, lora_config)
 
         if request.dtype not in DTYPE_MAP:
-            raise ValueError(f"Unsupported dtype '{request.dtype}', must be one of {list(DTYPE_MAP.keys())}")
+            raise ValueError(
+                f"Unsupported dtype '{request.dtype}', must be one of {list(DTYPE_MAP.keys())}"
+            )
         self._peft_model.to(DTYPE_MAP[request.dtype])
         self._peft_model.to(self.device)
 

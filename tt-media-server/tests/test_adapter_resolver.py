@@ -2,13 +2,12 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-import dataclasses
 import json
 from unittest.mock import patch
 
 import pytest
 
-from utils.adapter_resolver import AdapterInfo, resolve_adapter
+from utils.adapter_resolver import resolve_adapter
 
 
 class TestResolveAdapter:
@@ -32,7 +31,9 @@ class TestResolveAdapter:
         dir_only = tmp_path / "job" / "ckpt"
         dir_only.mkdir(parents=True)
         with patch("utils.adapter_resolver.TRAINING_STORE_ADAPTERS_DIR", str(tmp_path)):
-            with pytest.raises(FileNotFoundError, match="adapter_config.json not found"):
+            with pytest.raises(
+                FileNotFoundError, match="adapter_config.json not found"
+            ):
                 resolve_adapter("job/ckpt")
 
         (dir_only / "adapter_config.json").write_text(json.dumps({"lora_alpha": 16}))

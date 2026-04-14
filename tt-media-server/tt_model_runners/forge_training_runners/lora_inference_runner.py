@@ -92,7 +92,9 @@ class LoraInferenceRunner(BaseDeviceRunner):
         if self._active_adapter == adapter_info:
             return
         if self._active_adapter is not None:
-            self.logger.info(f"Switching adapter: {self._active_adapter.adapter_path} -> {adapter_info.adapter_path}")
+            self.logger.info(
+                f"Switching adapter: {self._active_adapter.adapter_path} -> {adapter_info.adapter_path}"
+            )
             if isinstance(self._active_model, PeftModel):
                 self._base_model = self._active_model.unload()
                 if hasattr(self._base_model, "peft_config"):
@@ -107,17 +109,21 @@ class LoraInferenceRunner(BaseDeviceRunner):
 
     def _load_base_model(self, model_name: str):
         if not model_name:
-            raise ValueError("No base model specified: set 'model' in the request or configure model_weights_path")
+            raise ValueError(
+                "No base model specified: set 'model' in the request or configure model_weights_path"
+            )
         if self._base_model is not None and self._base_model.name_or_path == model_name:
             return
         if self._base_model is not None:
-            self.logger.info(f"Switching base model: {self._base_model.name_or_path} -> {model_name}")
+            self.logger.info(
+                f"Switching base model: {self._base_model.name_or_path} -> {model_name}"
+            )
         self._teardown_compiled()
         self._base_model = AutoModelForCausalLM.from_pretrained(
             model_name, dtype=torch.bfloat16, use_cache=True
         )
         self._tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self._tokenizer.pad_token = self._tokenizer.eos_token 
+        self._tokenizer.pad_token = self._tokenizer.eos_token
         self._active_model = self._base_model
         self._active_adapter = None
         self.logger.info(f"Loaded base model: {model_name}")
@@ -240,7 +246,9 @@ class LoraInferenceRunner(BaseDeviceRunner):
                 output: CausalLMOutputWithPast = compiled_model(**input_args)
                 output_logits: torch.Tensor = output.logits.to("cpu")
                 next_token_id = output_logits[:, -1].argmax(dim=-1)
-                output_text = [self._tokenizer.decode(next_token_id[i]) for i in range(num_users)]
+                output_text = [
+                    self._tokenizer.decode(next_token_id[i]) for i in range(num_users)
+                ]
                 for i, output_tokens_list in enumerate(output_tokens):
                     output_tokens_list.append(output_text[i])
 

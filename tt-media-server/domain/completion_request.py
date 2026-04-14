@@ -75,4 +75,3 @@ class CompletionRequest(BaseRequest):
     # PEFT adapter checkpoint, e.g. "{job_id}/ckpt-step-{step}".
     # When set, base model is read from the adapter's config automatically.
     adapter: str | None = None
-
