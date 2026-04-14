@@ -1405,6 +1405,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 90000000,
+                },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 1}),
                     "disable_mm_preprocessor_cache": True,
@@ -1413,6 +1416,7 @@ llm_templates = [
         ],
         model_type=ModelType.VLM,
         status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
         supported_modalities=["text", "image"],
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
