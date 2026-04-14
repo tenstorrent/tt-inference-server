@@ -34,10 +34,11 @@ SpPipelineRunner::SpPipelineRunner(
       .d2h_socket_id = tt::config::d2hSocketId(),
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
+  pm::MockConfig mock = {};
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
-      std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
+      std::make_unique<pm::PipelineManager>(mock, managerParams);
   TT_LOG_INFO(
       "SpPipelineRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
@@ -203,6 +204,10 @@ void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
   seq.appendToken(output.token_id);
   bool finished = output.is_complete || stopTokenIds.count(output.token_id);
   if (finished) {
+    TT_LOG_INFO(
+        "[SpPipelineRunner] handleOutput: finished processing slot_id={}, "
+        "token_id={}",
+        output.slot_id, output.token_id);
     running.erase(output.slot_id);
   }
   ipc::pushToken(*resultQueue, seq.taskId, output.token_id, finished);
