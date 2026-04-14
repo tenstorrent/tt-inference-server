@@ -34,10 +34,10 @@ SpPipelineRunner::SpPipelineRunner(
       .d2h_socket_id = tt::config::d2hSocketId(),
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
-  pm::MockConfig mock = {};
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
-  pipelineManager = std::make_unique<pm::PipelineManager>(mock, managerParams);
+  pipelineManager =
+      std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
   TT_LOG_INFO(
       "SpPipelineRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
@@ -224,6 +224,7 @@ void SpPipelineRunner::handleRequest(
   assert(slotId != tt::domain::INVALID_SLOT_ID);
 
   auto it = running.find(slotId);
+  bool isRunning = it != running.end();
   bool isNew = !request->isContinuation();
 
   TT_LOG_DEBUG(
@@ -232,6 +233,15 @@ void SpPipelineRunner::handleRequest(
       request->taskId, slotId, isNew, request->isContinuation(),
       request->getNumPromptTokens(), request->getTokenIds().size(),
       running.size());
+
+  if (isRunning) {
+    TT_LOG_ERROR(
+        "[SpPipelineRunner] handleRequest: slot {} still actively generating "
+        "(task {}), rejecting new task {}",
+        slotId, it->second->taskId, request->taskId);
+    ipc::pushErrorToken(*resultQueue, request->taskId);
+    return;
+  }
 
   if (isNew) {
     TT_LOG_DEBUG(
