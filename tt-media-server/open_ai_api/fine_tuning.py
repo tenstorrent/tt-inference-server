@@ -1,32 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-import os
 import io
+import os
 import zipfile
+
 from config.constants import JobTypes
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
-from fastapi import APIRouter, Depends, Header, HTTPException, Security
+from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import JSONResponse, StreamingResponse
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
-from starlette.status import HTTP_401_UNAUTHORIZED
+from security.org_id_checker import get_org_id
 from utils.build_catalog import build_training_catalog
-
-ORG_ID_HEADER = os.getenv("ORG_ID_HEADER", "X-TT-Organization")
-
-
-def get_org_id(
-    org_id_header_field: str = Header(None, alias=ORG_ID_HEADER),
-) -> str:
-    if not org_id_header_field or not org_id_header_field.strip():
-        raise HTTPException(
-            status_code=HTTP_401_UNAUTHORIZED,
-            detail="Organization header must not be empty",
-        )
-    return org_id_header_field
 
 
 router = APIRouter()
