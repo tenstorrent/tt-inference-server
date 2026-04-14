@@ -14,7 +14,7 @@
 #include "utils/tokenizer.hpp"
 
 namespace tt::runners {
-using namespace llm_engine;
+using namespace tt::runners::llm_engine;
 using Config = tt::config::LLMConfig;
 
 LLMRunner::LLMRunner(const Config& config,

@@ -154,6 +154,32 @@ std::string visibleDevicesForWorker(size_t workerIndex) {
   return "";
 }
 
+std::string h2dSocketId() {
+  static const std::string cached =
+      envString("H2D_SOCKET_ID", defaults::H2D_SOCKET_ID);
+  return cached;
+}
+
+std::string d2hSocketId() {
+  static const std::string cached =
+      envString("D2H_SOCKET_ID", defaults::D2H_SOCKET_ID);
+  return cached;
+}
+
+unsigned pmConnectTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("PM_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
+}
+
+size_t pmMaxUsers() {
+  return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
+}
+
+bool useDeepseekMdFormat() {
+  return static_cast<bool>(
+      envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));
+}
+
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
@@ -175,6 +201,8 @@ LLMConfig llmEngineConfig() {
       cfg.runner_type = ModelRunnerType::MOCK;
     } else if (backend == "mock_pipeline") {
       cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
+    } else if (backend == "pipeline_manager") {
+      cfg.runner_type = ModelRunnerType::PIPELINE_MANAGER;
     } else {
       cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
     }
@@ -255,6 +283,12 @@ size_t maxTokensToPrefillOnDecode() {
   return static_cast<size_t>(
       envUlong("MAX_TOKENS_TO_PREFILL_ON_DECODE",
                defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
+}
+
+unsigned sessionAllocationMaxRetries() {
+  return static_cast<unsigned>(
+      envUlong("SESSION_ALLOCATION_MAX_RETRIES",
+               defaults::SESSION_ALLOCATION_MAX_RETRIES));
 }
 
 }  // namespace tt::config

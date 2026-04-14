@@ -5,7 +5,7 @@
 
 #include "runners/llm_runner/debug.hpp"
 
-namespace sp_pipeline {
+namespace tt::runners::sp_pipeline {
 
 SpPipelineModelRunner::SpPipelineModelRunner(DecodeCallback callback)
     : decodeCallback(std::move(callback)),
@@ -38,7 +38,7 @@ void SpPipelineModelRunner::readerLoop() {
   while (!stop.load(std::memory_order_relaxed)) {
     if (deviceOutput.tryRead(readBuf)) {
       uint64_t tokenId = readBuf.tokenIds.empty() ? 0 : readBuf.tokenIds[0];
-      llm_engine::TokenResult result(readBuf.taskId, tokenId);
+      tt::runners::llm_engine::TokenResult result(readBuf.taskId, tokenId);
       decodeCallback(result);
     } else {
       std::this_thread::yield();
@@ -46,4 +46,4 @@ void SpPipelineModelRunner::readerLoop() {
   }
 }
 
-}  // namespace sp_pipeline
+}  // namespace tt::runners::sp_pipeline

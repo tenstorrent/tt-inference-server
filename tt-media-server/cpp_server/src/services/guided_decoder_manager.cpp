@@ -37,14 +37,16 @@ GuidedDecoderManager::GuidedDecoderManager(
 GuidedDecoderManager::~GuidedDecoderManager() = default;
 
 void GuidedDecoderManager::initRequest(
-    uint32_t taskId, const llm_engine::SamplingParams& params) {
+    uint32_t taskId,
+    const tt::runners::llm_engine::SamplingParams& params) {
   if (!params.hasGuidedDecoding()) return;
 
   xgrammar::CompiledGrammar compiled = [&]() {
+    using tt::config::ResponseFormatType;
     switch (params.response_format_type) {
-      case llm_engine::ResponseFormatType::JSON_OBJECT:
+      case ResponseFormatType::JSON_OBJECT:
         return impl->compiler.CompileBuiltinJSONGrammar();
-      case llm_engine::ResponseFormatType::JSON_SCHEMA: {
+      case ResponseFormatType::JSON_SCHEMA: {
         if (!params.json_schema_str.has_value()) {
           throw std::invalid_argument(
               "json_schema response format requires a schema string");

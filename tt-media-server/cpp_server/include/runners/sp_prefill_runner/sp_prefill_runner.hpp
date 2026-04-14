@@ -19,7 +19,7 @@ class SpPrefillRunner : public IRunner {
  public:
   SpPrefillRunner(const tt::config::LLMConfig& config,
                   ipc::TokenRingBuffer<65536>* resultQueue,
-                  llm_engine::ITaskQueue* taskQueue);
+                  tt::runners::llm_engine::ITaskQueue* taskQueue);
   ~SpPrefillRunner() override;
 
   void run() override;
@@ -30,7 +30,7 @@ class SpPrefillRunner : public IRunner {
  private:
   tt::config::LLMConfig config;
   ipc::TokenRingBuffer<65536>* resultQueue;
-  llm_engine::ITaskQueue* taskQueue;
+  tt::runners::llm_engine::ITaskQueue* taskQueue;
   std::unique_ptr<sp_prefill::ISpPrefillModelRunner> modelRunner;
   std::atomic<bool> stopped{false};
 };

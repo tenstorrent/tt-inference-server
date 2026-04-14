@@ -5,15 +5,19 @@
 
 #include "runners/embedding_runner.hpp"
 #include "runners/llm_runner.hpp"
-#include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
 #include "runners/sp_prefill_runner/sp_prefill_runner.hpp"
+#include "sp_pipeline_runner/sp_pipeline_runner_demo.hpp"
+#ifdef ENABLE_BLAZE
+#include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
+#endif
 #include "utils/logger.hpp"
 
 namespace tt::utils::runner_factory {
 
 std::unique_ptr<runners::IRunner> createRunner(
     config::ModelService service, const config::RunnerConfig& config,
-    ipc::TokenRingBuffer<65536>* resultQueue, llm_engine::ITaskQueue* taskQueue,
+    ipc::TokenRingBuffer<65536>* resultQueue,
+    tt::runners::llm_engine::ITaskQueue* taskQueue,
     ipc::ICancelQueue* cancelQueue) {
   switch (service) {
     case config::ModelService::EMBEDDING: {
@@ -26,10 +30,19 @@ std::unique_ptr<runners::IRunner> createRunner(
 
       if (cfg.runner_type == config::ModelRunnerType::PIPELINE ||
           cfg.runner_type == config::ModelRunnerType::MOCK_PIPELINE) {
-        TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner");
+        TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner (demo)");
+        return std::make_unique<runners::SpPipelineRunnerDemo>(cfg, resultQueue,
+                                                               taskQueue);
+      }
+
+#ifdef ENABLE_BLAZE
+      if (cfg.runner_type == config::ModelRunnerType::PIPELINE_MANAGER) {
+        TT_LOG_INFO(
+            "[RunnerFactory] Creating SP Pipeline runner (pipeline_manager)");
         return std::make_unique<runners::SpPipelineRunner>(cfg, resultQueue,
                                                            taskQueue);
       }
+#endif
 
       if (cfg.runner_type == config::ModelRunnerType::PREFILL) {
         TT_LOG_INFO("[RunnerFactory] Creating SP Prefill runner");

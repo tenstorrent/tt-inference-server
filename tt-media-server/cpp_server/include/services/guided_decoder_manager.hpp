@@ -23,7 +23,8 @@ class GuidedDecoderManager {
   GuidedDecoderManager(const GuidedDecoderManager&) = delete;
   GuidedDecoderManager& operator=(const GuidedDecoderManager&) = delete;
 
-  void initRequest(uint32_t taskId, const llm_engine::SamplingParams& params);
+  void initRequest(uint32_t taskId,
+                   const tt::runners::llm_engine::SamplingParams& params);
 
   std::vector<int32_t> getNextAllowedTokenIds(uint32_t taskId);
 

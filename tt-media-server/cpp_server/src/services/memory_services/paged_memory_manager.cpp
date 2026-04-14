@@ -3,6 +3,7 @@
 
 #include "services/memory_services/paged_memory_manager.hpp"
 
+#include <algorithm>
 #include <utility>
 
 #include "config/settings.hpp"
@@ -27,15 +28,15 @@ ManageMemoryResult makeResult(const ManageMemoryTask& task,
 
 }  // namespace
 
-PagedMemoryManager::PagedMemoryManager(llm_engine::BlockManager& bm)
+PagedMemoryManager::PagedMemoryManager(
+    tt::runners::llm_engine::BlockManager& bm)
     : blockManager(&bm) {}
 
 ManageMemoryStatus PagedMemoryManager::allocateKv(
     const ManageMemoryTask& task, std::vector<int>& outSlotIds) {
-  std::vector<int64_t> placeholderTokens(static_cast<size_t>(task.inputSeqLen),
-                                         0);
-  llm_engine::Sequence seq(task.taskId, blockManager->blockSize(),
-                           std::move(placeholderTokens));
+  std::vector<int64_t> placeholderTokens(1, 0);  // Hardcoded to use one block
+  tt::runners::llm_engine::Sequence seq(task.taskId, blockManager->blockSize(),
+                                        std::move(placeholderTokens));
 
   if (!blockManager->allocate(seq)) {
     return ManageMemoryStatus::WAITING;
@@ -47,7 +48,7 @@ ManageMemoryStatus PagedMemoryManager::allocateKv(
 
 void PagedMemoryManager::deallocateKv(uint32_t taskId,
                                       std::vector<int> slotIds) {
-  llm_engine::Sequence seq(taskId, blockManager->blockSize(), {});
+  tt::runners::llm_engine::Sequence seq(taskId, blockManager->blockSize(), {});
   seq.getMutableBlockTable() = std::move(slotIds);
   blockManager->deallocate(seq);
 }

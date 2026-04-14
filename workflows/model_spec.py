@@ -2048,8 +2048,8 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        tt_metal_commit="555f240",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2938,7 +2938,7 @@ image_templates = [
 audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="bac8b34",
+        tt_metal_commit="2508216",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2974,7 +2974,7 @@ audio_tts_templates = [
     ),
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="e4a2dea",
+        tt_metal_commit="2508216",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -3013,7 +3013,7 @@ audio_tts_templates = [
     ),
     ModelSpecTemplate(
         weights=["microsoft/speecht5_tts"],
-        tt_metal_commit="e4a2dea",
+        tt_metal_commit="2508216",
         impl=speecht5_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -3037,7 +3037,7 @@ audio_tts_templates = [
     ),
     ModelSpecTemplate(
         weights=["microsoft/speecht5_tts"],
-        tt_metal_commit="e4a2dea",
+        tt_metal_commit="2508216",
         impl=speecht5_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -3146,6 +3146,76 @@ embedding_templates = [
                     "DEFAULT_THROTTLE_LEVEL": "0",
                     # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
                     # Each worker would otherwise try to bind to the same port (50051)
+                    "TT_METAL_INSPECTOR_RPC": "0",
+                },
+            ),
+        ],
+    ),
+    ModelSpecTemplate(
+        weights=["BAAI/bge-m3"],
+        tt_metal_commit="ec28d12",
+        impl=tt_vllm_plugin_impl,
+        min_disk_gb=15,
+        min_ram_gb=6,
+        docker_image="",
+        model_type=ModelType.EMBEDDING,
+        inference_engine=InferenceEngine.MEDIA.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "262144",
+                    "VLLM__MAX_MODEL_LENGTH": "8192",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "32",
+                    "MAX_BATCH_SIZE": "32",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "262144",
+                    "VLLM__MAX_MODEL_LENGTH": "8192",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "32",
+                    "MAX_BATCH_SIZE": "32",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=4,
+                max_context=64 * 1024,
+                default_impl=True,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "262144",
+                    "VLLM__MAX_MODEL_LENGTH": "8192",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "32",
+                    "MAX_BATCH_SIZE": "32",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
+                },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "262144",
+                    "VLLM__MAX_MODEL_LENGTH": "8192",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "VLLM__MAX_NUM_SEQS": "32",
+                    "MAX_BATCH_SIZE": "32",
+                    "DEFAULT_THROTTLE_LEVEL": "0",
+                    # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
                     "TT_METAL_INSPECTOR_RPC": "0",
                 },
             ),

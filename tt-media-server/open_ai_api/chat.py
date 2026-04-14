@@ -35,6 +35,7 @@ def _apply_chat_template(messages: list[dict]) -> str:
         messages,
         tokenize=False,
         add_generation_prompt=True,
+        **settings.chat_template_kwargs,
     )
 
 
@@ -88,6 +89,17 @@ async def chat_completions(
     messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
     prompt = _apply_chat_template(messages)
     prompt_tokens = _count_tokens(prompt)
+
+    # Reject prompts that exceed the model's context window
+    max_model_len = settings.vllm.max_model_length
+    if prompt_tokens > max_model_len:
+        logger.warning(
+            f"Rejected prompt: length ({prompt_tokens}) exceeds max model length ({max_model_len})"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Prompt length ({prompt_tokens}) exceeds max model length ({max_model_len})",
+        )
 
     # Build an internal CompletionRequest to reuse the existing inference pipeline
     completion_request = _build_completion_request(chat_request, prompt)

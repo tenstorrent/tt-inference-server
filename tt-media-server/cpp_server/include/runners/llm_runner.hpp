@@ -19,7 +19,7 @@ class GuidedDecoderManager;
 }  // namespace tt::services
 
 namespace tt::runners {
-using namespace llm_engine;
+using namespace tt::runners::llm_engine;
 
 class LLMRunner : public IRunner {
  public:

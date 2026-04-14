@@ -9,7 +9,7 @@
 #include "profiling/tracy.hpp"
 #include "runners/llm_runner/debug.hpp"
 
-namespace sp_pipeline {
+namespace tt::runners::sp_pipeline {
 
 namespace {
 constexpr uint64_t FALLBACK_TOKEN_ID = 12345;
@@ -40,7 +40,7 @@ void MockDevicePipeline::write(uint32_t taskId,
   inputQueue.push_back(std::move(req));
 }
 
-std::optional<llm_engine::TokenResult> MockDevicePipeline::read() {
+std::optional<tt::runners::llm_engine::TokenResult> MockDevicePipeline::read() {
   ZoneScopedN("MockDevice::read");
   std::unique_lock lock(outputMutex);
   outputNotEmpty.wait(lock, [this] {
@@ -194,4 +194,4 @@ void MockDevicePipeline::pipelineLoop() {
   }
 }
 
-}  // namespace sp_pipeline
+}  // namespace tt::runners::sp_pipeline

@@ -75,7 +75,14 @@ inline LLMMode llmModeFromString(const std::string& v) {
   return LLMMode::REGULAR;
 }
 
-enum class ModelRunnerType { MOCK, PIPELINE, LLAMA, MOCK_PIPELINE, PREFILL };
+enum class ModelRunnerType {
+  MOCK,
+  PIPELINE,
+  LLAMA,
+  MOCK_PIPELINE,
+  PIPELINE_MANAGER,
+  PREFILL
+};
 
 enum class ResponseFormatType : uint8_t {
   TEXT = 0,

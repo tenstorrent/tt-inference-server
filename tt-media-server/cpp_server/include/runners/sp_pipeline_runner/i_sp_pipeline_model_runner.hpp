@@ -13,10 +13,12 @@
 #include "runners/llm_runner/sequence.hpp"
 #include "utils/concurrent_queue.hpp"
 
-namespace sp_pipeline {
+namespace tt::runners::sp_pipeline {
 
-using DecodeCallback = std::function<void(const llm_engine::TokenResult&)>;
-using DecodeQueue = LockFreeSPSCQueue<llm_engine::TokenResult>;
+using DecodeCallback =
+    std::function<void(const tt::runners::llm_engine::TokenResult&)>;
+using DecodeQueue =
+    tt::utils::LockFreeSPSCQueue<tt::runners::llm_engine::TokenResult>;
 
 enum class RequestPhase { PREFILL, DECODE };
 
@@ -33,4 +35,4 @@ class ISpPipelineModelRunner {
 std::unique_ptr<ISpPipelineModelRunner> makeModelRunner(
     const tt::config::LLMConfig& config, DecodeCallback callback);
 
-}  // namespace sp_pipeline
+}  // namespace tt::runners::sp_pipeline

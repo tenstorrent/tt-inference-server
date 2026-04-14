@@ -18,7 +18,7 @@
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 
-namespace sp_pipeline {
+namespace tt::runners::sp_pipeline {
 
 struct MockDeviceConfig {
   size_t numStages = 64;
@@ -43,7 +43,7 @@ class MockDevicePipeline {
   void write(uint32_t taskId, const std::vector<int64_t>& tokenIds,
              uint32_t maxTokens, RequestPhase phase);
 
-  std::optional<llm_engine::TokenResult> read();
+  std::optional<tt::runners::llm_engine::TokenResult> read();
 
   void exit();
 
@@ -92,7 +92,7 @@ class MockDevicePipeline {
   std::condition_variable inputNotFull;
 
   // Output queue — read() blocks when empty.
-  std::deque<llm_engine::TokenResult> outputQueue;
+  std::deque<tt::runners::llm_engine::TokenResult> outputQueue;
   std::mutex outputMutex;
   std::condition_variable outputNotEmpty;
 
@@ -100,4 +100,4 @@ class MockDevicePipeline {
   std::thread pipelineThread;
 };
 
-}  // namespace sp_pipeline
+}  // namespace tt::runners::sp_pipeline

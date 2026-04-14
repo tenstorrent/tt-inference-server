@@ -40,7 +40,7 @@ class LLMTestRunner(BaseDeviceRunner):
         return True
 
     async def _run_async(self, requests: list[CompletionRequest]):
-        """Match VLLMRunner behavior: async generator for streaming, list for non-streaming."""
+        """Match VLLMForgeRunner behavior: async generator for streaming, list for non-streaming."""
         request = requests[0]
         if request.stream:
             return self._generate_streaming(request)
