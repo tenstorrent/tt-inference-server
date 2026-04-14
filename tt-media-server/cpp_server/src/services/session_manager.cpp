@@ -270,13 +270,24 @@ void SessionManager::createSession(
     });
     return;
   }
-
+  
   domain::Session session = domain::Session(domain::INVALID_SLOT_ID);
   auto pendingAllocation = PendingAllocation(
       std::move(session), std::move(onCompletion), std::move(onError),
       callerEventLoop, tt::config::sessionAllocationMaxRetries());
 
   sendAsyncAllocationRequest(pendingAllocation);
+}
+
+void SessionManager::evictSessions(const std::vector<std::string>& sessionIds) {
+  for (const auto& sessionId : sessionIds) {
+    TT_LOG_DEBUG("[SessionManager] evictSessions: evicting sessionId={}", sessionId);
+    setSessionInFlight(sessionId, false);
+    auto slotId = getSlotIdBySessionId(sessionId);
+    if (slotId != domain::INVALID_SLOT_ID) {
+      sendDeallocRequest(sessionId, slotId);
+    }
+  }
 }
 
 void SessionManager::sendAsyncAllocationRequest(

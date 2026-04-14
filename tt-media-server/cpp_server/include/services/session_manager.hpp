@@ -41,8 +41,8 @@ class SessionManager {
   uint32_t acquireSessionSlot(const std::string& sessionId);
   std::optional<domain::Session> getSession(const std::string& sessionId) const;
   size_t getActiveSessionCount() const;
-
   void setSessionInFlight(const std::string& sessionId, bool inFlight);
+  void evictSessions(const std::vector<std::string>& sessionIds);
 
  private:
   struct PendingAllocation {
