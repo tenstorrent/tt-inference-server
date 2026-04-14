@@ -124,19 +124,9 @@ std::string DeepseekTokenizer::applyChatTemplate(
     if (m.role == "system") continue;
 
     if (m.role == "user") {
-      // Close tool outputs if we were in that section
-      if (inToolOutputs) {
-        out << dsToolOutputsEnd;
-        inToolOutputs = false;
-      }
       out << dsUserTag << m.content;
+      inToolOutputs = false;  // Track that we left tool outputs
     } else if (m.role == "assistant") {
-      // Close tool outputs if we were in that section
-      if (inToolOutputs) {
-        out << dsToolOutputsEnd;
-        inToolOutputs = false;
-      }
-
       // Check if this assistant message has tool calls
       if (m.tool_calls.has_value() && !m.tool_calls->empty()) {
         // Output content first if present
@@ -153,10 +143,15 @@ std::string DeepseekTokenizer::applyChatTemplate(
               << "\n```" << dsToolCallEnd;
         }
         out << dsToolCallsEnd << dsEndOfSentence;
+        inToolOutputs = false;
       } else {
         // Regular assistant message without tool calls
-        out << dsAssistantTag << m.content;
-        if (cfg_.add_eos_token) out << cfg_.eos_token;
+        // If we were in tool outputs, close them first
+        if (inToolOutputs) {
+          out << dsToolOutputsEnd;
+          inToolOutputs = false;
+        }
+        out << dsAssistantTag << m.content << dsEndOfSentence;
       }
     } else if (m.role == "tool") {
       // Tool result message
