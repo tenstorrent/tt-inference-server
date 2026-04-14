@@ -1049,7 +1049,7 @@ llm_templates = [
             "google/gemma-3-1b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="1e76f57",
+        tt_metal_commit="6a76af9",
         vllm_commit="7c6685a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1772,7 +1772,7 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="1e76f57",
+        tt_metal_commit="6a76af9",
         vllm_commit="7c6685a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -2022,7 +2022,7 @@ vlm_templates = [
             "google/medgemma-4b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="1e76f57",
+        tt_metal_commit="6a76af9",
         vllm_commit="7c6685a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -2066,7 +2066,7 @@ vlm_templates = [
             "google/medgemma-27b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="1e76f57",
+        tt_metal_commit="6a76af9",
         vllm_commit="7c6685a",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
