@@ -285,6 +285,18 @@ size_t maxTokensToPrefillOnDecode() {
                defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
 }
 
+std::string kafkaBrokers() {
+  return envString("KAFKA_BROKERS", defaults::KAFKA_BROKERS);
+}
+
+std::string kafkaOffloadTopicName() {
+  return envString("KAFKA_OFFLOAD_TOPIC_NAME",
+                   defaults::KAFKA_OFFLOAD_TOPIC_NAME);
+}
+
+std::string kafkaGroupId() {
+  return envString("KAFKA_GROUP_ID", defaults::KAFKA_GROUP_ID);
+}
 unsigned sessionAllocationMaxRetries() {
   return static_cast<unsigned>(
       envUlong("SESSION_ALLOCATION_MAX_RETRIES",

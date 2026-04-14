@@ -109,6 +109,18 @@ size_t sessionEvictionCount();
  * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
 size_t maxTokensToPrefillOnDecode();
 
+/** Kafka broker addresses from KAFKA_BROKERS. Default:
+ * defaults::KAFKA_BROKERS. */
+std::string kafkaBrokers();
+
+/** Kafka topic name from KAFKA_OFFLOAD_TOPIC_NAME. Default:
+ * defaults::KAFKA_OFFLOAD_TOPIC_NAME. */
+std::string kafkaOffloadTopicName();
+
+/** Kafka consumer group ID from KAFKA_GROUP_ID. Default:
+ * defaults::KAFKA_GROUP_ID. */
+std::string kafkaGroupId();
+
 /** Max retries for session slot allocation from
  * SESSION_ALLOCATION_MAX_RETRIES. Default:
  * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
