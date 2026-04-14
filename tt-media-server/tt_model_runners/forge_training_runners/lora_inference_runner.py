@@ -27,6 +27,7 @@ class LoraInferenceRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads=num_torch_threads)
         self._compiled_model = None
+        self._active_model = None
         self._active_adapter: AdapterInfo | None = None
         self._base_model = None
         self._tokenizer = None
@@ -90,6 +91,12 @@ class LoraInferenceRunner(BaseDeviceRunner):
     def _load_adapter(self, adapter_info: AdapterInfo):
         if self._active_adapter == adapter_info:
             return
+        if self._active_adapter is not None:
+            self.logger.info(f"Switching adapter: {self._active_adapter.adapter_path} -> {adapter_info.adapter_path}")
+            if isinstance(self._active_model, PeftModel):
+                self._base_model = self._active_model.unload()
+                if hasattr(self._base_model, "peft_config"):
+                    delattr(self._base_model, "peft_config")
         self._load_base_model(adapter_info.base_model_name)
         self._teardown_compiled()
         self._active_model = PeftModel.from_pretrained(
@@ -103,11 +110,14 @@ class LoraInferenceRunner(BaseDeviceRunner):
             raise ValueError("No base model specified: set 'model' in the request or configure model_weights_path")
         if self._base_model is not None and self._base_model.name_or_path == model_name:
             return
+        if self._base_model is not None:
+            self.logger.info(f"Switching base model: {self._base_model.name_or_path} -> {model_name}")
         self._teardown_compiled()
         self._base_model = AutoModelForCausalLM.from_pretrained(
-            model_name, torch_dtype=torch.bfloat16, use_cache=False
+            model_name, torch_dtype=torch.bfloat16, use_cache=True
         )
         self._tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self._tokenizer.pad_token = self._tokenizer.eos_token 
         self._active_model = self._base_model
         self._active_adapter = None
         self.logger.info(f"Loaded base model: {model_name}")
@@ -120,9 +130,9 @@ class LoraInferenceRunner(BaseDeviceRunner):
 
     def _get_compiled_model(self):
         if self._compiled_model is None:
+            self._active_model.eval()
             self._active_model.to(self.device)
             self._compiled_model = torch.compile(self._active_model, backend="tt")
-            self._compiled_model.eval()
         return self._compiled_model
 
     def _construct_inputs(
