@@ -1209,7 +1209,7 @@ _eval_config_list = [
                     },
                 ),
                 apply_chat_template=False,
-                batch_size=16,
+                max_concurrent=32,
                 gen_kwargs={
                     "max_gen_toks": "256",
                     "do_sample": "false",
