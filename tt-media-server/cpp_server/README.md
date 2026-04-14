@@ -288,7 +288,7 @@ All environment variable reads go through `config/settings.hpp` (no direct `gete
 | `ENABLE_ACCUMULATED_STREAMING` | Enable token accumulation before streaming (send multiple tokens per chunk). | `false` |
 | `MAX_ACCUMULATED_TOKENS` | Maximum tokens to accumulate before streaming when `ENABLE_ACCUMULATED_STREAMING` is true. | `5` |
 | `KAFKA_BROKERS` | Kafka broker addresses (comma-separated) for session offloading. See Kafka Messaging section. | `localhost:9092` |
-| `KAFKA_TOPIC` | Kafka topic name for session offload messages. | `session-offload` |
+| `KAFKA_OFFLOAD_TOPIC_NAME` | Kafka topic name for session offload messages. | `session-offload` |
 | `KAFKA_GROUP_ID` | Kafka consumer group ID for load balancing across consumer instances. | `migration-workers` |
 
 ### Prefill/Decode Split Mode
@@ -440,7 +440,7 @@ Kafka configuration can be customized via environment variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `KAFKA_BROKERS` | Kafka broker addresses (comma-separated) | `localhost:9092` |
-| `KAFKA_TOPIC` | Topic name for session offload messages | `session-offload` |
+| `KAFKA_OFFLOAD_TOPIC_NAME` | Topic name for session offload messages | `session-offload` |
 | `KAFKA_GROUP_ID` | Consumer group ID for load balancing | `migration-workers` |
 
 ### Running Kafka Consumer
@@ -457,7 +457,7 @@ KAFKA_ENABLED=true ./build/tt_consumer -p 8002
 # With custom Kafka configuration
 KAFKA_ENABLED=true \
 KAFKA_BROKERS="kafka1:9092,kafka2:9092" \
-KAFKA_TOPIC="my-offload-topic" \
+KAFKA_OFFLOAD_TOPIC_NAME="my-offload-topic" \
 KAFKA_GROUP_ID="my-consumer-group" \
 ./build/tt_consumer -p 8001
 ```

@@ -113,8 +113,9 @@ size_t maxTokensToPrefillOnDecode();
  * defaults::KAFKA_BROKERS. */
 std::string kafkaBrokers();
 
-/** Kafka topic name from KAFKA_TOPIC. Default: defaults::KAFKA_TOPIC. */
-std::string kafkaTopic();
+/** Kafka topic name from KAFKA_OFFLOAD_TOPIC_NAME. Default:
+ * defaults::KAFKA_OFFLOAD_TOPIC_NAME. */
+std::string kafkaOffloadTopicName();
 
 /** Kafka consumer group ID from KAFKA_GROUP_ID. Default:
  * defaults::KAFKA_GROUP_ID. */

@@ -261,8 +261,9 @@ std::string kafkaBrokers() {
   return envString("KAFKA_BROKERS", defaults::KAFKA_BROKERS);
 }
 
-std::string kafkaTopic() {
-  return envString("KAFKA_TOPIC", defaults::KAFKA_TOPIC);
+std::string kafkaOffloadTopicName() {
+  return envString("KAFKA_OFFLOAD_TOPIC_NAME",
+                   defaults::KAFKA_OFFLOAD_TOPIC_NAME);
 }
 
 std::string kafkaGroupId() {

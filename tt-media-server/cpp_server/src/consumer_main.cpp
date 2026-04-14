@@ -74,7 +74,7 @@ int main(int argc, char* argv[]) {
   auto worker = std::make_shared<tt::worker::MigrationWorker>(
       tt::worker::MigrationWorkerConfig{
           .brokers = tt::config::kafkaBrokers(),
-          .topic = tt::config::kafkaTopic(),
+          .topic = tt::config::kafkaOffloadTopicName(),
           .group_id = tt::config::kafkaGroupId()});
 
   TT_LOG_INFO("[Consumer] Starting MigrationWorker...");
