@@ -1632,7 +1632,7 @@ class TestJobManager:
             await asyncio.sleep(0.1)
             return "result.pt"
 
-        job_data = await job_manager.create_job(
+        await job_manager.create_job(
             job_id="org-job-1",
             job_type=JobTypes.TRAINING,
             model="test-model",
