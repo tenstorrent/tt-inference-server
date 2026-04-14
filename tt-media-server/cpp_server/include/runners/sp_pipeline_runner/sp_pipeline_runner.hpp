@@ -57,6 +57,5 @@ class SpPipelineRunner : public IRunner {
       running;
   std::atomic<bool> stopped{false};
   std::unique_ptr<tt::services::AsyncMemoryManager> memoryManager;
-  std::unordered_set<uint32_t> cached;
 };
 }  // namespace tt::runners

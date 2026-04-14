@@ -34,10 +34,10 @@ SpPipelineRunner::SpPipelineRunner(
       .d2h_socket_id = tt::config::d2hSocketId(),
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
+  pm::MockConfig mock = {};
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
-  pipelineManager =
-      std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
+  pipelineManager = std::make_unique<pm::PipelineManager>(mock, managerParams);
   TT_LOG_INFO(
       "SpPipelineRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
@@ -202,12 +202,7 @@ void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
   auto& seq = *it->second;
   seq.appendToken(output.token_id);
   bool finished = output.is_complete || stopTokenIds.count(output.token_id);
-  auto taskId = seq.taskId;
-  if (finished) {
-    cached.insert(seq.getKVCacheSlot());
-    running.erase(output.slot_id);
-  }
-  ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
+  ipc::pushToken(*resultQueue, seq.taskId, output.token_id, finished);
 }
 
 inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
@@ -221,7 +216,6 @@ inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
                  slotId);
   }
   running.erase(slotId);
-  cached.erase(slotId);
 }
 
 void SpPipelineRunner::handleRequest(
@@ -230,24 +224,14 @@ void SpPipelineRunner::handleRequest(
   assert(slotId != tt::domain::INVALID_SLOT_ID);
 
   auto it = running.find(slotId);
-  bool isCached = cached.count(request->getKVCacheSlot());
-  bool isRunning = it != running.end();
-  bool isNew = !isRunning && !isCached;
+  bool isNew = !request->isContinuation();
 
   TT_LOG_DEBUG(
       "[SpPipelineRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
-      "numPromptTokens={}, totalTokens={}, runningSlots={}",
-      request->taskId, slotId, isNew, request->getNumPromptTokens(),
-      request->getTokenIds().size(), running.size());
-
-  if (isRunning) {
-    TT_LOG_ERROR(
-        "[SpPipelineRunner] handleRequest: slot {} still actively generating "
-        "(task {}), rejecting new task {}",
-        slotId, it->second->taskId, request->taskId);
-    ipc::pushErrorToken(*resultQueue, request->taskId);
-    return;
-  }
+      "isContinuation={}, numPromptTokens={}, totalTokens={}, runningSlots={}",
+      request->taskId, slotId, isNew, request->isContinuation(),
+      request->getNumPromptTokens(), request->getTokenIds().size(),
+      running.size());
 
   if (isNew) {
     TT_LOG_DEBUG(
@@ -261,7 +245,6 @@ void SpPipelineRunner::handleRequest(
         "[SpPipelineRunner] handleRequest: CONTINUE taskId={}, slotId={}",
         request->taskId, slotId);
     pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
-    cached.erase(request->getKVCacheSlot());
     running[slotId] = std::move(request);
   }
 }

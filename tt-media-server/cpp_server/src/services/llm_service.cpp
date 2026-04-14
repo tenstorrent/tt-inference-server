@@ -406,6 +406,7 @@ void LLMService::processStreamingRequest(
   if (request.slotId.has_value()) {
     sequence->setKVCacheSlot(request.slotId.value());
   }
+  sequence->setContinuation(request.continuation);
   sequence->setSamplingParams(
       std::make_unique<tt::runners::llm_engine::SamplingParams>(
           tt::utils::mapper::mapSamplingParams(request)));
