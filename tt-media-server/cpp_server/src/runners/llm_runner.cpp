@@ -58,11 +58,9 @@ LLMRunner::LLMRunner(const Config& config,
       return;
     }
 
-    bool grammarFinished = false;
     if (guidedDecoder && guidedDecoder->hasGuidedDecoding(result.taskId)) {
-      auto grammarResult = guidedDecoder->acceptToken(
-          result.taskId, static_cast<int32_t>(result.tokenId));
-      if (!grammarResult.accepted) {
+      if (!guidedDecoder->acceptToken(result.taskId,
+                                      static_cast<int32_t>(result.tokenId))) {
         TT_LOG_WARN(
             "[LLMRunner] Grammar rejected token {} for task {} - "
             "finishing sequence",
@@ -73,7 +71,6 @@ LLMRunner::LLMRunner(const Config& config,
         scheduler_->removeSequence(result.taskId);
         return;
       }
-      grammarFinished = grammarResult.completed;
     }
 
     std::vector<Sequence*> seqs = {seq};
@@ -81,7 +78,8 @@ LLMRunner::LLMRunner(const Config& config,
     scheduler_->postprocess(seqs, tokenIds);
 
     bool finished = seq->isFinished();
-    if (!finished && grammarFinished) {
+    if (!finished && guidedDecoder &&
+        guidedDecoder->isCompleted(result.taskId)) {
       finished = true;
       seq->setStatus(SequenceStatus::FINISHED);
     }

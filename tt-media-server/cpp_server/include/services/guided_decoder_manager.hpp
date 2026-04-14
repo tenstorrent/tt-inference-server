@@ -12,11 +12,6 @@
 
 namespace tt::services {
 
-struct TokenAcceptResult {
-  bool accepted = true;
-  bool completed = false;
-};
-
 class GuidedDecoderManager {
  public:
   explicit GuidedDecoderManager(const std::vector<std::string>& encodedVocab,
@@ -31,7 +26,9 @@ class GuidedDecoderManager {
 
   std::vector<int32_t> getNextAllowedTokenIds(uint32_t taskId);
 
-  TokenAcceptResult acceptToken(uint32_t taskId, int32_t tokenId);
+  bool acceptToken(uint32_t taskId, int32_t tokenId);
+
+  bool isCompleted(uint32_t taskId) const;
 
   bool hasGuidedDecoding(uint32_t taskId) const;
 
