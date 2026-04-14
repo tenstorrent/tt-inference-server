@@ -246,7 +246,9 @@ class VideoGenerationEvalsTest(BaseTest):
                     logger.info(f"✅ Video generated successfully: {video_path}")
                 else:
                     logger.error(f"❌ Video generation failed for job: {job_id}")
-                logger.info(f"Video {idx + 1} generation took {generation_duration:.1f}s")
+                logger.info(
+                    f"Video {idx + 1} generation took {generation_duration:.1f}s"
+                )
 
             except Exception as e:
                 logger.error(f"Error generating video for prompt '{prompt[:50]}': {e}")
