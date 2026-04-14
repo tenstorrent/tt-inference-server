@@ -196,11 +196,24 @@ struct ChatCompletionRequest : BaseRequest {
       req.tool_choice = ToolChoice::fromJson(json["tool_choice"]);
     }
 
-    // Parse parallel_tool_calls
-    if (json.isMember("parallel_tool_calls")) {
-      req.parallel_tool_calls =
-          getBool(json["parallel_tool_calls"], "parallel_tool_calls");
+ 
+    // Validate tool_choice constraints
+    if (req.tool_choice.has_value()) {
+      if (!req.tools.has_value() || req.tools->empty()) {
+        throw std::invalid_argument(
+            "tool_choice cannot be set without providing tools");
+      }
+
+      const auto& choice = req.tool_choice.value();
+      if (choice.type != "auto") {
+        throw std::invalid_argument(
+            "tool_choice must be 'auto' "
+            "Other tool_choice values ('none', 'required', or specific "
+            "functions) are not yet supported.");
+      }
     }
+
+  
 
     return req;
   }
