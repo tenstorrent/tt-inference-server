@@ -178,6 +178,26 @@ class TestJob:
         }
         assert result["completed_at"] is not None
 
+    def test_to_public_dict_with_org_id(self):
+        """Test converting job with org_id includes it in public dict"""
+        job = Job(
+            id="test-123",
+            job_type="training",
+            model="test-model",
+            created_at=1000,
+            org_id="org-abc",
+        )
+
+        result = job.to_public_dict()
+        assert result["org_id"] == "org-abc"
+
+    def test_to_public_dict_without_org_id(self):
+        """Test converting job without org_id omits it from public dict"""
+        job = Job(id="test-123", job_type="video", model="test-model", created_at=1000)
+
+        result = job.to_public_dict()
+        assert "org_id" not in result
+
 
 class TestJobManager:
     """Tests for JobManager class"""
@@ -1621,3 +1641,140 @@ class TestJobManager:
     async def test_get_job_logs_returns_none_for_unknown_job(self, job_manager):
         result = job_manager.get_job_logs("nonexistent")
         assert result is None
+
+    # ------------------------------------------------------------------------------------------------
+    # org_id scoping tests
+    @pytest.mark.asyncio
+    async def test_create_job_with_org_id(self, job_manager, mock_request):
+        """Test creating a job with org_id stores it correctly"""
+
+        async def task_func(req):
+            await asyncio.sleep(0.1)
+            return "result.pt"
+
+        job_data = await job_manager.create_job(
+            job_id="org-job-1",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+            org_id="org-abc",
+        )
+
+        assert job_data["org_id"] == "org-abc"
+
+        if job_manager.db:
+            db_job = job_manager.db.get_job_by_id("org-job-1")
+            assert db_job["org_id"] == "org-abc"
+
+    @pytest.mark.asyncio
+    async def test_create_job_without_org_id_omits_from_public_dict(
+        self, job_manager, mock_request
+    ):
+        """Test that jobs without org_id do not include it in public dict"""
+
+        async def task_func(req):
+            await asyncio.sleep(0.1)
+            return "result.mp4"
+
+        job_data = await job_manager.create_job(
+            job_id="no-org-job",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+
+        assert "org_id" not in job_data
+
+    @pytest.mark.asyncio
+    async def test_get_job_metadata_org_mismatch_returns_none(
+        self, job_manager, mock_request
+    ):
+        """Test that accessing a job with wrong org_id returns None"""
+
+        async def task_func(req):
+            await asyncio.sleep(0.1)
+            return "result.pt"
+
+        await job_manager.create_job(
+            job_id="org-job-2",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+            org_id="org-abc",
+        )
+
+        assert job_manager.get_job_metadata("org-job-2", org_id="org-abc") is not None
+        assert job_manager.get_job_metadata("org-job-2", org_id="org-other") is None
+        assert job_manager.get_job_metadata("org-job-2", org_id=None) is not None
+
+    @pytest.mark.asyncio
+    async def test_get_all_jobs_metadata_filtered_by_org(
+        self, job_manager, mock_request
+    ):
+        """Test that get_all_jobs_metadata filters by org_id"""
+
+        async def task_func(req):
+            await asyncio.sleep(0.1)
+            return "result.pt"
+
+        await job_manager.create_job(
+            job_id="org-a-job",
+            job_type=JobTypes.TRAINING,
+            model="m",
+            request=mock_request,
+            task_function=task_func,
+            org_id="org-a",
+        )
+        await job_manager.create_job(
+            job_id="org-b-job",
+            job_type=JobTypes.TRAINING,
+            model="m",
+            request=mock_request,
+            task_function=task_func,
+            org_id="org-b",
+        )
+        await job_manager.create_job(
+            job_id="no-org-job",
+            job_type=JobTypes.VIDEO,
+            model="m",
+            request=mock_request,
+            task_function=task_func,
+        )
+
+        org_a_jobs = job_manager.get_all_jobs_metadata(org_id="org-a")
+        assert len(org_a_jobs) == 1
+        assert org_a_jobs[0]["id"] == "org-a-job"
+
+        org_b_jobs = job_manager.get_all_jobs_metadata(org_id="org-b")
+        assert len(org_b_jobs) == 1
+        assert org_b_jobs[0]["id"] == "org-b-job"
+
+        all_jobs = job_manager.get_all_jobs_metadata(org_id=None)
+        assert len(all_jobs) == 3
+
+    @pytest.mark.asyncio
+    async def test_cancel_job_org_mismatch_returns_none(
+        self, job_manager, mock_request
+    ):
+        """Test that cancelling a job with wrong org_id returns None"""
+
+        async def task_func(req):
+            await asyncio.sleep(10)
+            return "result.pt"
+
+        await job_manager.create_job(
+            job_id="org-cancel-job",
+            job_type=JobTypes.TRAINING,
+            model="m",
+            request=mock_request,
+            task_function=task_func,
+            org_id="org-abc",
+        )
+
+        await asyncio.sleep(0.1)
+
+        assert job_manager.cancel_job("org-cancel-job", org_id="org-other") is None
+        assert job_manager.cancel_job("org-cancel-job", org_id="org-abc") is not None

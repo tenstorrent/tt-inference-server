@@ -25,7 +25,12 @@ class TrainingService(BaseJobService):
         self._model_name = next(iter(model_names)).value
         super().__init__()
 
-    async def create_job(self, job_type: JobTypes, request: TrainingRequest) -> dict:
+    async def create_job(
+        self,
+        job_type: JobTypes,
+        request: TrainingRequest,
+        org_id: Optional[str] = None,
+    ) -> dict:
         request.device_type = self.settings.device
         adapter_path = os.path.join(TRAINING_STORE_ADAPTERS_DIR, request._task_id)
         os.makedirs(adapter_path, exist_ok=True)
@@ -50,33 +55,36 @@ class TrainingService(BaseJobService):
             job_metrics=request._training_metrics,
             job_logs=request._training_logs,
             job_checkpoints=request._training_checkpoints,
+            org_id=org_id,
         )
 
-    def get_job_metrics(self, job_id: str, after: int = 0) -> list:
-        metrics_list = super().get_job_metrics(job_id)
+    def get_job_metrics(
+        self, job_id: str, org_id: Optional[str] = None, after: int = 0
+    ) -> list:
+        metrics_list = super().get_job_metrics(job_id, org_id=org_id)
         if metrics_list is None:
             raise ValueError(f"Job {job_id} not found")
         return list(metrics_list[after:])
 
-    def get_job_logs(self, job_id: str) -> list:
-        logs_list = super().get_job_logs(job_id)
+    def get_job_logs(self, job_id: str, org_id: Optional[str] = None) -> list:
+        logs_list = super().get_job_logs(job_id, org_id=org_id)
         if logs_list is None:
             raise ValueError(f"Job {job_id} not found")
         return list(logs_list)
 
-    def get_job_checkpoints(self, job_id: str) -> list:
-        checkpoints_list = super().get_job_checkpoints(job_id)
+    def get_job_checkpoints(self, job_id: str, org_id: Optional[str] = None) -> list:
+        checkpoints_list = super().get_job_checkpoints(job_id, org_id=org_id)
         if checkpoints_list is None:
             raise ValueError(f"Job {job_id} not found")
         return list(checkpoints_list)
 
     def get_checkpoint_download_path(
-        self, job_id: str, checkpoint_id: str
+        self, job_id: str, checkpoint_id: str, org_id: Optional[str] = None
     ) -> Optional[str]:
-        checkpoints = self.get_job_checkpoints(job_id)
+        checkpoints = self.get_job_checkpoints(job_id, org_id=org_id)
         if not any(ckpt["id"] == checkpoint_id for ckpt in checkpoints):
             return None
-        result_path = self._job_manager.get_job_result_path(job_id)
+        result_path = self._job_manager.get_job_result_path(job_id, org_id=org_id)
         if not result_path:
             return None
         checkpoint_path = os.path.join(result_path, checkpoint_id)
