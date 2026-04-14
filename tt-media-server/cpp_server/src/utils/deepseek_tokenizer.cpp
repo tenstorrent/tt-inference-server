@@ -9,9 +9,6 @@
 
 namespace tt::utils {
 
-// DeepSeek special tokens using fullwidth characters
-// \xEF\xBD\x9C = ｜ (fullwidth vertical bar)
-// \xE2\x96\x81 = ▁ (lower one eighth block)
 static const char* dsUserTag =
     "<\xEF\xBD\x9C"
     "User\xEF\xBD\x9C>";
@@ -76,13 +73,10 @@ std::string DeepseekTokenizer::applyChatTemplate(
 
   if (cfg_.add_bos_token) out << cfg_.bos_token;
 
-  // Collect system messages
   for (const auto& m : messages) {
     if (m.role == "system") out << m.content;
   }
 
-  // Append tool template to system prompt if tools are provided
-  // Following vLLM/SGLang pattern
   if (tools.has_value() && !tools->empty()) {
     out << "\n\n## Tools\nYou have access to the following tools:\n";
 
@@ -116,7 +110,6 @@ std::string DeepseekTokenizer::applyChatTemplate(
            "or spaces\n";
   }
 
-  // Track if we're inside tool outputs section
   bool inToolOutputs = false;
   bool isFirstToolOutput = true;
 
@@ -124,7 +117,6 @@ std::string DeepseekTokenizer::applyChatTemplate(
     if (m.role == "system") continue;
 
     if (m.role == "user") {
-      // Close tool outputs if we were in that section
       if (inToolOutputs) {
         out << dsToolOutputsEnd;
         inToolOutputs = false;
@@ -133,29 +125,24 @@ std::string DeepseekTokenizer::applyChatTemplate(
     } else if (m.role == "assistant") {
       // Check if this assistant message has tool calls
       if (m.tool_calls.has_value() && !m.tool_calls->empty()) {
-        // Close tool outputs if we were in that section
         if (inToolOutputs) {
           out << dsToolOutputsEnd;
           inToolOutputs = false;
         }
 
-        // Output content first if present
         if (!m.content.empty()) {
           out << dsAssistantTag << m.content;
         }
 
-        // Format tool calls
         out << dsToolCallsBegin;
         for (const auto& tc : m.tool_calls.value()) {
           out << dsToolCallBegin << "function" << dsToolSep
               << tc.function.name << "\n```json\n"
-              << tc.function.arguments  // Already JSON-encoded string
+              << tc.function.arguments
               << "\n```" << dsToolCallEnd;
         }
         out << dsToolCallsEnd << dsEndOfSentence;
       } else {
-        // Regular assistant message without tool calls
-        // If we were in tool outputs, close them first
         if (inToolOutputs) {
           out << dsToolOutputsEnd;
           inToolOutputs = false;
@@ -163,7 +150,6 @@ std::string DeepseekTokenizer::applyChatTemplate(
         out << dsAssistantTag << m.content << dsEndOfSentence;
       }
     } else if (m.role == "tool") {
-      // Tool result message
       if (!inToolOutputs) {
         out << dsToolOutputsBegin;
         inToolOutputs = true;
@@ -178,7 +164,6 @@ std::string DeepseekTokenizer::applyChatTemplate(
     }
   }
 
-  // Close tool outputs if we're still in that section
   if (inToolOutputs) {
     out << dsToolOutputsEnd;
   }
