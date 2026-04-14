@@ -14,6 +14,7 @@
 #include "domain/chat_message.hpp"
 #include "domain/json_field.hpp"
 #include "domain/llm_request.hpp"
+#include "domain/tool.hpp"
 #include "utils/tokenizer.hpp"
 
 namespace tt::domain {
@@ -75,6 +76,11 @@ struct ChatCompletionRequest : BaseRequest {
 
   // Session management
   std::optional<std::string> sessionId;
+
+  // Tool calling support
+  std::optional<std::vector<Tool>> tools;
+  std::optional<ToolChoice> tool_choice;
+  bool parallel_tool_calls = true;
 
   static ChatCompletionRequest fromJson(const Json::Value& json,
                                         uint32_t taskId) {
@@ -176,6 +182,39 @@ struct ChatCompletionRequest : BaseRequest {
     if (json.isMember("session_id") && !json["session_id"].isNull())
       req.sessionId = getString(json["session_id"], "session_id");
 
+    // Parse tools
+    if (json.isMember("tools") && json["tools"].isArray()) {
+      std::vector<Tool> toolList;
+      for (const auto& t : json["tools"]) {
+        toolList.push_back(Tool::fromJson(t));
+      }
+      req.tools = std::move(toolList);
+    }
+
+    // Parse tool_choice
+    if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
+      req.tool_choice = ToolChoice::fromJson(json["tool_choice"]);
+    }
+
+ 
+    // Validate tool_choice constraints
+    if (req.tool_choice.has_value()) {
+      if (!req.tools.has_value() || req.tools->empty()) {
+        throw std::invalid_argument(
+            "tool_choice cannot be set without providing tools");
+      }
+
+      const auto& choice = req.tool_choice.value();
+      if (choice.type != "auto") {
+        throw std::invalid_argument(
+            "tool_choice must be 'auto' "
+            "Other tool_choice values ('none', 'required', or specific "
+            "functions) are not yet supported.");
+      }
+    }
+
+  
+
     return req;
   }
 
@@ -208,7 +247,8 @@ struct ChatCompletionRequest : BaseRequest {
   LLMRequest toLLMRequest() const {
     LLMRequest out(task_id);
     out.model = model;
-    out.prompt = tt::utils::activeTokenizer().applyChatTemplate(messages);
+    out.prompt =
+        tt::utils::activeTokenizer().applyChatTemplate(messages, true, tools);
 
     out.echo = echo;
     out.max_tokens = max_tokens;

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "domain/llm_response.hpp"
+#include "domain/tool.hpp"
 
 namespace tt::domain {
 
@@ -21,6 +22,8 @@ struct ChatCompletionMessage {
   std::string content;
   std::optional<std::string> reasoning;
 
+  std::optional<std::vector<ToolCall>> tool_calls;
+
   Json::Value toJson() const {
     Json::Value json;
     json["role"] = role;
@@ -28,6 +31,16 @@ struct ChatCompletionMessage {
     if (reasoning.has_value()) {
       json["reasoning"] = reasoning.value();
     }
+
+    // Include tool_calls if present
+    if (tool_calls.has_value() && !tool_calls->empty()) {
+      Json::Value toolCallsArray(Json::arrayValue);
+      for (const auto& tc : tool_calls.value()) {
+        toolCallsArray.append(tc.toJson());
+      }
+      json["tool_calls"] = toolCallsArray;
+    }
+
     return json;
   }
 };
@@ -114,6 +127,9 @@ struct ChatCompletionDelta {
   std::optional<std::string> content;
   std::optional<std::string> reasoning;  // Reasoning content for DeepSeek R1
 
+  // Tool calling support for streaming
+  std::optional<std::vector<ToolCall>> tool_calls;
+
   Json::Value toJson() const {
     Json::Value json;
     if (role.has_value()) {
@@ -125,6 +141,16 @@ struct ChatCompletionDelta {
     if (reasoning.has_value()) {
       json["reasoning"] = reasoning.value();
     }
+
+    // Include tool_calls if present
+    if (tool_calls.has_value() && !tool_calls->empty()) {
+      Json::Value toolCallsArray(Json::arrayValue);
+      for (const auto& tc : tool_calls.value()) {
+        toolCallsArray.append(tc.toJson());
+      }
+      json["tool_calls"] = toolCallsArray;
+    }
+
     return json;
   }
 };

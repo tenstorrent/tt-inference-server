@@ -94,10 +94,14 @@ class Tokenizer {
 
   /**
    * Apply the model-specific chat template to a list of messages.
+   * @param messages List of chat messages to format
+   * @param addGenerationPrompt If true, add prompt for model to begin generating
+   * @param tools Optional list of tools to inject into the chat template
    */
   virtual std::string applyChatTemplate(
       const std::vector<tt::domain::ChatMessage>& messages,
-      bool addGenerationPrompt = true) const = 0;
+      bool addGenerationPrompt = true,
+      const std::optional<std::vector<tt::domain::Tool>>& tools = std::nullopt) const = 0;
 
   /**
    * Stream decoder for incremental token-by-token decoding.

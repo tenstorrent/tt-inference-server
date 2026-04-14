@@ -383,6 +383,13 @@ target_include_directories(cancel_queue_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(tool_calling_test tests/test_tool_calling.cpp)
+target_link_libraries(tool_calling_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(tool_calling_test PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
 add_executable(cancellation_test tests/cancellation_test.cpp)
 target_link_libraries(cancellation_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(cancellation_test PRIVATE
@@ -498,6 +505,7 @@ if(SANITIZE_ADDRESS)
         ipc_scheduler_smoke_test
         cancel_queue_test
         cancellation_test
+        tool_calling_test
     )
     foreach(target IN LISTS ASAN_TARGETS)
         target_compile_options(${target} PRIVATE ${ASAN_FLAGS})
