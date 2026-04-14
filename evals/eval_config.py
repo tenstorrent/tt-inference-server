@@ -2341,10 +2341,10 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=(100 - 3.91),
                     published_score_ref="https://huggingface.co/spaces/hf-audio/open_asr_leaderboard",
-                    score_func=score_multilevel_keys_mean,
+                    score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            ("librispeech_test_other", "wer,none"),
+                            "wer,none",
                         ],
                         "unit": "WER",
                     },
@@ -2371,10 +2371,10 @@ _eval_config_list = [
                     gpu_reference_score=(100 - 5.1208),
                     published_score_ref="https://huggingface.co/spaces/hf-audio/open_asr_leaderboard",
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/194#issuecomment-2791159501",
-                    score_func=score_multilevel_keys_mean,
+                    score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
-                            ("librispeech_test_other", "wer,none"),
+                            "wer,none",
                         ],
                         "unit": "WER",
                     },
@@ -2507,6 +2507,25 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=85.2,
                     published_score_ref="https://huggingface.co/BAAI/bge-large-en-v1.5",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="BAAI/bge-m3",
+        tasks=[
+            EvalTask(
+                task_name="embedding",
+                workflow_venv_type=WorkflowVenvType.EVALS_EMBEDDING,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score="",
+                    published_score_ref="",
+                    gpu_reference_score=0.7873,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/2892",
                     score_func=lambda results: 0.0,
                 ),
             ),
@@ -2713,7 +2732,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                 },
             ),
             EvalTask(
@@ -2744,7 +2763,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                 },
             ),
             EvalTask(
@@ -2775,7 +2794,7 @@ _eval_config_list = [
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                     "until": ["</s>"],
                 },
             ),
@@ -2812,7 +2831,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                 },
             ),
             EvalTask(
@@ -2843,7 +2862,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                 },
             ),
             EvalTask(
@@ -2874,7 +2893,7 @@ _eval_config_list = [
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                     "until": ["</s>"],
                 },
             ),
