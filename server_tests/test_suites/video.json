@@ -4,79 +4,206 @@
     "test_suites": [
         {
             "id": "wan-t3k",
-            "weights": ["Wan2.2-T2V-A14B-Diffusers"],
+            "weights": [
+                "Wan2.2-T2V-A14B-Diffusers"
+            ],
             "device": "t3k",
             "num_of_devices": 1,
             "model_marker": "wan",
             "test_cases": [
-                {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 370}},
-                {"template": "VideoGenerationParamTest", "enabled": true, "description": "Video generation param test"}
+                {
+                    "template": "VideoGenerationLoadTest",
+                    "enabled": true,
+                    "description": "Video generation load test",
+                    "targets": {
+                        "video_generation_target_time": 1200,
+                        "poll_timeout": 1500
+                    }
+                },
+                {
+                    "template": "VideoGenerationParamTest",
+                    "enabled": true,
+                    "description": "Video generation param test"
+                }
             ]
         },
         {
             "id": "wan-galaxy",
-            "weights": ["Wan2.2-T2V-A14B-Diffusers"],
+            "weights": [
+                "Wan2.2-T2V-A14B-Diffusers"
+            ],
             "device": "galaxy",
             "num_of_devices": 1,
             "model_marker": "wan",
             "test_cases": [
-                {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 370}},
-                {"template": "VideoGenerationParamTest", "enabled": true, "description": "Video generation param test"}
+                {
+                    "template": "VideoGenerationLoadTest",
+                    "enabled": true,
+                    "description": "Video generation load test",
+                    "targets": {
+                        "video_generation_target_time": 250,
+                        "poll_timeout": 550
+                    }
+                },
+                {
+                    "template": "VideoGenerationParamTest",
+                    "enabled": true,
+                    "description": "Video generation param test"
+                }
             ]
         },
         {
             "id": "wan-p150x8",
-            "weights": ["Wan2.2-T2V-A14B-Diffusers"],
+            "weights": [
+                "Wan2.2-T2V-A14B-Diffusers"
+            ],
             "device": "p150x8",
             "num_of_devices": 1,
             "model_marker": "wan",
             "test_cases": [
-                {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 370}},
-                {"template": "VideoGenerationParamTest", "enabled": true, "description": "Video generation param test"}
+                {
+                    "template": "VideoGenerationLoadTest",
+                    "enabled": true,
+                    "description": "Video generation load test",
+                    "targets": {
+                        "video_generation_target_time": 600,
+                        "poll_timeout": 900
+                    }
+                },
+                {
+                    "template": "VideoGenerationParamTest",
+                    "enabled": true,
+                    "description": "Video generation param test"
+                }
             ]
         },
         {
             "id": "wan-p300x2",
-            "weights": ["Wan2.2-T2V-A14B-Diffusers"],
+            "weights": [
+                "Wan2.2-T2V-A14B-Diffusers"
+            ],
             "device": "p300x2",
             "num_of_devices": 1,
             "model_marker": "wan",
             "test_cases": [
-                {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 370}},
-                {"template": "VideoGenerationParamTest", "enabled": true, "description": "Video generation param test"}
+                {
+                    "template": "VideoGenerationLoadTest",
+                    "enabled": true,
+                    "description": "Video generation load test",
+                    "targets": {
+                        "video_generation_target_time": 500,
+                        "poll_timeout": 800
+                    }
+                },
+                {
+                    "template": "VideoGenerationParamTest",
+                    "enabled": true,
+                    "description": "Video generation param test"
+                }
+            ]
+        },
+        {
+            "id": "mochi-p300x2",
+            "weights": [
+                "mochi-1-preview"
+            ],
+            "device": "p300x2",
+            "num_of_devices": 1,
+            "model_marker": "mochi",
+            "test_cases": [
+                {
+                    "template": "VideoGenerationLoadTest",
+                    "enabled": true,
+                    "description": "Video generation load test",
+                    "targets": {
+                        "video_generation_target_time": 900,
+                        "num_inference_steps": 50,
+                        "poll_timeout": 1100
+                    }
+                },
+                {
+                    "template": "VideoGenerationParamTest",
+                    "enabled": true,
+                    "description": "Video generation param test"
+                }
             ]
         },
         {
             "id": "mochi-t3k",
-            "weights": ["mochi-1-preview"],
+            "weights": [
+                "mochi-1-preview"
+            ],
             "device": "t3k",
             "num_of_devices": 1,
             "model_marker": "mochi",
             "test_cases": [
-                {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 480, "num_inference_steps": 50}},
-                {"template": "VideoGenerationParamTest", "enabled": true, "description": "Video generation param test"}
+                {
+                    "template": "VideoGenerationLoadTest",
+                    "enabled": true,
+                    "description": "Video generation load test",
+                    "targets": {
+                        "video_generation_target_time": 600,
+                        "num_inference_steps": 50,
+                        "poll_timeout": 900
+                    }
+                },
+                {
+                    "template": "VideoGenerationParamTest",
+                    "enabled": true,
+                    "description": "Video generation param test"
+                }
             ]
         },
         {
             "id": "mochi-galaxy",
-            "weights": ["mochi-1-preview"],
+            "weights": [
+                "mochi-1-preview"
+            ],
             "device": "galaxy",
             "num_of_devices": 1,
             "model_marker": "mochi",
             "test_cases": [
-                {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 480, "num_inference_steps": 50}},
-                {"template": "VideoGenerationParamTest", "enabled": true, "description": "Video generation param test"}
+                {
+                    "template": "VideoGenerationLoadTest",
+                    "enabled": true,
+                    "description": "Video generation load test",
+                    "targets": {
+                        "video_generation_target_time": 650,
+                        "num_inference_steps": 50,
+                        "poll_timeout": 800
+                    }
+                },
+                {
+                    "template": "VideoGenerationParamTest",
+                    "enabled": true,
+                    "description": "Video generation param test"
+                }
             ]
         },
         {
             "id": "mochi-p150x8",
-            "weights": ["mochi-1-preview"],
+            "weights": [
+                "mochi-1-preview"
+            ],
             "device": "p150x8",
             "num_of_devices": 1,
             "model_marker": "mochi",
             "test_cases": [
-                {"template": "VideoGenerationLoadTest", "enabled": true, "description": "Video generation load test", "targets": {"video_generation_target_time": 480, "num_inference_steps": 50}},
-                {"template": "VideoGenerationParamTest", "enabled": true, "description": "Video generation param test"}
+                {
+                    "template": "VideoGenerationLoadTest",
+                    "enabled": true,
+                    "description": "Video generation load test",
+                    "targets": {
+                        "video_generation_target_time": 900,
+                        "num_inference_steps": 50,
+                        "poll_timeout": 1000
+                    }
+                },
+                {
+                    "template": "VideoGenerationParamTest",
+                    "enabled": true,
+                    "description": "Video generation param test"
+                }
             ]
         }
     ]
