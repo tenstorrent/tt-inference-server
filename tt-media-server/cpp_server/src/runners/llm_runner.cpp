@@ -135,7 +135,8 @@ void LLMRunner::applyGuidedDecodingMasks(const std::vector<Sequence*>& seqs,
   for (Sequence* seq : seqs) {
     if (isPrefill && seq->getSamplingParams().hasGuidedDecoding()) {
       guidedDecoder->initRequest(seq->taskId, seq->getSamplingParams());
-    } else if (!isPrefill && guidedDecoder->hasGuidedDecoding(seq->taskId)) {
+    }
+    if (guidedDecoder->hasGuidedDecoding(seq->taskId)) {
       auto allowed = guidedDecoder->getNextAllowedTokenIds(seq->taskId);
       std::vector<int> allowedInt(allowed.begin(), allowed.end());
       seq->getMutableSamplingParams().allowed_token_ids = std::move(allowedInt);

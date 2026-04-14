@@ -412,7 +412,7 @@ target_include_directories(cancellation_test PRIVATE
 )
 
 add_executable(structured_output_test tests/structured_output_test.cpp)
-target_link_libraries(structured_output_test PRIVATE llm_engine GTest::gtest_main)
+target_link_libraries(structured_output_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(structured_output_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
     ${CMAKE_CURRENT_SOURCE_DIR}/include

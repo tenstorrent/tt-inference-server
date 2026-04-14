@@ -11,6 +11,8 @@
 #include "domain/response_format.hpp"
 #include "runners/llm_runner/sampling_params.hpp"
 
+namespace llm_engine = tt::runners::llm_engine;
+
 namespace {
 
 Json::Value parseJson(const std::string& str) {

@@ -12,6 +12,8 @@
 
 namespace tt::services {
 
+using tt::utils::ConcurrentMap;
+
 struct GuidedDecoderManager::Impl {
   xgrammar::TokenizerInfo tokenizerInfo;
   xgrammar::GrammarCompiler compiler;
@@ -37,8 +39,7 @@ GuidedDecoderManager::GuidedDecoderManager(
 GuidedDecoderManager::~GuidedDecoderManager() = default;
 
 void GuidedDecoderManager::initRequest(
-    uint32_t taskId,
-    const tt::runners::llm_engine::SamplingParams& params) {
+    uint32_t taskId, const tt::runners::llm_engine::SamplingParams& params) {
   if (!params.hasGuidedDecoding()) return;
 
   xgrammar::CompiledGrammar compiled = [&]() {
