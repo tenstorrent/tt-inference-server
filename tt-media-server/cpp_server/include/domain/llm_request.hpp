@@ -120,6 +120,8 @@ struct LLMRequest : BaseRequest {
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
+  bool continuation =
+      false;  // True if this request continues an existing session
 
   std::string toString() const {
     std::string promptInfo;
