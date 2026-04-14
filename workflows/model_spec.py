@@ -2270,8 +2270,8 @@ vlm_templates = [
             "google/medgemma-4b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="c254ee3",
-        vllm_commit="c4f2327",
+        tt_metal_commit="aecd1d7",
+        vllm_commit="0da90eb",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2314,8 +2314,8 @@ vlm_templates = [
             "google/medgemma-27b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="0b10c51",
-        vllm_commit="3499ffa",
+        tt_metal_commit="aecd1d7",
+        vllm_commit="0da90eb",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
