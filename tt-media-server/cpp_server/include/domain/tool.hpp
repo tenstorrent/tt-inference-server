@@ -83,10 +83,8 @@ struct ToolChoice {
   static ToolChoice fromJson(const Json::Value& json) {
     ToolChoice choice;
     if (json.isString()) {
-      // Simple string form: "none", "auto", "required"
       choice.type = json.asString();
     } else if (json.isObject()) {
-      // Object form: {"type": "function", "function": {"name": "..."}}
       if (json.isMember("type") && !json["type"].isNull()) {
         choice.type = json["type"].asString();
       }
@@ -100,10 +98,8 @@ struct ToolChoice {
 
   Json::Value toJson() const {
     if (type == "none" || type == "auto" || type == "required") {
-      // Simple string form
       return Json::Value(type);
     } else {
-      // Object form for specific function
       Json::Value json;
       json["type"] = type;
       if (function_name.has_value()) {
@@ -144,7 +140,7 @@ struct FunctionCall {
  * A tool call made by the model in a response.
  */
 struct ToolCall {
-  std::string id;  // Unique identifier (e.g., "call_abc123")
+  std::string id;
   std::string type = "function";
   FunctionCall function;
 

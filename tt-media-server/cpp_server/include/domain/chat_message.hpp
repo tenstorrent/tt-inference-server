@@ -19,10 +19,9 @@ struct ChatMessage {
   std::string role;
   std::string content;
 
-  // Tool calling support
   std::optional<std::vector<ToolCall>>
-      tool_calls;  // For assistant messages that call tools
-  std::optional<std::string> tool_call_id;  // For tool result messages
+      tool_calls;
+  std::optional<std::string> tool_call_id;
 
   static ChatMessage fromJson(const Json::Value& json) {
     ChatMessage msg;
