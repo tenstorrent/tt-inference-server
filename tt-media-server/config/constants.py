@@ -24,6 +24,7 @@ class SupportedModels(Enum):
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
+    LLAMA_3_2_1B_INSTRUCT = "meta-llama/Llama-3.2-1B-Instruct"
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
     LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B"
     LLAMA_3_2_3B_INSTRUCT = "meta-llama/Llama-3.2-3B-Instruct"
@@ -63,6 +64,7 @@ class ModelNames(Enum):
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
+    LLAMA_3_2_1B_INSTRUCT = "Llama-3.2-1B-Instruct"
     LLAMA_3_2_3B = "Llama-3.2-3B"
     LLAMA_3_1_8B = "Llama-3.1-8B"
     LLAMA_3_2_3B_INSTRUCT = "Llama-3.2-3B-Instruct"
@@ -202,6 +204,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
     ModelRunners.VLLMForge: {
+        ModelNames.LLAMA_3_2_1B_INSTRUCT,
         ModelNames.LLAMA_3_2_3B,
         ModelNames.LLAMA_3_2_3B_INSTRUCT,
         ModelNames.LLAMA_3_1_8B_INSTRUCT,
