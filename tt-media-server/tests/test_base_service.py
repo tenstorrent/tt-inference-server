@@ -768,9 +768,7 @@ class TestJobManagement:
         """Test get_job_metadata delegates to job manager"""
         result = base_job_service.get_job_metadata("job_1")
 
-        mock_job_manager.get_job_metadata.assert_called_once_with(
-            "job_1", org_id=None
-        )
+        mock_job_manager.get_job_metadata.assert_called_once_with("job_1", org_id=None)
         assert result == {"job_id": "job_1", "status": "running"}
 
     def test_get_job_result_path(self, base_job_service, mock_job_manager):

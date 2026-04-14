@@ -248,9 +248,7 @@ class JobManager:
                 return job.job_metrics
         return None
 
-    def get_job_logs(
-        self, job_id: str, org_id: Optional[str] = None
-    ) -> Optional[list]:
+    def get_job_logs(self, job_id: str, org_id: Optional[str] = None) -> Optional[list]:
         with self._jobs_lock:
             job = self._get_job_if_authorized(job_id, org_id)
             if job:
