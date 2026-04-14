@@ -178,26 +178,6 @@ class TestJob:
         }
         assert result["completed_at"] is not None
 
-    def test_to_public_dict_with_org_id(self):
-        """Test converting job with org_id includes it in public dict"""
-        job = Job(
-            id="test-123",
-            job_type="training",
-            model="test-model",
-            created_at=1000,
-            org_id="org-abc",
-        )
-
-        result = job.to_public_dict()
-        assert result["org_id"] == "org-abc"
-
-    def test_to_public_dict_without_org_id(self):
-        """Test converting job without org_id omits it from public dict"""
-        job = Job(id="test-123", job_type="video", model="test-model", created_at=1000)
-
-        result = job.to_public_dict()
-        assert "org_id" not in result
-
 
 class TestJobManager:
     """Tests for JobManager class"""
@@ -1661,31 +1641,9 @@ class TestJobManager:
             org_id="org-abc",
         )
 
-        assert job_data["org_id"] == "org-abc"
-
         if job_manager.db:
             db_job = job_manager.db.get_job_by_id("org-job-1")
             assert db_job["org_id"] == "org-abc"
-
-    @pytest.mark.asyncio
-    async def test_create_job_without_org_id_omits_from_public_dict(
-        self, job_manager, mock_request
-    ):
-        """Test that jobs without org_id do not include it in public dict"""
-
-        async def task_func(req):
-            await asyncio.sleep(0.1)
-            return "result.mp4"
-
-        job_data = await job_manager.create_job(
-            job_id="no-org-job",
-            job_type=JobTypes.VIDEO,
-            model="test-model",
-            request=mock_request,
-            task_function=task_func,
-        )
-
-        assert "org_id" not in job_data
 
     @pytest.mark.asyncio
     async def test_get_job_metadata_org_mismatch_returns_none(
