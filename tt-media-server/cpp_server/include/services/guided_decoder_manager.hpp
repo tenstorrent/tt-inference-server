@@ -5,14 +5,17 @@
 
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "runners/llm_runner/sampling_params.hpp"
 
 namespace tt::services {
+
+struct TokenAcceptResult {
+  bool accepted = true;
+  bool completed = false;
+};
 
 class GuidedDecoderManager {
  public:
@@ -28,9 +31,7 @@ class GuidedDecoderManager {
 
   std::vector<int32_t> getNextAllowedTokenIds(uint32_t taskId);
 
-  bool acceptToken(uint32_t taskId, int32_t tokenId);
-
-  bool isCompleted(uint32_t taskId) const;
+  TokenAcceptResult acceptToken(uint32_t taskId, int32_t tokenId);
 
   bool hasGuidedDecoding(uint32_t taskId) const;
 
