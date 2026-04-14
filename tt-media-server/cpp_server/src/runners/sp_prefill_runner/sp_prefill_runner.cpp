@@ -10,7 +10,7 @@ namespace tt::runners {
 
 SpPrefillRunner::SpPrefillRunner(const config::LLMConfig& config,
                                  ipc::TokenRingBuffer<65536>* resultQueue,
-                                 llm_engine::ITaskQueue* taskQueue)
+                                 tt::runners::llm_engine::ITaskQueue* taskQueue)
     : config(config), resultQueue(resultQueue), taskQueue(taskQueue) {
   modelRunner = sp_prefill::makeModelRunner(config);
 }

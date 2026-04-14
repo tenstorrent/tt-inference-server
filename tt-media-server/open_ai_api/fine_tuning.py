@@ -26,7 +26,10 @@ async def get_catalog(api_key: str = Security(get_api_key)):
         JSONResponse: Full training catalog.
     """
     settings = get_settings()
-    catalog = build_training_catalog(settings.model_runner)
+    num_workers = len(settings.device_ids.replace(" ", "").split("),("))
+    catalog = build_training_catalog(
+        settings.model_runner, settings.device, settings.device_mesh_shape, num_workers
+    )
     return JSONResponse(content=catalog)
 
 
@@ -49,6 +52,14 @@ async def submit_fine_tuning_request(
         service.scheduler.check_is_model_ready()
     except Exception:
         raise HTTPException(status_code=405, detail="Model is not ready")
+
+    settings = get_settings()
+    if request.device_type != settings.device:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Request device '{request.device_type}' does not match server device '{settings.device}'",
+        )
+
     try:
         job_data = await service.create_job(JobTypes.TRAINING, request)
         return JSONResponse(content=job_data, status_code=201)

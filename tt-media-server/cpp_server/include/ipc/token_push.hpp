@@ -7,6 +7,7 @@
 #include <thread>
 
 #include "ipc/token_ring_buffer.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::ipc {
 
@@ -17,6 +18,9 @@ void pushToken(TokenRingBuffer<N>& queue, uint32_t taskId, uint64_t tokenId,
   token.task_id = taskId;
   token.token_id = tokenId;
   token.flags = finished ? SharedToken::FLAG_FINAL : 0u;
+  if (finished) {
+    TT_LOG_DEBUG("pushed final token for task_id={}", taskId);
+  }
   while (!queue.push(token)) {
     std::this_thread::yield();
   }

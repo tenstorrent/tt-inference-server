@@ -46,12 +46,15 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_WHISPER: lambda wid: __import__(
         "tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]
     ).TTWhisperRunner(wid),
-    ModelRunners.VLLM: lambda wid: __import__(
-        "tt_model_runners.vllm_runner", fromlist=["VLLMRunner"]
-    ).VLLMRunner(wid),
+    ModelRunners.VLLMForge: lambda wid: __import__(
+        "tt_model_runners.vllm_runner", fromlist=["VLLMForgeRunner"]
+    ).VLLMForgeRunner(wid),
     ModelRunners.BGELargeEN_V1_5: lambda wid: __import__(
         "tt_model_runners.embedding_runner", fromlist=["BGELargeENRunner"]
     ).BGELargeENRunner(wid),
+    ModelRunners.BGEM3: lambda wid: __import__(
+        "tt_model_runners.embedding_runner", fromlist=["BGEM3Runner"]
+    ).BGEM3Runner(wid),
     ModelRunners.LLM_TEST: lambda wid: __import__(
         "tt_model_runners.llm_test_runner", fromlist=["LLMTestRunner"]
     ).LLMTestRunner(wid),

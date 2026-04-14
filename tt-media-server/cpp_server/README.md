@@ -84,13 +84,11 @@ Available log levels (from most to least verbose):
 
 ## LLM engine
 
-The LLM engine lives under `include/runners/llm_engine/` (headers) and `src/runners/llm_engine/` (sources). The engine uses the server's logging (`[DEBUG] [llm_engine:...]`) instead of its own.dia Server - C++ Drogon Implementation
-
-A high-performance C++ implementation of the TT Media Server using the Drogon web framework. This implementation is designed to benchmark the overhead of the Python FastAPI server by providing an identical API with minimal overhead.
-
-## LLM engine
-
-The LLM engine lives under `include/runners/llm_runner/` (headers) and `src/runners/llm_runner/` (sources). The engine uses the server’s logging (`[DEBUG] [llm_engine:...]`) instead of its own.
+Inference engine code lives under `include/runners/llm_runner/` and
+`src/runners/llm_runner/`. Public C++ API types are in namespace
+`tt::runners::llm_engine`. With `-DLLM_ENGINE_DEBUG_BUILD=ON`, `LLM_ENGINE_LOG`
+lines include the tag `runners.llm_engine:` in the prefix. The static library
+CMake target is `llm_runner_lib`.
 
 ### Main features
 
@@ -266,7 +264,7 @@ and `create_tokenizer_strategy()` factory.
 Configuration follows a unified system with clear separation of concerns:
 - **Type definitions**: `config/types.hpp` - enums and type conversions (ModelService, ModelType, LLMMode, SchedulingPolicy, etc.)
 - **Default values**: `config/defaults.hpp` - default values for all environment variables
-- **Runner config**: `config/runner_config.hpp` - LLMConfig, EmbeddingConfig, RunnerConfig variant, and llm_engine_config()
+- **Runner config**: `config/runner_config.hpp` — LLMConfig, EmbeddingConfig, RunnerConfig variant; runtime values filled via `tt::config::llmEngineConfig()` in `config/settings.hpp` / `settings.cpp`
 - **Runtime settings**: `config/settings.hpp` - reads environment variables and provides runtime accessors
 
 All environment variable reads go through `config/settings.hpp` (no direct `getenv` elsewhere).
@@ -759,7 +757,7 @@ cpp_server/
 - `LLMService`: LLM-specific service implementation
 
 ### Runners
-- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`. For LLM, builds `tt::config::LLMConfig` (via `llm_engine_config()` from `config/runner_config.hpp`) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/model_runner.hpp` and `model_runner.cpp`).
+- **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`. For LLM, builds `tt::config::LLMConfig` via `tt::config::llmEngineConfig()` (`config/settings.hpp` / `settings.cpp`) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/model_runner.hpp` and `model_runner.cpp`).
 
 ### API
 - `LLMController`: Drogon HTTP controller with OpenAI-compatible endpoints

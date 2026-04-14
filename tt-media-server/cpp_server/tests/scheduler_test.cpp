@@ -14,7 +14,7 @@
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 using Config = tt::config::LLMConfig;
 using SchedulingPolicy = tt::config::SchedulingPolicy;
@@ -522,4 +522,4 @@ TEST(MaxOccupancySchedulerTest, ContinuousRefill_MaintainsFullOccupancy) {
   EXPECT_EQ(b3.size(), 2u);
 }
 }  // namespace
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

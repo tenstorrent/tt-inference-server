@@ -8,7 +8,7 @@
 #include "config/runner_config.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 /**
  * IModelRunner that runs Llama-3.1-8B-Instruct via embedded Python interpreter
@@ -39,4 +39,4 @@ class LlamaModelRunner : public IModelRunner {
 std::unique_ptr<IModelRunner> makeLlamaModelRunner(
     const tt::config::LLMConfig& config, DecodeCallback callback);
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine
