@@ -35,6 +35,11 @@ OPTIMIZER_MAP = {
     TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
 }
 
+DTYPE_MAP = {
+    "torch.bfloat16": torch.bfloat16,
+    "torch.float32": torch.float32,
+}
+
 
 def _transform_labels(labels, ignored_index, vocab_size):
     """Convert labels to one-hot encoding with a mask for ignored tokens."""
@@ -264,7 +269,9 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             f"{sum(p.numel() for p in self._peft_model.parameters() if p.requires_grad)}"
         )
 
-        self._peft_model.to(eval(request.dtype))
+        if request.dtype not in DTYPE_MAP:
+            raise ValueError(f"Unsupported dtype '{request.dtype}', must be one of {list(DTYPE_MAP.keys())}")
+        self._peft_model.to(DTYPE_MAP[request.dtype])
         self._peft_model.to(self.device)
 
         model = torch.compile(

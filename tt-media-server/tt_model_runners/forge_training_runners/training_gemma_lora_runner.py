@@ -33,6 +33,11 @@ OPTIMIZER_MAP = {
     TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
 }
 
+DTYPE_MAP = {
+    "torch.bfloat16": torch.bfloat16,
+    "torch.float32": torch.float32,
+}
+
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
@@ -131,7 +136,9 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         self._peft_model = get_peft_model(self.hf_model, lora_config)
 
-        self._peft_model.to(eval(request.dtype))
+        if request.dtype not in DTYPE_MAP:
+            raise ValueError(f"Unsupported dtype '{request.dtype}', must be one of {list(DTYPE_MAP.keys())}")
+        self._peft_model.to(DTYPE_MAP[request.dtype])
         self._peft_model.to(self.device)
 
         # use torch compile
