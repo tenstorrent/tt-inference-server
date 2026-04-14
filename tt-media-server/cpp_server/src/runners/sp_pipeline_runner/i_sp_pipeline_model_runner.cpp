@@ -8,7 +8,7 @@
 #include "runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.hpp"
 #include "runners/sp_pipeline_runner/sp_pipeline_model_runner.hpp"
 
-namespace sp_pipeline {
+namespace tt::runners::sp_pipeline {
 
 using ModelRunnerType = tt::config::ModelRunnerType;
 
@@ -25,4 +25,4 @@ std::unique_ptr<ISpPipelineModelRunner> makeModelRunner(
   }
 }
 
-}  // namespace sp_pipeline
+}  // namespace tt::runners::sp_pipeline

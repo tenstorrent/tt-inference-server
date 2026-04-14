@@ -126,6 +126,24 @@ std::string kafkaGroupId();
  * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
 unsigned sessionAllocationMaxRetries();
 
+/** H2D socket ID from H2D_SOCKET_ID. Default: defaults::H2D_SOCKET_ID. */
+std::string h2dSocketId();
+
+/** D2H socket ID from D2H_SOCKET_ID. Default: defaults::D2H_SOCKET_ID. */
+std::string d2hSocketId();
+
+/** Pipeline manager connect timeout (ms) from PM_CONNECT_TIMEOUT_MS. Default:
+ * defaults::PM_CONNECT_TIMEOUT_MS. */
+unsigned pmConnectTimeoutMs();
+
+/** Pipeline manager max users from PM_MAX_USERS. Default:
+ * defaults::PM_MAX_USERS. */
+size_t pmMaxUsers();
+
+/** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
+ * defaults::USE_DEEPSEEK_MD_FORMAT. */
+bool useDeepseekMdFormat();
+
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();

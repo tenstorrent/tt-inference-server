@@ -22,7 +22,6 @@ class MemoryManager {
 
   std::optional<domain::ManageMemoryTask> getRequest();
   virtual void handleRequest(const domain::ManageMemoryTask& request) = 0;
-  void handleResponse(int slotId);
 
  protected:
   std::unique_ptr<ipc::MemoryRequestQueue> requestQueue;

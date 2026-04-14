@@ -63,7 +63,7 @@ bool SessionManager::closeSession(const std::string& sessionId) {
   }
 
   uint32_t slotId = session->getSlotId();
-  if (slotId != INVALID_SLOT_ID) {
+  if (slotId != domain::INVALID_SLOT_ID) {
     sendDeallocRequest(sessionId, slotId);
   }
 
@@ -89,7 +89,7 @@ bool SessionManager::assignSlotId(const std::string& sessionId,
 
 uint32_t SessionManager::getSlotIdBySessionId(
     const std::string& sessionId) const {
-  uint32_t result = INVALID_SLOT_ID;
+  uint32_t result = domain::INVALID_SLOT_ID;
   sessions.modify(sessionId, [&result](domain::Session& s) {
     s.updateActivityTime();
     result = s.getSlotId();
@@ -98,7 +98,7 @@ uint32_t SessionManager::getSlotIdBySessionId(
 }
 
 uint32_t SessionManager::acquireSessionSlot(const std::string& sessionId) {
-  uint32_t result = INVALID_SLOT_ID;
+  uint32_t result = domain::INVALID_SLOT_ID;
   sessions.modify(sessionId, [&result](domain::Session& s) {
     s.updateActivityTime();
     s.setInFlight(true);
@@ -177,7 +177,7 @@ void SessionManager::evictOldSessions() {
       continue;
     }
     uint32_t slotId = session->getSlotId();
-    if (slotId != INVALID_SLOT_ID) {
+    if (slotId != domain::INVALID_SLOT_ID) {
       sendDeallocRequest(sessionId, slotId);
     }
     ++evicted;
@@ -237,7 +237,7 @@ void SessionManager::createSession(
     return;
   }
 
-  domain::Session session = domain::Session(INVALID_SLOT_ID);
+  domain::Session session = domain::Session(domain::INVALID_SLOT_ID);
   auto pendingAllocation = PendingAllocation(
       std::move(session), std::move(onCompletion), std::move(onError),
       callerEventLoop, tt::config::sessionAllocationMaxRetries());
