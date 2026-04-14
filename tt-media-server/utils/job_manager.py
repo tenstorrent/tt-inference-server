@@ -196,9 +196,7 @@ class JobManager:
     ) -> Optional[Job]:
         """Retrieve a job by ID, returning None if org_id is set and doesn't match."""
         job = self._jobs.get(job_id)
-        if job is None:
-            return None
-        if org_id is not None and job.org_id != org_id:
+        if job is None or (org_id is not None and job.org_id != org_id):
             return None
         return job
 
