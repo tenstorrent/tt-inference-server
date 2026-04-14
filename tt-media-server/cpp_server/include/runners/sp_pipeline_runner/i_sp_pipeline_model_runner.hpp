@@ -15,8 +15,10 @@
 
 namespace tt::runners::sp_pipeline {
 
-using DecodeCallback = std::function<void(const llm_engine::TokenResult&)>;
-using DecodeQueue = tt::utils::LockFreeSPSCQueue<llm_engine::TokenResult>;
+using DecodeCallback =
+    std::function<void(const tt::runners::llm_engine::TokenResult&)>;
+using DecodeQueue =
+    tt::utils::LockFreeSPSCQueue<tt::runners::llm_engine::TokenResult>;
 
 enum class RequestPhase { PREFILL, DECODE };
 

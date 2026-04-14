@@ -28,7 +28,7 @@ class SpPipelineRunnerDemo : public IRunner {
  public:
   SpPipelineRunnerDemo(const tt::config::LLMConfig& config,
                        ipc::TokenRingBuffer<65536>* resultQueue,
-                       llm_engine::ITaskQueue* taskQueue);
+                       tt::runners::llm_engine::ITaskQueue* taskQueue);
   ~SpPipelineRunnerDemo() override;
 
   void run() override;
@@ -44,10 +44,11 @@ class SpPipelineRunnerDemo : public IRunner {
   tt::config::LLMConfig config;
   std::unordered_set<int64_t> stopTokenIds;
   ipc::TokenRingBuffer<65536>* resultQueue;
-  llm_engine::ITaskQueue* taskQueue;
+  tt::runners::llm_engine::ITaskQueue* taskQueue;
   std::unique_ptr<sp_pipeline::ISpPipelineModelRunner> modelRunner;
   sp_pipeline::DecodeQueue decodeQueue;
-  std::unordered_map<uint32_t, std::unique_ptr<llm_engine::Sequence>>
+  std::unordered_map<uint32_t,
+                     std::unique_ptr<tt::runners::llm_engine::Sequence>>
       activeSequences;
   std::atomic<bool> stopped{false};
   size_t maxInFlightCount;

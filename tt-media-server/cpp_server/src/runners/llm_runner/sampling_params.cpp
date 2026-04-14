@@ -1,6 +1,6 @@
 #include "runners/llm_runner/sampling_params.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 namespace {
 
@@ -112,4 +112,4 @@ std::unique_ptr<SamplingParams> SamplingParams::deserialize(std::istream& is) {
   return params;
 }
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

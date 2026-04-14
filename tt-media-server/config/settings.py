@@ -7,6 +7,7 @@ from functools import lru_cache
 from typing import Optional
 
 from config.constants import (
+    MODEL_NAME_OVERRIDES,
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
     SDXL_VALID_IMAGE_RESOLUTIONS,
@@ -48,6 +49,7 @@ class Settings(BaseSettings):
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
     model_weights_path: str = ""
+    chat_template_kwargs: dict = {}  # extra kwargs passed to apply_chat_template
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
     download_weights_from_service: bool = True
@@ -73,6 +75,7 @@ class Settings(BaseSettings):
 
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
+    weights_distribution_timeout_seconds: int = 1200
 
     # Job management settings
     max_jobs: int = 10000
@@ -185,6 +188,7 @@ class Settings(BaseSettings):
             logger.warning(
                 f"max_batch_size {self.max_batch_size} is less than max_num_seqs {self.vllm.max_num_seqs} in vllm settings, set max_batch_size to {self.vllm.max_num_seqs}"
             )
+            self.max_batch_size = self.vllm.max_num_seqs
 
     def _set_device_pairs_overrides(self) -> None:
         logger.info(
@@ -196,7 +200,7 @@ class Settings(BaseSettings):
             return
 
         dm = DeviceManager()
-        devices = None
+        devices = []
         mesh = self.device_mesh_shape
 
         try:
@@ -259,6 +263,7 @@ class Settings(BaseSettings):
             "SD_3_5_FAST": (4, 8),
             "SD_3_5_BASE": (2, 4),
             "TP2": (2, 1),
+            "SP_MESH_4X32": (4, 32),
         }
         for env_var, mesh_shape in env_mesh_map.items():
             value = os.getenv(env_var)
@@ -302,11 +307,19 @@ class Settings(BaseSettings):
             if supported_model:
                 self.model_weights_path = supported_model.value
 
-            # Apply all configuration values
+            # Apply all configuration values (env vars take precedence)
             for key, value in matching_config.items():
                 if hasattr(self, key):
+                    if key.upper() in os.environ:
+                        continue
                     if key == "vllm" and isinstance(value, dict):
                         value = VLLMSettings(**value)
+                    setattr(self, key, value)
+
+            # Apply per-model overrides (e.g. chat_template_kwargs for Qwen3)
+            model_overrides = MODEL_NAME_OVERRIDES.get(model_name_enum, {})
+            for key, value in model_overrides.items():
+                if hasattr(self, key):
                     setattr(self, key, value)
         if any(
             self.model_runner == r.value
