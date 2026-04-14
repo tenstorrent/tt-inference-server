@@ -5,10 +5,10 @@
 
 #include <xgrammar/xgrammar.h>
 
+#include <optional>
 #include <stdexcept>
 
 #include "utils/concurrent_map.hpp"
-#include "utils/logger.hpp"
 
 namespace tt::services {
 
@@ -18,10 +18,13 @@ struct GuidedDecoderManager::Impl {
   xgrammar::TokenizerInfo tokenizerInfo;
   xgrammar::GrammarCompiler compiler;
   int vocabSize;
+  int bitmaskSize;
+
+  std::optional<xgrammar::CompiledGrammar> cachedJsonObjectGrammar;
 
   struct RequestState {
     xgrammar::GrammarMatcher matcher;
-    xgrammar::CompiledGrammar compiledGrammar;
+    std::vector<int32_t> bitmaskBuffer;
   };
 
   ConcurrentMap<uint32_t, std::unique_ptr<RequestState>> requests;
@@ -29,7 +32,15 @@ struct GuidedDecoderManager::Impl {
   Impl(const std::vector<std::string>& encodedVocab, int vocabSize)
       : tokenizerInfo(encodedVocab, xgrammar::VocabType::BYTE_LEVEL, vocabSize),
         compiler(tokenizerInfo),
-        vocabSize(vocabSize) {}
+        vocabSize(vocabSize),
+        bitmaskSize(xgrammar::GetBitmaskSize(vocabSize)) {}
+
+  const xgrammar::CompiledGrammar& getJsonObjectGrammar() {
+    if (!cachedJsonObjectGrammar.has_value()) {
+      cachedJsonObjectGrammar.emplace(compiler.CompileBuiltinJSONGrammar());
+    }
+    return *cachedJsonObjectGrammar;
+  }
 };
 
 GuidedDecoderManager::GuidedDecoderManager(
@@ -43,16 +54,23 @@ void GuidedDecoderManager::initRequest(
   if (!params.hasGuidedDecoding()) return;
 
   using tt::config::ResponseFormatType;
-  xgrammar::CompiledGrammar compiled = [&]() {
+  const xgrammar::CompiledGrammar& compiled =
+      [&]() -> const xgrammar::CompiledGrammar& {
     switch (params.response_format_type) {
       case ResponseFormatType::JSON_OBJECT:
-        return impl->compiler.CompileBuiltinJSONGrammar();
+        return impl->getJsonObjectGrammar();
       case ResponseFormatType::JSON_SCHEMA: {
         if (!params.json_schema_str.has_value()) {
           throw std::invalid_argument(
               "json_schema response format requires a schema string");
         }
-        return impl->compiler.CompileJSONSchema(*params.json_schema_str);
+        // json_schema grammars are compiled per request (schema varies)
+        // TODO: cache by schema string hash for repeated schemas
+        static thread_local xgrammar::CompiledGrammar schemaGrammar =
+            impl->compiler.CompileJSONSchema(*params.json_schema_str);
+        schemaGrammar =
+            impl->compiler.CompileJSONSchema(*params.json_schema_str);
+        return schemaGrammar;
       }
       default:
         throw std::logic_error("initRequest called for non-guided request");
@@ -60,24 +78,25 @@ void GuidedDecoderManager::initRequest(
   }();
 
   xgrammar::GrammarMatcher matcher(compiled);
+  std::vector<int32_t> bitmaskBuffer(impl->bitmaskSize, 0);
 
-  impl->requests.insert(
-      taskId, std::make_unique<Impl::RequestState>(
-                  Impl::RequestState{std::move(matcher), std::move(compiled)}));
+  impl->requests.insert(taskId,
+                        std::make_unique<Impl::RequestState>(Impl::RequestState{
+                            std::move(matcher), std::move(bitmaskBuffer)}));
 }
 
 std::vector<int32_t> GuidedDecoderManager::getNextAllowedTokenIds(
     uint32_t taskId) {
   std::vector<int32_t> allowed;
   int vocabSize = impl->vocabSize;
+  int bitmaskSize = impl->bitmaskSize;
 
-  bool found = impl->requests.modify(
+  impl->requests.modify(
       taskId, [&](std::unique_ptr<Impl::RequestState>& state) {
-        int bitmaskSize = xgrammar::GetBitmaskSize(vocabSize);
-        std::vector<int32_t> bitmask(bitmaskSize, 0);
+        std::fill(state->bitmaskBuffer.begin(), state->bitmaskBuffer.end(), 0);
 
         DLTensor tensor;
-        tensor.data = bitmask.data();
+        tensor.data = state->bitmaskBuffer.data();
         tensor.device = {kDLCPU, 0};
         tensor.ndim = 1;
         tensor.dtype = xgrammar::GetBitmaskDLType();
@@ -90,34 +109,24 @@ std::vector<int32_t> GuidedDecoderManager::getNextAllowedTokenIds(
 
         allowed.reserve(1024);
         for (int i = 0; i < vocabSize; ++i) {
-          int wordIdx = i / 32;
-          int bitIdx = i % 32;
-          if (bitmask[wordIdx] & (1 << bitIdx)) {
+          if (state->bitmaskBuffer[i / 32] & (1 << (i % 32))) {
             allowed.push_back(i);
           }
         }
       });
 
-  if (!found) return {};
   return allowed;
 }
 
-bool GuidedDecoderManager::acceptToken(uint32_t taskId, int32_t tokenId) {
-  bool result = true;
-  impl->requests.modify(taskId,
-                        [&](std::unique_ptr<Impl::RequestState>& state) {
-                          result = state->matcher.AcceptToken(tokenId);
-                        });
+TokenAcceptResult GuidedDecoderManager::acceptToken(uint32_t taskId,
+                                                    int32_t tokenId) {
+  TokenAcceptResult result;
+  impl->requests.modify(
+      taskId, [&](std::unique_ptr<Impl::RequestState>& state) {
+        result.accepted = state->matcher.AcceptToken(tokenId);
+        result.completed = result.accepted && state->matcher.IsTerminated();
+      });
   return result;
-}
-
-bool GuidedDecoderManager::isCompleted(uint32_t taskId) const {
-  bool completed = false;
-  impl->requests.modify(taskId,
-                        [&](std::unique_ptr<Impl::RequestState>& state) {
-                          completed = state->matcher.IsTerminated();
-                        });
-  return completed;
 }
 
 bool GuidedDecoderManager::hasGuidedDecoding(uint32_t taskId) const {
