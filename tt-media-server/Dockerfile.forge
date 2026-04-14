@@ -120,4 +120,4 @@ ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/pj
 # spinup inference server
 WORKDIR "${APP_DIR}"
 EXPOSE 8000
-CMD ["/bin/bash", "-c", "cd ${APP_DIR}/server/ && source venv-worker/bin/activate && source ./run_uvicorn.sh"]
+CMD ["/bin/bash", "-c", "cd ${APP_DIR}/server/ && source venv-worker/bin/activate && source ./run_uvicorn.sh --skip-venv"]
