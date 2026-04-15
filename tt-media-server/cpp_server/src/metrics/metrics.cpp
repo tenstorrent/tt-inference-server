@@ -78,6 +78,14 @@ ServerMetrics::ServerMetrics() {
                          .Add({});
   max_queue_size_->Set(static_cast<double>(tt::config::maxQueueSize()));
 
+  decoding_requests_ =
+      &prometheus::BuildGauge()
+           .Name("tt_num_decoding_requests")
+           .Help("Number of requests actively generating tokens (excludes "
+                 "queued and prefilling requests)")
+           .Register(*registry_)
+           .Add({});
+
   // ----- latency summaries (exact quantiles, 60 s sliding window) ----------
   e2e_latency_seconds_ =
       &prometheus::BuildSummary()
@@ -229,6 +237,7 @@ void ServerMetrics::handleToken(const EventToken& e) {
     double ttft =
         std::chrono::duration<double>(e.time - ctx.start_time).count();
     ttft_seconds_->Observe(ttft);
+    decoding_requests_->Increment();
   } else {
     double itl =
         std::chrono::duration<double>(e.time - ctx.prev_token_time).count();
@@ -246,6 +255,8 @@ void ServerMetrics::handleRequestCompleted(const EventRequestCompleted& e) {
 
   e2e_latency_seconds_->Observe(
       std::chrono::duration<double>(e.time - ctx.start_time).count());
+
+  if (ctx.generation_tokens > 0) decoding_requests_->Decrement();
 
   if (ctx.prompt_tokens > 0) {
     prompt_tokens_total_->Increment(ctx.prompt_tokens);

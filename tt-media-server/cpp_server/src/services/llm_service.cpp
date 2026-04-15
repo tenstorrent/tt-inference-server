@@ -402,6 +402,8 @@ void LLMService::abortRequest(uint32_t taskId) {
         static_cast<double>(pending_tasks_.load()));
   }
 
+  tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId, "abort");
+
   // Invoke the detached callback with isFinal=true so any blocking waiter
   // (e.g. processRequest's cv.wait) is unblocked.  For streaming requests the
   // controller sets done=true BEFORE calling abortRequest, so the callback's

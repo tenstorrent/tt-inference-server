@@ -29,6 +29,38 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Tokens per Second per User — derived from the median inter-token latency (1 / ITL_p50). Represents the token streaming speed each user experiences.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "green", "value": 30 }
+            ]
+          },
+          "unit": "short",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 1 },
+      "id": 2,
+      "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "1 / tt_inter_token_latency_seconds{quantile=\"0.5\"}",
+          "legendFormat": "TSU"
+        }
+      ],
+      "title": "TSU — Tokens/s/User",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "description": "Requests in flight: from submission to final token delivery (includes queued, prefilling, and decoding)",
       "fieldConfig": {
         "defaults": {
@@ -45,7 +77,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "gridPos": { "h": 3, "w": 4, "x": 8, "y": 1 },
       "id": 1,
       "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
@@ -55,41 +87,43 @@
           "legendFormat": "In Flight"
         }
       ],
-      "title": "Request Queue",
+      "title": "Requests In Flight",
       "type": "stat"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Generation tokens per second (5 min rate)",
+      "description": "Requests actively generating tokens (excludes queued and prefilling)",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null }
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 16 },
+              { "color": "red", "value": 32 }
             ]
           },
-          "unit": "short"
+          "unit": "none"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
-      "id": 3,
+      "gridPos": { "h": 3, "w": 4, "x": 8, "y": 4 },
+      "id": 5,
       "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(tt_generation_tokens_total[5m])",
-          "legendFormat": "tokens/s"
+          "expr": "tt_num_decoding_requests",
+          "legendFormat": "Decoding"
         }
       ],
-      "title": "Output Token Throughput (tok/s)",
+      "title": "Decoding Users",
       "type": "stat"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Fraction of the queue capacity currently in use (queue_size / max_queue_size)",
+      "description": "Fraction of the request queue capacity currently in use (requests_in_flight / max_queue_size)",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -107,7 +141,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "gridPos": { "h": 3, "w": 12, "x": 12, "y": 4 },
       "id": 4,
       "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
@@ -117,12 +151,12 @@
           "legendFormat": "Queue fill"
         }
       ],
-      "title": "Queue Utilisation",
+      "title": "Request Queue Utilisation",
       "type": "stat"
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
       "id": 101,
       "title": "Request Latency",
       "type": "row"
@@ -143,7 +177,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "id": 10,
       "options": { "tooltip": { "mode": "multi", "sort": "none" } },
       "targets": [
@@ -187,7 +221,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "id": 11,
       "options": { "tooltip": { "mode": "multi", "sort": "none" } },
       "targets": [
@@ -217,10 +251,40 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
       "id": 102,
       "title": "Throughput & Decode",
       "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "TSU trend — derived from 1 / ITL (median). Shows the per-user token streaming speed over time.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "dark-green", "mode": "fixed" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "short",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "id": 22,
+      "options": { "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "1 / tt_inter_token_latency_seconds{quantile=\"0.5\"}",
+          "legendFormat": "TSU (tok/s/user)"
+        }
+      ],
+      "title": "TSU — Tokens/s/User (trend)",
+      "type": "timeseries"
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -238,7 +302,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
       "id": 20,
       "options": { "tooltip": { "mode": "multi", "sort": "none" } },
       "targets": [
@@ -277,7 +341,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
       "id": 21,
       "options": { "tooltip": { "mode": "multi", "sort": "none" } },
       "targets": [
@@ -297,7 +361,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
       "id": 103,
       "title": "Requests",
       "type": "row"
@@ -319,7 +383,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
       "id": 30,
       "options": { "tooltip": { "mode": "single", "sort": "none" } },
       "targets": [
@@ -348,7 +412,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
       "id": 31,
       "options": { "tooltip": { "mode": "multi", "sort": "none" } },
       "targets": [

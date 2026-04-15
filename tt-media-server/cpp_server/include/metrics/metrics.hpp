@@ -145,6 +145,7 @@ class ServerMetrics {
   // --- gauges ---
   prometheus::Gauge* queue_depth_{nullptr};
   prometheus::Gauge* max_queue_size_{nullptr};
+  prometheus::Gauge* decoding_requests_{nullptr};
 
   // --- latency summaries (exact quantiles via CKMS, 60 s sliding window) ---
   prometheus::Summary* e2e_latency_seconds_{nullptr};
