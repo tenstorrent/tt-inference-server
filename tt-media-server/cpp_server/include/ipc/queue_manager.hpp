@@ -8,14 +8,14 @@
 #include <vector>
 
 #include "ipc/boost_ipc_cancel_queue.hpp"
+#include "ipc/boost_ipc_result_queue.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
-#include "ipc/token_ring_buffer.hpp"
 
 namespace tt::ipc {
 
 constexpr const char* TASK_QUEUE_NAME = "tt_tasks";
+constexpr const char* RESULT_QUEUE_PREFIX = "tt_results_";
 constexpr const char* CANCEL_QUEUE_PREFIX = "tt_cancels_";
-constexpr size_t RING_BUFFER_CAPACITY = 65536;
 constexpr size_t CANCEL_QUEUE_CAPACITY = 1024;
 
 /**
@@ -25,8 +25,7 @@ constexpr size_t CANCEL_QUEUE_CAPACITY = 1024;
 class QueueManager {
  public:
   std::shared_ptr<BoostIpcTaskQueue> task_queue;
-  std::vector<std::shared_ptr<TokenRingBuffer<RING_BUFFER_CAPACITY>>>
-      result_queues;
+  std::vector<std::shared_ptr<BoostIpcResultQueue>> result_queues;
   std::vector<std::shared_ptr<BoostIpcCancelQueue>> cancel_queues;
 
   explicit QueueManager(int numWorkers) {
@@ -34,11 +33,13 @@ class QueueManager {
     result_queues.reserve(numWorkers);
     cancel_queues.reserve(numWorkers);
     for (int i = 0; i < numWorkers; i++) {
-      result_queues.emplace_back(
-          std::make_shared<TokenRingBuffer<RING_BUFFER_CAPACITY>>(
-              "/tt_tokens_" + std::to_string(i), true));
+      std::string resultName =
+          std::string(RESULT_QUEUE_PREFIX) + std::to_string(i);
+      result_queues.emplace_back(std::make_shared<BoostIpcResultQueue>(
+          resultName, RESULT_QUEUE_CAPACITY));
 
-      std::string cancelName = CANCEL_QUEUE_PREFIX + std::to_string(i);
+      std::string cancelName =
+          std::string(CANCEL_QUEUE_PREFIX) + std::to_string(i);
       cancel_queues.emplace_back(std::make_shared<BoostIpcCancelQueue>(
           cancelName, CANCEL_QUEUE_CAPACITY));
     }
@@ -50,17 +51,16 @@ class QueueManager {
     BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
     for (auto& queue : result_queues) {
       queue->shutdown();
+      queue->remove();
     }
     for (size_t i = 0; i < cancel_queues.size(); i++) {
       cancel_queues[i]->remove();
     }
   }
 
-  // Delete copy constructor and assignment operator
   QueueManager(const QueueManager&) = delete;
   QueueManager& operator=(const QueueManager&) = delete;
 
-  // Allow move constructor and assignment operator
   QueueManager(QueueManager&&) = default;
   QueueManager& operator=(QueueManager&&) = default;
 };
