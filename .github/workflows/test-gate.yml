@@ -419,6 +419,11 @@ jobs:
           cd cpp_server
           ./build.sh --clang-tidy
 
+      - name: Validate OpenAPI spec against registered routes
+        run: |
+          cd cpp_server
+          python3 tools/validate_openapi.py
+
   cpp-build:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
