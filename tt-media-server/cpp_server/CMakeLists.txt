@@ -91,6 +91,9 @@ if(NOT xgrammar_POPULATED)
         "set(XGRAMMAR_ENABLE_INTERNAL_CHECK OFF)\n"
     )
     add_subdirectory(${xgrammar_SOURCE_DIR} ${xgrammar_BINARY_DIR})
+    # xgrammar uses std::result_of (deprecated in C++17, removed in C++20);
+    # suppress the warning so clang-20 + -Werror doesn't break the build.
+    target_compile_options(xgrammar PRIVATE -Wno-deprecated-declarations)
 endif()
 
 # Import fmt from tt-metal for spdlog
