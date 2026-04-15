@@ -91,9 +91,11 @@ if(NOT xgrammar_POPULATED)
         "set(XGRAMMAR_ENABLE_INTERNAL_CHECK OFF)\n"
     )
     add_subdirectory(${xgrammar_SOURCE_DIR} ${xgrammar_BINARY_DIR})
-    # xgrammar uses std::result_of (deprecated in C++17, removed in C++20);
-    # suppress the warning so clang-20 + -Werror doesn't break the build.
-    target_compile_options(xgrammar PRIVATE -Wno-deprecated-declarations)
+    # xgrammar uses std::result_of (deprecated in C++17) via std::bind;
+    # GCC 12 libstdc++ annotates it, which clang-20 + -Werror rejects.
+    # xgrammar also enables -flto=auto, but mold can't link LTO objects
+    # without the plugin; disable both for compatibility.
+    target_compile_options(xgrammar PRIVATE -Wno-error=deprecated-declarations -fno-lto)
 endif()
 
 # Import fmt from tt-metal for spdlog
