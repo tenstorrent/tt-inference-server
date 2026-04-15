@@ -1,6 +1,7 @@
 #include "runners/llm_runner.hpp"
 
 #include <chrono>
+#include <future>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -137,11 +138,23 @@ void LLMRunner::applyGuidedDecodingMasks(const std::vector<Sequence*>& seqs,
     if (isPrefill && seq->getSamplingParams().hasGuidedDecoding()) {
       guidedDecoder->initRequest(seq->taskId, seq->getSamplingParams());
     }
-    if (guidedDecoder->hasGuidedDecoding(seq->taskId)) {
+  }
+
+  std::vector<std::future<void>> futures;
+  futures.reserve(seqs.size());
+
+  for (Sequence* seq : seqs) {
+    if (!guidedDecoder->hasGuidedDecoding(seq->taskId)) continue;
+
+    futures.push_back(std::async(std::launch::async, [this, seq] {
       auto allowed = guidedDecoder->getNextAllowedTokenIds(seq->taskId);
       std::vector<int> allowedInt(allowed.begin(), allowed.end());
       seq->getMutableSamplingParams().allowed_token_ids = std::move(allowedInt);
-    }
+    }));
+  }
+
+  for (auto& f : futures) {
+    f.get();
   }
 }
 
