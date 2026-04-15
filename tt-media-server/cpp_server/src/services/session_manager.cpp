@@ -17,9 +17,9 @@ namespace tt::services {
 SessionManager::SessionManager() {
   try {
     memoryRequestQueue = std::make_unique<ipc::MemoryRequestQueue>(
-        ipc::k_memory_request_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+        tt::config::ttMemoryRequestQueueName(), ipc::MEMORY_QUEUE_CAPACITY);
     memoryResultQueue = std::make_unique<ipc::MemoryResultQueue>(
-        ipc::k_memory_result_queue_name, ipc::MEMORY_QUEUE_CAPACITY);
+        tt::config::ttMemoryResultQueueName(), ipc::MEMORY_QUEUE_CAPACITY);
     TT_LOG_INFO("[SessionManager] Created memory management IPC queues");
     drainThread = std::thread([this] { readerLoop(); });
   } catch (const std::exception& e) {

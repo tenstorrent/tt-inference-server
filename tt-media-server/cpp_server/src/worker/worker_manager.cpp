@@ -235,12 +235,12 @@ WorkerConfig makeWorkerConfigForProcess(int workerId) {
   cfg.env_vars["TT_VISIBLE_DEVICES"] =
       tt::config::visibleDevicesForWorker(workerId);
   cfg.task_queue =
-      std::make_shared<tt::ipc::BoostIpcTaskQueue>(tt::ipc::TASK_QUEUE_NAME);
+      std::make_shared<tt::ipc::BoostIpcTaskQueue>(tt::config::ttTaskQueueName());
   cfg.result_queue =
       std::make_shared<tt::ipc::TokenRingBuffer<tt::ipc::RING_BUFFER_CAPACITY>>(
           "/tt_tokens_" + std::to_string(workerId), false);
   cfg.cancel_queue = std::make_shared<tt::ipc::BoostIpcCancelQueue>(
-      std::string(tt::ipc::CANCEL_QUEUE_PREFIX) + std::to_string(workerId));
+      std::string(tt::config::ttCancelQueueName()) + std::to_string(workerId));
   cfg.worker_id = workerId;
   cfg.runner_config = tt::config::llmEngineConfig();
   return cfg;

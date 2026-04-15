@@ -4,15 +4,16 @@
 #include "services/memory_services/memory_manager.hpp"
 
 #include "utils/logger.hpp"
+#include "config/settings.hpp"
 
 namespace tt::services {
 
 MemoryManager::MemoryManager() {
   // Open existing queues created by SessionManager in the main process
   requestQueue =
-      ipc::MemoryRequestQueue::openExisting(ipc::k_memory_request_queue_name);
+      ipc::MemoryRequestQueue::openExisting(tt::config::ttMemoryRequestQueueName());
   resultQueue =
-      ipc::MemoryResultQueue::openExisting(ipc::k_memory_result_queue_name);
+      ipc::MemoryResultQueue::openExisting(tt::config::ttMemoryResultQueueName());
 
   if (!requestQueue || !resultQueue) {
     TT_LOG_ERROR(
