@@ -421,6 +421,13 @@ target_include_directories(structured_output_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(xgrammar_benchmark tests/xgrammar_benchmark.cpp)
+target_link_libraries(xgrammar_benchmark PRIVATE llm_runner_lib)
+target_include_directories(xgrammar_benchmark PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)

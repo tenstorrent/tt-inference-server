@@ -485,7 +485,12 @@ jobs:
           path: tt-media-server/cpp_server
 
       - name: Make binaries executable
-        run: chmod +x cpp_server/build/tt_media_server_cpp
+        run: |
+          chmod +x cpp_server/build/tt_media_server_cpp
+          chmod +x cpp_server/build/xgrammar_benchmark
+
+      - name: Run xgrammar microbenchmark
+        run: cpp_server/build/xgrammar_benchmark 2>&1 | tee xgrammar_benchmark_output.txt
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -622,6 +627,18 @@ jobs:
         run: |
           [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
 
+      # ── xgrammar profiling results ─────────────────────────────────
+      - name: Print xgrammar profiling results
+        if: always()
+        run: |
+          echo "============ xgrammar Microbenchmark Results ============"
+          if [ -f xgrammar_benchmark_output.txt ]; then
+            grep -E '(Vocab size|Compile|Bitmask size|===|FillNext|BitmaskTo|AcceptToken|Total per|grammar terminated)' xgrammar_benchmark_output.txt || cat xgrammar_benchmark_output.txt
+          else
+            echo "xgrammar_benchmark_output.txt not found"
+          fi
+          echo "========================================================="
+
       # ── Check thresholds ─────────────────────────────────────────────
       - name: Check all benchmark thresholds
         run: |
@@ -716,6 +733,7 @@ jobs:
             tt-media-server/vllm-bench-structured-output-json-object.json
             tt-media-server/vllm-bench-structured-output-json-schema.json
             tt-media-server/vllm-bench-mock-pipeline.json
+            tt-media-server/xgrammar_benchmark_output.txt
           retention-days: 1
           if-no-files-found: warn
 
