@@ -16,7 +16,6 @@ RAW_OUTPUT=$(cd "$REPO" && "$REPO/venv/bin/python" run.py \
   --dev-mode \
   --device-id 0,1 \
   --service-port 7000 \
-  --host-hf-cache ~/.cache/huggingface/ \
   --skip-system-sw-validation \
   --print-docker-cmd 2>&1)
 
