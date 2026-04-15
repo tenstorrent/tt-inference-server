@@ -309,13 +309,20 @@ bool LLMController::shouldDoPrefillOnDecode(const domain::LLMRequest& request,
 }
 
 void LLMController::createSession(
-    const drogon::HttpRequestPtr& /*req*/,
+    const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   if (!sessionManager) {
     callback(errorResponse(drogon::k503ServiceUnavailable,
                            "Session management not available",
                            "service_unavailable"));
     return;
+  }
+
+  // Parse optional slot_id from request body
+  std::optional<uint32_t> slotId;
+  auto json = req->getJsonObject();
+  if (json && json->isMember("slot_id")) {
+    slotId = (*json)["slot_id"].asUInt();
   }
 
   auto* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
@@ -334,7 +341,7 @@ void LLMController::createSession(
         (*cb)(errorResponse(drogon::k500InternalServerError, std::string(err),
                             "internal_error"));
       },
-      loop);
+      loop, slotId);
 }
 
 void LLMController::closeSession(
