@@ -400,6 +400,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Validate OpenAPI spec against registered routes
+        run: |
+          pip install openapi-spec-validator --quiet
+          cd cpp_server
+          python3 tools/validate_openapi.py
+
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
 
@@ -418,11 +424,6 @@ jobs:
         run: |
           cd cpp_server
           ./build.sh --clang-tidy
-
-      - name: Validate OpenAPI spec against registered routes
-        run: |
-          cd cpp_server
-          python3 tools/validate_openapi.py
 
   cpp-build:
     needs: detect-changes
