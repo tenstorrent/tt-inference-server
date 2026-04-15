@@ -1,18 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 import vllm.envs as envs
-from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
 from vllm.platforms.interface import Platform, PlatformEnum
-from vllm.sampling_params import SamplingParams
 
 if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
+    from vllm.inputs import ProcessorInputs, PromptType
     from vllm.pooling_params import PoolingParams
+    from vllm.sampling_params import SamplingParams
 else:
     ModelConfig = None
     VllmConfig = None
@@ -198,8 +200,9 @@ class TTPlatform(Platform):
         processed_inputs: ProcessorInputs,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
+        from vllm.sampling_params import SamplingParams as _SamplingParams
 
-        if isinstance(params, SamplingParams):
+        if isinstance(params, _SamplingParams):
             if params.n != 1:
                 raise ValueError(f"Currently only supporting n=1 on {cls.device_name}.")
             if params.best_of is not None:

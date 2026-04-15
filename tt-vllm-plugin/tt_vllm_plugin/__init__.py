@@ -3,9 +3,14 @@
 
 
 def register():
-    # At first we used ttnn.get_device_ids() to truly understand if the TT platform is supported.
-    # This caused the offline inference to hang and never complete, so for now we just assume that we always have TT support.
-    return "tt_vllm_plugin.platform.TTPlatform"
+    # Delegate to the vLLM fork's built-in TTPlatform rather than the plugin's
+    # own platform.py.  The fork's TTPlatform is maintained in lockstep with
+    # the fork's vLLM APIs (arg_utils, envs, scheduler, worker) and uses
+    # PlatformEnum.TT so that vLLM's built-in TT-specific defaults (e.g.
+    # disabling chunked prefill via `is_tt()` in arg_utils) are applied
+    # correctly.  The plugin's platform.py targeted an older vLLM version and
+    # references removed APIs (envs.VLLM_USE_V1) and out-of-tree workers.
+    return "vllm.platforms.tt.TTPlatform"
 
 
 def register_models():
@@ -64,5 +69,26 @@ def register_models():
             "Qwen3-Embedding model may not be available. Ensure tt-metal is in Python path."
         )
 
-    # Add additional model registrations here as needed
-    # ModelRegistry.register_model("AnotherModel", "path.to:ModelClass")
+    # Register all tt_symbiote models from the central registry in tt-metal.
+    # Adding a new symbiote model only requires updating SYMBIOTE_MODEL_REGISTRY
+    # in models/experimental/tt_symbiote/vllm/__init__.py.
+    try:
+        from models.experimental.tt_symbiote.vllm import SYMBIOTE_MODEL_REGISTRY
+
+        for arch, module_path in SYMBIOTE_MODEL_REGISTRY.items():
+            ModelRegistry.register_model(arch, module_path)
+            print(f"Registered symbiote model: {arch}")
+    except ImportError:
+        import logging
+
+        logging.warning(
+            "tt_symbiote.vllm registry not importable (tt-metal not on PYTHONPATH?). "
+            "Symbiote models will not be available."
+        )
+    except Exception as e:
+        import logging
+
+        logging.warning(
+            f"Failed to register tt_symbiote models: {e}. "
+            "Ensure tt-metal is in Python path."
+        )

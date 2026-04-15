@@ -246,6 +246,12 @@ speecht5_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/experimental/speecht5_tts",
 )
+tt_symbiote_impl = ImplSpec(
+    impl_id="tt_symbiote",
+    impl_name="tt-symbiote",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/tt_symbiote",
+)
 forge_vllm_plugin_impl = ImplSpec(
     impl_id="forge_vllm_plugin",
     impl_name="forge-vllm-plugin",
@@ -1091,6 +1097,38 @@ llm_templates = [
                 override_tt_config={
                     "l1_small_size": 4096,
                     "fabric_config": "FABRIC_1D",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
+    ),
+    # Gemma4-31B via tt_symbiote (first symbiote model in the inference server)
+    ModelSpecTemplate(
+        weights=["google/gemma-4-31B"],
+        impl=tt_symbiote_impl,
+        tt_metal_commit="91e9ce5",
+        vllm_commit="8f36910",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=4096,
+                default_impl=True,
+                vllm_args={
+                    "max_model_len": "4096",
+                    "max_num_seqs": "1",
+                    "block_size": "64",
+                    "chat-template": "vllm-tt-metal/chat_templates/gemma4.jinja",
+                },
+                override_tt_config={
+                    "enable_model_warmup": False,
+                    "trace_region_size": 200000000,
+                },
+                env_vars={
+                    "TT_SYMBIOTE_DISPATCHER": "CPU",
+                    "MESH_DEVICE": "T3K",
                 },
             ),
         ],
