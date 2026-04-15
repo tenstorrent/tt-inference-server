@@ -234,6 +234,14 @@ void SpPipelineRunner::handleRequest(
       running.size());
 
   if (isNew) {
+    if (request->getSamplingParams().hasGuidedDecoding()) {
+      TT_LOG_WARN(
+          "[SpPipelineRunner] task_id={} has response_format constraint but "
+          "SP Pipeline does not support per-step guided decoding yet. "
+          "Output may not conform to the requested schema.",
+          request->taskId);
+    }
+
     TT_LOG_DEBUG(
         "[SpPipelineRunner] handleRequest: SUBMIT taskId={}, slotId={}",
         request->taskId, slotId);

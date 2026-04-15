@@ -363,7 +363,41 @@
           "presence_penalty": { "type": "number" },
           "frequency_penalty": { "type": "number" },
           "seed": { "type": "integer" },
-          "user": { "type": "string" }
+          "user": { "type": "string" },
+          "response_format": {
+            "$ref": "#/components/schemas/ResponseFormat"
+          }
+        }
+      },
+      "ResponseFormat": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["text", "json_object", "json_schema"],
+            "description": "The format the model must output. 'text' for free-form, 'json_object' for any valid JSON, 'json_schema' for JSON matching a specific schema."
+          },
+          "json_schema": {
+            "type": "object",
+            "description": "Required when type is 'json_schema'. Specifies the JSON schema the output must conform to.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "A name for the schema (for identification)"
+              },
+              "strict": {
+                "type": "boolean",
+                "default": false,
+                "description": "Whether to enforce strict schema adherence"
+              },
+              "schema": {
+                "type": "object",
+                "description": "The JSON Schema object that the output must match"
+              }
+            },
+            "required": ["schema"]
+          }
         }
       },
       "ChatCompletionResponse": {
