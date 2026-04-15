@@ -320,6 +320,11 @@ class TrainingOptimizers(Enum):
     ADAMW = "adamw"
 
 
+class AdapterStorageBackend(Enum):
+    LOCAL = "local"
+    HF_HUB = "hf_hub"
+
+
 # Base directory for storing fine-tuned adapter outputs.
 TRAINING_STORE_ADAPTERS_DIR = "model_store/"
 

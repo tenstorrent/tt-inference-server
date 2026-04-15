@@ -35,6 +35,7 @@ class TrainingRequest(BaseRequest):
     max_steps: int = Field(default=100, ge=0)
 
     _output_model_path: str = PrivateAttr(default=None)
+    _adapter_storage = PrivateAttr(default=None)
     _start_event: Event = PrivateAttr(default=None)
     _cancel_event: Event = PrivateAttr(default=None)
     _training_metrics: list = PrivateAttr(default=None)

@@ -15,7 +15,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 from domain.completion_request import CompletionRequest
 from domain.completion_response import CompletionOutput, CompletionResult
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-from utils.adapter_resolver import AdapterInfo, resolve_adapter
+from utils.adapter_storage import AdapterInfo, get_adapter_storage
 from utils.decorators import log_execution_time
 
 
@@ -31,6 +31,7 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         self._active_adapter: AdapterInfo | None = None
         self._base_model = None
         self._tokenizer = None
+        self._adapter_storage = get_adapter_storage()
 
     async def warmup(self):
         # single chip setup
@@ -45,7 +46,7 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         self._validate_request(request)
 
         if request.adapter:
-            adapter_info = resolve_adapter(request.adapter)
+            adapter_info = self._adapter_storage.resolve_adapter(request.adapter)
             self._load_adapter(adapter_info)
         else:
             base_name = request.model or self.settings.model_weights_path

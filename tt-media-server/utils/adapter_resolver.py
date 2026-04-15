@@ -2,44 +2,26 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-import json
-import os
-from dataclasses import dataclass
+from utils.adapter_storage import AdapterInfo, AdapterStorage, get_adapter_storage
 
-from config.constants import TRAINING_STORE_ADAPTERS_DIR
-
-
-@dataclass(frozen=True)
-class AdapterInfo:
-    base_model_name: str
-    adapter_path: str
+# Re-export so existing imports continue to work.
+__all__ = ["AdapterInfo", "resolve_adapter"]
 
 
-def resolve_adapter(adapter: str) -> AdapterInfo:
-    """Resolve an adapter identifier to base model name + filesystem path.
+def resolve_adapter(
+    adapter: str, storage: AdapterStorage | None = None
+) -> AdapterInfo:
+    """Resolve an adapter identifier to base model name + loadable path.
 
     Args:
         adapter: Adapter reference in the format "{job_id}/{checkpoint_id}",
                  e.g. "110aa287-8607-4d82-814e-69492b55a4e1/ckpt-step-20".
+        storage: Optional explicit storage backend.  When *None* the default
+                 backend is derived from application settings.
 
     Returns:
-        AdapterInfo with the base model name (from adapter_config.json)
-        and the absolute adapter path on disk.
+        AdapterInfo with the base model name and the adapter path.
     """
-    adapter_path = os.path.join(TRAINING_STORE_ADAPTERS_DIR, adapter)
-
-    if not os.path.isdir(adapter_path):
-        raise FileNotFoundError(f"Adapter not found at {adapter_path}")
-
-    config_path = os.path.join(adapter_path, "adapter_config.json")
-    if not os.path.isfile(config_path):
-        raise FileNotFoundError(f"adapter_config.json not found at {adapter_path}")
-
-    with open(config_path) as f:
-        config = json.load(f)
-
-    base_model_name = config.get("base_model_name_or_path")
-    if not base_model_name:
-        raise ValueError(f"base_model_name_or_path missing in {config_path}")
-
-    return AdapterInfo(base_model_name=base_model_name, adapter_path=adapter_path)
+    if storage is None:
+        storage = get_adapter_storage()
+    return storage.resolve_adapter(adapter)
