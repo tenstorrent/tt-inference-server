@@ -7,7 +7,7 @@
 #include <memory>
 
 #include "config/runner_config.hpp"
-#include "ipc/token_ring_buffer.hpp"
+#include "ipc/result_queue.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
@@ -18,7 +18,7 @@ namespace tt::runners {
 class SpPrefillRunner : public IRunner {
  public:
   SpPrefillRunner(const tt::config::LLMConfig& config,
-                  ipc::TokenRingBuffer<65536>* resultQueue,
+                  ipc::IResultQueue* resultQueue,
                   tt::runners::llm_engine::ITaskQueue* taskQueue);
   ~SpPrefillRunner() override;
 
@@ -29,7 +29,7 @@ class SpPrefillRunner : public IRunner {
 
  private:
   tt::config::LLMConfig config;
-  ipc::TokenRingBuffer<65536>* resultQueue;
+  ipc::IResultQueue* resultQueue;
   tt::runners::llm_engine::ITaskQueue* taskQueue;
   std::unique_ptr<sp_prefill::ISpPrefillModelRunner> modelRunner;
   std::atomic<bool> stopped{false};

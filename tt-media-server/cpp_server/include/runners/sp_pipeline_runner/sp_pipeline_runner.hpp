@@ -11,7 +11,7 @@
 
 #include "config/runner_config.hpp"
 #include "domain/manage_memory.hpp"
-#include "ipc/token_ring_buffer.hpp"
+#include "ipc/result_queue.hpp"
 #include "pipeline_manager/pipeline_manager.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
@@ -24,7 +24,7 @@ namespace pm = tt_blaze::pipeline_manager;
 class SpPipelineRunner : public IRunner {
  public:
   SpPipelineRunner(const tt::config::LLMConfig& config,
-                   ipc::TokenRingBuffer<65536>* resultQueue,
+                   ipc::IResultQueue* resultQueue,
                    tt::runners::llm_engine::ITaskQueue* taskQueue);
   ~SpPipelineRunner() override;
 
@@ -49,7 +49,7 @@ class SpPipelineRunner : public IRunner {
 
   tt::config::LLMConfig config;
   std::unordered_set<int64_t> stopTokenIds;
-  ipc::TokenRingBuffer<65536>* resultQueue;
+  ipc::IResultQueue* resultQueue;
   tt::runners::llm_engine::ITaskQueue* taskQueue;
   std::unique_ptr<pm::PipelineManager> pipelineManager;
   std::unordered_map<uint32_t,
