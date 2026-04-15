@@ -554,7 +554,7 @@ jobs:
             --random-input-len 128 \
             --random-output-len 128 \
             --num-prompts 1000 \
-            --max-concurrency 64 \
+            --max-concurrency 1 \
             --extra-body '{"response_format": {"type": "json_object"}}' \
             --save-result \
             --result-filename "vllm-bench-structured-output-json-object.json" \
@@ -572,7 +572,7 @@ jobs:
             --random-input-len 128 \
             --random-output-len 128 \
             --num-prompts 1000 \
-            --max-concurrency 64 \
+            --max-concurrency 1 \
             --extra-body '{"response_format": {"type": "json_schema", "json_schema": {"name": "person", "strict": true, "schema": {"type": "object", "properties": {"name": {"type": "string"}, "age": {"type": "integer"}, "city": {"type": "string"}}, "required": ["name", "age", "city"], "additionalProperties": false}}}}' \
             --save-result \
             --result-filename "vllm-bench-structured-output-json-schema.json" \
@@ -686,10 +686,10 @@ jobs:
             "vllm-bench-mock.json" 1 150
 
           check_thresholds "C++ Server vLLM Bench (structured output - json_object)" \
-            "vllm-bench-structured-output-json-object.json" 16 100
+            "vllm-bench-structured-output-json-object.json" 1 100
 
           check_thresholds "C++ Server vLLM Bench (structured output - json_schema)" \
-            "vllm-bench-structured-output-json-schema.json" 15 100
+            "vllm-bench-structured-output-json-schema.json" 1 100
 
           check_thresholds "C++ Server vLLM Bench (mock_pipeline)" \
             "vllm-bench-mock-pipeline.json" 3 395

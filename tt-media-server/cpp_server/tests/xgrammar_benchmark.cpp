@@ -44,19 +44,19 @@ int main() {
   int bitmaskSize = xgrammar::GetBitmaskSize(vocabSize);
   printf("Bitmask size: %d int32s (%d bytes)\n", bitmaskSize, bitmaskSize * 4);
 
-  constexpr int NUM_ITERATIONS = 1000;
+  constexpr int numIterations = 1000;
 
   auto benchGrammar = [&](const char* name,
                           const xgrammar::CompiledGrammar& grammar) {
     std::vector<long> fillTimes, convertTimes, acceptTimes;
-    fillTimes.reserve(NUM_ITERATIONS);
-    convertTimes.reserve(NUM_ITERATIONS);
-    acceptTimes.reserve(NUM_ITERATIONS);
+    fillTimes.reserve(numIterations);
+    convertTimes.reserve(numIterations);
+    acceptTimes.reserve(numIterations);
 
     xgrammar::GrammarMatcher matcher(grammar);
     std::vector<int32_t> bitmask(bitmaskSize, 0);
 
-    for (int iter = 0; iter < NUM_ITERATIONS; ++iter) {
+    for (int iter = 0; iter < numIterations; ++iter) {
       std::fill(bitmask.begin(), bitmask.end(), 0);
 
       DLTensor tensor;
