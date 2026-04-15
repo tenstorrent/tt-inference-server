@@ -11,6 +11,7 @@ from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
     SDXL_VALID_IMAGE_RESOLUTIONS,
+    AdapterStorageBackend,
     AudioTasks,
     DeviceTypes,
     DeviceIds,
@@ -98,6 +99,10 @@ class Settings(BaseSettings):
     default_sample_rate: int = 16000
     audio_task: str = AudioTasks.TRANSCRIBE.value
     audio_language: str = "English"
+
+    # Adapter storage settings
+    adapter_storage_backend: str = AdapterStorageBackend.LOCAL.value
+    hf_adapter_org: str = ""
 
     # Telemetry settings
     enable_telemetry: bool = True

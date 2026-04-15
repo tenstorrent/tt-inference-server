@@ -1,25 +1,25 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-import os
 from multiprocessing import Manager
+from typing import Optional
 
 from model_services.base_job_service import BaseJobService
 from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
-    TRAINING_STORE_ADAPTERS_DIR,
     JobTypes,
     ModelRunners,
 )
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
-from typing import Optional
+from utils.adapter_storage import get_adapter_storage
 
 
 class TrainingService(BaseJobService):
     def __init__(self):
         self.settings = get_settings()
         self._manager = Manager()
+        self._adapter_storage = get_adapter_storage()
         runner_enum = ModelRunners(self.settings.model_runner)
         model_names = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner_enum, set())
         self._model_name = next(iter(model_names)).value
@@ -27,9 +27,9 @@ class TrainingService(BaseJobService):
 
     async def create_job(self, job_type: JobTypes, request: TrainingRequest) -> dict:
         request.device_type = self.settings.device
-        adapter_path = os.path.join(TRAINING_STORE_ADAPTERS_DIR, request._task_id)
-        os.makedirs(adapter_path, exist_ok=True)
+        adapter_path = self._adapter_storage.ensure_job_dir(request._task_id)
         request._output_model_path = adapter_path
+        request._adapter_storage = self._adapter_storage
         self.logger.info(f"Generated output path: {request._output_model_path}")
 
         request._start_event = self._manager.Event()
@@ -76,10 +76,4 @@ class TrainingService(BaseJobService):
         checkpoints = self.get_job_checkpoints(job_id)
         if not any(ckpt["id"] == checkpoint_id for ckpt in checkpoints):
             return None
-        result_path = self._job_manager.get_job_result_path(job_id)
-        if not result_path:
-            return None
-        checkpoint_path = os.path.join(result_path, checkpoint_id)
-        if os.path.isdir(checkpoint_path):
-            return checkpoint_path
-        return None
+        return self._adapter_storage.get_checkpoint_path(job_id, checkpoint_id)

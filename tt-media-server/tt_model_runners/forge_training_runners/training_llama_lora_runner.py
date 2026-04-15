@@ -358,25 +358,19 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
                     # Checkpoint saving
                     if global_step > 0 and global_step % request.save_interval == 0:
-                        checkpoint_path = os.path.join(
-                            request._output_model_path, f"ckpt-step-{global_step}"
-                        )
+                        checkpoint_id = f"ckpt-step-{global_step}"
                         try:
-                            self._peft_model.save_pretrained(
-                                checkpoint_path,
-                                state_dict={
-                                    k: v.cpu()
-                                    for k, v in self._peft_model.state_dict().items()
-                                },
+                            saved_ref = request._adapter_storage.save_checkpoint(
+                                self._peft_model, request._task_id, checkpoint_id
                             )
                             self.logger.info(
-                                f"Model checkpoint saved to {checkpoint_path}.",
+                                f"Model checkpoint saved to {saved_ref}.",
                                 extra={"log_type": "checkpoint", "step": global_step},
                             )
                             if request._training_checkpoints is not None:
                                 request._training_checkpoints.append(
                                     {
-                                        "id": f"ckpt-step-{global_step}",
+                                        "id": checkpoint_id,
                                         "step": global_step,
                                         "epoch": epoch,
                                         "metrics": {"train_loss": round(avg_loss, 4)},

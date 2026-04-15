@@ -7,6 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from config.constants import JobTypes
 
 
+def _make_mock_storage():
+    storage = MagicMock()
+    storage.ensure_job_dir.side_effect = lambda job_id: f"model_store/{job_id}"
+    return storage
+
+
 def _training_service_patches(mock_settings):
     """Stack the common patches needed to instantiate TrainingService."""
     from contextlib import ExitStack
@@ -28,7 +34,12 @@ def _training_service_patches(mock_settings):
     )
     stack.enter_context(patch("model_services.base_service.TTLogger"))
     stack.enter_context(patch("model_services.base_service.HuggingFaceUtils"))
-    stack.enter_context(patch("model_services.training_service.os.makedirs"))
+    stack.enter_context(
+        patch(
+            "model_services.training_service.get_adapter_storage",
+            return_value=_make_mock_storage(),
+        )
+    )
     mock_jm.return_value.create_job = AsyncMock(return_value={"job_id": "test"})
     return stack, mock_jm
 
