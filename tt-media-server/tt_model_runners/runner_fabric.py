@@ -99,7 +99,7 @@ AVAILABLE_RUNNERS = {
         fromlist=["TrainingGemmaLoraRunner"],
     ).TrainingGemmaLoraRunner(wid),
     ModelRunners.LORA_SINGLE_CHIP: lambda wid: __import__(
-        "tt_model_runners.forge_training_runners.lora_single_chip_runner",
+        "tt_model_runners.forge_runners.lora_single_chip_runner",
         fromlist=["LoraSingleChipRunner"],
     ).LoraSingleChipRunner(wid),
     ModelRunners.TRAINING_LLAMA_LORA: lambda wid: __import__(
