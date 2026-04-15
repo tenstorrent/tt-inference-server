@@ -32,6 +32,10 @@ constexpr size_t MAX_SESSIONS_COUNT = 64;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
 constexpr size_t SESSION_EVICTION_COUNT = 10;
 constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 100;
+constexpr const char* KAFKA_BROKERS = "localhost:9092";
+constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
+constexpr const char* KAFKA_GROUP_ID = "migration-workers";
+
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 10;
 
 constexpr const char* H2D_SOCKET_ID = "h2d_socket";

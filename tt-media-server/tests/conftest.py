@@ -557,6 +557,7 @@ runner_mocks = {
     },
     "tt_model_runners.embedding_runner": {
         "BGELargeENRunner": create_mock_runner_class("BGELargeENRunner"),
+        "BGEM3Runner": create_mock_runner_class("BGEM3Runner"),
         "Qwen3Embedding8BRunner": create_mock_runner_class("Qwen3Embedding8BRunner"),
     },
     "tt_model_runners.llm_test_runner": {

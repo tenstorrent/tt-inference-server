@@ -75,6 +75,7 @@ class Settings(BaseSettings):
 
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
+    weights_distribution_timeout_seconds: int = 1200
 
     # Job management settings
     max_jobs: int = 10000
@@ -199,7 +200,7 @@ class Settings(BaseSettings):
             return
 
         dm = DeviceManager()
-        devices = None
+        devices = []
         mesh = self.device_mesh_shape
 
         try:
@@ -262,6 +263,7 @@ class Settings(BaseSettings):
             "SD_3_5_FAST": (4, 8),
             "SD_3_5_BASE": (2, 4),
             "TP2": (2, 1),
+            "SP_MESH_4X32": (4, 32),
         }
         for env_var, mesh_shape in env_mesh_map.items():
             value = os.getenv(env_var)

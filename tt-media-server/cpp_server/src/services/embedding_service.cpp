@@ -24,6 +24,7 @@
 #include "services/embedding_codec.hpp"
 #include "services/embedding_service.hpp"
 #include "utils/logger.hpp"
+#include "utils/scoped_fd.hpp"
 
 namespace tt::services {
 
@@ -74,8 +75,8 @@ std::string pipeReadString(int fd) {
 struct WorkerProcess {
   int worker_id = -1;
   pid_t pid = -1;
-  int write_fd = -1;  // parent → child (request pipe write end)
-  int read_fd = -1;   // child → parent (response pipe read end)
+  tt::utils::ScopedFd write_fd;  // parent → child (request pipe write end)
+  tt::utils::ScopedFd read_fd;   // child → parent (response pipe read end)
   std::atomic<bool> is_ready{false};
   std::atomic<bool> running{false};
   std::unique_ptr<std::thread> dispatch_thread;
@@ -84,42 +85,50 @@ struct WorkerProcess {
              std::function<void(int readFd, int writeFd)> childMain) {
     worker_id = workerId;
 
-    int reqPipe[2] = {-1, -1};
-    int respPipe[2] = {-1, -1};
-    if (pipe(reqPipe) < 0 || pipe(respPipe) < 0) {
+    int reqRaw[2] = {-1, -1};
+    if (pipe(reqRaw) < 0) {
       TT_LOG_ERROR("[EmbeddingService] Failed to create pipes for worker {}",
                    workerId);
       return false;
     }
+    tt::utils::ScopedFd reqRead(reqRaw[0]), reqWrite(reqRaw[1]);
+
+    int respRaw[2] = {-1, -1};
+    if (pipe(respRaw) < 0) {
+      TT_LOG_ERROR("[EmbeddingService] Failed to create pipes for worker {}",
+                   workerId);
+      return false;  // reqRead + reqWrite auto-close
+    }
+    tt::utils::ScopedFd respRead(respRaw[0]), respWrite(respRaw[1]);
 
     pid_t child = fork();
     if (child < 0) {
       TT_LOG_ERROR("[EmbeddingService] Failed to fork worker {}", workerId);
-      return false;
+      return false;  // all 4 FDs auto-close
     }
 
     if (child == 0) {
       // Child: close parent ends, run child main.
-      close(reqPipe[1]);
-      close(respPipe[0]);
-      childMain(reqPipe[0], respPipe[1]);
+      reqWrite.reset();
+      respRead.reset();
+      childMain(reqRead.release(), respWrite.release());
       _exit(0);  // childMain is [[noreturn]], but just in case
     }
 
-    // Parent: close child ends, record FDs.
-    close(reqPipe[0]);
-    close(respPipe[1]);
+    // Parent: close child ends, transfer ownership to members.
+    reqRead.reset();
+    respWrite.reset();
     pid = child;
-    write_fd = reqPipe[1];
-    read_fd = respPipe[0];
+    write_fd = std::move(reqWrite);
+    read_fd = std::move(respRead);
     is_ready.store(true);
     running.store(true);
 
     TT_LOG_INFO(
         "[EmbeddingService] Spawned worker {} with PID {} "
         "(TT_VISIBLE_DEVICES={}) write_fd={} read_fd={}",
-        workerId, pid, tt::config::visibleDevicesForWorker(workerId), write_fd,
-        read_fd);
+        workerId, pid, tt::config::visibleDevicesForWorker(workerId),
+        write_fd.get(), read_fd.get());
     return true;
   }
 
@@ -141,7 +150,7 @@ struct WorkerProcess {
   }
 
   bool sendRequest(const std::string& json) {
-    if (!pipeWrite(write_fd, json.data(), json.size())) {
+    if (!pipeWrite(write_fd.get(), json.data(), json.size())) {
       TT_LOG_ERROR("[EmbeddingService] Worker {} pipe write failed: {}",
                    worker_id, strerror(errno));
       is_ready.store(false);
@@ -151,7 +160,7 @@ struct WorkerProcess {
   }
 
   std::vector<uint8_t> receiveResponse() {
-    auto buf = pipeReadBinary(read_fd);
+    auto buf = pipeReadBinary(read_fd.get());
     if (buf.empty()) {
       TT_LOG_ERROR("[EmbeddingService] Worker {} response read failed",
                    worker_id);
@@ -166,10 +175,8 @@ struct WorkerProcess {
       waitpid(pid, nullptr, 0);
       TT_LOG_INFO("[EmbeddingService] Worker {} terminated", worker_id);
     }
-    if (write_fd >= 0) close(write_fd);
-    if (read_fd >= 0) close(read_fd);
-    write_fd = -1;
-    read_fd = -1;
+    write_fd.reset();
+    read_fd.reset();
   }
 };
 

@@ -7,7 +7,7 @@
 #include "config/runner_config.hpp"
 #include "llm_runner/sampling_params.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 using Config = tt::config::LLMConfig;
 
@@ -66,6 +66,7 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&status), sizeof(status));
   os.write(reinterpret_cast<const char*>(&blockSize), sizeof(blockSize));
   os.write(reinterpret_cast<const char*>(&kvCacheSlot), sizeof(kvCacheSlot));
+  os.write(reinterpret_cast<const char*>(&continuation), sizeof(continuation));
   samplingParams->serialize(os);
 }
 
@@ -98,8 +99,9 @@ Sequence Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(&seq.status), sizeof(seq.status));
   is.read(reinterpret_cast<char*>(&seq.blockSize), sizeof(seq.blockSize));
   is.read(reinterpret_cast<char*>(&seq.kvCacheSlot), sizeof(seq.kvCacheSlot));
+  is.read(reinterpret_cast<char*>(&seq.continuation), sizeof(seq.continuation));
   seq.samplingParams = SamplingParams::deserialize(is);
   return seq;
 }
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

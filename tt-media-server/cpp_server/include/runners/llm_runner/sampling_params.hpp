@@ -5,7 +5,7 @@
 #include <optional>
 #include <vector>
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 /**
  * Sampling parameters aligned with OpenAI-compatible completion request.
@@ -40,4 +40,4 @@ struct SamplingParams {
   static std::unique_ptr<SamplingParams> deserialize(std::istream& is);
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

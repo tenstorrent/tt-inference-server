@@ -5,7 +5,7 @@
 
 #include "runners/llm_runner/scheduler.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 /**
  * Keeps the device at full occupancy (max_in_flight_count) whenever possible.
@@ -38,4 +38,4 @@ class MaxOccupancyScheduler : public Scheduler {
   }
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

@@ -11,10 +11,10 @@ from multiprocessing import Event
 
 class TrainingRequest(BaseRequest):
     dataset_loader: str = DatasetLoaders.SST2.value
-    dataset_max_sequence_length: int = 32
+    dataset_max_sequence_length: int = 64
 
     batch_size: int = 4
-    learning_rate: float = 6e-5
+    learning_rate: float = 2e-5
     num_epochs: int = 1
     val_steps_freq: int = 50
     steps_freq: int = 10
@@ -32,6 +32,7 @@ class TrainingRequest(BaseRequest):
     optimizer: str = TrainingOptimizers.ADAMW.value
 
     save_interval: int = Field(default=100, gt=0)
+    max_steps: int = Field(default=100, ge=0)
 
     _output_model_path: str = PrivateAttr(default=None)
     _start_event: Event = PrivateAttr(default=None)

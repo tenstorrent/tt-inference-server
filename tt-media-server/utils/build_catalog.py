@@ -5,11 +5,10 @@ import math
 
 from config.constants import (
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
-    TRAINING_RUNNER_SUPPORTED_DEVICES,
+    DeviceTypes,
     ModelDisplayNames,
     ModelRunners,
     SupportedModels,
-    TrainingMeshShapes,
     TrainingOptimizers,
     TrainingTrainers,
 )
@@ -52,40 +51,41 @@ def _build_models_catalog(model_runner: str):
     return models
 
 
-def _build_clusters_catalog(model_runner: str):
+def _build_clusters_catalog(device: str, device_mesh_shape: tuple, num_workers: int):
     try:
-        runner_enum = ModelRunners(model_runner)
+        dt = DeviceTypes(device)
     except ValueError:
         return []
-    clusters = []
-    for dt in TRAINING_RUNNER_SUPPORTED_DEVICES.get(runner_enum, set()):
-        mesh_shape = list(TrainingMeshShapes[dt.name].value)
-        total_devices = math.prod(mesh_shape)
-        clusters.append(
-            {
-                "id": dt.value,
-                "display_name": dt.value.upper(),
-                "supported": True,
-                "partition": None,
+    mesh_shape = list(device_mesh_shape)
+    chips_per_worker = math.prod(mesh_shape)
+    total_devices = num_workers * chips_per_worker
+    return [
+        {
+            "id": dt.value,
+            "display_name": dt.value.upper(),
+            "supported": True,
+            "partition": None,
+            "mesh_shape": mesh_shape,
+            "num_workers": num_workers,
+            "topology": {
                 "mesh_shape": mesh_shape,
-                "topology": {
-                    "mesh_shape": mesh_shape,
-                    "nodes": total_devices,
-                    "total_devices": total_devices,
-                },
-            }
-        )
-    return clusters
+                "nodes": num_workers,
+                "total_devices": total_devices,
+            },
+        }
+    ]
 
 
-def build_training_catalog(model_runner: str):
+def build_training_catalog(
+    model_runner: str, device: str, device_mesh_shape: tuple, num_workers: int
+):
     models = _build_models_catalog(model_runner)
-    clusters = _build_clusters_catalog(model_runner)
+    clusters = _build_clusters_catalog(device, device_mesh_shape, num_workers)
 
     datasets = [
         {
             "id": loader.value,
-            "display_name": loader.value.upper(),
+            "display_name": loader.value,
             "supported": True,
         }
         for loader in AVAILABLE_DATASET_LOADERS
