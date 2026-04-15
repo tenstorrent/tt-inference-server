@@ -25,6 +25,10 @@
       "description": "OpenAI-compatible chat completion endpoints"
     },
     {
+      "name": "Embeddings",
+      "description": "OpenAI-compatible text embedding endpoints"
+    },
+    {
       "name": "Sessions",
       "description": "Session management for slot assignments"
     },
@@ -78,6 +82,49 @@
           },
           "401": {
             "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Model not ready",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/embeddings": {
+      "post": {
+        "tags": ["Embeddings"],
+        "summary": "Create embeddings",
+        "description": "Creates an embedding vector for the provided input text. OpenAI-compatible endpoint.",
+        "operationId": "createEmbedding",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/EmbeddingRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Embedding created successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EmbeddingResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" }
@@ -535,6 +582,57 @@
           "is_ready": {
             "type": "boolean",
             "description": "Whether worker is ready"
+          }
+        }
+      },
+      "EmbeddingRequest": {
+        "type": "object",
+        "required": ["model", "input"],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model identifier to use for embedding",
+            "example": "text-embedding-ada-002"
+          },
+          "input": {
+            "type": "string",
+            "description": "Text to embed"
+          },
+          "user": {
+            "type": "string",
+            "description": "Optional user identifier"
+          }
+        }
+      },
+      "EmbeddingResponse": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string",
+            "enum": ["list"]
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "object": { "type": "string", "enum": ["embedding"] },
+                "index": { "type": "integer" },
+                "embedding": {
+                  "type": "array",
+                  "items": { "type": "number" },
+                  "description": "Embedding vector"
+                }
+              }
+            }
+          },
+          "model": { "type": "string" },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "prompt_tokens": { "type": "integer" },
+              "total_tokens": { "type": "integer" }
+            }
           }
         }
       },
