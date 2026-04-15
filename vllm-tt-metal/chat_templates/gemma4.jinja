@@ -1,0 +1,4 @@
+{% for message in messages %}{% set role = 'model' if message['role'] == 'assistant' else message['role'] %}<|turn>{{ role }}
+{{ message['content'] }}<turn|>
+{% endfor %}{% if add_generation_prompt %}<|turn>model
+{% endif %}

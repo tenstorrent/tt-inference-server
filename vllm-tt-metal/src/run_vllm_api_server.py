@@ -350,6 +350,22 @@ def register_tt_models(impl_id=None):
     """
     impl_id = impl_id or "tt_transformers"
 
+    # tt_symbiote models register through a central registry in tt-metal and
+    # bypass the tt_transformers paths entirely.
+    if impl_id == "tt_symbiote":
+        try:
+            from models.experimental.tt_symbiote.vllm import SYMBIOTE_MODEL_REGISTRY
+
+            for arch, module_path in SYMBIOTE_MODEL_REGISTRY.items():
+                ModelRegistry.register_model(arch, module_path)
+                logger.info(f"Registered symbiote model: {arch}")
+        except ImportError:
+            logger.warning(
+                "tt_symbiote.vllm registry not importable (tt-metal not on PYTHONPATH?). "
+                "Symbiote models will not be available."
+            )
+        return
+
     # Llama path selection based on impl_id
     if impl_id == "llama3_70b_galaxy":
         os.environ["TT_LLAMA_TEXT_VER"] = "llama3_70b_galaxy"
@@ -657,6 +673,33 @@ def format_vllm_serve_command(argv) -> str:
     return " \\\n  ".join(command_lines)
 
 
+_VLLM_FILE_ARGS = frozenset({"chat-template", "chat_template"})
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+def _resolve_vllm_file_args(vllm_args: dict) -> dict:
+    """Resolve relative file-path vllm_args against the project root.
+
+    vLLM validates paths like --chat-template against os.getcwd(), which may
+    differ from the tt-inference-server project root.  This converts any
+    known file-path args that are relative into absolute paths so the
+    validation always succeeds regardless of the working directory.
+    """
+    resolved = dict(vllm_args)
+    for key in _VLLM_FILE_ARGS:
+        if key not in resolved:
+            continue
+        val = resolved[key]
+        path = Path(val)
+        if path.is_absolute():
+            continue
+        candidate = _PROJECT_ROOT / path
+        if candidate.is_file():
+            resolved[key] = str(candidate)
+            logger.info("Resolved vllm_arg %s to absolute path: %s", key, resolved[key])
+    return resolved
+
+
 def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
     # runpy uses sys.argv, rebuild it with the merged vLLM args.
     vllm_argv = [sys.argv[0]]
@@ -757,6 +800,7 @@ def main():
     set_runtime_env_vars(model_spec)
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
+    default_vllm_args = _resolve_vllm_file_args(default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
 
     # Step 5: Start trace capture if needed

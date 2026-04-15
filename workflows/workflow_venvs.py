@@ -259,7 +259,34 @@ def setup_benchmarks_vllm(
         == 0
     )
 
+    # Gemma4 and other newer HF models require transformers>=5.0.0 for their
+    # tokenizer (extra_special_tokens format changed from list to dict).
+    # The vllm==0.13.0 pin pulls an older transformers; upgrade it so the
+    # benchmark client can load the tokenizer.
+    if setup_succeeded and _model_needs_transformers_v5(model_spec):
+        logger.info(
+            "Model %s requires transformers>=5.0.0; upgrading in benchmark venv",
+            model_spec.model_name,
+        )
+        setup_succeeded = (
+            run_command(
+                f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} 'transformers>=5.0.0'",
+                logger=logger,
+            )
+            == 0
+        )
+
     return setup_succeeded
+
+
+def _model_needs_transformers_v5(model_spec: "ModelSpec") -> bool:  # noqa: F821
+    """Return True if the model's tokenizer needs transformers>=5.0.0."""
+    if model_spec.impl.impl_id == "tt_symbiote":
+        return True
+    hf_repo = (model_spec.hf_model_repo or "").lower()
+    if "gemma-4" in hf_repo:
+        return True
+    return False
 
 
 def setup_benchmarks_video(
