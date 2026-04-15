@@ -86,6 +86,12 @@ async def chat_completions(
         else settings.model_weights_path
     )
 
+    logger.info(
+        f"Chat request: temp={chat_request.temperature}, top_p={chat_request.top_p}, "
+        f"top_k={chat_request.top_k}, rep_penalty={chat_request.repetition_penalty}, "
+        f"max_tokens={chat_request.max_tokens}, stream={chat_request.stream}"
+    )
+
     # Convert chat messages to a prompt using the model's chat template
     messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
     prompt = _apply_chat_template(messages)
