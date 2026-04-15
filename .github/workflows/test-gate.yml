@@ -625,13 +625,17 @@ jobs:
       # ── Check thresholds ─────────────────────────────────────────────
       - name: Check all benchmark thresholds
         run: |
-          FAIL=0
+          BENCH_THRESHOLD_ERRORS=""
+
+          append_threshold_error() {
+            BENCH_THRESHOLD_ERRORS="${BENCH_THRESHOLD_ERRORS:+$BENCH_THRESHOLD_ERRORS$'\n'}$1"
+          }
 
           check_thresholds() {
             local LABEL="$1" FILE="$2" TPOT_LIMIT="$3" TTFT_LIMIT="$4"
             if [ ! -f "$FILE" ]; then
               echo "❌ [$LABEL] Result file not found: $FILE"
-              FAIL=1
+              append_threshold_error "[$LABEL] Result file not found: $FILE"
               return
             fi
 
@@ -643,19 +647,19 @@ jobs:
 
             if [ "$COMPLETED" -eq 0 ] && [ "$FAILED_REQ" -gt 0 ]; then
               echo "❌ [$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
-              FAIL=1
+              append_threshold_error "[$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
             fi
 
             if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
               if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_LIMIT else 1)"; then
                 echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
-                FAIL=1
+                append_threshold_error "[$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
               fi
             fi
             if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
               if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_LIMIT else 1)"; then
                 echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
-                FAIL=1
+                append_threshold_error "[$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
               fi
             fi
 
@@ -684,7 +688,16 @@ jobs:
           check_thresholds "C++ Server vLLM Bench (mock_pipeline)" \
             "vllm-bench-mock-pipeline.json" 3 395
 
-          echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
+          if [ -n "$BENCH_THRESHOLD_ERRORS" ]; then
+            echo "BENCH_FAIL=1" >> $GITHUB_ENV
+            {
+              echo "BENCH_THRESHOLD_ERRORS<<BENCHTHRESHOLDEOF"
+              printf '%s\n' "$BENCH_THRESHOLD_ERRORS"
+              echo "BENCHTHRESHOLDEOF"
+            } >> $GITHUB_ENV
+          else
+            echo "BENCH_FAIL=0" >> $GITHUB_ENV
+          fi
 
       # ── Artifacts & logs ─────────────────────────────────────────────
       - name: Show server logs
@@ -721,7 +734,34 @@ jobs:
           if-no-files-found: warn
 
       - name: Check benchmark result
-        run: exit ${{ env.BENCH_FAIL }}
+        run: |
+          if [ "${BENCH_FAIL:-0}" != "1" ]; then
+            exit 0
+          fi
+          echo ""
+          echo "Threshold failures (see **Check all benchmark thresholds** for full context):"
+          echo ""
+          if [ -n "${BENCH_THRESHOLD_ERRORS:-}" ]; then
+            {
+              echo "## Benchmark threshold failure"
+              echo ""
+              echo "Same messages as in **Check all benchmark thresholds** (❌ lines):"
+              echo ""
+              echo '```'
+              printf '%s\n' "$BENCH_THRESHOLD_ERRORS"
+              echo '```'
+              echo ""
+            } >> $GITHUB_STEP_SUMMARY
+            printf '%s\n' "$BENCH_THRESHOLD_ERRORS"
+            echo ""
+            while IFS= read -r line || [ -n "$line" ]; do
+              [ -z "$line" ] && continue
+              echo "::error title=Benchmark threshold failed::$line"
+            done <<< "$BENCH_THRESHOLD_ERRORS"
+          else
+            echo "::error::Benchmark thresholds failed (no detail captured; see **Check all benchmark thresholds** log)."
+          fi
+          exit 1
 
   cpp-server-prefill-decode-split:
     needs: [detect-changes, cpp-build]
@@ -829,13 +869,17 @@ jobs:
 
       - name: Check benchmark thresholds
         run: |
-          FAIL=0
+          BENCH_THRESHOLD_ERRORS=""
+
+          append_threshold_error() {
+            BENCH_THRESHOLD_ERRORS="${BENCH_THRESHOLD_ERRORS:+$BENCH_THRESHOLD_ERRORS$'\n'}$1"
+          }
 
           check_thresholds() {
             local LABEL="$1" FILE="$2" TPOT_LIMIT="$3" TTFT_LIMIT="$4"
             if [ ! -f "$FILE" ]; then
               echo "❌ [$LABEL] Result file not found: $FILE"
-              FAIL=1
+              append_threshold_error "[$LABEL] Result file not found: $FILE"
               return
             fi
 
@@ -847,19 +891,19 @@ jobs:
 
             if [ "$COMPLETED" -eq 0 ] && [ "$FAILED_REQ" -gt 0 ]; then
               echo "❌ [$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
-              FAIL=1
+              append_threshold_error "[$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
             fi
 
             if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
               if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_LIMIT else 1)"; then
                 echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
-                FAIL=1
+                append_threshold_error "[$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
               fi
             fi
             if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
               if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_LIMIT else 1)"; then
                 echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
-                FAIL=1
+                append_threshold_error "[$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
               fi
             fi
 
@@ -879,7 +923,16 @@ jobs:
           check_thresholds "C++ Server Prefill/Decode Split" \
             "${{ env.RESULT_FILE }}" 10 650
 
-          echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
+          if [ -n "$BENCH_THRESHOLD_ERRORS" ]; then
+            echo "BENCH_FAIL=1" >> $GITHUB_ENV
+            {
+              echo "BENCH_THRESHOLD_ERRORS<<BENCHTHRESHOLDEOF"
+              printf '%s\n' "$BENCH_THRESHOLD_ERRORS"
+              echo "BENCHTHRESHOLDEOF"
+            } >> $GITHUB_ENV
+          else
+            echo "BENCH_FAIL=0" >> $GITHUB_ENV
+          fi
 
       - name: Stop servers
         if: always()
@@ -925,7 +978,34 @@ jobs:
           if-no-files-found: warn
 
       - name: Check benchmark result
-        run: exit ${{ env.BENCH_FAIL }}
+        run: |
+          if [ "${BENCH_FAIL:-0}" != "1" ]; then
+            exit 0
+          fi
+          echo ""
+          echo "Threshold failures (see **Check benchmark thresholds** for full context):"
+          echo ""
+          if [ -n "${BENCH_THRESHOLD_ERRORS:-}" ]; then
+            {
+              echo "## Benchmark threshold failure"
+              echo ""
+              echo "Same messages as in **Check benchmark thresholds** (❌ lines):"
+              echo ""
+              echo '```'
+              printf '%s\n' "$BENCH_THRESHOLD_ERRORS"
+              echo '```'
+              echo ""
+            } >> $GITHUB_STEP_SUMMARY
+            printf '%s\n' "$BENCH_THRESHOLD_ERRORS"
+            echo ""
+            while IFS= read -r line || [ -n "$line" ]; do
+              [ -z "$line" ] && continue
+              echo "::error title=Benchmark threshold failed::$line"
+            done <<< "$BENCH_THRESHOLD_ERRORS"
+          else
+            echo "::error::Benchmark thresholds failed (no detail captured; see **Check benchmark thresholds** log)."
+          fi
+          exit 1
 
   forge-runner-changes:
     name: Detect Forge Runner Changes
