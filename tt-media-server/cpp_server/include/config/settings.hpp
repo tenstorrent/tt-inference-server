@@ -140,6 +140,29 @@ unsigned pmConnectTimeoutMs();
  * defaults::PM_MAX_USERS. */
 size_t pmMaxUsers();
 
+/** Task queue name from TT_TASK_QUEUE. Default: defaults::TT_TASK_QUEUE. */
+std::string ttTaskQueueName();
+
+/** Result queue name from TT_RESULT_QUEUE. Default: defaults::TT_RESULT_QUEUE.
+ */
+std::string ttResultQueueName();
+
+/** Cancel queue name from TT_CANCEL_QUEUE. Default: defaults::TT_CANCEL_QUEUE.
+ */
+std::string ttCancelQueueName();
+
+/** Memory request queue name from TT_MEMORY_REQUEST_QUEUE. Default:
+ * defaults::TT_MEMORY_REQUEST_QUEUE. */
+std::string ttMemoryRequestQueueName();
+
+/** Warmup signals queue name from TT_WARMUP_SIGNALS_QUEUE. Default:
+ * defaults::TT_WARMUP_SIGNALS_QUEUE. */
+std::string ttWarmupSignalsQueueName();
+
+/** Memory result queue name from TT_MEMORY_RESULT_QUEUE. Default:
+ * defaults::TT_MEMORY_RESULT_QUEUE. */
+std::string ttMemoryResultQueueName();
+
 /** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
  * defaults::USE_DEEPSEEK_MD_FORMAT. */
 bool useDeepseekMdFormat();
