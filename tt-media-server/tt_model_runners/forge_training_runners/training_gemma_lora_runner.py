@@ -21,20 +21,11 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
-from config.constants import (
-    TrainingOptimizers,
-    SupportedModels,
+from config.constants import SupportedModels
+from tt_model_runners.forge_training_runners.torch_utils import (
+    OPTIMIZER_MAP,
+    resolve_dtype,
 )
-
-
-OPTIMIZER_MAP = {
-    TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
-}
-
-DTYPE_MAP = {
-    "torch.bfloat16": torch.bfloat16,
-    "torch.float32": torch.float32,
-}
 
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
@@ -128,11 +119,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         self._peft_model = get_peft_model(self.hf_model, lora_config)
 
-        if request.dtype not in DTYPE_MAP:
-            raise ValueError(
-                f"Unsupported dtype '{request.dtype}', must be one of {list(DTYPE_MAP.keys())}"
-            )
-        self._peft_model.to(DTYPE_MAP[request.dtype])
+        self._peft_model.to(resolve_dtype(request.dtype))
         self._peft_model.to(self.device)
 
         # use torch compile
