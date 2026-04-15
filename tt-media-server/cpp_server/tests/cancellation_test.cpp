@@ -275,8 +275,7 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   auto taskQueue = makeQueue();
   InMemoryCancelQueue cancelQueue;
 
-  std::string rbName =
-      "test_cancel_rb_" + std::to_string(getpid()) + "_before";
+  std::string rbName = "test_cancel_rb_" + std::to_string(getpid()) + "_before";
   tt::ipc::BoostIpcResultQueue resultQueue(rbName,
                                            tt::ipc::RESULT_QUEUE_CAPACITY);
 

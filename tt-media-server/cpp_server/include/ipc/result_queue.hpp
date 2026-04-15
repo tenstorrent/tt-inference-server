@@ -31,7 +31,8 @@ struct SharedToken {
 
   static SharedToken deserialize(std::istream& is) {
     SharedToken token{};
-    is.read(reinterpret_cast<char*>(&token.token_index), sizeof(token.token_index));
+    is.read(reinterpret_cast<char*>(&token.token_index),
+            sizeof(token.token_index));
     is.read(reinterpret_cast<char*>(&token.flags), sizeof(token.flags));
     is.read(reinterpret_cast<char*>(&token.token_id), sizeof(token.token_id));
     is.read(reinterpret_cast<char*>(&token.task_id), sizeof(token.task_id));
