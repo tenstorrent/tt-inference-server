@@ -22,10 +22,16 @@
 
 namespace tt::services {
 
-class SessionInFlightException : public std::runtime_error {
+// Base exception for session errors that should return 429 (rate limit)
+class SessionRateLimitException : public std::runtime_error {
+ public:
+  using std::runtime_error::runtime_error;
+};
+
+class SessionInFlightException : public SessionRateLimitException {
  public:
   SessionInFlightException()
-      : std::runtime_error(
+      : SessionRateLimitException(
             "Session already has a request in flight. Multiple concurrent "
             "requests per session are not supported.") {}
 };

@@ -208,9 +208,6 @@ void SessionManager::evictOldSessions() {
                heap.size());
   size_t evicted = 0;
   for (const auto& [_, sessionId] : heap) {
-    if (evicted >= evictionCount) {
-      break;
-    }
     auto session = sessions.take(sessionId);
     if (!session.has_value()) {
       TT_LOG_DEBUG(

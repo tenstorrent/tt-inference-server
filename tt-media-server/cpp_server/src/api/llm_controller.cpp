@@ -45,7 +45,7 @@ LLMController::LLMController() {
 void LLMController::resolveSession(
     std::shared_ptr<domain::LLMRequest> req, trantor::EventLoop* loop,
     std::function<void(SessionInfo)> onResolved,
-    std::function<void(std::string_view)> onError) const {
+    std::function<void(const SessionError&)> onError) const {
   SessionInfo info;
 
   if (req->sessionId.has_value() && sessionManager) {
@@ -53,6 +53,7 @@ void LLMController::resolveSession(
       auto slotId = sessionManager->acquireSessionSlot(req->sessionId.value());
       if (slotId != domain::INVALID_SLOT_ID) {
         req->slotId = slotId;
+        req->continuation = true;
         info.validSessionFound = true;
         onResolved(info);
         return;
@@ -61,10 +62,9 @@ void LLMController::resolveSession(
             "Received request with non existing session, resetting session id");
         req->sessionId.reset();
       }
-    } catch (const services::SessionInFlightException& e) {
-      TT_LOG_WARN("[LLMController] Session {} already in flight: {}",
-                  req->sessionId.value(), e.what());
-      onError(e.what());
+    } catch (const services::SessionRateLimitException& e) {
+      TT_LOG_WARN("[LLMController] Session rate limit error: {}", e.what());
+      onError({SessionErrorType::RATE_LIMIT, e.what()});
       return;
     }
   }
@@ -77,7 +77,10 @@ void LLMController::resolveSession(
           SessionInfo info;
           onResolved(info);
         },
-        onError, loop);
+        [onError](std::string_view err) {
+          onError({SessionErrorType::ALLOCATION_FAIL, std::string(err)});
+        },
+        loop);
     return;
   }
 
@@ -186,17 +189,17 @@ void LLMController::chatCompletions(
                                 "rate_limit_exceeded"));
           }
         },
-        [cb](std::string_view err) {
-          TT_LOG_ERROR("[LLMController] Session resolution failed: {}", err);
-          // Check if this is a session-in-flight error
-          std::string errStr(err);
-          if (errStr.find("already has a request in flight") != std::string::npos) {
-            (*cb)(errorResponse(drogon::k429TooManyRequests, errStr,
+        [cb](const SessionError& err) {
+          TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
+                       err.message);
+          if (err.type == SessionErrorType::RATE_LIMIT) {
+            (*cb)(errorResponse(drogon::k429TooManyRequests, err.message,
                                 "rate_limit_exceeded"));
           } else {
             (*cb)(errorResponse(
                 drogon::k503ServiceUnavailable,
-                std::string("Failed to allocate memory resources: ") + errStr,
+                std::string("Failed to allocate memory resources: ") +
+                    err.message,
                 "service_unavailable"));
           }
         });
@@ -277,19 +280,18 @@ void LLMController::handleStreaming(
 
         (*cb)(writer->buildResponse());
       },
-      [cb](std::string_view err) {
-        TT_LOG_ERROR("[LLMController] Session resolution failed: {}", err);
-        // Check if this is a session-in-flight error
-        std::string errStr(err);
-        if (errStr.find("already has a request in flight") != std::string::npos) {
-          (*cb)(errorResponse(drogon::k429TooManyRequests, errStr,
+      [cb](const SessionError& err) {
+        TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
+                     err.message);
+        if (err.type == SessionErrorType::RATE_LIMIT) {
+          (*cb)(errorResponse(drogon::k429TooManyRequests, err.message,
                               "rate_limit_exceeded"));
         } else {
-          (*cb)(
-              errorResponse(drogon::k503ServiceUnavailable,
-                            std::string("Failed to allocate memory resources: ") +
-                                errStr,
-                            "service_unavailable"));
+          (*cb)(errorResponse(
+              drogon::k503ServiceUnavailable,
+              std::string("Failed to allocate memory resources: ") +
+                  err.message,
+              "service_unavailable"));
         }
       });
 }
