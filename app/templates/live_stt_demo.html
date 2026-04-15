@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live STT Demo - Whisper on TTNN</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: #0a0a0f;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+        h1 { font-size: 1.5rem; margin-bottom: 8px; }
+        .subtitle { color: #a0a0b0; font-size: 0.9rem; margin-bottom: 30px; }
+        
+        .mic-btn {
+            width: 80px; height: 80px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+            color: white;
+            font-size: 32px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 20px rgba(139, 92, 246, 0.3);
+        }
+        .mic-btn:hover { transform: scale(1.05); }
+        .mic-btn.recording {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            animation: pulse-glow 1.5s infinite;
+        }
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 4px 20px rgba(239, 68, 68, 0.3); }
+            50% { box-shadow: 0 4px 40px rgba(239, 68, 68, 0.6); }
+        }
+        
+        .status { margin: 16px 0; color: #a0a0b0; font-size: 0.85rem; }
+        
+        .transcript-box {
+            width: 100%;
+            max-width: 700px;
+            margin-top: 30px;
+            background: #1a1a24;
+            border: 1px solid #2a2a3a;
+            border-radius: 12px;
+            padding: 24px;
+            min-height: 200px;
+            font-size: 1.1rem;
+            line-height: 1.8;
+        }
+        .transcript-box .label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #8b5cf6;
+            margin-bottom: 12px;
+        }
+        .transcript-text { color: #fff; }
+        .transcript-text .cursor {
+            opacity: 0.3;
+            animation: blink 1s infinite;
+        }
+        @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+        .placeholder { color: #606070; font-style: italic; }
+        
+        .stats {
+            width: 100%;
+            max-width: 700px;
+            margin-top: 16px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .stat {
+            background: #1a1a24;
+            border: 1px solid #2a2a3a;
+            border-radius: 8px;
+            padding: 12px 16px;
+            flex: 1;
+            min-width: 150px;
+        }
+        .stat .stat-label { font-size: 0.7rem; color: #a0a0b0; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat .stat-value { font-size: 1.2rem; font-weight: 600; color: #8b5cf6; margin-top: 4px; }
+        
+        .log-box {
+            width: 100%;
+            max-width: 700px;
+            margin-top: 16px;
+            background: #12121a;
+            border: 1px solid #2a2a3a;
+            border-radius: 8px;
+            padding: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: #606070;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎤 Live STT Demo</h1>
+    <div class="subtitle">Whisper distil-large-v3 on TTNN — Real-time Streaming Transcription</div>
+    
+    <button class="mic-btn" id="micBtn" onclick="toggleMic()">🎤</button>
+    <div class="status" id="status">Click mic to start</div>
+    
+    <div class="transcript-box">
+        <div class="label">Live Transcript</div>
+        <div class="transcript-text" id="transcript">
+            <span class="placeholder">Your words will appear here as you speak...</span>
+        </div>
+    </div>
+    
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-label">Audio Duration</div>
+            <div class="stat-value" id="statDuration">0.0s</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Whisper Latency</div>
+            <div class="stat-value" id="statLatency">—</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Updates</div>
+            <div class="stat-value" id="statUpdates">0</div>
+        </div>
+    </div>
+    
+    <div class="log-box" id="logBox"></div>
+
+    <script>
+        let isRecording = false;
+        let audioContext = null;
+        let micStream = null;
+        let scriptNode = null;
+        let mediaSource = null;
+        let audioChunks = [];
+        let ws = null;
+        let transcribeTimer = null;
+        let isTranscribing = false;
+        let updateCount = 0;
+        
+        const INTERVAL = 2000;
+        
+        function log(msg) {
+            const box = document.getElementById('logBox');
+            const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+            box.innerHTML += `<div>[${time}] ${msg}</div>`;
+            box.scrollTop = box.scrollHeight;
+            console.log('[LiveSTT]', msg);
+        }
+        
+        function float32ToPCM16(float32Array) {
+            const pcm16 = new Int16Array(float32Array.length);
+            for (let i = 0; i < float32Array.length; i++) {
+                const s = Math.max(-1, Math.min(1, float32Array[i]));
+                pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+            return pcm16;
+        }
+        
+        async function getCombinedPCM16() {
+            if (audioChunks.length === 0) return null;
+            
+            const totalLength = audioChunks.reduce((sum, arr) => sum + arr.length, 0);
+            const combined = new Float32Array(totalLength);
+            let offset = 0;
+            for (const chunk of audioChunks) {
+                combined.set(chunk, offset);
+                offset += chunk.length;
+            }
+            
+            // Resample to 16kHz using OfflineAudioContext
+            const inputRate = audioContext.sampleRate;
+            if (inputRate !== 16000) {
+                const duration = combined.length / inputRate;
+                const offlineCtx = new OfflineAudioContext(1, Math.ceil(duration * 16000), 16000);
+                const buffer = offlineCtx.createBuffer(1, combined.length, inputRate);
+                buffer.getChannelData(0).set(combined);
+                const source = offlineCtx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(offlineCtx.destination);
+                source.start(0);
+                const rendered = await offlineCtx.startRendering();
+                return float32ToPCM16(rendered.getChannelData(0));
+            }
+            return float32ToPCM16(combined);
+        }
+        
+        async function connectWebSocket() {
+            return new Promise((resolve, reject) => {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const url = `${protocol}//${window.location.host}/ws/stt-live`;
+                log('Connecting to ' + url);
+                
+                ws = new WebSocket(url);
+                ws.onopen = () => { log('WebSocket connected'); resolve(); };
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleMessage(data);
+                };
+                ws.onerror = (e) => { log('WebSocket error'); reject(e); };
+                ws.onclose = () => { log('WebSocket closed'); ws = null; };
+            });
+        }
+        
+        function handleMessage(data) {
+            isTranscribing = false;
+            
+            if (data.type === 'transcript') {
+                const text = data.text || '';
+                const latency = data.time_ms ? data.time_ms.toFixed(0) + 'ms' : '?';
+                const duration = data.duration ? data.duration.toFixed(1) + 's' : '?';
+                
+                updateCount++;
+                document.getElementById('statLatency').textContent = latency;
+                document.getElementById('statDuration').textContent = duration;
+                document.getElementById('statUpdates').textContent = updateCount;
+                
+                if (text.trim()) {
+                    const el = document.getElementById('transcript');
+                    if (data.is_final) {
+                        el.innerHTML = text;
+                        log(`FINAL: "${text}" (${latency})`);
+                    } else {
+                        el.innerHTML = `${text}<span class="cursor">|</span>`;
+                        log(`PARTIAL: "${text}" (${latency})`);
+                    }
+                }
+                
+                if (data.is_final) {
+                    log('=== Session complete ===');
+                }
+            } else if (data.type === 'error') {
+                log('ERROR: ' + data.message);
+            }
+        }
+        
+        async function sendForTranscription(isFinal) {
+            if (isTranscribing && !isFinal) return;
+            
+            const pcm16 = await getCombinedPCM16();
+            if (!pcm16) return;
+            
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                try { await connectWebSocket(); }
+                catch (e) { log('Connect failed'); return; }
+            }
+            
+            isTranscribing = true;
+            const dur = (pcm16.length / 16000).toFixed(1);
+            log(`Sending ${dur}s audio (${pcm16.buffer.byteLength} bytes), final: ${isFinal}`);
+            
+            ws.send(pcm16.buffer);
+            ws.send(JSON.stringify({ action: isFinal ? 'final' : 'transcribe' }));
+        }
+        
+        async function startRecording() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            log('AudioContext sample rate: ' + audioContext.sampleRate);
+            
+            micStream = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true }
+            });
+            
+            await connectWebSocket();
+            
+            mediaSource = audioContext.createMediaStreamSource(micStream);
+            scriptNode = audioContext.createScriptProcessor(4096, 1, 1);
+            audioChunks = [];
+            updateCount = 0;
+            isTranscribing = false;
+            
+            scriptNode.onaudioprocess = (event) => {
+                if (isRecording) {
+                    audioChunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+                }
+            };
+            
+            mediaSource.connect(scriptNode);
+            scriptNode.connect(audioContext.destination);
+            
+            // Send for transcription every 2 seconds
+            transcribeTimer = setInterval(async () => {
+                if (isRecording && audioChunks.length > 0 && !isTranscribing) {
+                    await sendForTranscription(false);
+                }
+            }, INTERVAL);
+            
+            isRecording = true;
+            document.getElementById('micBtn').classList.add('recording');
+            document.getElementById('micBtn').textContent = '🔴';
+            document.getElementById('status').textContent = 'Speaking — transcript updates every 2s';
+            document.getElementById('transcript').innerHTML = '<span class="placeholder">Listening...</span>';
+            
+            log('Recording started');
+        }
+        
+        async function stopRecording() {
+            if (transcribeTimer) { clearInterval(transcribeTimer); transcribeTimer = null; }
+            if (scriptNode) { scriptNode.disconnect(); scriptNode = null; }
+            if (mediaSource) { mediaSource.disconnect(); mediaSource = null; }
+            if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+            
+            isRecording = false;
+            document.getElementById('micBtn').classList.remove('recording');
+            document.getElementById('micBtn').textContent = '🎤';
+            document.getElementById('status').textContent = 'Finalizing...';
+            
+            log('Recording stopped, sending final transcription...');
+            
+            await sendForTranscription(true);
+            
+            // Close WebSocket
+            if (ws) { ws.close(); ws = null; }
+            
+            document.getElementById('status').textContent = 'Click mic to start again';
+            audioChunks = [];
+        }
+        
+        async function toggleMic() {
+            if (isRecording) {
+                await stopRecording();
+            } else {
+                await startRecording();
+            }
+        }
+    </script>
+</body>
+</html>
