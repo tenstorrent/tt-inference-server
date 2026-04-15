@@ -13,6 +13,7 @@
 
 #include "domain/base_request.hpp"
 #include "domain/json_field.hpp"
+#include "domain/response_format.hpp"
 
 namespace tt::domain {
 
@@ -112,6 +113,9 @@ struct LLMRequest : BaseRequest {
   std::optional<int> truncate_prompt_tokens;
   int prompt_tokens_count = 0;
   bool fast_mode = false;
+
+  // Structured output constraint
+  std::optional<ResponseFormat> response_format;
 
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;

@@ -15,7 +15,8 @@
 
 namespace tt::services {
 class MemoryManager;
-}
+class GuidedDecoderManager;
+}  // namespace tt::services
 
 namespace tt::runners {
 using namespace tt::runners::llm_engine;
@@ -37,6 +38,8 @@ class LLMRunner : public IRunner {
   void step();
   void memoryLoop();
   void exit();
+  void applyGuidedDecodingMasks(const std::vector<Sequence*>& seqs,
+                                bool isPrefill);
 
   config::LLMConfig config_;
   ipc::TokenRingBuffer<65536>* result_queue_;
@@ -47,6 +50,8 @@ class LLMRunner : public IRunner {
 
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
   std::thread memoryThread;
+
+  std::unique_ptr<tt::services::GuidedDecoderManager> guidedDecoder;
 };
 
 }  // namespace tt::runners
