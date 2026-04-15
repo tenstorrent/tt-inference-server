@@ -10,7 +10,7 @@
 
 #include "config/settings.hpp"
 #include "domain/chat_message.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 using namespace tt::utils;
 using namespace tt::domain;

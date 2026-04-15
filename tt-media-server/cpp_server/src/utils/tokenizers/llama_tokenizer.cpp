@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "utils/llama_tokenizer.hpp"
+#include "utils/tokenizers/llama_tokenizer.hpp"
 
 #include <sstream>
 

@@ -8,7 +8,7 @@
 #include <sstream>
 
 #include "config/settings.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::utils {
 

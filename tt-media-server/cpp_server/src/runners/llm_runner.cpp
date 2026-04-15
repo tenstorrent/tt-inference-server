@@ -11,7 +11,7 @@
 #include "services/guided_decoder_manager.hpp"
 #include "services/memory_services/paged_memory_manager.hpp"
 #include "utils/logger.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::runners {
 using namespace tt::runners::llm_engine;

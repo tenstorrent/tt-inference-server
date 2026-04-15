@@ -17,7 +17,7 @@
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 #include "worker/worker_manager.hpp"
 
 namespace tt::services {

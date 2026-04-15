@@ -15,7 +15,7 @@
 #include "domain/json_field.hpp"
 #include "domain/llm_request.hpp"
 #include "domain/response_format.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::domain {
 

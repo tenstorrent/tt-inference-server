@@ -3,16 +3,16 @@
 
 #pragma once
 
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::utils {
 
-class LlamaTokenizer final : public Tokenizer {
+class DeepseekTokenizer final : public Tokenizer {
  public:
   using Tokenizer::Tokenizer;
 
-  std::string modelName() const { return "meta-llama/Llama-3.1-8B-Instruct"; }
-  std::vector<int64_t> stopTokenIds() const { return {128001, 128008, 128009}; }
+  std::string modelName() const { return "deepseek-ai/DeepSeek-R1-0528"; }
+  std::vector<int64_t> stopTokenIds() const { return {1}; }
 
   std::string applyChatTemplate(
       const std::vector<domain::ChatMessage>& messages,

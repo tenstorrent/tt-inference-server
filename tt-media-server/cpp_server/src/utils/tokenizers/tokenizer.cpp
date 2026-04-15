@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 #include <json/json.h>
 
@@ -10,8 +10,8 @@
 #include <sstream>
 
 #include "config/settings.hpp"
-#include "utils/deepseek_tokenizer.hpp"
-#include "utils/llama_tokenizer.hpp"
+#include "utils/tokenizers/deepseek_tokenizer.hpp"
+#include "utils/tokenizers/llama_tokenizer.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::utils {

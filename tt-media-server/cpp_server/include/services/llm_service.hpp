@@ -19,7 +19,7 @@
 #include "services/reasoning_parser.hpp"
 #include "services/streamable.hpp"
 #include "utils/concurrent_map.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 #include "worker/worker_manager.hpp"
 
 namespace tt::services {

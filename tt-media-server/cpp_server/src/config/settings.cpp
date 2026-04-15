@@ -14,7 +14,7 @@
 #include "config/defaults.hpp"
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::config {
 
