@@ -166,8 +166,8 @@ WorkerConfig WorkerManager::makeWorkerConfig(int workerId) {
   WorkerConfig cfg;
   cfg.env_vars["TT_VISIBLE_DEVICES"] =
       tt::config::visibleDevicesForWorker(workerId);
-  cfg.task_queue =
-      std::make_shared<tt::ipc::BoostIpcTaskQueue>(tt::config::ttTaskQueueName());
+  cfg.task_queue = std::make_shared<tt::ipc::BoostIpcTaskQueue>(
+      tt::config::ttTaskQueueName());
   cfg.result_queue = std::make_shared<tt::ipc::BoostIpcResultQueue>(
       std::string(tt::config::ttResultQueueName()) + std::to_string(workerId));
   cfg.cancel_queue = std::make_shared<tt::ipc::BoostIpcCancelQueue>(
@@ -233,8 +233,8 @@ WorkerConfig makeWorkerConfigForProcess(int workerId) {
   WorkerConfig cfg;
   cfg.env_vars["TT_VISIBLE_DEVICES"] =
       tt::config::visibleDevicesForWorker(workerId);
-  cfg.task_queue =
-      std::make_shared<tt::ipc::BoostIpcTaskQueue>(tt::config::ttTaskQueueName());
+  cfg.task_queue = std::make_shared<tt::ipc::BoostIpcTaskQueue>(
+      tt::config::ttTaskQueueName());
   cfg.result_queue = std::make_shared<tt::ipc::BoostIpcResultQueue>(
       std::string(tt::config::ttResultQueueName()) + std::to_string(workerId));
   cfg.cancel_queue = std::make_shared<tt::ipc::BoostIpcCancelQueue>(

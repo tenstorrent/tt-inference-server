@@ -7,11 +7,10 @@
 #include <string>
 #include <vector>
 
+#include "config/settings.hpp"
 #include "ipc/boost_ipc_cancel_queue.hpp"
 #include "ipc/boost_ipc_result_queue.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
-
-#include "config/settings.hpp"
 namespace tt::ipc {
 
 constexpr size_t RING_BUFFER_CAPACITY = 65536;
@@ -28,7 +27,8 @@ class QueueManager {
   std::vector<std::shared_ptr<BoostIpcCancelQueue>> cancel_queues;
 
   explicit QueueManager(int numWorkers) {
-    task_queue = std::make_shared<BoostIpcTaskQueue>(tt::config::ttTaskQueueName(), 1024);
+    task_queue = std::make_shared<BoostIpcTaskQueue>(
+        tt::config::ttTaskQueueName(), 1024);
     result_queues.reserve(numWorkers);
     cancel_queues.reserve(numWorkers);
     for (int i = 0; i < numWorkers; i++) {
@@ -37,7 +37,8 @@ class QueueManager {
       result_queues.emplace_back(std::make_shared<BoostIpcResultQueue>(
           resultName, RESULT_QUEUE_CAPACITY));
 
-      std::string cancelName = tt::config::ttCancelQueueName() + std::to_string(i);
+      std::string cancelName =
+          tt::config::ttCancelQueueName() + std::to_string(i);
       cancel_queues.emplace_back(std::make_shared<BoostIpcCancelQueue>(
           cancelName, CANCEL_QUEUE_CAPACITY));
     }

@@ -3,17 +3,17 @@
 
 #include "services/memory_services/memory_manager.hpp"
 
-#include "utils/logger.hpp"
 #include "config/settings.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::services {
 
 MemoryManager::MemoryManager() {
   // Open existing queues created by SessionManager in the main process
-  requestQueue =
-      ipc::MemoryRequestQueue::openExisting(tt::config::ttMemoryRequestQueueName());
-  resultQueue =
-      ipc::MemoryResultQueue::openExisting(tt::config::ttMemoryResultQueueName());
+  requestQueue = ipc::MemoryRequestQueue::openExisting(
+      tt::config::ttMemoryRequestQueueName());
+  resultQueue = ipc::MemoryResultQueue::openExisting(
+      tt::config::ttMemoryResultQueueName());
 
   if (!requestQueue || !resultQueue) {
     TT_LOG_ERROR(

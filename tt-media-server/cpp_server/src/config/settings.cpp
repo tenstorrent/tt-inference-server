@@ -193,11 +193,13 @@ std::string ttCancelQueueName() {
 }
 
 std::string ttWarmupSignalsQueueName() {
-  return envString("TT_WARMUP_SIGNALS_QUEUE", defaults::TT_WARMUP_SIGNALS_QUEUE);
+  return envString("TT_WARMUP_SIGNALS_QUEUE",
+                   defaults::TT_WARMUP_SIGNALS_QUEUE);
 }
 
 std::string ttMemoryRequestQueueName() {
-  return envString("TT_MEMORY_REQUEST_QUEUE", defaults::TT_MEMORY_REQUEST_QUEUE);
+  return envString("TT_MEMORY_REQUEST_QUEUE",
+                   defaults::TT_MEMORY_REQUEST_QUEUE);
 }
 
 std::string ttMemoryResultQueueName() {
