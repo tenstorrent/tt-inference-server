@@ -627,18 +627,6 @@ jobs:
         run: |
           [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
 
-      # ── xgrammar profiling results ─────────────────────────────────
-      - name: Print xgrammar profiling results
-        if: always()
-        run: |
-          echo "============ xgrammar Microbenchmark Results ============"
-          if [ -f xgrammar_benchmark_output.txt ]; then
-            grep -E '(Vocab size|Compile|Bitmask size|===|FillNext|BitmaskTo|AcceptToken|Total per|grammar terminated)' xgrammar_benchmark_output.txt || cat xgrammar_benchmark_output.txt
-          else
-            echo "xgrammar_benchmark_output.txt not found"
-          fi
-          echo "========================================================="
-
       # ── Check thresholds ─────────────────────────────────────────────
       - name: Check all benchmark thresholds
         run: |
