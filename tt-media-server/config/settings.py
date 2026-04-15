@@ -318,7 +318,11 @@ class Settings(BaseSettings):
             # Apply per-model overrides (e.g. chat_template_kwargs for Qwen3)
             model_overrides = MODEL_NAME_OVERRIDES.get(model_name_enum, {})
             for key, value in model_overrides.items():
-                if hasattr(self, key):
+                if key == "vllm" and isinstance(value, dict):
+                    for vk, vv in value.items():
+                        if hasattr(self.vllm, vk):
+                            setattr(self.vllm, vk, vv)
+                elif hasattr(self, key):
                     setattr(self, key, value)
         if any(
             self.model_runner == r.value

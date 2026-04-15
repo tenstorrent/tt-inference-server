@@ -49,6 +49,7 @@ class VLLMForgeRunner(BaseDeviceRunner):
                 "experimental_weight_dtype": "bfp_bf8",
                 "cpu_sampling": True,
                 "optimization_level": 1,
+                "enable_trace": True,
             },
         )
         self.logger.info(

@@ -30,10 +30,13 @@ class SupportedModels(Enum):
     LLAMA_3_2_3B_INSTRUCT = "meta-llama/Llama-3.2-3B-Instruct"
     LLAMA_3_1_8B_INSTRUCT = "meta-llama/Llama-3.1-8B-Instruct"
     LLAMA_3_1_70B = "meta-llama/Llama-3.1-70B"
+    PHI_4 = "microsoft/phi-4"
     QWEN_3_4B = "Qwen/Qwen3-4B"
     QWEN_3_8B = "Qwen/Qwen3-8B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
+    GEMMA_2_9B_IT = "google/gemma-2-9b-it"
+    FALCON3_10B_INSTRUCT = "tiiuae/Falcon3-10B-Instruct"
 
 
 # MODEL environment variable
@@ -70,10 +73,13 @@ class ModelNames(Enum):
     LLAMA_3_2_3B_INSTRUCT = "Llama-3.2-3B-Instruct"
     LLAMA_3_1_8B_INSTRUCT = "Llama-3.1-8B-Instruct"
     LLAMA_3_1_70B = "Llama-3.1-70B"
+    PHI_4 = "phi-4"
     QWEN_3_4B = "Qwen3-4B"
     QWEN_3_8B = "Qwen3-8B"
     SPEECHT5_TTS = "speecht5_tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
+    GEMMA_2_9B_IT = "gemma-2-9b-it"
+    FALCON3_10B_INSTRUCT = "Falcon3-10B-Instruct"
 
 
 class ModelRunners(Enum):
@@ -208,8 +214,11 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.LLAMA_3_2_3B,
         ModelNames.LLAMA_3_2_3B_INSTRUCT,
         ModelNames.LLAMA_3_1_8B_INSTRUCT,
+        ModelNames.PHI_4,
         ModelNames.QWEN_3_4B,
         ModelNames.QWEN_3_8B,
+        ModelNames.GEMMA_2_9B_IT,
+        ModelNames.FALCON3_10B_INSTRUCT,
     },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
@@ -1057,6 +1066,7 @@ for runner in [
 
 # Per-model overrides applied after device config (keyed by ModelNames enum value)
 MODEL_NAME_OVERRIDES = {
+    ModelNames.PHI_4: {"vllm": {"gpu_memory_utilization": 0.2}},
     ModelNames.QWEN_3_4B: {"chat_template_kwargs": {"enable_thinking": False}},
     ModelNames.QWEN_3_8B: {"chat_template_kwargs": {"enable_thinking": False}},
 }
