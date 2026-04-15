@@ -258,32 +258,57 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "TSU trend — derived from 1 / ITL (median). Shows the per-user token streaming speed over time.",
+      "description": "TSU (left axis) vs number of actively decoding users (right axis). Shows how per-user streaming speed changes with server load.",
       "fieldConfig": {
         "defaults": {
-          "color": { "fixedColor": "dark-green", "mode": "fixed" },
           "custom": {
             "drawStyle": "line",
-            "fillOpacity": 15,
+            "fillOpacity": 0,
             "lineWidth": 2,
             "showPoints": "never"
-          },
-          "unit": "short",
-          "decimals": 1
+          }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "TSU (tok/s/user)" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "dark-green", "mode": "fixed" } },
+              { "id": "custom.fillOpacity", "value": 15 },
+              { "id": "custom.axisPlacement", "value": "left" },
+              { "id": "custom.axisLabel", "value": "TSU (tok/s/user)" },
+              { "id": "unit", "value": "short" },
+              { "id": "decimals", "value": 0 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Decoding Users" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "dark-orange", "mode": "fixed" } },
+              { "id": "custom.fillOpacity", "value": 5 },
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "custom.axisLabel", "value": "Decoding Users" },
+              { "id": "unit", "value": "none" },
+              { "id": "decimals", "value": 0 }
+            ]
+          }
+        ]
       },
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
       "id": 22,
-      "options": { "tooltip": { "mode": "single", "sort": "none" } },
+      "options": { "tooltip": { "mode": "multi", "sort": "none" } },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "1 / tt_inter_token_latency_seconds{quantile=\"0.5\"}",
           "legendFormat": "TSU (tok/s/user)"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "tt_num_decoding_requests",
+          "legendFormat": "Decoding Users"
         }
       ],
-      "title": "TSU — Tokens/s/User (trend)",
+      "title": "TSU vs Decoding Users",
       "type": "timeseries"
     },
     {
