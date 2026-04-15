@@ -97,8 +97,8 @@ class ServerMetrics {
     std::string finish_reason;
   };
 
-  using MetricsEvent = std::variant<EventRequestSubmitted, EventToken,
-                                    EventRequestCompleted>;
+  using MetricsEvent =
+      std::variant<EventRequestSubmitted, EventToken, EventRequestCompleted>;
 
   // -------------------------------------------------------------------------
   // Background thread

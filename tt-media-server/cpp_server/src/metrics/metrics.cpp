@@ -81,8 +81,9 @@ ServerMetrics::ServerMetrics() {
   decoding_requests_ =
       &prometheus::BuildGauge()
            .Name("tt_num_decoding_requests")
-           .Help("Number of requests actively generating tokens (excludes "
-                 "queued and prefilling requests)")
+           .Help(
+               "Number of requests actively generating tokens (excludes "
+               "queued and prefilling requests)")
            .Register(*registry_)
            .Add({});
 
@@ -221,11 +222,10 @@ void ServerMetrics::processEvent(const MetricsEvent& event) {
 }
 
 void ServerMetrics::handleRequestSubmitted(const EventRequestSubmitted& e) {
-  contexts_.emplace(e.task_id,
-                    RequestContext{.start_time = e.time,
-                                   .prev_token_time = {},
-                                   .prompt_tokens = e.prompt_tokens,
-                                   .generation_tokens = 0});
+  contexts_.emplace(e.task_id, RequestContext{.start_time = e.time,
+                                              .prev_token_time = {},
+                                              .prompt_tokens = e.prompt_tokens,
+                                              .generation_tokens = 0});
 }
 
 void ServerMetrics::handleToken(const EventToken& e) {
