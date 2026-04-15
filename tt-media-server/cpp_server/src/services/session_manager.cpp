@@ -111,11 +111,27 @@ uint32_t SessionManager::getSlotIdBySessionId(
 
 uint32_t SessionManager::acquireSessionSlot(const std::string& sessionId) {
   uint32_t result = domain::INVALID_SLOT_ID;
-  sessions.modify(sessionId, [&result](domain::Session& s) {
+  bool wasInFlight = false;
+
+  sessions.modify(sessionId, [&result, &wasInFlight](domain::Session& s) {
+    wasInFlight = s.isInFlight();
+    if (wasInFlight) {
+      // Session is already in flight, don't modify
+      return;
+    }
     s.updateActivityTime();
     s.setInFlight(true);
     result = s.getSlotId();
   });
+
+  if (wasInFlight) {
+    TT_LOG_WARN(
+        "[SessionManager] acquireSessionSlot: sessionId={} already has a "
+        "request in flight",
+        sessionId);
+    throw SessionInFlightException();
+  }
+
   TT_LOG_DEBUG("[SessionManager] acquireSessionSlot sessionId={} -> slotId={}",
                sessionId, result);
   return result;

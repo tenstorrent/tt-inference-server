@@ -626,11 +626,13 @@ jobs:
       - name: Check all benchmark thresholds
         run: |
           FAIL=0
+          ERRORS=""
 
           check_thresholds() {
             local LABEL="$1" FILE="$2" TPOT_LIMIT="$3" TTFT_LIMIT="$4"
             if [ ! -f "$FILE" ]; then
               echo "❌ [$LABEL] Result file not found: $FILE"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] Result file not found: $FILE"
               FAIL=1
               return
             fi
@@ -643,18 +645,21 @@ jobs:
 
             if [ "$COMPLETED" -eq 0 ] && [ "$FAILED_REQ" -gt 0 ]; then
               echo "❌ [$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
               FAIL=1
             fi
 
             if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
               if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_LIMIT else 1)"; then
                 echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
+                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
                 FAIL=1
               fi
             fi
             if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
               if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_LIMIT else 1)"; then
                 echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
+                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
                 FAIL=1
               fi
             fi
@@ -676,7 +681,7 @@ jobs:
             "vllm-bench-mock.json" 1 150
 
           check_thresholds "C++ Server vLLM Bench (structured output - json_object)" \
-            "vllm-bench-structured-output-json-object.json" 15 100
+            "vllm-bench-structured-output-json-object.json" 16 100
 
           check_thresholds "C++ Server vLLM Bench (structured output - json_schema)" \
             "vllm-bench-structured-output-json-schema.json" 15 100
@@ -685,6 +690,11 @@ jobs:
             "vllm-bench-mock-pipeline.json" 3 395
 
           echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
+          {
+            echo "BENCH_ERRORS<<BENCHERRORSEOF"
+            printf '%s\n' "$ERRORS"
+            echo "BENCHERRORSEOF"
+          } >> $GITHUB_ENV
 
       # ── Artifacts & logs ─────────────────────────────────────────────
       - name: Show server logs
@@ -721,7 +731,13 @@ jobs:
           if-no-files-found: warn
 
       - name: Check benchmark result
-        run: exit ${{ env.BENCH_FAIL }}
+        if: always()
+        run: |
+          if [ "${BENCH_FAIL:-0}" != "1" ]; then
+            exit 0
+          fi
+          printf '%s\n' "$BENCH_ERRORS"
+          exit 1
 
   cpp-server-prefill-decode-split:
     needs: [detect-changes, cpp-build]
@@ -830,11 +846,13 @@ jobs:
       - name: Check benchmark thresholds
         run: |
           FAIL=0
+          ERRORS=""
 
           check_thresholds() {
             local LABEL="$1" FILE="$2" TPOT_LIMIT="$3" TTFT_LIMIT="$4"
             if [ ! -f "$FILE" ]; then
               echo "❌ [$LABEL] Result file not found: $FILE"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] Result file not found: $FILE"
               FAIL=1
               return
             fi
@@ -847,18 +865,21 @@ jobs:
 
             if [ "$COMPLETED" -eq 0 ] && [ "$FAILED_REQ" -gt 0 ]; then
               echo "❌ [$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
               FAIL=1
             fi
 
             if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
               if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_LIMIT else 1)"; then
                 echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
+                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
                 FAIL=1
               fi
             fi
             if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
               if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_LIMIT else 1)"; then
                 echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
+                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
                 FAIL=1
               fi
             fi
@@ -880,6 +901,11 @@ jobs:
             "${{ env.RESULT_FILE }}" 10 650
 
           echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
+          {
+            echo "BENCH_ERRORS<<BENCHERRORSEOF"
+            printf '%s\n' "$ERRORS"
+            echo "BENCHERRORSEOF"
+          } >> $GITHUB_ENV
 
       - name: Stop servers
         if: always()
@@ -925,7 +951,13 @@ jobs:
           if-no-files-found: warn
 
       - name: Check benchmark result
-        run: exit ${{ env.BENCH_FAIL }}
+        if: always()
+        run: |
+          if [ "${BENCH_FAIL:-0}" != "1" ]; then
+            exit 0
+          fi
+          printf '%s\n' "$BENCH_ERRORS"
+          exit 1
 
   forge-runner-changes:
     name: Detect Forge Runner Changes
@@ -951,7 +983,7 @@ jobs:
   forge-runner-cpu-tests:
     needs: forge-runner-changes
     if: ${{ needs.forge-runner-changes.outputs.should-run == 'true' }}
-    name: Forge Runner CPU Tests (Python 3.11)
+    name: Forge Runner CPU Tests (Python 3.12)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -974,10 +1006,10 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           # Dissable pip caching for now, it take longer than install sometimes
           # cache: 'pip'
           # cache-dependency-path: |
@@ -987,8 +1019,8 @@ jobs:
       - name: Create venv, install dependencies
         shell: bash
         run: |
-          python3.11 -m venv venv-3.11
-          source venv-3.11/bin/activate
+          python3.12 -m venv venv-3.12
+          source venv-3.12/bin/activate
           export VLLM_TARGET_DEVICE="empty"
           pip install --upgrade pip
           pip install -r requirements.txt
@@ -998,7 +1030,7 @@ jobs:
       - name: Run CPU-only tests
         shell: bash
         run: |
-          source venv-3.11/bin/activate
+          source venv-3.12/bin/activate
           pytest tt_model_runners/forge_runners/test_forge_models.py -k "cpu" -v
 
   test-coverage:

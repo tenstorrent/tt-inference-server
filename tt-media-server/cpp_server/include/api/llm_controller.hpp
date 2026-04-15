@@ -82,6 +82,16 @@ class LLMController : public drogon::HttpController<LLMController> {
     bool validSessionFound = false;
   };
 
+  enum class SessionErrorType {
+    RATE_LIMIT,      // Returns 429 Too Many Requests
+    ALLOCATION_FAIL  // Returns 503 Service Unavailable
+  };
+
+  struct SessionError {
+    SessionErrorType type;
+    std::string message;
+  };
+
   /**
    * Validate/create session, assign slot, populate request fields.
    * Throws std::runtime_error if session creation fails.
@@ -89,7 +99,7 @@ class LLMController : public drogon::HttpController<LLMController> {
   void resolveSession(std::shared_ptr<domain::LLMRequest> req,
                       trantor::EventLoop* loop,
                       std::function<void(SessionInfo)> onResolved,
-                      std::function<void(std::string_view)> onError) const;
+                      std::function<void(const SessionError&)> onError) const;
 
   /**
    * Determine if disaggregated prefill should be used for this request.

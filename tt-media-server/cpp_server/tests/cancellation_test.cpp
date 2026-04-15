@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
+#include "ipc/boost_ipc_result_queue.hpp"
 #include "ipc/cancel_queue.hpp"
-#include "ipc/token_ring_buffer.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
@@ -217,13 +217,13 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
   auto taskQueue = makeQueue();
   InMemoryCancelQueue cancelQueue;
 
-  std::string rbName = "/test_cancel_rb_" + std::to_string(getpid()) + "_stop";
-  tt::ipc::TokenRingBuffer<65536> resultQueue(rbName, true);
+  std::string rbName = "test_cancel_rb_" + std::to_string(getpid()) + "_stop";
+  tt::ipc::BoostIpcResultQueue resultQueue(rbName,
+                                           tt::ipc::RESULT_QUEUE_CAPACITY);
 
   tt::runners::LLMRunner runner{config, &resultQueue, taskQueue.get(),
                                 &cancelQueue};
 
-  // Add two requests: one we'll cancel, one we'll let finish
   uint32_t cancelId = nextId();
   uint32_t keepId = nextId();
 
@@ -237,7 +237,7 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
   std::thread consumer([&]() {
     tt::ipc::SharedToken token;
     while (!keepFinished.load()) {
-      if (resultQueue.pop(token)) {
+      if (resultQueue.tryPop(token)) {
         tokenCounts[token.task_id]++;
 
         // After first token from cancelId, push cancel signal
@@ -265,6 +265,7 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
   EXPECT_LT(tokenCounts[cancelId], 50);
 
   resultQueue.shutdown();
+  resultQueue.remove();
 }
 
 TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
@@ -274,9 +275,9 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   auto taskQueue = makeQueue();
   InMemoryCancelQueue cancelQueue;
 
-  std::string rbName =
-      "/test_cancel_rb_" + std::to_string(getpid()) + "_before";
-  tt::ipc::TokenRingBuffer<65536> resultQueue(rbName, true);
+  std::string rbName = "test_cancel_rb_" + std::to_string(getpid()) + "_before";
+  tt::ipc::BoostIpcResultQueue resultQueue(rbName,
+                                           tt::ipc::RESULT_QUEUE_CAPACITY);
 
   tt::runners::LLMRunner runner{config, &resultQueue, taskQueue.get(),
                                 &cancelQueue};
@@ -287,7 +288,6 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   runner.scheduler().addRequest(cancelId, prompt(4), {.max_tokens = 10});
   runner.scheduler().addRequest(keepId, prompt(4), {.max_tokens = 5});
 
-  // Push cancel BEFORE any step runs
   cancelQueue.push(cancelId);
 
   std::unordered_map<uint32_t, int> tokenCounts;
@@ -296,7 +296,7 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   std::thread consumer([&]() {
     tt::ipc::SharedToken token;
     while (!keepFinished.load()) {
-      if (resultQueue.pop(token)) {
+      if (resultQueue.tryPop(token)) {
         tokenCounts[token.task_id]++;
         if (token.task_id == keepId && token.isFinal()) {
           keepFinished.store(true);
@@ -316,6 +316,7 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   EXPECT_EQ(tokenCounts[cancelId], 0);
 
   resultQueue.shutdown();
+  resultQueue.remove();
 }
 
 }  // namespace
