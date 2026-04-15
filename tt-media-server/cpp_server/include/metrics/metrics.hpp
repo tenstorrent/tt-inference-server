@@ -52,39 +52,17 @@ class ServerMetrics {
    */
   void onRequestSubmitted(uint32_t task_id, int prompt_tokens);
 
-  /**
-   * Called for the first generated token of a request.
-   * Records time-to-first-token (TTFT).
-   *
-   * Only the first token needs to be reported here; subsequent tokens are
-   * handled via onITLSample() at a reduced rate.
-   */
+  /** Called for every generated token. Captures a timestamp on the caller's
+   *  thread and pushes a lightweight event; the background thread derives
+   *  TTFT, ITL, and token counts from the event stream. */
   void onToken(uint32_t task_id);
-
-  /**
-   * Called for a sampled inter-token latency observation.
-   *
-   * The caller (LLMService) is responsible for:
-   *   - Computing the elapsed time between two consecutive tokens.
-   *   - Calling this method only every kItlSampleStride tokens (defined in
-   *     llm_service.cpp) to amortise the per-event cost.
-   *
-   * itl_seconds must be the actual elapsed time between two CONSECUTIVE tokens
-   * (not between two sampled tokens), computed by the caller before invoking
-   * this method.
-   */
-  void onITLSample(uint32_t task_id, double itl_seconds);
 
   /**
    * Called when a request produces its final token.
    * Records e2e latency, generation token count, and success counter.
    * Cleans up per-request state.
-   *
-   * generation_tokens is passed explicitly by the caller because token events
-   * are sampled (only a fraction reach the metrics queue).
    */
-  void onRequestCompleted(uint32_t task_id, const std::string& finish_reason,
-                          int generation_tokens);
+  void onRequestCompleted(uint32_t task_id, const std::string& finish_reason);
 
   /**
    * Update the in-flight request gauge (call after pending_tasks_ changes).
@@ -109,29 +87,18 @@ class ServerMetrics {
     std::chrono::steady_clock::time_point time;
     int prompt_tokens;
   };
-  // Fired once per request (first token only) — drives TTFT.
-  struct EventFirstToken {
+  struct EventToken {
     uint32_t task_id;
     std::chrono::steady_clock::time_point time;
-  };
-  // Fired every kItlSampleStride tokens (see llm_service.cpp).
-  // itl_seconds is the actual elapsed time between two CONSECUTIVE tokens,
-  // pre-computed by the caller so this thread needs no per-task clock state.
-  struct EventITLSample {
-    uint32_t task_id;
-    double itl_seconds;
   };
   struct EventRequestCompleted {
     uint32_t task_id;
     std::chrono::steady_clock::time_point time;
     std::string finish_reason;
-    // Passed explicitly because token events are sampled, so the background
-    // thread cannot count tokens from the queue alone.
-    int generation_tokens;
   };
 
-  using MetricsEvent = std::variant<EventRequestSubmitted, EventFirstToken,
-                                    EventITLSample, EventRequestCompleted>;
+  using MetricsEvent = std::variant<EventRequestSubmitted, EventToken,
+                                    EventRequestCompleted>;
 
   // -------------------------------------------------------------------------
   // Background thread
@@ -142,8 +109,7 @@ class ServerMetrics {
   void metricsLoop();
   void processEvent(const MetricsEvent& event);
   void handleRequestSubmitted(const EventRequestSubmitted& e);
-  void handleFirstToken(const EventFirstToken& e);
-  void handleITLSample(const EventITLSample& e);
+  void handleToken(const EventToken& e);
   void handleRequestCompleted(const EventRequestCompleted& e);
 
   std::queue<MetricsEvent> event_queue_;
@@ -158,10 +124,9 @@ class ServerMetrics {
   // -------------------------------------------------------------------------
   struct RequestContext {
     std::chrono::steady_clock::time_point start_time;
-    std::optional<std::chrono::steady_clock::time_point> first_token_time;
+    std::chrono::steady_clock::time_point prev_token_time;
     int prompt_tokens = 0;
-    // generation_tokens is no longer tracked here: it arrives with
-    // EventRequestCompleted, supplied by the caller (LLMService).
+    int generation_tokens = 0;
   };
   std::unordered_map<uint32_t, RequestContext> contexts_;
 
