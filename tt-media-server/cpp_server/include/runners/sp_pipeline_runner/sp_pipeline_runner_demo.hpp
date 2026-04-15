@@ -12,7 +12,7 @@
 
 #include "config/runner_config.hpp"
 #include "ipc/boost_ipc_queue.hpp"
-#include "ipc/token_ring_buffer.hpp"
+#include "ipc/result_queue.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
@@ -27,7 +27,7 @@ namespace tt::runners {
 class SpPipelineRunnerDemo : public IRunner {
  public:
   SpPipelineRunnerDemo(const tt::config::LLMConfig& config,
-                       ipc::TokenRingBuffer<65536>* resultQueue,
+                       ipc::IResultQueue* resultQueue,
                        tt::runners::llm_engine::ITaskQueue* taskQueue);
   ~SpPipelineRunnerDemo() override;
 
@@ -43,7 +43,7 @@ class SpPipelineRunnerDemo : public IRunner {
 
   tt::config::LLMConfig config;
   std::unordered_set<int64_t> stopTokenIds;
-  ipc::TokenRingBuffer<65536>* resultQueue;
+  ipc::IResultQueue* resultQueue;
   tt::runners::llm_engine::ITaskQueue* taskQueue;
   std::unique_ptr<sp_pipeline::ISpPipelineModelRunner> modelRunner;
   sp_pipeline::DecodeQueue decodeQueue;
