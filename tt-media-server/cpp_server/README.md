@@ -86,9 +86,8 @@ Available log levels (from most to least verbose):
 
 Inference engine code lives under `include/runners/llm_runner/` and
 `src/runners/llm_runner/`. Public C++ API types are in namespace
-`tt::runners::llm_engine`. With `-DLLM_ENGINE_DEBUG_BUILD=ON`, `LLM_ENGINE_LOG`
-lines include the tag `runners.llm_engine:` in the prefix. The static library
-CMake target is `llm_runner_lib`.
+`tt::runners::llm_engine`. The engine uses the standard `TT_LOG_*` macros
+(see **Logging** above). The static library CMake target is `llm_runner_lib`.
 
 ### Main features
 
