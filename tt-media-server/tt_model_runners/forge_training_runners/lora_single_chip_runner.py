@@ -19,7 +19,7 @@ from utils.adapter_resolver import AdapterInfo, resolve_adapter
 from utils.decorators import log_execution_time
 
 
-class LoraInferenceRunner(BaseDeviceRunner):
+class LoraSingleChipRunner(BaseDeviceRunner):
     MAX_PROMPT_LENGTH: int = 32
     MAX_CACHE_LENGTH: int = 128
     BATCH_SIZE: int = 1
