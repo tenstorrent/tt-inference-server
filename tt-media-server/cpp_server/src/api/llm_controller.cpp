@@ -52,6 +52,7 @@ void LLMController::resolveSession(
     auto slotId = sessionManager->acquireSessionSlot(req->sessionId.value());
     if (slotId != domain::INVALID_SLOT_ID) {
       req->slotId = slotId;
+      req->continuation = true;
       info.validSessionFound = true;
       onResolved(info);
       return;

@@ -537,6 +537,42 @@ jobs:
             --result-filename "vllm-bench-mock.json" \
             2>&1 | tee bench_mock_output.txt
 
+      - name: Bench mock backend (structured output - json_object)
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --extra-body '{"response_format": {"type": "json_object"}}' \
+            --save-result \
+            --result-filename "vllm-bench-structured-output-json-object.json" \
+            2>&1 | tee bench_structured_output_json_object.txt
+
+      - name: Bench mock backend (structured output - json_schema)
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --extra-body '{"response_format": {"type": "json_schema", "json_schema": {"name": "person", "strict": true, "schema": {"type": "object", "properties": {"name": {"type": "string"}, "age": {"type": "integer"}, "city": {"type": "string"}}, "required": ["name", "age", "city"], "additionalProperties": false}}}}' \
+            --save-result \
+            --result-filename "vllm-bench-structured-output-json-schema.json" \
+            2>&1 | tee bench_structured_output_json_schema.txt
+
       - name: Stop mock server
         if: always()
         run: |
@@ -639,6 +675,12 @@ jobs:
           check_thresholds "C++ Server vLLM Bench (mock)" \
             "vllm-bench-mock.json" 1 150
 
+          check_thresholds "C++ Server vLLM Bench (structured output - json_object)" \
+            "vllm-bench-structured-output-json-object.json" 15 100
+
+          check_thresholds "C++ Server vLLM Bench (structured output - json_schema)" \
+            "vllm-bench-structured-output-json-schema.json" 15 100
+
           check_thresholds "C++ Server vLLM Bench (mock_pipeline)" \
             "vllm-bench-mock-pipeline.json" 3 395
 
@@ -661,6 +703,8 @@ jobs:
           name: cpp-server-bench-results
           path: |
             tt-media-server/vllm-bench-mock.json
+            tt-media-server/vllm-bench-structured-output-json-object.json
+            tt-media-server/vllm-bench-structured-output-json-schema.json
             tt-media-server/vllm-bench-mock-pipeline.json
           retention-days: 1
           if-no-files-found: warn

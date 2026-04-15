@@ -34,11 +34,11 @@ SpPipelineRunner::SpPipelineRunner(
       .d2h_socket_id = tt::config::d2hSocketId(),
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
-  pm::MockConfig mockConfig{};
+  // pm::MockConfig mock = {};
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
-      std::make_unique<pm::PipelineManager>(mockConfig, managerParams);
+      std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
   TT_LOG_INFO(
       "SpPipelineRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
@@ -224,38 +224,37 @@ void SpPipelineRunner::handleRequest(
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
 
-  auto it = running.find(slotId);
-  bool isNew = (it == running.end());
+  bool isNew = !request->isContinuation();
 
   TT_LOG_DEBUG(
       "[SpPipelineRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
-      "numPromptTokens={}, totalTokens={}, runningSlots={}",
-      request->taskId, slotId, isNew, request->getNumPromptTokens(),
-      request->getTokenIds().size(), running.size());
-
-  if (!isNew && it->second->taskId != request->taskId) {
-    TT_LOG_INFO(
-        "SpPipelineRunner::handleRequest slot={} reused by new task {} "
-        "(was task {}), treating as new SUBMIT",
-        slotId, request->taskId, it->second->taskId);
-    pipelineManager->push_request(utils::makeCancelRequest(slotId));
-    running.erase(it);
-    isNew = true;
-  }
+      "isContinuation={}, numPromptTokens={}, totalTokens={}, runningSlots={}",
+      request->taskId, slotId, isNew, request->isContinuation(),
+      request->getNumPromptTokens(), request->getTokenIds().size(),
+      running.size());
 
   if (isNew) {
+    if (request->getSamplingParams().hasGuidedDecoding()) {
+      TT_LOG_WARN(
+          "[SpPipelineRunner] task_id={} has response_format constraint but "
+          "SP Pipeline does not support per-step guided decoding yet. "
+          "Output may not conform to the requested schema.",
+          request->taskId);
+    }
+
     TT_LOG_DEBUG(
         "[SpPipelineRunner] handleRequest: SUBMIT taskId={}, slotId={}",
         request->taskId, slotId);
     pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
     running[slotId] = std::move(request);
     return;
+  } else {
+    TT_LOG_DEBUG(
+        "[SpPipelineRunner] handleRequest: CONTINUE taskId={}, slotId={}",
+        request->taskId, slotId);
+    pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
+    running[slotId] = std::move(request);
   }
-  TT_LOG_DEBUG(
-      "[SpPipelineRunner] handleRequest: CONTINUE taskId={}, slotId={}",
-      request->taskId, slotId);
-  pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
-  running[slotId] = std::move(request);
 }
 
 }  // namespace tt::runners
