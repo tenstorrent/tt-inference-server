@@ -96,6 +96,8 @@ class Job:
             "model": self.model,
             "request_parameters": self.request_parameters,
         }
+        if self.org_id:
+            data["org_id"] = self.org_id
         if self.completed_at:
             data["completed_at"] = self.completed_at
         if self.error:
