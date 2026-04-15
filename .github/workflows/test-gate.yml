@@ -643,9 +643,9 @@ jobs:
             MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
             MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
 
-            if [ "$COMPLETED" -eq 0 ] && [ "$FAILED_REQ" -gt 0 ]; then
-              echo "❌ [$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
-              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
+            if [ "$FAILED_REQ" -gt 0 ]; then
+              echo "❌ [$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
               FAIL=1
             fi
 
@@ -672,7 +672,7 @@ jobs:
               echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ ${TPOT_LIMIT}ms |"
               echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ ${TTFT_LIMIT}ms |"
               echo "| **completed** | $COMPLETED | - |"
-              echo "| **failed** | $FAILED_REQ | - |"
+              echo "| **failed** | $FAILED_REQ | 0 |"
               echo ""
             } >> $GITHUB_STEP_SUMMARY
           }
