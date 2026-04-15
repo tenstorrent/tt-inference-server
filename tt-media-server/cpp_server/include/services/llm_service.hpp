@@ -66,9 +66,14 @@ class LLMService
       override;
 
  private:
+  struct StreamingParams {
+    bool skip_special_tokens = true;
+    std::vector<std::string> stop_sequences;
+  };
+
   struct StreamCallbackEntry {
     std::function<void(domain::LLMStreamChunk&, bool)> callback;
-    bool skip_special_tokens = true;
+    StreamingParams params;
   };
 
   void startConsumers();

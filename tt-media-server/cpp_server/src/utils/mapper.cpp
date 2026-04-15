@@ -17,6 +17,7 @@ tt::runners::llm_engine::SamplingParams mapSamplingParams(
   params.min_p = request.min_p;
   params.repetition_penalty = request.repetition_penalty;
   params.length_penalty = request.length_penalty;
+  params.stop = request.stop;
   params.stop_token_ids = request.stop_token_ids;
   params.include_stop_str_in_output = request.include_stop_str_in_output;
   params.min_tokens = request.min_tokens;
