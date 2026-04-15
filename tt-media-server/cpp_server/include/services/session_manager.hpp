@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 
@@ -20,6 +21,20 @@
 #include "utils/concurrent_queue.hpp"
 
 namespace tt::services {
+
+// Base exception for session errors that should return 429 (rate limit)
+class SessionRateLimitException : public std::runtime_error {
+ public:
+  using std::runtime_error::runtime_error;
+};
+
+class SessionInFlightException : public SessionRateLimitException {
+ public:
+  SessionInFlightException()
+      : SessionRateLimitException(
+            "Session already has a request in flight. Multiple concurrent "
+            "requests per session are not supported.") {}
+};
 
 class SessionManager {
  public:
