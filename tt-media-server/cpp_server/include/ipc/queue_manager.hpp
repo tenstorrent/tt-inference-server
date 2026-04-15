@@ -7,15 +7,13 @@
 #include <string>
 #include <vector>
 
+#include "config/settings.hpp"
 #include "ipc/boost_ipc_cancel_queue.hpp"
 #include "ipc/boost_ipc_result_queue.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
-
 namespace tt::ipc {
 
-constexpr const char* TASK_QUEUE_NAME = "tt_tasks";
-constexpr const char* RESULT_QUEUE_PREFIX = "tt_results_";
-constexpr const char* CANCEL_QUEUE_PREFIX = "tt_cancels_";
+constexpr size_t RING_BUFFER_CAPACITY = 65536;
 constexpr size_t CANCEL_QUEUE_CAPACITY = 1024;
 
 /**
@@ -29,17 +27,18 @@ class QueueManager {
   std::vector<std::shared_ptr<BoostIpcCancelQueue>> cancel_queues;
 
   explicit QueueManager(int numWorkers) {
-    task_queue = std::make_shared<BoostIpcTaskQueue>(TASK_QUEUE_NAME, 1024);
+    task_queue = std::make_shared<BoostIpcTaskQueue>(
+        tt::config::ttTaskQueueName(), 1024);
     result_queues.reserve(numWorkers);
     cancel_queues.reserve(numWorkers);
     for (int i = 0; i < numWorkers; i++) {
       std::string resultName =
-          std::string(RESULT_QUEUE_PREFIX) + std::to_string(i);
+          std::string(tt::config::ttResultQueueName()) + std::to_string(i);
       result_queues.emplace_back(std::make_shared<BoostIpcResultQueue>(
           resultName, RESULT_QUEUE_CAPACITY));
 
       std::string cancelName =
-          std::string(CANCEL_QUEUE_PREFIX) + std::to_string(i);
+          tt::config::ttCancelQueueName() + std::to_string(i);
       cancel_queues.emplace_back(std::make_shared<BoostIpcCancelQueue>(
           cancelName, CANCEL_QUEUE_CAPACITY));
     }
@@ -48,7 +47,7 @@ class QueueManager {
   ~QueueManager() { clear(); }
 
   void clear() {
-    BoostIpcTaskQueue::remove(TASK_QUEUE_NAME);
+    BoostIpcTaskQueue::remove(tt::config::ttTaskQueueName());
     for (auto& queue : result_queues) {
       queue->shutdown();
       queue->remove();
