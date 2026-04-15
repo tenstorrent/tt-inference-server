@@ -83,7 +83,9 @@
         },
         {
             "id": "efficientnet-n150",
-            "weights": ["efficientnet"],
+            "weights": [
+                "efficientnet"
+            ],
             "device": "n150",
             "model_marker": "efficientnet",
             "test_cases": [
@@ -107,7 +109,9 @@
         },
         {
             "id": "segformer-n150",
-            "weights": ["segformer"],
+            "weights": [
+                "segformer"
+            ],
             "device": "n150",
             "model_marker": "segformer",
             "test_cases": [
@@ -131,7 +135,9 @@
         },
         {
             "id": "unet-n150",
-            "weights": ["unet"],
+            "weights": [
+                "unet"
+            ],
             "device": "n150",
             "model_marker": "unet",
             "test_cases": [
@@ -155,7 +161,9 @@
         },
         {
             "id": "vit-n150",
-            "weights": ["vit"],
+            "weights": [
+                "vit"
+            ],
             "device": "n150",
             "model_marker": "vit",
             "test_cases": [
@@ -179,7 +187,9 @@
         },
         {
             "id": "vovnet-n150",
-            "weights": ["vovnet"],
+            "weights": [
+                "vovnet"
+            ],
             "device": "n150",
             "model_marker": "vovnet",
             "test_cases": [
