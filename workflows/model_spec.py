@@ -1129,6 +1129,7 @@ llm_templates = [
                 env_vars={
                     "TT_SYMBIOTE_DISPATCHER": "CPU",
                     "MESH_DEVICE": "T3K",
+                    "DISABLE_METAL_OP_TIMEOUT": "1",
                 },
             ),
         ],

@@ -351,19 +351,17 @@ def register_tt_models(impl_id=None):
     impl_id = impl_id or "tt_transformers"
 
     # tt_symbiote models register through a central registry in tt-metal and
-    # bypass the tt_transformers paths entirely.
+    # bypass the tt_transformers paths entirely. The actual registration is
+    # handled automatically by tt_vllm_plugin.register_models (declared as the
+    # `tt_model_registry` entry in the `vllm.general_plugins` group, so it runs
+    # in every vLLM process including the EngineCore workers). Re-registering
+    # here would trigger a "Model architecture ... is already registered"
+    # warning from vLLM's ModelRegistry with no benefit, so we just return.
     if impl_id == "tt_symbiote":
-        try:
-            from models.experimental.tt_symbiote.vllm import SYMBIOTE_MODEL_REGISTRY
-
-            for arch, module_path in SYMBIOTE_MODEL_REGISTRY.items():
-                ModelRegistry.register_model(arch, module_path)
-                logger.info(f"Registered symbiote model: {arch}")
-        except ImportError:
-            logger.warning(
-                "tt_symbiote.vllm registry not importable (tt-metal not on PYTHONPATH?). "
-                "Symbiote models will not be available."
-            )
+        logger.info(
+            "impl_id=tt_symbiote: model registration delegated to "
+            "tt_vllm_plugin.register_models (vllm.general_plugins entry point)."
+        )
         return
 
     # Llama path selection based on impl_id
@@ -796,8 +794,10 @@ def main():
     register_tt_models(impl_id)
 
     # Step 4: Set runtime environment variables and vLLM server args
-    set_metal_timeout_env_vars()
+    # Model spec env vars must be applied first so that per-model overrides
+    # like DISABLE_METAL_OP_TIMEOUT are visible to set_metal_timeout_env_vars.
     set_runtime_env_vars(model_spec)
+    set_metal_timeout_env_vars()
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
     default_vllm_args = _resolve_vllm_file_args(default_vllm_args)
