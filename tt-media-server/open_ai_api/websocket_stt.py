@@ -125,9 +125,7 @@ async def stt_live(
                     if action == "final":
                         session_active = False
                 elif action == "stop":
-                    await websocket.send_json(
-                        {"type": "status", "message": "stopped"}
-                    )
+                    await websocket.send_json({"type": "status", "message": "stopped"})
                     session_active = False
                 else:
                     await websocket.send_json(

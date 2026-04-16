@@ -18,8 +18,6 @@ import argparse
 import asyncio
 import json
 import os
-import sys
-import time
 
 import numpy as np
 
@@ -112,7 +110,10 @@ def _print_response(data: dict, final: bool = False) -> None:
         tag = "FINAL" if (final or data.get("is_final")) else "partial"
         dur = data.get("duration", 0)
         ms = data.get("time_ms", 0)
-        print(f"  [{tag}] {dur:.1f}s audio, {ms:.0f}ms inference: {data.get('text', '')!r}", flush=True)
+        print(
+            f"  [{tag}] {dur:.1f}s audio, {ms:.0f}ms inference: {data.get('text', '')!r}",
+            flush=True,
+        )
     else:
         print(f"  [msg] {data}", flush=True)
 
@@ -124,7 +125,9 @@ def main() -> None:
         default=os.getenv("STT_WS_URL", "ws://localhost:7002/ws/stt-live"),
         help="WebSocket URL",
     )
-    parser.add_argument("--wav", default=None, help="Replay this WAV file instead of mic")
+    parser.add_argument(
+        "--wav", default=None, help="Replay this WAV file instead of mic"
+    )
     args = parser.parse_args()
 
     if args.wav:
