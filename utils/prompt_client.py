@@ -10,11 +10,14 @@ from typing import List, Tuple, Optional
 from pathlib import Path
 
 import requests
-import jwt
 from transformers import AutoTokenizer
 
 from utils.prompt_generation import generate_prompts
-from utils.prompt_configs import PromptConfig, EnvironmentConfig
+from utils.prompt_configs import (
+    EnvironmentConfig,
+    PromptConfig,
+    resolve_authorization_bearer,
+)
 from utils.cache_monitor import CacheMonitor
 
 logging.basicConfig(
@@ -76,7 +79,7 @@ class PromptClient:
         cache_dir: Optional[Path] = None,
     ):
         self.env_config = env_config
-        authorization = self._get_authorization()
+        authorization = resolve_authorization_bearer(env_config)
         if authorization:
             self.headers = {"Authorization": f"Bearer {authorization}"}
         else:
@@ -85,25 +88,6 @@ class PromptClient:
         self.health_url = self._get_api_health_url()
         self.cache_monitor = CacheMonitor(model_spec=model_spec, cache_dir=cache_dir)
         self.server_ready = False
-
-    def _get_authorization(self) -> Optional[str]:
-        if self.env_config.vllm_api_key:
-            return self.env_config.vllm_api_key
-
-        if self.env_config.jwt_secret:
-            json_payload = json.loads(
-                '{"team_id": "tenstorrent", "token_id":"debug-test"}'
-            )
-            encoded_jwt = jwt.encode(
-                json_payload, self.env_config.jwt_secret, algorithm="HS256"
-            )
-            return encoded_jwt
-
-        logger.warning(
-            "Neither VLLM_API_KEY nor JWT_SECRET environment variables are set. "
-            "Proceeding without authorization."
-        )
-        return None
 
     def _get_api_base_url(self, include_v1: bool = True) -> str:
         """Get base API URL, optionally with /v1 suffix.

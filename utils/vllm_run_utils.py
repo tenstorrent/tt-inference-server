@@ -4,11 +4,59 @@
 
 import json
 import logging
+import os
 from pathlib import Path
 import subprocess
 import jwt
 
 logger = logging.getLogger(__name__)
+
+
+def configure_vllm_api_key_env(no_auth: bool) -> None:
+    """Populate ``VLLM_API_KEY`` for vLLM's OpenAI API server from the environment.
+
+    When ``no_auth`` is True, ``VLLM_API_KEY`` is removed so the server does not
+    require authorization.
+
+    Otherwise, resolution order is:
+    1. ``VLLM_API_KEY`` — use as-is if set
+    2. ``API_KEY`` — copy to ``VLLM_API_KEY`` (parity with tt-media-server)
+    3. ``JWT_SECRET`` — derive a bearer token and set ``VLLM_API_KEY``
+    """
+    if no_auth:
+        if "VLLM_API_KEY" in os.environ:
+            del os.environ["VLLM_API_KEY"]
+        logger.info(
+            "--no-auth is set: requests to vLLM API will not require authorization. "
+            "HTTP Authorization header will not be checked."
+        )
+        return
+
+    if os.getenv("VLLM_API_KEY"):
+        logger.info("VLLM_API_KEY is already set, using existing value")
+        return
+
+    api_key = os.getenv("API_KEY")
+    if api_key:
+        os.environ["VLLM_API_KEY"] = api_key
+        logger.info(
+            "API_KEY is set: using it for vLLM API authorization (same role as VLLM_API_KEY)"
+        )
+        return
+
+    jwt_secret = os.getenv("JWT_SECRET")
+    if not jwt_secret:
+        logger.warning(
+            "Neither VLLM_API_KEY, API_KEY, nor JWT_SECRET are set: HTTP requests to vLLM API will not require authorization"
+        )
+        return
+
+    encoded_api_key = get_encoded_api_key(jwt_secret)
+    if encoded_api_key is not None:
+        os.environ["VLLM_API_KEY"] = encoded_api_key
+        logger.info(
+            "JWT_SECRET is set: HTTP requests to vLLM API require bearer token in 'Authorization' header. See docs for how to get bearer token."
+        )
 
 
 def create_model_symlink(symlinks_dir, model_name, weights_dir, file_symlinks_map={}):
