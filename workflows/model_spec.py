@@ -1604,7 +1604,7 @@ llm_templates = [
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="555f240",
+        tt_metal_commit="6900b0c",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1669,7 +1669,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="555f240",
+        tt_metal_commit="6900b0c",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
