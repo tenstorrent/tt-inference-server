@@ -1394,6 +1394,35 @@ llm_templates = [
         },
     ),
     ModelSpecTemplate(
+        weights=["mistralai/Mistral-Small-3.1-24B-Instruct-2503"],
+        impl=tt_transformers_impl,
+        tt_metal_commit="9e3b1b3",
+        vllm_commit="1d0aa18",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 90000000,
+                },
+                vllm_args={
+                    "limit-mm-per-prompt": json.dumps({"image": 1}),
+                    "disable_mm_preprocessor_cache": True,
+                },
+            ),
+        ],
+        model_type=ModelType.VLM,
+        status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
+        supported_modalities=["text", "image"],
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+        },
+    ),
+    ModelSpecTemplate(
         weights=["Qwen/QwQ-32B"],
         impl=tt_transformers_impl,
         tt_metal_commit="e95ffa5",
@@ -2270,8 +2299,8 @@ vlm_templates = [
             "google/medgemma-4b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="c254ee3",
-        vllm_commit="c4f2327",
+        tt_metal_commit="aecd1d7",
+        vllm_commit="0da90eb",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2314,8 +2343,8 @@ vlm_templates = [
             "google/medgemma-27b-it",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="0b10c51",
-        vllm_commit="3499ffa",
+        tt_metal_commit="aecd1d7",
+        vllm_commit="0da90eb",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(

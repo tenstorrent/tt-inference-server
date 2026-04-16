@@ -21,6 +21,24 @@
                     "description": "Video generation load test",
                     "targets": {
                         "video_generation_target_time": 370
+                    },
+                    "model_targets": {
+                        "wan+t3k": {
+                            "video_generation_target_time": 1200,
+                            "poll_timeout": 1500
+                        },
+                        "wan+galaxy": {
+                            "video_generation_target_time": 250,
+                            "poll_timeout": 550
+                        },
+                        "wan+p150x8": {
+                            "video_generation_target_time": 600,
+                            "poll_timeout": 900
+                        },
+                        "wan+p300x2": {
+                            "video_generation_target_time": 500,
+                            "poll_timeout": 800
+                        }
                     }
                 },
                 {
@@ -50,6 +68,24 @@
                     "targets": {
                         "video_generation_target_time": 480,
                         "num_inference_steps": 50
+                    },
+                    "model_targets": {
+                        "mochi+p300x2": {
+                            "video_generation_target_time": 900,
+                            "poll_timeout": 1100
+                        },
+                        "mochi+t3k": {
+                            "video_generation_target_time": 600,
+                            "poll_timeout": 900
+                        },
+                        "mochi+galaxy": {
+                            "video_generation_target_time": 650,
+                            "poll_timeout": 800
+                        },
+                        "mochi+p150x8": {
+                            "video_generation_target_time": 900,
+                            "poll_timeout": 1000
+                        }
                     }
                 },
                 {

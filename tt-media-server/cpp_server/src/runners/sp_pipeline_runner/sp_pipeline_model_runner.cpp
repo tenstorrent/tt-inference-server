@@ -3,7 +3,7 @@
 
 #include "runners/sp_pipeline_runner/sp_pipeline_model_runner.hpp"
 
-#include "runners/llm_runner/debug.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::runners::sp_pipeline {
 
@@ -30,7 +30,7 @@ void SpPipelineModelRunner::write(uint32_t taskId,
 void SpPipelineModelRunner::exit() {
   if (stop.exchange(true)) return;
   if (readerThread.joinable()) readerThread.join();
-  LLM_ENGINE_LOG("sp_pipeline") << "model runner exit" << std::endl;
+  TT_LOG_DEBUG("[sp_pipeline] model runner exit");
 }
 
 void SpPipelineModelRunner::readerLoop() {

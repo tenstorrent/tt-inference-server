@@ -7,7 +7,7 @@
 #include <chrono>
 
 #include "profiling/tracy.hpp"
-#include "runners/llm_runner/debug.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::runners::sp_pipeline {
 
@@ -57,7 +57,7 @@ void MockDevicePipeline::exit() {
   inputNotFull.notify_all();
   outputNotEmpty.notify_all();
   if (pipelineThread.joinable()) pipelineThread.join();
-  LLM_ENGINE_LOG("mock_device_pipeline") << "exit" << std::endl;
+  TT_LOG_DEBUG("[mock_device_pipeline] exit");
 }
 
 // ---------------------------------------------------------------------------

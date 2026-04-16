@@ -96,7 +96,7 @@ The server operates in two modes via `MODEL_SERVICE` environment variable:
 
 Runner type and tokenizer are selected via `LLM_DEVICE_BACKEND` environment variable. This selects the
 tokenizer strategy (chat template, stop tokens, decode filtering) at runtime via
-the `Tokenizer` subclass hierarchy (`utils/tokenizer.hpp`):
+the `Tokenizer` subclass hierarchy (`utils/tokenizers/tokenizer.hpp`):
 
 - **`mock`** or **`pipeline`** (default when unset: `mock`): Mock or TT device runner, DeepSeek V3 tokenizer strategy
 - **`llama`**: Python-based runner via pybind11, Llama 3.1 8B Instruct tokenizer strategy
@@ -139,8 +139,8 @@ The project uses modern C++20 with strict compiler warnings and sanitizer suppor
 ### Logging
 
 - Main server uses Drogon logging (in `./logs/` directory)
-- LLM engine uses structured logging with a `runners.llm_engine:` tag in `LLM_ENGINE_LOG` output when `LLM_ENGINE_DEBUG_BUILD` is enabled
-- Enable LLM engine debug logging with `-DLLM_ENGINE_DEBUG_BUILD=ON`
+- LLM engine uses the standard `TT_LOG_*` macros (spdlog-backed, defined in `utils/logger.hpp`)
+- Configure log level at runtime with `TT_LOG_LEVEL` env var (trace, debug, info, warn, error, critical, off)
 
 ## Dependencies and Prerequisites
 

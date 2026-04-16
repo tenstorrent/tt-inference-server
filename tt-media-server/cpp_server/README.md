@@ -86,9 +86,8 @@ Available log levels (from most to least verbose):
 
 Inference engine code lives under `include/runners/llm_runner/` and
 `src/runners/llm_runner/`. Public C++ API types are in namespace
-`tt::runners::llm_engine`. With `-DLLM_ENGINE_DEBUG_BUILD=ON`, `LLM_ENGINE_LOG`
-lines include the tag `runners.llm_engine:` in the prefix. The static library
-CMake target is `llm_runner_lib`.
+`tt::runners::llm_engine`. The engine uses the standard `TT_LOG_*` macros
+(see **Logging** above). The static library CMake target is `llm_runner_lib`.
 
 ### Main features
 
@@ -285,6 +284,9 @@ All environment variable reads go through `config/settings.hpp` (no direct `gete
 | `SCHEDULING_POLICY` | LLM scheduling policy: `prefill_first` (prioritize new requests) or `max_occupancy` (maximize throughput). See Choosing a Scheduling Policy. | `prefill_first` |
 | `ENABLE_ACCUMULATED_STREAMING` | Enable token accumulation before streaming (send multiple tokens per chunk). | `false` |
 | `MAX_ACCUMULATED_TOKENS` | Maximum tokens to accumulate before streaming when `ENABLE_ACCUMULATED_STREAMING` is true. | `5` |
+| `KAFKA_BROKERS` | Kafka broker addresses (comma-separated) for session offloading. See Kafka Messaging section. | `localhost:9092` |
+| `KAFKA_OFFLOAD_TOPIC_NAME` | Kafka topic name for session offload messages. | `session-offload` |
+| `KAFKA_GROUP_ID` | Kafka consumer group ID for load balancing across consumer instances. | `migration-workers` |
 
 ### Prefill/Decode Split Mode
 
@@ -340,6 +342,181 @@ Client HTTP Request
 3. Prefill server processes prompt, generates first token, sends prefill result with token IDs
 4. Decode server continues generating remaining tokens locally
 5. Decode server streams response to client
+
+## Kafka Messaging (Session Offloading)
+
+The server supports Kafka-based messaging for session offloading, enabling distributed session management.
+
+### Architecture
+
+```
+┌─────────────────┐         ┌─────────────────┐
+│  Main Server    │────────▶│  Kafka Broker   │
+│  (Producer)     │  Offload │  (Topic)        │
+│                 │  Request └─────────────────┘
+└─────────────────┘                 │
+                                    ▼
+                            ┌───────────────┐
+                            │   Consumer    │
+                            │   Instance    │
+                            │(MigrationWorker)
+                            └───────────────┘
+```
+
+**Note:** Kafka producer integration is currently in development and will be integrated into the `SessionManager` to handle session offload requests when capacity thresholds are reached.
+
+### Prerequisites
+
+1. **Install librdkafka** (Kafka C/C++ client library):
+   ```bash
+   # Option 1: Use the install script (recommended)
+   ./install_dependencies.sh --kafka
+   
+   # Option 2: Manual installation
+   sudo apt update
+   sudo apt install librdkafka-dev
+   
+   # Verify installation
+   dpkg -l | grep librdkafka
+   ```
+
+2. **Download and Install Kafka 4.2.0** (KRaft mode - no Zookeeper required):
+   ```bash
+   # Download Kafka in project root
+   cd /path/to/tt-inference-server
+   wget https://downloads.apache.org/kafka/4.2.0/kafka_2.13-4.2.0.tgz
+   tar -xzf kafka_2.13-4.2.0.tgz
+   cd kafka_2.13-4.2.0
+   
+   # Format storage (only needed once)
+   KAFKA_CLUSTER_ID="$(bin/kafka-storage.sh random-uuid)"
+   bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/server.properties --standalone
+   ```
+
+3. **Start Kafka Server**:
+   ```bash
+   # From the kafka_2.13-4.2.0 directory, start Kafka (keep this running in a separate terminal)
+   cd kafka_2.13-4.2.0
+   bin/kafka-server-start.sh config/server.properties
+   ```
+   
+   Kafka will start on `localhost:9092` by default.
+
+4. **Create Kafka Topic**:
+   ```bash
+   # From the kafka_2.13-4.2.0 directory
+   bin/kafka-topics.sh --create \
+     --topic session-offload \
+     --bootstrap-server localhost:9092 \
+     --partitions 1 \
+     --replication-factor 1
+   ```
+
+### Building with Kafka Support
+
+Build the server with Kafka enabled:
+
+```bash
+cd tt-media-server/cpp_server
+./build.sh --kafka
+```
+
+This builds:
+- `tt_media_server_cpp` - Main server (will include Kafka producer in SessionManager)
+- `tt_consumer` - Standalone Kafka consumer instance
+
+**Note:** When Kafka producer is implemented in the main server, you may need to set `KAFKA_ENABLED=true` at runtime:
+```bash
+KAFKA_ENABLED=true ./build/tt_media_server_cpp -p 8000
+```
+
+### Configuration
+
+Kafka configuration can be customized via environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `KAFKA_BROKERS` | Kafka broker addresses (comma-separated) | `localhost:9092` |
+| `KAFKA_OFFLOAD_TOPIC_NAME` | Topic name for session offload messages | `session-offload` |
+| `KAFKA_GROUP_ID` | Consumer group ID for load balancing | `migration-workers` |
+
+### Running Kafka Consumer
+
+Start a consumer instance to handle offload requests:
+
+```bash
+# Start consumer on default port (8001)
+KAFKA_ENABLED=true ./build/tt_consumer
+
+# Start consumer on custom port
+KAFKA_ENABLED=true ./build/tt_consumer -p 8002
+
+# With custom Kafka configuration
+KAFKA_ENABLED=true \
+KAFKA_BROKERS="kafka1:9092,kafka2:9092" \
+KAFKA_OFFLOAD_TOPIC_NAME="my-offload-topic" \
+KAFKA_GROUP_ID="my-consumer-group" \
+./build/tt_consumer -p 8001
+```
+
+**Note:** The `KAFKA_ENABLED=true` environment variable may be required at runtime to enable Kafka functionality.
+
+The consumer:
+- Subscribes to the configured Kafka topic
+- Polls for offload requests
+- Processes messages independently
+- Provides a health endpoint at `/health`
+
+**Consumer Options:**
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-h, --host HOST` | Listen address | `0.0.0.0` |
+| `-p, --port PORT` | HTTP port | `8001` |
+| `-t, --threads N` | Number of IO threads | `1` |
+
+### Verifying Kafka Setup
+
+```bash
+# From the kafka_2.13-4.2.0 directory:
+cd kafka_2.13-4.2.0
+
+# Check if Kafka topic exists
+bin/kafka-topics.sh --list --bootstrap-server localhost:9092
+
+# Describe topic details (partitions, replicas)
+bin/kafka-topics.sh --describe --topic session-offload --bootstrap-server localhost:9092
+
+# Monitor consumer group
+bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --group migration-workers --describe
+
+# Check consumer health (from any directory)
+curl http://localhost:8001/health
+```
+
+### Message Format
+
+Offload request messages are JSON with the following structure:
+
+```json
+{
+  "timestamp_us": 1234567890,
+  "action": "offload",
+  "session_id": "session-abc-123",
+  "current_session_count": 850,
+  "max_sessions": 1000
+}
+```
+
+### Stopping Kafka Consumer
+
+```bash
+# Stop the consumer
+pkill -f tt_consumer
+
+# Stop Kafka server (from kafka directory)
+cd kafka_2.13-4.2.0
+bin/kafka-server-stop.sh
+```
 
 ### Tracy profiling (Tracy build only)
 
@@ -637,6 +814,14 @@ chmod +x build.sh
 ./build.sh --debug   # Debug build
 ./build.sh --asan    # AddressSanitizer + LeakSanitizer (memory/leak detection)
 ./build.sh --tsan    # ThreadSanitizer (data-race detection; cannot combine with --asan)
+```
+
+Optional **Kafka** (`KAFKA_ENABLED=ON`, `messaging` / `migration_worker` / `tt_consumer`): install **librdkafka** first, then build with `--kafka`:
+
+```bash
+sudo apt install librdkafka-dev
+# or: ./install_dependencies.sh --kafka
+./build.sh --kafka
 ```
 
 ### Memory leak detection
