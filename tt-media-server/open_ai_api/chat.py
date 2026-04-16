@@ -61,6 +61,7 @@ def _build_completion_request(
         stop=chat_request.stop,
         n=chat_request.n,
         seed=chat_request.seed,
+        adapter=chat_request.adapter,
     )
 
 
