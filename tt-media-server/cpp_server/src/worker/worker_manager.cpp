@@ -6,6 +6,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <chrono>
 #include <climits>
 #include <cstdio>
@@ -121,7 +122,7 @@ SingleProcessWorker* WorkerManager::worker(size_t idx) {
 
 bool WorkerManager::checkWorkerAlive(size_t workerIdx) {
   auto* w = workers[workerIdx].get();
-  if (w->pid <= 0) {
+  if (w->pid <= 0 || !w->is_alive.load()) {
     return false;
   }
   int status;
@@ -156,7 +157,14 @@ bool WorkerManager::checkWorkerAlive(size_t workerIdx) {
     }
     return false;
   }
-  return true;  // waitpid error -- assume alive
+  // waitpid returned -1 (e.g. ECHILD after zombie was already reaped).
+  // Mark the worker dead rather than silently assuming alive.
+  TT_LOG_ERROR(
+      "[WorkerManager] waitpid failed for worker {} (PID {}): {} -- "
+      "marking dead",
+      workerIdx, w->pid, strerror(errno));
+  w->is_alive = false;
+  return false;
 }
 
 void WorkerManager::restartWorker(size_t workerIdx) {
