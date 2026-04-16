@@ -1,5 +1,5 @@
 {
-    "_version": "0.1.0",
+    "_version": "1.0.0",
     "_description": "Server tests schema configuration. Test suites are in test_suites/*.json",
     "model_categories": {
         "IMAGE": [
@@ -21,6 +21,7 @@
             "mobilenetv2",
             "efficientnet",
             "segformer",
+            "unet",
             "vit"
         ],
         "EMBEDDING": [
@@ -86,6 +87,247 @@
             "mochi": "Mochi video generation model tests",
             "mobilenetv2": "MobileNetV2 CNN model tests",
             "bge_m3": "BGE-M3 embedding model tests"
+        }
+    },
+    "model_configs": {
+        "mobilenetv2": {
+            "weights": [
+                "mobilenetv2"
+            ],
+            "category": "CNN",
+            "compatible_devices": [
+                "n150",
+                "n300"
+            ]
+        },
+        "resnet": {
+            "id_name": "resnet-50",
+            "weights": [
+                "resnet-50"
+            ],
+            "category": "CNN",
+            "compatible_devices": [
+                "n150",
+                "n300"
+            ]
+        },
+        "efficientnet": {
+            "weights": [
+                "efficientnet"
+            ],
+            "category": "CNN",
+            "compatible_devices": [
+                "n150"
+            ]
+        },
+        "segformer": {
+            "weights": [
+                "segformer"
+            ],
+            "category": "CNN",
+            "compatible_devices": [
+                "n150"
+            ]
+        },
+        "unet": {
+            "weights": [
+                "unet"
+            ],
+            "category": "CNN",
+            "compatible_devices": [
+                "n150"
+            ]
+        },
+        "vit": {
+            "weights": [
+                "vit"
+            ],
+            "category": "CNN",
+            "compatible_devices": [
+                "n150"
+            ]
+        },
+        "vovnet": {
+            "weights": [
+                "vovnet"
+            ],
+            "category": "CNN",
+            "compatible_devices": [
+                "n150"
+            ]
+        },
+        "distil_whisper": {
+            "id_name": "distil-whisper",
+            "weights": [
+                "distil-large-v3"
+            ],
+            "category": "AUDIO",
+            "compatible_devices": [
+                "n150",
+                "t3k",
+                "galaxy"
+            ]
+        },
+        "whisper": {
+            "weights": [
+                "whisper-large-v3"
+            ],
+            "category": "AUDIO",
+            "compatible_devices": [
+                "n150",
+                "t3k",
+                "galaxy"
+            ]
+        },
+        "wan": {
+            "weights": [
+                "Wan2.2-T2V-A14B-Diffusers"
+            ],
+            "category": "VIDEO",
+            "compatible_devices": [
+                "t3k",
+                "galaxy",
+                "p150x4",
+                "p150x8",
+                "p300x2"
+            ]
+        },
+        "mochi": {
+            "weights": [
+                "mochi-1-preview"
+            ],
+            "category": "VIDEO",
+            "compatible_devices": [
+                "t3k",
+                "galaxy",
+                "p150x4",
+                "p150x8",
+                "p300x2"
+            ]
+        },
+        "sdxl": {
+            "weights": [
+                "stable-diffusion-xl-base-1.0"
+            ],
+            "category": "IMAGE",
+            "compatible_devices": [
+                "n150",
+                "t3k",
+                "galaxy",
+                "n300",
+                "p150x8",
+                "p300x2"
+            ]
+        },
+        "sdxl_img2img": {
+            "id_name": "sdxl-img2img",
+            "weights": [
+                "stable-diffusion-xl-base-1.0-img-2-img"
+            ],
+            "category": "IMAGE",
+            "compatible_devices": [
+                "n150",
+                "t3k",
+                "galaxy"
+            ]
+        },
+        "sdxl_inpaint": {
+            "id_name": "sdxl-inpaint",
+            "weights": [
+                "stable-diffusion-xl-1.0-inpainting-0.1"
+            ],
+            "category": "IMAGE",
+            "compatible_devices": [
+                "n150",
+                "t3k",
+                "galaxy"
+            ]
+        },
+        "sd35": {
+            "weights": [
+                "stable-diffusion-3.5-large"
+            ],
+            "category": "IMAGE",
+            "compatible_devices": [
+                "t3k",
+                "galaxy"
+            ]
+        },
+        "flux_dev": {
+            "id_name": "flux-dev",
+            "weights": [
+                "FLUX.1-dev"
+            ],
+            "category": "IMAGE",
+            "compatible_devices": [
+                "t3k",
+                "galaxy",
+                "p150x4",
+                "p150x8",
+                "p300",
+                "p300x2"
+            ]
+        },
+        "flux_schnell": {
+            "id_name": "flux-schnell",
+            "weights": [
+                "FLUX.1-schnell"
+            ],
+            "category": "IMAGE",
+            "compatible_devices": [
+                "t3k",
+                "galaxy",
+                "p150x4",
+                "p150x8",
+                "p300",
+                "p300x2"
+            ]
+        },
+        "motif": {
+            "weights": [
+                "Motif-Image-6B-Preview"
+            ],
+            "category": "IMAGE",
+            "compatible_devices": [
+                "t3k",
+                "galaxy",
+                "p150x4",
+                "p150x8",
+                "p300x2"
+            ]
+        },
+        "bge": {
+            "weights": [
+                "bge-large-en-v1.5"
+            ],
+            "category": "EMBEDDING",
+            "compatible_devices": [
+                "n150",
+                "t3k",
+                "galaxy"
+            ]
+        },
+        "qwen3_emb": {
+            "id_name": "qwen3-emb-8b",
+            "weights": [
+                "Qwen3-Embedding-8B"
+            ],
+            "category": "EMBEDDING",
+            "compatible_devices": [
+                "n150",
+                "t3k",
+                "galaxy"
+            ]
+        },
+        "speecht5": {
+            "weights": [
+                "speecht5_tts"
+            ],
+            "category": "TTS",
+            "compatible_devices": [
+                "n150",
+                "p150"
+            ]
         }
     },
     "hardware_defaults": {
