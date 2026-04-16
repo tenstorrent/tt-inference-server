@@ -231,8 +231,9 @@ void LLMController::handleStreaming(
                   .count());
           params.includeUsage = !reqPtr->stream_options.has_value() ||
                                 reqPtr->stream_options->include_usage;
-          params.continuousUsage = reqPtr->stream_options.has_value() &&
-                                   reqPtr->stream_options->continuous_usage_stats;
+          params.continuousUsage =
+              reqPtr->stream_options.has_value() &&
+              reqPtr->stream_options->continuous_usage_stats;
           params.promptTokensCount = reqPtr->prompt_tokens_count;
           params.sessionId = reqPtr->sessionId;
           params.taskId = reqPtr->task_id;
