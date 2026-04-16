@@ -51,9 +51,8 @@ class BaseMediaStrategy(ABC):
         device_name = (
             self.device.name if hasattr(self.device, "name") else str(self.device)
         )
-        num_devices = self.model_spec.device_model_spec.max_concurrency
         logger.info(
-            f"Detected device: {device_name} with {num_devices} expected worker(s)"
+            f"Detected device: {device_name} with max_concurrency={self.model_spec.device_model_spec.max_concurrency}"
         )
 
         # Configure test with retry logic
@@ -67,10 +66,9 @@ class BaseMediaStrategy(ABC):
         )
         logger.info(f"TestConfig: {test_config}")
 
-        # Set targets for device count validation
-        targets = {
-            "num_of_devices": num_devices if num_devices and num_devices > 0 else None
-        }
+        # max_concurrency may exceed the actual worker count (e.g. batch_size * workers),
+        # so we check that at least 1 worker is ready rather than matching max_concurrency.
+        targets = {"num_of_devices": 1}
         logger.info(f"Test targets: {targets}")
 
         # Instantiate test
