@@ -256,8 +256,8 @@ void WorkerManager::startLivenessChecker() {
         bool alive = checkWorkerAlive(i);
         if (!alive) {
           TT_LOG_ERROR(
-              "[WorkerManager] Liveness check: Worker {} is dead (PID {})",
-              i, workers[i]->pid);
+              "[WorkerManager] Liveness check: Worker {} is dead (PID {})", i,
+              workers[i]->pid);
         }
       }
     }
