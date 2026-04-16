@@ -39,7 +39,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
                 vocabSize);
   } catch (const std::exception& e) {
     TT_LOG_WARN(
-        "[LLMRunner] Failed to init guided decoder, structured outputs "
+        "[LLMRunner] Failed to init guided decoder, structured outputs"
         "disabled: {}",
         e.what());
   }
