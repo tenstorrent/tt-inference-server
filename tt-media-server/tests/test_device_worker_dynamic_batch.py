@@ -12,9 +12,9 @@ from config.constants import SHUTDOWN_SIGNAL
 
 # Mock all external dependencies before importing
 sys.modules["ttnn"] = Mock()
-sys.modules["models.experimental.stable_diffusion_xl_base.tt.tt_unet"] = Mock()
-sys.modules["models.experimental.stable_diffusion_xl_base.tt.tt_embedding"] = Mock()
-sys.modules["models.experimental.stable_diffusion_xl_base.tt.sdxl_utility"] = Mock()
+sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_unet"] = Mock()
+sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_embedding"] = Mock()
+sys.modules["models.demos.stable_diffusion_xl_base.tt.sdxl_utility"] = Mock()
 
 # Mock config settings - must be done before any imports that use settings
 mock_settings = Mock()

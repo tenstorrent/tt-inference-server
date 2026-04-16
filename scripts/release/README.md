@@ -68,7 +68,7 @@ python3 scripts/release/update_model_spec.py release_logs/models_ci_last_good_19
 
 ### step 2b: [if manual models] manual release model changes to model_spec.py
 
-After changes are added, re-generate the Model Support `README.md` table and `model_specs_output.json` run:
+After changes are added, re-generate the Model Support `README.md` table and `model_spec.json` run:
 
 ```bash
 python3 scripts/release/update_model_spec.py --output-only
@@ -77,7 +77,7 @@ python3 scripts/release/update_model_spec.py --output-only
 #### outputs
 
 - `workflows/model_spec.py`: diff has updates from Models CI most recent passing runs
-- `model_specs_output.json`: all model specs fully expanded from the ModelSpecTemplates in `workflows/model_spec.py`
+- `model_spec.json`: all model specs fully expanded from the ModelSpecTemplates in `workflows/model_spec.py`
 - `release_logs/release_models_diff.md`: summary of diff with links to specific Models CI runs
 - `docs/model_support/`: regenerated model support documentation (model type pages, hardware pages, individual model pages)
 - `README.md`: updates to the `Model Support` section (links to docs/model_support/)

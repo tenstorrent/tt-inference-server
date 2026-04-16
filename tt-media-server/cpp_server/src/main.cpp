@@ -2,178 +2,208 @@
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 #include <drogon/drogon.h>
-#include <iostream>
+#include <netinet/tcp.h>
+#include <sys/stat.h>
+
+#include <atomic>
+#include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
-#include <sys/stat.h>
-#include <netinet/tcp.h>
+#include <iostream>
+#include <thread>
 
-#include "config/constants.hpp"
+#include "api/error_response.hpp"
+#include "config/defaults.hpp"
 #include "config/settings.hpp"
-#include "filters/security_filter.hpp"
 #include "profiling/tracy.hpp"
-#include "services/llm_service.hpp"
+#include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
-#include "worker/single_process_worker.hpp"
+#include "worker/worker_manager.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
 namespace {
-    volatile std::sig_atomic_t g_shutdown_requested = 0;
+volatile std::sig_atomic_t gShutdownRequested = 0;
 
-    void signal_handler(int signal) {
-        std::cout << "\n[Main] Received signal " << signal << ", initiating shutdown..." << std::endl;
-        g_shutdown_requested = 1;
-        drogon::app().quit();
-    }
+void signalHandler(int signal) {
+  TT_LOG_WARN("\n[Main] Received signal {}, initiating shutdown...", signal);
+  gShutdownRequested = 1;
+  drogon::app().quit();
 }
+}  // namespace
 
 int main(int argc, char* argv[]) {
-    if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
-        int worker_id = std::atoi(argv[2]);
-        tracy_config::TracyStartupWorker(worker_id);
-        tt::worker::WorkerConfig cfg = tt::services::make_worker_config_for_process(worker_id);
-        tt::worker::SingleProcessWorker worker(cfg);
-        worker.start();
-        _exit(0);
-    }
+  if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
+    int workerId = std::atoi(argv[2]);
+    tracy_config::tracyStartupWorker(workerId);
+    tt::worker::WorkerConfig cfg =
+        tt::worker::makeWorkerConfigForProcess(workerId);
+    tt::worker::SingleProcessWorker worker(cfg);
 
-    // Parse command line arguments
-    std::string host = "0.0.0.0";
-    uint16_t port = 8000;
-    int threads = std::thread::hardware_concurrency();
-    tt::utils::service_factory::register_services();
+    static std::atomic<bool> workerShutdown{false};
+    std::signal(SIGTERM, [](int) { workerShutdown.store(true); });
+    std::signal(SIGINT, [](int) { workerShutdown.store(true); });
 
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        if ((arg == "-h" || arg == "--host") && i + 1 < argc) {
-            host = argv[++i];
-        } else if ((arg == "-p" || arg == "--port") && i + 1 < argc) {
-            port = static_cast<uint16_t>(std::stoi(argv[++i]));
-        } else if ((arg == "-t" || arg == "--threads") && i + 1 < argc) {
-            threads = std::stoi(argv[++i]);
-        } else if (arg == "--help") {
-            std::cout << "TT Media Server (C++ Drogon)\n"
-                      << "Usage: " << argv[0] << " [options]\n"
-                      << "Options:\n"
-                      << "  -h, --host HOST     Listen host (default: 0.0.0.0)\n"
-                      << "  -p, --port PORT     Listen port (default: 8000)\n"
-                      << "  -t, --threads N     Number of IO threads (default: CPU cores)\n"
-                      << "  --help              Show this help message\n"
-                      << "\nEnvironment Variables:\n"
-                      << "  TT_RUNNER_TYPE      Runner type: 'llm_test' (default)\n";
-            return 0;
-        }
-    }
+    std::thread shutdownMonitor([&worker] {
+      while (!workerShutdown.load()) {
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
+      }
+      worker.stop();
+    });
 
-    // Setup signal handlers
-    std::signal(SIGINT, signal_handler);
-    std::signal(SIGTERM, signal_handler);
-
-    auto model_svc = tt::config::model_service();
-    std::string service_name = tt::config::to_string(model_svc);
-
-    std::cout << "=================================================\n"
-              << "  TT Media Server (C++ Drogon Implementation)\n"
-              << "=================================================\n"
-              << "  Host: " << host << "\n"
-              << "  Port: " << port << "\n"
-              << "  IO Threads: " << threads << "\n"
-              << "  Model Service: " << service_name << "\n";
-    std::cout << "=================================================\n"
-              << std::endl;
-
-    // Ensure log directory exists (Drogon requires it)
-    mkdir("./logs", 0755);
-
-    // Initialize the security token (lazy init happens on first check)
-    SecurityFilter::initToken();
-
-    // Register pre-handling advice for bearer token authentication
-    drogon::app().registerPreHandlingAdvice(
-        [](const drogon::HttpRequestPtr& req,
-           drogon::AdviceCallback&& callback,
-           drogon::AdviceChainCallback&& chainCallback) {
-
-            const std::string& path = req->path();
-
-            // Skip authentication for health, tt-liveness, docs, and openapi endpoints
-            if (path == "/health" || path == "/tt-liveness" ||
-                path == "/docs" || path == "/swagger" || path == "/openapi.json") {
-                chainCallback();
-                return;
-            }
-
-            // Check for Bearer token on protected endpoints
-            const std::string& authHeader = req->getHeader("Authorization");
-            constexpr std::string_view bearerPrefix = "Bearer ";
-
-            if (authHeader.size() <= bearerPrefix.size() ||
-                authHeader.compare(0, bearerPrefix.size(), bearerPrefix) != 0) {
-                auto resp = drogon::HttpResponse::newHttpJsonResponse(
-                    Json::Value("Missing or invalid Authorization header. Expected: Bearer <token>"));
-                resp->setStatusCode(drogon::k401Unauthorized);
-                resp->addHeader("WWW-Authenticate", "Bearer");
-                callback(resp);
-                return;
-            }
-
-            std::string_view providedToken(authHeader.data() + bearerPrefix.size(),
-                                           authHeader.size() - bearerPrefix.size());
-
-            if (providedToken != SecurityFilter::getExpectedToken()) {
-                auto resp = drogon::HttpResponse::newHttpJsonResponse(
-                    Json::Value("Invalid API key"));
-                resp->setStatusCode(drogon::k401Unauthorized);
-                resp->addHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
-                callback(resp);
-                return;
-            }
-
-            chainCallback();
-        });
-
-    // Configure Drogon
-    drogon::app()
-        .setLogLevel(trantor::Logger::kDebug)
-        .setLogPath("./logs")
-        .addListener(host, port)
-        .setThreadNum(threads)
-        .setAfterAcceptSockOptCallback([](int fd) {
-            int one = 1;
-            setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
-        })
-        .setMaxConnectionNum(100000)
-        .setMaxConnectionNumPerIP(0)  // No limit per IP
-        .setIdleConnectionTimeout(60)
-        .setKeepaliveRequestsNumber(0)  // No limit
-        .setClientMaxBodySize(100 * 1024 * 1024)  // 100MB max body
-        .setClientMaxMemoryBodySize(100 * 1024 * 1024)
-        .setStaticFilesCacheTime(0);
-
-    std::cout << "[Main] Starting Drogon server at http://" << host << ":" << port << std::endl;
-
-    if (model_svc == tt::config::ModelService::EMBEDDING) {
-        std::cout << "[Main] Endpoints:\n"
-                  << "  POST /v1/embeddings   - OpenAI-compatible embeddings\n"
-                  << "  GET  /health          - Health check\n"
-                  << "  GET  /tt-liveness     - Liveness check\n"
-                  << std::endl;
-    } else {
-        std::cout << "[Main] Endpoints:\n"
-                  << "  POST /v1/completions       - OpenAI-compatible completions\n"
-                  << "  POST /v1/chat/completions  - OpenAI-compatible chat completions\n"
-                  << "  GET  /health               - Health check\n"
-                  << "  GET  /tt-liveness          - Liveness check\n"
-                  << "  GET  /docs                 - Swagger UI\n"
-                  << "  GET  /openapi.json         - OpenAPI specification\n"
-                  << std::endl;
-    }
-
-    // Run the server
-    drogon::app().run();
-
-    std::cout << "[Main] Server shutdown complete" << std::endl;
+    worker.start();
+    workerShutdown.store(true);
+    if (shutdownMonitor.joinable()) shutdownMonitor.join();
     return 0;
+  }
+
+  namespace defs = tt::config::defaults;
+
+  std::string host = defs::SERVER_HOST;
+  uint16_t port = defs::SERVER_PORT;
+  int threads = std::thread::hardware_concurrency();
+  tt::utils::service_factory::initializeServices();
+
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if ((arg == "-h" || arg == "--host") && i + 1 < argc) {
+      host = argv[++i];
+    } else if ((arg == "-p" || arg == "--port") && i + 1 < argc) {
+      port = static_cast<uint16_t>(std::stoi(argv[++i]));
+    } else if ((arg == "-t" || arg == "--threads") && i + 1 < argc) {
+      threads = std::stoi(argv[++i]);
+    } else if (arg == "--help") {
+      // Use cout for help message (before logger is initialized)
+      std::cout
+          << "TT Media Server (C++ Drogon)\n"
+          << "Usage: " << argv[0] << " [options]\n"
+          << "Options:\n"
+          << "  -h, --host HOST     Listen host (default: 0.0.0.0)\n"
+          << "  -p, --port PORT     Listen port (default: 8000)\n"
+          << "  -t, --threads N     Number of IO threads (default: CPU cores)\n"
+          << "  --help              Show this help message\n"
+          << "\nEnvironment Variables:\n";
+      return 0;
+    }
+  }
+
+  // Initialize logger first
+  tt::utils::ZeroOverheadLogger::initialize();
+
+  // Setup signal handlers
+  std::signal(SIGINT, signalHandler);
+  std::signal(SIGTERM, signalHandler);
+
+  auto modelSvc = tt::config::modelService();
+  std::string serviceName = tt::config::toString(modelSvc);
+
+  TT_LOG_INFO("=================================================");
+  TT_LOG_INFO("  TT Media Server (C++ Drogon Implementation)");
+  TT_LOG_INFO("=================================================");
+  TT_LOG_INFO("  Host: {}", host);
+  TT_LOG_INFO("  Port: {}", port);
+  TT_LOG_INFO("  IO Threads: {}", threads);
+  TT_LOG_INFO("  Model Service: {}", serviceName);
+  TT_LOG_INFO("=================================================");
+
+  if (mkdir("./logs", 0755) != 0 && errno != EEXIST) {
+    TT_LOG_WARN("[Main] Failed to create log directory: {}", strerror(errno));
+  }
+
+  const char* envToken = std::getenv("OPENAI_API_KEY");
+  std::string apiKey =
+      (envToken && envToken[0] != '\0') ? envToken : "your-secret-key";
+  if (apiKey == "your-secret-key") {
+    TT_LOG_WARN("[SecurityFilter] OPENAI_API_KEY not set, using default key");
+  }
+
+  drogon::app().registerPreHandlingAdvice(
+      [apiKey](const drogon::HttpRequestPtr& req,
+               drogon::AdviceCallback&& callback,
+               drogon::AdviceChainCallback&& chainCallback) {
+        const std::string& path = req->path();
+
+        if (path == "/health" || path == "/tt-liveness" || path == "/docs" ||
+            path == "/swagger" || path == "/openapi.json" ||
+            path == "/metrics") {
+          chainCallback();
+          return;
+        }
+
+        const std::string& authHeader = req->getHeader("Authorization");
+        constexpr std::string_view bearerPrefix = "Bearer ";
+
+        if (authHeader.size() <= bearerPrefix.size() ||
+            authHeader.compare(0, bearerPrefix.size(), bearerPrefix) != 0) {
+          auto resp = tt::api::errorResponse(
+              drogon::k401Unauthorized,
+              "Missing or invalid Authorization header. Expected: Bearer "
+              "<token>",
+              "authentication_error");
+          resp->addHeader("WWW-Authenticate", "Bearer");
+          callback(resp);
+          return;
+        }
+
+        std::string_view providedToken(authHeader.data() + bearerPrefix.size(),
+                                       authHeader.size() - bearerPrefix.size());
+
+        if (providedToken != apiKey) {
+          auto resp =
+              tt::api::errorResponse(drogon::k401Unauthorized,
+                                     "Invalid API key", "authentication_error");
+          resp->addHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
+          callback(resp);
+          return;
+        }
+
+        chainCallback();
+      });
+
+  // Configure Drogon
+  drogon::app()
+      .setLogLevel(trantor::Logger::kDebug)
+      .setLogPath("./logs")
+      .addListener(host, port)
+      .setThreadNum(threads)
+      .setAfterAcceptSockOptCallback([](int fd) {
+        int one = 1;
+        if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) < 0) {
+          TT_LOG_WARN("[Main] Failed to set TCP_NODELAY: {}", strerror(errno));
+        }
+      })
+      .setMaxConnectionNum(defs::MAX_CONNECTIONS)
+      .setMaxConnectionNumPerIP(0)
+      .setIdleConnectionTimeout(defs::IDLE_CONNECTION_TIMEOUT_S)
+      .setKeepaliveRequestsNumber(0)
+      .setClientMaxBodySize(defs::CLIENT_MAX_BODY_BYTES)
+      .setClientMaxMemoryBodySize(defs::CLIENT_MAX_BODY_BYTES)
+      .setStaticFilesCacheTime(0);
+
+  TT_LOG_INFO("[Main] Starting Drogon server at http://{}:{}", host, port);
+
+  if (modelSvc == tt::config::ModelService::EMBEDDING) {
+    TT_LOG_INFO("[Main] Endpoints:");
+    TT_LOG_INFO("  POST /v1/embeddings   - OpenAI-compatible embeddings");
+    TT_LOG_INFO("  GET  /health          - Health check");
+    TT_LOG_INFO("  GET  /tt-liveness     - Liveness check");
+  } else {
+    TT_LOG_INFO("[Main] Endpoints:");
+    TT_LOG_INFO(
+        "  POST /v1/chat/completions  - OpenAI-compatible chat completions");
+    TT_LOG_INFO("  GET  /health               - Health check");
+    TT_LOG_INFO("  GET  /tt-liveness          - Liveness check");
+    TT_LOG_INFO("  GET  /docs                 - Swagger UI");
+    TT_LOG_INFO("  GET  /openapi.json         - OpenAPI specification");
+    TT_LOG_INFO("  GET  /metrics              - Prometheus metrics scrape");
+  }
+
+  // Run the server
+  drogon::app().run();
+
+  TT_LOG_INFO("[Main] Server shutdown complete");
+  return 0;
 }

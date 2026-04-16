@@ -27,9 +27,16 @@ from evals.eval_config import EVAL_CONFIGS
 from stress_tests.stress_tests_summary_report import (
     generate_report as stress_test_generate_report_helper,
 )
-from tests.utils.vllm_parameter_json_to_md import main as generate_vllm_parameter_report
+from server_tests.utils.vllm_parameter_json_to_md import (
+    main as generate_vllm_parameter_report,
+)
+from workflows.acceptance_criteria import (
+    acceptance_criteria_check,
+    format_acceptance_summary_markdown,
+)
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import (
     get_default_workflow_root_log_dir,
     is_preprocessing_enabled_for_whisper,
@@ -217,9 +224,9 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="Run vLLM reports")
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     parser.add_argument(
@@ -2165,16 +2172,17 @@ def extract_eval_json_data(json_path: Path):
 
 
 def extract_eval_results(files):
+    files = sorted(files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
     results = {}
     meta_data = {}
     for json_file in files:
-        # logger.info(f"Processing: {json_file}")
         res, meta = extract_eval_json_data(Path(json_file))
         _ = meta.pop("task_name", None)
         for task_dict in res:
             for specific_task_name, metrics in task_dict.items():
-                results[specific_task_name] = metrics
-                meta_data[specific_task_name] = meta
+                if specific_task_name not in results:
+                    results[specific_task_name] = metrics
+                    meta_data[specific_task_name] = meta
 
     return results, meta_data
 
@@ -2207,7 +2215,9 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                 # do NOT extract results[t_key] here.
                 # The score_func expects the ROOT results dict so it can do results[task_name].
 
-                kwargs = task.score.score_func_kwargs
+                # Shallow-copy to avoid mutating the shared config dict: kwargs["task_name"] = t_key
+                # below would permanently alter score_func_kwargs for all subsequent tasks in this process.
+                kwargs = dict(task.score.score_func_kwargs)
                 # Update task_name so the score function looks up the specific subtask (e.g. longbench_2wikimqa)
                 kwargs["task_name"] = t_key
                 configured_keys = kwargs.get("result_keys", [])
@@ -2235,7 +2245,12 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                     )
                 except Exception as e:
                     logger.warning(f"  Could not calculate score for {t_key}: {e}")
-                    score = 0.0
+                    if kwargs.get("unit") == "WER":
+                        # WER=100 is worst-case (100% word error rate). Using score=0.0 here
+                        # would be transformed to 100-0=100 and incorrectly pass the tolerance check.
+                        score = 100.0
+                    else:
+                        score = 0.0
                 if kwargs.get("unit") == "WER":
                     score = 100 - score
 
@@ -2400,6 +2415,7 @@ def process_list_format_eval_files(list_files):
     Returns:
         Tuple of (results_dict, meta_data_dict) in the same format as extract_eval_results()
     """
+    list_files = sorted(list_files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
     results = {}
     meta_data = {}
 
@@ -2419,19 +2435,15 @@ def process_list_format_eval_files(list_files):
             # Extract task name if available
             task_name = eval_data.get("task_name", "image_generation")
 
-            # Store metrics under task name
-            if task_name not in results:
-                results[task_name] = {}
+            if task_name in results:
+                continue
 
-            # Add all metrics from this eval data
-            results[task_name].update(eval_data)
+            results[task_name] = eval_data
 
-            # Store metadata
-            if task_name not in meta_data:
-                meta_data[task_name] = {
-                    "task_name": task_name,
-                    "dataset_path": eval_data.get("dataset_path", "N/A"),
-                }
+            meta_data[task_name] = {
+                "task_name": task_name,
+                "dataset_path": eval_data.get("dataset_path", "N/A"),
+            }
         except (json.JSONDecodeError, IOError) as e:
             logger.warning(f"Could not process list format file {filepath}: {e}")
 
@@ -2509,6 +2521,7 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
         image_files = glob(image_file_path_pattern)
         logger.info(f"Image Files: {image_files}")
         files.extend(image_files)
+    files = list(dict.fromkeys(files))
     logger.info("Evaluations Summary")
     logger.info(f"Processing: {len(files)} files")
     if (
@@ -2595,73 +2608,96 @@ def evals_generate_report(args, server_mode, model_spec, report_id, metadata={})
 
 
 def generate_tests_report(args, server_mode, model_spec, report_id, metadata={}):
-    # glob on all test reports - each test category might produce its own report
-    file_name_pattern = f"test_{model_spec.model_id}_*/*"
-    file_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/tests_output/{file_name_pattern}"
-    )
-    files = glob(file_path_pattern)
     output_dir = Path(args.output_path) / "tests"
     output_dir.mkdir(parents=True, exist_ok=True)
     data_dir = output_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"summary_{report_id}.md"
 
-    logger.info("Tests Summary")
-    logger.info(f"Processing: {len(files)} files")
-    if not files:
-        logger.info("No tests report files found. Skipping.")
-        return (
-            "",
-            [
-                {
-                    "model": getattr(args, "model", "unknown_model"),
-                    "device": getattr(args, "device", "unknown_device"),
-                }
-            ],
-            None,
-            None,
+    empty_result = (
+        "",
+        [
+            {
+                "model": getattr(args, "model", "unknown_model"),
+                "device": getattr(args, "device", "unknown_device"),
+            }
+        ],
+        None,
+        None,
+    )
+
+    # Find the latest test output directory for this model
+    tests_output_dir = get_default_workflow_root_log_dir() / "tests_output"
+    dir_pattern = f"test_{model_spec.model_id}__*"
+    matching_dirs = list(tests_output_dir.glob(dir_pattern))
+    if not matching_dirs:
+        logger.info(
+            f"No test output directories matching '{dir_pattern}' "
+            f"in {tests_output_dir}. Skipping."
         )
-    # TODO: Support handling of multiple test reports
-    assert len(files) == 1, "Handling of multiple tests reports is unimplemented."
-    files = files[0]
+        return empty_result
 
-    # generate vLLM parameter coverage report
-    markdown_str = generate_vllm_parameter_report(
-        files, output_path, report_id, metadata, model_spec=model_spec
-    )
+    latest_dir = max(matching_dirs, key=lambda d: d.stat().st_mtime)
+    logger.info(f"Using latest test output directory: {latest_dir}")
 
-    # Look for parameter_report.json in tests_output directory
-    release_raw = None
-    test_dir_pattern = f"test_{model_spec.model_id}_*"
-    test_dir_path_pattern = (
-        f"{get_default_workflow_root_log_dir()}/tests_output/{test_dir_pattern}"
-    )
-    test_dirs = glob(test_dir_path_pattern)
+    # Collect report file paths from parameter_report_*.json files
+    report_files = []
+    for report_path in sorted(latest_dir.glob("parameter_report_*.json")):
+        report_files.append(str(report_path))
+        logger.info(f"  Found report: {report_path}")
 
-    for test_dir in test_dirs:
-        parameter_report_path = Path(test_dir) / "parameter_report.json"
-        if parameter_report_path.exists():
-            try:
-                with open(parameter_report_path, "r", encoding="utf-8") as f:
-                    release_raw = json.load(f)
-                logger.info(f"Loaded parameter report from: {parameter_report_path}")
-                break
-            except Exception as e:
-                logger.warning(
-                    f"Could not read parameter report {parameter_report_path}: {e}"
-                )
+    logger.info(f"Found {len(report_files)} parameter report(s)")
 
-    if release_raw is None:
-        logger.info("No parameter_report.json found in tests_output directory.")
+    if not report_files:
+        logger.info("No parameter report files found in test output directory.")
+        return empty_result
+
+    logger.info(f"Processing {len(report_files)} parameter report(s)")
+
+    # Generate vLLM parameter coverage report from all report files
+    # Each JSON contains its own task_name field
+    markdown_str = generate_vllm_parameter_report(report_files)
+
+    # Merge all parameter report data into combined release_raw
+    release_raw_list = []
+    for report_file in report_files:
+        try:
+            with open(report_file, "r", encoding="utf-8") as f:
+                release_raw_list.append(json.load(f))
+            logger.info(f"Loaded parameter report from: {report_file}")
+        except Exception as e:
+            logger.warning(f"Could not read parameter report {report_file}: {e}")
+
+    if not release_raw_list:
         release_raw = [
             {
                 "model": getattr(args, "model", "unknown_model"),
                 "device": getattr(args, "device", "unknown_device"),
             }
         ]
+    elif len(release_raw_list) == 1:
+        release_raw = release_raw_list[0]
+    else:
+        # Merge results from multiple reports
+        release_raw = {
+            "endpoint_url": ", ".join(
+                r.get("endpoint_url", "N/A") for r in release_raw_list
+            ),
+            "model_name": release_raw_list[0].get("model_name", "unknown-model"),
+            "model_impl": release_raw_list[0].get("model_impl", "unknown-impl"),
+            "results": {},
+        }
+        for report_data in release_raw_list:
+            for test_case, tests in report_data.get("results", {}).items():
+                if test_case in release_raw["results"]:
+                    release_raw["results"][test_case].extend(tests)
+                else:
+                    release_raw["results"][test_case] = list(tests)
 
-    release_str = f"### Test Results for {model_spec.model_name} on {args.device}\n\n{markdown_str}"
+    release_str = (
+        f"### Test Results for {model_spec.model_name} on {args.device}"
+        f"\n\n{markdown_str}"
+    )
 
     # Write markdown report to file
     with output_path.open("w", encoding="utf-8") as f:
@@ -3071,7 +3107,9 @@ def stress_test_generate_report(args, server_mode, model_spec, report_id, metada
     return stress_test_release_str, release_raw, summary_fpath, data_fpath
 
 
-def benchmarks_release_data_format(model_spec, device_str, benchmark_summary_data):
+def benchmarks_release_data_format(
+    model_spec, device_str, benchmark_summary_data, runtime_config=None
+):
     """Convert the benchmark release data to the desired format"""
     reformated_benchmarks_release_data = []
 
@@ -3388,13 +3426,13 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    # Extract CLI args from model_spec
-    cli_args = model_spec.cli_args
-    model = cli_args.get("model")
-    device_str = cli_args.get("device")
-    docker_server = cli_args.get("docker_server", False)
+    # runtime config loaded from JSON
+    model = runtime_config.model
+    device_str = runtime_config.device
+    docker_server = runtime_config.docker_server
 
     workflow_config = WORKFLOW_REPORT_CONFIG
     logger.info(f"workflow_config=: {workflow_config}")
@@ -3414,15 +3452,15 @@ def main():
 
     # only show the impl run command if non-default impl is used
     if model_spec.device_model_spec.default_impl:
-        run_cmd = f"python run.py --model {model} --device {device_str} --workflow release {command_flag}"
+        run_cmd = f"python run.py --model {model} --tt-device {device_str} --workflow release {command_flag}"
     else:
-        run_cmd = f"python run.py --model {model} --device {device_str} --impl {model_spec.impl.impl_name} --workflow release {command_flag}"
+        run_cmd = f"python run.py --model {model} --tt-device {device_str} --impl {model_spec.impl.impl_name} --workflow release {command_flag}"
 
     metadata = {
         "report_id": report_id,
         "model_name": model_spec.model_name,
         "model_id": model_spec.model_id,
-        "model_spec_json": args.model_spec_json,
+        "runtime_model_spec_json": args.runtime_model_spec_json,
         "model_repo": model_spec.hf_model_repo,
         "model_impl": model_spec.impl.impl_name,
         "inference_engine": model_spec.inference_engine,
@@ -3439,22 +3477,26 @@ def main():
     # Create a simple args object for the report generation functions
     class SimpleArgs:
         def __init__(
-            self, output_path, model, device, model_spec_json, percentile_report=False
+            self,
+            output_path,
+            model,
+            device,
+            runtime_model_spec_json,
+            percentile_report=False,
         ):
             self.output_path = output_path
             self.model = model
             self.device = device
-            self.model_spec_json = model_spec_json
+            self.runtime_model_spec_json = runtime_model_spec_json
             self.percentile_report = percentile_report
 
-    # Extract percentile_report flag from cli_args
-    percentile_report = cli_args.get("percentile_report", False)
+    percentile_report = runtime_config.percentile_report
 
     simple_args = SimpleArgs(
         args.output_path,
         model,
         device_str,
-        args.model_spec_json,
+        args.runtime_model_spec_json,
         percentile_report=percentile_report,
     )
 
@@ -3545,18 +3587,13 @@ def main():
     if genai_perf_release_str:
         all_benchmarks_str += genai_perf_release_str + "\n\n"
 
-    release_str = f"{release_header}\n\n{metadata_str}\n\n{all_benchmarks_str}{evals_release_str}\n\n{tests_release_str}\n\n{stress_tests_release_str}\n\n{server_tests_release_str}"
-    print(release_str)
-    # save to file
     release_output_dir = Path(args.output_path) / "release"
     release_output_dir.mkdir(parents=True, exist_ok=True)
     release_data_dir = release_output_dir / "data"
     release_data_dir.mkdir(parents=True, exist_ok=True)
     release_file = release_output_dir / f"report_{report_id}.md"
     raw_file = release_data_dir / f"report_data_{report_id}.json"
-    with release_file.open("w", encoding="utf-8") as f:
-        f.write(release_str)
-
+    release_str = ""
     with raw_file.open("w", encoding="utf-8") as f:
         # Read detailed benchmark statistics from CSV if available
         benchmarks_detailed_data = None
@@ -3583,8 +3620,7 @@ def main():
             or model_spec.model_type.name == ModelType.TEXT_TO_SPEECH.name
         ):
             # Get performance targets using the shared utility
-            # Extract the device we are running on
-            device_str = cli_args.get("device").lower()
+            device_str = runtime_config.device.lower()
             targets = get_performance_targets(
                 model_spec.model_name,
                 device_str,
@@ -3693,7 +3729,7 @@ def main():
 
             # Make sure benchmarks_release_data is of proper format for CNN and IMAGE
             benchmarks_release_data = benchmarks_release_data_format(
-                model_spec, device_str, benchmark_summary_data
+                model_spec, device_str, benchmark_summary_data, runtime_config
             )
 
             # Add target_checks to the existing benchmark object
@@ -3702,8 +3738,7 @@ def main():
 
         elif model_spec.model_type.name == ModelType.EMBEDDING.name:
             # Get performance targets using the shared utility
-            # Extract the device we are running on
-            device_str = cli_args.get("device").lower()
+            device_str = runtime_config.device.lower()
             targets = get_performance_targets(
                 model_spec.model_name,
                 device_str,
@@ -3809,7 +3844,28 @@ def main():
         if parameter_support_tests_data:
             output_data["parameter_support_tests"] = parameter_support_tests_data
 
+        acceptance_criteria, acceptance_blockers = acceptance_criteria_check(
+            output_data
+        )
+        acceptance_summary_markdown = format_acceptance_summary_markdown(
+            acceptance_criteria, acceptance_blockers
+        )
+        output_data["acceptance_criteria"] = acceptance_criteria
+        output_data["acceptance_blockers"] = acceptance_blockers
+        output_data["acceptance_summary_markdown"] = acceptance_summary_markdown
+
+        release_str = (
+            f"{release_header}\n\n{metadata_str}\n\n"
+            f"{acceptance_summary_markdown}\n\n{all_benchmarks_str}"
+            f"{evals_release_str}\n\n{tests_release_str}\n\n"
+            f"{stress_tests_release_str}\n\n{server_tests_release_str}"
+        )
+        print(release_str)
+
         json.dump(output_data, f, indent=4)
+
+    with release_file.open("w", encoding="utf-8") as f:
+        f.write(release_str)
 
     main_return_code = 0
     return main_return_code

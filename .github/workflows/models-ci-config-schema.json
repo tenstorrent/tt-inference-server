@@ -4,6 +4,24 @@
   "description": "Schema for models CI configuration",
   "type": "object",
   "$defs": {
+    "device_names": {
+      "type": "string",
+      "enum": ["N150", "N300", "T3K", "GALAXY", "GALAXY_BH", "P100", "P150X4", "P150X8", "P300X2", "DUAL_GALAXY"]
+    },
+    "device_arg_entry": {
+      "type": "object",
+      "properties": {
+        "additional-args": {
+          "type": "string",
+          "description": "Additional arguments to pass to run.py"
+        },
+        "throttle-perf": {
+          "type": "string",
+          "description": "TT_MM_THROTTLE_PERF value"
+        }
+      },
+      "additionalProperties": false
+    },
     "schedule_config": {
       "type": "object",
       "properties": {
@@ -12,8 +30,7 @@
             {
               "type": "array",
               "items": {
-                "type": "string",
-                "enum": ["N150", "N300", "T3K", "GALAXY", "GALAXY_BH", "P100", "P150X4", "P150X8", "P300X2"]
+                "$ref": "#/$defs/device_names"
               },
               "minItems": 1,
               "description": "Array of specific devices to run tests on"
@@ -25,6 +42,23 @@
             }
           ],
           "description": "List of devices to run tests on, or 'ALL' for all devices"
+        },
+        "device-args": {
+          "type": "object",
+          "description": "Per-device additional arguments for run.py",
+          "properties": {
+            "N150":    { "$ref": "#/$defs/device_arg_entry" },
+            "N300":    { "$ref": "#/$defs/device_arg_entry" },
+            "T3K":     { "$ref": "#/$defs/device_arg_entry" },
+            "GALAXY":  { "$ref": "#/$defs/device_arg_entry" },
+            "GALAXY_BH": { "$ref": "#/$defs/device_arg_entry" },
+            "P100":    { "$ref": "#/$defs/device_arg_entry" },
+            "P150X4":  { "$ref": "#/$defs/device_arg_entry" },
+            "P150X8":  { "$ref": "#/$defs/device_arg_entry" },
+            "P300X2":  { "$ref": "#/$defs/device_arg_entry" },
+            "DUAL_GALAXY":  { "$ref": "#/$defs/device_arg_entry" }
+          },
+          "additionalProperties": false
         }
       },
       "required": ["devices"],

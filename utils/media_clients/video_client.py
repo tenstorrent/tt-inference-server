@@ -383,11 +383,11 @@ class VideoClientStrategy(BaseMediaStrategy):
                 }
         """
         # Lazy import to avoid loading dependencies at module import time
-        from tests.server_tests.test_cases.video_generation_eval_test import (
+        from server_tests.test_cases.video_generation_eval_test import (
             VideoGenerationEvalsTest,
             VideoGenerationEvalsTestRequest,
         )
-        from tests.server_tests.test_classes import TestConfig
+        from server_tests.test_classes import TestConfig
 
         logger.info("Running video generation eval.")
 
@@ -430,8 +430,8 @@ class VideoClientStrategy(BaseMediaStrategy):
         3. Run FVMD test (compute_fvmd) with same paths.
         4. Combine FVD and FVMD scores into a single dict.
 
-        Reference videos: tests/server_tests/datasets/video_fvd_subset/videos
-        Generated videos: tests/server_tests/datasets/videos (same as
+        Reference videos: server_tests/datasets/video_fvd_subset/videos
+        Generated videos: server_tests/datasets/videos (same as
         video_generation_eval_test) or /tmp/videos (video_client downloads).
 
         Returns:
@@ -445,26 +445,24 @@ class VideoClientStrategy(BaseMediaStrategy):
         """
         from pathlib import Path
 
-        from tests.server_tests.test_cases.video_fvd_eval_test import (
+        from server_tests.test_cases.video_fvd_eval_test import (
             DATASET_DIR as FVD_DATASET_DIR,
         )
-        from tests.server_tests.test_cases.video_fvd_eval_test import (
+        from server_tests.test_cases.video_fvd_eval_test import (
             VideoFVDTest,
             VideoFVDTestRequest,
         )
-        from tests.server_tests.test_cases.video_fvmd_eval_test import (
+        from server_tests.test_cases.video_fvmd_eval_test import (
             VideoFVMDTest,
             VideoFVMDTestRequest,
         )
-        from tests.server_tests.test_classes import TestConfig
+        from server_tests.test_classes import TestConfig
 
         logger.info("Running video FVD and FVMD eval.")
 
         reference_videos_path = str(Path(FVD_DATASET_DIR) / "videos")
         # Generated videos: same dir as video_generation_eval_test, or /tmp/videos
-        generated_videos_path = str(
-            Path("tests/server_tests/datasets/videos").resolve()
-        )
+        generated_videos_path = str(Path("server_tests/datasets/videos").resolve())
         if not Path(generated_videos_path).exists():
             generated_videos_path = "/tmp/videos"
         logger.info(

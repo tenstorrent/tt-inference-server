@@ -79,7 +79,7 @@ Examples:
     if not parsed_data:
         logger.error(f"Failed to parse workflow logs from: {workflow_logs_path}")
         logger.error(
-            "Please check that the directory exists and contains valid run_specs/ and reports_output/ subdirectories"
+            "Please check that the directory exists and contains valid runtime_model_specs/ (or run_specs/) and reports_output/ subdirectories"
         )
         return 1
 

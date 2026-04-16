@@ -5,7 +5,7 @@ Start tt-media-server in docker container:
 python3 run.py --model whisper-large-v3 --device t3k --workflow server --docker-server --dev-mode
 ```
 
-Note: whisper model implementation is single chip. It scales onto multple chips but requires 1 device with PCIe access so for LoudBox/QuietBox (t3k) it can only run on 4 devices (the L chip on the n300 boards). A 2 chip implementation could be added to remove this scaling limitation for n300 and LoudBox/QuietBox. Galaxy does not have this limitation and each of the 32 galaxy modules can run whisper with a tt-media-server worker associated.
+Note: whisper model implementation is single chip. It scales onto multiple chips but requires 1 device with PCIe access so for LoudBox/QuietBox (t3k) it can only run on 4 devices (the L chip on the n300 boards). A 2 chip implementation could be added to remove this scaling limitation for n300 and LoudBox/QuietBox. Galaxy does not have this limitation and each of the 32 galaxy modules can run whisper with a tt-media-server worker associated.
 
 ## non-streaming output
 Example script downloads librispeech samples are uses HTTP API for audio transcription:

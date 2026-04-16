@@ -4,11 +4,19 @@ We use [Tenstorrent’s Tracy](https://github.com/tenstorrent/tracy) with the Tr
 
 ### What Tracy enables
 
-- **Zones** – Instrumented regions (e.g. `API::completions`, `Scheduler::start`, `Worker::process_task`) to see where time is spent.
+- **Zones** – Instrumented regions (e.g. `API::chat_completions`, `Scheduler::start`, `Worker::process_task`) to see where time is spent.
 - **Plots** – Numeric series over time (e.g. `pending_tasks`).
 - **Memory profiling** – Allocation/free tracking (when built with Tracy alloc hooks).
 - **Lock profiling** – Mutex hold/wait times for `TracyLockable(std::mutex, ...)` (scheduler, embedding service/controller, model runner). Lock events appear on the thread timeline; in the GUI, **Options → Locks** lists locks and **Draw locks** shows them on the timeline. Uncheck **Only contended** to see locks used by a single thread (otherwise only contended locks are shown).
 - **Multi-process** – Main process on port 8086 (Tracy started in `register_services()` via `TracyStartMainProcess()`). Workers are started by fork+exec and each starts Tracy on 8087, 8088, … (connect to each in the GUI).
+
+### Building with Tracy
+
+```bash
+./build.sh --tracy
+```
+
+The binary is at `./build/tt_media_server_cpp` as usual.
 
 ### Building the Tracy GUI
 
@@ -48,13 +56,19 @@ Replace `/path/to/your/tracy.rb` with the path to your formula file (e.g. from y
 |----------|----------------|-------|
 | **Run C++ server with Tracy** | **C++ Server [CodeLLDB + Tracy]** | Builds `build-tracy/`, runs the server with Tracy enabled; connect GUI to localhost:8086 (and 8087 for workers). |
 | **Run C++ server without Tracy** | **C++ Server [CodeLLDB]** | Builds `build/`, runs the server with no Tracy instrumentation. |
-| **Capture Tracy to a file** | **Tracy: Capture to file** | Runs the Tracy **capture** tool: connects to port 8086 and writes a capture to `cpp_server/capture.tracy` for 60 seconds (`-s 60`). Use **-f** in the config to overwrite an existing file. Start the **C++ server with Tracy** first, then run this config; afterward open `capture.tracy` in the Tracy GUI. |
 
-Typical workflow for “capture to file”:
+### Capturing a profile
 
-1. Start **C++ Server [CodeLLDB + Tracy]** (server listening on 8086).
-2. Run **Tracy: Capture to file** (capture connects to 8086 and writes `capture.tracy`).
-3. Open `cpp_server/capture.tracy` in the Tracy GUI to inspect the capture offline.
+Start the server with Tracy enabled first, then capture using either method — both write to `capture.tracy` for offline viewing in the Tracy GUI.
+
+**Command line** (supports custom duration and port):
+
+```bash
+./tracy-capture.sh [SECONDS] [PORT]   # defaults: 60s, port 8086
+./tracy-capture.sh 10 8087            # 10 seconds, worker 0
+```
+
+**VS Code**: run the **Tracy: Capture to file** launch config (captures port 8086 for 60s).
 
 ### Tips
 

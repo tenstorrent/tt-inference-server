@@ -1,4 +1,24 @@
 {
+    "Qwen3-VL-32B-Instruct": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 512,
+                "image_width": 512,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 150,
+                        "tput_user": 38
+                    }
+                }
+            }
+        ]
+    },
     "Qwen2.5-VL-3B-Instruct": {
         "n150": [
             {
@@ -5294,6 +5314,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
+                "num_eval_runs": 100,
                 "task_type": "image",
                 "targets": {
                     "theoretical": {
@@ -5307,6 +5328,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
+                "num_eval_runs": 100,
                 "task_type": "image",
                 "targets": {
                     "theoretical": {
@@ -5320,6 +5342,7 @@
             {
                 "max_concurrency": 4,
                 "num_inference_steps": 20,
+                "num_eval_runs": 100,
                 "task_type": "image",
                 "targets": {
                     "theoretical": {
@@ -5332,6 +5355,33 @@
         "galaxy": [
             {
                 "max_concurrency": 32,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12500,
+                        "tput_user": 0.08
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12500,
+                        "tput_user": 0.08
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "max_concurrency": 1,
                 "num_inference_steps": 20,
                 "task_type": "image",
                 "targets": {
@@ -5348,6 +5398,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
+                "num_eval_runs": 100,
                 "task_type": "image",
                 "targets": {
                     "theoretical": {
@@ -5361,6 +5412,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
+                "num_eval_runs": 100,
                 "task_type": "image",
                 "targets": {
                     "theoretical": {
@@ -5376,6 +5428,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
+                "num_eval_runs": 100,
                 "task_type": "image",
                 "targets": {
                     "theoretical": {
@@ -5391,6 +5444,7 @@
             {
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
+                "num_eval_runs": 100,
                 "task_type": "image",
                 "targets": {
                     "theoretical": {
@@ -5663,6 +5717,22 @@
                     }
                 }
             }
+        ],
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "audio",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 400.0,
+                        "ttft_streaming_ms": null,
+                        "tput_user": 65.0,
+                        "rtr": 17.0,
+                        "tolerance": 0.05
+                    }
+                }
+            }
         ]
     },
     "distil-large-v3": {
@@ -5767,6 +5837,19 @@
                     }
                 }
             }
+        ],
+        "p150x4": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 50,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "tput_user": 0.0019
+                    }
+                }
+            }
         ]
     },
     "Wan2.2-T2V-A14B-Diffusers": {
@@ -5826,6 +5909,21 @@
                         "end_to_end_latency_ms": 321490,
                         "inference_steps_per_second": 0.1244,
                         "tput_user": 0.00311
+                    }
+                }
+            }
+        ],
+        "p150x4": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "end_to_end_latency_ms": 971590,
+                        "inference_steps_per_second": 0.0412,
+                        "tput_user": 0.00103
                     }
                 }
             }
@@ -5952,7 +6050,7 @@
                     "theoretical": {
                         "tput_user": 5750,
                         "tput_prefill": 46000,
-                        "e2el_ms": 5000
+                        "e2el_ms": 8300
                     }
                 }
             }
@@ -5992,6 +6090,60 @@
                         "tput_user": 5750,
                         "tput_prefill": 46000,
                         "e2el_ms": 5000
+                    }
+                }
+            }
+        ]
+    },
+    "bge-m3": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 5750,
+                        "tput_prefill": 300000,
+                        "e2el_ms": 5000
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 5750,
+                        "tput_prefill": 300000,
+                        "e2el_ms": 5000
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 4,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 5750,
+                        "tput_prefill": 300000,
+                        "e2el_ms": 5000
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 32,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 5750,
+                        "tput_prefill": 46000,
+                        "e2el_ms": 8300
                     }
                 }
             }

@@ -3,85 +3,92 @@
 
 #pragma once
 
-#include "services/base_service.hpp"
-#include "ipc/queue_manager.hpp"
-#include "worker/single_process_worker.hpp"
-#include "domain/completion_request.hpp"
-#include "domain/completion_response.hpp"
-#include "services/streamable.hpp"
-#include "sockets/inter_server_service.hpp"
-
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
-#include "utils/concurrent_map.hpp"
-#include "utils/tokenizer.hpp"
+#include <unordered_set>
 #include <vector>
+
+#include "domain/llm_request.hpp"
+#include "domain/llm_response.hpp"
+#include "ipc/queue_manager.hpp"
+#include "services/base_service.hpp"
+#include "services/reasoning_parser.hpp"
+#include "services/streamable.hpp"
+#include "utils/concurrent_map.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
+#include "worker/worker_manager.hpp"
 
 namespace tt::services {
 
-worker::WorkerConfig make_worker_config_for_process(int worker_id);
-
 class LLMService
-    : public BaseService<domain::CompletionRequest, domain::CompletionResponse>
-    , public Streamable<domain::CompletionRequest, domain::StreamingChunkResponse> {
-public:
+    : public BaseService<domain::LLMRequest, domain::LLMResponse>,
+      public Streamable<domain::LLMRequest, domain::LLMStreamChunk> {
+ public:
+  using StreamCallback =
+      std::function<void(const domain::LLMStreamChunk&, bool)>;
 
-    LLMService();
-    ~LLMService() override;
+  LLMService();
+  ~LLMService() override;
 
-    LLMService(const LLMService&) = delete;
-    LLMService& operator=(const LLMService&) = delete;
+  LLMService(const LLMService&) = delete;
+  LLMService& operator=(const LLMService&) = delete;
 
-    void start() override;
-    void stop() override;
+  void start() override;
+  void stop() override;
 
-    bool is_model_ready() const override;
-    SystemStatus get_system_status() const override;
+  bool isModelReady() const override;
 
-protected:
-    void pre_process(domain::CompletionRequest& request) const override;
-    void post_process(domain::CompletionResponse& response) const override;
-    domain::CompletionResponse process_request(
-        domain::CompletionRequest request) override;
+  void preProcess(domain::LLMRequest& request) const override;
 
-    void streaming_pre_process(domain::CompletionRequest& request) const override { pre_process(request); }
-    void streaming_post_process(domain::StreamingChunkResponse&) const override {}
-    void process_streaming_request(
-        domain::CompletionRequest request,
-        std::function<void(domain::StreamingChunkResponse&, bool is_final)> callback
-    ) override;
+  /**
+   * Abort an in-flight request. Removes the streaming callback, decrements
+   * pending_tasks_, invokes the callback with finish_reason="abort" to unblock
+   * synchronous waiters, and broadcasts cancel to all worker queues.
+   * Idempotent and thread-safe.
+   */
+  void abortRequest(uint32_t taskId);
 
-private:
-    void start_workers();
-    void start_consumers();
+ protected:
+  void postProcess(domain::LLMResponse& response) const override;
+  size_t currentQueueSize() const override;
+  domain::LLMResponse processRequest(domain::LLMRequest request) override;
 
-    void consumer_loop_for_worker(size_t worker_idx);
+  std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
-    bool check_worker_alive(size_t worker_idx);
+  void streamingPostProcess(domain::LLMStreamChunk&) const override {}
+  void processStreamingRequest(
+      domain::LLMRequest request,
+      std::function<void(domain::LLMStreamChunk&, bool isFinal)> callback)
+      override;
 
-    std::vector<std::unique_ptr<worker::SingleProcessWorker>> workers_;
-    size_t num_workers_;
+ private:
+  struct StreamCallbackEntry {
+    std::function<void(domain::LLMStreamChunk&, bool)> callback;
+    bool skip_special_tokens = true;
+  };
 
-    std::vector<std::thread> consumer_threads_;
+  void startConsumers();
+  void consumerLoopForWorker(size_t workerIdx);
 
-    ConcurrentMap<std::string, std::function<void(domain::StreamingChunkResponse&, bool)>> stream_callbacks_;
+  std::optional<StreamCallbackEntry> resolveCallback(uint32_t taskId,
+                                                     bool isFinal);
 
-    std::atomic<uint64_t> next_worker_{0};
+  std::vector<std::thread> consumer_threads_;
 
-    std::atomic<size_t> pending_tasks_{0};
+  utils::ConcurrentMap<uint32_t, StreamCallbackEntry> stream_callbacks_;
 
-    std::atomic<bool> is_ready_{false};
-    std::atomic<bool> running_{false};
+  std::atomic<size_t> pending_tasks_{0};
+  std::atomic<bool> running_{false};
 
-    size_t max_queue_size_ = 10000;
-    std::string device_ = "cpu";
-
-    std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
-    tt::utils::Tokenizer tokenizer_;
-    std::unique_ptr<tt::sockets::InterServerService> socket_service_;
+  std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
+  std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
+  const tt::utils::tokenizers::Tokenizer* tokenizer_;
+  std::unordered_set<int64_t> stop_token_set_;
+  std::unique_ptr<ReasoningParser> reasoning_parser_;
 };
 
-}
+}  // namespace tt::services
