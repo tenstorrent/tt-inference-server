@@ -259,10 +259,10 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/llm_runner/sampling_params.cpp
     src/utils/logger.cpp
     src/config/settings.cpp
-    src/utils/tokenizer.cpp
-    src/utils/deepseek_tokenizer.cpp
-    src/utils/llama_tokenizer.cpp
-    src/utils/tokenizer_config_loader.cpp
+    src/utils/tokenizers/tokenizer.cpp
+    src/utils/tokenizers/deepseek_tokenizer.cpp
+    src/utils/tokenizers/llama_tokenizer.cpp
+    src/utils/tokenizers/tokenizer_config_loader.cpp
     src/services/memory_services/memory_manager.cpp
     src/services/memory_services/paged_memory_manager.cpp
     src/services/memory_services/contiguous_memory_manager.cpp

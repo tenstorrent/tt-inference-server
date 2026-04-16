@@ -11,7 +11,7 @@
 #include "services/guided_decoder_manager.hpp"
 #include "services/memory_services/paged_memory_manager.hpp"
 #include "utils/logger.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::runners {
 using namespace tt::runners::llm_engine;
@@ -30,7 +30,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
   }
 
   try {
-    const auto& tok = tt::utils::activeTokenizer();
+    const auto& tok = tt::utils::tokenizers::activeTokenizer();
     auto encodedVocab = tok.getEncodedVocab();
     int vocabSize = static_cast<int>(encodedVocab.size());
     guidedDecoder = std::make_unique<services::GuidedDecoderManager>(

@@ -19,7 +19,7 @@
 #include "services/reasoning_parser.hpp"
 #include "services/streamable.hpp"
 #include "utils/concurrent_map.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 #include "worker/worker_manager.hpp"
 
 namespace tt::services {
@@ -86,7 +86,7 @@ class LLMService
 
   std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
   std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
-  const tt::utils::Tokenizer* tokenizer_;
+  const tt::utils::tokenizers::Tokenizer* tokenizer_;
   std::unordered_set<int64_t> stop_token_set_;
   std::unique_ptr<ReasoningParser> reasoning_parser_;
 };

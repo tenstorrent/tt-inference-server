@@ -21,13 +21,38 @@ void HealthController::health(
     const drogon::HttpRequestPtr&,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   Json::Value response;
-  response["status"] = "healthy";
   response["timestamp"] = static_cast<Json::Int64>(
       std::chrono::duration_cast<std::chrono::seconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count());
 
-  callback(drogon::HttpResponse::newHttpJsonResponse(response));
+  // Check if any workers are alive
+  bool hasAliveWorkers = false;
+  if (service_) {
+    try {
+      auto status = service_->getSystemStatus();
+      for (const auto& w : status.worker_info) {
+        if (w.is_alive) {
+          hasAliveWorkers = true;
+          break;
+        }
+      }
+    } catch (const std::exception& e) {
+      TT_LOG_ERROR("[HealthController] Failed to get worker status: {}",
+                   e.what());
+    }
+  }
+
+  if (hasAliveWorkers) {
+    response["status"] = "healthy";
+    callback(drogon::HttpResponse::newHttpJsonResponse(response));
+  } else {
+    response["status"] = "unhealthy";
+    response["error"] = "no workers are alive";
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k503ServiceUnavailable);
+    callback(resp);
+  }
 }
 
 void HealthController::ready(
@@ -59,6 +84,8 @@ void HealthController::ready(
       Json::Value wj;
       wj["worker_id"] = w.worker_id;
       wj["is_ready"] = w.is_ready;
+      wj["is_alive"] = w.is_alive;
+      wj["pid"] = static_cast<Json::Int64>(w.pid);
       workers.append(wj);
     }
     response["workers"] = workers;
