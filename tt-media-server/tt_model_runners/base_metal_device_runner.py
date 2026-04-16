@@ -3,6 +3,8 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 
+import ast
+import os
 import ttnn
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
@@ -12,7 +14,12 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
         super().__init__(device_id)
 
     def get_pipeline_device_params(self):
-        return None
+        fabric_config = os.getenv("FABRIC_CONFIG", None)
+        if fabric_config == "FABRIC_1D":
+            return {"fabric_config": ttnn.FabricConfig.FABRIC_1D}
+        elif fabric_config == "FABRIC_1D_RING":
+            return {"fabric_config": ttnn.FabricConfig.FABRIC_1D_RING}
+        return fabric_config
 
     def set_device(self):
         if self.ttnn_device is None:
@@ -79,15 +86,17 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
             self.logger.info(
                 f"Device {self.device_id}: Found {len(device_ids)} available TTNN devices: {device_ids}"
             )
-
-            mesh_shape = ttnn.MeshShape(self.settings.device_mesh_shape)
+            
+            device_mesh_shape = self.settings.device_mesh_shape
+            mesh_shape_env = os.getenv("MESH_SHAPE", None)
+            if mesh_shape_env:
+                device_mesh_shape = ast.literal_eval(mesh_shape_env)
+            mesh_shape = ttnn.MeshShape(device_mesh_shape)
 
             device_params = self.get_pipeline_device_params()
             updated_device_params = self.get_updated_device_params(device_params)
-            fabric_config = self._configure_fabric(updated_device_params)
-            mesh_device = self._initialize_mesh_device(
-                mesh_shape, updated_device_params, fabric_config
-            )
+            self._configure_fabric(updated_device_params)
+            mesh_device = self._initialize_mesh_device(mesh_shape, updated_device_params)
 
             self.logger.info(
                 f"Device {self.device_id}: Created mesh device with {mesh_device.get_num_devices()} devices"
@@ -102,21 +111,50 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
             ) from e
 
     def _configure_fabric(self, updated_device_params):
-        return None
+        fabric_config = updated_device_params.pop("fabric_config", None)
+        fabric_tensix_config = updated_device_params.pop("fabric_tensix_config", None)
+        reliability_mode = updated_device_params.pop("reliability_mode", None)
+        fabric_manager = updated_device_params.pop("fabric_manager", None)
+        fabric_router_config = updated_device_params.pop("fabric_router_config", None)
 
-    def _initialize_mesh_device(self, mesh_shape, device_params, fabric_config):
+        if fabric_config:
+            if reliability_mode is None:
+                reliability_mode = ttnn.FabricReliabilityMode.STRICT_INIT
+
+            # Apply default logic for fabric_tensix_config,
+            # fabric_tensix_config is used for enabling tensix extensions for the fabric router,
+            # some sender channels in the fabric router are moved to the fabric tensix extension
+            # (currently the extension is mux kernel, can have other kernels in future as well).
+            if fabric_tensix_config is None:
+                fabric_tensix_config = ttnn.FabricTensixConfig.DISABLED
+
+            if fabric_manager is None:
+                fabric_manager = ttnn.FabricManagerMode.DEFAULT
+
+            # Build kwargs for set_fabric_config, only include fabric_router_config if provided
+            if fabric_router_config is not None:
+                ttnn.set_fabric_config(
+                    fabric_config,
+                    reliability_mode,
+                    None,
+                    fabric_tensix_config,
+                    ttnn.FabricUDMMode.DISABLED,
+                    fabric_manager,
+                    fabric_router_config,
+                )
+            else:
+                ttnn.set_fabric_config(
+                    fabric_config,
+                    reliability_mode,
+                    None,
+                    fabric_tensix_config,
+                    ttnn.FabricUDMMode.DISABLED,
+                    fabric_manager,
+                )
+
+    def _initialize_mesh_device(self, mesh_shape, device_params):
         try:
             mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **device_params)
         except Exception as e:
-            try:
-                if fabric_config:
-                    ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
-            except Exception as reset_error:
-                self.logger.warning(
-                    f"Device {self.device_id}: Failed to reset fabric after device initialization failure: {reset_error}"
-                )
-            self.logger.error(
-                f"Device {self.device_id}: Mesh device initialization failed: {e}"
-            )
             raise RuntimeError(f"Mesh device initialization failed: {str(e)}") from e
         return mesh_device

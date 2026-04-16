@@ -101,7 +101,9 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         self._max_num_blocks_per_seq = 0
 
     def get_pipeline_device_params(self):
-        return {"num_command_queues": 2, "trace_region_size": 50000000}
+        device_params = super().get_pipeline_device_params()
+        device_params["trace_region_size"] = 50000000
+        return device_params
 
     def _page_table_from_block_ids(self, block_ids: list[int], torch) -> Any:
         """Build page_table tensor from block IDs (single sequence, shape [1, max_blocks]).
