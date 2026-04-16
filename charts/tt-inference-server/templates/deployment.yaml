@@ -1,4 +1,5 @@
 {{- include "tt-inference-server.validateValues" . }}
+{{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -7,34 +8,30 @@ metadata:
   labels:
     {{- include "tt-inference-server.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
-  progressDeadlineSeconds: {{ .Values.progressDeadlineSeconds }}
+  replicas: {{ $cfg.replicaCount }}
+  progressDeadlineSeconds: {{ $cfg.progressDeadlineSeconds }}
   selector:
     matchLabels:
       {{- include "tt-inference-server.selectorLabels" . | nindent 6 }}
   strategy:
-    type: {{ .Values.updateStrategy.type }}
+    type: RollingUpdate
   template:
     metadata:
       labels:
         {{- include "tt-inference-server.selectorLabels" . | nindent 8 }}
       annotations:
-        {{- /*
-          Rolling restart whenever ConfigMap or Secret content changes.
-          This ensures the running pod always reflects the declared configuration.
-        */}}
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
-        {{- with .Values.podAnnotations }}
+        {{- with $cfg.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      hostIPC: {{ .Values.hostIPC }}
-      {{- with .Values.image.pullSecrets }}
+      hostIPC: {{ $cfg.hostIPC }}
+      {{- with $cfg.image.pullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.podSecurityContext }}
+      {{- with $cfg.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -56,8 +53,8 @@ spec:
       containers:
         - name: inference-server
           image: {{ include "tt-inference-server.image" . }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          {{- if eq .Values.serverType "vllm" }}
+          imagePullPolicy: {{ $cfg.image.pullPolicy }}
+          {{- if eq $cfg.serverType "vllm" }}
           args:
             - "--model"
             - {{ .Values.model | quote }}
@@ -66,18 +63,14 @@ spec:
           {{- end }}
           ports:
             - name: http
-              containerPort: {{ .Values.service.targetPort }}
-              protocol: {{ .Values.service.protocol }}
+              containerPort: {{ $cfg.service.targetPort }}
+              protocol: {{ $cfg.service.protocol }}
           envFrom:
             - configMapRef:
                 name: {{ include "tt-inference-server.configmapName" . }}
             - secretRef:
                 name: {{ include "tt-inference-server.secretName" . }}
-          {{- with .Values.extraEnv }}
-          {{- /*
-            Items with valueFrom (e.g. secretKeyRef) can't go into a ConfigMap,
-            so they are injected directly here.
-          */}}
+          {{- with $cfg.extraEnv }}
           env:
             {{- range . }}
             {{- if .valueFrom }}
@@ -94,31 +87,31 @@ spec:
               mountPath: /dev/tenstorrent
             - name: hugepages-1g
               mountPath: /dev/hugepages-1G
-          {{- with .Values.resources }}
+          {{- with $cfg.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- if .Values.probes.liveness.enabled }}
+            {{- toYaml $cfg.securityContext | nindent 12 }}
+          {{- if $cfg.probes.liveness.enabled }}
           livenessProbe:
             httpGet:
-              path: {{ .Values.probes.liveness.path }}
+              path: {{ $cfg.probes.liveness.path }}
               port: http
-            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
-            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
-            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+            initialDelaySeconds: {{ $cfg.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ $cfg.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ $cfg.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ $cfg.probes.liveness.failureThreshold }}
           {{- end }}
-          {{- if .Values.probes.readiness.enabled }}
+          {{- if $cfg.probes.readiness.enabled }}
           readinessProbe:
             httpGet:
-              path: {{ .Values.probes.readiness.path }}
+              path: {{ $cfg.probes.readiness.path }}
               port: http
-            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
-            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
-            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+            initialDelaySeconds: {{ $cfg.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ $cfg.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ $cfg.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ $cfg.probes.readiness.failureThreshold }}
           {{- end }}
       volumes:
         - name: cache
@@ -133,15 +126,15 @@ spec:
           hostPath:
             path: /dev/hugepages-1G
             type: Directory
-      {{- with .Values.nodeSelector }}
+      {{- with $cfg.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- with $cfg.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tolerations }}
+      {{- with $cfg.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
