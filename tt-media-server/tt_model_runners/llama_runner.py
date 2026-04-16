@@ -29,6 +29,8 @@ import sys
 from dataclasses import dataclass
 from typing import Any
 
+import torch
+
 _tt_metal = os.environ.get("TT_METAL_HOME")
 if _tt_metal and _tt_metal not in sys.path:
     sys.path.insert(0, _tt_metal)
@@ -74,6 +76,19 @@ class StepResult:
     task_id: int
     token_id: int
     error: str = ""
+
+
+@dataclass
+class RunResult:
+    """Result of run(prefill=True|False): token results and optional prefill page_tables.
+
+    page_tables is set only when is_prefill: list of list of torch.Tensor, one list
+    per sequence; each inner list has one tensor per block with shape
+    (n_layers, 2, n_kv_heads, block_size, head_dim) for migration.
+    """
+
+    results: list[StepResult]
+    page_tables: list[list[torch.Tensor]] | None = None
 
 
 class Llama31_8BRunner(BaseMetalDeviceRunner):
@@ -190,6 +205,79 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         )
         self.logger.info(f"Device {self.device_id}: Model loaded")
 
+    async def write_page_table(
+        self, block_ids: list[int], page_tables: list[torch.Tensor]
+    ) -> None:
+        """Write migrated KV cache data into this runner's in-memory kv_cache.
+
+        Used when prefill was done on another server: block_ids are the target
+        block indices on this server, and page_tables[i] is the KV data for
+        block block_ids[i]. Each page tensor must have shape
+        (n_layers, 2, n_kv_heads, block_size, head_dim) with the second
+        dimension 0 = K, 1 = V.
+
+        Uses tt-metal's ttnn.experimental.paged_fill_cache (cache is ttnn.Tensor
+        on device, not PyTorch), so host data is moved to device and written
+        via that API.
+        """
+        import ttnn
+
+        if self._kv_cache is None:
+            raise RuntimeError("KV cache not allocated; warmup may have failed")
+        if len(block_ids) != len(page_tables):
+            raise ValueError("block_ids and page_tables must have the same length")
+        for block_id in block_ids:
+            if block_id < 0 or block_id >= MAX_NUM_BLOCKS:
+                raise ValueError(
+                    f"block_id {block_id} out of range [0, {MAX_NUM_BLOCKS})"
+                )
+
+        mesh_idx = 0
+        layer_cache = self._kv_cache[mesh_idx]
+        n_layers = len(layer_cache)
+        mesh_device = self.model.model_args[mesh_idx].mesh_device
+        num_blocks = len(block_ids)
+
+        page_table_torch = torch.tensor(
+            [block_ids], dtype=torch.int32, device=page_tables[0].device
+        )
+        page_table_tt = ttnn.from_torch(page_table_torch, dtype=ttnn.int32).to(
+            mesh_device
+        )
+
+        for layer in range(n_layers):
+            keys_BKSD = layer_cache[layer][0]
+            values_BKSD = layer_cache[layer][1]
+            cache_dtype = keys_BKSD.dtype
+
+            k_blocks = torch.cat(
+                [page_tables[i][layer, 0] for i in range(num_blocks)], dim=1
+            )
+            v_blocks = torch.cat(
+                [page_tables[i][layer, 1] for i in range(num_blocks)], dim=1
+            )
+            k_fill = k_blocks.unsqueeze(0)
+            v_fill = v_blocks.unsqueeze(0)
+
+            k_fill_tt = ttnn.from_torch(k_fill, dtype=torch.bfloat16)
+            k_fill_tt = ttnn.typecast(k_fill_tt, dtype=cache_dtype)
+            k_fill_tt = k_fill_tt.to(ttnn.TILE_LAYOUT).to(mesh_device)
+
+            v_fill_tt = ttnn.from_torch(v_fill, dtype=torch.bfloat16)
+            v_fill_tt = ttnn.typecast(v_fill_tt, dtype=cache_dtype)
+            v_fill_tt = v_fill_tt.to(ttnn.TILE_LAYOUT).to(mesh_device)
+
+            ttnn.experimental.paged_fill_cache(
+                keys_BKSD, k_fill_tt, page_table_tt, batch_idx=0
+            )
+            ttnn.experimental.paged_fill_cache(
+                values_BKSD, v_fill_tt, page_table_tt, batch_idx=0
+            )
+            ttnn.deallocate(k_fill_tt)
+            ttnn.deallocate(v_fill_tt)
+
+        ttnn.deallocate(page_table_tt)
+
     async def warmup(self) -> bool:
         self.logger.info(f"Device {self.device_id}: Model warmup...")
         os.environ["HF_MODEL"] = self.hf_model_name
@@ -230,12 +318,12 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         is_prefill: bool = True,
         sequences: list | None = None,
         reset_batch: bool = False,
-    ) -> list[StepResult]:
-        """Run one scheduler step (prefill or decode), returning one token per sequence.
+    ) -> RunResult:
+        """Run one scheduler step (prefill or decode), returning RunResult.
 
-        Called from C++ as runner.run(is_prefill, sequences, reset_batch) with positional args.
-        reset_batch: passed from C++; True on the first decode step after prefill to reset
-        on-device sampling state (prompt/output for penalties).
+        RunResult.results are one token per sequence; RunResult.page_tables is
+        set only when is_prefill (list of list of torch.Tensor for migration).
+        Called from C++ as runner.run(is_prefill, sequences, reset_batch).
         """
         import torch
 
@@ -244,10 +332,75 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
         if self._kv_cache is None:
             raise RuntimeError("KV cache not allocated; warmup may have failed")
         if is_prefill:
-            return self._run_prefill_batch(sequences, torch)
+            results = self._run_prefill_batch(sequences, torch)
+            page_tables = self._read_page_tables_from_cache(sequences)
+            return RunResult(results=results, page_tables=page_tables)
         if self.max_batch_size > 1 and len(sequences) > 0:
-            return self._run_decode_batch(sequences, torch, reset_batch=reset_batch)
-        return [self._run_decode(s, torch, reset_batch=reset_batch) for s in sequences]
+            results = self._run_decode_batch(sequences, torch, reset_batch=reset_batch)
+        else:
+            results = [
+                self._run_decode(s, torch, reset_batch=reset_batch) for s in sequences
+            ]
+        return RunResult(results=results, page_tables=None)
+
+    def _read_page_tables_from_cache(
+        self, sequences: list[StepSequence]
+    ) -> list[list[torch.Tensor]]:
+        """Read KV cache blocks for each sequence's block_table; return list of list of tensors."""
+        import ttnn
+
+        mesh_idx = 0
+        layer_cache = self._kv_cache[mesh_idx]
+        n_layers = len(layer_cache)
+        mesh_device = self.model.model_args[mesh_idx].mesh_device
+        n_kv_heads = layer_cache[0][0].shape[1]
+        block_size = self._block_size
+        head_dim = layer_cache[0][0].shape[3]
+
+        out: list[list[torch.Tensor]] = []
+        for seq in sequences:
+            if not seq.block_table:
+                out.append([])
+                continue
+            block_tensors: list[torch.Tensor] = []
+            for block_id in seq.block_table:
+                k_v_list: list[torch.Tensor] = []
+                for layer in range(n_layers):
+                    keys_BKSD = layer_cache[layer][0]
+                    values_BKSD = layer_cache[layer][1]
+                    start = [block_id, 0, 0, 0]
+                    end = [
+                        block_id + 1,
+                        n_kv_heads,
+                        block_size,
+                        head_dim,
+                    ]
+                    step = [1, 1, 1, 1]
+                    k_slice = ttnn.slice(keys_BKSD, start, end, step)
+                    v_slice = ttnn.slice(values_BKSD, start, end, step)
+                    k_host = ttnn.from_device(k_slice)
+                    v_host = ttnn.from_device(v_slice)
+                    k_t = ttnn.to_torch(
+                        k_host,
+                        mesh_composer=ttnn.ConcatMeshToTensor(mesh_device, dim=-1),
+                    ).squeeze(0)
+                    v_t = ttnn.to_torch(
+                        v_host,
+                        mesh_composer=ttnn.ConcatMeshToTensor(mesh_device, dim=-1),
+                    ).squeeze(0)
+                    k_v_list.append(k_t)
+                    k_v_list.append(v_t)
+                    ttnn.deallocate(k_slice)
+                    ttnn.deallocate(v_slice)
+                block_tensor = torch.stack(
+                    [
+                        torch.stack([k_v_list[i], k_v_list[i + 1]])
+                        for i in range(0, len(k_v_list), 2)
+                    ]
+                )
+                block_tensors.append(block_tensor)
+            out.append(block_tensors)
+        return out
 
     def _run_prefill_batch(
         self, sequences: list[StepSequence], torch
