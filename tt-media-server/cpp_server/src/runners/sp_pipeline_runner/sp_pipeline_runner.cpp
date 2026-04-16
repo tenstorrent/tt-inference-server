@@ -16,6 +16,7 @@
 #include "runners/sp_pipeline_runner/sp_pipeline_utils.hpp"
 #include "services/memory_services/sp_pipeline_memory_manager.hpp"
 #include "utils/logger.hpp"
+#include "worker/worker_metrics.hpp"
 
 namespace tt::runners {
 namespace utils = sp_pipeline_utils;
@@ -125,6 +126,7 @@ void SpPipelineRunner::stop() {
 }
 
 void SpPipelineRunner::step() {
+  tt::worker::WorkerMetrics::instance().updateStepHeartbeat();
   auto memoryRequest = getMemoryRequest();
   if (memoryRequest.has_value()) {
     TT_LOG_DEBUG(
@@ -192,6 +194,7 @@ SpPipelineRunner::getMemoryRequest() {
 }
 
 void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
+  tt::worker::WorkerMetrics::instance().updateOutputHeartbeat();
   auto it = running.find(output.slot_id);
   if (it == running.end()) {
     TT_LOG_ERROR(
@@ -207,6 +210,9 @@ void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
   bool finished = output.is_complete || hitStop;
   auto taskId = seq.taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
+  if (finished) {
+    tt::worker::WorkerMetrics::instance().decrementActiveRequests();
+  }
 }
 
 inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
@@ -224,6 +230,7 @@ inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
 
 void SpPipelineRunner::handleRequest(
     std::unique_ptr<tt::runners::llm_engine::Sequence> request) {
+  tt::worker::WorkerMetrics::instance().incrementActiveRequests();
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
 

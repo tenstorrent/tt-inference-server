@@ -171,4 +171,10 @@ bool useDeepseekMdFormat();
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();
 
+/** Base port for worker-side Prometheus /metrics endpoints.
+ * Worker N listens on WORKER_METRICS_BASE_PORT + N.
+ * From WORKER_METRICS_BASE_PORT. Default: defaults::WORKER_METRICS_BASE_PORT.
+ */
+uint16_t workerMetricsBasePort();
+
 }  // namespace tt::config

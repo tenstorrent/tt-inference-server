@@ -14,3 +14,19 @@ scrape_configs:
     metrics_path: /metrics
     scheme: http
     scrape_timeout: 4s
+
+  - job_name: "tt_worker"
+    # Worker metrics endpoints: base port 8100 + workerId.
+    # For multiple workers, list all ports: ['host:8100', 'host:8101']
+    #
+    # Canonical pipeline-stall expression (use this in alerts and the watchdog):
+    #   tt_worker_last_output_age_seconds > T and tt_worker_active_requests > 0
+    # The raw tt_worker_last_output_age_seconds metric is kept for debugging.
+    static_configs:
+      - targets:
+          - "__WORKER_TARGET__"
+        labels:
+          instance: "tt_worker"
+    metrics_path: /metrics
+    scheme: http
+    scrape_timeout: 4s

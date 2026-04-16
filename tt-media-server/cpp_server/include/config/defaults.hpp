@@ -61,5 +61,6 @@ constexpr size_t EMBEDDING_MAX_PIPE_BYTES = 100 * 1024 * 1024;  // 100 MB
 constexpr int CALLBACK_POOL_THREADS = 16;
 constexpr unsigned WORKER_STOP_TIMEOUT_MS = 500;
 constexpr unsigned SHUTDOWN_POLL_MS = 50;
+constexpr uint16_t WORKER_METRICS_BASE_PORT = 8100;
 
 }  // namespace tt::config::defaults

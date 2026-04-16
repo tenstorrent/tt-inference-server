@@ -515,6 +515,8 @@ set(SOURCES
     src/sockets/inter_server_service.cpp
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp
+    src/worker/worker_metrics.cpp
+    src/worker/worker_metrics_server.cpp
 )
 
 # Create executable

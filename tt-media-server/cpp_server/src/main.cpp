@@ -21,6 +21,8 @@
 #include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
 #include "worker/worker_manager.hpp"
+#include "worker/worker_metrics.hpp"
+#include "worker/worker_metrics_server.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
@@ -38,6 +40,15 @@ int main(int argc, char* argv[]) {
   if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
     int workerId = std::atoi(argv[2]);
     tracy_config::tracyStartupWorker(workerId);
+    tt::utils::ZeroOverheadLogger::initialize();
+
+    tt::worker::WorkerMetrics::instance().initialize(workerId);
+
+    uint16_t metricsPort =
+        tt::config::workerMetricsBasePort() + static_cast<uint16_t>(workerId);
+    tt::worker::WorkerMetricsServer metricsServer{workerId, metricsPort};
+    metricsServer.start();
+
     tt::worker::WorkerConfig cfg =
         tt::worker::makeWorkerConfigForProcess(workerId);
     tt::worker::SingleProcessWorker worker(cfg);
@@ -57,6 +68,7 @@ int main(int argc, char* argv[]) {
     worker.start();
     workerShutdown.store(true);
     if (shutdownMonitor.joinable()) shutdownMonitor.join();
+    metricsServer.stop();
     return 0;
   }
 

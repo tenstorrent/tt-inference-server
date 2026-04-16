@@ -329,4 +329,10 @@ unsigned sessionAllocationMaxRetries() {
                defaults::SESSION_ALLOCATION_MAX_RETRIES));
 }
 
+uint16_t workerMetricsBasePort() {
+  static const uint16_t cached = static_cast<uint16_t>(
+      envUlong("WORKER_METRICS_BASE_PORT", defaults::WORKER_METRICS_BASE_PORT));
+  return cached;
+}
+
 }  // namespace tt::config

@@ -29,7 +29,8 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
-        sed "s|__SERVER_TARGET__|$$SERVER_TARGET|g"
+        WORKER_TARGET="$$(echo $$SERVER_TARGET | sed 's|:[0-9]*$$||'):8100"
+        && sed "s|__SERVER_TARGET__|$$SERVER_TARGET|g; s|__WORKER_TARGET__|$$WORKER_TARGET|g"
         /etc/prometheus/prometheus.yml.tmpl > /tmp/prometheus.yml
         && exec /bin/prometheus
         --config.file=/tmp/prometheus.yml
