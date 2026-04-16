@@ -38,8 +38,8 @@ constexpr const char* KAFKA_GROUP_ID = "migration-workers";
 
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 10;
 
-constexpr const char* H2D_SOCKET_ID = "h2d_socket";
-constexpr const char* D2H_SOCKET_ID = "d2h_socket";
+constexpr const char* H2D_SOCKET_ID = "deepseek_h2d";
+constexpr const char* D2H_SOCKET_ID = "deepseek_d2h";
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";
 constexpr const char* TT_CANCEL_QUEUE = "tt_cancels";
@@ -47,7 +47,7 @@ constexpr const char* TT_WARMUP_SIGNALS_QUEUE = "tt_warmup_signals";
 constexpr const char* TT_MEMORY_REQUEST_QUEUE = "tt_mem_requests";
 constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
-constexpr size_t PM_MAX_USERS = 32;
+constexpr size_t PM_MAX_USERS = 64;
 constexpr bool USE_DEEPSEEK_MD_FORMAT = false;
 
 constexpr const char* SERVER_HOST = "0.0.0.0";
