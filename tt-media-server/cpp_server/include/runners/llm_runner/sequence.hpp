@@ -87,6 +87,9 @@ class Sequence {
     samplingParams = std::move(p);
   }
 
+  bool isContinuation() const { return continuation; }
+  void setContinuation(bool c) { continuation = c; }
+
  private:
   SequenceStatus status = SequenceStatus::WAITING;
   std::vector<int64_t> tokenIds;
@@ -97,6 +100,7 @@ class Sequence {
   std::unique_ptr<SamplingParams> samplingParams;
   int blockSize;
   uint32_t kvCacheSlot = tt::domain::INVALID_SLOT_ID;
+  bool continuation = false;  // True if this continues an existing session
 };
 
 }  // namespace tt::runners::llm_engine

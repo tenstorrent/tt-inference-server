@@ -135,6 +135,8 @@ class Tokenizer {
   std::unique_ptr<StreamDecoder> createStreamDecoder(
       bool skipSpecialTokens = true) const;
 
+  std::vector<std::string> getEncodedVocab() const;
+
  protected:
   std::unique_ptr<tokenizers::Tokenizer> tok_;
   TokenizerConfig cfg_;

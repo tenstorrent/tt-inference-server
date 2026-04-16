@@ -15,6 +15,7 @@
 #include "domain/json_field.hpp"
 #include "domain/llm_request.hpp"
 #include "domain/tool.hpp"
+#include "domain/response_format.hpp"
 #include "utils/tokenizer.hpp"
 
 namespace tt::domain {
@@ -73,6 +74,9 @@ struct ChatCompletionRequest : BaseRequest {
   std::optional<int> truncate_prompt_tokens;
 
   bool fast_mode = false;
+
+  // Structured output constraint
+  std::optional<ResponseFormat> response_format;
 
   // Session management
   std::optional<std::string> sessionId;
@@ -179,6 +183,10 @@ struct ChatCompletionRequest : BaseRequest {
 
     if (json.isMember("fast_mode")) req.fast_mode = json["fast_mode"].asBool();
 
+    if (json.isMember("response_format") && !json["response_format"].isNull()) {
+      req.response_format = ResponseFormat::fromJson(json["response_format"]);
+    }
+
     if (json.isMember("session_id") && !json["session_id"].isNull())
       req.sessionId = getString(json["session_id"], "session_id");
 
@@ -279,6 +287,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.prompt_logprobs = prompt_logprobs;
     out.truncate_prompt_tokens = truncate_prompt_tokens;
     out.fast_mode = fast_mode;
+    out.response_format = response_format;
     out.sessionId = sessionId;
     return out;
   }

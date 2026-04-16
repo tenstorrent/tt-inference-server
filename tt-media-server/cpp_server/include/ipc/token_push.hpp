@@ -6,14 +6,13 @@
 #include <cstdint>
 #include <thread>
 
-#include "ipc/token_ring_buffer.hpp"
+#include "ipc/result_queue.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::ipc {
 
-template <size_t N>
-void pushToken(TokenRingBuffer<N>& queue, uint32_t taskId, uint64_t tokenId,
-               bool finished) {
+inline void pushToken(IResultQueue& queue, uint32_t taskId, uint64_t tokenId,
+                      bool finished) {
   SharedToken token{};
   token.task_id = taskId;
   token.token_id = tokenId;
@@ -26,8 +25,7 @@ void pushToken(TokenRingBuffer<N>& queue, uint32_t taskId, uint64_t tokenId,
   }
 }
 
-template <size_t N>
-void pushErrorToken(TokenRingBuffer<N>& queue, uint32_t taskId) {
+inline void pushErrorToken(IResultQueue& queue, uint32_t taskId) {
   SharedToken token{};
   token.task_id = taskId;
   token.flags = SharedToken::FLAG_FINAL | SharedToken::FLAG_ERROR;
