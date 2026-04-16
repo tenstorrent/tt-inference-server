@@ -72,6 +72,28 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# xgrammar for structured output / guided decoding (JSON schema constrained generation)
+FetchContent_Declare(xgrammar
+    GIT_REPOSITORY https://github.com/mlc-ai/xgrammar.git
+    GIT_TAG        v0.1.33
+    GIT_SHALLOW    TRUE
+)
+FetchContent_GetProperties(xgrammar)
+if(NOT xgrammar_POPULATED)
+    FetchContent_Populate(xgrammar)
+    # xgrammar ships cmake/config.cmake that forces PYTHON_BINDINGS=ON; override it
+    # in the source tree so its CMakeLists.txt picks up our settings.
+    file(WRITE "${xgrammar_SOURCE_DIR}/cmake/config.cmake"
+        "set(XGRAMMAR_BUILD_PYTHON_BINDINGS OFF)\n"
+        "set(XGRAMMAR_BUILD_CXX_TESTS OFF)\n"
+        "set(XGRAMMAR_ENABLE_CPPTRACE OFF)\n"
+        "set(XGRAMMAR_ENABLE_COVERAGE OFF)\n"
+        "set(XGRAMMAR_ENABLE_INTERNAL_CHECK OFF)\n"
+    )
+    add_subdirectory(${xgrammar_SOURCE_DIR} ${xgrammar_BINARY_DIR})
+    target_compile_options(xgrammar PRIVATE -Wno-error=deprecated-declarations -fno-lto)
+endif()
+
 # Import fmt from tt-metal for spdlog
 if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
     set(fmt_DIR "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
@@ -237,10 +259,10 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/llm_runner/sampling_params.cpp
     src/utils/logger.cpp
     src/config/settings.cpp
-    src/utils/tokenizer.cpp
-    src/utils/deepseek_tokenizer.cpp
-    src/utils/llama_tokenizer.cpp
-    src/utils/tokenizer_config_loader.cpp
+    src/utils/tokenizers/tokenizer.cpp
+    src/utils/tokenizers/deepseek_tokenizer.cpp
+    src/utils/tokenizers/llama_tokenizer.cpp
+    src/utils/tokenizers/tokenizer_config_loader.cpp
     src/services/memory_services/memory_manager.cpp
     src/services/memory_services/paged_memory_manager.cpp
     src/services/memory_services/contiguous_memory_manager.cpp
@@ -252,6 +274,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/sp_prefill_runner/sp_prefill_runner.cpp
     src/runners/sp_prefill_runner/i_sp_prefill_model_runner.cpp
     src/runners/sp_prefill_runner/sp_prefill_model_runner.cpp
+    src/services/guided_decoder_manager.cpp
 )
 
 # Add pipeline_manager-dependent sources only when ENABLE_BLAZE is ON
@@ -278,8 +301,8 @@ target_include_directories(llm_runner_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
-# Link tokenizers_cpp and JsonCpp since settings.cpp depends on tokenizer.hpp
-target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp)
+# Link tokenizers_cpp, JsonCpp, and xgrammar (guided decoding for structured outputs)
+target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar)
 
 # Link PipelineManager when ENABLE_BLAZE is ON: prefer Full (SocketPipeline + TT::Metalium),
 # fall back to Core (mock pipeline only).
@@ -295,7 +318,6 @@ if(ENABLE_BLAZE)
 else()
     message(STATUS "Skipping PipelineManager linking (ENABLE_BLAZE=OFF)")
 endif()
-
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     target_compile_definitions(llm_runner_lib PUBLIC USE_METAL_CPP_LIB)
     # Find tt_metal library directory
@@ -324,11 +346,6 @@ target_compile_options(llm_runner_lib PRIVATE -Wall -Wextra -Wpedantic)
 
 if(ENABLE_TRACY)
     target_link_libraries(llm_runner_lib PUBLIC tracy_client)
-endif()
-
-option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
-if(LLM_ENGINE_DEBUG_BUILD)
-    target_compile_definitions(llm_runner_lib PUBLIC LLM_ENGINE_DEBUG)
 endif()
 
 option(SANITIZE_THREAD "Build with ThreadSanitizer (TSan) for data-race detection" OFF)
@@ -393,6 +410,13 @@ target_include_directories(cancellation_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(structured_output_test tests/structured_output_test.cpp)
+target_link_libraries(structured_output_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(structured_output_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -401,6 +425,7 @@ gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(cancellation_test)
+gtest_discover_tests(structured_output_test)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -576,6 +601,7 @@ if(SANITIZE_ADDRESS)
         ipc_scheduler_smoke_test
         cancel_queue_test
         cancellation_test
+        structured_output_test
     )
     if(KAFKA_ENABLED)
         list(APPEND ASAN_TARGETS tt_consumer)

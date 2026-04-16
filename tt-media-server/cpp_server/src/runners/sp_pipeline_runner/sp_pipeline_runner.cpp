@@ -21,7 +21,7 @@ namespace tt::runners {
 namespace utils = sp_pipeline_utils;
 
 SpPipelineRunner::SpPipelineRunner(
-    const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* resultQueue,
+    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
     tt::runners::llm_engine::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
@@ -234,6 +234,14 @@ void SpPipelineRunner::handleRequest(
       running.size());
 
   if (isNew) {
+    if (request->getSamplingParams().hasGuidedDecoding()) {
+      TT_LOG_WARN(
+          "[SpPipelineRunner] task_id={} has response_format constraint but "
+          "SP Pipeline does not support per-step guided decoding yet. "
+          "Output may not conform to the requested schema.",
+          request->taskId);
+    }
+
     TT_LOG_DEBUG(
         "[SpPipelineRunner] handleRequest: SUBMIT taskId={}, slotId={}",
         request->taskId, slotId);

@@ -14,7 +14,7 @@
 #include "config/defaults.hpp"
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::config {
 
@@ -125,7 +125,7 @@ static std::filesystem::path tokenizersDir() {
 std::string tokenizerPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
-  std::string modelDir = utils::tokenizerDirForModel(model);
+  std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
   std::filesystem::path p = base / modelDir / "tokenizer.json";
   if (std::filesystem::exists(p)) {
     return std::filesystem::absolute(p).string();
@@ -138,7 +138,7 @@ std::string tokenizerPath() { return tokenizerPath(modelType()); }
 std::string tokenizerConfigPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
-  std::string modelDir = utils::tokenizerDirForModel(model);
+  std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
   std::filesystem::path p = base / modelDir / "tokenizer_config.json";
   if (std::filesystem::exists(p)) {
     return std::filesystem::absolute(p).string();
@@ -180,10 +180,36 @@ bool useDeepseekMdFormat() {
       envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));
 }
 
+std::string ttTaskQueueName() {
+  return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
+}
+
+std::string ttResultQueueName() {
+  return envString("TT_RESULT_QUEUE", defaults::TT_RESULT_QUEUE);
+}
+
+std::string ttCancelQueueName() {
+  return envString("TT_CANCEL_QUEUE", defaults::TT_CANCEL_QUEUE);
+}
+
+std::string ttWarmupSignalsQueueName() {
+  return envString("TT_WARMUP_SIGNALS_QUEUE",
+                   defaults::TT_WARMUP_SIGNALS_QUEUE);
+}
+
+std::string ttMemoryRequestQueueName() {
+  return envString("TT_MEMORY_REQUEST_QUEUE",
+                   defaults::TT_MEMORY_REQUEST_QUEUE);
+}
+
+std::string ttMemoryResultQueueName() {
+  return envString("TT_MEMORY_RESULT_QUEUE", defaults::TT_MEMORY_RESULT_QUEUE);
+}
+
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
-    cfg.stop_token_ids = utils::activeTokenizer().stopTokenIds();
+    cfg.stop_token_ids = utils::tokenizers::activeTokenizer().stopTokenIds();
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);

@@ -1,10 +1,65 @@
 {
-    "_description": "Test suites for CNN model category (MobileNetV2)",
+    "_description": "Test suites for CNN model category",
     "_category": "CNN",
     "test_suites": [
         {
+            "id": "resnet-50-n150",
+            "weights": [
+                "resnet-50"
+            ],
+            "device": "n150",
+            "model_marker": "resnet",
+            "test_cases": [
+                {
+                    "template": "CnnLoadTest",
+                    "enabled": true,
+                    "description": "CNN image classification load test",
+                    "targets": {
+                        "cnn_time": 5,
+                        "response_format": "json",
+                        "top_k": 3,
+                        "min_confidence": 70.0
+                    }
+                },
+                {
+                    "template": "CnnParamTest",
+                    "enabled": true,
+                    "description": "CNN parameter variations test"
+                }
+            ]
+        },
+        {
+            "id": "resnet-50-n300",
+            "weights": [
+                "resnet-50"
+            ],
+            "device": "n300",
+            "num_of_devices": 1,
+            "model_marker": "resnet",
+            "test_cases": [
+                {
+                    "template": "CnnLoadTest",
+                    "enabled": true,
+                    "description": "CNN image classification load test",
+                    "targets": {
+                        "cnn_time": 5,
+                        "response_format": "json",
+                        "top_k": 3,
+                        "min_confidence": 70.0
+                    }
+                },
+                {
+                    "template": "CnnParamTest",
+                    "enabled": true,
+                    "description": "CNN parameter variations test"
+                }
+            ]
+        },
+        {
             "id": "mobilenetv2-n150",
-            "weights": ["mobilenetv2"],
+            "weights": [
+                "mobilenetv2"
+            ],
             "device": "n150",
             "model_marker": "mobilenetv2",
             "test_cases": [
@@ -27,8 +82,140 @@
             ]
         },
         {
+            "id": "efficientnet-n150",
+            "weights": [
+                "efficientnet"
+            ],
+            "device": "n150",
+            "model_marker": "efficientnet",
+            "test_cases": [
+                {
+                    "template": "CnnLoadTest",
+                    "enabled": true,
+                    "description": "CNN image classification load test",
+                    "targets": {
+                        "cnn_time": 5,
+                        "response_format": "json",
+                        "top_k": 3,
+                        "min_confidence": 70.0
+                    }
+                },
+                {
+                    "template": "CnnParamTest",
+                    "enabled": true,
+                    "description": "CNN parameter variations test"
+                }
+            ]
+        },
+        {
+            "id": "segformer-n150",
+            "weights": [
+                "segformer"
+            ],
+            "device": "n150",
+            "model_marker": "segformer",
+            "test_cases": [
+                {
+                    "template": "CnnLoadTest",
+                    "enabled": true,
+                    "description": "CNN image classification load test",
+                    "targets": {
+                        "cnn_time": 5,
+                        "response_format": "json",
+                        "top_k": 3,
+                        "min_confidence": 70.0
+                    }
+                },
+                {
+                    "template": "CnnParamTest",
+                    "enabled": true,
+                    "description": "CNN parameter variations test"
+                }
+            ]
+        },
+        {
+            "id": "unet-n150",
+            "weights": [
+                "unet"
+            ],
+            "device": "n150",
+            "model_marker": "unet",
+            "test_cases": [
+                {
+                    "template": "CnnLoadTest",
+                    "enabled": true,
+                    "description": "CNN image classification load test",
+                    "targets": {
+                        "cnn_time": 5,
+                        "response_format": "json",
+                        "top_k": 3,
+                        "min_confidence": 70.0
+                    }
+                },
+                {
+                    "template": "CnnParamTest",
+                    "enabled": true,
+                    "description": "CNN parameter variations test"
+                }
+            ]
+        },
+        {
+            "id": "vit-n150",
+            "weights": [
+                "vit"
+            ],
+            "device": "n150",
+            "model_marker": "vit",
+            "test_cases": [
+                {
+                    "template": "CnnLoadTest",
+                    "enabled": true,
+                    "description": "CNN image classification load test",
+                    "targets": {
+                        "cnn_time": 5,
+                        "response_format": "json",
+                        "top_k": 3,
+                        "min_confidence": 70.0
+                    }
+                },
+                {
+                    "template": "CnnParamTest",
+                    "enabled": true,
+                    "description": "CNN parameter variations test"
+                }
+            ]
+        },
+        {
+            "id": "vovnet-n150",
+            "weights": [
+                "vovnet"
+            ],
+            "device": "n150",
+            "model_marker": "vovnet",
+            "test_cases": [
+                {
+                    "template": "CnnLoadTest",
+                    "enabled": true,
+                    "description": "CNN image classification load test",
+                    "targets": {
+                        "cnn_time": 5,
+                        "response_format": "json",
+                        "top_k": 3,
+                        "min_confidence": 70.0
+                    }
+                },
+                {
+                    "template": "CnnParamTest",
+                    "enabled": true,
+                    "description": "CNN parameter variations test"
+                }
+            ]
+        },
+        {
             "id": "mobilenetv2-n300",
-            "weights": ["mobilenetv2"],
+            "weights": [
+                "mobilenetv2"
+            ],
             "device": "n300",
             "num_of_devices": 1,
             "model_marker": "mobilenetv2",
