@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "services/tool_call_parser.hpp"
+#include "services/tool_call/deepseek_tool_call_parser.hpp"
 
 #include <json/json.h>
 
+namespace tt::services::tool_call {
 
-namespace tt::services {
-
-std::optional<std::vector<domain::ToolCall>> ToolCallParser::parseComplete(
-    const std::string& text) const {
-
+std::optional<std::vector<domain::ToolCall>>
+DeepSeekToolCallParser::parseComplete(const std::string& text) const {
   size_t calls_begin = text.find(TOOL_CALLS_BEGIN);
   if (calls_begin == std::string::npos) {
     return std::nullopt;
@@ -22,7 +20,8 @@ std::optional<std::vector<domain::ToolCall>> ToolCallParser::parseComplete(
   }
 
   size_t content_start = calls_begin + std::string(TOOL_CALLS_BEGIN).length();
-  std::string calls_block = text.substr(content_start, calls_end - content_start);
+  std::string calls_block =
+      text.substr(content_start, calls_end - content_start);
 
   std::vector<domain::ToolCall> tool_calls;
   size_t pos = 0;
@@ -34,7 +33,8 @@ std::optional<std::vector<domain::ToolCall>> ToolCallParser::parseComplete(
       break;
     }
 
-    size_t call_content_start = call_begin + std::string(TOOL_CALL_BEGIN).length();
+    size_t call_content_start =
+        call_begin + std::string(TOOL_CALL_BEGIN).length();
     size_t call_end = calls_block.find(TOOL_CALL_END, call_content_start);
     if (call_end == std::string::npos) {
       break;
@@ -59,7 +59,7 @@ std::optional<std::vector<domain::ToolCall>> ToolCallParser::parseComplete(
   return tool_calls;
 }
 
-std::optional<domain::ToolCall> ToolCallParser::parseToolCall(
+std::optional<domain::ToolCall> DeepSeekToolCallParser::parseToolCall(
     const std::string& call_text, int index) const {
   size_t sep_pos = call_text.find(TOOL_SEP);
   if (sep_pos == std::string::npos) {
@@ -103,7 +103,7 @@ std::optional<domain::ToolCall> ToolCallParser::parseToolCall(
   return tool_call;
 }
 
-std::string ToolCallParser::extractJsonFromMarkdown(
+std::string DeepSeekToolCallParser::extractJsonFromMarkdown(
     const std::string& text) const {
   size_t json_start = text.find("```json");
   if (json_start == std::string::npos) {
@@ -130,7 +130,8 @@ std::string ToolCallParser::extractJsonFromMarkdown(
   return trimWhitespace(json);
 }
 
-std::string ToolCallParser::trimWhitespace(const std::string& text) const {
+std::string DeepSeekToolCallParser::trimWhitespace(
+    const std::string& text) const {
   if (text.empty()) return text;
 
   size_t first = text.find_first_not_of(" \t\n\r");
@@ -142,4 +143,22 @@ std::string ToolCallParser::trimWhitespace(const std::string& text) const {
   return text.substr(first, last - first + 1);
 }
 
-}  // namespace tt::services
+std::string DeepSeekToolCallParser::stripMarkers(const std::string& text) const {
+  size_t calls_begin = text.find(TOOL_CALLS_BEGIN);
+  if (calls_begin == std::string::npos) {
+    return text;
+  }
+
+  size_t calls_end = text.find(TOOL_CALLS_END, calls_begin);
+  if (calls_end == std::string::npos) {
+    return text;
+  }
+
+  calls_end += std::string(TOOL_CALLS_END).length();
+  std::string before = text.substr(0, calls_begin);
+  std::string after =
+      calls_end < text.length() ? text.substr(calls_end) : "";
+  return before + after;
+}
+
+}  // namespace tt::services::tool_call

@@ -17,7 +17,7 @@
 #include "ipc/queue_manager.hpp"
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
-#include "services/tool_call_parser.hpp"
+#include "services/tool_call/tool_call_parser.hpp"
 #include "services/streamable.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/tokenizer.hpp"
@@ -90,7 +90,7 @@ class LLMService
   const tt::utils::Tokenizer* tokenizer_;
   std::unordered_set<int64_t> stop_token_set_;
   std::unique_ptr<ReasoningParser> reasoning_parser_;
-  std::unique_ptr<ToolCallParser> tool_call_parser_;
+  std::unique_ptr<tool_call::ToolCallParser> tool_call_parser_;
 };
 
 }  // namespace tt::services
