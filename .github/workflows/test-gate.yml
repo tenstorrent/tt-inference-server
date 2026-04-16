@@ -491,7 +491,12 @@ jobs:
           path: tt-media-server/cpp_server
 
       - name: Make binaries executable
-        run: chmod +x cpp_server/build/tt_media_server_cpp
+        run: |
+          chmod +x cpp_server/build/tt_media_server_cpp
+          chmod +x cpp_server/build/xgrammar_benchmark
+
+      - name: Run xgrammar microbenchmark
+        run: cpp_server/build/xgrammar_benchmark 2>&1 | tee xgrammar_benchmark_output.txt
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -509,7 +514,7 @@ jobs:
       - name: Start C++ server (mock backend)
         run: |
           cd cpp_server/build
-          LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 > ../../cpp_server_mock.log 2>&1 &
+          ENABLE_ACCUMULATED_STREAMING=true LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 > ../../cpp_server_mock.log 2>&1 &
           echo $! > ../../cpp_server.pid
           cd ../..
           for i in $(seq 1 30); do
@@ -687,10 +692,10 @@ jobs:
             "vllm-bench-mock.json" 1 150
 
           check_thresholds "C++ Server vLLM Bench (structured output - json_object)" \
-            "vllm-bench-structured-output-json-object.json" 16 100
+            "vllm-bench-structured-output-json-object.json" 1 150
 
           check_thresholds "C++ Server vLLM Bench (structured output - json_schema)" \
-            "vllm-bench-structured-output-json-schema.json" 15 100
+            "vllm-bench-structured-output-json-schema.json" 1 150
 
           check_thresholds "C++ Server vLLM Bench (mock_pipeline)" \
             "vllm-bench-mock-pipeline.json" 3 395
