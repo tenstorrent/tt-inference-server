@@ -11,7 +11,9 @@ namespace tt::worker {
  * WorkerManager::getWorkerInfo). */
 struct WorkerInfo {
   std::string worker_id;
-  bool is_ready;
+  bool is_ready = false;
+  bool is_alive = true;
+  pid_t pid = -1;
 };
 
 }  // namespace tt::worker

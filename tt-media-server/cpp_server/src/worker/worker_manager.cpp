@@ -6,12 +6,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #include "config/settings.hpp"
 #include "ipc/boost_ipc_cancel_queue.hpp"
@@ -62,9 +64,11 @@ WorkerManager::~WorkerManager() { stop(); }
 void WorkerManager::start() {
   startWarmupListener();
   startWorkers();
+  startLivenessChecker();
 }
 
 void WorkerManager::stop() {
+  stopLivenessChecker();
   stopWarmupListener();
   stopProcesses();
 }
@@ -102,7 +106,10 @@ std::vector<WorkerInfo> WorkerManager::getWorkerInfo() const {
   for (const auto& w : workers) {
     WorkerInfo info;
     info.worker_id = std::to_string(w->worker_id);
-    info.is_ready = isWorkerWarmed(w->worker_id);
+    info.pid = w->pid;
+    info.is_alive = w->is_alive;
+    // Worker is ready only if it's warmed up and the process is still alive
+    info.is_ready = w->is_alive && isWorkerWarmed(w->worker_id);
     out.push_back(std::move(info));
   }
   return out;
@@ -227,6 +234,41 @@ void WorkerManager::startWarmupListener() {
       TT_LOG_WARN("[WorkerManager] Warmup listener failed: unknown exception");
     }
   });
+}
+
+void WorkerManager::startLivenessChecker() {
+  livenessCheckerShouldStop = false;
+  livenessCheckerThread = std::thread([this]() {
+    TT_LOG_INFO("[WorkerManager] Liveness checker thread started");
+    while (!livenessCheckerShouldStop.load()) {
+      // Wait 5 seconds, but wake up if stop is requested
+      for (int i = 0; i < 50 && !livenessCheckerShouldStop.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+
+      if (livenessCheckerShouldStop.load()) {
+        break;
+      }
+
+      // Check all workers
+      for (size_t i = 0; i < workers.size(); ++i) {
+        bool alive = checkWorkerAlive(i);
+        if (!alive) {
+          TT_LOG_ERROR(
+              "[WorkerManager] Liveness check: Worker {} is dead (PID {})", i,
+              workers[i]->pid);
+        }
+      }
+    }
+    TT_LOG_INFO("[WorkerManager] Liveness checker thread stopped");
+  });
+}
+
+void WorkerManager::stopLivenessChecker() {
+  livenessCheckerShouldStop = true;
+  if (livenessCheckerThread.joinable()) {
+    livenessCheckerThread.join();
+  }
 }
 
 WorkerConfig makeWorkerConfigForProcess(int workerId) {
