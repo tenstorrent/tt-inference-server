@@ -139,8 +139,8 @@ The project uses modern C++20 with strict compiler warnings and sanitizer suppor
 ### Logging
 
 - Main server uses Drogon logging (in `./logs/` directory)
-- LLM engine uses structured logging with a `runners.llm_engine:` tag in `LLM_ENGINE_LOG` output when `LLM_ENGINE_DEBUG_BUILD` is enabled
-- Enable LLM engine debug logging with `-DLLM_ENGINE_DEBUG_BUILD=ON`
+- LLM engine uses the standard `TT_LOG_*` macros (spdlog-backed, defined in `utils/logger.hpp`)
+- Configure log level at runtime with `TT_LOG_LEVEL` env var (trace, debug, info, warn, error, critical, off)
 
 ## Dependencies and Prerequisites
 

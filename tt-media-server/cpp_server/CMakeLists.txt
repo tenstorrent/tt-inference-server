@@ -348,11 +348,6 @@ if(ENABLE_TRACY)
     target_link_libraries(llm_runner_lib PUBLIC tracy_client)
 endif()
 
-option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
-if(LLM_ENGINE_DEBUG_BUILD)
-    target_compile_definitions(llm_runner_lib PUBLIC LLM_ENGINE_DEBUG)
-endif()
-
 option(SANITIZE_THREAD "Build with ThreadSanitizer (TSan) for data-race detection" OFF)
 option(SANITIZE_ADDRESS "Build with AddressSanitizer (ASan) and LeakSanitizer for memory errors and leak detection" OFF)
 if(SANITIZE_THREAD AND SANITIZE_ADDRESS)
