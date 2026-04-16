@@ -1,0 +1,341 @@
+# SPDX-FileCopyrightText: © 2025 Tenstorrent Inc.
+# SPDX-License-Identifier: Apache-2.0
+"""
+Integration test for distributed tensor sockets using ttnn.create_distributed_socket.
+
+This tests our utility functions in prefill_node/distributed_tensor_sockets_utilities.py:
+- build_socket_config() - creates SocketConfig for tensor transfer
+- create_tensor_socket() - creates a DistributedISocket with send/recv methods
+
+=== SINGLE-HOST SETUP (2x N300 on same machine) ===
+
+    # First reset devices
+    tt-smi -r
+
+    # Activate tt-metal environment
+    source /data/ztorlak/tt-metal/python_env/bin/activate
+    export TT_METAL_HOME=/data/ztorlak/tt-metal
+    export PYTHONPATH=/data/ztorlak/tt-metal/ttnn:$PYTHONPATH
+
+    # Run test (use --oversubscribe if in SLURM with limited slots)
+    tt-run --rank-binding /data/ztorlak/tt-inference-server/tt-media-server/prefill_node_tests/dual_n300_rank_bindings.yaml \\
+           --mpi-args "--oversubscribe" \\
+           python -m pytest /data/ztorlak/tt-inference-server/tt-media-server/prefill_node_tests/test_distributed_tensor_sockets_integration.py -vv -s --timeout=60
+
+=== MULTI-HOST SETUP (2x N300 on separate machines) ===
+
+For multi-host testing, see test_multihost_distributed_socket.py which provides:
+- Detailed setup instructions for multi-host MPI
+- Hostfile configuration
+- SLURM multi-node allocation
+
+Quick multi-host run:
+    # Create hostfile with both hosts
+    echo "host1 slots=1" > /data/ztorlak/hostfile
+    echo "host2 slots=1" >> /data/ztorlak/hostfile
+
+    # Run from tt-metal environment
+    tt-run --rank-binding /data/ztorlak/tt-inference-server/tt-media-server/prefill_node_tests/multihost_n300_rank_bindings.yaml \\
+           --mpi-args "--hostfile /data/ztorlak/hostfile --mca btl_tcp_if_exclude docker0,lo" \\
+           python /data/ztorlak/tt-inference-server/tt-media-server/prefill_node_tests/test_multihost_distributed_socket.py
+"""
+
+import time
+
+import pytest
+import torch
+import ttnn
+from loguru import logger
+
+from prefill_node.distributed_tensor_sockets_utilities import (
+    build_socket_config,
+    create_tensor_socket,
+)
+from prefill_node_tests.node_utils import format_size, format_throughput
+
+
+@pytest.mark.timeout(60)
+def test_distributed_tensor_socket_with_create_distributed_socket() -> None:
+    """
+    Test distributed tensor socket creation and tensor transfer.
+
+    This tests:
+    1. build_socket_config() - helper to create SocketConfig
+    2. create_tensor_socket() - creates a DistributedISocket
+    3. DistributedISocket.send()/recv() - actual tensor transfer between ranks
+
+    The test sends tensors of various sizes from rank 0 (prefill) to rank 1 (decode)
+    and measures throughput.
+    """
+    timings: dict[str, float] = {}
+    test_start = time.perf_counter()
+
+    logger.info("=== Starting distributed tensor socket integration test ===")
+
+    # Initialize TT-Fabric for inter-device communication
+    logger.info("Setting fabric config to FABRIC_2D")
+    ttnn.set_fabric_config(ttnn.FabricConfig.FABRIC_2D)
+
+    # Each process gets one N300 (1x2 mesh, 2 chips per board)
+    mesh_shape = ttnn.MeshShape(1, 2)
+
+    visible_device_ids = ttnn.get_device_ids()
+    logger.info(f"Visible device IDs: {visible_device_ids}")
+
+    if len(visible_device_ids) != 2:
+        pytest.skip(
+            f"Expected exactly 2 devices for N300 (1x2 mesh), got {len(visible_device_ids)}."
+        )
+
+    # Time device initialization
+    device_init_start = time.perf_counter()
+    physical_device_ids = visible_device_ids
+    logger.info(
+        f"Opening mesh device with shape {mesh_shape} on devices {physical_device_ids}"
+    )
+    device = ttnn.open_mesh_device(
+        mesh_shape=mesh_shape, physical_device_ids=physical_device_ids
+    )
+    timings["device_init"] = time.perf_counter() - device_init_start
+    logger.info(
+        f"[TIMING] Device initialization: {timings['device_init'] * 1000:.2f} ms"
+    )
+
+    try:
+        if not ttnn.distributed_context_is_initialized():
+            pytest.fail("Distributed context not initialized. Run with tt-run.")
+
+        world_size = int(ttnn.distributed_context_get_size())
+        if world_size != 2:
+            pytest.skip(f"This test requires exactly 2 processes, got {world_size}")
+
+        rank = int(ttnn.distributed_context_get_rank())
+        logger.info(f"Process rank={rank} started on N300 device")
+
+        # === Test distributed socket utilities ===
+        endpoint_type = "SENDER" if rank == 0 else "RECEIVER"
+        logger.info(f"Rank {rank}: Setting up as {endpoint_type}")
+
+        # Test 2: Verify the distributed socket enums exist
+        logger.info(f"Rank {rank}: Checking distributed socket enums...")
+        assert hasattr(ttnn, "DistributedSocketType"), (
+            "ttnn.DistributedSocketType not found"
+        )
+        assert hasattr(ttnn, "DistributedEndpointSocketType"), (
+            "ttnn.DistributedEndpointSocketType not found"
+        )
+        assert hasattr(ttnn, "create_distributed_socket"), (
+            "ttnn.create_distributed_socket not found"
+        )
+        logger.info(f"Rank {rank}: All distributed socket bindings present!")
+
+        # Test 2: Build socket config using the helper function
+        socket_config = build_socket_config(
+            mesh_shape,
+            sender_rank=0,
+            receiver_rank=1,
+        )
+
+        other_rank = 1 if rank == 0 else 0
+        logger.info(
+            f"Rank {rank}: Creating distributed socket to other_rank={other_rank}..."
+        )
+
+        # Test 3: Create distributed socket (TIMED)
+        socket_create_start = time.perf_counter()
+        dist_socket = create_tensor_socket(
+            device,
+            other_rank,
+            socket_config,
+            socket_type="MPI",
+            endpoint_type=endpoint_type,
+        )
+        timings["socket_create"] = time.perf_counter() - socket_create_start
+        logger.info(
+            f"Rank {rank}: Distributed socket created successfully! "
+            f"({timings['socket_create'] * 1000:.2f} ms)"
+        )
+        logger.info(f"Rank {rank}: Socket type: {type(dist_socket)}")
+
+        # Test 4: Verify socket has send/recv methods
+        assert hasattr(dist_socket, "send"), "Socket missing send() method"
+        assert hasattr(dist_socket, "recv"), "Socket missing recv() method"
+        logger.info(f"Rank {rank}: Socket has send/recv methods!")
+
+        # Barrier before tensor transfer
+        ttnn.distributed_context_barrier()
+
+        # Test 6: Try to send/receive a tensor (TIMED)
+        # Test with different tensor sizes
+        test_shapes = [
+            (1, 1, 32, 32),  # Small: 2 KB (bfloat16)
+            (1, 1, 128, 128),  # Medium: 32 KB
+            (1, 1, 512, 512),  # Large: 512 KB
+            (1, 1, 1024, 1024),  # XLarge: 2 MB
+        ]
+
+        for shape in test_shapes:
+            # Calculate tensor size in bytes (bfloat16 = 2 bytes per element)
+            tensor_elements = shape[0] * shape[1] * shape[2] * shape[3]
+            tensor_size_bytes = tensor_elements * 2  # bfloat16
+
+            test_value = 99.0
+            shape_str = f"{shape[2]}x{shape[3]}"
+
+            # Barrier to sync before each transfer
+            ttnn.distributed_context_barrier()
+
+            if rank == 0:
+                # Sender: Create tensor and send
+                tensor_create_start = time.perf_counter()
+                logger.info(
+                    f"Rank 0: Creating tensor {shape_str} "
+                    f"({format_size(tensor_size_bytes)})"
+                )
+                src_torch = torch.ones(shape, dtype=torch.bfloat16) * test_value
+                src_tt = ttnn.from_torch(
+                    src_torch,
+                    device=device,
+                    dtype=ttnn.bfloat16,
+                    layout=ttnn.TILE_LAYOUT,
+                )
+                tensor_create_time = time.perf_counter() - tensor_create_start
+                logger.info(
+                    f"Rank 0: Tensor created ({tensor_create_time * 1000:.2f} ms)"
+                )
+
+                # Barrier to sync tensor creation
+                ttnn.distributed_context_barrier()
+
+                # Time the actual send
+                send_start = time.perf_counter()
+                logger.info(f"Rank 0: Sending tensor {shape_str}...")
+                dist_socket.send(src_tt)
+                ttnn.synchronize_device(device)
+                send_time = time.perf_counter() - send_start
+
+                timings[f"send_{shape_str}"] = send_time
+                throughput = format_throughput(tensor_size_bytes, send_time)
+                logger.info(
+                    f"Rank 0: Tensor {shape_str} sent! "
+                    f"Time: {send_time * 1000:.2f} ms, "
+                    f"Size: {format_size(tensor_size_bytes)}, "
+                    f"Throughput: {throughput}"
+                )
+
+                # Barrier after send
+                ttnn.distributed_context_barrier()
+
+            else:
+                # Receiver: Allocate buffer and receive
+                alloc_start = time.perf_counter()
+                logger.info(
+                    f"Rank 1: Allocating receive buffer {shape_str} "
+                    f"({format_size(tensor_size_bytes)})"
+                )
+                dst_tt = ttnn.allocate_tensor_on_device(
+                    ttnn.TensorSpec(
+                        list(shape), ttnn.DataType.BFLOAT16, ttnn.TILE_LAYOUT
+                    ),
+                    device,
+                )
+                alloc_time = time.perf_counter() - alloc_start
+                logger.info(f"Rank 1: Buffer allocated ({alloc_time * 1000:.2f} ms)")
+
+                # Barrier to sync tensor creation on sender
+                ttnn.distributed_context_barrier()
+
+                # Time the actual receive
+                recv_start = time.perf_counter()
+                logger.info(f"Rank 1: Receiving tensor {shape_str}...")
+                dist_socket.recv(dst_tt)
+                ttnn.synchronize_device(device)
+                recv_time = time.perf_counter() - recv_start
+
+                timings[f"recv_{shape_str}"] = recv_time
+                throughput = format_throughput(tensor_size_bytes, recv_time)
+                logger.info(
+                    f"Rank 1: Tensor {shape_str} received! "
+                    f"Time: {recv_time * 1000:.2f} ms, "
+                    f"Size: {format_size(tensor_size_bytes)}, "
+                    f"Throughput: {throughput}"
+                )
+
+                # Barrier after recv
+                ttnn.distributed_context_barrier()
+
+                # Verify (only for smallest tensor to save time)
+                if shape == test_shapes[0]:
+                    dst_torch = ttnn.to_torch(
+                        ttnn.from_device(dst_tt),
+                        mesh_composer=ttnn.ConcatMeshToTensor(device, dim=-1),
+                    )
+                    if dst_torch.shape[-1] > shape[-1]:
+                        dst_torch = dst_torch[..., : shape[-1]]
+
+                    logger.info(f"Rank 1: Received tensor shape: {dst_torch.shape}")
+                    logger.info(
+                        f"Rank 1: Received values: {dst_torch[0, 0, 0, :4].tolist()}"
+                    )
+
+                    expected = torch.ones(shape, dtype=torch.bfloat16) * test_value
+                    assert torch.allclose(
+                        dst_torch.float(), expected.float(), rtol=1e-2
+                    ), (
+                        f"Tensor mismatch! Expected {test_value}, "
+                        f"got {dst_torch[0, 0, 0, 0].item()}"
+                    )
+                    logger.info("Rank 1: Tensor verification PASSED!")
+
+        # Cleanup
+        del dist_socket
+
+        ttnn.distributed_context_barrier()
+
+        # Print timing summary
+        total_time = time.perf_counter() - test_start
+        timings["total"] = total_time
+
+        logger.info("")
+        logger.info(f"{'=' * 60}")
+        logger.info(f"Rank {rank}: TIMING SUMMARY")
+        logger.info(f"{'=' * 60}")
+        logger.info(
+            f"  Device initialization:  {timings['device_init'] * 1000:>10.2f} ms"
+        )
+        logger.info(
+            f"  Socket creation:        {timings['socket_create'] * 1000:>10.2f} ms"
+        )
+
+        # Transfer times
+        logger.info(f"  {'─' * 56}")
+        logger.info("  Tensor Transfers:")
+        for shape in test_shapes:
+            shape_str = f"{shape[2]}x{shape[3]}"
+            tensor_size = shape[0] * shape[1] * shape[2] * shape[3] * 2
+            if rank == 0 and f"send_{shape_str}" in timings:
+                t = timings[f"send_{shape_str}"]
+                tp = format_throughput(tensor_size, t)
+                logger.info(
+                    f"    {shape_str:>10} send: {t * 1000:>8.2f} ms  "
+                    f"({format_size(tensor_size):>8}, {tp})"
+                )
+            elif rank == 1 and f"recv_{shape_str}" in timings:
+                t = timings[f"recv_{shape_str}"]
+                tp = format_throughput(tensor_size, t)
+                logger.info(
+                    f"    {shape_str:>10} recv: {t * 1000:>8.2f} ms  "
+                    f"({format_size(tensor_size):>8}, {tp})"
+                )
+
+        logger.info(f"  {'─' * 56}")
+        logger.info(f"  Total test time:        {total_time * 1000:>10.2f} ms")
+        logger.info(f"{'=' * 60}")
+
+        logger.info(f"Rank {rank}: Test complete")
+
+    finally:
+        logger.info("Closing mesh device")
+        ttnn.close_device(device)
+
+    logger.info("=== Distributed tensor socket integration test PASSED ===")

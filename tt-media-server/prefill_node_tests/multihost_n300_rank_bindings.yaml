@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: © 2025 Tenstorrent Inc.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Multi-Host Rank Binding for 2x N300 devices on separate hosts
+#
+# Process 0 (rank=0): Host 1, mesh_id=0 (prefill node)
+# Process 1 (rank=1): Host 2, mesh_id=1 (decode node)
+# Each N300 has 2 chips (1x2 mesh topology)
+
+rank_bindings:
+  - rank: 0
+    mesh_id: 0
+    mesh_host_rank: 0
+    env_overrides:
+      TT_VISIBLE_DEVICES: "0"  # Single chip on host 1 (1x1 mesh)
+      PYTHONPATH: "/data/ztorlak/tt-metal/python_env/lib/python3.10/site-packages:/data/ztorlak/tt-metal/ttnn:/data/ztorlak/tt-metal/tools:/data/ztorlak/tt-inference-server/tt-media-server:/data/ztorlak/tt-metal"
+
+  - rank: 1
+    mesh_id: 1
+    mesh_host_rank: 0
+    env_overrides:
+      TT_VISIBLE_DEVICES: "0"  # Single chip on host 2 (1x1 mesh)
+      PYTHONPATH: "/data/ztorlak/tt-metal/python_env/lib/python3.10/site-packages:/data/ztorlak/tt-metal/ttnn:/data/ztorlak/tt-metal/tools:/data/ztorlak/tt-inference-server/tt-media-server:/data/ztorlak/tt-metal"
+
+# Multi-host mesh graph descriptor - two separate N300s, no physical connections
+# MPI handles CPU-to-CPU transfer between hosts
+mesh_graph_desc_path: "/data/ztorlak/tt-inference-server/tt-media-server/prefill_node_tests/multihost_n300_mesh_graph_descriptor.textproto"
