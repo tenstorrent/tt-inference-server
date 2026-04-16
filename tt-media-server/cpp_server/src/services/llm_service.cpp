@@ -236,12 +236,6 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   std::unordered_map<uint32_t, MetricsSamplingState> metricsSampling;
 
   while (running_) {
-    if (!worker_manager_->checkWorkerAlive(workerIdx)) {
-      TT_LOG_ERROR("[Consumer-{}] Worker process died, exiting consumer",
-                   workerIdx);
-      break;
-    }
-
     bool anyActivity = false;
 
     ipc::SharedToken token;
