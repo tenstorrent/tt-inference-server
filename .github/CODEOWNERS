@@ -4,17 +4,14 @@
 *       @tenstorrent/tt-inference-server-codeowners
 
 # tt-media-server
-tt-media-server/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @knovokmetTT @vpetrovicTT
+tt-media-server/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @knovokmetTT @vpetrovicTT @ddjukicTT
 tt-media-server/tt_model_runners/forge_runners/ @vmilosevic
 
 # tt-vllm-plugin
-tt-vllm-plugin/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @bgoelTT @knovokmetTT @vpetrovicTT
+tt-vllm-plugin/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @bgoelTT @knovokmetTT @vpetrovicTT @ddjukicTT
 
 # vllm-tt-metal
-vllm-tt-metal-llama3/ @tstescoTT @bgoelTT @stisiTT
-
-# docker entrypoint
-docker-entrypoint.sh @tstescoTT @bgoelTT @idjuricTT @acvejicTT
+vllm-tt-metal/ @tstescoTT @bgoelTT @stisiTT
 
 # workflows
 run.py @tstescoTT @bgoelTT @stisiTT @tenstorrent/tt-inference-server-codeowners
@@ -44,3 +41,6 @@ scripts/release/* @vmaksimovicTT @tstescoTT @bgoelTT
 # docs
 docs/ @tenstorrent/tt-inference-server-codeowners
 README.md @tstescoTT @bgoelTT @idjuricTT
+
+# tt-infenrece-server-v2
+tt-infenrece-server-v2/ @idjuricTT @fivanovicTT @vpetrovicTT @ddjukicTT

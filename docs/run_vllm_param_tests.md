@@ -28,14 +28,14 @@ source .workflow_venvs/.venv_tests_run_script/bin/activate
 export JWT_SECRET=<my-secret>
 
 # the example below runs the determinism tests, these test top_k or top_p, and temperature are working.
-pytest tests/server_tests/test_cases/test_vllm_server_parameters.py -sv \
+pytest server_tests/test_cases/test_vllm_server_parameters.py -sv \
 -k "test_determinism" \
 --endpoint-url http://127.0.0.1:8000/v1/chat/completions \
 --model-name Qwen/Qwen3-32B \
 --model-backend tt-transformers \
 --output-path ./workflow_logs/tests_output/test_my_output_path
 ```
-The default pytest args are defined in `test_config.py` for each model, e.g.: https://github.com/tenstorrent/tt-inference-server/blob/dev/tests/test_config.py#L45
+The default pytest args are defined in `test_config.py` for each model, e.g.: https://github.com/tenstorrent/tt-inference-server/blob/dev/server_tests/test_config.py#L45
 
 
 #### step 3[alternative]: run pytest binary without 'source'
@@ -47,7 +47,7 @@ cd $TT_INFERENCE_SERVER_REPO_ROOT
 export JWT_SECRET=<my-secret>
 
 # the example below runs the determinism tests, these test top_k or top_p, and temperature are working.
-.workflow_venvs/.venv_tests_run_script/bin/pytest tests/server_tests/test_cases/test_vllm_server_parameters.py -sv \
+.workflow_venvs/.venv_tests_run_script/bin/pytest server_tests/test_cases/test_vllm_server_parameters.py -sv \
 -k "test_determinism" \
 --endpoint-url http://127.0.0.1:8000/v1/chat/completions \
 --model-name Qwen/Qwen3-32B \
@@ -58,7 +58,7 @@ export JWT_SECRET=<my-secret>
 Example output:
 ```log
 tstesco@xxxxxxxxxxx ~/software/tt-inference-server[tstesco/test-manual-run-doc]$ export JWT_SECRET=<my-secret>
-tstesco@xxxxxxxxxxx ~/software/tt-inference-server[tstesco/test-manual-run-doc]$ .workflow_venvs/.venv_tests_run_script/bin/pytest tests/server_tests/test_cases/test_vllm_server_parameters.py -sv -k "test_determinism" --endpoint-url http://127.0.0.1:8000/v1/chat/completions --model-name Qwen/Qwen3-32B --model-backend tt-transformers --output-path ./workflow_logs/tests_output/test_my_output_path
+tstesco@xxxxxxxxxxx ~/software/tt-inference-server[tstesco/test-manual-run-doc]$ .workflow_venvs/.venv_tests_run_script/bin/pytest server_tests/test_cases/test_vllm_server_parameters.py -sv -k "test_determinism" --endpoint-url http://127.0.0.1:8000/v1/chat/completions --model-name Qwen/Qwen3-32B --model-backend tt-transformers --output-path ./workflow_logs/tests_output/test_my_output_path
 ================================================================================ test session starts =================================================================================
 platform linux -- Python 3.10.19, pytest-8.3.5, pluggy-1.6.0 -- /home/tstesco/software/tt-inference-server/.workflow_venvs/.venv_tests_run_script/bin/python
 cachedir: .pytest_cache
@@ -67,9 +67,9 @@ configfile: pyproject.toml
 plugins: anyio-4.12.0
 collected 20 items / 17 deselected / 3 selected
 
-tests/server_tests/test_cases/test_vllm_server_parameters.py::test_determinism_parameters[temperature-0.0] PASSED
-tests/server_tests/test_cases/test_vllm_server_parameters.py::test_determinism_parameters[top_k-1] PASSED
-tests/server_tests/test_cases/test_vllm_server_parameters.py::test_determinism_parameters[top_p-0.01] PASSED
+server_tests/test_cases/test_vllm_server_parameters.py::test_determinism_parameters[temperature-0.0] PASSED
+server_tests/test_cases/test_vllm_server_parameters.py::test_determinism_parameters[top_k-1] PASSED
+server_tests/test_cases/test_vllm_server_parameters.py::test_determinism_parameters[top_p-0.01] PASSED
 Generating parameter_report.json...
 parameter_report.json generated.
 

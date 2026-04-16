@@ -3,11 +3,13 @@
 
 #pragma once
 
-#include <vector>
-#include <string>
 #include <json/json.h>
 
+#include <string>
+#include <vector>
+
 #include "domain/base_response.hpp"
+#include "utils/id_generator.hpp"
 
 namespace tt::domain {
 
@@ -16,85 +18,87 @@ namespace tt::domain {
  * Based on: https://platform.openai.com/docs/api-reference/embeddings/object
  */
 struct EmbeddingResponse : BaseResponse {
-    // The embedding vector
-    std::vector<float> embedding;
+  using BaseResponse::BaseResponse;
 
-    // Number of tokens in the input
-    int total_tokens = 0;
+  // The embedding vector
+  std::vector<float> embedding;
 
-    // Model used
-    std::string model;
+  // Number of tokens in the input
+  int total_tokens = 0;
 
-    // Error message (if any)
-    std::string error;
+  // Model used
+  std::string model;
 
-    /**
-     * Convert to OpenAI-compatible JSON response.
-     */
-    Json::Value to_openai_json() const {
-        Json::Value response;
-        response["object"] = "list";
+  // Error message (if any)
+  std::string error;
 
-        // Data array with embedding object
-        Json::Value data(Json::arrayValue);
-        Json::Value embedding_obj;
-        embedding_obj["object"] = "embedding";
-        embedding_obj["index"] = 0;
+  /**
+   * Convert to OpenAI-compatible JSON response.
+   */
+  Json::Value toOpenaiJson() const {
+    Json::Value response;
+    response["object"] = "list";
 
-        // Pre-size the array for better performance
-        Json::Value embedding_array(Json::arrayValue);
-        embedding_array.resize(static_cast<Json::ArrayIndex>(embedding.size()));
-        for (size_t i = 0; i < embedding.size(); ++i) {
-            embedding_array[static_cast<Json::ArrayIndex>(i)] = embedding[i];
-        }
-        embedding_obj["embedding"] = std::move(embedding_array);
-        data.append(std::move(embedding_obj));
+    // Data array with embedding object
+    Json::Value data(Json::arrayValue);
+    Json::Value embeddingObj;
+    embeddingObj["object"] = "embedding";
+    embeddingObj["index"] = 0;
 
-        response["data"] = std::move(data);
-        response["model"] = model;
+    // Pre-size the array for better performance
+    Json::Value embeddingArray(Json::arrayValue);
+    embeddingArray.resize(static_cast<Json::ArrayIndex>(embedding.size()));
+    for (size_t i = 0; i < embedding.size(); ++i) {
+      embeddingArray[static_cast<Json::ArrayIndex>(i)] = embedding[i];
+    }
+    embeddingObj["embedding"] = std::move(embeddingArray);
+    data.append(std::move(embeddingObj));
 
-        // Usage info
-        Json::Value usage;
-        usage["total_tokens"] = total_tokens;
-        usage["prompt_tokens"] = total_tokens;
-        response["usage"] = std::move(usage);
+    response["data"] = std::move(data);
+    response["model"] = model;
 
-        return response;
+    // Usage info
+    Json::Value usage;
+    usage["total_tokens"] = total_tokens;
+    usage["prompt_tokens"] = total_tokens;
+    response["usage"] = std::move(usage);
+
+    return response;
+  }
+
+  /**
+   * Parse from Python result JSON. task_id from JSON if present, otherwise a
+   * new UUID.
+   */
+  static EmbeddingResponse fromJson(const Json::Value& json) {
+    uint32_t tid = json.isMember("task_id") && json["task_id"].isUInt()
+                       ? json["task_id"].asUInt()
+                       : tt::utils::TaskIDGenerator::generate();
+    EmbeddingResponse resp(tid);
+
+    if (json.isMember("embedding") && json["embedding"].isArray()) {
+      const Json::Value& embArray = json["embedding"];
+      const size_t SIZE = embArray.size();
+      resp.embedding.reserve(SIZE);
+      for (Json::ArrayIndex i = 0; i < SIZE; ++i) {
+        resp.embedding.push_back(embArray[i].asFloat());
+      }
     }
 
-    /**
-     * Parse from Python result JSON.
-     */
-    static EmbeddingResponse from_json(const Json::Value& json) {
-        EmbeddingResponse resp;
-
-        if (json.isMember("embedding") && json["embedding"].isArray()) {
-            const Json::Value& emb_array = json["embedding"];
-            const size_t size = emb_array.size();
-            resp.embedding.reserve(size);
-            for (Json::ArrayIndex i = 0; i < size; ++i) {
-                resp.embedding.push_back(emb_array[i].asFloat());
-            }
-        }
-
-        if (json.isMember("total_tokens")) {
-            resp.total_tokens = json["total_tokens"].asInt();
-        }
-
-        if (json.isMember("model")) {
-            resp.model = json["model"].asString();
-        }
-
-        if (json.isMember("task_id")) {
-            resp.task_id = json["task_id"].asString();
-        }
-
-        if (json.isMember("error")) {
-            resp.error = json["error"].asString();
-        }
-
-        return resp;
+    if (json.isMember("total_tokens")) {
+      resp.total_tokens = json["total_tokens"].asInt();
     }
+
+    if (json.isMember("model")) {
+      resp.model = json["model"].asString();
+    }
+
+    if (json.isMember("error")) {
+      resp.error = json["error"].asString();
+    }
+
+    return resp;
+  }
 };
 
-} // namespace tt::domain
+}  // namespace tt::domain

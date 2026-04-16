@@ -70,211 +70,164 @@ def finalize_axes(axes):
         ax.set_ylim(bottom=0, top=ymax * 1.15)
 
 
+def _plot_latency_panel(ax, xs, ys, xlabel, title, marker, color):
+    """Plot a latency metric panel with log-2 x-axis and ms annotations."""
+    ax.plot(xs, ys, marker, color=color, linewidth=2, markersize=7)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("ms")
+    ax.set_title(title)
+    ax.set_xscale("log", base=2)
+    ax.set_xticks(xs)
+    ax.set_xticklabels([str(x) for x in xs], rotation=45, ha="right", fontsize=7)
+    setup_latency_axis(ax)
+    ax.grid(True, alpha=0.3)
+    for x, y in zip(xs, ys):
+        ax.annotate(
+            format_latency_ms(y),
+            (x, y),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=8,
+        )
+
+
+def _plot_throughput_panel(ax, xs, ys, xlabel, ylabel, title, marker, color, fmt=".1f"):
+    """Plot a throughput metric panel with log-2 x-axis and numeric annotations."""
+    ax.plot(xs, ys, marker, color=color, linewidth=2, markersize=7)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.set_xscale("log", base=2)
+    ax.set_xticks(xs)
+    ax.set_xticklabels([str(x) for x in xs], rotation=45, ha="right", fontsize=7)
+    ax.grid(True, alpha=0.3)
+    for x, y in zip(xs, ys):
+        ax.annotate(
+            f"{y:{fmt}}",
+            (x, y),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=8,
+        )
+
+
+def _extract_metrics(data: list[dict]) -> dict[str, list[float]]:
+    """Extract all plottable metric series from filtered records."""
+    tpot_values = [r["mean_tpot_ms"] for r in data]
+    return {
+        "ttft": [round_latency_ms(r["mean_ttft_ms"]) for r in data],
+        "tpot": [round_latency_ms(v) for v in tpot_values],
+        "itl": [round_latency_ms(r.get("mean_itl_ms", 0.0)) for r in data],
+        "req_throughput": [r["request_throughput"] for r in data],
+        "tok_throughput": [r.get("output_throughput", 0.0) for r in data],
+        "tpu": [1000.0 / v if v > 0 else 0.0 for v in tpot_values],
+    }
+
+
+def _plot_phase(xs, xlabel, suptitle, data, output_path):
+    """Plot a 2x3 grid: latency row (TTFT, TPOT, ITL) and throughput row (req/s, tok/s, TPU)."""
+    m = _extract_metrics(data)
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    fig.suptitle(suptitle, fontsize=14)
+
+    _plot_latency_panel(
+        axes[0, 0], xs, m["ttft"], xlabel, "Mean TTFT", "o-", "tab:blue"
+    )
+    _plot_latency_panel(
+        axes[0, 1], xs, m["tpot"], xlabel, "Mean TPOT", "s-", "tab:orange"
+    )
+    _plot_latency_panel(
+        axes[0, 2], xs, m["itl"], xlabel, "Mean ITL", "^-", "tab:purple"
+    )
+
+    _plot_throughput_panel(
+        axes[1, 0],
+        xs,
+        m["req_throughput"],
+        xlabel,
+        "Requests/s",
+        "Request Throughput",
+        "D-",
+        "tab:green",
+        ".2f",
+    )
+    _plot_throughput_panel(
+        axes[1, 1],
+        xs,
+        m["tok_throughput"],
+        xlabel,
+        "Tokens/s",
+        "Output Throughput",
+        "P-",
+        "tab:red",
+    )
+    _plot_throughput_panel(
+        axes[1, 2],
+        xs,
+        m["tpu"],
+        xlabel,
+        "Tokens/s/user",
+        "Tokens Per Second Per User",
+        "X-",
+        "tab:cyan",
+    )
+
+    finalize_axes(axes.flat)
+    plt.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    print(f"  Saved {output_path}")
+
+
 def plot_phase1_isl(records, fixed_osl: int, fixed_conc: int, output_dir: Path):
-    """Impact of increasing ISL on TTFT and TPOT."""
+    """Impact of increasing ISL on latency and throughput metrics."""
     data = filter_records(records, _osl=fixed_osl, _conc=fixed_conc)
     if not data:
         print(f"  No data for Phase 1 (OSL={fixed_osl}, conc={fixed_conc})")
         return
     isls = [r["_isl"] for r in data]
-    ttfts = [round_latency_ms(r["mean_ttft_ms"]) for r in data]
-    tpots = [round_latency_ms(r["mean_tpot_ms"]) for r in data]
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle(
+    _plot_phase(
+        isls,
+        "Input Sequence Length (ISL)",
         f"Impact of Input Sequence Length (OSL={fixed_osl}, concurrency={fixed_conc})",
-        fontsize=14,
+        data,
+        output_dir / "phase1_isl_impact.png",
     )
-
-    ax1.plot(isls, ttfts, "o-", color="tab:blue", linewidth=2, markersize=7)
-    ax1.set_xlabel("Input Sequence Length (ISL)")
-    ax1.set_ylabel("Mean TTFT (ms)")
-    ax1.set_title("Mean Time To First Token")
-    ax1.set_xscale("log", base=2)
-    ax1.set_xticks(isls)
-    ax1.set_xticklabels([str(x) for x in isls])
-    setup_latency_axis(ax1)
-    ax1.grid(True, alpha=0.3)
-    for x, y in zip(isls, ttfts):
-        ax1.annotate(
-            format_latency_ms(y),
-            (x, y),
-            textcoords="offset points",
-            xytext=(0, 10),
-            ha="center",
-            fontsize=8,
-        )
-
-    ax2.plot(isls, tpots, "s-", color="tab:orange", linewidth=2, markersize=7)
-    ax2.set_xlabel("Input Sequence Length (ISL)")
-    ax2.set_ylabel("Mean TPOT (ms)")
-    ax2.set_title("Mean Time Per Output Token")
-    ax2.set_xscale("log", base=2)
-    ax2.set_xticks(isls)
-    ax2.set_xticklabels([str(x) for x in isls])
-    setup_latency_axis(ax2)
-    ax2.grid(True, alpha=0.3)
-    for x, y in zip(isls, tpots):
-        ax2.annotate(
-            format_latency_ms(y),
-            (x, y),
-            textcoords="offset points",
-            xytext=(0, 10),
-            ha="center",
-            fontsize=8,
-        )
-
-    finalize_axes([ax1, ax2])
-    plt.tight_layout()
-    dest = output_dir / "phase1_isl_impact.png"
-    fig.savefig(dest, dpi=150)
-    plt.close(fig)
-    print(f"  Saved {dest}")
 
 
 def plot_phase2_osl(records, fixed_isl: int, fixed_conc: int, output_dir: Path):
-    """Impact of increasing OSL on TTFT and TPOT."""
+    """Impact of increasing OSL on latency and throughput metrics."""
     data = filter_records(records, _isl=fixed_isl, _conc=fixed_conc)
     if not data:
         print(f"  No data for Phase 2 (ISL={fixed_isl}, conc={fixed_conc})")
         return
     osls = [r["_osl"] for r in data]
-    ttfts = [round_latency_ms(r["mean_ttft_ms"]) for r in data]
-    tpots = [round_latency_ms(r["mean_tpot_ms"]) for r in data]
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle(
+    _plot_phase(
+        osls,
+        "Output Sequence Length (OSL)",
         f"Impact of Output Sequence Length (ISL={fixed_isl}, concurrency={fixed_conc})",
-        fontsize=14,
+        data,
+        output_dir / "phase2_osl_impact.png",
     )
-
-    ax1.plot(osls, ttfts, "o-", color="tab:blue", linewidth=2, markersize=7)
-    ax1.set_xlabel("Output Sequence Length (OSL)")
-    ax1.set_ylabel("Mean TTFT (ms)")
-    ax1.set_title("Mean Time To First Token")
-    ax1.set_xscale("log", base=2)
-    ax1.set_xticks(osls)
-    ax1.set_xticklabels([str(x) for x in osls])
-    setup_latency_axis(ax1)
-    ax1.grid(True, alpha=0.3)
-    for x, y in zip(osls, ttfts):
-        ax1.annotate(
-            format_latency_ms(y),
-            (x, y),
-            textcoords="offset points",
-            xytext=(0, 10),
-            ha="center",
-            fontsize=8,
-        )
-
-    ax2.plot(osls, tpots, "s-", color="tab:orange", linewidth=2, markersize=7)
-    ax2.set_xlabel("Output Sequence Length (OSL)")
-    ax2.set_ylabel("Mean TPOT (ms)")
-    ax2.set_title("Mean Time Per Output Token")
-    ax2.set_xscale("log", base=2)
-    ax2.set_xticks(osls)
-    ax2.set_xticklabels([str(x) for x in osls])
-    setup_latency_axis(ax2)
-    ax2.grid(True, alpha=0.3)
-    for x, y in zip(osls, tpots):
-        ax2.annotate(
-            format_latency_ms(y),
-            (x, y),
-            textcoords="offset points",
-            xytext=(0, 10),
-            ha="center",
-            fontsize=8,
-        )
-
-    finalize_axes([ax1, ax2])
-    plt.tight_layout()
-    dest = output_dir / "phase2_osl_impact.png"
-    fig.savefig(dest, dpi=150)
-    plt.close(fig)
-    print(f"  Saved {dest}")
 
 
 def plot_phase3_concurrency(records, fixed_isl: int, fixed_osl: int, output_dir: Path):
-    """Impact of increasing concurrency on TTFT, TPOT, and request throughput."""
+    """Impact of increasing concurrency on latency and throughput metrics."""
     data = filter_records(records, _isl=fixed_isl, _osl=fixed_osl)
     if not data:
         print(f"  No data for Phase 3 (ISL={fixed_isl}, OSL={fixed_osl})")
         return
     concs = [r["_conc"] for r in data]
-    ttfts = [round_latency_ms(r["mean_ttft_ms"]) for r in data]
-    tpots = [round_latency_ms(r["mean_tpot_ms"]) for r in data]
-    req_thr = [r["request_throughput"] for r in data]
-
-    fig, axes = plt.subplots(1, 3, figsize=(14, 5))
-    fig.suptitle(
-        f"Impact of Concurrency (ISL={fixed_isl}, OSL={fixed_osl})", fontsize=14
+    _plot_phase(
+        concs,
+        "Max Concurrency",
+        f"Impact of Concurrency (ISL={fixed_isl}, OSL={fixed_osl})",
+        data,
+        output_dir / "phase3_concurrency_impact.png",
     )
-
-    ax = axes[0]
-    ax.plot(concs, ttfts, "o-", color="tab:blue", linewidth=2, markersize=7)
-    ax.set_xlabel("Max Concurrency")
-    ax.set_ylabel("Mean TTFT (ms)")
-    ax.set_title("Mean Time To First Token")
-    ax.set_xscale("log", base=2)
-    ax.set_xticks(concs)
-    ax.set_xticklabels([str(x) for x in concs])
-    setup_latency_axis(ax)
-    ax.grid(True, alpha=0.3)
-    for x, y in zip(concs, ttfts):
-        ax.annotate(
-            format_latency_ms(y),
-            (x, y),
-            textcoords="offset points",
-            xytext=(0, 10),
-            ha="center",
-            fontsize=8,
-        )
-
-    ax = axes[1]
-    ax.plot(concs, tpots, "s-", color="tab:orange", linewidth=2, markersize=7)
-    ax.set_xlabel("Max Concurrency")
-    ax.set_ylabel("Mean TPOT (ms)")
-    ax.set_title("Mean Time Per Output Token")
-    ax.set_xscale("log", base=2)
-    ax.set_xticks(concs)
-    ax.set_xticklabels([str(x) for x in concs])
-    setup_latency_axis(ax)
-    ax.grid(True, alpha=0.3)
-    for x, y in zip(concs, tpots):
-        ax.annotate(
-            format_latency_ms(y),
-            (x, y),
-            textcoords="offset points",
-            xytext=(0, 10),
-            ha="center",
-            fontsize=8,
-        )
-
-    ax = axes[2]
-    ax.plot(concs, req_thr, "D-", color="tab:green", linewidth=2, markersize=7)
-    ax.set_xlabel("Max Concurrency")
-    ax.set_ylabel("Requests/s")
-    ax.set_title("Request Throughput")
-    ax.set_xscale("log", base=2)
-    ax.set_xticks(concs)
-    ax.set_xticklabels([str(x) for x in concs])
-    ax.grid(True, alpha=0.3)
-    for x, y in zip(concs, req_thr):
-        ax.annotate(
-            f"{y:.1f}",
-            (x, y),
-            textcoords="offset points",
-            xytext=(0, 10),
-            ha="center",
-            fontsize=8,
-        )
-
-    finalize_axes(axes)
-    plt.tight_layout()
-    dest = output_dir / "phase3_concurrency_impact.png"
-    fig.savefig(dest, dpi=150)
-    plt.close(fig)
-    print(f"  Saved {dest}")
 
 
 def main():
@@ -303,8 +256,8 @@ def main():
     parser.add_argument(
         "--phase2-isl",
         type=int,
-        default=128,
-        help="Fixed ISL used in Phase 2 (default: 128)",
+        default=512,
+        help="Fixed ISL used in Phase 2 (default: 512)",
     )
     parser.add_argument(
         "--phase2-conc",

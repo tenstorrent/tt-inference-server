@@ -30,7 +30,6 @@ This module provides:
 
 3. **Install forge dependencies:**
    ```bash
-   export VLLM_TARGET_DEVICE="empty" # Fixes the vllm installation error "CUDA_HOME is not set"
    pip install -r tt_model_runners/forge_runners/requirements.txt
    ```
 
@@ -47,13 +46,14 @@ Use MODEL_RUNNER to select which model is run
    - TT_XLA_RESNET = "tt-xla-resnet"
    - TT_XLA_VOVNET = "tt-xla-vovnet"
    - TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
-   - TT_XLA_EFFICENNET = "tt-xla-efficientnet"
+   - TT_XLA_EFFICIENTNET = "tt-xla-efficientnet"
    - TT_XLA_SEGFORMER = "tt-xla-segformer"
    - TT_XLA_UNET = "tt-xla-unet"
    - TT_XLA_VIT = "tt-xla-vit"
+   - TT_XLA_SDXL = "tt-xla-sdxl"
 
 Set appropriate HF_TOKEN to load weights from Huggingface.
-IRD_LF_CACHE is out large file caching service, in IRD enviroment use http://aus2-lfcache.aus2.tenstorrent.com/
+IRD_LF_CACHE is out large file caching service, in IRD environment use http://aus2-lfcache.aus2.tenstorrent.com/
 
 ```bash
 export MODEL_RUNNER=tt-xla-resnet
@@ -125,10 +125,10 @@ Model should first be tested locally:
 
 1. In tt-media-server, in `config/vllm_settings`, choose the desired model from the `SupportedModels` enum
 2. In `config/settings.py`, set your device id(s), `is_galaxy` bool, and most importantly, `model_runner` to `ModelRunners.VLLM.value`
-3. Create a python3.11 venv with the forge vllm plugin and activate
+3. Create a python3.12 venv with the forge vllm plugin and activate
 4. Do a `pip install -r` in both tt-inference-server and tt-media-server
 5. Do `export VLLM_TARGET_DEVICE="empty"`
-6. Run the tt-media-server with python3.11 venv (exec the `run_uvicorn.sh`)
+6. Run the tt-media-server with python3.12 venv (exec the `run_uvicorn.sh`)
 7. You can send completion requests via `localhost:8000/docs` page
 
 ### CI
@@ -138,6 +138,10 @@ To run the forge model, select the `forge-vllm-plugin` implementation when runni
 Add the model into the options dropdown(under the model input) in on-dispatch.yml in .github/workflows/on-dispatch.yml file
 
 To add models into the on-nightly workflow, navigate to tt-shield repo, and add the model into the model matrix in .github/workflows/on-dispatch.yml , under   run-evals-on-media-inference-server-forge job
+
+### Model Specific Options
+
+- For TT_XLA_SDXL use TTXLA_SDXL_RESOLUTION [512|1024] to specify the output image resolution, default is 512.
 
 NOTES:
 - We are unable to run evaluations on Forge models that exist in metal.

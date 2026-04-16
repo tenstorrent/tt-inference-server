@@ -21,10 +21,10 @@ project_root = Path(__file__).resolve().parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from tests.server_tests.test_cases.image_generation_eval_test import (
+from server_tests.test_cases.image_generation_eval_test import (
     ImageGenerationEvalsTest,
 )
-from tests.server_tests.test_classes import TestConfig as ServerTestConfig
+from server_tests.test_classes import TestConfig as ServerTestConfig
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_accuracy_check,
     calculate_metrics,
@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 WORKFLOW_EVALS = "evals"
 WORKFLOW_BENCHMARKS = "benchmarks"
 SDXL_SD35_BENCHMARK_NUM_PROMPTS = 20
+SDXL_BENCHMARK_NUM_PROMPTS = 100
 SDXL_SD35_INFERENCE_STEPS = 20
 IMAGE_FORMAT_FOR_EVALS = "PNG"
 IMAGE_QUALITY_FOR_EVALS = 100
@@ -215,6 +216,13 @@ class ImageClientStrategy(BaseMediaStrategy):
 
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
+
+            # Override num_calls for SDXL trace model to 100 prompts
+            if runner_in_use == "tt-sdxl-trace":
+                logger.info(
+                    f"Overriding num_calls for SDXL trace model to {SDXL_BENCHMARK_NUM_PROMPTS} prompts"
+                )
+                num_calls = SDXL_BENCHMARK_NUM_PROMPTS
 
             # Route to appropriate benchmark method using dispatch map
             benchmark_method = self.benchmark_methods.get(
@@ -675,6 +683,9 @@ class ImageClientStrategy(BaseMediaStrategy):
         result = await eval_test._run_specific_test_async()
 
         if not result.get("success"):
+            logger.error(
+                f"ImageGenerationEvalsTest ACCURACY_CHECK failed: error={result.get('error')}"
+            )
             error = result.get("error", "ImageGenerationEvalsTest failed")
             raise RuntimeError(error)
 

@@ -22,6 +22,7 @@ sys.path.insert(0, str(project_root))
 
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import get_repo_root_path, run_command
 from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
@@ -57,9 +58,9 @@ def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Run genai-perf benchmarks via Docker")
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     parser.add_argument(
@@ -222,11 +223,11 @@ def main():
     logger.info(f"Running {__file__} ...")
 
     args = parse_args()
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    # Extract CLI args from model_spec
-    cli_args = model_spec.cli_args
-    service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+    # runtime config loaded from JSON
+    service_port = runtime_config.service_port
 
     logger.info(f"Model: {model_spec.model_name}")
     logger.info(f"Device: {model_spec.device_type}")

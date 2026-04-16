@@ -3,21 +3,31 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+import json
 import re
 
 import pytest
 
 from workflows.model_spec import (
     MODEL_SPECS,
+    MODEL_SPECS_SCHEMA_VERSION,
     VERSION,
     DeviceModelSpec,
     ImplSpec,
     ModelSpec,
     ModelSpecTemplate,
+    VersionRequirement,
+    export_model_specs_json,
     get_model_spec_map,
     spec_templates,
+    SystemRequirements,
 )
-from workflows.workflow_types import DeviceTypes, InferenceEngine, ModelStatusTypes
+from workflows.workflow_types import (
+    DeviceTypes,
+    InferenceEngine,
+    ModelStatusTypes,
+    VersionMode,
+)
 
 
 @pytest.fixture
@@ -39,6 +49,7 @@ def sample_device_model_spec():
         max_concurrency=16,
         max_context=64 * 1024,
         default_impl=True,
+        tensor_cache_timeout=2400.0,
     )
 
 
@@ -58,12 +69,14 @@ class TestModelSpecTemplateSystem:
                     max_concurrency=16,
                     max_context=64 * 1024,
                     default_impl=True,
+                    tensor_cache_timeout=1800.0,
                 ),
                 DeviceModelSpec(
                     device=DeviceTypes.N300,
                     max_concurrency=32,
                     max_context=128 * 1024,
                     default_impl=False,
+                    tensor_cache_timeout=3600.0,
                 ),
             ],
             weights=["test/model-7B", "test/model-7B-Instruct"],
@@ -85,6 +98,10 @@ class TestModelSpecTemplateSystem:
             assert isinstance(spec, ModelSpec)
             assert spec.impl == template.impl
             assert spec.status == "testing"
+            expected_timeout = (
+                1800.0 if spec.device_type == DeviceTypes.N150 else 3600.0
+            )
+            assert spec.device_model_spec.tensor_cache_timeout == expected_timeout
 
     def test_template_defaults(self, sample_impl):
         """Test template creation with defaults."""
@@ -106,6 +123,220 @@ class TestModelSpecTemplateSystem:
         assert template.version == VERSION
         assert template.status == ModelStatusTypes.EXPERIMENTAL
         assert template.docker_image is None
+
+    def test_system_requirement_template_level(self, sample_impl):
+        """Test that SystemRequirements propagate correctly from templates and device specs."""
+        template1 = ModelSpecTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            system_requirements=SystemRequirements(
+                firmware=VersionRequirement(
+                    specifier=">=18.6.0",
+                    mode=VersionMode.STRICT,
+                ),
+                kmd=VersionRequirement(
+                    specifier=">=2.1.0",
+                    mode=VersionMode.STRICT,
+                ),
+            ),
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=32,
+                    max_context=128 * 1024,
+                )
+            ],
+            weights=["test/model-1"],
+        )
+
+        specs1 = template1.expand_to_specs()
+        assert len(specs1) == 1
+        assert specs1[0].system_requirements is not None
+        assert specs1[0].system_requirements.firmware.specifier == ">=18.6.0"
+        assert specs1[0].system_requirements.firmware.mode == VersionMode.STRICT
+        assert specs1[0].system_requirements.kmd.specifier == ">=2.1.0"
+        assert specs1[0].system_requirements.kmd.mode == VersionMode.STRICT
+
+    def test_system_requirements_device_model_spec_level(self, sample_impl):
+        template2 = ModelSpecTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.1.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=32,
+                    max_context=128 * 1024,
+                    system_requirements=SystemRequirements(
+                        firmware=VersionRequirement(
+                            specifier=">=18.8.0",
+                            mode=VersionMode.SUGGESTED,
+                        ),
+                        kmd=VersionRequirement(
+                            specifier=">=2.2.0",
+                            mode=VersionMode.SUGGESTED,
+                        ),
+                    ),
+                ),
+            ],
+            weights=["test/model-2"],
+        )
+
+        specs2 = template2.expand_to_specs()
+        assert len(specs2) == 1
+        assert specs2[0].system_requirements is not None
+        assert specs2[0].system_requirements.firmware.specifier == ">=18.8.0"
+        assert specs2[0].system_requirements.firmware.mode == VersionMode.SUGGESTED
+        assert specs2[0].system_requirements.kmd.specifier == ">=2.2.0"
+        assert specs2[0].system_requirements.kmd.mode == VersionMode.SUGGESTED
+
+    def test_system_requirements_both_levels(self, sample_impl):
+        template3 = ModelSpecTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.2.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            system_requirements=SystemRequirements(
+                firmware=VersionRequirement(
+                    specifier=">=18.0.0",
+                    mode=VersionMode.STRICT,
+                ),
+                kmd=VersionRequirement(
+                    specifier=">=2.0.0",
+                    mode=VersionMode.STRICT,
+                ),
+            ),
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=32,
+                    max_context=128 * 1024,
+                    system_requirements=SystemRequirements(
+                        firmware=VersionRequirement(
+                            specifier=">=18.12.0",
+                            mode=VersionMode.SUGGESTED,
+                        ),
+                        kmd=VersionRequirement(
+                            specifier=">=2.4.1",
+                            mode=VersionMode.SUGGESTED,
+                        ),
+                    ),
+                ),
+            ],
+            weights=["test/model-3"],
+        )
+
+        specs3 = template3.expand_to_specs()
+        assert len(specs3) == 1
+        assert specs3[0].system_requirements is not None
+        assert specs3[0].system_requirements.firmware.specifier == ">=18.12.0"
+        assert specs3[0].system_requirements.firmware.mode == VersionMode.SUGGESTED
+        assert specs3[0].system_requirements.kmd.specifier == ">=2.4.1"
+        assert specs3[0].system_requirements.kmd.mode == VersionMode.SUGGESTED
+
+    def test_metadata_per_weight(self, sample_impl):
+        """Test that metadata is correctly assigned per weight during expansion."""
+        template = ModelSpecTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=16,
+                    max_context=64 * 1024,
+                    default_impl=True,
+                ),
+            ],
+            weights=["test/model-A", "test/model-B"],
+            metadata={
+                "test/model-A": {"license": "apache-2.0", "custom_key": 42},
+                "test/model-B": {"license": "mit"},
+            },
+        )
+
+        specs = template.expand_to_specs()
+        assert len(specs) == 2
+
+        spec_a = [s for s in specs if s.hf_model_repo == "test/model-A"][0]
+        spec_b = [s for s in specs if s.hf_model_repo == "test/model-B"][0]
+
+        assert spec_a.metadata == {"license": "apache-2.0", "custom_key": 42}
+        assert spec_b.metadata == {"license": "mit"}
+
+    def test_metadata_defaults_empty(self, sample_impl):
+        """Test that metadata defaults to empty dict when not provided."""
+        template = ModelSpecTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=16,
+                    max_context=64 * 1024,
+                ),
+            ],
+            weights=["test/model"],
+        )
+
+        assert template.metadata == {}
+        specs = template.expand_to_specs()
+        assert specs[0].metadata == {}
+
+    def test_metadata_partial_weights(self, sample_impl):
+        """Test that weights without metadata entries get empty dict."""
+        template = ModelSpecTemplate(
+            impl=sample_impl,
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150,
+                    max_concurrency=16,
+                    max_context=64 * 1024,
+                ),
+            ],
+            weights=["test/model-A", "test/model-B"],
+            metadata={
+                "test/model-A": {"some": "data"},
+            },
+        )
+
+        specs = template.expand_to_specs()
+        spec_a = [s for s in specs if s.hf_model_repo == "test/model-A"][0]
+        spec_b = [s for s in specs if s.hf_model_repo == "test/model-B"][0]
+
+        assert spec_a.metadata == {"some": "data"}
+        assert spec_b.metadata == {}
+
+    def test_metadata_invalid_key_raises(self, sample_impl):
+        """Test that metadata with keys not in weights raises an error."""
+        with pytest.raises(AssertionError, match="These keys do not exist as weights"):
+            ModelSpecTemplate(
+                impl=sample_impl,
+                tt_metal_commit="v1.0.0",
+                vllm_commit="abc123",
+                inference_engine=InferenceEngine.VLLM.value,
+                device_model_specs=[
+                    DeviceModelSpec(
+                        device=DeviceTypes.N150,
+                        max_concurrency=16,
+                        max_context=64 * 1024,
+                    ),
+                ],
+                weights=["test/model-A"],
+                metadata={
+                    "test/model-A": {"ok": True},
+                    "test/nonexistent-model": {"bad": True},
+                },
+            )
 
 
 class TestModelSpecSystem:
@@ -219,14 +450,17 @@ class TestModelSpecSystem:
         assert loaded_spec.model_id == original_spec.model_id
         assert loaded_spec.model_name == original_spec.model_name
         assert loaded_spec.status == original_spec.status
+        assert (
+            loaded_spec.device_model_spec.tensor_cache_timeout
+            == original_spec.device_model_spec.tensor_cache_timeout
+        )
 
-    def test_apply_runtime_args_overrides_commits_from_docker_image(
+    def test_apply_overrides_commits_from_docker_image(
         self, sample_impl, sample_device_model_spec
     ):
-        """Test that apply_runtime_args updates commits from docker image tag."""
-        import argparse
+        """Test that apply_overrides updates commits from docker image tag."""
+        from workflows.runtime_config import RuntimeConfig
 
-        # Create ModelSpec with default commits
         default_tt_metal_commit = "default-tt-metal-commit-1234567890"
         default_vllm_commit = "default-vllm"
         spec = ModelSpec(
@@ -241,24 +475,20 @@ class TestModelSpecSystem:
             device_model_spec=sample_device_model_spec,
         )
 
-        # Verify initial commits are the defaults
         assert spec.tt_metal_commit == default_tt_metal_commit
         assert spec.vllm_commit == default_vllm_commit
 
-        # Create args with override_docker_image containing commits in tag
-        # Format: version-tt_metal_commit(40)-vllm_commit(7)-timestamp
         new_tt_metal_commit = "fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd"
         new_vllm_commit = "7a9b86f"
         docker_image_with_commits = f"ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.4.0-{new_tt_metal_commit}-{new_vllm_commit}-58111263717"
-        args = argparse.Namespace()
-        args.override_docker_image = docker_image_with_commits
-        args.override_tt_config = None
-        args.vllm_override_args = None
-        args.service_port = None
-        args.dev_mode = False
+        rc = RuntimeConfig(
+            model="TestModel-7B",
+            workflow="benchmarks",
+            device="n150",
+            override_docker_image=docker_image_with_commits,
+        )
 
-        # Apply runtime args
-        spec.apply_runtime_args(args)
+        spec.apply_overrides(rc)
 
         assert spec.tt_metal_commit == new_tt_metal_commit
         assert spec.vllm_commit == new_vllm_commit
@@ -294,6 +524,42 @@ class TestSystemIntegration:
             assert isinstance(spec, ModelSpec)
             assert model_id.startswith("id_")
             assert spec.model_id == model_id
+
+    def test_export_model_specs_json_includes_metadata(
+        self, sample_impl, sample_device_model_spec, tmp_path
+    ):
+        """Test exported model spec JSON includes top-level metadata."""
+        spec = ModelSpec(
+            device_type=DeviceTypes.N150,
+            impl=sample_impl,
+            hf_model_repo="test/TestModel-7B",
+            model_id="id_test-impl_TestModel-7B_n150",
+            model_name="TestModel-7B",
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_spec=sample_device_model_spec,
+        )
+        output_path = tmp_path / "model_spec.json"
+
+        num_specs = export_model_specs_json({spec.model_id: spec}, output_path)
+
+        assert num_specs == 1
+        data = json.loads(output_path.read_text())
+        assert data["schema_version"] == MODEL_SPECS_SCHEMA_VERSION
+        assert data["release_version"] == VERSION
+        assert (
+            data["model_specs"][spec.hf_model_repo][spec.device_type.to_string()][
+                spec.inference_engine
+            ][spec.impl.impl_id]["model_id"]
+            == spec.model_id
+        )
+        assert (
+            data["model_specs"][spec.hf_model_repo][spec.device_type.to_string()][
+                spec.inference_engine
+            ][spec.impl.impl_id]["device_model_spec"]["tensor_cache_timeout"]
+            == spec.device_model_spec.tensor_cache_timeout
+        )
 
     def test_real_spec_templates(self):
         """Test that real spec templates generate valid specs."""

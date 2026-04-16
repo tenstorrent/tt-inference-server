@@ -14,9 +14,9 @@ unset ARCH_NAME
 
 virtual_env_name="venv-worker"
 # Create virtual environment with available Python version
-if command -v python3.11 >/dev/null 2>&1; then
-    echo "Using python3.11 for virtual environment..."
-    python3.11 -m venv ${virtual_env_name}
+if command -v python3.12 >/dev/null 2>&1; then
+    echo "Using python3.12 for virtual environment..."
+    python3.12 -m venv ${virtual_env_name}
 else
     echo "Error: No suitable Python version found!"
     exit 1
@@ -41,6 +41,7 @@ fi
 if [ -f "tt_model_runners/forge_runners/requirements.txt" ]; then
     # Dissable pip's package cache, reducing disk usage during installation and Docker size
     pip install --no-cache-dir -r tt_model_runners/forge_runners/requirements.txt
+    tt-forge-install
 fi
 
 echo "Setup complete in virtual environment ${virtual_env_name}."

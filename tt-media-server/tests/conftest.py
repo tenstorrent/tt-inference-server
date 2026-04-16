@@ -36,6 +36,7 @@ mock_modules = [
     "torch_xla",
     "datasets",
     "pytorchcv",
+    "peft",
 ]
 
 # Add mocks to sys.modules before any imports
@@ -297,6 +298,9 @@ submodules = {
     "torch_xla.core": MagicMock(),
     "torch_xla.core.xla_model": MagicMock(),
     "torch_xla.runtime": MagicMock(),
+    "torch_xla.distributed": MagicMock(),
+    "torch_xla.distributed.spmd": MagicMock(),
+    "peft": sys.modules.get("peft", MagicMock()),
     "vllm.sampling_params": sys.modules["vllm"].sampling_params
     if "vllm" in sys.modules
     else MagicMock(),
@@ -360,13 +364,24 @@ if "models" not in sys.modules:
     whisper_mock.tt = whisper_tt_mock
     demos_mock.whisper = whisper_mock
 
+    # Set up yolov4 submodule
+    yolov4_mock = MagicMock()
+    yolov4_mock.post_processing = MagicMock()
+    yolov4_reference_mock = MagicMock()
+    yolov4_reference_mock.yolov4 = MagicMock()
+    yolov4_mock.reference = yolov4_reference_mock
+    demos_mock.yolov4 = yolov4_mock
+
     # Set up common submodule with get_mesh_mappers
     common_mock = MagicMock()
     common_mock.get_mesh_mappers = MagicMock(return_value=(MagicMock(), MagicMock()))
+    common_mock.YOLOV4_L1_SMALL_SIZE = 10960
+    yolov4_mock.common = common_mock
 
     # Set up runner submodule
     runner_mock = MagicMock()
     runner_mock.performant_runner = MagicMock()
+    yolov4_mock.runner = runner_mock
 
     # Set up utils submodule
     utils_mock = MagicMock()
@@ -415,23 +430,29 @@ if "models" not in sys.modules:
     sys.modules["models.common.generation_utils"] = common_mock_top.generation_utils
     sys.modules["models.demos"] = demos_mock
     sys.modules["models.demos.whisper"] = whisper_mock
+    sys.modules["models.demos.yolov4"] = yolov4_mock
+    sys.modules["models.demos.yolov4.common"] = common_mock
+    sys.modules["models.demos.yolov4.runner"] = runner_mock
+    sys.modules["models.demos.yolov4.runner.performant_runner"] = (
+        runner_mock.performant_runner
+    )
     sys.modules["models.demos.utils"] = utils_mock
     sys.modules["models.demos.utils.common_demo_utils"] = utils_mock.common_demo_utils
     sys.modules["models.experimental"] = experimental_mock
-    sys.modules["models.experimental.stable_diffusion_xl_base"] = sdxl_base_mock
-    sys.modules["models.experimental.stable_diffusion_xl_base.tests"] = sdxl_tests_mock
-    sys.modules["models.experimental.stable_diffusion_xl_base.tests.test_common"] = (
+    sys.modules["models.demos.stable_diffusion_xl_base"] = sdxl_base_mock
+    sys.modules["models.demos.stable_diffusion_xl_base.tests"] = sdxl_tests_mock
+    sys.modules["models.demos.stable_diffusion_xl_base.tests.test_common"] = (
         sdxl_tests_mock.test_common
     )
-    sys.modules["models.experimental.stable_diffusion_xl_base.tt"] = sdxl_tt_mock
-    sys.modules["models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline"] = (
+    sys.modules["models.demos.stable_diffusion_xl_base.tt"] = sdxl_tt_mock
+    sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_sdxl_pipeline"] = (
         sdxl_tt_mock.tt_sdxl_pipeline
     )
+    sys.modules["models.demos.stable_diffusion_xl_base.tt.tt_sdxl_img2img_pipeline"] = (
+        sdxl_tt_mock.tt_sdxl_img2img_pipeline
+    )
     sys.modules[
-        "models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_img2img_pipeline"
-    ] = sdxl_tt_mock.tt_sdxl_img2img_pipeline
-    sys.modules[
-        "models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline"
+        "models.demos.stable_diffusion_xl_base.tt.tt_sdxl_inpainting_pipeline"
     ] = sdxl_tt_mock.tt_sdxl_inpainting_pipeline
     sys.modules["models.tt_dit"] = tt_dit_mock
     sys.modules["models.tt_dit.parallel"] = tt_dit_mock.parallel
@@ -463,6 +484,9 @@ if "models" not in sys.modules:
     sys.modules["models.demos.whisper.tt.whisper_generator"] = (
         whisper_tt_mock.whisper_generator
     )
+    sys.modules["models.demos.yolov4.reference"] = yolov4_reference_mock
+    sys.modules["models.demos.yolov4.reference.yolov4"] = yolov4_reference_mock.yolov4
+    sys.modules["models.demos.yolov4.post_processing"] = yolov4_mock.post_processing
 
 
 # Mock logger - BEFORE anything else
@@ -533,6 +557,7 @@ runner_mocks = {
     },
     "tt_model_runners.embedding_runner": {
         "BGELargeENRunner": create_mock_runner_class("BGELargeENRunner"),
+        "BGEM3Runner": create_mock_runner_class("BGEM3Runner"),
         "Qwen3Embedding8BRunner": create_mock_runner_class("Qwen3Embedding8BRunner"),
     },
     "tt_model_runners.llm_test_runner": {

@@ -1,6 +1,6 @@
 # Developer Documentation
 
-Directory of developement docs for working on tt-inference-server.
+Directory of development docs for working on tt-inference-server.
 
 ## Getting Started
 
@@ -25,3 +25,7 @@ Directory of developement docs for working on tt-inference-server.
 
 - [Run Model on Specific Commit](run_model_on_commit.md) - How to run a model on a specific tt-metal or other dependency commit
 - [Experimental Models](experimental_models.md) - List of models with experimental status under active development
+
+## Deployment
+
+- [Multi-Host Deployment](multihost_deployment.md) - Guide for distributed inference across multiple systems (like Dual/Quad Galaxy)

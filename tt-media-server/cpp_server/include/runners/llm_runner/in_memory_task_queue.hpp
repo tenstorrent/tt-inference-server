@@ -3,13 +3,13 @@
 
 #pragma once
 
-#include "runners/llm_runner/task_queue.hpp"
-
 #include <deque>
 #include <memory>
 #include <sstream>
 
-namespace llm_engine {
+#include "runners/llm_runner/task_queue.hpp"
+
+namespace tt::runners::llm_engine {
 
 /**
  * In-process ITaskQueue backed by a deque of owned pointers.
@@ -22,14 +22,21 @@ class InMemoryTaskQueue : public ITaskQueue {
     std::ostringstream os;
     seq.serialize(os);
     std::istringstream is(os.str());
-    queue_.push_back(std::unique_ptr<Sequence>(Sequence::deserialize(is)));
+    queue_.push_back(std::make_unique<Sequence>(Sequence::deserialize(is)));
   }
 
-  Sequence* try_pop() override {
+  std::unique_ptr<Sequence> tryPop() override {
     if (queue_.empty()) return nullptr;
-    Sequence* seq = queue_.front().release();
+    auto seq = std::move(queue_.front());
     queue_.pop_front();
-    return seq;
+    return std::move(seq);
+  }
+
+  std::unique_ptr<Sequence> receive() override {
+    if (queue_.empty()) return nullptr;
+    auto seq = std::move(queue_.front());
+    queue_.pop_front();
+    return std::move(seq);
   }
 
   bool empty() const override { return queue_.empty(); }
@@ -38,4 +45,4 @@ class InMemoryTaskQueue : public ITaskQueue {
   std::deque<std::unique_ptr<Sequence>> queue_;
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

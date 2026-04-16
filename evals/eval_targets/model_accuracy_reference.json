@@ -23,6 +23,20 @@
             }
         }
     },
+    "stable-diffusion-xl-base-1.0-512x512": {
+        "accuracy": {
+            "100": {
+                "fid_valid_range": [
+                    150.0,
+                    250.0
+                ],
+                "clip_valid_range": [
+                    28.0,
+                    34.0
+                ]
+            }
+        }
+    },
     "stable-diffusion-3.5-large": {
         "accuracy": {
             "5000": {
@@ -203,6 +217,20 @@
                 "clip_valid_range": [
                     29.65581,
                     31.4903184066
+                ]
+            }
+        }
+    },
+    "stable-diffusion-xl-base-1.0-lora": {
+        "accuracy": {
+            "100": {
+                "fid_valid_range": [
+                    180.0,
+                    230.0
+                ],
+                "clip_valid_range": [
+                    27.0,
+                    33.0
                 ]
             }
         }

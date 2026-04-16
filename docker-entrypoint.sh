@@ -65,5 +65,6 @@ set_group_permissions "$CACHE_ROOT" "$SHARED_GROUP_NAME"
 # NOTE: running recursive chmod on /home/${CONTAINER_APP_USERNAME} takes long time
 echo "Mounted volume permissions setup completed."
 
-# Execute CMD as CONTAINER_APP_USERNAME user
+# Execute server as CONTAINER_APP_USERNAME user
+# Usage: docker run <image> --model <hf_repo> --device <device_type>
 exec gosu "${CONTAINER_APP_USERNAME}" "$@"

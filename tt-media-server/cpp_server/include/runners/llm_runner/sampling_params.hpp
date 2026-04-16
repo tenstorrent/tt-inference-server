@@ -1,18 +1,24 @@
 #pragma once
 
-#include <optional>
-#include <vector>
 #include <iostream>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
-namespace llm_engine {
+#include "config/types.hpp"
+
+namespace tt::runners::llm_engine {
+
+using tt::config::ResponseFormatType;
 
 /**
  * Sampling parameters aligned with OpenAI-compatible completion request.
- * Mirrors sampling-related fields from tt::domain::CompletionRequest.
+ * Mirrors sampling-related fields from tt::domain::LLMRequest.
  */
 struct SamplingParams {
-  float temperature = 1.0f;
-  int max_tokens = 64;
+  float temperature = 0.0f;
+  std::optional<int> max_tokens;
   bool ignore_eos = false;
 
   std::optional<float> top_p;
@@ -34,8 +40,17 @@ struct SamplingParams {
   std::optional<std::vector<int>> allowed_token_ids;
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
+  bool fast_mode = false;
+
+  ResponseFormatType response_format_type = ResponseFormatType::TEXT;
+  std::optional<std::string> json_schema_str;
+
+  bool hasGuidedDecoding() const {
+    return response_format_type != ResponseFormatType::TEXT;
+  }
+
   void serialize(std::ostream& os) const;
-  static SamplingParams* deserialize(std::istream& is);
+  static std::unique_ptr<SamplingParams> deserialize(std::istream& is);
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

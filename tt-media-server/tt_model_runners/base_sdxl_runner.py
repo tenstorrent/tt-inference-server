@@ -8,18 +8,18 @@ from abc import abstractmethod
 
 import ttnn
 from domain.image_generate_request import ImageGenerateRequest
-from models.experimental.stable_diffusion_xl_base.tests.test_common import (
+from models.demos.stable_diffusion_xl_base.tests.test_common import (
     SDXL_FABRIC_CONFIG,
     SDXL_L1_SMALL_SIZE,
-    SDXL_TRACE_REGION_SIZE,
 )
-from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
+from models.demos.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
     TtSDXLPipeline,
 )
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
 from utils.logger import log_exception_chain
+from utils.lora_utils import prepare_prompt_with_lora, resolve_lora_path
 
 
 class BaseSDXLRunner(BaseMetalDeviceRunner):
@@ -28,12 +28,12 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         self.tt_sdxl: TtSDXLPipeline = None
         self.batch_size = 0
         self.pipeline = None
+        self._current_lora_path: str | None = None
+        self._current_lora_scale: float | None = None
 
     def get_pipeline_device_params(self):
         device_params = {
             "l1_small_size": SDXL_L1_SMALL_SIZE,
-            "trace_region_size": self.settings.trace_region_size
-            or SDXL_TRACE_REGION_SIZE,
         }
         if self.is_tensor_parallel:
             device_params["fabric_config"] = SDXL_FABRIC_CONFIG
@@ -92,8 +92,9 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
             f"Device {self.device_id}: Model weights downloaded successfully"
         )
 
-        # 6 minutes to distribute the model on device
-        weights_distribution_timeout = 720
+        weights_distribution_timeout = (
+            self.settings.weights_distribution_timeout_seconds
+        )
 
         try:
             await asyncio.wait_for(
@@ -184,6 +185,14 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
 
         return prompts, negative_prompts, prompts_2, negative_prompt_2, needed_padding
 
+    def _inject_lora_triggers(
+        self, prompts: list[str], lora_path: str | None
+    ) -> list[str]:
+        """Inject LoRA trigger words into non-empty prompts."""
+        if not lora_path:
+            return prompts
+        return [prepare_prompt_with_lora(p, lora_path) for p in prompts]
+
     def _apply_request_settings(self, request: ImageGenerateRequest) -> None:
         if request.num_inference_steps is not None:
             self.tt_sdxl.set_num_inference_steps(request.num_inference_steps)
@@ -199,6 +208,41 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
 
         if request.timesteps is not None and request.sigmas is not None:
             raise ValueError("Cannot pass both timesteps and sigmas. Choose one.")
+
+    def _ensure_lora_state(self, request: ImageGenerateRequest) -> None:
+        requested_path = request.lora_path
+        requested_scale = request.lora_scale
+
+        needs_change = requested_path != self._current_lora_path or (
+            requested_path is not None and requested_scale != self._current_lora_scale
+        )
+        if not needs_change:
+            return
+
+        if self._current_lora_path is not None:
+            self.logger.info(
+                f"Device {self.device_id}: Unloading LoRA adapter: {self._current_lora_path}"
+            )
+            self.tt_sdxl.unload_lora_weights()
+            self._current_lora_path = None
+            self._current_lora_scale = None
+
+        if requested_path is not None:
+            try:
+                local_path = resolve_lora_path(requested_path)
+                self.logger.info(
+                    f"Device {self.device_id}: Loading LoRA adapter: {requested_path} (scale={requested_scale})"
+                )
+                self.tt_sdxl.load_lora_weights(local_path)
+                self.tt_sdxl.fuse_lora(requested_scale)
+                self._current_lora_path = requested_path
+                self._current_lora_scale = requested_scale
+            except Exception as e:
+                self._current_lora_path = None
+                self._current_lora_scale = None
+                raise RuntimeError(
+                    f"Failed to load LoRA adapter '{requested_path}': {e}"
+                ) from e
 
     def _ttnn_inference(self, tensors, prompts, needed_padding):
         images = []
@@ -234,4 +278,6 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
             and request.sigmas == first_request.sigmas
             and request.prompt_2 == first_request.prompt_2
             and request.negative_prompt_2 == first_request.negative_prompt_2
+            and request.lora_path == first_request.lora_path
+            and request.lora_scale == first_request.lora_scale
         )

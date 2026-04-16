@@ -5,13 +5,18 @@
 """
 Stress Tests Configuration Arguments
 
-Consolidates arguments from multiple sources (argparse, model_spec.cli_args, workflow_args)
+Consolidates arguments from multiple sources (argparse, RuntimeConfig, workflow_args)
 into a single well-typed dataclass with explicit precedence rules.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from workflows.runtime_config import RuntimeConfig
 
 
 @dataclass
@@ -21,7 +26,7 @@ class StressTestsArgs:
 
     Arguments come from three sources:
     1. CLI args (argparse): project_root, output_path, jwt_secret
-    2. Model spec cli_args: model, device, service_port, disable_trace_capture, etc.
+    2. RuntimeConfig: model, device, service_port, disable_trace_capture, etc.
     3. Parsed workflow_args: run_mode, max_context_length, endurance_mode, custom_*_values, custom_num_prompts_strategy
     """
 
@@ -30,12 +35,12 @@ class StressTestsArgs:
     output_path: str
     jwt_secret: str
 
-    # From model_spec.cli_args (core configuration)
+    # From RuntimeConfig (core configuration)
     model: str
     device: str
     service_port: str = "8000"
 
-    # From model_spec.cli_args (stress tests specific)
+    # From RuntimeConfig (stress tests specific)
     disable_trace_capture: bool = False
     run_mode: str = "multiple"
     max_context_length: Optional[int] = None
@@ -59,13 +64,15 @@ class StressTestsArgs:
     model_spec: Optional[object] = None
 
     @classmethod
-    def from_sources(cls, args, cli_args: dict, model_spec, parsed_workflow_args: dict):
+    def from_sources(
+        cls, args, runtime_config: RuntimeConfig, model_spec, parsed_workflow_args: dict
+    ):
         """
         Merge arguments from multiple sources with clear precedence.
 
         Args:
             args: argparse Namespace with project_root, output_path, jwt_secret
-            cli_args: dict from model_spec.cli_args
+            runtime_config: RuntimeConfig with model, device, service_port, etc.
             model_spec: ModelSpec object
             parsed_workflow_args: dict of parsed workflow_args
 
@@ -77,12 +84,14 @@ class StressTestsArgs:
             project_root=args.project_root,
             output_path=args.output_path,
             jwt_secret=args.jwt_secret,
-            # From model_spec.cli_args (required)
-            model=cli_args.get("model"),
-            device=cli_args.get("device"),
-            service_port=cli_args.get("service_port", "8000"),
-            # From model_spec.cli_args (stress tests configuration)
-            disable_trace_capture=cli_args.get("disable_trace_capture", False),
+            # From RuntimeConfig (required)
+            model=runtime_config.model,
+            device=runtime_config.device,
+            service_port=runtime_config.service_port,
+            # From RuntimeConfig (stress tests configuration)
+            # Auto-disable trace capture if model has builtin warmup and user hasn't explicitly overridden
+            disable_trace_capture=runtime_config.disable_trace_capture
+            or getattr(model_spec, "has_builtin_warmup", False),
             run_mode=parsed_workflow_args.get("run_mode", "multiple"),
             max_context_length=parsed_workflow_args.get("max_context_length"),
             endurance_mode=parsed_workflow_args.get("endurance_mode", False),

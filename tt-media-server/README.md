@@ -79,7 +79,7 @@ For development running:
 1. Setup tt-metal and all the needed variables for it
 2. Make sure you're in tt-metal's python env
 3. Clone tt-inference-server repo and switch to dev branch
-4. ```sudo apt update && sudo apt install -y ffmpeg && pip install -r requirements.txt``` from tt-media-server
+4. ```sudo apt update && sudo apt install -y ffmpeg && uv pip install -r requirements.txt``` from tt-media-server
 5. ```uvicorn main:app --lifespan on --port 8000``` (lifespan methods are needed to init device and close the devices)
 
 ## SDXL setup
@@ -305,7 +305,7 @@ curl -X POST "http://localhost:8000/v1/audio/transcriptions" \
 
 The Text-to-Speech API converts text to speech audio using the SpeechT5 model. The response is binary audio (WAV, MP3, OGG) or JSON with base64 audio and metadata.
 
-**Endpoint:** `POST /v1/audio/speech`  
+**Endpoint:** `POST /v1/audio/speech`
 **Content-Type:** `application/json`
 
 ## Request parameters
@@ -818,7 +818,7 @@ Labels are part of the metrics. Example:
 tt_media_server_device_warmup_duration_seconds_sum{device_id="2",model_type="tt-sdxl-trace"} 505.4703781604767
 
 - **`model_type`**: The type of model being used (e.g., `SDXL`, `TT_SDXL_IMAGE_TO_IMAGE`)
-- **`device_id`**: Identifier for the Tenstorrent device being used
+- **`device_id`**: Logical index of the Tenstorrent device for that worker (devices are ordered by PCI bus address; on Galaxy this stays the same across reset). Not the same as the number in `/dev/tenstorrent/N`.
 - **`status`**: Operation status (`success` or `failure`)
 - **`preprocessing_enabled`**: Whether preprocessing is enabled (`true` or `false`)
 - **`post_processing_enabled`**: Whether post-processing is enabled (`true` or `false`)

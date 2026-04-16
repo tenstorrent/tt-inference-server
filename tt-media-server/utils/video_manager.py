@@ -2,129 +2,161 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+from __future__ import annotations
+
 import os
 import subprocess
 import uuid
+from pathlib import Path
+
+import numpy as np
+from numpy.typing import NDArray
 
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 
+_MIN_CRF = 0
+_MAX_CRF = 51
+_FFMPEG_ENCODE_TIMEOUT_S = 600
+_FFMPEG_REMUX_TIMEOUT_S = 60
+_VIDEO_OUTPUT_DIR = Path("/tmp/videos")
+_VALID_CHANNEL_COUNTS = (1, 3, 4)
+_RGB_CHANNELS = 3
+_MAX_PIXEL_VALUE = 255.0
+_NORMALIZED_RANGE_MAX = 1.0
+
 
 class VideoManager:
+    """MP4 export via FFmpeg subprocess pipe (raw RGB → libx264)."""
+
     def __init__(self):
-        super().__init__()
         self._logger = TTLogger()
 
     @log_execution_time("Exporting video to MP4")
-    def export_to_mp4(self, frames, fps=16):
+    def export_to_mp4(self, frames: NDArray, fps: int = 16) -> str:
         """
-        Export a list/array of frames to an MP4 video file.
-        """
-        self._logger.info(f"Starting video export with fps={fps}")
+        Export frames to MP4 (H.264 via ffmpeg).
 
+        Env (optional):
+            TT_VIDEO_EXPORT_CRF: 0–51, lower = better quality. Default 23.
+            TT_VIDEO_EXPORT_PRESET: ultrafast … veryslow. Default medium.
+        """
         if hasattr(frames, "frames"):
             frames = frames.frames
-            self._logger.info(f"Extracted frames shape: {frames.shape}")
 
-        self._logger.info(f"Input frames type: {type(frames)}")
-        self._logger.info(
-            f"Input frames shape: {getattr(frames, 'shape', 'No shape attribute')}"
-        )
+        _VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = str(_VIDEO_OUTPUT_DIR / f"{uuid.uuid4()}.mp4")
 
-        # Auto-generate path in videos directory
-        video_id = str(uuid.uuid4())
-        video_dir = "/tmp/videos"
-        os.makedirs(video_dir, exist_ok=True)
-        output_path = f"{video_dir}/{video_id}.mp4"
-        self._logger.info(f"Generated output path: {output_path}")
+        crf = int(os.environ.get("TT_VIDEO_EXPORT_CRF", "23"))
+        crf = max(_MIN_CRF, min(_MAX_CRF, crf))
+        preset = os.environ.get("TT_VIDEO_EXPORT_PRESET", "ultrafast").strip()
 
         try:
-            self._logger.info("Attempting to use diffusers export_to_video")
-            from diffusers.utils import export_to_video
-
-            # Process frames for diffusers
-            processed_frames = self._process_frames_for_export(frames)
-            export_to_video(processed_frames, output_video_path=output_path, fps=fps)
-
-            self._logger.info(f"Video export completed successfully: {output_path}")
+            processed = self._process_frames_for_export(frames)
+            cmd = self._build_encode_cmd(processed, output_path, fps, crf, preset)
+            self._run_ffmpeg(cmd, stdin_data=processed.tobytes())
             return output_path
 
         except Exception as e:
             self._logger.error(f"Video export failed: {e}")
-            raise RuntimeError(f"Failed to export video: {e}")
+            raise RuntimeError(f"Failed to export video: {e}") from e
 
     @log_execution_time("Processing frames for export")
-    def _process_frames_for_export(self, frames):
-        """Process frames to ensure they're in the correct format for video export."""
-        import numpy as np
+    def _process_frames_for_export(self, frames: NDArray) -> NDArray[np.uint8]:
+        """Normalize to contiguous uint8 (N, H, W, 3) for rawvideo rgb24."""
+        frames = _normalize_shape(frames)
+        frames = _normalize_channels(frames)
+        frames = _normalize_dtype(frames)
 
-        self._logger.info(f"Processing frames with shape: {frames.shape}")
+        if not frames.flags["C_CONTIGUOUS"]:
+            frames = np.ascontiguousarray(frames)
 
-        # Handle different possible shapes:
-        # WAN output: (1, num_frames, height, width, channels)
-        # Expected: (num_frames, height, width, channels)
-        if len(frames.shape) == 5:
-            # Shape: (batch, num_frames, height, width, channels)
-            # Take first batch
-            frames = frames[0]
-            self._logger.info(f"Extracted first batch, new shape: {frames.shape}")
-
-        if len(frames.shape) == 4:
-            # Shape: (num_frames, height, width, channels) - this is what we want
-            self._logger.info(f"Frames in correct 4D format: {frames.shape}")
-            num_frames, height, width, channels = frames.shape
-            self._logger.info(
-                f"Video details: {num_frames} frames, {height}x{width}, {channels} channels"
-            )
-        else:
-            self._logger.error(f"Unexpected frame shape: {frames.shape}")
-            raise ValueError(f"Unexpected frame dimensions: {frames.shape}")
-
-        # Validate channels
-        if frames.shape[-1] not in [1, 3, 4]:
-            self._logger.error(f"Unsupported channel count: {frames.shape[-1]}")
-            raise ValueError(
-                f"Frames have {frames.shape[-1]} channels, expected 1, 3, or 4"
-            )
-
-        # Convert to list of individual frames
-        frame_list = []
-        for i in range(frames.shape[0]):
-            frame = frames[i]
-
-            # Handle different channel counts
-            if frame.shape[-1] == 3:
-                # RGB - perfect
-                frame_list.append(frame)
-            elif frame.shape[-1] == 1:
-                # Grayscale - convert to RGB
-                frame = np.repeat(frame, 3, axis=-1)
-                frame_list.append(frame)
-            elif frame.shape[-1] == 4:
-                # RGBA - remove alpha channel
-                frame = frame[:, :, :3]
-                frame_list.append(frame)
-
-        self._logger.info(f"Processed {len(frame_list)} frames")
-        if frame_list:
-            sample_frame = frame_list[0]
-            self._logger.info(
-                f"Sample frame shape: {sample_frame.shape}, dtype: {sample_frame.dtype}"
-            )
-            self._logger.info(
-                f"Sample frame value range: [{sample_frame.min():.4f}, {sample_frame.max():.4f}]"
-            )
-
-        return frame_list
+        return frames
 
     @staticmethod
-    def ensure_faststart(input_path, output_path):
-        """
-        Rewrites the MP4 file with -movflags faststart using ffmpeg.
-        """
+    def _build_encode_cmd(
+        frames: NDArray, output_path: str, fps: int, crf: int, preset: str
+    ) -> list[str]:
+        """Build the ffmpeg rawvideo → libx264 command list."""
+        _, height, width, channels = frames.shape
+        if channels != _RGB_CHANNELS:
+            raise ValueError(
+                f"Expected {_RGB_CHANNELS} RGB channels after processing, got {channels}"
+            )
+
         cmd = [
             "ffmpeg",
-            "-y",  # Overwrite output file if it exists
+            "-y",
+            "-f",
+            "rawvideo",
+            "-vcodec",
+            "rawvideo",
+            "-s",
+            f"{width}x{height}",
+            "-pix_fmt",
+            "rgb24",
+            "-r",
+            str(fps),
+            "-i",
+            "-",
+        ]
+
+        if crf == 0:
+            cmd.extend(["-c:v", "libx264", "-crf", "0", "-pix_fmt", "yuv444p"])
+        else:
+            cmd.extend(
+                [
+                    "-c:v",
+                    "libx264",
+                    "-crf",
+                    str(crf),
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-tune",
+                    "film",
+                    "-profile:v",
+                    "high",
+                    "-level",
+                    "4.2",
+                ]
+            )
+
+        if preset:
+            cmd.extend(["-preset", preset])
+
+        cmd.extend(["-movflags", "+faststart", output_path])
+        return cmd
+
+    @staticmethod
+    def _run_ffmpeg(
+        cmd: list[str],
+        stdin_data: bytes | None = None,
+        timeout: int = _FFMPEG_ENCODE_TIMEOUT_S,
+    ) -> None:
+        """Execute an ffmpeg command, raising on failure or timeout."""
+        process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE if stdin_data else None,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+
+        try:
+            _, stderr = process.communicate(input=stdin_data, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            raise RuntimeError("FFmpeg export timed out") from None
+
+        if process.returncode != 0:
+            error_msg = stderr.decode(errors="replace") if stderr else "Unknown error"
+            raise RuntimeError(f"FFmpeg failed: {error_msg}")
+
+    @classmethod
+    def ensure_faststart(cls, input_path: str, output_path: str) -> None:
+        """Rewrites the MP4 file with -movflags faststart using ffmpeg."""
+        cmd = [
+            "ffmpeg",
+            "-y",
             "-i",
             input_path,
             "-c",
@@ -133,6 +165,44 @@ class VideoManager:
             "faststart",
             output_path,
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"ffmpeg failed: {result.stderr}")
+        cls._run_ffmpeg(cmd, timeout=_FFMPEG_REMUX_TIMEOUT_S)
+
+
+def _normalize_shape(frames: NDArray) -> NDArray:
+    """Squeeze batch dim and validate 4D (N, H, W, C)."""
+    if frames.ndim == 5:
+        frames = frames[0]
+
+    if frames.ndim != 4:
+        raise ValueError(f"Unexpected frame dimensions: {frames.shape}")
+
+    return frames
+
+
+def _normalize_channels(frames: NDArray) -> NDArray:
+    """Convert grayscale or RGBA to RGB."""
+    _, _, _, channels = frames.shape
+
+    if channels not in _VALID_CHANNEL_COUNTS:
+        raise ValueError(f"Frames have {channels} channels, expected 1, 3, or 4")
+
+    if channels == 1:
+        return np.repeat(frames, _RGB_CHANNELS, axis=-1)
+    if channels == 4:
+        return frames[..., :_RGB_CHANNELS]
+
+    return frames
+
+
+def _normalize_dtype(frames: NDArray) -> NDArray[np.uint8]:
+    """Convert to uint8, handling float [0,1] and [0,255] ranges."""
+    if frames.dtype == np.uint8:
+        return frames
+
+    if frames.dtype in (np.float32, np.float64):
+        max_val = float(np.max(frames)) if frames.size else 0.0
+        if max_val <= _NORMALIZED_RANGE_MAX:
+            return (frames * _MAX_PIXEL_VALUE).clip(0, 255).astype(np.uint8)
+        return frames.clip(0, 255).astype(np.uint8)
+
+    return frames.clip(0, 255).astype(np.uint8)

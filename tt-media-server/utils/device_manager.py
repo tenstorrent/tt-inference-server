@@ -2,182 +2,315 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
+"""
+Device discovery: tt-smi for (1,1) and (2,4), test_system_health for Galaxy (2,1).
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
 import subprocess
-from utils.logger import TTLogger
+import sys
+import time
+from dataclasses import dataclass
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+SYSTEM_HEALTH_BINARY_ENV = "TT_SYSTEM_HEALTH_BINARY"
+TT_METAL_HOME_ENV = "TT_METAL_HOME"
+TT_SMI_TIMEOUT = int(os.environ.get("TT_SMI_TIMEOUT", "30"))
+SYSTEM_HEALTH_TIMEOUT = int(os.environ.get("TT_SYSTEM_HEALTH_TIMEOUT", "60"))
+SYSTEM_HEALTH_RELATIVE_PATH = "build/test/tt_metal/tt_fabric/test_system_health"
+SYSTEM_HEALTH_GTEST_FILTER = "Cluster.ReportSystemHealth"
+N_PER_TRAY = 8
+N_LOC_PAIRS = (("1", "2"), ("3", "4"), ("5", "6"), ("7", "8"))
+
+CHIP_PATTERN = re.compile(
+    r"Chip:\s+(\d+)\s+PCIe:\s+(\d+)\s+Unique ID:\s+(\w+)\s+Tray:\s+(\d+)\s+N(\d+)"
+)
+
+
+class DeviceDiscoveryError(RuntimeError):
+    """Device discovery failed."""
+
+
+@dataclass(frozen=True)
+class ChipInfo:
+    chip_id: str
+    pcie_id: str
+    unique_id: str
+    tray: str
+    n_loc: str
 
 
 class DeviceManager:
-    def __init__(self):
-        self.logger = TTLogger()
+    """
+    Unified device discovery.
 
-    def get_tray_mapping_from_system(self):
-        """Execute tt-smi command and return tray mapping dictionary"""
+    - tt-smi: get_single_devices(), get_device_groups_of_eight()
+    - test_system_health: get_device_pairs()
+    """
+
+    def __init__(self, system_health_binary: Optional[str] = None):
+        self._system_health_binary = system_health_binary
+
+    def get_single_devices(self) -> list[int]:
+        """(1,1) mesh - flat list via tt-smi. Returns [] on discovery failure."""
         try:
-            # Execute the system command
+            tray_mapping = self._run_tt_smi()
+        except DeviceDiscoveryError as e:
+            logger.warning("tt-smi discovery failed (will use env device_ids): %s", e)
+            return []
+        devices = self._create_single_devices(tray_mapping)
+        logger.info("Single devices: %s", devices)
+        return devices
+
+    def get_device_pairs(self) -> list[tuple[int, int]]:
+        """(2,1) Galaxy - N1-N2, N3-N4 pairs via test_system_health. Returns [] on failure."""
+        try:
+            chips = self._run_system_health()
+            pairs = self._build_pairs_from_chips(chips)
+            logger.info("Device pairs: %s", pairs)
+            return pairs
+        except DeviceDiscoveryError as e:
+            logger.error("Galaxy device discovery failed: %s", e)
+            return []
+
+    def get_device_groups_of_eight(self) -> list[tuple[int, ...]]:
+        """(2,4) mesh - groups of 8 via tt-smi. Returns [] on failure."""
+        try:
+            tray_mapping = self._run_tt_smi()
+        except DeviceDiscoveryError as e:
+            logger.error("tt-smi discovery failed: %s", e)
+            return []
+        try:
+            groups = self._create_device_groups_of_eight(tray_mapping)
+        except DeviceDiscoveryError as e:
+            logger.error("%s", e)
+            return []
+        logger.info("Device groups of 8: %s", groups)
+        return groups
+
+    def _run_tt_smi(self) -> dict[int, list[int]]:
+        """Run tt-smi, return tray -> [device_ids]. Raises DiscoveryError on failure."""
+        try:
             result = subprocess.run(
                 ["tt-smi", "-glx_list_tray_to_device"],
                 capture_output=True,
                 text=True,
-                timeout=30,  # 30 second timeout
+                timeout=TT_SMI_TIMEOUT,
             )
-
-            if result.returncode != 0:
-                self.logger.error(
-                    f"tt-smi command failed with return code {result.returncode}"
-                )
-                self.logger.error(f"stderr: {result.stderr}")
-                return {}
-
-            # Parse the output using existing method
-            tray_mapping = self.parse_tray_mapping(result.stdout)
-            self.logger.info(f"Successfully parsed tray mapping: {tray_mapping}")
-            return tray_mapping
-
-        except subprocess.TimeoutExpired:
-            self.logger.error("tt-smi command timed out after 30 seconds")
-            return {}
         except FileNotFoundError:
-            self.logger.error(
-                "tt-smi command not found. Make sure it's installed and in PATH"
-            )
-            return {}
+            raise DeviceDiscoveryError("tt-smi not found in PATH")
+        except subprocess.TimeoutExpired:
+            raise DeviceDiscoveryError(f"tt-smi timed out after {TT_SMI_TIMEOUT}s")
+
+        if result.returncode != 0:
+            raise DeviceDiscoveryError(f"tt-smi failed: {result.stderr}")
+
+        tray_mapping = self._parse_tt_smi_output(result.stdout or "")
+        if not tray_mapping:
+            raise DeviceDiscoveryError("tt-smi: no trays parsed")
+
+        logger.info("Tray mapping: %s", tray_mapping)
+        return tray_mapping
+
+    @staticmethod
+    def _parse_tt_smi_output(output: str) -> dict[int, list[int]]:
+        """Parse tt-smi tray table."""
+        tray_mapping: dict[int, list[int]] = {}
+        for line in output.strip().split("\n"):
+            if not line.strip().startswith("│") or not any(c.isdigit() for c in line):
+                continue
+            parts = [p.strip() for p in line.split("│") if p.strip()]
+            if len(parts) >= 3:
+                try:
+                    tray_mapping[int(parts[0])] = [
+                        int(d.strip()) for d in parts[2].split(",")
+                    ]
+                except (ValueError, IndexError):
+                    continue
+        return tray_mapping
+
+    def get_tray_mapping_from_system(self) -> dict[int, list[int]]:
+        """Run tt-smi and return tray mapping. Returns {} on failure."""
+        try:
+            return self._run_tt_smi()
         except Exception as e:
-            self.logger.error(f"Error executing tt-smi command: {e}")
+            logger.error("tt-smi discovery failed: %s", e)
             return {}
 
     @staticmethod
-    def parse_tray_mapping(table_text):
-        """Parse the tray mapping table and return a dictionary of tray -> device IDs"""
+    def _create_single_devices(tray_mapping: dict[int, list[int]]) -> list[int]:
+        """Flatten tray mapping to sorted list of device ids."""
+        return [d for tray in sorted(tray_mapping) for d in sorted(tray_mapping[tray])]
 
-        lines = table_text.strip().split("\n")
-        tray_mapping = {}
+    @staticmethod
+    def _create_device_groups_of_eight(
+        tray_mapping: dict[int, list[int]],
+    ) -> list[tuple[int, ...]]:
+        """Build one group of 8 per tray. Raises DiscoveryError if any tray has < 8."""
+        groups: list[tuple[int, ...]] = []
+        for tray in sorted(tray_mapping):
+            ids = sorted(tray_mapping[tray])  # Maybe not mandatory to sort
+            if len(ids) < N_PER_TRAY:
+                raise DeviceDiscoveryError(
+                    f"Tray {tray}: need {N_PER_TRAY} devices, got {len(ids)}"
+                )
+            groups.append(tuple(ids[:N_PER_TRAY]))
+        return groups
 
-        # Find the data rows (skip header and separator lines)
-        data_rows = []
-        for line in lines:
-            # Look for lines that start with │ and contain actual data (not headers)
-            if line.strip().startswith("│") and any(char.isdigit() for char in line):
-                data_rows.append(line)
+    def _run_system_health(self) -> list[ChipInfo]:
+        """Run test_system_health, return parsed chips. Raises DiscoveryError on failure."""
+        binary = self._resolve_binary()
+        result = self._exec_system_health(binary)
 
-        for row in data_rows:
-            # Split by │ and clean up the parts
-            parts = [part.strip() for part in row.split("│") if part.strip()]
+        output = result.stdout or ""
+        if not output:
+            raise DeviceDiscoveryError("test_system_health: no output")
 
-            if len(parts) >= 3:
-                try:
-                    # First column is tray number
-                    tray_number = int(parts[0])
+        chips = self._parse_system_health_output(output)
+        if not chips:
+            raise DeviceDiscoveryError("test_system_health: no chips parsed")
 
-                    # Third column contains the device IDs
-                    device_ids_str = parts[2]
+        return chips
 
-                    # Parse the device IDs (comma-separated)
-                    device_ids = [int(id.strip()) for id in device_ids_str.split(",")]
+    def _exec_system_health(self, binary: str) -> subprocess.CompletedProcess:
+        """Execute the binary, retrying once after chmod +x on permission failure."""
+        cmd = [binary, f"--gtest_filter={SYSTEM_HEALTH_GTEST_FILTER}"]
+        env = self._build_env()
 
-                    tray_mapping[tray_number] = device_ids
+        logger.info("Running test_system_health (~10-15s): %s", binary)
+        self._flush_streams()
 
-                except (ValueError, IndexError) as e:
-                    print(f"Error parsing row: {row}, Error: {e}")
-                    continue
-
-        return tray_mapping
-
-    def create_device_pairs(self, tray_mapping):
-        """Create device pairs from tray mapping. Each pair contains adjacent device IDs from the same tray"""
-        device_pairs = []
-
-        for tray_number, device_ids in tray_mapping.items():
-            # Sort device IDs to ensure consistent pairing
-            sorted_device_ids = sorted(device_ids)
-
-            # Create pairs from adjacent devices in the same tray
-            for i in range(0, len(sorted_device_ids), 2):
-                if i + 1 < len(sorted_device_ids):
-                    pair = (sorted_device_ids[i], sorted_device_ids[i + 1])
-                    device_pairs.append(pair)
-                else:
-                    # Handle odd number of devices - log warning
-                    self.logger.warning(
-                        f"Tray {tray_number} has odd number of devices. Device {sorted_device_ids[i]} will not be paired."
-                    )
-
-        self.logger.info(f"Created {len(device_pairs)} device pairs: {device_pairs}")
-
-        return device_pairs
-
-    def get_device_pairs_from_system(self):
-        """Convenience method to get tray mapping and create device pairs in one call"""
-        tray_mapping = self.get_tray_mapping_from_system()
-        if not tray_mapping:
-            self.logger.error("Failed to get tray mapping, cannot create device pairs")
-            return []
-
-        return self.create_device_pairs(tray_mapping)
-
-    def create_single_devices(self, tray_mapping):
-        """Create single devices from tray mapping. Each device is returned as individual integer"""
-        single_devices = []
-
-        for tray_number, device_ids in tray_mapping.items():
-            # Sort device IDs to ensure consistent ordering
-            sorted_device_ids = sorted(device_ids)
-
-            # Add each device individually
-            single_devices.extend(sorted_device_ids)
-
-        self.logger.info(
-            f"Created {len(single_devices)} single devices: {single_devices}"
-        )
-        return single_devices
-
-    def get_single_devices_from_system(self):
-        """Convenience method to get tray mapping and create single device tuples in one call"""
-        tray_mapping = self.get_tray_mapping_from_system()
-        if not tray_mapping:
-            self.logger.error(
-                "Failed to get tray mapping, cannot create single device tuples"
+        start = time.monotonic()
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=SYSTEM_HEALTH_TIMEOUT,
+                env=env,
+                start_new_session=True,
             )
-            return []
+        except subprocess.TimeoutExpired:
+            raise DeviceDiscoveryError(
+                f"test_system_health timed out after {SYSTEM_HEALTH_TIMEOUT}s"
+            )
+        except OSError as e:
+            result = self._retry_after_chmod(binary, cmd, env, e)
 
-        return self.create_single_devices(tray_mapping)
-
-    def create_device_groups_of_eight(self, tray_mapping):
-        """Create device groups from tray mapping. Each group contains 8 device IDs from the same tray"""
-        device_groups = []
-
-        for tray_number, device_ids in tray_mapping.items():
-            # Sort device IDs to ensure consistent grouping
-            sorted_device_ids = sorted(device_ids)
-
-            # Check if we have at least 8 devices in this tray
-            if len(sorted_device_ids) < 8:
-                error_msg = f"Tray {tray_number} has only {len(sorted_device_ids)} devices, but 8 are required for grouping"
-                self.logger.error(error_msg)
-                raise ValueError(error_msg)
-
-            # Create groups of 8 devices from the same tray
-            for i in range(0, len(sorted_device_ids), 8):
-                if i + 7 < len(sorted_device_ids):
-                    # Get 8 consecutive devices
-                    group = tuple(sorted_device_ids[i : i + 8])
-                    device_groups.append(group)
-                else:
-                    # Handle remaining devices (less than 8)
-                    remaining = len(sorted_device_ids) - i
-                    error_msg = f"Tray {tray_number} has {remaining} remaining devices that cannot form a group of 8"
-                    self.logger.error(error_msg)
-                    raise ValueError(error_msg)
-
-        self.logger.info(
-            f"Created {len(device_groups)} device groups of 8 chips each: {device_groups}"
+        logger.info(
+            "Completed in %.1fs, rc=%s",
+            time.monotonic() - start,
+            result.returncode,
         )
-        return device_groups
+        return result
 
-    def get_device_groups_of_eight_from_system(self):
-        """Convenience method to get tray mapping and create device groups of 8 in one call"""
-        tray_mapping = self.get_tray_mapping_from_system()
-        if not tray_mapping:
-            self.logger.error("Failed to get tray mapping, cannot create device groups")
-            return []
+    def _retry_after_chmod(
+        self,
+        binary: str,
+        cmd: list[str],
+        env: dict,
+        original_error: OSError,
+    ) -> subprocess.CompletedProcess:
+        """chmod +x the binary and retry once. Raises DeviceDiscoveryError if retry also fails."""
+        logger.warning(
+            "test_system_health exec failed: %s — attempting chmod +x %s",
+            original_error,
+            binary,
+        )
+        try:
+            os.chmod(binary, os.stat(binary).st_mode | 0o111)
+        except OSError as chmod_err:
+            raise DeviceDiscoveryError(
+                f"test_system_health not executable and chmod +x failed: {chmod_err}"
+            ) from original_error
 
-        return self.create_device_groups_of_eight(tray_mapping)
+        try:
+            return subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=SYSTEM_HEALTH_TIMEOUT,
+                env=env,
+                start_new_session=True,
+            )
+        except subprocess.TimeoutExpired:
+            raise DeviceDiscoveryError(
+                f"test_system_health timed out after {SYSTEM_HEALTH_TIMEOUT}s (after chmod +x)"
+            )
+        except OSError as e:
+            raise DeviceDiscoveryError(
+                f"test_system_health failed even after chmod +x: {e}"
+            ) from original_error
+
+    def _resolve_binary(self) -> str:
+        """Resolve test_system_health binary path."""
+        if self._system_health_binary:
+            return self._system_health_binary
+        env_binary = os.environ.get(SYSTEM_HEALTH_BINARY_ENV)
+        if env_binary:
+            return env_binary
+        home = os.environ.get(TT_METAL_HOME_ENV)
+        if home:
+            return os.path.join(home, SYSTEM_HEALTH_RELATIVE_PATH)
+        return os.path.join(".", SYSTEM_HEALTH_RELATIVE_PATH)
+
+    @staticmethod
+    def _build_env() -> dict[str, str]:
+        """Build subprocess environment."""
+        env = os.environ.copy()
+        home = os.environ.get(TT_METAL_HOME_ENV)
+        if home:
+            env["TT_METAL_RUNTIME_ROOT"] = home
+        return env
+
+    @staticmethod
+    def _flush_streams() -> None:
+        """Flush streams before subprocess."""
+        sys.stdout.flush()
+        sys.stderr.flush()
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+
+    @staticmethod
+    def _parse_system_health_output(output: str) -> list[ChipInfo]:
+        """Parse test_system_health output."""
+        chips: list[ChipInfo] = []
+        for line in output.split("\n"):
+            if "PCIe:" not in line:
+                continue
+            match = CHIP_PATTERN.search(line)
+            if match is None:
+                continue
+            chips.append(
+                ChipInfo(
+                    chip_id=match.group(1),
+                    pcie_id=match.group(2),
+                    unique_id=match.group(3),
+                    tray=match.group(4),
+                    n_loc=match.group(5),
+                )
+            )
+        return chips
+
+    @staticmethod
+    def _build_pairs_from_chips(chips: list[ChipInfo]) -> list[tuple[int, int]]:
+        """Build N1-N2, N3-N4, N5-N6, N7-N8 pairs per tray."""
+        tray_map: dict[str, dict[str, str]] = {}
+        for c in chips:
+            tray_map.setdefault(c.tray, {})[c.n_loc] = c.chip_id
+
+        pairs: list[tuple[int, int]] = []
+        for tray in sorted(tray_map, key=int):
+            n_devices = tray_map[tray]
+            for n1, n2 in N_LOC_PAIRS:
+                dev1 = n_devices.get(n1)
+                dev2 = n_devices.get(n2)
+                if dev1 and dev2:
+                    pairs.append((int(dev1), int(dev2)))
+        return pairs
