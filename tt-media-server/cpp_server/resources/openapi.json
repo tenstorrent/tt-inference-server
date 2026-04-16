@@ -103,6 +103,63 @@
         }
       }
     },
+    "/v1/responses": {
+      "post": {
+        "tags": ["Responses"],
+        "summary": "Create responses",
+        "description": "Creates a model response using the Responses API. Input can be a plain string or an array of input items. Returns a response object with output items and usage statistics. Supports streaming via SSE.",
+        "operationId": "createResponses",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ResponsesRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful responses (JSON) or streaming (text/event-stream)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResponsesResponse" }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "SSE stream; object \"responses.chunk\", choices[].delta"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (e.g. missing or empty messages)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Model not ready",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/embeddings": {
       "post": {
         "tags": ["Embeddings"],
@@ -685,6 +742,216 @@
               "prompt_tokens": { "type": "integer" },
               "total_tokens": { "type": "integer" }
             }
+          }
+        }
+      },
+      "ResponsesRequest": {
+        "type": "object",
+        "required": ["input"],
+        "properties": {
+          "input": {
+            "description": "Text or array of input items to generate a response for",
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "object" } }
+            ]
+          },
+          "model": {
+            "type": "string",
+            "description": "Model identifier",
+            "nullable": true
+          },
+          "instructions": {
+            "type": "string",
+            "description": "System instructions prepended as a system message",
+            "nullable": true
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "description": "Maximum number of output tokens",
+            "nullable": true
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Sampling temperature",
+            "nullable": true
+          },
+          "top_p": {
+            "type": "number",
+            "description": "Nucleus sampling probability",
+            "nullable": true
+          },
+          "top_k": {
+            "type": "integer",
+            "description": "Top-k sampling",
+            "nullable": true
+          },
+          "stream": {
+            "type": "boolean",
+            "description": "Whether to stream the response via SSE",
+            "default": false
+          },
+          "stop": {
+            "description": "Stop sequence(s)",
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ],
+            "nullable": true
+          },
+          "presence_penalty": {
+            "type": "number",
+            "minimum": -2.0,
+            "maximum": 2.0,
+            "nullable": true
+          },
+          "frequency_penalty": {
+            "type": "number",
+            "minimum": -2.0,
+            "maximum": 2.0,
+            "nullable": true
+          },
+          "repetition_penalty": {
+            "type": "number",
+            "nullable": true
+          },
+          "seed": {
+            "type": "integer",
+            "nullable": true
+          },
+          "tools": {
+            "type": "array",
+            "items": { "type": "object" },
+            "default": []
+          },
+          "tool_choice": {
+            "description": "Tool choice strategy",
+            "nullable": true
+          },
+          "truncation": {
+            "type": "string",
+            "enum": ["auto", "disabled"],
+            "default": "disabled"
+          },
+          "service_tier": {
+            "type": "string",
+            "enum": ["auto", "default", "flex", "scale", "priority"],
+            "default": "auto"
+          },
+          "user": {
+            "type": "string",
+            "nullable": true
+          },
+          "metadata": {
+            "type": "object",
+            "nullable": true
+          },
+          "reasoning": {
+            "type": "object",
+            "nullable": true
+          },
+          "text": {
+            "type": "object",
+            "nullable": true
+          },
+          "previous_response_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "background": {
+            "type": "boolean",
+            "default": false
+          },
+          "store": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "ResponsesResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique response identifier"
+          },
+          "object": {
+            "type": "string",
+            "enum": ["response"]
+          },
+          "created_at": {
+            "type": "integer",
+            "description": "Unix timestamp of creation"
+          },
+          "model": {
+            "type": "string",
+            "description": "Model used for the response"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["completed", "incomplete", "failed", "in_progress"],
+            "description": "Response status"
+          },
+          "output": {
+            "type": "array",
+            "items": { "type": "object" },
+            "description": "Output items produced by the model"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/ResponseUsage"
+          },
+          "temperature": { "type": "number" },
+          "top_p": { "type": "number" },
+          "max_output_tokens": { "type": "integer" },
+          "truncation": { "type": "string" },
+          "service_tier": { "type": "string" },
+          "background": { "type": "boolean" },
+          "parallel_tool_calls": { "type": "boolean" },
+          "tool_choice": {},
+          "tools": {
+            "type": "array",
+            "items": { "type": "object" }
+          },
+          "incomplete_details": {
+            "type": "object",
+            "properties": {
+              "reason": { "type": "string" }
+            },
+            "nullable": true
+          },
+          "instructions": { "type": "string", "nullable": true },
+          "metadata": { "type": "object", "nullable": true },
+          "user": { "type": "string", "nullable": true },
+          "presence_penalty": { "type": "number", "nullable": true },
+          "frequency_penalty": { "type": "number", "nullable": true }
+        }
+      },
+      "ResponseUsage": {
+        "type": "object",
+        "properties": {
+          "input_tokens": {
+            "type": "integer",
+            "description": "Number of input tokens"
+          },
+          "input_tokens_details": {
+            "type": "object",
+            "properties": {
+              "cached_tokens": { "type": "integer" }
+            }
+          },
+          "output_tokens": {
+            "type": "integer",
+            "description": "Number of output tokens"
+          },
+          "output_tokens_details": {
+            "type": "object",
+            "properties": {
+              "reasoning_tokens": { "type": "integer" }
+            }
+          },
+          "total_tokens": {
+            "type": "integer",
+            "description": "Total tokens used"
           }
         }
       },

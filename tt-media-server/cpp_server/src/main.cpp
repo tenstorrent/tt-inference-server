@@ -194,6 +194,7 @@ int main(int argc, char* argv[]) {
     TT_LOG_INFO("[Main] Endpoints:");
     TT_LOG_INFO(
         "  POST /v1/chat/completions  - OpenAI-compatible chat completions");
+    TT_LOG_INFO("  POST /v1/responses        - OpenAI-compatible responses");
     TT_LOG_INFO("  GET  /health               - Health check");
     TT_LOG_INFO("  GET  /tt-liveness          - Liveness check");
     TT_LOG_INFO("  GET  /docs                 - Swagger UI");

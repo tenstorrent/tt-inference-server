@@ -23,6 +23,7 @@ class LLMController : public drogon::HttpController<LLMController> {
   METHOD_LIST_BEGIN
   ADD_METHOD_TO(LLMController::chatCompletions, "/v1/chat/completions",
                 drogon::Post);
+  ADD_METHOD_TO(LLMController::responses, "/v1/responses", drogon::Post);
   ADD_METHOD_TO(LLMController::createSession, "/v1/sessions", drogon::Post);
   ADD_METHOD_TO(LLMController::closeSession, "/v1/sessions/{session_id}",
                 drogon::Delete);
@@ -42,6 +43,14 @@ class LLMController : public drogon::HttpController<LLMController> {
    * OpenAI-compatible chat completions endpoint.
    */
   void chatCompletions(
+      const drogon::HttpRequestPtr& req,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+
+  /**
+   * POST /v1/responses
+   * OpenAI-compatible responses endpoint.
+   */
+  void responses(
       const drogon::HttpRequestPtr& req,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 

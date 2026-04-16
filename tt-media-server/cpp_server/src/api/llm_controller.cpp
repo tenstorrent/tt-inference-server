@@ -218,6 +218,19 @@ void LLMController::chatCompletions(
   }
 }
 
+void LLMController::responses(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+  ZoneScopedN("API::responses");
+
+  auto json = req->getJsonObject();
+  if (!json) {
+    callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
+                           "invalid_request_error"));
+    return;
+  }
+}
+
 void LLMController::handleStreaming(
     std::shared_ptr<domain::LLMRequest> reqPtr,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
