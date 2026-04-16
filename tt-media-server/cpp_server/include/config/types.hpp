@@ -4,9 +4,9 @@
 #pragma once
 
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <string_view>
-#include <stdexcept>
 
 namespace tt::config {
 
@@ -100,9 +100,12 @@ inline std::string toString(Model m) {
 }
 
 inline Model modelFromString(const std::string_view& v) {
-  if (v == "deepseek-ai/DeepSeek-R1-0528") return Model::DEEPSEEK_R1_0528;
-  else if (v == "meta-llama/Llama-3.1-8B-Instruct") return Model::LLAMA_3_1_8B_INSTRUCT;
-  else throw std::invalid_argument("Invalid model: " + std::string(v));
+  if (v == "deepseek-ai/DeepSeek-R1-0528")
+    return Model::DEEPSEEK_R1_0528;
+  else if (v == "meta-llama/Llama-3.1-8B-Instruct")
+    return Model::LLAMA_3_1_8B_INSTRUCT;
+  else
+    throw std::invalid_argument("Invalid model: " + std::string(v));
 }
 
 enum class ResponseFormatType : uint8_t {

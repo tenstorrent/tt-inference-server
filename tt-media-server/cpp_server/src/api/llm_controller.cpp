@@ -21,24 +21,31 @@
 #include "utils/service_container.hpp"
 
 namespace tt::api {
-  
-void LLMController::models(
-    const drogon::HttpRequestPtr& _,
-    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
-  auto models = std::vector<std::string>(1);
-  auto model = tt::config::model();
-  models[0] = toString(model);
+
+namespace {
+
+Json::Value buildModelListResponse(const std::vector<std::string>& models) {
   Json::Value response;
   response["object"] = "list";
   response["data"] = Json::Value(Json::arrayValue);
   for (const auto& model : models) {
-    Json::Value data;
-    data["id"] = model;
-    data["object"] = "model";
-    data["owned_by"] = "tenstorrent";
-    response["data"].append(data);
+    Json::Value entry;
+    entry["id"] = model;
+    entry["object"] = "model";
+    entry["owned_by"] = "tenstorrent";
+    response["data"].append(entry);
   }
-  auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+  return response;
+}
+
+}  // namespace
+
+void LLMController::models(
+    const drogon::HttpRequestPtr& _,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+  auto modelName = toString(tt::config::model());
+  auto resp = drogon::HttpResponse::newHttpJsonResponse(
+      buildModelListResponse({modelName}));
   callback(resp);
 }
 

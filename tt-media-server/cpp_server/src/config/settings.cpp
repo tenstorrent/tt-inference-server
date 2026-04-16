@@ -245,7 +245,8 @@ ModelType modelType() {
 }
 
 Model model() {
-  static const Model cached = modelFromString(envString("MODEL", defaults::MODEL));
+  static const Model cached =
+      modelFromString(envString("MODEL", defaults::MODEL));
   return cached;
 }
 

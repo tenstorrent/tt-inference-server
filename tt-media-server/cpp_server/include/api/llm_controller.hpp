@@ -28,12 +28,10 @@ class LLMController : public drogon::HttpController<LLMController> {
                 drogon::Delete);
   ADD_METHOD_TO(LLMController::getSlotId, "/v1/sessions/{session_id}/slot",
                 drogon::Get);
-  ADD_METHOD_TO(LLMController::models, "/v1/models",
-                drogon::Get);
+  ADD_METHOD_TO(LLMController::models, "/v1/models", drogon::Get);
   METHOD_LIST_END
 
   LLMController();
-  
 
   void models(
       const drogon::HttpRequestPtr& req,
