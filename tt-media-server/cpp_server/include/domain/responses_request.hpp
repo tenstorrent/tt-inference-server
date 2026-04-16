@@ -161,8 +161,7 @@ struct ResponsesRequest : BaseRequest {
       req.text = json["text"];
     if (json.isMember("tool_choice") && !json["tool_choice"].isNull())
       req.tool_choice = json["tool_choice"];
-    if (json.isMember("tools"))
-      req.tools = json["tools"];
+    if (json.isMember("tools")) req.tools = json["tools"];
 
     if (json.isMember("top_logprobs") && !json["top_logprobs"].isNull())
       req.top_logprobs = getInt(json["top_logprobs"], "top_logprobs");
@@ -181,9 +180,8 @@ struct ResponsesRequest : BaseRequest {
           getBool(json["skip_special_tokens"], "skip_special_tokens");
     if (json.isMember("include_stop_str_in_output") &&
         !json["include_stop_str_in_output"].isNull())
-      req.include_stop_str_in_output =
-          getBool(json["include_stop_str_in_output"],
-                  "include_stop_str_in_output");
+      req.include_stop_str_in_output = getBool(
+          json["include_stop_str_in_output"], "include_stop_str_in_output");
     if (json.isMember("presence_penalty") && !json["presence_penalty"].isNull())
       req.presence_penalty =
           getFloat(json["presence_penalty"], "presence_penalty");
@@ -242,8 +240,7 @@ struct ResponsesRequest : BaseRequest {
       if (sv.isString()) {
         req.stop.push_back(sv.asString());
       } else if (sv.isArray()) {
-        for (const auto& s : sv)
-          req.stop.push_back(getString(s, "stop[]"));
+        for (const auto& s : sv) req.stop.push_back(getString(s, "stop[]"));
       } else if (!sv.isNull()) {
         throw std::invalid_argument("stop must be a string, array, or null");
       }
@@ -311,12 +308,10 @@ struct ResponsesRequest : BaseRequest {
       j["skip_special_tokens"] = *skip_special_tokens;
     if (include_stop_str_in_output.has_value())
       j["include_stop_str_in_output"] = *include_stop_str_in_output;
-    if (presence_penalty.has_value())
-      j["presence_penalty"] = *presence_penalty;
+    if (presence_penalty.has_value()) j["presence_penalty"] = *presence_penalty;
     if (frequency_penalty.has_value())
       j["frequency_penalty"] = *frequency_penalty;
-    if (prompt_cache_key.has_value())
-      j["prompt_cache_key"] = *prompt_cache_key;
+    if (prompt_cache_key.has_value()) j["prompt_cache_key"] = *prompt_cache_key;
 
     if (request_id.has_value()) j["request_id"] = *request_id;
     if (!media_io_kwargs.isNull()) j["media_io_kwargs"] = media_io_kwargs;
@@ -405,8 +400,7 @@ struct ResponsesRequest : BaseRequest {
     out.top_k = top_k;
     out.user = user;
     out.repetition_penalty = repetition_penalty;
-    out.include_stop_str_in_output =
-        include_stop_str_in_output.value_or(false);
+    out.include_stop_str_in_output = include_stop_str_in_output.value_or(false);
     out.ignore_eos = ignore_eos.value_or(false);
     out.skip_special_tokens = skip_special_tokens.value_or(true);
 

@@ -113,12 +113,11 @@ struct OutputTokensDetails {
       d.tool_output_tokens =
           getInt(json["tool_output_tokens"], "tool_output_tokens");
     if (json.isMember("output_tokens_per_turn"))
-      d.output_tokens_per_turn = readIntArray(
-          json["output_tokens_per_turn"], "output_tokens_per_turn");
+      d.output_tokens_per_turn = readIntArray(json["output_tokens_per_turn"],
+                                              "output_tokens_per_turn");
     if (json.isMember("tool_output_tokens_per_turn"))
-      d.tool_output_tokens_per_turn =
-          readIntArray(json["tool_output_tokens_per_turn"],
-                       "tool_output_tokens_per_turn");
+      d.tool_output_tokens_per_turn = readIntArray(
+          json["tool_output_tokens_per_turn"], "tool_output_tokens_per_turn");
     return d;
   }
 
@@ -238,8 +237,7 @@ struct ResponsesResponse : BaseResponse {
 
     ResponsesResponse r(tid);
 
-    if (json.isMember("id"))
-      r.id = getString(json["id"], "id");
+    if (json.isMember("id")) r.id = getString(json["id"], "id");
     if (json.isMember("created_at") && json["created_at"].isIntegral())
       r.created_at = json["created_at"].asInt64();
 
@@ -255,13 +253,10 @@ struct ResponsesResponse : BaseResponse {
     if (json.isMember("metadata") && json["metadata"].isObject())
       r.metadata = json["metadata"];
 
-    if (json.isMember("model"))
-      r.model = getString(json["model"], "model");
-    if (json.isMember("object"))
-      r.object = getString(json["object"], "object");
+    if (json.isMember("model")) r.model = getString(json["model"], "model");
+    if (json.isMember("object")) r.object = getString(json["object"], "object");
 
-    if (json.isMember("output"))
-      r.output = json["output"];
+    if (json.isMember("output")) r.output = json["output"];
 
     if (json.isMember("parallel_tool_calls"))
       r.parallel_tool_calls =
@@ -269,13 +264,10 @@ struct ResponsesResponse : BaseResponse {
     if (json.isMember("temperature"))
       r.temperature = getFloat(json["temperature"], "temperature");
 
-    if (json.isMember("tool_choice"))
-      r.tool_choice = json["tool_choice"];
-    if (json.isMember("tools"))
-      r.tools = json["tools"];
+    if (json.isMember("tool_choice")) r.tool_choice = json["tool_choice"];
+    if (json.isMember("tools")) r.tools = json["tools"];
 
-    if (json.isMember("top_p"))
-      r.top_p = getFloat(json["top_p"], "top_p");
+    if (json.isMember("top_p")) r.top_p = getFloat(json["top_p"], "top_p");
     if (json.isMember("background"))
       r.background = getBool(json["background"], "background");
     if (json.isMember("max_output_tokens"))
@@ -296,11 +288,9 @@ struct ResponsesResponse : BaseResponse {
 
     if (json.isMember("service_tier"))
       r.service_tier = getString(json["service_tier"], "service_tier");
-    if (json.isMember("status"))
-      r.status = getString(json["status"], "status");
+    if (json.isMember("status")) r.status = getString(json["status"], "status");
 
-    if (json.isMember("text") && !json["text"].isNull())
-      r.text = json["text"];
+    if (json.isMember("text") && !json["text"].isNull()) r.text = json["text"];
     if (json.isMember("top_logprobs") && !json["top_logprobs"].isNull())
       r.top_logprobs = getInt(json["top_logprobs"], "top_logprobs");
     if (json.isMember("truncation"))
@@ -337,10 +327,8 @@ struct ResponsesResponse : BaseResponse {
 
     if (incomplete_details.has_value())
       j["incomplete_details"] = incomplete_details->toJson();
-    if (instructions.has_value())
-      j["instructions"] = *instructions;
-    if (!metadata.isNull() && !metadata.empty())
-      j["metadata"] = metadata;
+    if (instructions.has_value()) j["instructions"] = *instructions;
+    if (!metadata.isNull() && !metadata.empty()) j["metadata"] = metadata;
 
     j["model"] = model;
     j["object"] = object;
@@ -353,39 +341,29 @@ struct ResponsesResponse : BaseResponse {
     j["top_p"] = top_p;
     j["background"] = background;
     j["max_output_tokens"] = max_output_tokens;
-    if (max_tool_calls.has_value())
-      j["max_tool_calls"] = *max_tool_calls;
+    if (max_tool_calls.has_value()) j["max_tool_calls"] = *max_tool_calls;
     if (previous_response_id.has_value())
       j["previous_response_id"] = *previous_response_id;
-    if (!prompt.isNull())
-      j["prompt"] = prompt;
-    if (!reasoning.isNull())
-      j["reasoning"] = reasoning;
+    if (!prompt.isNull()) j["prompt"] = prompt;
+    if (!reasoning.isNull()) j["reasoning"] = reasoning;
 
     j["service_tier"] = service_tier;
     j["status"] = status;
 
-    if (!text.isNull())
-      j["text"] = text;
-    if (top_logprobs.has_value())
-      j["top_logprobs"] = *top_logprobs;
+    if (!text.isNull()) j["text"] = text;
+    if (top_logprobs.has_value()) j["top_logprobs"] = *top_logprobs;
     j["truncation"] = truncation;
 
-    if (usage.has_value())
-      j["usage"] = usage->toJson();
-    if (user.has_value())
-      j["user"] = *user;
-    if (presence_penalty.has_value())
-      j["presence_penalty"] = *presence_penalty;
+    if (usage.has_value()) j["usage"] = usage->toJson();
+    if (user.has_value()) j["user"] = *user;
+    if (presence_penalty.has_value()) j["presence_penalty"] = *presence_penalty;
     if (frequency_penalty.has_value())
       j["frequency_penalty"] = *frequency_penalty;
 
     if (!kv_transfer_params.isNull())
       j["kv_transfer_params"] = kv_transfer_params;
-    if (!input_messages.isNull())
-      j["input_messages"] = input_messages;
-    if (!output_messages.isNull())
-      j["output_messages"] = output_messages;
+    if (!input_messages.isNull()) j["input_messages"] = input_messages;
+    if (!output_messages.isNull()) j["output_messages"] = output_messages;
 
     return j;
   }
@@ -395,8 +373,7 @@ struct ResponsesResponse : BaseResponse {
       const tt::runners::llm_engine::SamplingParams& samplingParams,
       std::string modelName, int64_t createdTime, Json::Value output,
       std::string status, std::optional<ResponseUsage> usage = std::nullopt,
-      Json::Value inputMessages = {},
-      Json::Value outputMessages = {},
+      Json::Value inputMessages = {}, Json::Value outputMessages = {},
       Json::Value kvTransfer = {}) {
     ResponsesResponse r(taskId);
     r.id = request.request_id.value_or("");
@@ -437,12 +414,9 @@ struct ResponsesResponse : BaseResponse {
     r.presence_penalty = samplingParams.presence_penalty;
     r.frequency_penalty = samplingParams.frequency_penalty;
 
-    if (!kvTransfer.isNull())
-      r.kv_transfer_params = std::move(kvTransfer);
-    if (!inputMessages.isNull())
-      r.input_messages = std::move(inputMessages);
-    if (!outputMessages.isNull())
-      r.output_messages = std::move(outputMessages);
+    if (!kvTransfer.isNull()) r.kv_transfer_params = std::move(kvTransfer);
+    if (!inputMessages.isNull()) r.input_messages = std::move(inputMessages);
+    if (!outputMessages.isNull()) r.output_messages = std::move(outputMessages);
 
     return r;
   }
