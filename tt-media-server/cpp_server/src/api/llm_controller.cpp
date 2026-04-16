@@ -250,7 +250,8 @@ void LLMController::handleStreaming(
           };
 
           if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
-            service->submitStreamingRequest(*reqPtr, streamingCallback);
+            // preprocess is already called
+            service->submitStreamingRequest(*reqPtr, streamingCallback, true);
           } else if (tt::config::llmMode() ==
                      tt::config::LLMMode::DECODE_ONLY) {
             if (shouldDoPrefillOnDecode(*reqPtr,
