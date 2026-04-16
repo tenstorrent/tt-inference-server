@@ -197,6 +197,7 @@ def generate_docker_run_command(
 
     docker_env_vars = {}
     if setup_config:
+        docker_env_vars["CACHE_ROOT"] = str(setup_config.cache_root)
         if (
             setup_config.container_model_weights_path
             and setup_config.host_model_weights_mount_dir
