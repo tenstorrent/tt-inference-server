@@ -111,6 +111,12 @@ struct ChatCompletionResponse {
       chatChoice.index = choice.index;
       chatChoice.message.content = choice.text;
       chatChoice.message.reasoning = choice.reasoning;
+
+      // Copy tool calls if present
+      if (choice.tool_calls.has_value()) {
+        chatChoice.message.tool_calls = choice.tool_calls;
+      }
+
       chatChoice.finish_reason = choice.finish_reason.value_or("stop");
       response.choices.push_back(std::move(chatChoice));
     }

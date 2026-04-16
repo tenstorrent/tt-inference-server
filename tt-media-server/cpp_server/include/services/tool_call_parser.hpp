@@ -14,15 +14,11 @@ namespace tt::services {
 /**
  * ToolCallParser for DeepSeek tool calling format.
  *
- * Parses tool calls from model-generated text containing DeepSeek's special
- * markers like <｜tool▁calls▁begin｜>, <｜tool▁call▁begin｜>, etc.
- *
  * This initial implementation provides text-based parsing only (for
  * non-streaming requests). Token-based streaming support can be added later.
  */
 class ToolCallParser {
  public:
-  // String markers for DeepSeek tool calling format
   static constexpr const char* TOOL_CALLS_BEGIN =
       "<\xEF\xBD\x9C"
       "tool\xE2\x96\x81"
@@ -51,7 +47,6 @@ class ToolCallParser {
   ToolCallParser() = default;
   ~ToolCallParser() = default;
 
-  // Non-copyable (following ReasoningParser pattern)
   ToolCallParser(const ToolCallParser&) = delete;
   ToolCallParser& operator=(const ToolCallParser&) = delete;
 

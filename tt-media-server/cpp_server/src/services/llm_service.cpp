@@ -35,6 +35,7 @@ LLMService::LLMService() : tokenizer_(&tt::utils::activeTokenizer()) {
 
   worker_manager_ = std::make_unique<tt::worker::WorkerManager>(numWorkers);
   reasoning_parser_ = std::make_unique<ReasoningParser>();
+  tool_call_parser_ = std::make_unique<ToolCallParser>();
 
   TT_LOG_INFO("[LLMService] Initialized (workers={})", numWorkers);
   queue_manager_ =
@@ -389,6 +390,30 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
 
       // Replace text with answer only (reasoning stripped)
       choice.text = std::move(result.answer);
+    }
+  }
+
+  if (tool_call_parser_) {
+    for (auto& choice : response.choices) {
+      auto tool_calls = tool_call_parser_->parseComplete(choice.text);
+      if (tool_calls.has_value() && !tool_calls->empty()) {
+        choice.tool_calls = std::move(tool_calls);
+
+        size_t calls_begin = choice.text.find(ToolCallParser::TOOL_CALLS_BEGIN);
+        if (calls_begin != std::string::npos) {
+          size_t calls_end = choice.text.find(ToolCallParser::TOOL_CALLS_END, calls_begin);
+          if (calls_end != std::string::npos) {
+            calls_end += std::string(ToolCallParser::TOOL_CALLS_END).length();
+            std::string before = choice.text.substr(0, calls_begin);
+            std::string after = calls_end < choice.text.length()
+                                    ? choice.text.substr(calls_end)
+                                    : "";
+            choice.text = before + after;
+          }
+        }
+
+        choice.finish_reason = "tool_calls";
+      }
     }
   }
 }

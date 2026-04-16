@@ -7,8 +7,10 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "domain/base_response.hpp"
+#include "domain/tool.hpp"
 
 namespace tt::domain {
 
@@ -52,6 +54,7 @@ struct LLMChoice {
   std::optional<std::string> finish_reason;
   std::optional<int64_t> token_id;
   std::optional<std::string> reasoning;
+  std::optional<std::vector<ToolCall>> tool_calls;
 };
 
 /**
