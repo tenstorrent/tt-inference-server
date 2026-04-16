@@ -83,8 +83,12 @@ def _plot_latency_panel(ax, xs, ys, xlabel, title, marker, color):
     ax.grid(True, alpha=0.3)
     for x, y in zip(xs, ys):
         ax.annotate(
-            format_latency_ms(y), (x, y),
-            textcoords="offset points", xytext=(0, 10), ha="center", fontsize=8,
+            format_latency_ms(y),
+            (x, y),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=8,
         )
 
 
@@ -100,8 +104,12 @@ def _plot_throughput_panel(ax, xs, ys, xlabel, ylabel, title, marker, color, fmt
     ax.grid(True, alpha=0.3)
     for x, y in zip(xs, ys):
         ax.annotate(
-            f"{y:{fmt}}", (x, y),
-            textcoords="offset points", xytext=(0, 10), ha="center", fontsize=8,
+            f"{y:{fmt}}",
+            (x, y),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontsize=8,
         )
 
 
@@ -125,21 +133,46 @@ def _plot_phase(xs, xlabel, suptitle, data, output_path):
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
     fig.suptitle(suptitle, fontsize=14)
 
-    _plot_latency_panel(axes[0, 0], xs, m["ttft"], xlabel, "Mean TTFT", "o-", "tab:blue")
-    _plot_latency_panel(axes[0, 1], xs, m["tpot"], xlabel, "Mean TPOT", "s-", "tab:orange")
-    _plot_latency_panel(axes[0, 2], xs, m["itl"], xlabel, "Mean ITL", "^-", "tab:purple")
+    _plot_latency_panel(
+        axes[0, 0], xs, m["ttft"], xlabel, "Mean TTFT", "o-", "tab:blue"
+    )
+    _plot_latency_panel(
+        axes[0, 1], xs, m["tpot"], xlabel, "Mean TPOT", "s-", "tab:orange"
+    )
+    _plot_latency_panel(
+        axes[0, 2], xs, m["itl"], xlabel, "Mean ITL", "^-", "tab:purple"
+    )
 
     _plot_throughput_panel(
-        axes[1, 0], xs, m["req_throughput"], xlabel, "Requests/s",
-        "Request Throughput", "D-", "tab:green", ".2f",
+        axes[1, 0],
+        xs,
+        m["req_throughput"],
+        xlabel,
+        "Requests/s",
+        "Request Throughput",
+        "D-",
+        "tab:green",
+        ".2f",
     )
     _plot_throughput_panel(
-        axes[1, 1], xs, m["tok_throughput"], xlabel, "Tokens/s",
-        "Output Throughput", "P-", "tab:red",
+        axes[1, 1],
+        xs,
+        m["tok_throughput"],
+        xlabel,
+        "Tokens/s",
+        "Output Throughput",
+        "P-",
+        "tab:red",
     )
     _plot_throughput_panel(
-        axes[1, 2], xs, m["tpu"], xlabel, "Tokens/s/user",
-        "Tokens Per Second Per User", "X-", "tab:cyan",
+        axes[1, 2],
+        xs,
+        m["tpu"],
+        xlabel,
+        "Tokens/s/user",
+        "Tokens Per Second Per User",
+        "X-",
+        "tab:cyan",
     )
 
     finalize_axes(axes.flat)
@@ -157,9 +190,11 @@ def plot_phase1_isl(records, fixed_osl: int, fixed_conc: int, output_dir: Path):
         return
     isls = [r["_isl"] for r in data]
     _plot_phase(
-        isls, "Input Sequence Length (ISL)",
+        isls,
+        "Input Sequence Length (ISL)",
         f"Impact of Input Sequence Length (OSL={fixed_osl}, concurrency={fixed_conc})",
-        data, output_dir / "phase1_isl_impact.png",
+        data,
+        output_dir / "phase1_isl_impact.png",
     )
 
 
@@ -171,9 +206,11 @@ def plot_phase2_osl(records, fixed_isl: int, fixed_conc: int, output_dir: Path):
         return
     osls = [r["_osl"] for r in data]
     _plot_phase(
-        osls, "Output Sequence Length (OSL)",
+        osls,
+        "Output Sequence Length (OSL)",
         f"Impact of Output Sequence Length (ISL={fixed_isl}, concurrency={fixed_conc})",
-        data, output_dir / "phase2_osl_impact.png",
+        data,
+        output_dir / "phase2_osl_impact.png",
     )
 
 
@@ -185,9 +222,11 @@ def plot_phase3_concurrency(records, fixed_isl: int, fixed_osl: int, output_dir:
         return
     concs = [r["_conc"] for r in data]
     _plot_phase(
-        concs, "Max Concurrency",
+        concs,
+        "Max Concurrency",
         f"Impact of Concurrency (ISL={fixed_isl}, OSL={fixed_osl})",
-        data, output_dir / "phase3_concurrency_impact.png",
+        data,
+        output_dir / "phase3_concurrency_impact.png",
     )
 
 
