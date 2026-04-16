@@ -45,6 +45,9 @@ def health(service: BaseService = Depends(service_resolver)) -> dict[str, Any]:
 
     if not status.get("model_ready", False):
         raise HTTPException(status_code=503, detail="Model not ready")
+    ext_status = status.get("external_process_status")
+    if ext_status and ext_status.get("state") == "fatal":
+        raise HTTPException(status_code=503, detail="External process in fatal state")
     return {}
 
 
@@ -86,3 +89,34 @@ async def reset_device(
         return {"status": f"Reset of device {device_id} scheduled"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
+
+
+@router.post("/tt-external-process-recovery")
+async def external_process_recovery(
+    service: BaseService = Depends(service_resolver),
+) -> dict[str, Any]:
+    """
+    Manually trigger external process recovery (kill → recover links → restart).
+
+    Returns:
+        dict: Status message indicating the result of the recovery operation.
+
+    Raises:
+        HTTPException: If recovery fails or monitor is not configured.
+    """
+    monitor = service.scheduler.external_process_monitor
+    if monitor is None:
+        raise HTTPException(
+            status_code=404,
+            detail="External process monitor is not configured",
+        )
+    try:
+        success = await monitor.run_recovery()
+        if success:
+            return {"status": "External process recovery initiated"}
+        else:
+            return {"status": "External process recovery failed", "details": monitor.get_status()}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"External process recovery failed: {e}"
+        )

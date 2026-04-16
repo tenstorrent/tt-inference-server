@@ -85,7 +85,7 @@ class BaseService(ABC):
 
     def check_is_model_ready(self) -> dict:
         """Detailed system status for monitoring"""
-        return {
+        status = {
             "model_ready": self.scheduler.check_is_model_ready(),
             "queue_size": self.scheduler.task_queue.qsize()
             if hasattr(self.scheduler.task_queue, "qsize")
@@ -96,6 +96,11 @@ class BaseService(ABC):
             "worker_info": self.scheduler.get_worker_info(),
             "runner_in_use": settings.model_runner,
         }
+        if self.scheduler.external_process_monitor:
+            status["external_process_status"] = (
+                self.scheduler.external_process_monitor.get_status()
+            )
+        return status
 
     async def deep_reset(self) -> bool:
         """Reset the device and all the scheduler workers and processes"""

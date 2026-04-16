@@ -41,6 +41,23 @@ class Settings(BaseSettings):
     allow_deep_reset: bool = False
     use_greedy_based_allocation: bool = True
 
+    # External process monitoring settings (for MPI hang detection & recovery)
+    external_process_log_path: str = ""
+    external_process_launch_command: str = ""
+    external_process_launch_cwd: str = ""
+    external_process_env_setup: str = ""
+    external_process_ready_pattern: str = "SHM bridge ready"
+    external_process_hang_patterns: str = (
+        "TIMEOUT: device timeout in fetch queue wait"
+        ";TT_THROW.*Timed out while waiting for active ethernet core"
+    )
+    external_process_recovery_command: str = ""
+    external_process_recovery_cwd: str = ""
+    external_process_recovery_success_pattern: str = "All Links Are Healthy"
+    external_process_check_interval_seconds: float = 10.0
+    external_process_recovery_cooldown_seconds: float = 120.0
+    external_process_max_recovery_attempts: int = 3
+
     # Model settings
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = (

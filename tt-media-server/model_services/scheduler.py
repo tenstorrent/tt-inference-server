@@ -16,6 +16,7 @@ from device_workers.device_worker_dynamic_batch import (
 )
 from fastapi import HTTPException
 from utils.decorators import log_execution_time
+from utils.external_process_monitor import ExternalProcessMonitor
 from utils.logger import TTLogger
 from utils.simple_queue_factory import get_queue, get_task_queue
 
@@ -27,6 +28,7 @@ class Scheduler:
         self.logger = TTLogger()
         self._setup_initial_variables()
         self._start_queues()
+        self._setup_external_process_monitor()
 
     def _start_queues(self):
         worker_count = self.get_worker_count()
@@ -50,6 +52,27 @@ class Scheduler:
             )
 
         self.error_queue = Queue()
+
+    def _setup_external_process_monitor(self):
+        if self.settings.external_process_launch_command:
+            self.external_process_monitor = ExternalProcessMonitor(
+                settings=self.settings,
+                on_hang_detected=self._on_external_hang_detected,
+            )
+            self.logger.info("External process monitor configured")
+        else:
+            self.external_process_monitor = None
+
+    async def _on_external_hang_detected(self, pattern: str):
+        self.logger.warning(
+            f"External process hang detected, triggering recovery. Pattern: {pattern}"
+        )
+        monitor = self.external_process_monitor
+        success = await monitor.run_recovery()
+        if success:
+            self.logger.info("External process recovery succeeded, process re-launched")
+        else:
+            self.logger.error("External process recovery failed")
 
     def get_worker_count(self):
         if not hasattr(self, "worker_count"):
@@ -103,6 +126,10 @@ class Scheduler:
 
     @log_execution_time("Scheduler - starting workers")
     async def start_workers(self):
+        # Start external process monitor if configured
+        if self.external_process_monitor:
+            await self.external_process_monitor.start()
+
         # keep result listener in the main event loop
         self.listener_task_ref = asyncio.create_task(self.result_listener())
 
@@ -350,6 +377,12 @@ class Scheduler:
     def stop_workers(self):
         """Stop workers and close all queues"""
         self.logger.info("Stopping workers")
+
+        # Stop external process monitor if running
+        if self.external_process_monitor:
+            asyncio.get_event_loop().run_until_complete(
+                self.external_process_monitor.stop()
+            )
 
         try:
             self.monitor_running = False
