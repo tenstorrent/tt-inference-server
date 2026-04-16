@@ -22,6 +22,7 @@ from open_ai_api import (
     tokenizer,
     tt_maintenance_api,
     video,
+    websocket_stt,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
     ],
     ModelServices.AUDIO.value: [
         ServiceRoute(audio.router, "/v1/audio", "/audio", ["Audio processing"]),
+        ServiceRoute(websocket_stt.router, "", None, ["Audio WS"]),
     ],
     ModelServices.TEXT_TO_SPEECH.value: [
         ServiceRoute(
