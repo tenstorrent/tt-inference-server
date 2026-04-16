@@ -1,6 +1,0 @@
-apiVersion: v2
-name: tt-inference-server
-description: Tenstorrent inference server — vLLM and media backends on Galaxy hardware
-type: application
-version: 0.2.0
-appVersion: "0.12.0"
