@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 #include <json/json.h>
 
@@ -10,11 +10,11 @@
 #include <sstream>
 
 #include "config/settings.hpp"
-#include "utils/deepseek_tokenizer.hpp"
-#include "utils/llama_tokenizer.hpp"
 #include "utils/logger.hpp"
+#include "utils/tokenizers/deepseek_tokenizer.hpp"
+#include "utils/tokenizers/llama_tokenizer.hpp"
 
-namespace tt::utils {
+namespace tt::utils::tokenizers {
 
 // ---------------------------------------------------------------------------
 // Tokenizer base class
@@ -60,11 +60,11 @@ Tokenizer::Tokenizer(const std::string& path) {
   f.close();
 
   if (path.size() >= 5 && path.compare(path.size() - 5, 5, ".json") == 0) {
-    tok_ = tokenizers::Tokenizer::FromBlobJSON(blob);
+    tok_ = ::tokenizers::Tokenizer::FromBlobJSON(blob);
     specialTokenIds_ = parseSpecialTokenIds(blob);
   } else if (path.size() >= 7 &&
              path.compare(path.size() - 7, 7, ".model") == 0) {
-    tok_ = tokenizers::Tokenizer::FromBlobSentencePiece(blob);
+    tok_ = ::tokenizers::Tokenizer::FromBlobSentencePiece(blob);
   } else {
     throw std::runtime_error(
         "[TokenizerUtil] Unknown extension; use .json or .model: " + path);
@@ -222,4 +222,4 @@ const Tokenizer& activeTokenizer() {
   return *tok;
 }
 
-}  // namespace tt::utils
+}  // namespace tt::utils::tokenizers

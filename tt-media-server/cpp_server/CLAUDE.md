@@ -96,7 +96,7 @@ The server operates in two modes via `MODEL_SERVICE` environment variable:
 
 Runner type and tokenizer are selected via `LLM_DEVICE_BACKEND` environment variable. This selects the
 tokenizer strategy (chat template, stop tokens, decode filtering) at runtime via
-the `Tokenizer` subclass hierarchy (`utils/tokenizer.hpp`):
+the `Tokenizer` subclass hierarchy (`utils/tokenizers/tokenizer.hpp`):
 
 - **`mock`** or **`pipeline`** (default when unset: `mock`): Mock or TT device runner, DeepSeek V3 tokenizer strategy
 - **`llama`**: Python-based runner via pybind11, Llama 3.1 8B Instruct tokenizer strategy
