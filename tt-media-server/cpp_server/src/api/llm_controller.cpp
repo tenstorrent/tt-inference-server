@@ -15,6 +15,7 @@
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
+#include "domain/models_response.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
@@ -22,30 +23,12 @@
 
 namespace tt::api {
 
-namespace {
-
-Json::Value buildModelListResponse(const std::vector<std::string>& models) {
-  Json::Value response;
-  response["object"] = "list";
-  response["data"] = Json::Value(Json::arrayValue);
-  for (const auto& model : models) {
-    Json::Value entry;
-    entry["id"] = model;
-    entry["object"] = "model";
-    entry["owned_by"] = "tenstorrent";
-    response["data"].append(entry);
-  }
-  return response;
-}
-
-}  // namespace
-
 void LLMController::models(
     const drogon::HttpRequestPtr& _,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
-  auto modelName = toString(tt::config::model());
-  auto resp = drogon::HttpResponse::newHttpJsonResponse(
-      buildModelListResponse({modelName}));
+  domain::ModelsResponse response;
+  response.data.push_back({toString(tt::config::model())});
+  auto resp = drogon::HttpResponse::newHttpJsonResponse(response.toJson());
   callback(resp);
 }
 

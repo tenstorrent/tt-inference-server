@@ -90,22 +90,28 @@ enum class Model {
   LLAMA_3_1_8B_INSTRUCT,
 };
 
+struct ModelMapping {
+  Model model;
+  std::string_view name;
+};
+
+static constexpr ModelMapping MODEL_MAPPINGS[] = {
+    {Model::DEEPSEEK_R1_0528, "deepseek-ai/DeepSeek-R1-0528"},
+    {Model::LLAMA_3_1_8B_INSTRUCT, "meta-llama/Llama-3.1-8B-Instruct"},
+};
+
 inline std::string toString(Model m) {
-  switch (m) {
-    case Model::DEEPSEEK_R1_0528:
-      return "deepseek-ai/DeepSeek-R1-0528";
-    case Model::LLAMA_3_1_8B_INSTRUCT:
-      return "meta-llama/Llama-3.1-8B-Instruct";
+  for (const auto& entry : MODEL_MAPPINGS) {
+    if (entry.model == m) return std::string(entry.name);
   }
+  throw std::invalid_argument("Cannot match model to string");
 }
 
 inline Model modelFromString(const std::string_view& v) {
-  if (v == "deepseek-ai/DeepSeek-R1-0528")
-    return Model::DEEPSEEK_R1_0528;
-  else if (v == "meta-llama/Llama-3.1-8B-Instruct")
-    return Model::LLAMA_3_1_8B_INSTRUCT;
-  else
-    throw std::invalid_argument("Invalid model: " + std::string(v));
+  for (const auto& entry : MODEL_MAPPINGS) {
+    if (entry.name == v) return entry.model;
+  }
+  throw std::invalid_argument("Invalid model: " + std::string(v));
 }
 
 enum class ResponseFormatType : uint8_t {
