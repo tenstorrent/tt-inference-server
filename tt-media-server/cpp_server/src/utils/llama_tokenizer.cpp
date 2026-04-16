@@ -61,9 +61,6 @@ std::string LlamaTokenizer::applyChatTemplate(
       if (!tool.function.parameters.isNull()) {
         functionJson["parameters"] = tool.function.parameters;
       }
-      if (tool.function.strict.has_value()) {
-        functionJson["strict"] = tool.function.strict.value();
-      }
 
       toolWrapper["function"] = functionJson;
       toolsArray.append(toolWrapper);
