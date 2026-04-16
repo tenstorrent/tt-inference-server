@@ -148,6 +148,13 @@ def parse_arguments():
         default=os.getenv("SERVICE_PORT", "8000"),
     )
     parser.add_argument(
+        "--server-url",
+        type=str,
+        default=None,
+        help="Base URL of an already-running inference server to target (e.g. 'http://192.168.1.10'). "
+        "Overrides the default http://127.0.0.1. Use together with --service-port when not using --docker-server or --local-server.",
+    )
+    parser.add_argument(
         "--bind-host",
         type=str,
         default="0.0.0.0",
@@ -376,6 +383,14 @@ def parse_arguments():
             "Use only one of them."
         )
     args.device = args.tt_device or args.device
+
+    if args.server_url and (args.docker_server or args.local_server):
+        parser.error(
+            "--server-url cannot be used together with --docker-server or --local-server. "
+            "Use --server-url alone to target an already-running inference server."
+        )
+    if args.server_url:
+        args.server_url = args.server_url.rstrip("/")
 
     args.engine = (
         InferenceEngine.from_string(args.engine).value if args.engine else None

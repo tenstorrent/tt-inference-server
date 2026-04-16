@@ -66,8 +66,17 @@ STRENGTH_INPAINTING = 0.99
 class ImageClientStrategy(BaseMediaStrategy):
     """Strategy for image models (SDXL, etc)."""
 
-    def __init__(self, all_params, model_spec, device, output_path, service_port):
-        super().__init__(all_params, model_spec, device, output_path, service_port)
+    def __init__(
+        self, all_params, model_spec, device, output_path, service_port, deploy_url=None
+    ):
+        super().__init__(
+            all_params,
+            model_spec,
+            device,
+            output_path,
+            service_port,
+            deploy_url=deploy_url,
+        )
 
         # Map runners to their benchmark methods
         self.benchmark_methods = {
