@@ -258,6 +258,12 @@ tt_vllm_plugin_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
     code_path="tt_vllm_plugin",
 )
+cpp_server_impl = ImplSpec(
+    impl_id="cpp_server",
+    impl_name="cpp-server",
+    repo_url="https://github.com/tenstorrent/tt-media-server/tree/main/cpp_server",
+    code_path="cpp_server",
+)
 
 
 @dataclass(frozen=True)
@@ -2249,6 +2255,40 @@ llm_templates = [
                 "tool_call_parser_name": "llama3_json",
             },
         },
+    ),
+    ModelSpecTemplate(
+        weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
+        impl=cpp_server_impl,
+        tt_metal_commit="3f72232",
+        inference_engine=InferenceEngine.CPP_SERVER.value,
+        model_type=ModelType.LLM,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.N150,
+                max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.N300,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+            ),
+        ],
+        has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
         weights=["Qwen/Qwen2.5-Coder-32B-Instruct"],

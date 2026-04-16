@@ -271,6 +271,7 @@ def main():
     if (
         model_spec.inference_engine == InferenceEngine.MEDIA.value
         or model_spec.inference_engine == InferenceEngine.FORGE.value
+        or model_spec.inference_engine == InferenceEngine.CPP_SERVER.value
     ):
         os.environ["OPENAI_API_KEY"] = "your-secret-key"
         os.environ["VLLM_API_KEY"] = "your-secret-key"

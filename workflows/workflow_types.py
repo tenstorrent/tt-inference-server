@@ -319,6 +319,7 @@ class VersionMode(IntEnum):
 class InferenceEngine(Enum):
     VLLM = "vLLM"
     MEDIA = "media"
+    CPP_SERVER = "cpp_server"
     FORGE = "forge"
 
     @property
@@ -327,6 +328,7 @@ class InferenceEngine(Enum):
             InferenceEngine.VLLM: "vLLM (tt-metal integration fork)",
             InferenceEngine.MEDIA: "tt-media-server",
             InferenceEngine.FORGE: "tt-media-server (forge plugin)",
+            InferenceEngine.CPP_SERVER: "tt-media-server (cpp server)",
         }[self]
 
     @classmethod

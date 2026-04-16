@@ -57,6 +57,25 @@ def get_media_server_docker_env_vars(model_spec):
     return env_vars
 
 
+def get_cpp_server_docker_env_vars(model_spec):
+    """Get cpp server environment variables for Docker container."""
+    env_vars = {
+        "CACHE_ROOT": "/home/container_app_user/cache_root",  # TODO: remove this
+        "SERVER_MODE": "cpp",
+        "DEFAULT_THROTTLE_LEVEL": "0",
+        "LLM_DEVICE_BACKEND": "llama",
+        "MODEL_SERVICE": "llm",
+        "MAX_BATCH_SIZE": "32",
+        "SCHEDULING_POLICY": "max_occupancy",
+        "DEVICE_IDS": "",
+    }
+
+    logger.info(
+        "Cpp server environment variables: SERVER_MODE=cpp, DEFAULT_THROTTLE_LEVEL=0, LLM_DEVICE_BACKEND=llama, MODEL_SERVICE=llm, MAX_BATCH_SIZE=32, SCHEDULING_POLICY=max_occupancy, DEVICE_IDS=''"
+    )
+    return env_vars
+
+
 def ensure_docker_image(image_name):
     logger.info(f"running: docker pull {image_name}")
     logger.info("this may take several minutes ...")
@@ -220,6 +239,9 @@ def generate_docker_run_command(
         api_key = os.getenv("API_KEY")
         if api_key:
             docker_env_vars["API_KEY"] = api_key
+
+    elif model_spec.inference_engine == InferenceEngine.CPP_SERVER.value:
+        docker_env_vars.update(get_cpp_server_docker_env_vars(model_spec))
 
     user_home_path = "/home/container_app_user"
     if runtime_config.dev_mode:

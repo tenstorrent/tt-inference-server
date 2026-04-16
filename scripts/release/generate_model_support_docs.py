@@ -68,6 +68,7 @@ INFERENCE_ENGINE_README_LINKS = {
     InferenceEngine.VLLM.value: "../../../vllm-tt-metal/README.md",
     InferenceEngine.MEDIA.value: "../../../tt-media-server/README.md",
     InferenceEngine.FORGE.value: "../../../tt-media-server/README.md",
+    InferenceEngine.CPP_SERVER.value: "../../../tt-media-server/cpp_server/README.md",
 }
 
 # Mapping device type to hardware link text (reused from update_model_spec.py)
