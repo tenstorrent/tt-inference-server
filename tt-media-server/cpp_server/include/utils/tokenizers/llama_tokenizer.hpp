@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
-namespace tt::utils {
+namespace tt::utils::tokenizers {
 
 class LlamaTokenizer final : public Tokenizer {
  public:
@@ -15,8 +15,8 @@ class LlamaTokenizer final : public Tokenizer {
   std::vector<int64_t> stopTokenIds() const { return {128001, 128008, 128009}; }
 
   std::string applyChatTemplate(
-      const std::vector<domain::ChatMessage>& messages,
+      const std::vector<tt::domain::ChatMessage>& messages,
       bool addGenerationPrompt) const;
 };
 
-}  // namespace tt::utils
+}  // namespace tt::utils::tokenizers
