@@ -44,7 +44,6 @@ class RuntimeConfig:
     interactive: bool = False
     service_port: str = "8000"
     bind_host: str = "0.0.0.0"
-    server_url: Optional[str] = None
 
     # Dev / override
     dev_mode: bool = False
@@ -113,7 +112,6 @@ class RuntimeConfig:
             interactive=args.interactive,
             service_port=args.service_port,
             bind_host=args.bind_host,
-            server_url=args.server_url,
             dev_mode=args.dev_mode,
             no_auth=args.no_auth,
             print_docker_cmd=args.print_docker_cmd,

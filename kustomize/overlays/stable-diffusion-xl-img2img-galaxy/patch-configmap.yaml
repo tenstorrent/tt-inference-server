@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: tt-inference-server
-data:
-  MODEL: "stable-diffusion-xl-base-1.0-img-2-img"

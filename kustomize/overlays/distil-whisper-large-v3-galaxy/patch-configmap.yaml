@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: tt-inference-server
-data:
-  MODEL: "distil-large-v3"

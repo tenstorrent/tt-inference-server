@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: tt-inference-server
-data:
-  MODEL: "whisper-large-v3"

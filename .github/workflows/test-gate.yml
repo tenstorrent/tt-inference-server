@@ -13,6 +13,7 @@ jobs:
     outputs:
       should-test: ${{ steps.filter.outputs.code }}
       cpp-server: ${{ steps.filter.outputs.cpp_server }}
+      charts: ${{ steps.filter.outputs.charts }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -26,6 +27,8 @@ jobs:
               - '.github/workflows/*.yml'
             cpp_server:
               - 'tt-media-server/cpp_server/**'
+            charts:
+              - 'charts/**'
 
   lint:
     needs: detect-changes
@@ -1230,6 +1233,35 @@ jobs:
             diff-cover-output.txt
           retention-days: 14
 
+  helm-chart-validate:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.charts == 'true' }}
+    name: Helm Chart Validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: latest
+
+      - name: Install kubeconform
+        run: |
+          KUBECONFORM_VERSION=v0.6.7
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Helm template validation
+        run: |
+          helm template ci-test charts/tt-inference-server \
+            --set model=Llama-3.1-8B-Instruct \
+            --set device=galaxy \
+            | kubeconform -strict -summary
+
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
@@ -1243,6 +1275,7 @@ jobs:
       - cpp-build
       - cpp-server-benchmarks
       - cpp-server-prefill-decode-split
+      - helm-chart-validate
     if: always()
     steps:
       - name: Check results
@@ -1269,6 +1302,10 @@ jobs:
           done
           if [[ "$STATUS" -ne 0 ]]; then
             echo "CI gate failed: one or more jobs failed or were cancelled"
+            exit 1
+          fi
+          if [[ "${{ needs.helm-chart-validate.result }}" == "failure" ]]; then
+            echo "❌ Helm chart validation failed"
             exit 1
           fi
           echo "✅ All checks passed (or were skipped)"
