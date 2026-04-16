@@ -21,5 +21,6 @@ whisperx==3.4.3
 requests
 num2words
 
+torchaudio<2.9
 
 --extra-index-url https://download.pytorch.org/whl/cpu
