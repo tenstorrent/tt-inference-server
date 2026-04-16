@@ -11,7 +11,7 @@
 #include "services/guided_decoder_manager.hpp"
 #include "services/memory_services/paged_memory_manager.hpp"
 #include "utils/logger.hpp"
-#include "utils/tokenizers/tokenizer.hpp"
+#include "utils/tokenizer.hpp"
 
 namespace tt::runners {
 using namespace tt::runners::llm_engine;
@@ -30,7 +30,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
   }
 
   try {
-    const auto& tok = tt::utils::tokenizers::activeTokenizer();
+    const auto& tok = tt::utils::activeTokenizer();
     auto encodedVocab = tok.getEncodedVocab();
     int vocabSize = static_cast<int>(encodedVocab.size());
     guidedDecoder = std::make_unique<services::GuidedDecoderManager>(
@@ -39,7 +39,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
                 vocabSize);
   } catch (const std::exception& e) {
     TT_LOG_WARN(
-        "[LLMRunner] Failed to init guided decoder, structured outputs"
+        "[LLMRunner] Failed to init guided decoder, structured outputs "
         "disabled: {}",
         e.what());
   }
@@ -137,25 +137,11 @@ void LLMRunner::applyGuidedDecodingMasks(const std::vector<Sequence*>& seqs,
     if (isPrefill && seq->getSamplingParams().hasGuidedDecoding()) {
       guidedDecoder->initRequest(seq->taskId, seq->getSamplingParams());
     }
-  }
-
-  std::vector<uint32_t> taskIds;
-  std::vector<Sequence*> guidedSeqs;
-  for (Sequence* seq : seqs) {
     if (guidedDecoder->hasGuidedDecoding(seq->taskId)) {
-      taskIds.push_back(seq->taskId);
-      guidedSeqs.push_back(seq);
+      auto allowed = guidedDecoder->getNextAllowedTokenIds(seq->taskId);
+      std::vector<int> allowedInt(allowed.begin(), allowed.end());
+      seq->getMutableSamplingParams().allowed_token_ids = std::move(allowedInt);
     }
-  }
-
-  if (taskIds.empty()) return;
-
-  auto batch = guidedDecoder->getNextAllowedTokenIdsBatch(taskIds);
-  for (size_t i = 0; i < batch.size(); ++i) {
-    std::vector<int> allowedInt(batch[i].allowedTokenIds.begin(),
-                                batch[i].allowedTokenIds.end());
-    guidedSeqs[i]->getMutableSamplingParams().allowed_token_ids =
-        std::move(allowedInt);
   }
 }
 
