@@ -16,7 +16,8 @@ static const char* llamaSystemPreamble =
 
 std::string LlamaTokenizer::applyChatTemplate(
     const std::vector<tt::domain::ChatMessage>& messages,
-    bool addGenerationPrompt) const {
+    bool addGenerationPrompt,
+    const std::optional<std::vector<tt::domain::tool_calls::Tool>>&) const {
   std::ostringstream out;
 
   std::string systemContent;

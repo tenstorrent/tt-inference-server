@@ -247,7 +247,7 @@ struct ChatCompletionRequest : BaseRequest {
     LLMRequest out(task_id);
     out.model = model;
     out.prompt =
-        tt::utils::tokenizers::activeTokenizer().applyChatTemplate(messages);
+        tt::utils::tokenizers::activeTokenizer().applyChatTemplate(messages, true ,tools);
 
     out.echo = echo;
     out.max_tokens = max_tokens;
