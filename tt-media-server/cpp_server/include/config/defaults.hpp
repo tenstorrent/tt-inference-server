@@ -50,6 +50,8 @@ constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 32;
 constexpr bool USE_DEEPSEEK_MD_FORMAT = false;
 
+constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
+
 constexpr const char* SERVER_HOST = "0.0.0.0";
 constexpr uint16_t SERVER_PORT = 8000;
 constexpr size_t MAX_CONNECTIONS = 100000;

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <stdexcept>
 
 namespace tt::config {
 
@@ -83,6 +84,26 @@ enum class ModelRunnerType {
   PIPELINE_MANAGER,
   PREFILL
 };
+
+enum class Model {
+  DEEPSEEK_R1_0528,
+  LLAMA_3_1_8B_INSTRUCT,
+};
+
+inline std::string toString(Model m) {
+  switch (m) {
+    case Model::DEEPSEEK_R1_0528:
+      return "deepseek-ai/DeepSeek-R1-0528";
+    case Model::LLAMA_3_1_8B_INSTRUCT:
+      return "meta-llama/Llama-3.1-8B-Instruct";
+  }
+}
+
+inline Model modelFromString(const std::string_view& v) {
+  if (v == "deepseek-ai/DeepSeek-R1-0528") return Model::DEEPSEEK_R1_0528;
+  else if (v == "meta-llama/Llama-3.1-8B-Instruct") return Model::LLAMA_3_1_8B_INSTRUCT;
+  else throw std::invalid_argument("Invalid model: " + std::string(v));
+}
 
 enum class ResponseFormatType : uint8_t {
   TEXT = 0,

@@ -244,6 +244,11 @@ ModelType modelType() {
   return cached;
 }
 
+Model model() {
+  static const Model cached = modelFromString(envString("MODEL", defaults::MODEL));
+  return cached;
+}
+
 LLMMode llmMode() {
   static const LLMMode cached =
       llmModeFromString(envStringLower("LLM_MODE", defaults::LLM_MODE));

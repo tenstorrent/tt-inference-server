@@ -21,6 +21,26 @@
 #include "utils/service_container.hpp"
 
 namespace tt::api {
+  
+void LLMController::models(
+    const drogon::HttpRequestPtr& _,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+  auto models = std::vector<std::string>(1);
+  auto model = tt::config::model();
+  models[0] = toString(model);
+  Json::Value response;
+  response["object"] = "list";
+  response["data"] = Json::Value(Json::arrayValue);
+  for (const auto& model : models) {
+    Json::Value data;
+    data["id"] = model;
+    data["object"] = "model";
+    data["owned_by"] = "tenstorrent";
+    response["data"].append(data);
+  }
+  auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+  callback(resp);
+}
 
 LLMController::LLMController() {
   if (!tt::config::isLlmServiceEnabled()) {
@@ -28,6 +48,8 @@ LLMController::LLMController() {
         "[LLMController] Skipping initialization (TT_model_SERVICE != llm)");
     return;
   }
+
+  tt::config::model();
 
   const auto& c = tt::utils::ServiceContainer::instance();
   service = c.llm();
