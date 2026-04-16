@@ -56,6 +56,7 @@ void DisaggregationService::setupSocketHandlers() {
             request.max_tokens = message.remaining_tokens;
             auto slotId = message.slot_id;
             request.slotId = slotId;
+            llmService->preProcess(request);
             llmService->submitStreamingRequest(request, callback.value());
           } else {
             auto finalResponse = domain::LLMStreamChunk(message.task_id);
@@ -96,6 +97,7 @@ void DisaggregationService::setupSocketHandlers() {
                                                    message.token_ids.end()));
           auto slotId = message.slot_id;
 
+          llmService->preProcess(request);
           llmService->submitStreamingRequest(
               request,
               [this, message, maxTokens, slotId](

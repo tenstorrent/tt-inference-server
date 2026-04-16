@@ -20,7 +20,6 @@ class Streamable {
   void submitStreamingRequest(
       RequestType& request,
       std::function<void(const ResponseType&, bool isFinal)> callback) {
-    preProcess(request);
     processStreamingRequest(
         std::move(request),
         [this, cb = std::move(callback)](ResponseType& response, bool isFinal) {

@@ -219,38 +219,39 @@ void LLMController::handleStreaming(
   resolveSession(
       reqPtr, loop,
       [this, reqPtr, cb, loop](SessionInfo sessionInfo) {
-        StreamParams params;
-        params.completionId = "chatcmpl-" + std::to_string(reqPtr->task_id);
-        params.model = reqPtr->model.value_or("default");
-        params.created = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::system_clock::now().time_since_epoch())
-                .count());
-        params.includeUsage = !reqPtr->stream_options.has_value() ||
-                              reqPtr->stream_options->include_usage;
-        params.continuousUsage = reqPtr->stream_options.has_value() &&
-                                 reqPtr->stream_options->continuous_usage_stats;
-        params.promptTokensCount = reqPtr->prompt_tokens_count;
-        params.sessionId = reqPtr->sessionId;
-        params.taskId = reqPtr->task_id;
-        params.service = service;
-        params.sessionManager = sessionManager;
-
-        auto writer = SseStreamWriter::create(loop, std::move(params));
-
-        auto streamingCallback = [writer](const domain::LLMStreamChunk& chunk,
-                                          bool isFinal) {
-          if (writer->isDone()) return;
-          if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
-          if (isFinal) writer->finalizeStream();
-        };
-
         try {
+          service->preProcess(*reqPtr);
+
+          StreamParams params;
+          params.completionId = "chatcmpl-" + std::to_string(reqPtr->task_id);
+          params.model = reqPtr->model.value_or("default");
+          params.created = static_cast<int64_t>(
+              std::chrono::duration_cast<std::chrono::seconds>(
+                  std::chrono::system_clock::now().time_since_epoch())
+                  .count());
+          params.includeUsage = !reqPtr->stream_options.has_value() ||
+                                reqPtr->stream_options->include_usage;
+          params.continuousUsage = reqPtr->stream_options.has_value() &&
+                                   reqPtr->stream_options->continuous_usage_stats;
+          params.promptTokensCount = reqPtr->prompt_tokens_count;
+          params.sessionId = reqPtr->sessionId;
+          params.taskId = reqPtr->task_id;
+          params.service = service;
+          params.sessionManager = sessionManager;
+
+          auto writer = SseStreamWriter::create(loop, std::move(params));
+
+          auto streamingCallback = [writer](const domain::LLMStreamChunk& chunk,
+                                            bool isFinal) {
+            if (writer->isDone()) return;
+            if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
+            if (isFinal) writer->finalizeStream();
+          };
+
           if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
             service->submitStreamingRequest(*reqPtr, streamingCallback);
           } else if (tt::config::llmMode() ==
                      tt::config::LLMMode::DECODE_ONLY) {
-            service->preProcess(*reqPtr);
             if (shouldDoPrefillOnDecode(*reqPtr,
                                         sessionInfo.validSessionFound)) {
               TT_LOG_DEBUG(
@@ -272,13 +273,12 @@ void LLMController::handleStreaming(
                 "internal_error"));
             return;
           }
+
+          (*cb)(writer->buildResponse());
         } catch (const services::QueueFullException& e) {
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
-          return;
         }
-
-        (*cb)(writer->buildResponse());
       },
       [cb](const SessionError& err) {
         TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
