@@ -1,0 +1,142 @@
+name: Nightly C++ Server Benchmarks
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 2:00 AM UTC every day
+  workflow_dispatch:
+    inputs:
+      num_prompts:
+        description: 'Number of prompts per benchmark run'
+        required: false
+        default: '10'
+
+jobs:
+  cpp-server-full-benchmarks:
+    name: Full Benchmark Suite
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve numeric GitHub job ID
+        id: job-id
+        run: |
+          JOB_ID=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" \
+            --jq '.jobs[] | select(.name == "Full Benchmark Suite") | .id')
+          echo "job_id=$JOB_ID" >> $GITHUB_OUTPUT
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Build C++ server
+        run: |
+          cd cpp_server
+          ./build.sh
+          cd ..
+
+      - name: Start C++ server
+        run: |
+          cd cpp_server/build
+          ./tt_media_server_cpp -p 8000 > ../../cpp_server.log 2>&1 &
+          echo $! > ../../cpp_server.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/health | grep -q '"status"' && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8000/health || exit 1
+          echo "Server started on port 8000"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install Python dependencies
+        run: |
+          uv venv
+          uv pip install vllm
+          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Run full benchmark suite
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+          NUM_PROMPTS: ${{ github.event.inputs.num_prompts || '10' }}
+          RESULTS_DIR: bench_results
+          JOB_SUFFIX: ${{ steps.job-id.outputs.job_id }}
+        working-directory: tt-media-server/cpp_server
+        run: |
+          chmod +x benchmarks/run_benchmarks.sh
+          benchmarks/run_benchmarks.sh
+
+      - name: Generate summary
+        working-directory: tt-media-server/cpp_server
+        run: |
+          {
+            echo "## Nightly C++ Server Benchmark Results"
+            echo ""
+            echo "| ISL | OSL | Conc | Req/s | Mean TTFT (ms) | Mean TPOT (ms) | Out tok/s |"
+            echo "|-----|-----|------|-------|----------------|----------------|-----------|"
+          } >> $GITHUB_STEP_SUMMARY
+
+          for f in bench_results/bench_isl*.json; do
+            [ -f "$f" ] || continue
+            BASENAME=$(basename "$f")
+            REQ_THR=$(jq -r '.request_throughput // "N/A"' "$f")
+            MEAN_TTFT=$(jq -r '.mean_ttft_ms // "N/A"' "$f")
+            MEAN_TPOT=$(jq -r '.mean_tpot_ms // "N/A"' "$f")
+            OUT_THR=$(jq -r '.output_throughput // "N/A"' "$f")
+
+            ISL=$(echo "$BASENAME" | sed -nE 's/bench_isl([0-9]+)_.*/\1/p')
+            OSL=$(echo "$BASENAME" | sed -nE 's/.*_osl([0-9]+)_.*/\1/p')
+            CONC=$(echo "$BASENAME" | sed -nE 's/.*_conc([0-9]+)_.*/\1/p')
+
+            printf "| %s | %s | %s | %.1f | %.3f | %.4f | %.0f |\n" \
+              "$ISL" "$OSL" "$CONC" \
+              "$REQ_THR" "$MEAN_TTFT" "$MEAN_TPOT" "$OUT_THR" \
+              >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Stop C++ server
+        if: always()
+        run: |
+          [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
+
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== C++ Server Logs ==="
+          if [ -f cpp_server.log ]; then
+            cat cpp_server.log
+          else
+            echo "No cpp_server.log file found"
+          fi
+
+      - name: Upload benchmark report
+        if: always()
+        env:
+          JOB_ID: ${{ job.check_run_id }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: vllm-bench-report_${{ env.JOB_ID }}
+          path: tt-media-server/cpp_server/bench_results/
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-benchmark-server-logs
+          path: tt-media-server/cpp_server.log
+          retention-days: 7
+          if-no-files-found: warn
