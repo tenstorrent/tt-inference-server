@@ -35,7 +35,8 @@ LLMService::LLMService() : tokenizer_(&tt::utils::activeTokenizer()) {
 
   worker_manager_ = std::make_unique<tt::worker::WorkerManager>(numWorkers);
   reasoning_parser_ = std::make_unique<ReasoningParser>();
-  tool_call_parser_ = std::make_unique<ToolCallParser>();
+  tool_call_parser_ = tool_call::createToolCallParser(
+      tt::config::llmEngineConfig().runner_type);
 
   TT_LOG_INFO("[LLMService] Initialized (workers={})", numWorkers);
   queue_manager_ =
@@ -395,23 +396,19 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
 
   if (tool_call_parser_) {
     for (auto& choice : response.choices) {
+      TT_LOG_DEBUG("[ToolCallParser] Parsing text (length={}): {}",
+                   choice.text.length(),
+                   choice.text.substr(0, std::min<size_t>(500, choice.text.length())));
+
       auto tool_calls = tool_call_parser_->parseComplete(choice.text);
       if (tool_calls.has_value() && !tool_calls->empty()) {
-        choice.tool_calls = std::move(tool_calls);
-
-        size_t calls_begin = choice.text.find(ToolCallParser::TOOL_CALLS_BEGIN);
-        if (calls_begin != std::string::npos) {
-          size_t calls_end = choice.text.find(ToolCallParser::TOOL_CALLS_END, calls_begin);
-          if (calls_end != std::string::npos) {
-            calls_end += std::string(ToolCallParser::TOOL_CALLS_END).length();
-            std::string before = choice.text.substr(0, calls_begin);
-            std::string after = calls_end < choice.text.length()
-                                    ? choice.text.substr(calls_end)
-                                    : "";
-            choice.text = before + after;
-          }
+        TT_LOG_DEBUG("[ToolCallParser] Found {} tool calls", tool_calls->size());
+        for (const auto& tc : *tool_calls) {
+          TT_LOG_DEBUG("[ToolCallParser]   - id={}, type={}, name={}, args={}",
+                       tc.id, tc.type, tc.function.name, tc.function.arguments);
         }
-
+        choice.tool_calls = std::move(tool_calls);
+        choice.text = tool_call_parser_->stripMarkers(choice.text);
         choice.finish_reason = "tool_calls";
       }
     }

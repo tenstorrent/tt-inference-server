@@ -401,6 +401,9 @@ target_include_directories(lockfree_queue_test PRIVATE
 add_executable(test_tokenizer tests/test_tokenizer.cpp)
 target_link_libraries(test_tokenizer PRIVATE llm_runner_lib GTest::gtest_main)
 
+add_executable(find_tool_token_ids tests/find_tool_token_ids.cpp)
+target_link_libraries(find_tool_token_ids PRIVATE llm_runner_lib)
+
 add_executable(cancel_queue_test tests/cancel_queue_test.cpp)
 target_link_libraries(cancel_queue_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(cancel_queue_test PRIVATE
@@ -410,8 +413,19 @@ target_include_directories(cancel_queue_test PRIVATE
 
 add_executable(tool_calling_test tests/test_tool_calling.cpp)
 target_link_libraries(tool_calling_test PRIVATE llm_runner_lib GTest::gtest_main)
-target_include_directories(tool_calling_test PRIVATE 
+target_include_directories(tool_calling_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+add_executable(test_tool_call_parser
+    tests/test_tool_call_parser.cpp
+    src/services/tool_call/tool_call_parser.cpp
+    src/services/tool_call/mock_tool_call_parser.cpp
+    src/services/tool_call/deepseek_tool_call_parser.cpp
+)
+target_link_libraries(test_tool_call_parser PRIVATE GTest::gtest_main JsonCpp::JsonCpp)
+target_include_directories(test_tool_call_parser PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
@@ -436,6 +450,7 @@ gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
 gtest_discover_tests(cancel_queue_test)
+gtest_discover_tests(test_tool_call_parser)
 gtest_discover_tests(cancellation_test)
 gtest_discover_tests(structured_output_test)
 
@@ -511,6 +526,9 @@ set(SOURCES
     src/api/openapi.cpp
     src/services/llm_service.cpp
     src/services/reasoning_parser.cpp
+    src/services/tool_call/tool_call_parser.cpp
+    src/services/tool_call/mock_tool_call_parser.cpp
+    src/services/tool_call/deepseek_tool_call_parser.cpp
     src/services/session_manager.cpp
     src/domain/session.cpp
     src/worker/single_process_worker.cpp
