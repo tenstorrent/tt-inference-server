@@ -201,8 +201,11 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   }
   auto& seq = *it->second;
   seq.appendToken(output.token_id);
-  bool finished = output.is_complete || stopTokenIds.count(output.token_id);
-  ipc::pushToken(*resultQueue, seq.taskId, output.token_id, finished);
+  bool hitStop = !seq.getSamplingParams().ignore_eos &&
+                 stopTokenIds.count(output.token_id) > 0;
+  bool finished = output.is_complete || hitStop;
+  auto taskId = seq.taskId;
+  ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
 }
 
 inline void BlazeRunner::evictSlot(uint32_t slotId) {
