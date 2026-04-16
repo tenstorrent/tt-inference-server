@@ -400,6 +400,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Validate OpenAPI spec against registered routes
+        run: |
+          pip install openapi-spec-validator --quiet
+          cd cpp_server
+          python3 tools/validate_openapi.py
+
       - name: Install C++ build dependencies
         run: cpp_server/install_dependencies.sh
 
@@ -537,6 +543,42 @@ jobs:
             --result-filename "vllm-bench-mock.json" \
             2>&1 | tee bench_mock_output.txt
 
+      - name: Bench mock backend (structured output - json_object)
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --extra-body '{"response_format": {"type": "json_object"}}' \
+            --save-result \
+            --result-filename "vllm-bench-structured-output-json-object.json" \
+            2>&1 | tee bench_structured_output_json_object.txt
+
+      - name: Bench mock backend (structured output - json_schema)
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'deepseek-ai/DeepSeek-R1-0528' \
+            --backend openai-chat \
+            --endpoint /v1/chat/completions \
+            --dataset-name random \
+            --random-input-len 128 \
+            --random-output-len 128 \
+            --num-prompts 1000 \
+            --max-concurrency 64 \
+            --extra-body '{"response_format": {"type": "json_schema", "json_schema": {"name": "person", "strict": true, "schema": {"type": "object", "properties": {"name": {"type": "string"}, "age": {"type": "integer"}, "city": {"type": "string"}}, "required": ["name", "age", "city"], "additionalProperties": false}}}}' \
+            --save-result \
+            --result-filename "vllm-bench-structured-output-json-schema.json" \
+            2>&1 | tee bench_structured_output_json_schema.txt
+
       - name: Stop mock server
         if: always()
         run: |
@@ -590,11 +632,13 @@ jobs:
       - name: Check all benchmark thresholds
         run: |
           FAIL=0
+          ERRORS=""
 
           check_thresholds() {
             local LABEL="$1" FILE="$2" TPOT_LIMIT="$3" TTFT_LIMIT="$4"
             if [ ! -f "$FILE" ]; then
               echo "❌ [$LABEL] Result file not found: $FILE"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] Result file not found: $FILE"
               FAIL=1
               return
             fi
@@ -605,20 +649,23 @@ jobs:
             MEAN_TPOT_MS=$(jq -r '.mean_tpot_ms // 0' "$FILE")
             MEAN_TTFT_MS=$(jq -r '.mean_ttft_ms // 0' "$FILE")
 
-            if [ "$COMPLETED" -eq 0 ] && [ "$FAILED_REQ" -gt 0 ]; then
-              echo "❌ [$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
+            if [ "$FAILED_REQ" -gt 0 ]; then
+              echo "❌ [$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] $FAILED_REQ request(s) failed (completed=$COMPLETED, failed=$FAILED_REQ)"
               FAIL=1
             fi
 
             if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
               if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_LIMIT else 1)"; then
                 echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
+                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
                 FAIL=1
               fi
             fi
             if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
               if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_LIMIT else 1)"; then
                 echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
+                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
                 FAIL=1
               fi
             fi
@@ -631,7 +678,7 @@ jobs:
               echo "| **mean_tpot_ms** | $MEAN_TPOT_MS | ≤ ${TPOT_LIMIT}ms |"
               echo "| **mean_ttft_ms** | $MEAN_TTFT_MS | ≤ ${TTFT_LIMIT}ms |"
               echo "| **completed** | $COMPLETED | - |"
-              echo "| **failed** | $FAILED_REQ | - |"
+              echo "| **failed** | $FAILED_REQ | 0 |"
               echo ""
             } >> $GITHUB_STEP_SUMMARY
           }
@@ -639,10 +686,21 @@ jobs:
           check_thresholds "C++ Server vLLM Bench (mock)" \
             "vllm-bench-mock.json" 1 150
 
+          check_thresholds "C++ Server vLLM Bench (structured output - json_object)" \
+            "vllm-bench-structured-output-json-object.json" 16 100
+
+          check_thresholds "C++ Server vLLM Bench (structured output - json_schema)" \
+            "vllm-bench-structured-output-json-schema.json" 15 100
+
           check_thresholds "C++ Server vLLM Bench (mock_pipeline)" \
             "vllm-bench-mock-pipeline.json" 3 395
 
           echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
+          {
+            echo "BENCH_ERRORS<<BENCHERRORSEOF"
+            printf '%s\n' "$ERRORS"
+            echo "BENCHERRORSEOF"
+          } >> $GITHUB_ENV
 
       # ── Artifacts & logs ─────────────────────────────────────────────
       - name: Show server logs
@@ -661,6 +719,8 @@ jobs:
           name: cpp-server-bench-results
           path: |
             tt-media-server/vllm-bench-mock.json
+            tt-media-server/vllm-bench-structured-output-json-object.json
+            tt-media-server/vllm-bench-structured-output-json-schema.json
             tt-media-server/vllm-bench-mock-pipeline.json
           retention-days: 1
           if-no-files-found: warn
@@ -677,7 +737,13 @@ jobs:
           if-no-files-found: warn
 
       - name: Check benchmark result
-        run: exit ${{ env.BENCH_FAIL }}
+        if: always()
+        run: |
+          if [ "${BENCH_FAIL:-0}" != "1" ]; then
+            exit 0
+          fi
+          printf '%s\n' "$BENCH_ERRORS"
+          exit 1
 
   cpp-server-prefill-decode-split:
     needs: [detect-changes, cpp-build]
@@ -786,11 +852,13 @@ jobs:
       - name: Check benchmark thresholds
         run: |
           FAIL=0
+          ERRORS=""
 
           check_thresholds() {
             local LABEL="$1" FILE="$2" TPOT_LIMIT="$3" TTFT_LIMIT="$4"
             if [ ! -f "$FILE" ]; then
               echo "❌ [$LABEL] Result file not found: $FILE"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] Result file not found: $FILE"
               FAIL=1
               return
             fi
@@ -803,18 +871,21 @@ jobs:
 
             if [ "$COMPLETED" -eq 0 ] && [ "$FAILED_REQ" -gt 0 ]; then
               echo "❌ [$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
+              ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] All requests failed (completed=0, failed=$FAILED_REQ)"
               FAIL=1
             fi
 
             if [ -n "$MEAN_TPOT_MS" ] && [ "$MEAN_TPOT_MS" != "null" ]; then
               if ! python3 -c "exit(0 if float('$MEAN_TPOT_MS') <= $TPOT_LIMIT else 1)"; then
                 echo "❌ [$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
+                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_tpot_ms $MEAN_TPOT_MS exceeds threshold ${TPOT_LIMIT}ms"
                 FAIL=1
               fi
             fi
             if [ -n "$MEAN_TTFT_MS" ] && [ "$MEAN_TTFT_MS" != "null" ]; then
               if ! python3 -c "exit(0 if float('$MEAN_TTFT_MS') <= $TTFT_LIMIT else 1)"; then
                 echo "❌ [$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
+                ERRORS="${ERRORS:+$ERRORS$'\n'}[$LABEL] mean_ttft_ms $MEAN_TTFT_MS exceeds threshold ${TTFT_LIMIT}ms"
                 FAIL=1
               fi
             fi
@@ -836,6 +907,11 @@ jobs:
             "${{ env.RESULT_FILE }}" 10 650
 
           echo "BENCH_FAIL=$FAIL" >> $GITHUB_ENV
+          {
+            echo "BENCH_ERRORS<<BENCHERRORSEOF"
+            printf '%s\n' "$ERRORS"
+            echo "BENCHERRORSEOF"
+          } >> $GITHUB_ENV
 
       - name: Stop servers
         if: always()
@@ -881,7 +957,13 @@ jobs:
           if-no-files-found: warn
 
       - name: Check benchmark result
-        run: exit ${{ env.BENCH_FAIL }}
+        if: always()
+        run: |
+          if [ "${BENCH_FAIL:-0}" != "1" ]; then
+            exit 0
+          fi
+          printf '%s\n' "$BENCH_ERRORS"
+          exit 1
 
   forge-runner-changes:
     name: Detect Forge Runner Changes
@@ -907,7 +989,7 @@ jobs:
   forge-runner-cpu-tests:
     needs: forge-runner-changes
     if: ${{ needs.forge-runner-changes.outputs.should-run == 'true' }}
-    name: Forge Runner CPU Tests (Python 3.11)
+    name: Forge Runner CPU Tests (Python 3.12)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -930,10 +1012,10 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           # Dissable pip caching for now, it take longer than install sometimes
           # cache: 'pip'
           # cache-dependency-path: |
@@ -943,8 +1025,8 @@ jobs:
       - name: Create venv, install dependencies
         shell: bash
         run: |
-          python3.11 -m venv venv-3.11
-          source venv-3.11/bin/activate
+          python3.12 -m venv venv-3.12
+          source venv-3.12/bin/activate
           export VLLM_TARGET_DEVICE="empty"
           pip install --upgrade pip
           pip install -r requirements.txt
@@ -954,7 +1036,7 @@ jobs:
       - name: Run CPU-only tests
         shell: bash
         run: |
-          source venv-3.11/bin/activate
+          source venv-3.12/bin/activate
           pytest tt_model_runners/forge_runners/test_forge_models.py -k "cpu" -v
 
   test-coverage:

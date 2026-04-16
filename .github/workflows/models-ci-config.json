@@ -122,6 +122,16 @@
         }
       }
     },
+    "Mistral-Small-3.1-24B-Instruct-2503": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "T3K"
+          ]
+        }
+      }
+    },
     "QwQ-32B": {
       "inference_engine": "vLLM",
       "ci": {
@@ -282,6 +292,19 @@
         "release": {
           "devices": [
             "GALAXY"
+          ]
+        }
+      }
+    },
+    "bge-m3": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "GALAXY",
+            "N150",
+            "N300",
+            "T3K"
           ]
         }
       }

@@ -84,6 +84,12 @@ enum class ModelRunnerType {
   PREFILL
 };
 
+enum class ResponseFormatType : uint8_t {
+  TEXT = 0,
+  JSON_OBJECT = 1,
+  JSON_SCHEMA = 2
+};
+
 enum class SchedulingPolicy {
   PREFILL_FIRST,
   MAX_OCCUPANCY,

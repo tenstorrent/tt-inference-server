@@ -78,6 +78,15 @@ ServerMetrics::ServerMetrics() {
                          .Add({});
   max_queue_size_->Set(static_cast<double>(tt::config::maxQueueSize()));
 
+  decoding_requests_ =
+      &prometheus::BuildGauge()
+           .Name("tt_num_decoding_requests")
+           .Help(
+               "Number of requests actively generating tokens (excludes "
+               "queued and prefilling requests)")
+           .Register(*registry_)
+           .Add({});
+
   // ----- latency summaries (exact quantiles, 60 s sliding window) ----------
   e2e_latency_seconds_ =
       &prometheus::BuildSummary()
@@ -138,24 +147,15 @@ void ServerMetrics::onRequestSubmitted(uint32_t taskId, int promptTokens) {
 }
 
 void ServerMetrics::onToken(uint32_t taskId) {
-  if (!tryPushEvent(
-          EventFirstToken{taskId, std::chrono::steady_clock::now()})) {
-    TT_LOG_WARN("[ServerMetrics] event queue full, dropping FirstToken");
-  }
-}
-
-void ServerMetrics::onITLSample(uint32_t taskId, double itlSeconds) {
-  if (!tryPushEvent(EventITLSample{taskId, itlSeconds})) {
-    TT_LOG_WARN("[ServerMetrics] event queue full, dropping ITLSample");
+  if (!tryPushEvent(EventToken{taskId, std::chrono::steady_clock::now()})) {
+    TT_LOG_WARN("[ServerMetrics] event queue full, dropping Token");
   }
 }
 
 void ServerMetrics::onRequestCompleted(uint32_t taskId,
-                                       const std::string& finishReason,
-                                       int generationTokens) {
-  if (!tryPushEvent(EventRequestCompleted{taskId,
-                                          std::chrono::steady_clock::now(),
-                                          finishReason, generationTokens})) {
+                                       const std::string& finishReason) {
+  if (!tryPushEvent(EventRequestCompleted{
+          taskId, std::chrono::steady_clock::now(), finishReason})) {
     TT_LOG_WARN("[ServerMetrics] event queue full, dropping RequestCompleted");
   }
 }
@@ -213,10 +213,8 @@ void ServerMetrics::processEvent(const MetricsEvent& event) {
         using T = std::decay_t<decltype(e)>;
         if constexpr (std::is_same_v<T, EventRequestSubmitted>)
           handleRequestSubmitted(e);
-        else if constexpr (std::is_same_v<T, EventFirstToken>)
-          handleFirstToken(e);
-        else if constexpr (std::is_same_v<T, EventITLSample>)
-          handleITLSample(e);
+        else if constexpr (std::is_same_v<T, EventToken>)
+          handleToken(e);
         else if constexpr (std::is_same_v<T, EventRequestCompleted>)
           handleRequestCompleted(e);
       },
@@ -224,28 +222,29 @@ void ServerMetrics::processEvent(const MetricsEvent& event) {
 }
 
 void ServerMetrics::handleRequestSubmitted(const EventRequestSubmitted& e) {
-  contexts_.emplace(e.task_id,
-                    RequestContext{.start_time = e.time,
-                                   .first_token_time = std::nullopt,
-                                   .prompt_tokens = e.prompt_tokens});
+  contexts_.emplace(e.task_id, RequestContext{.start_time = e.time,
+                                              .prev_token_time = {},
+                                              .prompt_tokens = e.prompt_tokens,
+                                              .generation_tokens = 0});
 }
 
-void ServerMetrics::handleFirstToken(const EventFirstToken& e) {
+void ServerMetrics::handleToken(const EventToken& e) {
   auto it = contexts_.find(e.task_id);
   if (it == contexts_.end()) return;
   auto& ctx = it->second;
 
-  if (!ctx.first_token_time.has_value()) {
-    ctx.first_token_time = e.time;
+  if (ctx.generation_tokens == 0) {
     double ttft =
         std::chrono::duration<double>(e.time - ctx.start_time).count();
     ttft_seconds_->Observe(ttft);
+    decoding_requests_->Increment();
+  } else {
+    double itl =
+        std::chrono::duration<double>(e.time - ctx.prev_token_time).count();
+    inter_token_latency_seconds_->Observe(itl);
   }
-}
-
-void ServerMetrics::handleITLSample(const EventITLSample& e) {
-  if (contexts_.find(e.task_id) == contexts_.end()) return;
-  inter_token_latency_seconds_->Observe(e.itl_seconds);
+  ctx.prev_token_time = e.time;
+  ctx.generation_tokens++;
 }
 
 void ServerMetrics::handleRequestCompleted(const EventRequestCompleted& e) {
@@ -257,13 +256,16 @@ void ServerMetrics::handleRequestCompleted(const EventRequestCompleted& e) {
   e2e_latency_seconds_->Observe(
       std::chrono::duration<double>(e.time - ctx.start_time).count());
 
+  if (ctx.generation_tokens > 0) decoding_requests_->Decrement();
+
   if (ctx.prompt_tokens > 0) {
     prompt_tokens_total_->Increment(ctx.prompt_tokens);
     request_prompt_tokens_->Observe(static_cast<double>(ctx.prompt_tokens));
   }
-  if (e.generation_tokens > 0)
-    generation_tokens_total_->Increment(e.generation_tokens);
-  request_generation_tokens_->Observe(static_cast<double>(e.generation_tokens));
+  if (ctx.generation_tokens > 0)
+    generation_tokens_total_->Increment(ctx.generation_tokens);
+  request_generation_tokens_->Observe(
+      static_cast<double>(ctx.generation_tokens));
 
   request_success_family_
       ->Add({{"model_name", model_name_}, {"finished_reason", e.finish_reason}})
