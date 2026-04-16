@@ -2,6 +2,7 @@
 
 #include <unistd.h>
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -37,7 +38,7 @@ class SingleProcessWorker {
 
   pid_t pid{-1};
   bool is_ready{false};
-  bool is_alive{true};
+  std::atomic<bool> is_alive{true};
   int worker_id{-1};
   WorkerConfig cfg;
 
