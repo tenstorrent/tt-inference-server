@@ -271,17 +271,17 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
     src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
     src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
-    src/runners/sp_prefill_runner/sp_prefill_runner.cpp
-    src/runners/sp_prefill_runner/i_sp_prefill_model_runner.cpp
-    src/runners/sp_prefill_runner/sp_prefill_model_runner.cpp
+    src/runners/sp_prefill_runner/blaze_prefill_runner.cpp
+    src/runners/sp_prefill_runner/i_blaze_prefill_model_runner.cpp
+    src/runners/sp_prefill_runner/blaze_prefill_model_runner.cpp
     src/services/guided_decoder_manager.cpp
 )
 
 # Add pipeline_manager-dependent sources only when ENABLE_BLAZE is ON
 if(ENABLE_BLAZE)
     list(APPEND LLM_RUNNER_LIB_SOURCES
-        src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
-        src/services/memory_services/sp_pipeline_memory_manager.cpp
+        src/runners/sp_pipeline_runner/blaze_runner.cpp
+        src/services/memory_services/blaze_memory_manager.cpp
     )
     message(STATUS "llm_runner_lib: including pipeline_manager-dependent sources (ENABLE_BLAZE=ON)")
 endif()

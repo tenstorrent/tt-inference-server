@@ -5,10 +5,10 @@
 
 #include "runners/embedding_runner.hpp"
 #include "runners/llm_runner.hpp"
-#include "runners/sp_prefill_runner/sp_prefill_runner.hpp"
+#include "runners/sp_prefill_runner/blaze_prefill_runner.hpp"
 #include "sp_pipeline_runner/sp_pipeline_runner_demo.hpp"
 #ifdef ENABLE_BLAZE
-#include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
+#include "runners/sp_pipeline_runner/blaze_runner.hpp"
 #endif
 #include "utils/logger.hpp"
 
@@ -37,17 +37,16 @@ std::unique_ptr<runners::IRunner> createRunner(
 
 #ifdef ENABLE_BLAZE
       if (cfg.runner_type == config::ModelRunnerType::PIPELINE_MANAGER) {
-        TT_LOG_INFO(
-            "[RunnerFactory] Creating SP Pipeline runner (pipeline_manager)");
-        return std::make_unique<runners::SpPipelineRunner>(cfg, resultQueue,
-                                                           taskQueue);
+        TT_LOG_INFO("[RunnerFactory] Creating Blaze runner (pipeline_manager)");
+        return std::make_unique<runners::BlazeRunner>(cfg, resultQueue,
+                                                      taskQueue);
       }
 #endif
 
       if (cfg.runner_type == config::ModelRunnerType::PREFILL) {
-        TT_LOG_INFO("[RunnerFactory] Creating SP Prefill runner");
-        return std::make_unique<runners::SpPrefillRunner>(cfg, resultQueue,
-                                                          taskQueue);
+        TT_LOG_INFO("[RunnerFactory] Creating Blaze Prefill runner");
+        return std::make_unique<runners::BlazePrefillRunner>(cfg, resultQueue,
+                                                             taskQueue);
       }
 
       TT_LOG_INFO("[RunnerFactory] Creating LLM runner (mock)");

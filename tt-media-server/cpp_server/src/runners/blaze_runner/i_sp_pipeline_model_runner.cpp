@@ -21,7 +21,7 @@ std::unique_ptr<ISpPipelineModelRunner> makeModelRunner(
       return std::make_unique<MockSpPipelineModelRunner>(std::move(callback));
     default:
       throw std::invalid_argument(
-          "Invalid model runner type for SpPipelineRunner");
+          "Invalid model runner type for BlazeRunner");
   }
 }
 

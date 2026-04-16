@@ -1,24 +1,24 @@
-#include "services/memory_services/sp_pipeline_memory_manager.hpp"
+#include "services/memory_services/blaze_memory_manager.hpp"
 
-#include "runners/sp_pipeline_runner/sp_pipeline_utils.hpp"
+#include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
-namespace utils = tt::runners::sp_pipeline_utils;
+namespace utils = tt::runners::blaze_utils;
 
-SpPipelineMemoryManager::SpPipelineMemoryManager(
+BlazeMemoryManager::BlazeMemoryManager(
     tt_blaze::pipeline_manager::PipelineManager& pipelineManager,
     onEvictCb onEvict)
     : pipelineManager(pipelineManager), onEvict(onEvict) {}
 
-void SpPipelineMemoryManager::handleRequest(
+void BlazeMemoryManager::handleRequest(
     const domain::ManageMemoryTask& request) {
   switch (request.action) {
     case domain::MemoryManagementAction::ALLOCATE: {
       auto requestId = nextRequestID++;
       allocating[requestId] = request.taskId;
       TT_LOG_DEBUG(
-          "[SpPipelineMemoryManager] ALLOCATE: taskId={}, assigned "
+          "[BlazeMemoryManager] ALLOCATE: taskId={}, assigned "
           "requestId={}, pending allocations={}",
           request.taskId, requestId, allocating.size());
       pipelineManager.push_request(utils::makeAllocateRequest(requestId));
@@ -27,7 +27,7 @@ void SpPipelineMemoryManager::handleRequest(
     case domain::MemoryManagementAction::DEALLOCATE: {
       for (auto slotId : request.slotIds) {
         TT_LOG_DEBUG(
-            "[SpPipelineMemoryManager] DEALLOCATE: taskId={}, cancelling "
+            "[BlazeMemoryManager] DEALLOCATE: taskId={}, cancelling "
             "slotId={}, then evicting",
             request.taskId, slotId);
         pipelineManager.push_request(utils::makeCancelRequest(slotId));
@@ -44,12 +44,12 @@ void SpPipelineMemoryManager::handleRequest(
   }
 }
 
-void SpPipelineMemoryManager::handleResponse(uint32_t requestId,
+void BlazeMemoryManager::handleResponse(uint32_t requestId,
                                              uint32_t slotId) {
   auto it = allocating.find(requestId);
   if (it == allocating.end()) {
     TT_LOG_WARN(
-        "[SpPipelineMemoryManager] handleResponse: unknown requestId={}, "
+        "[BlazeMemoryManager] handleResponse: unknown requestId={}, "
         "slotId={}",
         requestId, slotId);
     return;
@@ -57,14 +57,14 @@ void SpPipelineMemoryManager::handleResponse(uint32_t requestId,
   auto taskId = it->second;
   allocating.erase(it);
   TT_LOG_DEBUG(
-      "[SpPipelineMemoryManager] handleResponse: requestId={}, taskId={}, "
+      "[BlazeMemoryManager] handleResponse: requestId={}, taskId={}, "
       "slotId={}, remaining pending={}",
       requestId, taskId, slotId, allocating.size());
   domain::ManageMemoryResult result;
   result.taskId = taskId;
   if (slotId == tt_blaze::pipeline_manager::INVALID_SLOT) {
     TT_LOG_DEBUG(
-        "[SpPipelineMemoryManager] handleResponse: FAILURE (INVALID_SLOT) "
+        "[BlazeMemoryManager] handleResponse: FAILURE (INVALID_SLOT) "
         "for taskId={}",
         taskId);
     result.status = domain::ManageMemoryStatus::FAILURE;
@@ -73,7 +73,7 @@ void SpPipelineMemoryManager::handleResponse(uint32_t requestId,
     return;
   }
   TT_LOG_DEBUG(
-      "[SpPipelineMemoryManager] handleResponse: SUCCESS taskId={}, "
+      "[BlazeMemoryManager] handleResponse: SUCCESS taskId={}, "
       "slotId={}",
       taskId, slotId);
   result.status = domain::ManageMemoryStatus::SUCCESS;

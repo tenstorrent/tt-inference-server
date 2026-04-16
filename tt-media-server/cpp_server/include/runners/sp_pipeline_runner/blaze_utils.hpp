@@ -7,7 +7,7 @@
 #include "llm_runner/sequence.hpp"
 #include "pipeline_manager/pipeline_manager_types.hpp"
 
-namespace tt::runners::sp_pipeline_utils {
+namespace tt::runners::blaze_utils {
 
 namespace pm = tt_blaze::pipeline_manager;
 
@@ -57,4 +57,4 @@ inline pm::ISRequest makeContinueRequest(
   return req;
 }
 
-}  // namespace tt::runners::sp_pipeline_utils
+}  // namespace tt::runners::blaze_utils

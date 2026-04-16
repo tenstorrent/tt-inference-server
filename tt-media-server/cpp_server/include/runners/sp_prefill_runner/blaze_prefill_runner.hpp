@@ -11,27 +11,27 @@
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
-#include "runners/sp_prefill_runner/i_sp_prefill_model_runner.hpp"
+#include "runners/sp_prefill_runner/i_blaze_prefill_model_runner.hpp"
 
 namespace tt::runners {
 
-class SpPrefillRunner : public IRunner {
+class BlazePrefillRunner : public IRunner {
  public:
-  SpPrefillRunner(const tt::config::LLMConfig& config,
-                  ipc::IResultQueue* resultQueue,
-                  tt::runners::llm_engine::ITaskQueue* taskQueue);
-  ~SpPrefillRunner() override;
+  BlazePrefillRunner(const tt::config::LLMConfig& config,
+                     ipc::IResultQueue* resultQueue,
+                     tt::runners::llm_engine::ITaskQueue* taskQueue);
+  ~BlazePrefillRunner() override;
 
   void run() override;
   void stop() override;
   bool warmup() override;
-  const char* runnerType() const override { return "SpPrefillRunner"; }
+  const char* runnerType() const override { return "BlazePrefillRunner"; }
 
  private:
   tt::config::LLMConfig config;
   ipc::IResultQueue* resultQueue;
   tt::runners::llm_engine::ITaskQueue* taskQueue;
-  std::unique_ptr<sp_prefill::ISpPrefillModelRunner> modelRunner;
+  std::unique_ptr<blaze_prefill::IBlazePrefillModelRunner> modelRunner;
   std::atomic<bool> stopped{false};
 };
 
