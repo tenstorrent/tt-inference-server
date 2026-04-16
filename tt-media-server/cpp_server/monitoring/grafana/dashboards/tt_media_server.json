@@ -123,6 +123,66 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Cumulative prompt tokens processed since server start. Useful for gauging total work done before a restart or crash.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          },
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 3, "w": 6, "x": 12, "y": 1 },
+      "id": 6,
+      "options": { "colorMode": "background_solid", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "tt_prompt_tokens_total",
+          "legendFormat": "Prompt Tokens"
+        }
+      ],
+      "title": "Total Prompt Tokens",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Cumulative generation tokens produced since server start. Useful for gauging total work done before a restart or crash.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "purple", "value": null }
+            ]
+          },
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 3, "w": 6, "x": 18, "y": 1 },
+      "id": 7,
+      "options": { "colorMode": "background_solid", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "tt_generation_tokens_total",
+          "legendFormat": "Generation Tokens"
+        }
+      ],
+      "title": "Total Generation Tokens",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "description": "Fraction of the request queue capacity currently in use (requests_in_flight / max_queue_size)",
       "fieldConfig": {
         "defaults": {
