@@ -15,7 +15,7 @@
 #include "domain/json_field.hpp"
 #include "domain/llm_request.hpp"
 #include "domain/response_format.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::domain {
 
@@ -216,7 +216,8 @@ struct ChatCompletionRequest : BaseRequest {
   LLMRequest toLLMRequest() const {
     LLMRequest out(task_id);
     out.model = model;
-    out.prompt = tt::utils::activeTokenizer().applyChatTemplate(messages);
+    out.prompt =
+        tt::utils::tokenizers::activeTokenizer().applyChatTemplate(messages);
 
     out.echo = echo;
     out.max_tokens = max_tokens;
