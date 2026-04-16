@@ -316,7 +316,6 @@ def build_eval_command(
     output_path,
     service_port,
     runtime_config=None,
-    deploy_url: str = "http://127.0.0.1",
 ) -> List[str]:
     """
     Build the command for lm_eval by templating command-line arguments using properties
@@ -325,9 +324,9 @@ def build_eval_command(
     # Audio models use tt-media-server which has endpoints at /audio (not /v1/audio)
     # Other models use vLLM which has endpoints at /v1
     if task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
-        base_url = f"{deploy_url}:{service_port}"
+        base_url = f"http://127.0.0.1:{service_port}"
     else:
-        base_url = f"{deploy_url}:{service_port}/v1"
+        base_url = f"http://127.0.0.1:{service_port}/v1"
     eval_class = task.eval_class
     task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
     if task.use_chat_api:
@@ -583,7 +582,6 @@ def main():
                 args.output_path,
                 runtime_config.service_port,
                 runtime_config=runtime_config,
-                deploy_url=env_config.deploy_url,
             )
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)
@@ -638,7 +636,6 @@ def main():
                 args.output_path,
                 runtime_config.service_port,
                 runtime_config=runtime_config,
-                deploy_url=env_config.deploy_url,
             )
             return_code = run_command(command=cmd, logger=logger, env=env_vars)
             return_codes.append(return_code)
