@@ -25,10 +25,6 @@
 
 namespace tt::domain {
 
-/**
- * OpenAI-compatible Responses API request body plus vLLM extensions.
- * Mirrors vllm ResponsesRequest (protocol.py).
- */
 struct ResponsesRequest : BaseRequest {
   using BaseRequest::BaseRequest;
 
