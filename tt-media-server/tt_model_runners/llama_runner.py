@@ -132,12 +132,32 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
 
     @staticmethod
     def _sample_from_logits(logits_1d, seq: StepSequence, torch):
-        """Sample a single token from logits, applying allowed_token_ids mask and top-k filtering."""
+        """Host-side sampling with grammar mask, penalties, top-k/top-p filtering.
+
+        Temporary fallback until bitmask-based constrained decoding is supported
+        on device.  Mirrors the parameters that _build_sampling_params passes to
+        the on-device sampler so behaviour is consistent.
+        """
         if seq.allowed_token_ids is not None:
             mask = torch.full_like(logits_1d, float("-inf"))
             allowed = torch.tensor(seq.allowed_token_ids, dtype=torch.long)
             mask[allowed] = 0.0
             logits_1d = logits_1d + mask
+
+        rep_pen = seq.repetition_penalty if seq.repetition_penalty is not None else 1.0
+        if rep_pen != 1.0:
+            positive = logits_1d > 0
+            logits_1d = torch.where(positive, logits_1d / rep_pen, logits_1d * rep_pen)
+
+        pres_pen = seq.presence_penalty
+        freq_pen = seq.frequency_penalty
+        if pres_pen != 0.0 or freq_pen != 0.0:
+            token_counts = torch.zeros_like(logits_1d)
+            for tid in seq.token_ids:
+                if 0 <= tid < token_counts.size(0):
+                    token_counts[tid] += 1
+            appeared = (token_counts > 0).float()
+            logits_1d = logits_1d - freq_pen * token_counts - pres_pen * appeared
 
         temp = seq.temperature
         if temp == 0 or temp is None:
@@ -147,8 +167,27 @@ class Llama31_8BRunner(BaseMetalDeviceRunner):
 
         k = seq.top_k if seq.top_k is not None and seq.top_k > 0 else 10
         top_vals, top_idx = torch.topk(scaled, min(k, scaled.size(0)))
-        probs = torch.softmax(top_vals, dim=-1)
-        chosen = top_idx[torch.multinomial(probs, 1)]
+
+        top_p = seq.top_p if seq.top_p is not None else 1.0
+        if top_p < 1.0:
+            sorted_probs, sorted_order = torch.sort(
+                torch.softmax(top_vals, dim=-1), descending=True
+            )
+            cumulative = torch.cumsum(sorted_probs, dim=-1)
+            cutoff = (cumulative - sorted_probs) >= top_p
+            sorted_probs[cutoff] = 0.0
+            sorted_probs /= sorted_probs.sum()
+            orig_idx = sorted_order[torch.multinomial(sorted_probs, 1)]
+            chosen = top_idx[orig_idx]
+        else:
+            probs = torch.softmax(top_vals, dim=-1)
+            if seq.seed is not None:
+                g = torch.Generator()
+                g.manual_seed(seq.seed)
+                chosen = top_idx[torch.multinomial(probs, 1, generator=g)]
+            else:
+                chosen = top_idx[torch.multinomial(probs, 1)]
+
         return int(chosen.item())
 
     def _build_batch_sampling_params(
