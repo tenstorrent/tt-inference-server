@@ -491,12 +491,7 @@ jobs:
           path: tt-media-server/cpp_server
 
       - name: Make binaries executable
-        run: |
-          chmod +x cpp_server/build/tt_media_server_cpp
-          chmod +x cpp_server/build/xgrammar_benchmark
-
-      - name: Run xgrammar microbenchmark
-        run: cpp_server/build/xgrammar_benchmark 2>&1 | tee xgrammar_benchmark_output.txt
+        run: chmod +x cpp_server/build/tt_media_server_cpp
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
