@@ -17,7 +17,7 @@ BlazePrefillModelRunner::~BlazePrefillModelRunner() { exit(); }
 
 std::optional<tt::runners::llm_engine::TokenResult>
 BlazePrefillModelRunner::forward(uint32_t taskId,
-                              const std::vector<int64_t>& tokenIds) {
+                                 const std::vector<int64_t>& tokenIds) {
   TT_LOG_DEBUG(
       "BlazePrefillModelRunner: Writing into shared memory input task_id={}, "
       "token count={}",

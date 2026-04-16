@@ -19,15 +19,14 @@
 namespace tt::runners {
 namespace utils = blaze_utils;
 
-BlazeRunner::BlazeRunner(
-    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
-    tt::runners::llm_engine::ITaskQueue* taskQueue)
+BlazeRunner::BlazeRunner(const config::LLMConfig& config,
+                         ipc::IResultQueue* resultQueue,
+                         tt::runners::llm_engine::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
       taskQueue(taskQueue) {
-  TT_LOG_INFO(
-      "BlazeRunner: Constructing PipelineManager with SocketConfig...");
+  TT_LOG_INFO("BlazeRunner: Constructing PipelineManager with SocketConfig...");
   pm::SocketConfig socketConfig{
       .h2d_socket_id = tt::config::h2dSocketId(),
       .d2h_socket_id = tt::config::d2hSocketId(),
@@ -38,8 +37,7 @@ BlazeRunner::BlazeRunner(
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
       std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
-  TT_LOG_INFO(
-      "BlazeRunner: PipelineManager constructed, calling start()...");
+  TT_LOG_INFO("BlazeRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
   TT_LOG_INFO(
       "BlazeRunner: PipelineManager started, creating MemoryManager...");
@@ -119,23 +117,20 @@ bool BlazeRunner::warmup() {
   return true;
 }
 
-void BlazeRunner::stop() {
-  stopped.store(true, std::memory_order_relaxed);
-}
+void BlazeRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
 
 void BlazeRunner::step() {
   auto memoryRequest = getMemoryRequest();
   if (memoryRequest.has_value()) {
-    TT_LOG_DEBUG(
-        "[BlazeRunner] step: got memoryRequest taskId={}, action={}",
-        memoryRequest->taskId, static_cast<int>(memoryRequest->action));
+    TT_LOG_DEBUG("[BlazeRunner] step: got memoryRequest taskId={}, action={}",
+                 memoryRequest->taskId,
+                 static_cast<int>(memoryRequest->action));
     handleMemoryRequest(*memoryRequest);
   }
   auto response = getResponse();
   if (response.has_value()) {
-    TT_LOG_DEBUG(
-        "[BlazeRunner] step: got PMResponse request_id={}, slot_id={}",
-        response->request_id, response->slot_id);
+    TT_LOG_DEBUG("[BlazeRunner] step: got PMResponse request_id={}, slot_id={}",
+                 response->request_id, response->slot_id);
     handleResponse(*response);
   }
   auto output = getOutput();
@@ -169,8 +164,7 @@ std::optional<pm::OutputMessage> BlazeRunner::getOutput() {
   return std::nullopt;
 }
 
-std::unique_ptr<tt::runners::llm_engine::Sequence>
-BlazeRunner::getRequest() {
+std::unique_ptr<tt::runners::llm_engine::Sequence> BlazeRunner::getRequest() {
   auto req = taskQueue->tryPop();
   if (!req) return nullptr;
   return req;
@@ -211,9 +205,8 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
 inline void BlazeRunner::evictSlot(uint32_t slotId) {
   auto it = running.find(slotId);
   if (it != running.end()) {
-    TT_LOG_DEBUG(
-        "[BlazeRunner] evictSlot: slotId={}, was running taskId={}",
-        slotId, it->second->taskId);
+    TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={}, was running taskId={}",
+                 slotId, it->second->taskId);
   } else {
     TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={} (not in running map)",
                  slotId);
@@ -244,16 +237,14 @@ void BlazeRunner::handleRequest(
           request->taskId);
     }
 
-    TT_LOG_DEBUG(
-        "[BlazeRunner] handleRequest: SUBMIT taskId={}, slotId={}",
-        request->taskId, slotId);
+    TT_LOG_DEBUG("[BlazeRunner] handleRequest: SUBMIT taskId={}, slotId={}",
+                 request->taskId, slotId);
     pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
     running[slotId] = std::move(request);
     return;
   } else {
-    TT_LOG_DEBUG(
-        "[BlazeRunner] handleRequest: CONTINUE taskId={}, slotId={}",
-        request->taskId, slotId);
+    TT_LOG_DEBUG("[BlazeRunner] handleRequest: CONTINUE taskId={}, slotId={}",
+                 request->taskId, slotId);
     pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
     running[slotId] = std::move(request);
   }

@@ -44,8 +44,7 @@ void BlazeMemoryManager::handleRequest(
   }
 }
 
-void BlazeMemoryManager::handleResponse(uint32_t requestId,
-                                             uint32_t slotId) {
+void BlazeMemoryManager::handleResponse(uint32_t requestId, uint32_t slotId) {
   auto it = allocating.find(requestId);
   if (it == allocating.end()) {
     TT_LOG_WARN(

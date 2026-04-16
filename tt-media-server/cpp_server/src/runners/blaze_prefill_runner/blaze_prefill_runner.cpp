@@ -8,9 +8,9 @@
 
 namespace tt::runners {
 
-BlazePrefillRunner::BlazePrefillRunner(const config::LLMConfig& config,
-                                 ipc::IResultQueue* resultQueue,
-                                 tt::runners::llm_engine::ITaskQueue* taskQueue)
+BlazePrefillRunner::BlazePrefillRunner(
+    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
+    tt::runners::llm_engine::ITaskQueue* taskQueue)
     : config(config), resultQueue(resultQueue), taskQueue(taskQueue) {
   modelRunner = blaze_prefill::makeModelRunner(config);
 }
@@ -48,7 +48,8 @@ void BlazePrefillRunner::run() {
                  result->taskId);
 
     if (result->isError) {
-      TT_LOG_WARN("[BlazePrefillRunner] Error token for task {}", result->taskId);
+      TT_LOG_WARN("[BlazePrefillRunner] Error token for task {}",
+                  result->taskId);
       ipc::pushErrorToken(*resultQueue, result->taskId);
     } else {
       TT_LOG_DEBUG(
