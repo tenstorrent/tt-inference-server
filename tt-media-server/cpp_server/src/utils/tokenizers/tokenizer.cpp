@@ -10,9 +10,9 @@
 #include <sstream>
 
 #include "config/settings.hpp"
+#include "utils/logger.hpp"
 #include "utils/tokenizers/deepseek_tokenizer.hpp"
 #include "utils/tokenizers/llama_tokenizer.hpp"
-#include "utils/logger.hpp"
 
 namespace tt::utils::tokenizers {
 

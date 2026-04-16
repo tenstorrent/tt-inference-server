@@ -136,13 +136,12 @@ struct MetricsSamplingState {
 };
 
 std::string decodeToken(
-    std::unordered_map<uint32_t,
-                       std::unique_ptr<
-                           tt::utils::tokenizers::Tokenizer::StreamDecoder>>&
+    std::unordered_map<
+        uint32_t,
+        std::unique_ptr<tt::utils::tokenizers::Tokenizer::StreamDecoder>>&
         decoders,
     const tt::utils::tokenizers::Tokenizer* tokenizer, uint32_t taskId,
-    uint32_t tokenId,
-    bool isFinal, bool skipSpecial) {
+    uint32_t tokenId, bool isFinal, bool skipSpecial) {
   auto& decoder = decoders[taskId];
   if (!decoder) decoder = tokenizer->createStreamDecoder(skipSpecial);
   std::string delta = decoder->step(static_cast<int>(tokenId));
@@ -233,9 +232,9 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     return;
   }
 
-  std::unordered_map<uint32_t,
-                     std::unique_ptr<
-                         tt::utils::tokenizers::Tokenizer::StreamDecoder>>
+  std::unordered_map<
+      uint32_t,
+      std::unique_ptr<tt::utils::tokenizers::Tokenizer::StreamDecoder>>
       streamDecoders;
   std::unordered_map<uint32_t, MetricsSamplingState> metricsSampling;
 
