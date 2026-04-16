@@ -11,6 +11,7 @@ from config.constants import ModelRunners, ModelServices, SupportedModels
 from config.settings import get_settings
 from domain.image_generate_request import ImageGenerateRequest
 from domain.video_generate_request import VideoGenerateRequest
+from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
@@ -57,8 +58,17 @@ class TTDiTRunner(BaseMetalDeviceRunner):
             reliability_mode = updated_device_params.pop(
                 "reliability_mode", ttnn.FabricReliabilityMode.STRICT_INIT
             )
+            fabric_router_config = updated_device_params.pop(
+                "fabric_router_config", ttnn.FabricRouterConfig()
+            )
             ttnn.set_fabric_config(
-                fabric_config, reliability_mode, None, fabric_tensix_config
+                fabric_config,
+                reliability_mode,
+                None,
+                fabric_tensix_config,
+                ttnn.FabricUDMMode.DISABLED,
+                ttnn.FabricManagerMode.DEFAULT,
+                fabric_router_config,
             )
             return fabric_config
         except Exception as e:
@@ -323,24 +333,30 @@ class TTWan22Runner(TTDiTRunner):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
         # TODO: Move parameterization outside of runner class.
-        if tuple(self.pipeline.mesh_device.shape) == (4, 8):
+        if (
+            self.pipeline.mesh_device.shape.mesh_size() >= 32
+        ):  # i.e GLX: ((4, 8), (4, 32))
             width = 1280
             height = 720
         else:
             width = 832
             height = 480
         num_frames = 81
-        frames = self.pipeline(
-            prompt=request.prompt,
-            negative_prompt=request.negative_prompt,
-            height=height,
-            width=width,
-            num_frames=num_frames,
-            num_inference_steps=request.num_inference_steps,
-            guidance_scale=3.0,
-            guidance_scale_2=4.0,
-            seed=int(request.seed or 0),
-        )
+        pipeline_args = {
+            "prompt": request.prompt,
+            "height": height,
+            "width": width,
+            "num_frames": num_frames,
+            "num_inference_steps": request.num_inference_steps,
+            "guidance_scale": 4.0,
+            "guidance_scale_2": 3.0,
+            "seed": int(request.seed or 0),
+            "traced": True,
+        }
+        # Only include negative_prompt if it's not empty. Otherwise, implicitly trigger the pipeline default.
+        if bool(request.negative_prompt):
+            pipeline_args["negative_prompt"] = request.negative_prompt
+        frames = self.pipeline(**pipeline_args)
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
@@ -348,9 +364,15 @@ class TTWan22Runner(TTDiTRunner):
         device_params = {
             "fabric_config": ttnn.FabricConfig.FABRIC_1D,
         }
-        if ttnn.device.is_blackhole():
-            device_params["fabric_tensix_config"] = ttnn.FabricTensixConfig.MUX
-            device_params["dispatch_core_axis"] = ttnn.device.DispatchCoreAxis.ROW
-        elif tuple(self.settings.device_mesh_shape) == (4, 8):
+
+        mesh_size = (
+            self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
+        )
+        if mesh_size >= 32:  # i.e GLX: ((4, 8), (4, 32))
             device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
+            if is_blackhole():
+                device_params["trace_region_size"] = 120000000
+                config = ttnn.FabricRouterConfig()
+                config.max_packet_payload_size_bytes = 8192
+                device_params["fabric_router_config"] = config
         return device_params

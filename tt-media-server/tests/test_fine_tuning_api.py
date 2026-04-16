@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from open_ai_api.fine_tuning import router
 from resolver.service_resolver import service_resolver
+from security.org_id_checker import get_org_id
 from security.api_key_checker import get_api_key
 
 
@@ -23,6 +24,7 @@ def client(mock_service):
     app.include_router(router)
     app.dependency_overrides[service_resolver] = lambda: mock_service
     app.dependency_overrides[get_api_key] = lambda: "test-key"
+    app.dependency_overrides[get_org_id] = lambda: "test-org"
     return TestClient(app)
 
 

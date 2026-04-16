@@ -21,17 +21,11 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
-from config.constants import (
-    ModelRunners,
-    TrainingOptimizers,
-    TRAINING_RUNNER_SUPPORTED_DEVICES,
-    SupportedModels,
+from config.constants import SupportedModels
+from tt_model_runners.forge_training_runners.torch_utils import (
+    OPTIMIZER_MAP,
+    resolve_dtype,
 )
-
-
-OPTIMIZER_MAP = {
-    TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
-}
 
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
@@ -72,21 +66,15 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         request = training_requests[0]
 
+        if request.device_type != self.settings.device:
+            raise ValueError(
+                f"Request device '{request.device_type}' does not match "
+                f"server device '{self.settings.device}'"
+            )
+
         log_handler = None
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
-
-        supported_device_types = {
-            dt.value
-            for dt in TRAINING_RUNNER_SUPPORTED_DEVICES[
-                ModelRunners.TRAINING_GEMMA_LORA
-            ]
-        }
-        if request.device_type not in supported_device_types:
-            raise ValueError(
-                f"Gemma Lora training requires a single chip device, "
-                f"got '{request.device_type}'. Supported: {sorted(supported_device_types)}"
-            )
 
         if request._start_event:
             request._start_event.set()
@@ -131,7 +119,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         self._peft_model = get_peft_model(self.hf_model, lora_config)
 
-        self._peft_model.to(eval(request.dtype))
+        self._peft_model.to(resolve_dtype(request.dtype))
         self._peft_model.to(self.device)
 
         # use torch compile
@@ -158,10 +146,34 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         global_step = 0
         running_loss = 0.0
-        self.compiled_model.train()
         try:
             for epoch in range(request.num_epochs):
                 for batch in tqdm(self.train_dataloader):
+                    # Validation at the start of each step cycle
+                    if global_step % request.val_steps_freq == 0:
+                        avg_val_loss = self.run_validation(
+                            cancel_event=request._cancel_event
+                        )
+                        if avg_val_loss is not None:
+                            self.logger.info(
+                                f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}",
+                                extra={"log_type": "eval", "step": global_step},
+                            )
+                            if request._training_metrics is not None:
+                                request._training_metrics.append(
+                                    {
+                                        "global_step": global_step,
+                                        "epoch": epoch,
+                                        "metric_name": "val_loss",
+                                        "value": round(avg_val_loss, 4),
+                                        "learning_rate": self.optimizer.param_groups[0][
+                                            "lr"
+                                        ],
+                                        "timestamp": time.time(),
+                                    }
+                                )
+                        self.compiled_model.train()
+
                     self.optimizer.zero_grad()
 
                     batch = {k: v.to(self.device) for k, v in batch.items()}
@@ -267,31 +279,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                                 f"Failed to save checkpoint at step {global_step}: {e}"
                             )
 
-                    # Validation
-                    if global_step % request.val_steps_freq == 0:
-                        avg_val_loss = self.run_validation(
-                            cancel_event=request._cancel_event
-                        )
-                        if avg_val_loss is not None:
-                            self.logger.info(
-                                f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}",
-                                extra={"log_type": "eval", "step": global_step},
-                            )
-                            if request._training_metrics is not None:
-                                request._training_metrics.append(
-                                    {
-                                        "global_step": global_step,
-                                        "epoch": epoch,
-                                        "metric_name": "val_loss",
-                                        "value": round(avg_val_loss, 4),
-                                        "learning_rate": self.optimizer.param_groups[0][
-                                            "lr"
-                                        ],
-                                        "timestamp": time.time(),
-                                    }
-                                )
-                        self.compiled_model.train()
-
                     # Check for cancellation at the end of each training step
                     if request._cancel_event and request._cancel_event.is_set():
                         self.logger.info(
@@ -302,7 +289,13 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
                     global_step += 1
 
-                # Break outer epoch loop if cancelled
+                    if request.max_steps > 0 and global_step >= request.max_steps:
+                        self.logger.info(
+                            f"Reached max_steps={request.max_steps} at step {global_step}, stopping training.",
+                            extra={"log_type": "info", "step": global_step},
+                        )
+                        break
+
                 if request._cancel_event and request._cancel_event.is_set():
                     break
 

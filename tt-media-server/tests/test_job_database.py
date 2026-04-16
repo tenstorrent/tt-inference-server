@@ -17,6 +17,20 @@ def db_with_job(db):
     return db
 
 
+class TestInsertJobOrgId:
+    def test_insert_job_with_org_id(self, db):
+        db.insert_job(
+            "job-org", "training", "model-1", {}, "in_progress", 1000, org_id="org-abc"
+        )
+        result = db.get_job_by_id("job-org")
+        assert result["org_id"] == "org-abc"
+
+    def test_insert_job_without_org_id(self, db):
+        db.insert_job("job-no-org", "video", "model-1", {}, "queued", 1000)
+        result = db.get_job_by_id("job-no-org")
+        assert result["org_id"] is None
+
+
 class TestInsertCheckpoint:
     def test_insert_and_retrieve_single_checkpoint(self, db_with_job):
         db_with_job.insert_checkpoint(

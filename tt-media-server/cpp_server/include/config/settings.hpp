@@ -109,6 +109,18 @@ size_t sessionEvictionCount();
  * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
 size_t maxTokensToPrefillOnDecode();
 
+/** Kafka broker addresses from KAFKA_BROKERS. Default:
+ * defaults::KAFKA_BROKERS. */
+std::string kafkaBrokers();
+
+/** Kafka topic name from KAFKA_OFFLOAD_TOPIC_NAME. Default:
+ * defaults::KAFKA_OFFLOAD_TOPIC_NAME. */
+std::string kafkaOffloadTopicName();
+
+/** Kafka consumer group ID from KAFKA_GROUP_ID. Default:
+ * defaults::KAFKA_GROUP_ID. */
+std::string kafkaGroupId();
+
 /** Max retries for session slot allocation from
  * SESSION_ALLOCATION_MAX_RETRIES. Default:
  * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
@@ -127,6 +139,29 @@ unsigned pmConnectTimeoutMs();
 /** Pipeline manager max users from PM_MAX_USERS. Default:
  * defaults::PM_MAX_USERS. */
 size_t pmMaxUsers();
+
+/** Task queue name from TT_TASK_QUEUE. Default: defaults::TT_TASK_QUEUE. */
+std::string ttTaskQueueName();
+
+/** Result queue name from TT_RESULT_QUEUE. Default: defaults::TT_RESULT_QUEUE.
+ */
+std::string ttResultQueueName();
+
+/** Cancel queue name from TT_CANCEL_QUEUE. Default: defaults::TT_CANCEL_QUEUE.
+ */
+std::string ttCancelQueueName();
+
+/** Memory request queue name from TT_MEMORY_REQUEST_QUEUE. Default:
+ * defaults::TT_MEMORY_REQUEST_QUEUE. */
+std::string ttMemoryRequestQueueName();
+
+/** Warmup signals queue name from TT_WARMUP_SIGNALS_QUEUE. Default:
+ * defaults::TT_WARMUP_SIGNALS_QUEUE. */
+std::string ttWarmupSignalsQueueName();
+
+/** Memory result queue name from TT_MEMORY_RESULT_QUEUE. Default:
+ * defaults::TT_MEMORY_RESULT_QUEUE. */
+std::string ttMemoryResultQueueName();
 
 /** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
  * defaults::USE_DEEPSEEK_MD_FORMAT. */

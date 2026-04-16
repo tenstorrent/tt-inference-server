@@ -52,6 +52,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.BGELargeEN_V1_5: lambda wid: __import__(
         "tt_model_runners.embedding_runner", fromlist=["BGELargeENRunner"]
     ).BGELargeENRunner(wid),
+    ModelRunners.BGEM3: lambda wid: __import__(
+        "tt_model_runners.embedding_runner", fromlist=["BGEM3Runner"]
+    ).BGEM3Runner(wid),
     ModelRunners.LLM_TEST: lambda wid: __import__(
         "tt_model_runners.llm_test_runner", fromlist=["LLMTestRunner"]
     ).LLMTestRunner(wid),
@@ -95,6 +98,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.forge_training_runners.training_gemma_lora_runner",
         fromlist=["TrainingGemmaLoraRunner"],
     ).TrainingGemmaLoraRunner(wid),
+    ModelRunners.LORA_SINGLE_CHIP: lambda wid: __import__(
+        "tt_model_runners.forge_runners.lora_single_chip_runner",
+        fromlist=["LoraSingleChipRunner"],
+    ).LoraSingleChipRunner(wid),
     ModelRunners.TRAINING_LLAMA_LORA: lambda wid: __import__(
         "tt_model_runners.forge_training_runners.training_llama_lora_runner",
         fromlist=["TrainingLlamaLoraRunner"],

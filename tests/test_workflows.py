@@ -3,8 +3,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-import json
 import importlib
+import json
 import os
 import tempfile
 from argparse import Namespace
@@ -778,22 +778,28 @@ class TestMainWorkflowIntegration:
 class TestSpecTestsBehavior:
     """Test spec-tests return codes for missing config and interruption."""
 
-    def test_spec_tests_missing_config_returns_one(self):
+    def test_spec_tests_no_matching_suites_returns_one(self):
         spec_tests_run = importlib.import_module("server_tests.run_spec_tests")
         args = Namespace(
             runtime_model_spec_json="runtime.json",
             model="missing-model",
             device="n150",
+            model_category=None,
+            markers=None,
+            match_all_markers=False,
+            exclude_markers=None,
+            test_name=None,
+            suite_category=None,
+            skip_prerequisites=False,
+            list_markers=False,
+            list_tests=False,
+            output_path=None,
+            hf_token="",
         )
 
-        with patch.object(spec_tests_run, "configure_logging"), patch.object(
+        with patch.object(spec_tests_run, "_configure_logging"), patch.object(
             spec_tests_run, "parse_args", return_value=args
-        ), patch.object(
-            spec_tests_run, "find_test_config_by_model_and_device", return_value=None
-        ), patch(
-            "builtins.open",
-            mock_open(read_data=json.dumps([{"weights": ["other"], "device": "n150"}])),
-        ):
+        ), patch.object(spec_tests_run, "_apply_filters", return_value=[]):
             result = spec_tests_run.main()
 
         assert result == 1
@@ -802,18 +808,36 @@ class TestSpecTestsBehavior:
         spec_tests_run = importlib.import_module("server_tests.run_spec_tests")
         args = Namespace(
             runtime_model_spec_json="runtime.json",
-            model="Llama-3.1-8B-Instruct",
+            model="stable-diffusion-xl-base-1.0",
             device="n150",
+            model_category=None,
+            markers=None,
+            match_all_markers=False,
+            exclude_markers=None,
+            test_name=None,
+            suite_category=None,
+            skip_prerequisites=False,
+            list_markers=False,
+            list_tests=False,
+            output_path=None,
+            hf_token="",
         )
-        test_cases_config = {
+
+        fake_suite = {
+            "id": "fake",
+            "weights": ["fake"],
+            "device": "n150",
             "test_cases": [
                 {
                     "name": "FakeCase",
                     "module": "fake_server_tests_module",
                     "test_config": {},
                     "targets": {},
+                    "markers": [],
+                    "description": "",
+                    "enabled": True,
                 }
-            ]
+            ],
         }
 
         class FakeCase:
@@ -824,12 +848,10 @@ class TestSpecTestsBehavior:
 
         fake_module = Namespace(FakeCase=FakeCase)
 
-        with patch.object(spec_tests_run, "configure_logging"), patch.object(
+        with patch.object(spec_tests_run, "_configure_logging"), patch.object(
             spec_tests_run, "parse_args", return_value=args
         ), patch.object(
-            spec_tests_run,
-            "find_test_config_by_model_and_device",
-            return_value=test_cases_config,
+            spec_tests_run, "_apply_filters", return_value=[fake_suite]
         ), patch.object(
             spec_tests_run.importlib, "import_module", return_value=fake_module
         ), patch.object(spec_tests_run, "ServerRunner") as mock_runner:

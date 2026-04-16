@@ -21,7 +21,7 @@ namespace tt::runners {
 namespace utils = sp_pipeline_utils;
 
 SpPipelineRunner::SpPipelineRunner(
-    const config::LLMConfig& config, ipc::TokenRingBuffer<65536>* resultQueue,
+    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
     tt::runners::llm_engine::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
@@ -34,6 +34,7 @@ SpPipelineRunner::SpPipelineRunner(
       .d2h_socket_id = tt::config::d2hSocketId(),
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
+  // pm::MockConfig mock = {};
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
@@ -201,7 +202,8 @@ void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
   }
   auto& seq = *it->second;
   seq.appendToken(output.token_id);
-  bool hitStop = !seq.getSamplingParams().ignore_eos && stopTokenIds.count(output.token_id) > 0;
+  bool hitStop = !seq.getSamplingParams().ignore_eos &&
+                 stopTokenIds.count(output.token_id) > 0;
   bool finished = output.is_complete || hitStop;
   auto taskId = seq.taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
@@ -221,40 +223,41 @@ inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
 }
 
 void SpPipelineRunner::handleRequest(
-  std::unique_ptr<tt::runners::llm_engine::Sequence> request) {
-auto slotId = request->getKVCacheSlot();
-assert(slotId != tt::domain::INVALID_SLOT_ID);
+    std::unique_ptr<tt::runners::llm_engine::Sequence> request) {
+  auto slotId = request->getKVCacheSlot();
+  assert(slotId != tt::domain::INVALID_SLOT_ID);
 
-bool isNew = !request->isContinuation();
+  bool isNew = !request->isContinuation();
 
-TT_LOG_DEBUG(
-    "[SpPipelineRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
-    "isContinuation={}, numPromptTokens={}, totalTokens={}, runningSlots={}",
-    request->taskId, slotId, isNew, request->isContinuation(),
-    request->getNumPromptTokens(), request->getTokenIds().size(),
-    running.size());
+  TT_LOG_DEBUG(
+      "[SpPipelineRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
+      "isContinuation={}, numPromptTokens={}, totalTokens={}, runningSlots={}",
+      request->taskId, slotId, isNew, request->isContinuation(),
+      request->getNumPromptTokens(), request->getTokenIds().size(),
+      running.size());
 
-if (isNew) {
-  if (request->getSamplingParams().hasGuidedDecoding()) {
-    TT_LOG_WARN(
-        "[SpPipelineRunner] task_id={} has response_format constraint but "
-        "SP Pipeline does not support per-step guided decoding yet. "
-        "Output may not conform to the requested schema.",
-        request->taskId);
+  if (isNew) {
+    if (request->getSamplingParams().hasGuidedDecoding()) {
+      TT_LOG_WARN(
+          "[SpPipelineRunner] task_id={} has response_format constraint but "
+          "SP Pipeline does not support per-step guided decoding yet. "
+          "Output may not conform to the requested schema.",
+          request->taskId);
+    }
+
+    TT_LOG_DEBUG(
+        "[SpPipelineRunner] handleRequest: SUBMIT taskId={}, slotId={}",
+        request->taskId, slotId);
+    pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
+    running[slotId] = std::move(request);
+    return;
+  } else {
+    TT_LOG_DEBUG(
+        "[SpPipelineRunner] handleRequest: CONTINUE taskId={}, slotId={}",
+        request->taskId, slotId);
+    pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
+    running[slotId] = std::move(request);
   }
-
-  TT_LOG_DEBUG(
-      "[SpPipelineRunner] handleRequest: SUBMIT taskId={}, slotId={}",
-      request->taskId, slotId);
-  pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
-  running[slotId] = std::move(request);
-  return;
-} else {
-  TT_LOG_DEBUG(
-      "[SpPipelineRunner] handleRequest: CONTINUE taskId={}, slotId={}",
-      request->taskId, slotId);
-  pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
-  running[slotId] = std::move(request);
 }
 
 }  // namespace tt::runners

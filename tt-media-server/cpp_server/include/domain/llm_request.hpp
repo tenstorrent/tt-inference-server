@@ -13,6 +13,7 @@
 
 #include "domain/base_request.hpp"
 #include "domain/json_field.hpp"
+#include "domain/response_format.hpp"
 
 namespace tt::domain {
 
@@ -113,9 +114,14 @@ struct LLMRequest : BaseRequest {
   int prompt_tokens_count = 0;
   bool fast_mode = false;
 
+  // Structured output constraint
+  std::optional<ResponseFormat> response_format;
+
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
+  bool continuation =
+      false;  // True if this request continues an existing session
 
   std::string toString() const {
     std::string promptInfo;

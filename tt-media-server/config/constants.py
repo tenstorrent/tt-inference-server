@@ -24,6 +24,7 @@ class SupportedModels(Enum):
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
+    BGE_M3 = "BAAI/bge-m3"
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
     LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B"
     LLAMA_3_2_3B_INSTRUCT = "meta-llama/Llama-3.2-3B-Instruct"
@@ -63,6 +64,7 @@ class ModelNames(Enum):
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
+    BGE_M3 = "bge-m3"
     LLAMA_3_2_3B = "Llama-3.2-3B"
     LLAMA_3_1_8B = "Llama-3.1-8B"
     LLAMA_3_2_3B_INSTRUCT = "Llama-3.2-3B-Instruct"
@@ -93,6 +95,7 @@ class ModelRunners(Enum):
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
     BGELargeEN_V1_5 = "bge_large_en_v1_5"
+    BGEM3 = "bge-m3"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
@@ -102,6 +105,7 @@ class ModelRunners(Enum):
     TT_XLA_VIT = "tt-xla-vit"
     TRAINING_LLAMA_LORA = "training-llama-lora"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
+    LORA_SINGLE_CHIP = "lora-single-chip"
     MOCK = "mock"
     SP_RUNNER = "sp_runner"
     LLM_TEST = "llm_test"
@@ -139,11 +143,13 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.VLLMForge_LLAMA_70B,
         ModelRunners.LLM_TEST,
         ModelRunners.LLAMA_RUNNER,
+        ModelRunners.LORA_SINGLE_CHIP,
     },
     ModelServices.EMBEDDING: {
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
         ModelRunners.QWEN_EMBEDDING_8B,
         ModelRunners.BGELargeEN_V1_5,
+        ModelRunners.BGEM3,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
@@ -201,6 +207,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
+    ModelRunners.BGEM3: {ModelNames.BGE_M3},
     ModelRunners.VLLMForge: {
         ModelNames.LLAMA_3_2_3B,
         ModelNames.LLAMA_3_2_3B_INSTRUCT,
@@ -211,6 +218,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TRAINING_LLAMA_LORA: {ModelNames.LLAMA_3_1_8B},
+    ModelRunners.LORA_SINGLE_CHIP: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TT_XLA_SDXL: {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
         ModelNames.STABLE_DIFFUSION_XL_512,
@@ -230,18 +238,6 @@ class DeviceTypes(Enum):
     P150X8 = "p150x8"  # BH LoudBox - 8x P150 (2,4 mesh)
     P300X2 = "p300x2"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
     BLACKHOLE_GALAXY = "bh-galaxy"
-
-
-class TrainingMeshShapes(Enum):
-    N150 = (1, 1)
-    P150 = (1, 1)
-    P300 = (1, 2)
-
-
-TRAINING_RUNNER_SUPPORTED_DEVICES = {
-    ModelRunners.TRAINING_GEMMA_LORA: {DeviceTypes.P150, DeviceTypes.N150},
-    ModelRunners.TRAINING_LLAMA_LORA: {DeviceTypes.P300},
-}
 
 
 class QueueType(Enum):
@@ -306,8 +302,8 @@ class JobTypes(Enum):
 
 
 class DatasetLoaders(Enum):
-    SST2 = "sst2"
-    ALPACA = "alpaca"
+    SST2 = "SST2"
+    ALPACA = "Alpaca"
 
 
 class TrainingTrainers(Enum):
@@ -617,6 +613,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
@@ -972,6 +969,70 @@ ModelConfigs = {
         },
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
         "max_batch_size": 8,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.BGEM3, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 32,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192 * 32,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.BGEM3, DeviceTypes.N300): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 32,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192 * 32,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.BGEM3, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192 * 32,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
+        "max_batch_size": 32,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.BGEM3, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192 * 32,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
+        "max_batch_size": 32,
         "default_throttle_level": 0,
         "use_queue_per_worker": True,
     },

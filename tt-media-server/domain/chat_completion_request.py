@@ -34,3 +34,5 @@ class ChatCompletionRequest(BaseModel):
     n: int = 1
     seed: int | None = None
     user: str | None = None
+
+    adapter: str | None = None
