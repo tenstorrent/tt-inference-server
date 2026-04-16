@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: tt-inference-server
-data:
-  MODEL: "Wan2.2-T2V-A14B-Diffusers"
