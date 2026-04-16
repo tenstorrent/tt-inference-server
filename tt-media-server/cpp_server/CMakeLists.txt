@@ -91,6 +91,7 @@ if(NOT xgrammar_POPULATED)
         "set(XGRAMMAR_ENABLE_INTERNAL_CHECK OFF)\n"
     )
     add_subdirectory(${xgrammar_SOURCE_DIR} ${xgrammar_BINARY_DIR})
+    target_compile_options(xgrammar PRIVATE -Wno-error=deprecated-declarations -fno-lto)
 endif()
 
 # Import fmt from tt-metal for spdlog
@@ -345,11 +346,6 @@ target_compile_options(llm_runner_lib PRIVATE -Wall -Wextra -Wpedantic)
 
 if(ENABLE_TRACY)
     target_link_libraries(llm_runner_lib PUBLIC tracy_client)
-endif()
-
-option(LLM_ENGINE_DEBUG_BUILD "Enable LLM engine debug logging (LLM_ENGINE_LOG)" OFF)
-if(LLM_ENGINE_DEBUG_BUILD)
-    target_compile_definitions(llm_runner_lib PUBLIC LLM_ENGINE_DEBUG)
 endif()
 
 option(SANITIZE_THREAD "Build with ThreadSanitizer (TSan) for data-race detection" OFF)

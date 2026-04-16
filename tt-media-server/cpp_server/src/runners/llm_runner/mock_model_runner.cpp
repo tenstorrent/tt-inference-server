@@ -1,6 +1,6 @@
 #include "profiling/tracy.hpp"
-#include "runners/llm_runner/debug.hpp"
 #include "runners/llm_runner/model_runner.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::runners::llm_engine {
 
@@ -17,9 +17,8 @@ class MockModelRunner : public IModelRunner {
 
   void run(const std::vector<Sequence*>& seqs, bool isPrefill) override {
     ZoneScopedN("MockModelRunner::run");
-    LLM_ENGINE_LOG("model_runner:mock")
-        << (isPrefill ? "prefill" : "decode")
-        << " max_in_flight_count=" << seqs.size() << std::endl;
+    TT_LOG_DEBUG("[model_runner:mock] {} max_in_flight_count={}",
+                 isPrefill ? "prefill" : "decode", seqs.size());
     if (isPrefill) {
       ZoneScopedN("MockModelRunner::prefill");
       for (Sequence* seq : seqs) {
@@ -36,9 +35,7 @@ class MockModelRunner : public IModelRunner {
     }
   }
 
-  void exit() override {
-    LLM_ENGINE_LOG("model_runner:mock") << "exit" << std::endl;
-  }
+  void exit() override { TT_LOG_DEBUG("[model_runner:mock] exit"); }
 
  private:
   static uint64_t pickToken(const Sequence* seq, uint64_t defaultToken) {

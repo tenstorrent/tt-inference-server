@@ -726,13 +726,33 @@ class TestJobManagement:
         assert call_kwargs["job_id"] == "job_1"
         assert call_kwargs["job_type"] == mock_job_type
         assert call_kwargs["request"] == mock_request
+        assert call_kwargs["org_id"] is None
+        assert result == {"job_id": "job_1", "status": "created"}
+
+    @pytest.mark.asyncio
+    async def test_create_job_with_org_id(
+        self, base_job_service, mock_job_manager, mock_settings
+    ):
+        """Test create_job forwards org_id to job manager"""
+        mock_job_type = Mock()
+        mock_request = MockRequest(task_id="job_1")
+
+        with patch("model_services.base_job_service.settings", mock_settings):
+            result = await base_job_service.create_job(
+                mock_job_type, mock_request, org_id="org-abc"
+            )
+
+        call_kwargs = mock_job_manager.create_job.call_args[1]
+        assert call_kwargs["org_id"] == "org-abc"
         assert result == {"job_id": "job_1", "status": "created"}
 
     def test_get_all_jobs_metadata(self, base_job_service, mock_job_manager):
         """Test get_all_jobs_metadata delegates to job manager"""
         result = base_job_service.get_all_jobs_metadata()
 
-        mock_job_manager.get_all_jobs_metadata.assert_called_once_with(None)
+        mock_job_manager.get_all_jobs_metadata.assert_called_once_with(
+            None, org_id=None
+        )
         assert result == [{"job_id": "job_1"}]
 
     def test_get_all_jobs_metadata_with_type(self, base_job_service, mock_job_manager):
@@ -740,27 +760,31 @@ class TestJobManagement:
         mock_job_type = Mock()
         base_job_service.get_all_jobs_metadata(mock_job_type)
 
-        mock_job_manager.get_all_jobs_metadata.assert_called_once_with(mock_job_type)
+        mock_job_manager.get_all_jobs_metadata.assert_called_once_with(
+            mock_job_type, org_id=None
+        )
 
     def test_get_job_metadata(self, base_job_service, mock_job_manager):
         """Test get_job_metadata delegates to job manager"""
         result = base_job_service.get_job_metadata("job_1")
 
-        mock_job_manager.get_job_metadata.assert_called_once_with("job_1")
+        mock_job_manager.get_job_metadata.assert_called_once_with("job_1", org_id=None)
         assert result == {"job_id": "job_1", "status": "running"}
 
     def test_get_job_result_path(self, base_job_service, mock_job_manager):
         """Test get_job_result_path delegates to job manager"""
         result = base_job_service.get_job_result_path("job_1")
 
-        mock_job_manager.get_job_result_path.assert_called_once_with("job_1")
+        mock_job_manager.get_job_result_path.assert_called_once_with(
+            "job_1", org_id=None
+        )
         assert result == "/tmp/result.json"
 
     def test_cancel_job(self, base_job_service, mock_job_manager):
         """Test cancel_job delegates to job manager"""
         result = base_job_service.cancel_job("job_1")
 
-        mock_job_manager.cancel_job.assert_called_once_with("job_1")
+        mock_job_manager.cancel_job.assert_called_once_with("job_1", org_id=None)
         assert result is True
 
 

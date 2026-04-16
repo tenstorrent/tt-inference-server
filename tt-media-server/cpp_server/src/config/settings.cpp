@@ -180,6 +180,32 @@ bool useDeepseekMdFormat() {
       envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));
 }
 
+std::string ttTaskQueueName() {
+  return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
+}
+
+std::string ttResultQueueName() {
+  return envString("TT_RESULT_QUEUE", defaults::TT_RESULT_QUEUE);
+}
+
+std::string ttCancelQueueName() {
+  return envString("TT_CANCEL_QUEUE", defaults::TT_CANCEL_QUEUE);
+}
+
+std::string ttWarmupSignalsQueueName() {
+  return envString("TT_WARMUP_SIGNALS_QUEUE",
+                   defaults::TT_WARMUP_SIGNALS_QUEUE);
+}
+
+std::string ttMemoryRequestQueueName() {
+  return envString("TT_MEMORY_REQUEST_QUEUE",
+                   defaults::TT_MEMORY_REQUEST_QUEUE);
+}
+
+std::string ttMemoryResultQueueName() {
+  return envString("TT_MEMORY_RESULT_QUEUE", defaults::TT_MEMORY_RESULT_QUEUE);
+}
+
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;

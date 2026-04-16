@@ -5,8 +5,8 @@
 #include <stdexcept>
 
 #include "profiling/tracy.hpp"
-#include "runners/llm_runner/debug.hpp"
 #include "runners/llm_runner/hash.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::runners::llm_engine {
 
@@ -50,10 +50,8 @@ Block& BlockManager::allocateBlock(int blockId) {
   free_block_ids_.erase(
       std::find(free_block_ids_.begin(), free_block_ids_.end(), blockId));
   used_block_ids_.insert(blockId);
-  LLM_ENGINE_LOG("block_manager")
-      << "allocate_block block_id=" << blockId
-      << " free=" << free_block_ids_.size()
-      << " used=" << used_block_ids_.size() << std::endl;
+  TT_LOG_DEBUG("[block_manager] allocate_block block_id={} free={} used={}",
+               blockId, free_block_ids_.size(), used_block_ids_.size());
   return blocks_[static_cast<size_t>(blockId)];
 }
 
@@ -62,9 +60,8 @@ void BlockManager::deallocateBlock(int blockId) {
   assert(blocks_[static_cast<size_t>(blockId)].ref_count == 0);
   used_block_ids_.erase(blockId);
   free_block_ids_.push_back(blockId);
-  LLM_ENGINE_LOG("block_manager")
-      << "deallocate_block block_id=" << blockId
-      << " free=" << free_block_ids_.size() << std::endl;
+  TT_LOG_DEBUG("[block_manager] deallocate_block block_id={} free={}", blockId,
+               free_block_ids_.size());
 }
 
 size_t BlockManager::numFreeBlocks() const {
@@ -81,9 +78,8 @@ bool BlockManager::allocate(Sequence& seq) {
     return false;
   }
 
-  LLM_ENGINE_LOG("block_manager")
-      << "allocate task_id=" << seq.taskId << " num_blocks=" << seq.numBlocks()
-      << " free=" << free_block_ids_.size() << std::endl;
+  TT_LOG_DEBUG("[block_manager] allocate task_id={} num_blocks={} free={}",
+               seq.taskId, seq.numBlocks(), free_block_ids_.size());
   int64_t h = -1;
   bool cacheMiss = false;
   for (size_t i = 0; i < seq.numBlocks(); ++i) {
@@ -123,9 +119,8 @@ bool BlockManager::allocate(Sequence& seq) {
 void BlockManager::deallocate(Sequence& seq) {
   ZoneScopedN("BlockManager::deallocate");
   std::lock_guard<std::mutex> lock(mutex);
-  LLM_ENGINE_LOG("block_manager")
-      << "deallocate task_id=" << seq.taskId
-      << " num_blocks=" << seq.getBlockTable().size() << std::endl;
+  TT_LOG_DEBUG("[block_manager] deallocate task_id={} num_blocks={}",
+               seq.taskId, seq.getBlockTable().size());
   for (auto it = seq.getBlockTable().rbegin(); it != seq.getBlockTable().rend();
        ++it) {
     int blockId = *it;
@@ -152,17 +147,16 @@ void BlockManager::mayAppend(Sequence& seq) {
   Block& lastBlock = blocks_[static_cast<size_t>(blockTable.back())];
   size_t len = seq.size();
   if (len % block_size_ == 1) {
-    LLM_ENGINE_LOG("block_manager") << "may_append task_id=" << seq.taskId
-                                    << " new_block len=" << len << std::endl;
+    TT_LOG_DEBUG("[block_manager] may_append task_id={} new_block len={}",
+                 seq.taskId, len);
     assert(lastBlock.hash != -1);
     int blockId = free_block_ids_.front();
     allocateBlock(blockId);
     blockTable.push_back(blockId);
   } else if (len % block_size_ == 0) {
     assert(lastBlock.hash == -1);
-    LLM_ENGINE_LOG("block_manager")
-        << "may_append task_id=" << seq.taskId << " fill_last_block len=" << len
-        << std::endl;
+    TT_LOG_DEBUG("[block_manager] may_append task_id={} fill_last_block len={}",
+                 seq.taskId, len);
     std::vector<int64_t> tokenIds = seq.block(seq.numBlocks() - 1);
     int64_t prefix =
         (blockTable.size() > 1)

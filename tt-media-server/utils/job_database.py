@@ -53,7 +53,8 @@ class JobDatabase:
                     created_at INTEGER NOT NULL,
                     completed_at INTEGER,
                     error_message TEXT,
-                    result_path TEXT
+                    result_path TEXT,
+                    org_id TEXT
                 );
             """)
             cursor.execute("""
@@ -105,12 +106,13 @@ class JobDatabase:
         request_parameters: dict,
         status: str,
         created_at: int,
+        org_id: Optional[str] = None,
     ) -> None:
         """Insert a new job into the database."""
         with self._get_cursor(commit=True) as cursor:
             cursor.execute(
                 """
-                INSERT INTO jobs (id, job_type, model, status, request_parameters, created_at) VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO jobs (id, job_type, model, status, request_parameters, created_at, org_id) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -119,6 +121,7 @@ class JobDatabase:
                     status,
                     json.dumps(request_parameters),
                     created_at,
+                    org_id,
                 ),
             )
 

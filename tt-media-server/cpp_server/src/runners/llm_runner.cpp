@@ -17,8 +17,7 @@ namespace tt::runners {
 using namespace tt::runners::llm_engine;
 using Config = tt::config::LLMConfig;
 
-LLMRunner::LLMRunner(const Config& config,
-                     ipc::TokenRingBuffer<65536>* resultQueue,
+LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
                      ITaskQueue* taskQueue, ipc::ICancelQueue* cancelQueue)
     : config_(config), result_queue_(resultQueue), cancel_queue_(cancelQueue) {
   scheduler_ =
