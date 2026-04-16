@@ -5,7 +5,7 @@
 
 #include <sstream>
 
-namespace tt::utils {
+namespace tt::utils::tokenizers {
 
 static const char* dsUserTag =
     "<\xEF\xBD\x9C"
@@ -15,7 +15,7 @@ static const char* dsAssistantTag =
     "Assistant\xEF\xBD\x9C>";
 
 std::string DeepseekTokenizer::applyChatTemplate(
-    const std::vector<domain::ChatMessage>& messages,
+    const std::vector<tt::domain::ChatMessage>& messages,
     bool addGenerationPrompt) const {
   std::ostringstream out;
 
@@ -41,4 +41,4 @@ std::string DeepseekTokenizer::applyChatTemplate(
   return out.str();
 }
 
-}  // namespace tt::utils
+}  // namespace tt::utils::tokenizers

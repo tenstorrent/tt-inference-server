@@ -14,7 +14,7 @@
 #include "config/types.hpp"
 #include "domain/chat_message.hpp"
 
-namespace tt::utils {
+namespace tt::utils::tokenizers {
 
 /**
  * Parsed tokenizer_config.json (Hugging Face format).
@@ -134,7 +134,7 @@ class Tokenizer {
   std::vector<std::string> getEncodedVocab() const;
 
  protected:
-  std::unique_ptr<tokenizers::Tokenizer> tok_;
+  std::unique_ptr<::tokenizers::Tokenizer> tok_;
   TokenizerConfig cfg_;
   std::unordered_set<int> specialTokenIds_;
 };
@@ -161,4 +161,4 @@ std::string tokenizerDirForModel(config::ModelType model);
  */
 const Tokenizer& activeTokenizer();
 
-}  // namespace tt::utils
+}  // namespace tt::utils::tokenizers

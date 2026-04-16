@@ -4,13 +4,12 @@
 #include <json/json.h>
 
 #include <fstream>
-#include <mutex>
 #include <sstream>
 
 #include "config/settings.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
-namespace tt::utils {
+namespace tt::utils::tokenizers {
 
 namespace {
 
@@ -94,4 +93,4 @@ TokenizerConfig getTokenizerConfig(const std::string& configPath) {
   return loadAndValidate(configPath);
 }
 
-}  // namespace tt::utils
+}  // namespace tt::utils::tokenizers

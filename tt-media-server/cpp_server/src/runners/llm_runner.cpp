@@ -30,7 +30,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
   }
 
   try {
-    const auto& tok = tt::utils::activeTokenizer();
+    const auto& tok = tt::utils::tokenizers::activeTokenizer();
     auto encodedVocab = tok.getEncodedVocab();
     int vocabSize = static_cast<int>(encodedVocab.size());
     guidedDecoder = std::make_unique<services::GuidedDecoderManager>(

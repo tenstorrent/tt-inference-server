@@ -11,7 +11,7 @@
 #include "config/settings.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
-using namespace tt::utils;
+using namespace tt::utils::tokenizers;
 
 constexpr size_t NUM_WARMUP_ITERATIONS = 5;
 constexpr size_t NUM_BENCHMARK_ITERATIONS = 50;

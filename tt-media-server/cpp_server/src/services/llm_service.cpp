@@ -26,7 +26,8 @@ namespace tt::services {
 using tt::services::ContentType;
 using tt::services::TokenParseResult;
 
-LLMService::LLMService() : tokenizer_(&tt::utils::activeTokenizer()) {
+LLMService::LLMService()
+    : tokenizer_(&tt::utils::tokenizers::activeTokenizer()) {
   size_t numWorkers = tt::config::numWorkers();
   max_queue_size_ = tt::config::maxQueueSize();
 
@@ -73,7 +74,7 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
 
   if (std::holds_alternative<std::string>(request.prompt)) {
     auto text = std::get<std::string>(request.prompt);
-    static auto cfg = tt::utils::getTokenizerConfig();
+    static auto cfg = tt::utils::tokenizers::getTokenizerConfig();
     bool hasBos = text.size() >= cfg.bos_token.size() &&
                   text.compare(0, cfg.bos_token.size(), cfg.bos_token) == 0;
     if (cfg.add_bos_token && !cfg.bos_token.empty() && !hasBos) {
@@ -136,9 +137,11 @@ struct MetricsSamplingState {
 
 std::string decodeToken(
     std::unordered_map<uint32_t,
-                       std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>&
+                       std::unique_ptr<
+                           tt::utils::tokenizers::Tokenizer::StreamDecoder>>&
         decoders,
-    const tt::utils::Tokenizer* tokenizer, uint32_t taskId, uint32_t tokenId,
+    const tt::utils::tokenizers::Tokenizer* tokenizer, uint32_t taskId,
+    uint32_t tokenId,
     bool isFinal, bool skipSpecial) {
   auto& decoder = decoders[taskId];
   if (!decoder) decoder = tokenizer->createStreamDecoder(skipSpecial);
@@ -231,7 +234,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   }
 
   std::unordered_map<uint32_t,
-                     std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>
+                     std::unique_ptr<
+                         tt::utils::tokenizers::Tokenizer::StreamDecoder>>
       streamDecoders;
   std::unordered_map<uint32_t, MetricsSamplingState> metricsSampling;
 

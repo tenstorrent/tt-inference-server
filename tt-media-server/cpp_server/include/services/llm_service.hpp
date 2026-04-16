@@ -86,7 +86,7 @@ class LLMService
 
   std::unique_ptr<tt::ipc::QueueManager> queue_manager_;
   std::unique_ptr<tt::worker::WorkerManager> worker_manager_;
-  const tt::utils::Tokenizer* tokenizer_;
+  const tt::utils::tokenizers::Tokenizer* tokenizer_;
   std::unordered_set<int64_t> stop_token_set_;
   std::unique_ptr<ReasoningParser> reasoning_parser_;
 };

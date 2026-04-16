@@ -125,7 +125,7 @@ static std::filesystem::path tokenizersDir() {
 std::string tokenizerPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
-  std::string modelDir = utils::tokenizerDirForModel(model);
+  std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
   std::filesystem::path p = base / modelDir / "tokenizer.json";
   if (std::filesystem::exists(p)) {
     return std::filesystem::absolute(p).string();
@@ -138,7 +138,7 @@ std::string tokenizerPath() { return tokenizerPath(modelType()); }
 std::string tokenizerConfigPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
-  std::string modelDir = utils::tokenizerDirForModel(model);
+  std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
   std::filesystem::path p = base / modelDir / "tokenizer_config.json";
   if (std::filesystem::exists(p)) {
     return std::filesystem::absolute(p).string();
@@ -183,7 +183,7 @@ bool useDeepseekMdFormat() {
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
-    cfg.stop_token_ids = utils::activeTokenizer().stopTokenIds();
+    cfg.stop_token_ids = utils::tokenizers::activeTokenizer().stopTokenIds();
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
