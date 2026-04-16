@@ -7,12 +7,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
 #include "config/types.hpp"
 #include "domain/chat_message.hpp"
+#include "domain/tool_calls/tool.hpp"
 
 namespace tt::utils::tokenizers {
 
@@ -97,7 +99,9 @@ class Tokenizer {
    */
   virtual std::string applyChatTemplate(
       const std::vector<tt::domain::ChatMessage>& messages,
-      bool addGenerationPrompt = true) const = 0;
+      bool addGenerationPrompt = true,
+      const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools =
+          std::nullopt) const = 0;
 
   /**
    * Stream decoder for incremental token-by-token decoding.
