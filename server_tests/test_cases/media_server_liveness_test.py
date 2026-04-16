@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 import aiohttp
+
 from server_tests.base_test import BaseTest
 
 # Set up logging
