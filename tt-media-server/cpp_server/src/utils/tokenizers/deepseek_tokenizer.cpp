@@ -92,6 +92,8 @@ std::string DeepseekTokenizer::applyChatTemplate(
         "## Tools\n\n### Function\n\nYou have the following functions "
         "available:\n\n";
 
+    out << toolsDescription;
+
     for (const auto& tool : *tools) {
       out << "- `" << tool.functionDefinition.name << "`:\n```json\n"
           << tool.toJson() << "\n```\n";
