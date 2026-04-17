@@ -7,6 +7,7 @@
 #include <chrono>
 #include <thread>
 
+#include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
 #include "utils/id_generator.hpp"
@@ -15,18 +16,23 @@
 namespace tt::services {
 
 namespace {
-// Linear backoff for failed slot allocation results: start at BASE, grow by
-// STEP per consecutive failure, clamped at CAP.
-constexpr std::chrono::milliseconds ALLOCATION_RETRY_BASE_DELAY{500};
-constexpr std::chrono::milliseconds ALLOCATION_RETRY_DELAY_STEP{250};
-constexpr std::chrono::milliseconds ALLOCATION_RETRY_MAX_DELAY{3000};
-// Flat backoff when the IPC request queue is full (transient backpressure).
+constexpr std::chrono::milliseconds ALLOCATION_RETRY_BASE_DELAY{2000};
+constexpr std::chrono::milliseconds ALLOCATION_RETRY_DELAY_STEP{700};
+constexpr std::chrono::milliseconds ALLOCATION_RETRY_MAX_DELAY =
+    ALLOCATION_RETRY_BASE_DELAY +
+    ALLOCATION_RETRY_DELAY_STEP *
+        (tt::config::defaults::SESSION_ALLOCATION_MAX_RETRIES - 1);
 constexpr std::chrono::milliseconds IPC_QUEUE_FULL_RETRY_DELAY{50};
 
-std::chrono::milliseconds computeAllocationRetryDelay(int failureCount) {
-  auto delay = ALLOCATION_RETRY_BASE_DELAY +
-               ALLOCATION_RETRY_DELAY_STEP * failureCount;
+inline std::chrono::milliseconds computeAllocationRetryDelay(int failureCount) {
+  auto delay =
+      ALLOCATION_RETRY_BASE_DELAY + ALLOCATION_RETRY_DELAY_STEP * failureCount;
   return std::min(delay, ALLOCATION_RETRY_MAX_DELAY);
+}
+
+inline int computeFailureCount(int attemptsRemaining) {
+  return static_cast<int>(tt::config::sessionAllocationMaxRetries()) -
+         attemptsRemaining;
 }
 }  // namespace
 
@@ -340,7 +346,8 @@ void SessionManager::sendAsyncAllocationRequest(
       });
     } else {
       pa.attemptsRemaining--;
-      pa.retryAt = std::chrono::steady_clock::now() + IPC_QUEUE_FULL_RETRY_DELAY;
+      pa.retryAt =
+          std::chrono::steady_clock::now() + IPC_QUEUE_FULL_RETRY_DELAY;
       TT_LOG_DEBUG(
           "[SessionManager] sendAsyncAllocationRequest: queuing retry for "
           "sessionId={}, attemptsRemaining={}, delayMs={}",
@@ -410,8 +417,7 @@ void SessionManager::handleMemoryResult(
         [onCompletion = std::move(pendingAllocation.onCompletion),
          session = pendingAllocation.session]() { onCompletion(session); });
   } else if (pendingAllocation.attemptsRemaining > 0) {
-    int failureCount = static_cast<int>(tt::config::sessionAllocationMaxRetries()) -
-                       pendingAllocation.attemptsRemaining;
+    int failureCount = computeFailureCount(pendingAllocation.attemptsRemaining);
     pendingAllocation.attemptsRemaining--;
     auto delay = computeAllocationRetryDelay(failureCount);
     pendingAllocation.retryAt = std::chrono::steady_clock::now() + delay;
