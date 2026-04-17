@@ -14,48 +14,66 @@
 using namespace tt::domain;
 using namespace tt::domain::tool_calls;
 
-// DeepSeek special tokens
-namespace DeepSeekTokens {
-  const char* BOS = "<｜begin▁of▁sentence｜>";
-  const char* USER_TAG = "<｜User｜>";
-  const char* ASSISTANT_TAG = "<｜Assistant｜>";
-  const char* TOOL_CALLS_BEGIN = "<｜tool▁calls▁begin｜>";
-  const char* TOOL_CALL_BEGIN = "<｜tool▁call▁begin｜>";
-  const char* TOOL_SEP = "<｜tool▁sep｜>";
-  const char* TOOL_CALL_END = "<｜tool▁call▁end｜>";
-  const char* TOOL_CALLS_END = "<｜tool▁calls▁end｜>";
-}
+// Base class for tokenizer-specific template configuration
+struct TokenizerTemplateConfig {
+  virtual ~TokenizerTemplateConfig() = default;
 
-// Helper to build expected tool section
-std::string buildExpectedToolSection(const std::vector<Tool>& tools) {
-  std::ostringstream out;
+  // Special tokens
+  virtual const char* bos() const = 0;
+  virtual const char* userTag() const = 0;
+  virtual const char* assistantTag() const = 0;
+  virtual const char* toolCallsBegin() const = 0;
+  virtual const char* toolCallBegin() const = 0;
+  virtual const char* toolSep() const = 0;
+  virtual const char* toolCallEnd() const = 0;
+  virtual const char* toolCallsEnd() const = 0;
 
-  // Tool calling instructions
-  out << "You are a helpful assistant with tool calling capabilities. "
-      << "When a tool call is needed, you MUST use the following format to issue the call:\n"
-      << DeepSeekTokens::TOOL_CALLS_BEGIN
-      << DeepSeekTokens::TOOL_CALL_BEGIN
-      << "function"
-      << DeepSeekTokens::TOOL_SEP
-      << "FUNCTION_NAME\n"
-      << "```json\n{\"param1\":\"value1\",\"param2\":\"value2\"}\n```"
-      << DeepSeekTokens::TOOL_CALL_END
-      << DeepSeekTokens::TOOL_CALLS_END
-      << "\n\nMake sure the JSON is valid.\n"
-      << "## Tools\n\n### Function\n\nYou have the following functions available:\n\n";
+  // Build the tool section for this tokenizer
+  virtual std::string buildToolSection(const std::vector<Tool>& tools) const = 0;
 
-  // Tool definitions
-  // Note: The tokenizer uses default JSON formatting (with indentation)
-  // We need to match that by using the stream operator directly
-  for (const auto& tool : tools) {
-    out << "- `" << tool.functionDefinition.name << "`:\n```json\n"
-        << tool.toJson() << "\n```\n";
+  // Name for logging
+  virtual const char* name() const = 0;
+};
+
+struct DeepSeekTemplateConfig : public TokenizerTemplateConfig {
+  const char* bos() const override { return "<｜begin▁of▁sentence｜>"; }
+  const char* userTag() const override { return "<｜User｜>"; }
+  const char* assistantTag() const override { return "<｜Assistant｜>"; }
+  const char* toolCallsBegin() const override { return "<｜tool▁calls▁begin｜>"; }
+  const char* toolCallBegin() const override { return "<｜tool▁call▁begin｜>"; }
+  const char* toolSep() const override { return "<｜tool▁sep｜>"; }
+  const char* toolCallEnd() const override { return "<｜tool▁call▁end｜>"; }
+  const char* toolCallsEnd() const override { return "<｜tool▁calls▁end｜>"; }
+  const char* name() const override { return "DeepSeek"; }
+
+  std::string buildToolSection(const std::vector<Tool>& tools) const override {
+    std::ostringstream out;
+
+    out << "You are a helpful assistant with tool calling capabilities. "
+        << "When a tool call is needed, you MUST use the following format to issue the call:\n"
+        << toolCallsBegin() << toolCallBegin() << "function" << toolSep()
+        << "FUNCTION_NAME\n"
+        << "```json\n{\"param1\":\"value1\",\"param2\":\"value2\"}\n```"
+        << toolCallEnd() << toolCallsEnd()
+        << "\n\nMake sure the JSON is valid.\n"
+        << "## Tools\n\n### Function\n\nYou have the following functions available:\n\n";
+
+    for (const auto& tool : tools) {
+      out << "- `" << tool.functionDefinition.name << "`:\n```json\n"
+          << tool.toJson() << "\n```\n";
+    }
+
+    return out.str();
   }
+};
 
-  return out.str();
+// Get DeepSeek config instance
+const TokenizerTemplateConfig* getDeepSeekConfig() {
+  static DeepSeekTemplateConfig config;
+  return &config;
 }
 
-void testChatTemplateWithoutTools() {
+void testChatTemplateWithoutTools(const TokenizerTemplateConfig* config) {
   std::cout << "\n=== Testing Chat Template Without Tools ===\n";
 
   auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
@@ -70,7 +88,7 @@ void testChatTemplateWithoutTools() {
 
   // Should not contain tool-related markers when no tools provided
   assert(result.find("tools") == std::string::npos ||
-         result.find("<｜tool▁calls▁begin｜>") == std::string::npos);
+         result.find(config->toolCallsBegin()) == std::string::npos);
 
   // Should contain the user message
   assert(result.find(content) != std::string::npos);
@@ -80,8 +98,8 @@ void testChatTemplateWithoutTools() {
 }
 
 
-void testChatTemplateWithSingleTool() {
-  std::cout << "\n=== Testing Exact Single Tool Template ===\n";
+void testChatTemplateWithSingleTool(const TokenizerTemplateConfig* config) {
+  std::cout << "\n=== Testing Exact Single Tool Template (" << config->name() << ") ===\n";
 
   auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
 
@@ -109,12 +127,12 @@ void testChatTemplateWithSingleTool() {
   // Get actual result
   std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
 
-  // Build expected result
+  // Build expected result using tokenizer-specific config
   std::ostringstream expected;
-  expected << DeepSeekTokens::BOS;
-  expected << buildExpectedToolSection(tools);
-  expected << DeepSeekTokens::USER_TAG << "Get weather for SF";
-  expected << DeepSeekTokens::ASSISTANT_TAG;
+  expected << config->bos();
+  expected << config->buildToolSection(tools);
+  expected << config->userTag() << "Get weather for SF";
+  expected << config->assistantTag();
 
   // Compare
   if (actual == expected.str()) {
@@ -141,8 +159,8 @@ void testChatTemplateWithSingleTool() {
   std::cout << "✅ Test passed!\n";
 }
 
-void testChatTemplateWithMultipleTools() {
-  std::cout << "\n=== Testing Exact Multiple Tools Template ===\n";
+void testChatTemplateWithMultipleTools(const TokenizerTemplateConfig* config) {
+  std::cout << "\n=== Testing Exact Multiple Tools Template (" << config->name() << ") ===\n";
 
   auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
 
@@ -181,12 +199,12 @@ void testChatTemplateWithMultipleTools() {
   // Get actual result
   std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
 
-  // Build expected result
+  // Build expected result using tokenizer-specific config
   std::ostringstream expected;
-  expected << DeepSeekTokens::BOS;
-  expected << buildExpectedToolSection(tools);
-  expected << DeepSeekTokens::USER_TAG << "Check weather and time";
-  expected << DeepSeekTokens::ASSISTANT_TAG;
+  expected << config->bos();
+  expected << config->buildToolSection(tools);
+  expected << config->userTag() << "Check weather and time";
+  expected << config->assistantTag();
 
   // Compare
   if (actual == expected.str()) {
@@ -212,8 +230,8 @@ void testChatTemplateWithMultipleTools() {
 
   std::cout << "✅ Test passed!\n";
 }
-void testChatTemplateWithConversationHistory() {
-  std::cout << "\n=== Testing Exact Conversation History Template ===\n";
+void testChatTemplateWithConversationHistory(const TokenizerTemplateConfig* config) {
+  std::cout << "\n=== Testing Exact Conversation History Template (" << config->name() << ") ===\n";
 
   auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
 
@@ -253,14 +271,16 @@ void testChatTemplateWithConversationHistory() {
   // Get actual result
   std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
 
-  // Build expected result
+  // Build expected result using tokenizer-specific config
+  // Structure: BOS + SystemMsg + ToolSection + User1 + Assistant1 + User2 + AssistantPrompt
   std::ostringstream expected;
-  expected << DeepSeekTokens::BOS;
-  expected << buildExpectedToolSection(tools);
-  expected << DeepSeekTokens::USER_TAG << "Check SF weather";
-  expected << DeepSeekTokens::ASSISTANT_TAG << "I'll check for you.";
-  expected << DeepSeekTokens::USER_TAG << "Also check LA";
-  expected << DeepSeekTokens::ASSISTANT_TAG;
+  expected << config->bos();
+  expected << config->buildToolSection(tools);
+  expected << config->userTag() << "Check SF weather";
+  expected << config->assistantTag() << "I'll check for you.";
+  // Note: No EOS token between messages in conversation (only if add_eos_token is true)
+  expected << config->userTag() << "Also check LA";
+  expected << config->assistantTag();
 
   // Compare
   if (actual == expected.str()) {
@@ -312,7 +332,6 @@ void testChatTemplateEmptyTools() {
   std::vector<Tool> emptyTools;
   std::string result = tokenizer.applyChatTemplate(messages, true, emptyTools);
 
-  // Should behave like no tools provided
   assert(!result.empty());
   std::cout << "✓ Chat template with empty tools vector handled\n";
 
@@ -322,7 +341,6 @@ void testChatTemplateEmptyTools() {
 void testToolStructureValidation() {
   std::cout << "\n=== Testing Tool Structure Validation ===\n";
 
-  // Verify tool JSON structure
   Tool tool;
   tool.type = "function";
   tool.functionDefinition.name = "test_function";
@@ -337,7 +355,6 @@ void testToolStructureValidation() {
 
   Json::Value toolJson = tool.toJson();
 
-  // Verify structure matches OpenAI spec
   assert(toolJson.isMember("type"));
   assert(toolJson["type"].asString() == "function");
   assert(toolJson.isMember("function"));
@@ -369,10 +386,13 @@ int main() {
   std::cout << "╚══════════════════════════════════════════════════════════╝\n";
 
   try {
-    testChatTemplateWithoutTools();
-    testChatTemplateWithSingleTool();
-    testChatTemplateWithMultipleTools();
-    testChatTemplateWithConversationHistory();
+    // Get config for the active tokenizer (DeepSeek for now)
+    const auto* config = getDeepSeekConfig();
+
+    testChatTemplateWithoutTools(config);
+    testChatTemplateWithSingleTool(config);
+    testChatTemplateWithMultipleTools(config);
+    testChatTemplateWithConversationHistory(config);
     testChatTemplateEmptyTools();
     testToolStructureValidation();
 
