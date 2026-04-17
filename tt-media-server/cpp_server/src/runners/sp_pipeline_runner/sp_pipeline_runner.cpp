@@ -34,11 +34,10 @@ SpPipelineRunner::SpPipelineRunner(
       .d2h_socket_id = tt::config::d2hSocketId(),
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
-  // pm::MockConfig mock = {};
+  pm::MockConfig mock = {};
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
-  pipelineManager =
-      std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
+  pipelineManager = std::make_unique<pm::PipelineManager>(mock, managerParams);
   TT_LOG_INFO(
       "SpPipelineRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
@@ -96,22 +95,25 @@ bool SpPipelineRunner::warmup() {
 
   TT_LOG_INFO("SpPipelineRunner: warmup - pushing SUBMIT request...");
   pipelineManager->push_request(utils::makeSubmitRequest(slotId, *warmupSeq));
-  const int maxAttempts = 1000;
-  int attempts = 0;
+
+  const auto timeout = std::chrono::milliseconds(tt::config::warmupTimeoutMs());
+  const auto pollInterval = std::chrono::milliseconds(10);
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
   bool receivedToken = false;
   auto output = pm::OutputMessage{};
 
-  while (attempts < maxAttempts && !receivedToken) {
-    receivedToken = pipelineManager->try_pop_output(output);
-    if (receivedToken) {
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (pipelineManager->try_pop_output(output)) {
+      receivedToken = true;
       break;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    attempts++;
+    std::this_thread::sleep_for(pollInterval);
   }
 
   if (!receivedToken) {
-    TT_LOG_ERROR("[SpPipelineRunner] Warmup timed out waiting for token");
+    TT_LOG_ERROR(
+        "[SpPipelineRunner] Warmup timed out waiting for token after {} ms",
+        timeout.count());
     return false;
   }
 
