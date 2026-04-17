@@ -5,6 +5,7 @@
 import base64
 
 import aiohttp
+
 from server_tests.base_test import BaseTest
 
 
