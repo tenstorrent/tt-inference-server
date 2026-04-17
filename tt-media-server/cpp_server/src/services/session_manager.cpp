@@ -60,13 +60,26 @@ void SessionManager::readerLoop() {
   }
 }
 
-bool SessionManager::closeSession(const std::string& sessionId) {
+CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
   TT_LOG_DEBUG("[SessionManager] closeSession called for sessionId={}",
                sessionId);
-  auto session = sessions.take(sessionId);
+
+  // Atomically check in-flight status and remove the session only if idle.
+  // Removing an in-flight session without this guard would deallocate the KV
+  // slot while the active request is still using it (issue #2907).
+  auto session = sessions.takeIf(
+      sessionId, [](const domain::Session& s) { return !s.isInFlight(); });
+
   if (!session.has_value()) {
+    if (sessions.contains(sessionId)) {
+      TT_LOG_WARN(
+          "[SessionManager] closeSession: sessionId={} is in-flight, "
+          "deferring close until request completes",
+          sessionId);
+      return CloseSessionResult::IN_FLIGHT;
+    }
     TT_LOG_WARN("[SessionManager] Session not found: {}", sessionId);
-    return false;
+    return CloseSessionResult::NOT_FOUND;
   }
 
   uint32_t slotId = session->getSlotId();
@@ -77,7 +90,7 @@ bool SessionManager::closeSession(const std::string& sessionId) {
   }
 
   TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
-  return true;
+  return CloseSessionResult::SUCCESS;
 }
 
 bool SessionManager::assignSlotId(const std::string& sessionId,
@@ -208,10 +221,16 @@ void SessionManager::evictOldSessions() {
                heap.size());
   size_t evicted = 0;
   for (const auto& [_, sessionId] : heap) {
-    auto session = sessions.take(sessionId);
+    // Use takeIf to atomically check the in-flight flag and remove the session.
+    // Without this, a concurrent acquireSessionSlot call could mark the session
+    // in-flight between the forEach check above and the take here, causing a
+    // dealloc request to be sent for a slot that is actively in use.
+    auto session = sessions.takeIf(
+        sessionId, [](const domain::Session& s) { return !s.isInFlight(); });
     if (!session.has_value()) {
       TT_LOG_DEBUG(
-          "[SessionManager] evictOldSessions: session {} already removed",
+          "[SessionManager] evictOldSessions: session {} already removed or "
+          "now in-flight, skipping",
           sessionId);
       continue;
     }
