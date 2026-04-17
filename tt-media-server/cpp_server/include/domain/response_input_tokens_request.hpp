@@ -100,8 +100,7 @@ struct ResponseInputTokensRequest : BaseRequest {
     if (json.isMember("truncation") && !json["truncation"].isNull()) {
       std::string truncation = getString(json["truncation"], "truncation");
       if (truncation != "auto" && truncation != "disabled")
-        throw std::invalid_argument(
-            "truncation must be 'auto' or 'disabled'");
+        throw std::invalid_argument("truncation must be 'auto' or 'disabled'");
       req.truncation = std::move(truncation);
     }
 
