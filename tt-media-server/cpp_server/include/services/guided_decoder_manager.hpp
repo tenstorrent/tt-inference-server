@@ -17,11 +17,6 @@ struct TokenAcceptResult {
   bool completed = false;
 };
 
-struct BatchAllowedResult {
-  uint32_t taskId;
-  std::vector<int32_t> allowedTokenIds;
-};
-
 class GuidedDecoderManager {
  public:
   explicit GuidedDecoderManager(const std::vector<std::string>& encodedVocab,
@@ -33,11 +28,6 @@ class GuidedDecoderManager {
 
   void initRequest(uint32_t taskId,
                    const tt::runners::llm_engine::SamplingParams& params);
-
-  std::vector<int32_t> getNextAllowedTokenIds(uint32_t taskId);
-
-  std::vector<BatchAllowedResult> getNextAllowedTokenIdsBatch(
-      const std::vector<uint32_t>& taskIds);
 
   void fillNextBitmask(uint32_t taskId, std::vector<int32_t>& bitmask);
 
