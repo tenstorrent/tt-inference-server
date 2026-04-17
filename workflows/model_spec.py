@@ -2981,6 +2981,12 @@ audio_tts_templates = [
                 default_impl=True,
             ),
             DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=1,
                 max_context=64 * 1024,
