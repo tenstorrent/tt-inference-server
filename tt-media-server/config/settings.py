@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
 from functools import lru_cache
@@ -12,8 +12,8 @@ from config.constants import (
     MODEL_SERVICE_RUNNER_MAP,
     SDXL_VALID_IMAGE_RESOLUTIONS,
     AudioTasks,
-    DeviceTypes,
     DeviceIds,
+    DeviceTypes,
     ModelConfigs,
     ModelNames,
     ModelRunners,

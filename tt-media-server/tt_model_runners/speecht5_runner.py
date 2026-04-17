@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import base64
@@ -8,8 +8,6 @@ import io
 import os
 import re
 from typing import Any, AsyncGenerator, Dict, List
-
-from num2words import num2words
 
 import soundfile as sf
 import torch
@@ -40,12 +38,12 @@ from models.experimental.speecht5_tts.tt.ttnn_speecht5_postnet import (
     TTNNSpeechT5SpeechDecoderPostnet,
     preprocess_postnet_parameters,
 )
+from num2words import num2words
 from telemetry.telemetry_client import TelemetryEvent
 from transformers import SpeechT5ForTextToSpeech, SpeechT5HifiGan, SpeechT5Processor
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
 from utils.speaker_embeddings import SpeakerEmbeddingsManager
-
 
 DEFAULT_CHUNK_SIZE = 256  # Maximum characters per text chunk
 
