@@ -9,6 +9,10 @@
 
 #include "services/base_service.hpp"
 
+namespace tt::sockets {
+class InterServerService;
+}
+
 namespace tt::api {
 
 class HealthController : public drogon::HttpController<HealthController> {
@@ -30,6 +34,7 @@ class HealthController : public drogon::HttpController<HealthController> {
 
  private:
   std::shared_ptr<services::IService> service_;
+  std::shared_ptr<sockets::InterServerService> socket_;
 };
 
 }  // namespace tt::api
