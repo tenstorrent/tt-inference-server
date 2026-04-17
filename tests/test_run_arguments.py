@@ -318,6 +318,8 @@ class TestModelSpecCliArgsCompatibility:
             "/opt/tt-metal",
             "--vllm-dir",
             "/opt/vllm",
+            "--tools",
+            "guidellm",
         ]
         with patch("sys.argv", ["run.py"] + full_args):
             args = parse_arguments()
@@ -338,6 +340,7 @@ class TestModelSpecCliArgsCompatibility:
         assert args.concurrency_sweeps is True
         assert args.tt_metal_home == "/opt/tt-metal"
         assert args.vllm_dir == "/opt/vllm"
+        assert args.tools == "guidellm"
 
         # Test defaults
         with patch("sys.argv", ["run.py"] + base_args):

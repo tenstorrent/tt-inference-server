@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the BENCHMARKS_GUIDELLM workflow venv (Python 3.11).
+# Consumed by the BENCHMARKS_GUIDELLM VenvConfig in workflows/workflow_venvs.py.
+#
+# GuideLLM is a benchmarking harness for LLM serving stacks.
+# Repository: https://github.com/neuralmagic/guidellm
+#
+# torch is pulled in by transitive deps (e.g. prompt_client) and is pinned to
+# a CPU build to keep the venv lightweight.
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.4.0+cpu
+guidellm
+requests
+pyjwt
+datasets
+pillow
+imageio
+imageio-ffmpeg
