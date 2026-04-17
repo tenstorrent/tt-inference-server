@@ -3,76 +3,67 @@
 
 #include "worker/worker_metrics.hpp"
 
-#include <prometheus/gauge.h>
-#include <prometheus/registry.h>
-#include <prometheus/text_serializer.h>
+#include <unistd.h>
 
 #include <chrono>
-#include <memory>
-#include <sstream>
+
+#include "config/settings.hpp"
+#include "utils/logger.hpp"
+#include "worker/sp_pipeline_metrics_layout.hpp"
+#include "worker/worker_metrics_shm.hpp"
 
 namespace tt::worker {
-
-namespace {
-struct PrometheusState {
-  std::shared_ptr<prometheus::Registry> registry;
-  prometheus::Gauge* stepHeartbeatAge{nullptr};
-  prometheus::Gauge* outputHeartbeatAge{nullptr};
-  prometheus::Gauge* activeRequestsGauge{nullptr};
-  prometheus::Gauge* workerAlive{nullptr};
-};
-
-PrometheusState& promState() {
-  static PrometheusState state;
-  return state;
-}
-}  // namespace
 
 WorkerMetrics& WorkerMetrics::instance() {
   static WorkerMetrics inst;
   return inst;
 }
 
-void WorkerMetrics::initialize(int workerId) {
-  this->workerId = workerId;
+void WorkerMetrics::initialize(int workerId, MetricsLayout layout) {
+  workerId_ = workerId;
+  layout_ = layout;
 
-  auto now = nowMs();
-  stepEpochMs.store(now, std::memory_order_relaxed);
-  lastOutputEpochMs.store(now, std::memory_order_relaxed);
+  const std::string shmName = tt::config::workerMetricsShmName();
+  WorkerMetricsShmRegion* region = openSharedRegion(shmName);
+  if (region == nullptr) {
+    TT_LOG_CRITICAL(
+        "[WorkerMetrics] Worker {} failed to attach to shm '{}'; metrics "
+        "disabled",
+        workerId, shmName);
+    slot_ = nullptr;
+    return;
+  }
 
-  auto& ps = promState();
-  ps.registry = std::make_shared<prometheus::Registry>();
-  const std::string idStr = std::to_string(workerId);
+  uint32_t numSlots = region->num_workers.load(std::memory_order_acquire);
+  if (workerId < 0 || static_cast<uint32_t>(workerId) >= numSlots) {
+    TT_LOG_CRITICAL(
+        "[WorkerMetrics] Worker id {} out of range (num_workers={}); metrics "
+        "disabled",
+        workerId, numSlots);
+    slot_ = nullptr;
+    return;
+  }
 
-  ps.stepHeartbeatAge =
-      &prometheus::BuildGauge()
-           .Name("tt_worker_heartbeat_age_seconds")
-           .Help("Seconds since the worker last called step()")
-           .Register(*ps.registry)
-           .Add({{"worker_id", idStr}});
+  slot_ = &region->slots[workerId];
+  slot_->generation.fetch_add(1, std::memory_order_acq_rel);
+  slot_->metrics_layout.store(static_cast<uint32_t>(layout),
+                              std::memory_order_release);
+  slot_->pid.store(static_cast<int32_t>(getpid()), std::memory_order_release);
 
-  ps.outputHeartbeatAge =
-      &prometheus::BuildGauge()
-           .Name("tt_worker_last_output_age_seconds")
-           .Help("Seconds since the worker last produced a token")
-           .Register(*ps.registry)
-           .Add({{"worker_id", idStr}});
+  // Seed sp_pipeline timestamps so age starts at ~0 instead of since-epoch.
+  if (layout == MetricsLayout::LLM) {
+    auto now = nowMs();
+    slot_->scratch[sp_pipeline::SCRATCH_STEP_EPOCH_MS].store(
+        now, std::memory_order_relaxed);
+    slot_->scratch[sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS].store(
+        now, std::memory_order_relaxed);
+    slot_->scratch[sp_pipeline::SCRATCH_ACTIVE_REQUESTS].store(
+        0, std::memory_order_relaxed);
+  }
 
-  ps.activeRequestsGauge =
-      &prometheus::BuildGauge()
-           .Name("tt_worker_active_requests")
-           .Help("Number of requests currently in the worker pipeline")
-           .Register(*ps.registry)
-           .Add({{"worker_id", idStr}});
-
-  ps.workerAlive = &prometheus::BuildGauge()
-                        .Name("tt_worker_alive")
-                        .Help("1 while the worker process is running")
-                        .Register(*ps.registry)
-                        .Add({{"worker_id", idStr}});
-  ps.workerAlive->Set(1);
-
-  initialized = true;
+  TT_LOG_INFO(
+      "[WorkerMetrics] Worker {} attached to shm '{}' slot {}, layout={}",
+      workerId, shmName, workerId, static_cast<uint32_t>(layout));
 }
 
 uint64_t WorkerMetrics::nowMs() {
@@ -83,53 +74,41 @@ uint64_t WorkerMetrics::nowMs() {
 }
 
 void WorkerMetrics::updateStepHeartbeat() {
-  stepEpochMs.store(nowMs(), std::memory_order_relaxed);
+  if (slot_ == nullptr) return;
+  slot_->scratch[sp_pipeline::SCRATCH_STEP_EPOCH_MS].store(
+      nowMs(), std::memory_order_relaxed);
 }
 
 void WorkerMetrics::updateOutputHeartbeat() {
-  lastOutputEpochMs.store(nowMs(), std::memory_order_relaxed);
+  if (slot_ == nullptr) return;
+  slot_->scratch[sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS].store(
+      nowMs(), std::memory_order_relaxed);
 }
 
 void WorkerMetrics::incrementActiveRequests() {
-  uint32_t prev = activeRequestsCount.fetch_add(1, std::memory_order_relaxed);
+  if (slot_ == nullptr) return;
+  uint64_t prev = slot_->scratch[sp_pipeline::SCRATCH_ACTIVE_REQUESTS]
+                      .fetch_add(1, std::memory_order_relaxed);
   if (prev == 0) {
-    lastOutputEpochMs.store(nowMs(), std::memory_order_relaxed);
+    slot_->scratch[sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS].store(
+        nowMs(), std::memory_order_relaxed);
   }
 }
 
 void WorkerMetrics::decrementActiveRequests() {
-  activeRequestsCount.fetch_sub(1, std::memory_order_relaxed);
+  if (slot_ == nullptr) return;
+  slot_->scratch[sp_pipeline::SCRATCH_ACTIVE_REQUESTS].fetch_sub(
+      1, std::memory_order_relaxed);
 }
 
-double WorkerMetrics::stepAgeSec() const {
-  auto now = nowMs();
-  auto last = stepEpochMs.load(std::memory_order_relaxed);
-  return static_cast<double>(now - last) / 1000.0;
+void WorkerMetrics::scratchStoreU64(size_t idx, uint64_t value) {
+  if (slot_ == nullptr || idx >= WORKER_SCRATCH_U64_COUNT) return;
+  slot_->scratch[idx].store(value, std::memory_order_relaxed);
 }
 
-double WorkerMetrics::outputAgeSec() const {
-  auto now = nowMs();
-  auto last = lastOutputEpochMs.load(std::memory_order_relaxed);
-  return static_cast<double>(now - last) / 1000.0;
-}
-
-uint32_t WorkerMetrics::activeRequests() const {
-  return activeRequestsCount.load(std::memory_order_relaxed);
-}
-
-std::string WorkerMetrics::renderText() {
-  if (!initialized) return "";
-
-  auto& ps = promState();
-  ps.stepHeartbeatAge->Set(stepAgeSec());
-  ps.outputHeartbeatAge->Set(outputAgeSec());
-  ps.activeRequestsGauge->Set(
-      static_cast<double>(activeRequestsCount.load(std::memory_order_relaxed)));
-
-  prometheus::TextSerializer serializer;
-  std::ostringstream ss;
-  serializer.Serialize(ss, ps.registry->Collect());
-  return ss.str();
+void WorkerMetrics::scratchAddU64(size_t idx, uint64_t delta) {
+  if (slot_ == nullptr || idx >= WORKER_SCRATCH_U64_COUNT) return;
+  slot_->scratch[idx].fetch_add(delta, std::memory_order_relaxed);
 }
 
 }  // namespace tt::worker

@@ -761,6 +761,218 @@ cpp_server/
 ### API
 - `LLMController`: Drogon HTTP controller with OpenAI-compatible endpoints
 
+## Worker Metrics
+
+Worker processes publish operational signals (heartbeats, active request
+count, etc.) to the main process through a single POSIX shared-memory
+segment. The main process aggregates them at scrape time and exposes them
+via the existing `/metrics` endpoint, alongside the server-side metrics.
+
+### Design intent
+
+- **Single `/metrics` endpoint owned by main.** Operators configure one
+  Prometheus job; per-worker port discovery is unnecessary, and the same
+  endpoint works in single-process and HA-replica deployments.
+- **Push via shared memory, not IPC queues.** The worker hot path
+  (`step()`, per-token updates) must be a single relaxed atomic store with
+  no syscalls, no allocations, and no producer-side blocking. A
+  `boost::interprocess::message_queue` would impose mutex + condvar +
+  memcpy per update; per-update sockets would add latency to
+  `active_requests` decrements. The shared-memory approach lets the writer
+  pay nothing per update, and the reader (main process) pays the
+  aggregation cost only at scrape time (every 5-15s).
+- **No common metrics header in the slot.** Different worker types
+  (LLM, SDXL, embedding, TTS) will have entirely different liveness and
+  load semantics. Hard-coding "heartbeat" or "active_requests" into the
+  slot would force every future worker type to either lie about those
+  fields or break the contract. Instead, each slot exposes only a minimal
+  dispatch tag (`pid`, `metrics_layout`, `generation`) plus a layout-owned
+  scratch area.
+- **Layout enum names what the bytes mean, not who wrote them.** A future
+  second runner that produces the same operational signals as the current
+  `SpPipelineRunner` would reuse `MetricsLayout::LLM` and the existing
+  renderer, instead of declaring a new layout.
+
+### Architecture
+
+```mermaid
+flowchart LR
+    subgraph Workers
+        W0["Worker 0<br/>(MetricsLayout::LLM)"]
+        W1["Worker 1<br/>(MetricsLayout::SDXL, future)"]
+    end
+
+    SHM[("POSIX shm<br/>/dev/shm/tt_worker_metrics<br/>N x slot{tag + scratch}")]
+
+    W0 -->|"atomic store ~ns"| SHM
+    W1 -->|"atomic store"| SHM
+
+    subgraph Main["Main process"]
+        AGG[WorkerMetricsAggregator]
+        WMG["WorkerManager<br/>(is_alive source)"]
+        REG["prometheus::Registry"]
+        EP["GET /metrics"]
+
+        subgraph Renderers["Renderer registry (by MetricsLayout)"]
+            RL["SpPipelineWorkerMetricsRenderer<br/>(MetricsLayout::LLM)"]
+            RX["SdxlWorkerMetricsRenderer<br/>(future)"]
+        end
+    end
+
+    SHM -->|"atomic load at scrape"| AGG
+    WMG -->|"is_alive[]"| AGG
+    AGG -->|"dispatch by metrics_layout"| Renderers
+    Renderers -->|"Set() gauges"| REG
+    REG --> EP
+```
+
+### Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant Main
+    participant SHM as /dev/shm/tt_worker_metrics
+    participant W0 as Worker 0 (after execv)
+
+    Main->>Main: name = settings::workerMetricsShmName()
+    Main->>SHM: shm_unlink(name) (defensive)
+    Main->>SHM: shm_open + ftruncate + mmap
+    Main->>SHM: init magic / version / num_workers
+    Main->>W0: fork + execv (env TT_WORKER_METRICS_SHM inherited)
+    W0->>W0: name = settings::workerMetricsShmName()
+    W0->>SHM: shm_open + mmap
+    W0->>SHM: claim slots[workerId], write pid + metrics_layout
+
+    loop Hot path (per step / per token)
+        W0->>SHM: scratch[idx].store (relaxed)
+    end
+
+    Note over Main: scrape arrives
+    Main->>SHM: load all slots
+    Main->>Main: dispatch by metrics_layout, render
+
+    Note over Main: shutdown
+    Main->>SHM: munmap + shm_unlink
+```
+
+`fork+execv` wipes the inherited mmap, so the worker re-opens the segment
+by name. `TT_WORKER_METRICS_SHM` is inherited across `execv`, so main and
+worker resolve to the same name automatically.
+
+### Class diagram - worker side
+
+```mermaid
+classDiagram
+    direction LR
+    class WorkerMetrics {
+        +initialize(workerId, MetricsLayout)
+        +updateStepHeartbeat()
+        +updateOutputHeartbeat()
+        +incrementActiveRequests()
+        +decrementActiveRequests()
+        +scratchStoreU64(idx, value)
+        +scratchAddU64(idx, delta)
+        -slot_ : WorkerSlot*
+    }
+    class SpPipelineRunner {
+        +step()
+        +handleRequest()
+        +handleOutput()
+    }
+    class WorkerSlot {
+        +pid
+        +metrics_layout
+        +generation
+        +scratch[32]
+    }
+    class spPipelineLayout["sp_pipeline_metrics_layout.hpp"] {
+        +SCRATCH_STEP_EPOCH_MS
+        +SCRATCH_LAST_OUTPUT_EPOCH_MS
+        +SCRATCH_ACTIVE_REQUESTS
+    }
+    SpPipelineRunner --> WorkerMetrics : updates
+    WorkerMetrics --> WorkerSlot : writes via mmap
+    WorkerMetrics ..> spPipelineLayout : uses indices
+    SpPipelineRunner ..> spPipelineLayout : uses indices
+```
+
+### Class diagram - main side
+
+```mermaid
+classDiagram
+    direction LR
+    class MetricsController {
+        +get(/metrics) Response
+    }
+    class WorkerMetricsAggregator {
+        +registerRenderer(MetricsLayout, IRenderer)
+        +refresh()
+        +renderText() string
+        -region_ : WorkerMetricsShmRegion*
+        -mgr_ : WorkerManager*
+    }
+    class IWorkerMetricsRenderer {
+        <<interface>>
+        +prebuildGauges(Registry&, workerId)
+        +render(WorkerSlot&, workerId, is_alive)
+    }
+    class SpPipelineWorkerMetricsRenderer
+    class SdxlWorkerMetricsRenderer["SdxlWorkerMetricsRenderer (future)"]
+    class WorkerManager {
+        +getWorkerInfo() vector~WorkerInfo~
+    }
+    class PrometheusRegistry["prometheus::Registry"]
+    MetricsController --> WorkerMetricsAggregator : refresh()+renderText()
+    WorkerMetricsAggregator --> IWorkerMetricsRenderer : dispatch by layout
+    IWorkerMetricsRenderer <|.. SpPipelineWorkerMetricsRenderer
+    IWorkerMetricsRenderer <|.. SdxlWorkerMetricsRenderer
+    WorkerMetricsAggregator --> WorkerManager : is_alive lookup
+    SpPipelineWorkerMetricsRenderer --> PrometheusRegistry : Set() gauges
+```
+
+### Adding a new worker type
+
+1. Pick a `MetricsLayout` enum value in
+   `include/worker/worker_metrics_shm.hpp`. Reuse an existing one if your
+   new runner produces the same metric semantics; otherwise append a new
+   value (never renumber).
+2. Create `include/worker/<runner>_metrics_layout.hpp` with `SCRATCH_*`
+   index constants. Append-only.
+3. Create `<Runner>WorkerMetricsRenderer` implementing
+   `IWorkerMetricsRenderer`. Pre-build the Prometheus gauges in
+   `prebuildGauges`, read scratch via your layout's indices in `render`,
+   and decide what (if anything) to emit when `is_alive == false`.
+4. In your runner's hot path, call
+   `WorkerMetrics::scratchStoreU64(<your index>, value)` (or
+   `scratchAddU64` for counters).
+5. In `main.cpp`, register the renderer for your `MetricsLayout` value
+   and add the mapping in `metricsLayoutFromConfig()`.
+6. Add Grafana panels using your new metric names.
+
+No transport, slot layout, aggregator, or main lifecycle code needs to
+change.
+
+### Modifying an existing worker type
+
+- **Adding a metric:** append a new `SCRATCH_*` index in the layout
+  header, write it from the runner, read+emit it in the renderer.
+- **Removing a metric:** stop writing/reading the index but leave the
+  constant in place (commented as deprecated).
+- **Repurposing or shrinking an index, or reordering:** safe because main
+  and worker are always launched from the same binary (main forks and
+  execs the same executable), so there is never a version skew between
+  producer and consumer of the layout. No compatibility shim needed.
+- **Renaming a Prometheus metric** is a Grafana / dashboard concern only;
+  no shm changes.
+
+### Operational knobs
+
+- `TT_WORKER_METRICS_SHM` env var sets the shared-memory segment name
+  (defaults to `/tt_worker_metrics`). Inherited across `fork+execv`, so
+  setting it on the main process applies symmetrically to every worker.
+- Stale segments left by an unclean shutdown are auto-recovered on next
+  start (defensive `shm_unlink` before `shm_open(O_CREAT)`).
+
 ## Runner Types
 
 The server supports the following runner types, selected via the `LLM_DEVICE_BACKEND` environment variable:

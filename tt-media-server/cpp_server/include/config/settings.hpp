@@ -163,6 +163,11 @@ std::string ttWarmupSignalsQueueName();
  * defaults::TT_MEMORY_RESULT_QUEUE. */
 std::string ttMemoryResultQueueName();
 
+/** POSIX shared-memory segment name backing the worker metrics transport.
+ * From TT_WORKER_METRICS_SHM. Default: defaults::TT_WORKER_METRICS_SHM.
+ * Inherited across fork+execv so main and worker resolve to the same name. */
+std::string workerMetricsShmName();
+
 /** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
  * defaults::USE_DEEPSEEK_MD_FORMAT. */
 bool useDeepseekMdFormat();
@@ -170,11 +175,5 @@ bool useDeepseekMdFormat();
 /** Build LLMConfig from environment variables and runtime settings. Implemented
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();
-
-/** Base port for worker-side Prometheus /metrics endpoints.
- * Worker N listens on WORKER_METRICS_BASE_PORT + N.
- * From WORKER_METRICS_BASE_PORT. Default: defaults::WORKER_METRICS_BASE_PORT.
- */
-uint16_t workerMetricsBasePort();
 
 }  // namespace tt::config

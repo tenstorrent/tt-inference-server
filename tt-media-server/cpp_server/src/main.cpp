@@ -12,21 +12,27 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <thread>
 
 #include "api/error_response.hpp"
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
+#include "services/llm_service.hpp"
 #include "utils/logger.hpp"
+#include "utils/service_container.hpp"
 #include "utils/service_factory.hpp"
+#include "worker/sp_pipeline_worker_metrics_renderer.hpp"
 #include "worker/worker_manager.hpp"
 #include "worker/worker_metrics.hpp"
-#include "worker/worker_metrics_server.hpp"
+#include "worker/worker_metrics_aggregator.hpp"
+#include "worker/worker_metrics_shm.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
 namespace {
+
 volatile std::sig_atomic_t gShutdownRequested = 0;
 
 void signalHandler(int signal) {
@@ -34,6 +40,19 @@ void signalHandler(int signal) {
   gShutdownRequested = 1;
   drogon::app().quit();
 }
+
+/** Map the runtime ModelService to the metrics layout this binary's runner
+ *  publishes into shared memory. */
+tt::worker::MetricsLayout metricsLayoutFromConfig() {
+  switch (tt::config::modelService()) {
+    case tt::config::ModelService::LLM:
+      return tt::worker::MetricsLayout::LLM;
+    case tt::config::ModelService::EMBEDDING:
+      return tt::worker::MetricsLayout::EMBEDDING;
+  }
+  return tt::worker::MetricsLayout::UNKNOWN;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -42,12 +61,8 @@ int main(int argc, char* argv[]) {
     tracy_config::tracyStartupWorker(workerId);
     tt::utils::ZeroOverheadLogger::initialize();
 
-    tt::worker::WorkerMetrics::instance().initialize(workerId);
-
-    uint16_t metricsPort =
-        tt::config::workerMetricsBasePort() + static_cast<uint16_t>(workerId);
-    tt::worker::WorkerMetricsServer metricsServer{workerId, metricsPort};
-    metricsServer.start();
+    tt::worker::WorkerMetrics::instance().initialize(workerId,
+                                                     metricsLayoutFromConfig());
 
     tt::worker::WorkerConfig cfg =
         tt::worker::makeWorkerConfigForProcess(workerId);
@@ -68,7 +83,6 @@ int main(int argc, char* argv[]) {
     worker.start();
     workerShutdown.store(true);
     if (shutdownMonitor.joinable()) shutdownMonitor.join();
-    metricsServer.stop();
     return 0;
   }
 
@@ -77,7 +91,6 @@ int main(int argc, char* argv[]) {
   std::string host = defs::SERVER_HOST;
   uint16_t port = defs::SERVER_PORT;
   int threads = std::thread::hardware_concurrency();
-  tt::utils::service_factory::initializeServices();
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -123,6 +136,31 @@ int main(int argc, char* argv[]) {
 
   if (mkdir("./logs", 0755) != 0 && errno != EEXIST) {
     TT_LOG_WARN("[Main] Failed to create log directory: {}", strerror(errno));
+  }
+
+  // Create the worker-metrics shared-memory region BEFORE workers are spawned
+  // (initializeServices() starts the WorkerManager which fork+execv's workers).
+  const std::string shmName = tt::config::workerMetricsShmName();
+  const size_t numWorkers = tt::config::numWorkers();
+  tt::worker::WorkerMetricsShmRegion* shmRegion =
+      tt::worker::createSharedRegion(shmName, numWorkers);
+
+  tt::utils::service_factory::initializeServices();
+
+  // Wire the aggregator now that the WorkerManager exists. Workers may still
+  // be attaching to the segment; renderers tolerate empty/UNKNOWN slots.
+  if (shmRegion != nullptr) {
+    auto& agg = tt::worker::WorkerMetricsAggregator::instance();
+    tt::worker::WorkerManager* mgr = nullptr;
+    auto llm = tt::utils::ServiceContainer::instance().llm();
+    if (llm) {
+      mgr = llm->workerManager();
+    }
+    agg.initialize(shmRegion, mgr, numWorkers);
+    agg.registerRenderer(
+        tt::worker::MetricsLayout::LLM,
+        std::make_unique<tt::worker::SpPipelineWorkerMetricsRenderer>());
+    agg.prebuildAll();
   }
 
   const char* envToken = std::getenv("OPENAI_API_KEY");
@@ -215,6 +253,10 @@ int main(int argc, char* argv[]) {
 
   // Run the server
   drogon::app().run();
+
+  if (shmRegion != nullptr) {
+    tt::worker::destroySharedRegion(shmRegion, shmName);
+  }
 
   TT_LOG_INFO("[Main] Server shutdown complete");
   return 0;

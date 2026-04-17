@@ -3,49 +3,57 @@
 
 #pragma once
 
-#include <atomic>
+#include <cstddef>
 #include <cstdint>
-#include <string>
+
+#include "worker/worker_metrics_shm.hpp"
 
 namespace tt::worker {
 
 /**
- * Per-worker heartbeat tracking exposed via a dedicated /metrics endpoint.
+ * Per-worker metrics writer backed by a POSIX shared-memory slot.
  *
- * Heartbeat timestamps are stored as atomics and converted to age-in-seconds
- * at scrape time (renderText). This keeps the hot path (step/handleOutput)
- * to a single atomic store.
+ * On initialize() the worker attaches to the segment created by main and
+ * claims slots[workerId], stamping its pid and metrics_layout. The hot path
+ * is then a single relaxed atomic store into a layout-defined scratch cell;
+ * no syscalls, no allocations, no locks.
  *
- * The header is kept free of prometheus includes so it can be used from
- * llm_runner_lib without adding a prometheus dependency.
+ * Convenience methods (updateStepHeartbeat etc.) are valid only when the
+ * worker was initialized with MetricsLayout::LLM and target the indices
+ * declared in sp_pipeline_metrics_layout.hpp. For other layouts, use the
+ * scratchStoreU64 / scratchAddU64 primitives with that layout's own
+ * index constants.
  */
 class WorkerMetrics {
  public:
   static WorkerMetrics& instance();
 
-  void initialize(int workerId);
+  /**
+   * Attach to the shared region (name from settings::workerMetricsShmName())
+   * and claim the slot for the given worker id. Stamps the current pid and
+   * the metrics_layout tag so the main-side aggregator can dispatch the
+   * slot to the right renderer.
+   */
+  void initialize(int workerId, MetricsLayout layout);
 
+  // ----- sp_pipeline (MetricsLayout::LLM) convenience writers ---------------
   void updateStepHeartbeat();
   void updateOutputHeartbeat();
   void incrementActiveRequests();
   void decrementActiveRequests();
 
-  std::string renderText();
-
-  double stepAgeSec() const;
-  double outputAgeSec() const;
-  uint32_t activeRequests() const;
+  // ----- low-level layout-agnostic writers ----------------------------------
+  void scratchStoreU64(size_t idx, uint64_t value);
+  void scratchAddU64(size_t idx, uint64_t delta);
 
  private:
   WorkerMetrics() = default;
 
   static uint64_t nowMs();
 
-  int workerId{0};
-  bool initialized{false};
-  std::atomic<uint64_t> stepEpochMs{0};
-  std::atomic<uint64_t> lastOutputEpochMs{0};
-  std::atomic<uint32_t> activeRequestsCount{0};
+  int workerId_{0};
+  MetricsLayout layout_{MetricsLayout::UNKNOWN};
+  WorkerSlot* slot_{nullptr};
 };
 
 }  // namespace tt::worker

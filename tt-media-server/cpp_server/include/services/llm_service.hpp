@@ -52,6 +52,10 @@ class LLMService
    */
   void abortRequest(uint32_t taskId);
 
+  /** Borrowed pointer to the worker manager, used by main to wire the
+   * worker metrics aggregator. Lifetime tied to this LLMService. */
+  tt::worker::WorkerManager* workerManager() { return worker_manager_.get(); }
+
  protected:
   void postProcess(domain::LLMResponse& response) const override;
   size_t currentQueueSize() const override;
