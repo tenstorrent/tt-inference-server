@@ -90,7 +90,7 @@ std::string DeepseekTokenizer::applyChatTemplate(
         "\n\n"
         "Make sure the JSON is valid.\n"
         "## Tools\n\n### Function\n\nYou have the following functions "
-           "available:\n\n";
+        "available:\n\n";
 
     for (const auto& tool : *tools) {
       out << "- `" << tool.functionDefinition.name << "`:\n```json\n"

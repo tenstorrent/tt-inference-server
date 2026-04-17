@@ -67,9 +67,7 @@ struct DeepSeekTemplateConfig : public TokenizerTemplateConfig {
   const char* toolOutputsEnd() const override {
     return "<｜tool▁outputs▁end｜>";
   }
-  const char* endOfSentence() const override {
-    return "<｜end▁of▁sentence｜>";
-  }
+  const char* endOfSentence() const override { return "<｜end▁of▁sentence｜>"; }
   const char* name() const override { return "DeepSeek"; }
 
   std::string buildToolSection(const std::vector<Tool>& tools) const override {
@@ -181,9 +179,9 @@ ChatMessage createAssistantMessage(const std::string& content) {
 
 // Create an assistant message with a single tool call
 ChatMessage createAssistantWithToolCall(const std::string& content,
-                                         const std::string& toolCallId,
-                                         const std::string& functionName,
-                                         const std::string& arguments) {
+                                        const std::string& toolCallId,
+                                        const std::string& functionName,
+                                        const std::string& arguments) {
   ChatMessage msg;
   msg.role = "assistant";
   msg.content = content;
@@ -223,7 +221,7 @@ ChatMessage createAssistantWithToolCalls(
 
 // Create a tool output message
 ChatMessage createToolOutputMessage(const std::string& toolCallId,
-                                     const std::string& content) {
+                                    const std::string& content) {
   ChatMessage msg;
   msg.role = "tool";
   msg.tool_call_id = toolCallId;
@@ -267,8 +265,7 @@ void testChatTemplateWithSingleTool(const TokenizerTemplateConfig* config) {
   auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
 
   // Create message
-  std::vector<ChatMessage> messages = {
-      createUserMessage("Get weather for SF")};
+  std::vector<ChatMessage> messages = {createUserMessage("Get weather for SF")};
 
   // Create tool
   std::vector<Tool> tools = {createWeatherTool()};
@@ -504,9 +501,8 @@ void testChatTemplateWithToolOutputs(const TokenizerTemplateConfig* config) {
 
   ChatMessage assistantMsg = createAssistantWithToolCall(
       "", "call_123", "get_weather", "{\"location\":\"San Francisco\"}");
-  ChatMessage toolMsg =
-      createToolOutputMessage("call_123",
-                              "{\"temperature\":72,\"conditions\":\"sunny\"}");
+  ChatMessage toolMsg = createToolOutputMessage(
+      "call_123", "{\"temperature\":72,\"conditions\":\"sunny\"}");
 
   std::vector<ChatMessage> messages = {
       createUserMessage("What's the weather in SF?"), assistantMsg, toolMsg};
