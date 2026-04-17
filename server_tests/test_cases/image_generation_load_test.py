@@ -7,6 +7,7 @@ import logging
 import time
 
 import aiohttp
+
 from server_tests.base_test import BaseTest
 
 # Set up logging
