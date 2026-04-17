@@ -18,12 +18,12 @@ namespace tt::services {
 struct GuidedDecoderManager::Impl {
   xgrammar::TokenizerInfo tokenizerInfo;
   xgrammar::GrammarCompiler compiler;
-  xgrammar::BatchGrammarMatcher batchMatcher;
   int vocabSize;
   int bitmaskSize;
 
   struct RequestState {
     xgrammar::GrammarMatcher matcher;
+    std::vector<int32_t> bitmaskBuffer;
   };
 
   // All access is from the single worker-process inference thread.
@@ -37,12 +37,25 @@ struct GuidedDecoderManager::Impl {
         bitmaskSize(xgrammar::GetBitmaskSize(vocabSize)),
         pool(std::thread::hardware_concurrency()) {}
 
-  static void extractAllowedIds(const int32_t* bitmaskRow,
-                                std::vector<int32_t>& out, int vocabSize,
-                                int bitmaskSize) {
+  static void fillAndExtract(RequestState* state, std::vector<int32_t>& out,
+                             int vocabSize, int bitmaskSize) {
+    std::fill(state->bitmaskBuffer.begin(), state->bitmaskBuffer.end(), 0);
+
+    DLTensor tensor{};
+    tensor.data = state->bitmaskBuffer.data();
+    tensor.device = {kDLCPU, 0};
+    tensor.ndim = 1;
+    tensor.dtype = xgrammar::GetBitmaskDLType();
+    int64_t shape = bitmaskSize;
+    tensor.shape = &shape;
+    tensor.strides = nullptr;
+    tensor.byte_offset = 0;
+
+    state->matcher.FillNextTokenBitmask(&tensor);
+
     out.reserve(1024);
     for (int w = 0; w < bitmaskSize; ++w) {
-      auto word = static_cast<uint32_t>(bitmaskRow[w]);
+      auto word = static_cast<uint32_t>(state->bitmaskBuffer[w]);
       while (word != 0) {
         int bit = __builtin_ctz(word);
         int tokenId = w * 32 + bit;
@@ -79,8 +92,11 @@ void GuidedDecoderManager::initRequest(
     }
   }();
 
+  xgrammar::GrammarMatcher matcher(compiled);
+  std::vector<int32_t> bitmaskBuffer(impl->bitmaskSize, 0);
+
   impl->requests[taskId] = std::make_unique<Impl::RequestState>(
-      Impl::RequestState{xgrammar::GrammarMatcher(compiled)});
+      Impl::RequestState{std::move(matcher), std::move(bitmaskBuffer)});
 }
 
 std::vector<int32_t> GuidedDecoderManager::getNextAllowedTokenIds(
@@ -88,22 +104,9 @@ std::vector<int32_t> GuidedDecoderManager::getNextAllowedTokenIds(
   auto it = impl->requests.find(taskId);
   if (it == impl->requests.end()) return {};
 
-  std::vector<int32_t> buffer(impl->bitmaskSize, 0);
-  DLTensor tensor{};
-  tensor.data = buffer.data();
-  tensor.device = {kDLCPU, 0};
-  tensor.ndim = 1;
-  tensor.dtype = xgrammar::GetBitmaskDLType();
-  int64_t shape = impl->bitmaskSize;
-  tensor.shape = &shape;
-  tensor.strides = nullptr;
-  tensor.byte_offset = 0;
-
-  it->second->matcher.FillNextTokenBitmask(&tensor);
-
   std::vector<int32_t> allowed;
-  Impl::extractAllowedIds(buffer.data(), allowed, impl->vocabSize,
-                          impl->bitmaskSize);
+  Impl::fillAndExtract(it->second.get(), allowed, impl->vocabSize,
+                       impl->bitmaskSize);
   return allowed;
 }
 
@@ -118,51 +121,22 @@ GuidedDecoderManager::getNextAllowedTokenIdsBatch(
     Impl::RequestState* state;
   };
   std::vector<WorkItem> items;
-  std::vector<xgrammar::GrammarMatcher> matchers;
   items.reserve(taskIds.size());
-  matchers.reserve(taskIds.size());
-
   for (uint32_t id : taskIds) {
     auto it = impl->requests.find(id);
     if (it != impl->requests.end()) {
       items.push_back({id, it->second.get()});
-      matchers.push_back(std::move(it->second->matcher));
     }
   }
 
-  if (items.empty()) return {};
-
-  auto batchSize = static_cast<int64_t>(matchers.size());
-
-  // Batch-fill bitmasks using xgrammar's internal thread pool
-  std::vector<int32_t> batchBuffer(batchSize * bitmaskSize, 0);
-  int64_t shape[2] = {batchSize, static_cast<int64_t>(bitmaskSize)};
-  DLTensor batchTensor{};
-  batchTensor.data = batchBuffer.data();
-  batchTensor.device = {kDLCPU, 0};
-  batchTensor.ndim = 2;
-  batchTensor.dtype = xgrammar::GetBitmaskDLType();
-  batchTensor.shape = shape;
-  batchTensor.strides = nullptr;
-  batchTensor.byte_offset = 0;
-
-  impl->batchMatcher.BatchFillNextTokenBitmask(&matchers, &batchTensor);
-
-  // Move matchers back to request states
-  for (size_t i = 0; i < items.size(); ++i) {
-    items[i].state->matcher = std::move(matchers[i]);
-  }
-
-  // Extract allowed token IDs in parallel using thread pool
   std::vector<BatchAllowedResult> results(items.size());
 
   constexpr size_t kParallelThreshold = 4;
   if (items.size() <= kParallelThreshold) {
     for (size_t i = 0; i < items.size(); ++i) {
       results[i].taskId = items[i].taskId;
-      Impl::extractAllowedIds(batchBuffer.data() + i * bitmaskSize,
-                              results[i].allowedTokenIds, vocabSize,
-                              bitmaskSize);
+      Impl::fillAndExtract(items[i].state, results[i].allowedTokenIds,
+                           vocabSize, bitmaskSize);
     }
     return results;
   }
@@ -174,9 +148,8 @@ GuidedDecoderManager::getNextAllowedTokenIdsBatch(
   for (size_t i = 0; i < items.size(); ++i) {
     impl->pool.submit([&, i] {
       results[i].taskId = items[i].taskId;
-      Impl::extractAllowedIds(batchBuffer.data() + i * bitmaskSize,
-                              results[i].allowedTokenIds, vocabSize,
-                              bitmaskSize);
+      Impl::fillAndExtract(items[i].state, results[i].allowedTokenIds,
+                           vocabSize, bitmaskSize);
       if (completed.fetch_add(1, std::memory_order_acq_rel) + 1 ==
           items.size()) {
         std::lock_guard lk(doneMutex);
@@ -192,6 +165,31 @@ GuidedDecoderManager::getNextAllowedTokenIdsBatch(
 
   return results;
 }
+
+void GuidedDecoderManager::fillNextBitmask(uint32_t taskId,
+                                           std::vector<int32_t>& bitmask) {
+  auto it = impl->requests.find(taskId);
+  if (it == impl->requests.end()) return;
+
+  auto* state = it->second.get();
+  bitmask.assign(impl->bitmaskSize, 0);
+
+  DLTensor tensor{};
+  tensor.data = bitmask.data();
+  tensor.device = {kDLCPU, 0};
+  tensor.ndim = 1;
+  tensor.dtype = xgrammar::GetBitmaskDLType();
+  int64_t shape = impl->bitmaskSize;
+  tensor.shape = &shape;
+  tensor.strides = nullptr;
+  tensor.byte_offset = 0;
+
+  state->matcher.FillNextTokenBitmask(&tensor);
+}
+
+int GuidedDecoderManager::vocabSize() const { return impl->vocabSize; }
+
+int GuidedDecoderManager::bitmaskSize() const { return impl->bitmaskSize; }
 
 TokenAcceptResult GuidedDecoderManager::acceptToken(uint32_t taskId,
                                                     int32_t tokenId) {

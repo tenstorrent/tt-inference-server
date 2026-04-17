@@ -142,7 +142,21 @@ void LlamaModelRunner::run(const std::vector<Sequence*>& seqs, bool isPrefill) {
             sp ? static_cast<double>(sp->frequency_penalty) : 0.0;
 
         py::object allowedTokenIds = py::none();
-        if (sp && sp->allowed_token_ids.has_value()) {
+        if (sp && sp->token_bitmask.has_value()) {
+          py::list pyAllowed;
+          const auto& bitmask = *sp->token_bitmask;
+          int vocabSize = sp->bitmask_vocab_size;
+          for (size_t w = 0; w < bitmask.size(); ++w) {
+            auto word = static_cast<uint32_t>(bitmask[w]);
+            while (word != 0) {
+              int bit = __builtin_ctz(word);
+              int tokenId = static_cast<int>(w) * 32 + bit;
+              if (tokenId < vocabSize) pyAllowed.append(tokenId);
+              word &= word - 1;
+            }
+          }
+          allowedTokenIds = std::move(pyAllowed);
+        } else if (sp && sp->allowed_token_ids.has_value()) {
           py::list pyAllowed;
           for (int tid : *sp->allowed_token_ids) {
             pyAllowed.append(tid);

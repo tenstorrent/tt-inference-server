@@ -39,6 +39,11 @@ class GuidedDecoderManager {
   std::vector<BatchAllowedResult> getNextAllowedTokenIdsBatch(
       const std::vector<uint32_t>& taskIds);
 
+  void fillNextBitmask(uint32_t taskId, std::vector<int32_t>& bitmask);
+
+  int vocabSize() const;
+  int bitmaskSize() const;
+
   TokenAcceptResult acceptToken(uint32_t taskId, int32_t tokenId);
 
   bool hasGuidedDecoding(uint32_t taskId) const;
