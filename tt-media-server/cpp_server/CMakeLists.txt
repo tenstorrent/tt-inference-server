@@ -417,6 +417,25 @@ target_include_directories(structured_output_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(concurrent_utils_test tests/concurrent_utils_test.cpp)
+target_link_libraries(concurrent_utils_test PRIVATE GTest::gtest_main)
+target_include_directories(concurrent_utils_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(toctou_race_repro tests/toctou_race_repro.cpp)
+target_link_libraries(toctou_race_repro PRIVATE GTest::gtest_main)
+target_include_directories(toctou_race_repro PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Bug-only reproducer: compiles against both pre-fix and post-fix codebase.
+add_executable(bug_repro_only tests/bug_repro_only.cpp)
+target_link_libraries(bug_repro_only PRIVATE GTest::gtest_main)
+target_include_directories(bug_repro_only PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -426,6 +445,9 @@ gtest_discover_tests(test_tokenizer)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(cancellation_test)
 gtest_discover_tests(structured_output_test)
+gtest_discover_tests(concurrent_utils_test)
+gtest_discover_tests(toctou_race_repro)
+gtest_discover_tests(bug_repro_only)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
