@@ -504,10 +504,38 @@ class TestVideoMatrixExpansion:
         },
     ]
 
-    WAN_LOAD_TARGETS = {"video_generation_target_time": 370}
+    WAN_LOAD_TARGETS = {
+        "wan-t3k": {"video_generation_target_time": 1200, "poll_timeout": 1500},
+        "wan-galaxy": {"video_generation_target_time": 250, "poll_timeout": 550},
+        "wan-p150x4": {"video_generation_target_time": 370},
+        "wan-p150x8": {"video_generation_target_time": 600, "poll_timeout": 900},
+        "wan-p300x2": {"video_generation_target_time": 500, "poll_timeout": 800},
+    }
     MOCHI_LOAD_TARGETS = {
-        "video_generation_target_time": 480,
-        "num_inference_steps": 50,
+        "mochi-p150x4": {
+            "video_generation_target_time": 480,
+            "num_inference_steps": 50,
+        },
+        "mochi-p300x2": {
+            "video_generation_target_time": 900,
+            "num_inference_steps": 50,
+            "poll_timeout": 1100,
+        },
+        "mochi-t3k": {
+            "video_generation_target_time": 600,
+            "num_inference_steps": 50,
+            "poll_timeout": 900,
+        },
+        "mochi-galaxy": {
+            "video_generation_target_time": 650,
+            "num_inference_steps": 50,
+            "poll_timeout": 800,
+        },
+        "mochi-p150x8": {
+            "video_generation_target_time": 900,
+            "num_inference_steps": 50,
+            "poll_timeout": 1000,
+        },
     }
 
     def test_video_suite_count(self):
@@ -550,7 +578,10 @@ class TestVideoMatrixExpansion:
 
             load_test = suite["test_cases"][0]
             assert load_test["template"] == "VideoGenerationLoadTest"
-            assert load_test["targets"] == self.WAN_LOAD_TARGETS
+            expected_targets = self.WAN_LOAD_TARGETS[suite["id"]]
+            assert load_test["targets"] == expected_targets, (
+                f"targets mismatch for {suite['id']}"
+            )
 
             param_test = suite["test_cases"][1]
             assert param_test["template"] == "VideoGenerationParamTest"
@@ -567,7 +598,10 @@ class TestVideoMatrixExpansion:
 
             load_test = suite["test_cases"][0]
             assert load_test["template"] == "VideoGenerationLoadTest"
-            assert load_test["targets"] == self.MOCHI_LOAD_TARGETS
+            expected_targets = self.MOCHI_LOAD_TARGETS[suite["id"]]
+            assert load_test["targets"] == expected_targets, (
+                f"targets mismatch for {suite['id']}"
+            )
 
             param_test = suite["test_cases"][1]
             assert param_test["template"] == "VideoGenerationParamTest"
