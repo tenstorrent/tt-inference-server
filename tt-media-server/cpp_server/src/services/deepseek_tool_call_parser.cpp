@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include "services/tool_call_parser.hpp"
-
 #include <json/reader.h>
 #include <json/value.h>
 
 #include <regex>
 
 #include "config/types.hpp"
+#include "services/tool_call_parser.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
@@ -37,9 +36,9 @@ class DeepSeekToolCallParser : public IToolCallParser {
     Json::Value toolCallsArray(Json::arrayValue);
     int callIndex = 0;
 
-    // Pattern to match: function<｜tool▁sep｜>function_name\n```json\n{...}\n```
-    // Using a simpler approach: find the markers and extract content between
-    // them
+    // Pattern to match:
+    // function<｜tool▁sep｜>function_name\n```json\n{...}\n``` Using a simpler
+    // approach: find the markers and extract content between them
     size_t pos = 0;
     while (true) {
       // Find next tool call
@@ -114,8 +113,7 @@ class DeepSeekToolCallParser : public IToolCallParser {
             // Convert arguments to string (OpenAI format expects string)
             Json::StreamWriterBuilder writerBuilder;
             writerBuilder["indentation"] = "";
-            function["arguments"] =
-                Json::writeString(writerBuilder, argsJson);
+            function["arguments"] = Json::writeString(writerBuilder, argsJson);
 
             toolCall["function"] = function;
             toolCallsArray.append(toolCall);

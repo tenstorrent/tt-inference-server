@@ -393,9 +393,10 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
   // Parse tool calls from the response
   if (tool_call_parser_) {
     for (auto& choice : response.choices) {
-      TT_LOG_DEBUG("[LLMService] Parsing text for tool calls (length={}): {}",
-                   choice.text.length(),
-                   choice.text.substr(0, std::min<size_t>(200, choice.text.length())));
+      TT_LOG_DEBUG(
+          "[LLMService] Parsing text for tool calls (length={}): {}",
+          choice.text.length(),
+          choice.text.substr(0, std::min<size_t>(200, choice.text.length())));
 
       auto toolCalls = tool_call_parser_->parseComplete(choice.text);
       if (toolCalls.has_value() && !toolCalls->empty()) {

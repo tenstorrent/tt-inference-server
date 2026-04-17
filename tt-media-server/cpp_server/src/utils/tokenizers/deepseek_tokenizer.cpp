@@ -14,7 +14,7 @@ static const char* dsUserTag =
 static const char* dsAssistantTag =
     "<\xEF\xBD\x9C"
     "Assistant\xEF\xBD\x9C>";
-    static const char* dsToolCallsBegin =
+static const char* dsToolCallsBegin =
     "<\xEF\xBD\x9C"
     "tool\xE2\x96\x81"
     "calls\xE2\x96\x81"
@@ -67,7 +67,8 @@ static const char* dsEndOfSentence =
 std::string DeepseekTokenizer::applyChatTemplate(
     const std::vector<tt::domain::ChatMessage>& messages,
     bool addGenerationPrompt,
-    const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools) const {
+    const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools)
+    const {
   std::ostringstream out;
 
   if (cfg_.add_bos_token) out << cfg_.bos_token;
@@ -80,16 +81,21 @@ std::string DeepseekTokenizer::applyChatTemplate(
     const std::string tools_description =
         std::string(
             "You are a helpful assistant with tool calling capabilities. "
-            "When a tool call is needed, you MUST use the following format to issue the call:\n") +
-        dsToolCallsBegin + dsToolCallBegin + "function" + dsToolSep + "FUNCTION_NAME\n" +
-        "```json\n{\"param1\":\"value1\",\"param2\":\"value2\"}\n```" + dsToolCallEnd +
-        dsToolCallsEnd + "\n\n"
+            "When a tool call is needed, you MUST use the following format to "
+            "issue the call:\n") +
+        dsToolCallsBegin + dsToolCallBegin + "function" + dsToolSep +
+        "FUNCTION_NAME\n" +
+        "```json\n{\"param1\":\"value1\",\"param2\":\"value2\"}\n```" +
+        dsToolCallEnd + dsToolCallsEnd +
+        "\n\n"
         "Make sure the JSON is valid.\n"
-        "## Tools\n\n### Function\n\nYou have the following functions available:\n\n";
+        "## Tools\n\n### Function\n\nYou have the following functions "
+        "available:\n\n";
 
     out << tools_description;
     for (const auto& tool : *tools) {
-      out<<"- `" << tool.functionDefinition.name << "`:\n```json\n" << (tool.toJson()) << "\n```\n";
+      out << "- `" << tool.functionDefinition.name << "`:\n```json\n"
+          << (tool.toJson()) << "\n```\n";
     }
   }
 
@@ -102,7 +108,6 @@ std::string DeepseekTokenizer::applyChatTemplate(
       if (cfg_.add_eos_token) out << cfg_.eos_token;
     }
   }
-
 
   if (addGenerationPrompt) {
     out << dsAssistantTag;

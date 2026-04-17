@@ -5,8 +5,8 @@
 #include <iostream>
 #include <string>
 
-#include "services/tool_call_parser.hpp"
 #include "config/types.hpp"
+#include "services/tool_call_parser.hpp"
 
 using namespace tt::services;
 
@@ -18,7 +18,8 @@ void testDeepSeekToolCallParsing() {
   // Test 1: Single tool call
   {
     std::string input =
-        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_weather\n"
+        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_"
+        "weather\n"
         "```json\n"
         "{\"location\":\"San Francisco\"}\n"
         "```\n"
@@ -85,9 +86,14 @@ void testDeepSeekToolCallParsing() {
   // Test 4: Complex JSON arguments with objects and arrays
   {
     std::string input =
-        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>create_event\n"
+        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>"
+        "create_event\n"
         "```json\n"
-        "{\"title\":\"Team Meeting\",\"location\":{\"venue\":\"Conference Room A\",\"address\":\"123 Main St\"},\"attendees\":[{\"name\":\"Alice\",\"email\":\"alice@example.com\"},{\"name\":\"Bob\",\"email\":\"bob@example.com\"}],\"start_time\":\"2026-04-20T10:00:00Z\",\"duration_minutes\":60}\n"
+        "{\"title\":\"Team Meeting\",\"location\":{\"venue\":\"Conference Room "
+        "A\",\"address\":\"123 Main "
+        "St\"},\"attendees\":[{\"name\":\"Alice\",\"email\":\"alice@example."
+        "com\"},{\"name\":\"Bob\",\"email\":\"bob@example.com\"}],\"start_"
+        "time\":\"2026-04-20T10:00:00Z\",\"duration_minutes\":60}\n"
         "```\n"
         "<｜tool▁call▁end｜><｜tool▁calls▁end｜>";
 
@@ -105,14 +111,16 @@ void testDeepSeekToolCallParsing() {
     assert(args.find("alice@example.com") != std::string::npos);
     assert(args.find("attendees") != std::string::npos);
 
-    std::cout << "✓ Test 4 passed: Complex JSON arguments with objects and arrays\n";
+    std::cout
+        << "✓ Test 4 passed: Complex JSON arguments with objects and arrays\n";
   }
 
   // Test 5: Tool call with text before/after
   {
     std::string input =
         "Let me check that for you.\n"
-        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_weather\n"
+        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_"
+        "weather\n"
         "```json\n"
         "{\"location\":\"San Francisco\"}\n"
         "```\n"
@@ -146,7 +154,8 @@ void testDeepSeekStripMarkers() {
   {
     std::string input =
         "Some text before\n"
-        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_weather\n"
+        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_"
+        "weather\n"
         "```json\n"
         "{\"location\":\"San Francisco\"}\n"
         "```\n"
@@ -182,7 +191,8 @@ void testDeepSeekEdgeCases() {
   // Test 1: Malformed - missing end marker
   {
     std::string input =
-        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_weather\n"
+        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_"
+        "weather\n"
         "```json\n"
         "{\"location\":\"San Francisco\"}\n"
         "```\n";
@@ -209,7 +219,8 @@ void testDeepSeekEdgeCases() {
   // Test 3: Invalid JSON
   {
     std::string input =
-        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_weather\n"
+        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_"
+        "weather\n"
         "```json\n"
         "{invalid json here}\n"
         "```\n"
@@ -229,7 +240,8 @@ void testDeepSeekOpenAIFormatCompliance() {
   auto parser = createToolCallParser(tt::config::ModelType::DEEPSEEK_R1_0528);
 
   std::string input =
-      "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_weather\n"
+      "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>get_"
+      "weather\n"
       "```json\n"
       "{\"location\":\"San Francisco\"}\n"
       "```\n"
@@ -277,9 +289,12 @@ int main() {
     testDeepSeekOpenAIFormatCompliance();
 
     std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║              🎉 ALL TESTS PASSED! 🎉                    ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout
+        << "╔══════════════════════════════════════════════════════════╗\n";
+    std::cout
+        << "║              🎉 ALL TESTS PASSED! 🎉                    ║\n";
+    std::cout
+        << "╚══════════════════════════════════════════════════════════╝\n";
     std::cout << "\n";
 
     return 0;
