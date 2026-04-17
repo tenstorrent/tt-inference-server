@@ -58,6 +58,7 @@ def main():
         if sr != TARGET_SR:
             try:
                 import librosa
+
                 pcm = librosa.resample(pcm, orig_sr=sr, target_sr=TARGET_SR)
             except ImportError:
                 print(f"  skipping sample (sr={sr}, librosa not installed)")

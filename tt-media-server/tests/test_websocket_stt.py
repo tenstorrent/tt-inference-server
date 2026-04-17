@@ -159,15 +159,21 @@ class TestWebSocketSTTLive:
         text = txt_path.read_text().lower()
         return [w for w in text.split() if len(w) > 4]
 
-    def test_live_streaming_transcription(self, librispeech_audio_pcm, ground_truth_keywords):
+    def test_live_streaming_transcription(
+        self, librispeech_audio_pcm, ground_truth_keywords
+    ):
         import websockets.sync.client as ws_sync
 
         CHUNK_BYTES = 16000 * 2 * 2  # 2s × 16kHz × 2 bytes/sample
         transcript_parts = []
 
         with ws_sync.connect(f"{self.LIVE_SERVER_URL}/ws/stt-live") as ws:
-            for offset in range(0, len(librispeech_audio_pcm) - CHUNK_BYTES, CHUNK_BYTES):
-                chunk = librispeech_audio_pcm[: offset + CHUNK_BYTES]  # cumulative buffer
+            for offset in range(
+                0, len(librispeech_audio_pcm) - CHUNK_BYTES, CHUNK_BYTES
+            ):
+                chunk = librispeech_audio_pcm[
+                    : offset + CHUNK_BYTES
+                ]  # cumulative buffer
                 ws.send(chunk)
                 ws.send(json.dumps({"action": "transcribe"}))
                 raw = ws.recv()
