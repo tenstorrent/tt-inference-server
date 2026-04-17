@@ -49,7 +49,7 @@ server must make this straightforward without modifying core infrastructure.
 - Stable core (HTTP layer, tokenization, worker lifecycle) that rarely changes.
 - Model-specific logic isolated in adapter layers (runner implementations).
 - When hardware topology requires custom communication or scheduling, changes
-  are confined to the worker level — the main server remains unchanged.
+are confined to the worker level — the main server remains unchanged.
 
 ## Logging
 
@@ -74,6 +74,7 @@ export TT_LOG_FILE=./logs/server.log  # Enable file logging (optional)
 ```
 
 Available log levels (from most to least verbose):
+
 - `trace` - Most detailed logging
 - `debug` - Debug information
 - `info` - Informational messages (default)
@@ -105,30 +106,36 @@ The engine does **not** support chunked prefill: each request is prefilled in fu
 The LLM engine supports two scheduling policies that trade off individual request latency vs. overall throughput:
 
 #### Prefill First (Default)
+
 **When to use:** Low to moderate request rates, latency-sensitive applications
 
 **Behavior:** Always prefills new requests when the prefill_queue has waiting requests. Decode is only attempted when nothing can be prefilled.
 
 **Advantages:**
+
 - **Better Time-To-First-Token (TTFT)** for individual requests
 - New requests get processed immediately without waiting for decode batches
 - Optimal for scenarios where user-perceived latency is critical
 
 **Trade-offs:**
+
 - Decode sequences may be interrupted when new requests arrive
 - Lower overall device occupancy during mixed workloads
 
 #### Max Occupancy
+
 **When to use:** High request rates, throughput-oriented applications
 
 **Behavior:** Keeps the device at full occupancy (`max_in_flight_count` from MAX_IN_FLIGHT_COUNT env var) whenever possible. When decode sequences finish and free slots, immediately prefills enough new sequences to refill capacity, then resumes decode at full width.
 
 **Advantages:**
+
 - **Better average TTFT across all users** under high load
 - Maximizes device utilization and overall throughput
 - Decode batches run at full capacity for better efficiency
 
 **Trade-offs:**
+
 - Individual requests may wait longer for their first token
 - Decode sequences lose one decode step during each prefill batch
 
@@ -219,10 +226,12 @@ Model-specific behavior (chat template, stop tokens, decode filtering) is
 selected at **runtime** via the `LLM_DEVICE_BACKEND` environment variable — no
 recompilation needed:
 
-| `LLM_DEVICE_BACKEND` | Model | Tokenizer |
-|----------------------|-------|-----------|
-| `mock` or `pipeline` (default when unset: `mock`) | DeepSeek V3 | `tokenizers/deepseek-ai/DeepSeek-R1-0528/` |
-| `llama` | Llama 3.1 8B Instruct | `tokenizers/meta-llama/Llama-3.1-8B-Instruct/` |
+
+| `LLM_DEVICE_BACKEND`                              | Model                 | Tokenizer                                      |
+| ------------------------------------------------- | --------------------- | ---------------------------------------------- |
+| `mock` or `pipeline` (default when unset: `mock`) | DeepSeek V3           | `tokenizers/deepseek-ai/DeepSeek-R1-0528/`     |
+| `llama`                                           | Llama 3.1 8B Instruct | `tokenizers/meta-llama/Llama-3.1-8B-Instruct/` |
+
 
 The runtime selection uses an OOP strategy pattern — see
 `include/utils/tokenizer_strategy.hpp` for the `ITokenizerStrategy` interface
@@ -251,16 +260,19 @@ and `create_tokenizer_strategy()` factory.
 
 ### Command Line Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-h, --host HOST` | Listen address | `0.0.0.0` |
-| `-p, --port PORT` | Listen port | `8000` |
+
+| Option            | Description          | Default   |
+| ----------------- | -------------------- | --------- |
+| `-h, --host HOST` | Listen address       | `0.0.0.0` |
+| `-p, --port PORT` | Listen port          | `8000`    |
 | `-t, --threads N` | Number of IO threads | CPU cores |
-| `--help` | Show help message | - |
+| `--help`          | Show help message    | -         |
+
 
 ### Environment Variables
 
 Configuration follows a unified system with clear separation of concerns:
+
 - **Type definitions**: `config/types.hpp` - enums and type conversions (ModelService, ModelType, LLMMode, SchedulingPolicy, etc.)
 - **Default values**: `config/defaults.hpp` - default values for all environment variables
 - **Runner config**: `config/runner_config.hpp` — LLMConfig, EmbeddingConfig, RunnerConfig variant; runtime values filled via `tt::config::llmEngineConfig()` in `config/settings.hpp` / `settings.cpp`
@@ -268,36 +280,40 @@ Configuration follows a unified system with clear separation of concerns:
 
 All environment variable reads go through `config/settings.hpp` (no direct `getenv` elsewhere).
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DEVICE_IDS` | Bracket-pair device list, one worker per pair (e.g. `(0,1,2,3),(4,5,6,7)`). num_workers = number of pairs; each worker's `TT_VISIBLE_DEVICES` = that pair's contents. | `(0)` |
-| `MODEL_SERVICE` | Service mode: `embedding` or `llm`. Same as tt-media-server. | `llm` |
-| `MAX_BATCH_DELAY_TIME_MS` | Max wait (ms) to fill batch (embedding). Same as tt-media-server. | `5` |
-| `MAX_QUEUE_SIZE` | Maximum number of requests that can be queued. | `1000` |
-| `MAX_IN_FLIGHT_COUNT` | Maximum number of requests being processed simultaneously. | `32` |
-| `TT_PYTHON_PATH` | Path added to Python `sys.path` for embedding runner (C++ only). | `..` |
-| `LLM_DEVICE_BACKEND` | LLM device backend and model: `mock` or `pipeline` (DeepSeek V3 tokenizer), `llama` (Llama 3.1 8B Instruct). | `mock` |
-| `OPENAI_API_KEY` | Bearer token for API authentication. | `your-secret-key` |
-| `LLM_MODE` | LLM operating mode: `regular`, `prefill`, or `decode`. See Prefill/Decode Split Mode. | `regular` |
-| `SOCKET_HOST` | Socket host for prefill/decode communication. Decode server: bind address. Prefill server: decode server address. | `localhost` |
-| `SOCKET_PORT` | Socket port for prefill/decode communication. | `9000` |
-| `SCHEDULING_POLICY` | LLM scheduling policy: `prefill_first` (prioritize new requests) or `max_occupancy` (maximize throughput). See Choosing a Scheduling Policy. | `prefill_first` |
-| `ENABLE_ACCUMULATED_STREAMING` | Enable token accumulation before streaming (send multiple tokens per chunk). | `false` |
-| `MAX_ACCUMULATED_TOKENS` | Maximum tokens to accumulate before streaming when `ENABLE_ACCUMULATED_STREAMING` is true. | `5` |
-| `KAFKA_BROKERS` | Kafka broker addresses (comma-separated) for session offloading. See Kafka Messaging section. | `localhost:9092` |
-| `KAFKA_OFFLOAD_TOPIC_NAME` | Kafka topic name for session offload messages. | `session-offload` |
-| `KAFKA_GROUP_ID` | Kafka consumer group ID for load balancing across consumer instances. | `migration-workers` |
+
+| Variable                       | Description                                                                                                                                                           | Default             |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `DEVICE_IDS`                   | Bracket-pair device list, one worker per pair (e.g. `(0,1,2,3),(4,5,6,7)`). num_workers = number of pairs; each worker's `TT_VISIBLE_DEVICES` = that pair's contents. | `(0)`               |
+| `MODEL_SERVICE`                | Service mode: `embedding` or `llm`. Same as tt-media-server.                                                                                                          | `llm`               |
+| `MAX_BATCH_DELAY_TIME_MS`      | Max wait (ms) to fill batch (embedding). Same as tt-media-server.                                                                                                     | `5`                 |
+| `MAX_QUEUE_SIZE`               | Maximum number of requests that can be queued.                                                                                                                        | `1000`              |
+| `MAX_IN_FLIGHT_COUNT`          | Maximum number of requests being processed simultaneously.                                                                                                            | `32`                |
+| `TT_PYTHON_PATH`               | Path added to Python `sys.path` for embedding runner (C++ only).                                                                                                      | `..`                |
+| `LLM_DEVICE_BACKEND`           | LLM device backend and model: `mock` or `pipeline` (DeepSeek V3 tokenizer), `llama` (Llama 3.1 8B Instruct).                                                          | `mock`              |
+| `OPENAI_API_KEY`               | Bearer token for API authentication.                                                                                                                                  | `your-secret-key`   |
+| `LLM_MODE`                     | LLM operating mode: `regular`, `prefill`, or `decode`. See Prefill/Decode Split Mode.                                                                                 | `regular`           |
+| `SOCKET_HOST`                  | Socket host for prefill/decode communication. Decode server: bind address. Prefill server: decode server address.                                                     | `localhost`         |
+| `SOCKET_PORT`                  | Socket port for prefill/decode communication.                                                                                                                         | `9000`              |
+| `SCHEDULING_POLICY`            | LLM scheduling policy: `prefill_first` (prioritize new requests) or `max_occupancy` (maximize throughput). See Choosing a Scheduling Policy.                          | `prefill_first`     |
+| `ENABLE_ACCUMULATED_STREAMING` | Enable token accumulation before streaming (send multiple tokens per chunk).                                                                                          | `false`             |
+| `MAX_ACCUMULATED_TOKENS`       | Maximum tokens to accumulate before streaming when `ENABLE_ACCUMULATED_STREAMING` is true.                                                                            | `5`                 |
+| `KAFKA_BROKERS`                | Kafka broker addresses (comma-separated) for session offloading. See Kafka Messaging section.                                                                         | `localhost:9092`    |
+| `KAFKA_OFFLOAD_TOPIC_NAME`     | Kafka topic name for session offload messages.                                                                                                                        | `session-offload`   |
+| `KAFKA_GROUP_ID`               | Kafka consumer group ID for load balancing across consumer instances.                                                                                                 | `migration-workers` |
+
 
 ### Prefill/Decode Split Mode
 
 The server supports running in a split architecture where prefill and decode operations are handled by separate server instances on different machines. This enables distributing the workload across multiple nodes.
 
 **Modes:**
+
 - `regular` (default): Single server handles both prefill and decode
 - `prefill`: Server only performs prefill (processes prompt, generates first token)
 - `decode`: Server receives HTTP requests, forwards to prefill server, then generates remaining tokens locally
 
 **Architecture:**
+
 ```
 Client HTTP Request
         │
@@ -317,26 +333,25 @@ Client HTTP Request
 **Running the split architecture:**
 
 1. **Start Decode Server** (receives HTTP requests, listens for prefill connections):
-   ```bash
+  ```bash
    LLM_MODE=decode SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
      ./build/tt_media_server_cpp -p 8001
-   ```
-
+  ```
 2. **Start Prefill Server** (connects to decode server):
-   ```bash
+  ```bash
    LLM_MODE=prefill SOCKET_HOST=<decode-server-ip> SOCKET_PORT=9000 \
      ./build/tt_media_server_cpp -p 8002
-   ```
-
+  ```
 3. **Send requests to the Decode Server**:
-   ```bash
+  ```bash
    curl -X POST http://<decode-server>:8001/v1/chat/completions \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer your-secret-key" \
      -d '{"messages": [{"role": "user", "content": "Hello, how are you?"}], "max_tokens": 50}'
-   ```
+  ```
 
 **Flow:**
+
 1. Client sends request to decode server (HTTP)
 2. Decode server sends prefill request to prefill server (socket)
 3. Prefill server processes prompt, generates first token, sends prefill result with token IDs
@@ -368,49 +383,45 @@ The server supports Kafka-based messaging for session offloading, enabling distr
 ### Prerequisites
 
 1. **Install librdkafka** (Kafka C/C++ client library):
-   ```bash
+  ```bash
    # Option 1: Use the install script (recommended)
    ./install_dependencies.sh --kafka
-   
+
    # Option 2: Manual installation
    sudo apt update
    sudo apt install librdkafka-dev
-   
+
    # Verify installation
    dpkg -l | grep librdkafka
-   ```
-
+  ```
 2. **Download and Install Kafka 4.2.0** (KRaft mode - no Zookeeper required):
-   ```bash
+  ```bash
    # Download Kafka in project root
    cd /path/to/tt-inference-server
    wget https://downloads.apache.org/kafka/4.2.0/kafka_2.13-4.2.0.tgz
    tar -xzf kafka_2.13-4.2.0.tgz
    cd kafka_2.13-4.2.0
-   
+
    # Format storage (only needed once)
    KAFKA_CLUSTER_ID="$(bin/kafka-storage.sh random-uuid)"
    bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/server.properties --standalone
-   ```
-
+  ```
 3. **Start Kafka Server**:
-   ```bash
+  ```bash
    # From the kafka_2.13-4.2.0 directory, start Kafka (keep this running in a separate terminal)
    cd kafka_2.13-4.2.0
    bin/kafka-server-start.sh config/server.properties
-   ```
-   
+  ```
    Kafka will start on `localhost:9092` by default.
-
 4. **Create Kafka Topic**:
-   ```bash
+  ```bash
    # From the kafka_2.13-4.2.0 directory
    bin/kafka-topics.sh --create \
      --topic session-offload \
      --bootstrap-server localhost:9092 \
      --partitions 1 \
      --replication-factor 1
-   ```
+  ```
 
 ### Building with Kafka Support
 
@@ -422,10 +433,12 @@ cd tt-media-server/cpp_server
 ```
 
 This builds:
+
 - `tt_media_server_cpp` - Main server (will include Kafka producer in SessionManager)
 - `tt_consumer` - Standalone Kafka consumer instance
 
 **Note:** When Kafka producer is implemented in the main server, you may need to set `KAFKA_ENABLED=true` at runtime:
+
 ```bash
 KAFKA_ENABLED=true ./build/tt_media_server_cpp -p 8000
 ```
@@ -434,11 +447,13 @@ KAFKA_ENABLED=true ./build/tt_media_server_cpp -p 8000
 
 Kafka configuration can be customized via environment variables:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `KAFKA_BROKERS` | Kafka broker addresses (comma-separated) | `localhost:9092` |
-| `KAFKA_OFFLOAD_TOPIC_NAME` | Topic name for session offload messages | `session-offload` |
-| `KAFKA_GROUP_ID` | Consumer group ID for load balancing | `migration-workers` |
+
+| Variable                   | Description                              | Default             |
+| -------------------------- | ---------------------------------------- | ------------------- |
+| `KAFKA_BROKERS`            | Kafka broker addresses (comma-separated) | `localhost:9092`    |
+| `KAFKA_OFFLOAD_TOPIC_NAME` | Topic name for session offload messages  | `session-offload`   |
+| `KAFKA_GROUP_ID`           | Consumer group ID for load balancing     | `migration-workers` |
+
 
 ### Running Kafka Consumer
 
@@ -462,17 +477,21 @@ KAFKA_GROUP_ID="my-consumer-group" \
 **Note:** The `KAFKA_ENABLED=true` environment variable may be required at runtime to enable Kafka functionality.
 
 The consumer:
+
 - Subscribes to the configured Kafka topic
 - Polls for offload requests
 - Processes messages independently
 - Provides a health endpoint at `/health`
 
 **Consumer Options:**
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-h, --host HOST` | Listen address | `0.0.0.0` |
-| `-p, --port PORT` | HTTP port | `8001` |
-| `-t, --threads N` | Number of IO threads | `1` |
+
+
+| Option            | Description          | Default   |
+| ----------------- | -------------------- | --------- |
+| `-h, --host HOST` | Listen address       | `0.0.0.0` |
+| `-p, --port PORT` | HTTP port            | `8001`    |
+| `-t, --threads N` | Number of IO threads | `1`       |
+
 
 ### Verifying Kafka Setup
 
@@ -531,6 +550,7 @@ The server uses Bearer token authentication for protected API endpoints. The tok
 ### Unprotected Endpoints
 
 The following endpoints do not require authentication:
+
 - `GET /health`
 - `GET /tt-liveness`
 - `GET /docs`
@@ -571,13 +591,15 @@ pkill -9 -f tt_media_server_cpp
 
 ## API Endpoints
 
-| Endpoint | Method | Auth Required | Description |
-|----------|--------|---------------|-------------|
-| `/v1/chat/completions` | POST | ✅ Yes | OpenAI-compatible chat completion |
-| `/health` | GET | ❌ No | Health check (unchanged: always 200 with status + timestamp) |
-| `/tt-liveness` | GET | ❌ No | Liveness (like Python: 200 with status alive + model info; model_ready = any worker warmed up; 500 only on failure) |
-| `/docs` | GET | ❌ No | Swagger UI documentation |
-| `/openapi.json` | GET | ❌ No | OpenAPI specification |
+
+| Endpoint               | Method | Auth Required | Description                                                                                                         |
+| ---------------------- | ------ | ------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `/v1/chat/completions` | POST   | ✅ Yes         | OpenAI-compatible chat completion                                                                                   |
+| `/health`              | GET    | ❌ No          | Health check (unchanged: always 200 with status + timestamp)                                                        |
+| `/tt-liveness`         | GET    | ❌ No          | Liveness (like Python: 200 with status alive + model info; model_ready = any worker warmed up; 500 only on failure) |
+| `/docs`                | GET    | ❌ No          | Swagger UI documentation                                                                                            |
+| `/openapi.json`        | GET    | ❌ No          | OpenAPI specification                                                                                               |
+
 
 ## Usage Examples
 
@@ -595,6 +617,7 @@ curl -X POST http://localhost:8001/v1/chat/completions \
 ```
 
 **Response:**
+
 ```json
 {
   "id": "chatcmpl-abc123",
@@ -633,6 +656,7 @@ curl -X POST http://localhost:8001/v1/chat/completions \
 ```
 
 **Response (Server-Sent Events):**
+
 ```
 data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant","content":""},"index":0}],...}
 
@@ -650,6 +674,7 @@ curl http://localhost:8001/health
 ```
 
 **Response:**
+
 ```json
 {
   "status": "healthy",
@@ -666,6 +691,7 @@ curl http://localhost:8001/tt-liveness
 Liveness probe (same as Python tt-liveness). Always returns 200 when the process can respond; 500 only on unrecoverable failure. The `model_ready` field reflects whether any worker has warmed up.
 
 **Response (200):**
+
 ```json
 {
   "status": "alive",
@@ -683,7 +709,7 @@ Liveness probe (same as Python tt-liveness). Always returns 200 when the process
 
 ### Swagger UI
 
-Open in browser: http://localhost:8001/docs
+Open in browser: [http://localhost:8001/docs](http://localhost:8001/docs)
 
 ## Architecture
 
@@ -742,23 +768,28 @@ cpp_server/
 ## Components
 
 ### Domain Objects
+
 - `LLMRequest` / `LLMResponse`: Internal pipeline request and response types
 - `LLMStreamChunk`: Internal streaming chunk callback type used by LLMService
 - `ChatCompletionRequest` / `ChatCompletionResponse`: OpenAI-compatible chat completions request and response
 - `ChatCompletionStreamChunk`: Chat completions SSE streaming chunk
 
 ### Scheduler
+
 - `ThreadSafeQueue<T>`: Lock-free thread-safe queue for task management
 - `Scheduler`: Manages worker threads and task distribution
 
 ### Services
+
 - `BaseService`: Base class with pre/post processing hooks
 - `LLMService`: LLM-specific service implementation
 
 ### Runners
+
 - **Runner factory** (`utils/runner_factory.cpp`): Creates the runner based on `MODEL_SERVICE` and `LLM_DEVICE_BACKEND`. For LLM, builds `tt::config::LLMConfig` via `tt::config::llmEngineConfig()` (`config/settings.hpp` / `settings.cpp`) and passes it to `LLMRunner`; the model runner (stub or Llama pybind11) is created inside the engine via `make_model_runner(config)` (see `include/runners/llm_runner/model_runner.hpp` and `model_runner.cpp`).
 
 ### API
+
 - `LLMController`: Drogon HTTP controller with OpenAI-compatible endpoints
 
 ## Worker Metrics
@@ -768,200 +799,23 @@ count, etc.) to the main process through a single POSIX shared-memory
 segment. The main process aggregates them at scrape time and exposes them
 via the existing `/metrics` endpoint, alongside the server-side metrics.
 
-### Design intent
-
-- **Single `/metrics` endpoint owned by main.** Operators configure one
-  Prometheus job; per-worker port discovery is unnecessary, and the same
-  endpoint works in single-process and HA-replica deployments.
-- **Push via shared memory, not IPC queues.** The worker hot path
-  (`step()`, per-token updates) must be a single relaxed atomic store with
-  no syscalls, no allocations, and no producer-side blocking. A
-  `boost::interprocess::message_queue` would impose mutex + condvar +
-  memcpy per update; per-update sockets would add latency to
-  `active_requests` decrements. The shared-memory approach lets the writer
-  pay nothing per update, and the reader (main process) pays the
-  aggregation cost only at scrape time (every 5-15s).
-- **No common metrics header in the slot.** Different worker types
-  (LLM, SDXL, embedding, TTS) will have entirely different liveness and
-  load semantics. Hard-coding "heartbeat" or "active_requests" into the
-  slot would force every future worker type to either lie about those
-  fields or break the contract. Instead, each slot exposes only a minimal
-  dispatch tag (`pid`, `metrics_layout`, `generation`) plus a layout-owned
-  scratch area.
-- **Layout enum names what the bytes mean, not who wrote them.** A future
-  second runner that produces the same operational signals as the current
-  `SpPipelineRunner` would reuse `MetricsLayout::SP_PIPELINE_RUNNER` and the existing
-  renderer, instead of declaring a new layout.
-- **Per-worker renderer is resolved once at startup.** In any given
-  deployment main already knows which runner each worker will execute
-  (same binary, same config), and that assignment cannot change at
-  runtime. `WorkerMetricsAggregator::initialize()` takes
-  `vector<MetricsLayout>` and `prebuildAll()` caches one
-  `IWorkerMetricsRenderer*` per worker, so `refresh()` on the scrape path
-  is a straight `renderer_by_worker_[i]->render(slots[i], is_alive)`
-  walk - no atomic load of the tag and no hash-map lookup per scrape.
-  The slot still carries `metrics_layout` for offline debugging
-  (`xxd /dev/shm/tt_worker_metrics`) and a one-shot startup consistency
-  check that main's config agrees with what each worker actually wrote.
-
-### Architecture
-
-```mermaid
-flowchart LR
-    subgraph Workers
-        W0["Worker 0<br/>(MetricsLayout::SP_PIPELINE_RUNNER)"]
-        W1["Worker 1<br/>(MetricsLayout::SDXL, future)"]
-    end
-
-    SHM[("POSIX shm<br/>/dev/shm/tt_worker_metrics<br/>N x slot{tag + scratch}")]
-
-    W0 -->|"atomic store ~ns"| SHM
-    W1 -->|"atomic store"| SHM
-
-    subgraph Main["Main process"]
-        AGG[WorkerMetricsAggregator]
-        WMG["WorkerManager<br/>(is_alive source)"]
-        REG["prometheus::Registry"]
-        EP["GET /metrics"]
-
-        subgraph Renderers["Renderer registry (by MetricsLayout)"]
-            RL["SpPipelineWorkerMetricsRenderer<br/>(MetricsLayout::SP_PIPELINE_RUNNER)"]
-            RX["SdxlWorkerMetricsRenderer<br/>(future)"]
-        end
-    end
-
-    SHM -->|"atomic load at scrape"| AGG
-    WMG -->|"is_alive[]"| AGG
-    AGG -->|"cached renderer[workerId]"| Renderers
-    Renderers -->|"Set() gauges"| REG
-    REG --> EP
-```
-
-### Lifecycle
-
-```mermaid
-sequenceDiagram
-    participant Main
-    participant SHM as /dev/shm/tt_worker_metrics
-    participant W0 as Worker 0 (after execv)
-
-    Main->>Main: name = settings::workerMetricsShmName()
-    Main->>SHM: shm_unlink(name) (defensive)
-    Main->>SHM: shm_open + ftruncate + mmap
-    Main->>SHM: init magic / version / num_workers
-    Main->>W0: fork + execv (env TT_WORKER_METRICS_SHM inherited)
-    W0->>W0: name = settings::workerMetricsShmName()
-    W0->>SHM: shm_open + mmap
-    W0->>SHM: claim slots[workerId], write pid + metrics_layout
-
-    loop Hot path (per step / per token)
-        W0->>SHM: scratch[idx].store (relaxed)
-    end
-
-    Note over Main: scrape arrives
-    Main->>SHM: load all slots
-    Main->>Main: renderer_by_worker_[i]->render(slot, is_alive)
-
-    Note over Main: shutdown
-    Main->>SHM: munmap + shm_unlink
-```
-
-`fork+execv` wipes the inherited mmap, so the worker re-opens the segment
-by name. `TT_WORKER_METRICS_SHM` is inherited across `execv`, so main and
-worker resolve to the same name automatically.
-
-### Class diagram - worker side
-
-```mermaid
-classDiagram
-    direction LR
-    class WorkerMetrics {
-        +initialize(workerId, MetricsLayout)
-        +updateStepHeartbeat()
-        +updateOutputHeartbeat()
-        +incrementActiveRequests()
-        +decrementActiveRequests()
-        +scratchStoreU64(idx, value)
-        +scratchAddU64(idx, delta)
-        -slot_ : WorkerSlot*
-    }
-    class SpPipelineRunner {
-        +step()
-        +handleRequest()
-        +handleOutput()
-    }
-    class WorkerSlot {
-        +pid
-        +metrics_layout
-        +generation
-        +scratch[32]
-    }
-    class spPipelineLayout["sp_pipeline_metrics_layout.hpp"] {
-        +SCRATCH_STEP_EPOCH_MS
-        +SCRATCH_LAST_OUTPUT_EPOCH_MS
-        +SCRATCH_ACTIVE_REQUESTS
-    }
-    SpPipelineRunner --> WorkerMetrics : updates
-    WorkerMetrics --> WorkerSlot : writes via mmap
-    WorkerMetrics ..> spPipelineLayout : uses indices
-    SpPipelineRunner ..> spPipelineLayout : uses indices
-```
-
-### Class diagram - main side
-
-```mermaid
-classDiagram
-    direction LR
-    class MetricsController {
-        +get(/metrics) Response
-    }
-    class WorkerMetricsAggregator {
-        +initialize(region, mgr, layout_by_worker)
-        +registerRenderer(MetricsLayout, IRenderer)
-        +prebuildAll()
-        +refresh()
-        +renderText() string
-        -region_ : WorkerMetricsShmRegion*
-        -mgr_ : WorkerManager*
-        -layout_by_worker_ : vector~MetricsLayout~
-        -renderer_by_worker_ : vector~IRenderer*~
-    }
-    class IWorkerMetricsRenderer {
-        <<interface>>
-        +prebuildGauges(Registry&, workerId)
-        +render(WorkerSlot&, workerId, is_alive)
-    }
-    class SpPipelineWorkerMetricsRenderer
-    class SdxlWorkerMetricsRenderer["SdxlWorkerMetricsRenderer (future)"]
-    class WorkerManager {
-        +getWorkerInfo() vector~WorkerInfo~
-    }
-    class PrometheusRegistry["prometheus::Registry"]
-    MetricsController --> WorkerMetricsAggregator : refresh()+renderText()
-    WorkerMetricsAggregator --> IWorkerMetricsRenderer : cached per worker
-    IWorkerMetricsRenderer <|.. SpPipelineWorkerMetricsRenderer
-    IWorkerMetricsRenderer <|.. SdxlWorkerMetricsRenderer
-    WorkerMetricsAggregator --> WorkerManager : is_alive lookup
-    SpPipelineWorkerMetricsRenderer --> PrometheusRegistry : Set() gauges
-```
-
 ### Adding a new worker type
 
 1. Pick a `MetricsLayout` enum value in
-   `include/worker/worker_metrics_shm.hpp`. Reuse an existing one if your
+  `include/worker/worker_metrics_shm.hpp`. Reuse an existing one if your
    new runner produces the same metric semantics; otherwise append a new
    value (never renumber).
-2. Create `include/worker/<runner>_metrics_layout.hpp` with `SCRATCH_*`
-   index constants. Append-only.
+2. Create `include/worker/<runner>_metrics_layout.hpp` with `SCRATCH_`*
+  index constants. Append-only.
 3. Create `<Runner>WorkerMetricsRenderer` implementing
-   `IWorkerMetricsRenderer`. Pre-build the Prometheus gauges in
+  `IWorkerMetricsRenderer`. Pre-build the Prometheus gauges in
    `prebuildGauges`, read scratch via your layout's indices in `render`,
    and decide what (if anything) to emit when `is_alive == false`.
 4. In your runner's hot path, call
-   `WorkerMetrics::scratchStoreU64(<your index>, value)` (or
+  `WorkerMetrics::scratchStoreU64(<your index>, value)` (or
    `scratchAddU64` for counters).
 5. In `main.cpp`, register the renderer for your `MetricsLayout` value
-   and add the mapping in `metricsLayoutFromConfig()`.
+  and add the mapping in `metricsLayoutFromConfig()`.
 6. Add Grafana panels using your new metric names.
 
 No transport, slot layout, aggregator, or main lifecycle code needs to
@@ -969,33 +823,35 @@ change.
 
 ### Modifying an existing worker type
 
-- **Adding a metric:** append a new `SCRATCH_*` index in the layout
-  header, write it from the runner, read+emit it in the renderer.
+- **Adding a metric:** append a new `SCRATCH_`* index in the layout
+header, write it from the runner, read+emit it in the renderer.
 - **Removing a metric:** stop writing/reading the index but leave the
-  constant in place (commented as deprecated).
+constant in place (commented as deprecated).
 - **Repurposing or shrinking an index, or reordering:** safe because main
-  and worker are always launched from the same binary (main forks and
-  execs the same executable), so there is never a version skew between
-  producer and consumer of the layout. No compatibility shim needed.
+and worker are always launched from the same binary (main forks and
+execs the same executable), so there is never a version skew between
+producer and consumer of the layout. No compatibility shim needed.
 - **Renaming a Prometheus metric** is a Grafana / dashboard concern only;
-  no shm changes.
+no shm changes.
 
 ### Operational knobs
 
 - `TT_WORKER_METRICS_SHM` env var sets the shared-memory segment name
-  (defaults to `/tt_worker_metrics`). Inherited across `fork+execv`, so
-  setting it on the main process applies symmetrically to every worker.
+(defaults to `/tt_worker_metrics`). Inherited across `fork+execv`, so
+setting it on the main process applies symmetrically to every worker.
 - Stale segments left by an unclean shutdown are auto-recovered on next
-  start (defensive `shm_unlink` before `shm_open(O_CREAT)`).
+start (defensive `shm_unlink` before `shm_open(O_CREAT)`).
 
 ## Runner Types
 
 The server supports the following runner types, selected via the `LLM_DEVICE_BACKEND` environment variable:
 
-| Runner | Value | Description |
-|--------|-------|-------------|
-| Mock / Pipeline | `mock` or `pipeline` (default when unset: `mock`) | Mock: no device. Pipeline: TT device. Both use DeepSeek V3 tokenizer. |
-| Llama runner | `llama` | In-process pybind11: embeds Python and calls `tt_model_runners.llama_runner.Llama31_8BRunner` (TT device). Requires `TT_METAL_HOME`, `HF_MODEL`, tokenizer under `tokenizers/meta-llama/Llama-3.1-8B-Instruct/`. |
+
+| Runner          | Value                                             | Description                                                                                                                                                                                                      |
+| --------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mock / Pipeline | `mock` or `pipeline` (default when unset: `mock`) | Mock: no device. Pipeline: TT device. Both use DeepSeek V3 tokenizer.                                                                                                                                            |
+| Llama runner    | `llama`                                           | In-process pybind11: embeds Python and calls `tt_model_runners.llama_runner.Llama31_8BRunner` (TT device). Requires `TT_METAL_HOME`, `HF_MODEL`, tokenizer under `tokenizers/meta-llama/Llama-3.1-8B-Instruct/`. |
+
 
 ### LLM mock runner (default)
 
@@ -1054,21 +910,21 @@ sudo apt install librdkafka-dev
 ### Memory leak detection
 
 1. **AddressSanitizer (ASan) + LeakSanitizer (LSan)** — recommended on macOS and Linux:
-   ```bash
+  ```bash
    ./build.sh --asan
    cd build && ctest --output-on-failure
    # Or run the server and exit; at exit ASan will report leaks and address errors.
    ./tt_media_server_cpp -p 8001
-   ```
+  ```
    Leak reports appear at process exit. Use `LSAN_OPTIONS=verbosity=1` for more detail.
-
 2. **Valgrind** (Linux only; not supported on current macOS):
-   ```bash
+  ```bash
    valgrind --leak-check=full --show-leak-kinds=all ./build/tt_media_server_cpp -p 8001
    # Or for unit tests:
    valgrind --leak-check=full ./build/scheduler_test
-   ```
+  ```
    Build a normal (non-ASan) binary; Valgrind instruments at runtime.
+
 ### Tokenizer (mlc-ai/tokenizers-cpp)
 
 The server includes tokenizer support for encode/decode:
@@ -1076,99 +932,90 @@ The server includes tokenizer support for encode/decode:
 1. Install [Rust](https://rustup.rs) (required by tokenizers-cpp).
 2. tokenizers-cpp is **fetched at configure time** via CMake FetchContent. CMake will download it into `build/_deps/`.
 3. Build the server — tokenizer files are pre-fetched automatically by `build.sh`:
-   ```bash
+  ```bash
    ./build.sh
-   ```
-
+  ```
 4. Tokenizer files are stored per-model under `tokenizers/<model-name>/`. The
-   active tokenizer is selected at runtime based on `LLM_DEVICE_BACKEND` (see
+  active tokenizer is selected at runtime based on `LLM_DEVICE_BACKEND` (see
    [Runtime model selection](#runtime-model-selection) above).
-
    To fetch DeepSeek R1 0528 tokenizer and config from Hugging Face into `tokenizers/`:
-   ```bash
-   mkdir -p cpp_server/tokenizers
-   wget -q -O cpp_server/tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/resolve/main/tokenizer.json
-   wget -q -O cpp_server/tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/resolve/main/tokenizer_config.json
-   ```
 
 ## Performance
 
 The `LLMTestRunner` is designed to generate tokens at **120,000 tokens/second** using busy-wait loops for microsecond precision timing. This allows benchmarking the server infrastructure overhead independent of actual model inference.
 
 Token generation timing:
+
 - Target: 120,000 tokens/second
 - Token interval: ~8.33 microseconds
 - Uses `std::chrono::high_resolution_clock` for precise timing
 
 ## Comparison with Python FastAPI
 
-| Feature | Python FastAPI | C++ Drogon |
-|---------|---------------|------------|
-| Framework | FastAPI + Uvicorn | Drogon |
-| Async Model | asyncio | epoll/kqueue + threads |
-| JSON Library | Pydantic | jsoncpp |
-| Queue | multiprocessing.Queue | std::queue + mutex |
-| Target Throughput | Variable | 120k tokens/sec |
+
+| Feature           | Python FastAPI        | C++ Drogon             |
+| ----------------- | --------------------- | ---------------------- |
+| Framework         | FastAPI + Uvicorn     | Drogon                 |
+| Async Model       | asyncio               | epoll/kqueue + threads |
+| JSON Library      | Pydantic              | jsoncpp                |
+| Queue             | multiprocessing.Queue | std::queue + mutex     |
+| Target Throughput | Variable              | 120k tokens/sec        |
+
 
 ## Performance Testing
 
 To compare with the Python server:
 
 1. Start the C++ server:
-   ```bash
+  ```bash
    ./build/tt_media_server_cpp -p 8001
-   ```
-
+  ```
 2. Start the Python server:
-   ```bash
+  ```bash
    cd .. && python main.py --port 8000
-   ```
-
+  ```
 3. Run load tests against both servers and compare:
-   - Request latency
-   - Streaming chunk latency (time between tokens)
-   - CPU utilization
-   - Memory usage
+  - Request latency
+  - Streaming chunk latency (time between tokens)
+  - CPU utilization
+  - Memory usage
 
 ## Troubleshooting
 
 ### Server won't start
 
 1. **Port already in use:**
-   ```bash
+  ```bash
    # Check what's using the port
    lsof -i :8001
    # Kill it or use a different port
    ./build/tt_media_server_cpp -p 8002
-   ```
-
+  ```
 2. **Permission denied:**
-   ```bash
+  ```bash
    chmod +x ./build/tt_media_server_cpp
-   ```
-
+  ```
 3. **Missing libraries:**
-   ```bash
+  ```bash
    # Check for missing shared libraries
    ldd ./build/tt_media_server_cpp
    # Install Drogon if missing
    sudo ldconfig
-   ```
+  ```
 
 ### Build fails
 
 1. **Drogon not found:**
-   ```bash
+  ```bash
    # Install Drogon system-wide
    cd /path/to/drogon/build
    sudo make install
    sudo ldconfig
-   ```
-
+  ```
 2. **CMake too old:**
-   ```bash
+  ```bash
    cmake --version  # Need 3.19+
-   ```
+  ```
 
 ### Server crashes
 
