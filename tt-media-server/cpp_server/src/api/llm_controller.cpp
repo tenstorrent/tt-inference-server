@@ -152,8 +152,8 @@ void LLMController::chatCompletions(
     return std::make_shared<ChatCompletionEventFormatter>();
   };
 
-  handleRequest(request, std::move(formatter), std::move(streamFormatterFactory),
-                std::move(callback));
+  handleRequest(request, std::move(formatter),
+                std::move(streamFormatterFactory), std::move(callback));
 }
 
 void LLMController::responses(
@@ -244,11 +244,12 @@ void LLMController::responses(
 
   auto streamFormatterFactory =
       [respReqPtr, samplingParams]() -> std::shared_ptr<StreamEventFormatter> {
-    return std::make_shared<ResponsesEventFormatter>(respReqPtr, samplingParams);
+    return std::make_shared<ResponsesEventFormatter>(respReqPtr,
+                                                     samplingParams);
   };
 
-  handleRequest(request, std::move(formatter), std::move(streamFormatterFactory),
-                std::move(callback));
+  handleRequest(request, std::move(formatter),
+                std::move(streamFormatterFactory), std::move(callback));
 }
 
 void LLMController::handleRequest(

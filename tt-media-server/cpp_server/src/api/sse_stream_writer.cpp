@@ -12,8 +12,9 @@
 
 namespace tt::api {
 
-SseStreamWriter::SseStreamWriter(trantor::EventLoop* loop, StreamParams params,
-                                 std::shared_ptr<StreamEventFormatter> formatter)
+SseStreamWriter::SseStreamWriter(
+    trantor::EventLoop* loop, StreamParams params,
+    std::shared_ptr<StreamEventFormatter> formatter)
     : loop_(loop),
       params_(std::move(params)),
       formatter_(std::move(formatter)) {

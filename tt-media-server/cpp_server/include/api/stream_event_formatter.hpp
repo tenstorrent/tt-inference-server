@@ -20,7 +20,8 @@ struct StreamParams;
  * specific OpenAI-compatible protocol (chat completions, responses, ...).
  *
  * The writer owns one formatter per request and calls these hooks in this
- * order: formatInitialEvents -> formatTokenEvents (N times) -> formatFinalEvents.
+ * order: formatInitialEvents -> formatTokenEvents (N times) ->
+ * formatFinalEvents.
  */
 class StreamEventFormatter {
  public:
@@ -41,8 +42,7 @@ class StreamEventFormatter {
   virtual std::string formatFinalEvents(
       const StreamParams& params, const domain::CompletionUsage& usage,
       const std::string& accumulatedText,
-      const std::optional<std::string>& finishReason,
-      bool includeUsage) = 0;
+      const std::optional<std::string>& finishReason, bool includeUsage) = 0;
 };
 
 /** Chat completions SSE (current default): emits `chat.completion.chunk`
@@ -58,15 +58,16 @@ class ChatCompletionEventFormatter final : public StreamEventFormatter {
       const std::optional<domain::CompletionUsage>& usage, int currentTokens,
       const std::string& accumulatedText) override;
 
-  std::string formatFinalEvents(
-      const StreamParams& params, const domain::CompletionUsage& usage,
-      const std::string& accumulatedText,
-      const std::optional<std::string>& finishReason,
-      bool includeUsage) override;
+  std::string formatFinalEvents(const StreamParams& params,
+                                const domain::CompletionUsage& usage,
+                                const std::string& accumulatedText,
+                                const std::optional<std::string>& finishReason,
+                                bool includeUsage) override;
 };
 
 /** Responses API SSE: emits `response.created`, `response.output_text.delta`,
- *  `response.completed` / `response.incomplete`, etc. No `[DONE]` terminator. */
+ *  `response.completed` / `response.incomplete`, etc. No `[DONE]` terminator.
+ */
 class ResponsesEventFormatter final : public StreamEventFormatter {
  public:
   ResponsesEventFormatter(
@@ -82,11 +83,11 @@ class ResponsesEventFormatter final : public StreamEventFormatter {
       const std::optional<domain::CompletionUsage>& usage, int currentTokens,
       const std::string& accumulatedText) override;
 
-  std::string formatFinalEvents(
-      const StreamParams& params, const domain::CompletionUsage& usage,
-      const std::string& accumulatedText,
-      const std::optional<std::string>& finishReason,
-      bool includeUsage) override;
+  std::string formatFinalEvents(const StreamParams& params,
+                                const domain::CompletionUsage& usage,
+                                const std::string& accumulatedText,
+                                const std::optional<std::string>& finishReason,
+                                bool includeUsage) override;
 
  private:
   std::shared_ptr<domain::ResponsesRequest> request_;
@@ -101,8 +102,7 @@ class ResponsesEventFormatter final : public StreamEventFormatter {
   std::string formatEvent(const std::string& eventName,
                           const Json::Value& payload);
   std::string buildResponseObjectJson(
-      int64_t createdAt, const std::string& status,
-      const Json::Value& output,
+      int64_t createdAt, const std::string& status, const Json::Value& output,
       const std::optional<domain::CompletionUsage>& usage) const;
 };
 
