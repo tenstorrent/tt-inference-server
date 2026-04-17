@@ -59,14 +59,10 @@ class Session {
   void setInFlight(bool inFlight) { in_flight_ = inFlight; }
 
   /**
-   * Check if a close was requested while the session was in-flight.
+   * Returns true if closeSession was called while a request was in-flight.
+   * The close executes automatically when the in-flight request completes.
    */
   bool isPendingClose() const { return pending_close_; }
-
-  /**
-   * Mark the session for deferred close (set when closeSession is called
-   * while a request is in-flight).
-   */
   void setPendingClose(bool pendingClose) { pending_close_ = pendingClose; }
 
   /**

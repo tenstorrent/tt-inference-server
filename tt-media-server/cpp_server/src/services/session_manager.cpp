@@ -64,48 +64,42 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
   TT_LOG_DEBUG("[SessionManager] closeSession called for sessionId={}",
                sessionId);
 
-  // Removing an in-flight session would deallocate the KV slot while the
-  // active request is still using it.
+  auto executeClose = [&](const domain::Session& s) {
+    if (s.getSlotId() != domain::INVALID_SLOT_ID) {
+      sendDeallocRequest(sessionId, s.getSlotId());
+    }
+    TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
+  };
+
   auto session = sessions.takeIf(
       sessionId, [](const domain::Session& s) { return !s.isInFlight(); });
-
-  if (!session.has_value()) {
-    bool found = sessions.modify(
-        sessionId, [](domain::Session& s) { s.setPendingClose(true); });
-    if (!found) {
-      TT_LOG_WARN("[SessionManager] Session not found: {}", sessionId);
-      return CloseSessionResult::NOT_FOUND;
-    }
-    // The in-flight request may have completed between the takeIf above and
-    // the modify; attempt an immediate close now to avoid leaving the session
-    // stuck with pendingClose=true and inFlight=false.
-    auto raced = sessions.takeIf(sessionId, [](const domain::Session& s) {
-      return s.isPendingClose() && !s.isInFlight();
-    });
-    if (raced.has_value()) {
-      uint32_t slotId = raced->getSlotId();
-      if (slotId != domain::INVALID_SLOT_ID) {
-        sendDeallocRequest(sessionId, slotId);
-      }
-      TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
-      return CloseSessionResult::SUCCESS;
-    }
-    TT_LOG_WARN(
-        "[SessionManager] closeSession: sessionId={} is in-flight, "
-        "will close when request completes",
-        sessionId);
-    return CloseSessionResult::IN_FLIGHT;
+  if (session.has_value()) {
+    executeClose(*session);
+    return CloseSessionResult::SUCCESS;
   }
 
-  uint32_t slotId = session->getSlotId();
-  TT_LOG_DEBUG("[SessionManager] closeSession sessionId={} has slotId={}",
-               sessionId, slotId);
-  if (slotId != domain::INVALID_SLOT_ID) {
-    sendDeallocRequest(sessionId, slotId);
+  bool found = sessions.modify(
+      sessionId, [](domain::Session& s) { s.setPendingClose(true); });
+  if (!found) {
+    TT_LOG_WARN("[SessionManager] Session not found: {}", sessionId);
+    return CloseSessionResult::NOT_FOUND;
   }
 
-  TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
-  return CloseSessionResult::SUCCESS;
+  // The in-flight request may have completed between the takeIf and modify;
+  // resolve the race with one more attempt.
+  auto deferred = sessions.takeIf(sessionId, [](const domain::Session& s) {
+    return s.isPendingClose() && !s.isInFlight();
+  });
+  if (deferred.has_value()) {
+    executeClose(*deferred);
+    return CloseSessionResult::SUCCESS;
+  }
+
+  TT_LOG_WARN(
+      "[SessionManager] closeSession: sessionId={} is in-flight, "
+      "will close when request completes",
+      sessionId);
+  return CloseSessionResult::IN_FLIGHT;
 }
 
 bool SessionManager::assignSlotId(const std::string& sessionId,
@@ -144,7 +138,6 @@ uint32_t SessionManager::acquireSessionSlot(const std::string& sessionId) {
   sessions.modify(sessionId, [&result, &wasInFlight](domain::Session& s) {
     wasInFlight = s.isInFlight();
     if (wasInFlight) {
-      // Session is already in flight, don't modify
       return;
     }
     s.updateActivityTime();
