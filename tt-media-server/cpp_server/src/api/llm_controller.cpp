@@ -16,7 +16,7 @@
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
 #include "domain/models_response.hpp"
-#include "domain/responses_request.hpp"
+#include "domain/response_input_tokens.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
@@ -122,10 +122,11 @@ void LLMController::responsesInputTokens(
     return;
   }
 
-  std::optional<domain::ResponsesRequest> respReqOpt;
+  std::optional<domain::ResponseInputTokensRequest> parsedOpt;
   try {
     uint32_t taskId = tt::utils::TaskIDGenerator::generate();
-    respReqOpt = domain::ResponsesRequest::fromJson(*json, std::move(taskId));
+    parsedOpt =
+        domain::ResponseInputTokensRequest::fromJson(*json, std::move(taskId));
   } catch (const std::exception& e) {
     callback(errorResponse(drogon::k400BadRequest,
                            std::string("Failed to parse request: ") + e.what(),
@@ -133,7 +134,7 @@ void LLMController::responsesInputTokens(
     return;
   }
 
-  const domain::ResponsesRequest& respReq = *respReqOpt;
+  const domain::ResponsesRequest& respReq = parsedOpt->responses;
 
   TT_LOG_INFO("[LLMController] /v1/responses/input_tokens task_id={} model={}",
               respReq.task_id, respReq.model.value_or("default"));
@@ -156,10 +157,9 @@ void LLMController::responsesInputTokens(
     return;
   }
 
-  Json::Value response;
-  response["input_tokens"] = llmRequest.prompt_tokens_count;
-  response["model"] = llmRequest.model.value_or("default");
-  callback(drogon::HttpResponse::newHttpJsonResponse(response));
+  domain::ResponseInputTokensResponse out;
+  out.input_tokens = llmRequest.prompt_tokens_count;
+  callback(drogon::HttpResponse::newHttpJsonResponse(out.toJson()));
 }
 
 void LLMController::chatCompletions(
