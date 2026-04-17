@@ -451,6 +451,7 @@ class TestSetupFunctionsReturnBool:
             "setup_reports_run_script",
             "setup_hf_setup",
             "setup_benchmarks_aiperf",
+            "setup_benchmarks_guidellm",
             "setup_system_software_validation",
             "setup_tt_smi",
             "setup_tt_topology",
