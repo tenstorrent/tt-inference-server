@@ -784,6 +784,60 @@
 
         .podcast-status.success { color: var(--accent-green); }
         .podcast-status.error { color: var(--accent-red); }
+
+        /* Streaming cursor animation */
+        .streaming-cursor {
+            animation: blink 1s infinite;
+            color: var(--accent-purple);
+        }
+        
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        /* Streaming toggle */
+        .streaming-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .streaming-toggle input[type="checkbox"] {
+            width: 36px;
+            height: 20px;
+            appearance: none;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .streaming-toggle input[type="checkbox"]::before {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            top: 1px;
+            left: 1px;
+            transition: all 0.2s;
+        }
+
+        .streaming-toggle input[type="checkbox"]:checked {
+            background: rgba(139, 92, 246, 0.3);
+            border-color: var(--accent-purple);
+        }
+
+        .streaming-toggle input[type="checkbox"]:checked::before {
+            background: var(--accent-purple);
+            left: 17px;
+        }
     </style>
 </head>
 <body>
@@ -801,6 +855,10 @@
             </div>
         </div>
         <div class="header-right">
+            <label class="streaming-toggle" title="Stream sentences with audio as they're generated">
+                <input type="checkbox" id="streamingToggle" checked onchange="useStreaming = this.checked">
+                <span>Stream</span>
+            </label>
             <div class="model-status">
                 <div class="model-badge"><span class="dot ready" id="faceStatus"></span>Face</div>
                 <div class="model-badge"><span class="dot ready" id="whisperStatus"></span>Whisper</div>
@@ -951,6 +1009,9 @@
         let currentMode = 'talk';
         let abortController = null;
         let activeTimer = null;
+        let useStreaming = true;  // Enable streaming by default
+        let audioQueue = [];      // Queue for streaming audio chunks
+        let isPlayingQueue = false;
 
         // Session ID for conversation context (unique per browser session)
         const sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -1446,7 +1507,169 @@
             }
         }
 
+        // Audio queue management for streaming playback
+        async function playNextInQueue() {
+            if (isPlayingQueue || audioQueue.length === 0) return;
+            
+            isPlayingQueue = true;
+            while (audioQueue.length > 0) {
+                const audioData = audioQueue.shift();
+                if (audioData) {
+                    await playAudioFromBase64(audioData);
+                }
+            }
+            isPlayingQueue = false;
+        }
+
+        async function playAudioFromBase64(base64Data) {
+            return new Promise((resolve) => {
+                if (!base64Data) { resolve(); return; }
+                
+                try {
+                    const binaryString = atob(base64Data);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    const blob = new Blob([bytes], { type: 'audio/wav' });
+                    const audioUrl = URL.createObjectURL(blob);
+                    
+                    const audio = new Audio(audioUrl);
+                    currentAudio = audio;
+                    
+                    audio.onended = () => {
+                        URL.revokeObjectURL(audioUrl);
+                        currentAudio = null;
+                        resolve();
+                    };
+                    audio.onerror = () => {
+                        URL.revokeObjectURL(audioUrl);
+                        currentAudio = null;
+                        resolve();
+                    };
+                    audio.play().catch(() => resolve());
+                } catch (e) {
+                    console.error('Audio decode error:', e);
+                    resolve();
+                }
+            });
+        }
+
+        async function processChatMessageStreaming(userText) {
+            isProcessing = true;
+            setStatus('thinking', 'Thinking');
+            thinkingIndicator.style.display = 'flex';
+            audioQueue = [];
+            isPlayingQueue = false;
+
+            const thinkStart = Date.now();
+            thinkingText.textContent = 'Generating response...';
+            
+            // Create a message element that we'll update as sentences arrive
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant';
+            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-sender assistant">ASSISTANT</span>
+                    <span class="message-time">${time}</span>
+                    <span class="timing-badge" id="streamingTiming">Streaming...</span>
+                </div>
+                <div class="message-content" id="streamingContent">
+                    <span class="streaming-cursor">▊</span>
+                </div>
+            `;
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            
+            const contentEl = document.getElementById('streamingContent');
+            const timingEl = document.getElementById('streamingTiming');
+            let fullText = '';
+            let sentenceCount = 0;
+
+            try {
+                const response = await fetch('/api/chat-stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: userText, session_id: sessionId, mode: currentMode })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                
+                                if (data.type === 'sentence') {
+                                    sentenceCount++;
+                                    fullText += (fullText ? ' ' : '') + data.text;
+                                    contentEl.innerHTML = fullText + ' <span class="streaming-cursor">▊</span>';
+                                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                                    
+                                    // Queue audio and start playing
+                                    if (data.audio_b64) {
+                                        audioQueue.push(data.audio_b64);
+                                        setStatus('speaking', 'Speaking');
+                                        playNextInQueue();  // Start playing if not already
+                                    }
+                                    
+                                    const elapsed = ((Date.now() - thinkStart) / 1000).toFixed(1);
+                                    timingEl.textContent = `${sentenceCount} sentences · ${elapsed}s`;
+                                }
+                                else if (data.type === 'done') {
+                                    const duration = ((Date.now() - thinkStart) / 1000).toFixed(1);
+                                    timingEl.textContent = `Generated in ${duration}s`;
+                                    contentEl.innerHTML = data.full_response || fullText;
+                                    
+                                    // If mode changed, sync UI
+                                    if (data.mode && data.mode !== currentMode) {
+                                        setMode(data.mode);
+                                    }
+                                }
+                                else if (data.type === 'error') {
+                                    contentEl.innerHTML = 'Error: ' + data.message;
+                                }
+                            } catch (e) {
+                                console.error('Parse error:', e);
+                            }
+                        }
+                    }
+                }
+                
+                // Wait for audio queue to finish
+                while (audioQueue.length > 0 || isPlayingQueue) {
+                    await new Promise(r => setTimeout(r, 100));
+                }
+
+            } catch (error) {
+                console.error('Streaming error:', error);
+                contentEl.innerHTML = 'Sorry, there was an error: ' + error.message;
+            } finally {
+                isProcessing = false;
+                thinkingIndicator.style.display = 'none';
+                setStatus('idle', 'Ready');
+                controlStatus.textContent = getModeHint(currentMode);
+            }
+        }
+
         async function processChatMessage(userText) {
+            // Use streaming if enabled
+            if (useStreaming) {
+                return processChatMessageStreaming(userText);
+            }
+            
+            // Original non-streaming flow
             isProcessing = true;
             setStatus('thinking', 'Thinking');
             thinkingIndicator.style.display = 'flex';
@@ -1536,11 +1759,21 @@
 
                 // Add user message
                 addMessage('user', userText);
+                thinkingIndicator.style.display = 'none';
 
-                // 2. Generate response
+                // Use streaming if enabled
+                if (useStreaming) {
+                    recordBtn.disabled = false;
+                    abortController = null;
+                    await processChatMessageStreaming(userText);
+                    return;
+                }
+
+                // 2. Generate response (non-streaming)
                 setStatus('thinking', 'Generating');
                 const thinkStart = Date.now();
                 thinkingText.textContent = 'Generating response...';
+                thinkingIndicator.style.display = 'flex';
                 if (activeTimer) clearInterval(activeTimer);
                 activeTimer = setInterval(() => {
                     const elapsed = ((Date.now() - thinkStart) / 1000).toFixed(0);

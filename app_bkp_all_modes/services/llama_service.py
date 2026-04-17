@@ -254,6 +254,105 @@ class LlamaService:
                 "response": "I'm sorry, I encountered an error.",
                 "processing_time": 0
             }
+
+    async def generate_response_streaming(self, message: str, max_tokens: int = 256, conversation_history: list = None, system_prompt: str = None):
+        """Generator that yields sentences as they're completed during generation.
+        
+        Yields dict with:
+          - type: "sentence" | "done"
+          - text: the sentence text (for sentence type)
+          - full_response: complete response (for done type)
+        """
+        import re
+        history_count = len(conversation_history) if conversation_history else 0
+        logger.info(f"🤖 Streaming response to: {message[:50]}..." + (f" (with {history_count} history turns)" if conversation_history else ""))
+        
+        try:
+            import torch
+            start_time = asyncio.get_event_loop().time()
+            
+            self._reset_kv_cache()
+            
+            formatted = self.format_prompt(message, conversation_history, system_prompt)
+            tokens = self.tokenizer.encode(formatted)
+            
+            MAX_SEQ_LEN = 4096
+            SAFE_INPUT_LIMIT = MAX_SEQ_LEN - max_tokens - 32
+            
+            if len(tokens) > SAFE_INPUT_LIMIT:
+                formatted = self.format_prompt(message, None, system_prompt)
+                tokens = self.tokenizer.encode(formatted)
+                if len(tokens) > SAFE_INPUT_LIMIT:
+                    tokens = tokens[:SAFE_INPUT_LIMIT]
+            
+            max_tokens = min(max_tokens, MAX_SEQ_LEN - len(tokens) - 5)
+            input_tokens = torch.tensor([tokens])
+            
+            # Prefill
+            result = self.generator.prefill_forward_text(
+                input_tokens,
+                page_table=None,
+                kv_cache=self.tt_kv_cache,
+                prompt_lens=[len(tokens)],
+            )
+            logits = result[0] if isinstance(result, tuple) else result
+            
+            generated_tokens = list(tokens)
+            sentence_buffer = ""
+            full_response = ""
+            
+            # Sentence-ending patterns
+            sentence_end_pattern = re.compile(r'[.!?]\s*$')
+            
+            for _ in range(max_tokens):
+                next_token_id = torch.argmax(logits[0, -1, :]).item()
+                
+                if next_token_id == self.tokenizer.eos_token_id:
+                    break
+                
+                generated_tokens.append(next_token_id)
+                
+                if len(generated_tokens) >= 4090:
+                    break
+                
+                # Decode just this token to add to buffer
+                new_text = self.tokenizer.decode([next_token_id], skip_special_tokens=True)
+                sentence_buffer += new_text
+                full_response += new_text
+                
+                # Check if we have a complete sentence (ends with . ! ? followed by space or end)
+                if sentence_end_pattern.search(sentence_buffer) and len(sentence_buffer.strip()) > 10:
+                    yield {"type": "sentence", "text": sentence_buffer.strip()}
+                    sentence_buffer = ""
+                    # Small yield to allow event loop to process
+                    await asyncio.sleep(0)
+                
+                result = self.generator.decode_forward(
+                    torch.tensor([[next_token_id]]),
+                    torch.tensor([len(generated_tokens)])
+                )
+                logits = result[0] if isinstance(result, tuple) else result
+            
+            # Yield any remaining text in buffer
+            if sentence_buffer.strip():
+                yield {"type": "sentence", "text": sentence_buffer.strip()}
+            
+            processing_time = asyncio.get_event_loop().time() - start_time
+            tokens_generated = len(generated_tokens) - len(tokens)
+            logger.info(f"✅ Streaming response completed in {processing_time:.2f}s ({tokens_generated} tokens)")
+            
+            yield {
+                "type": "done",
+                "full_response": full_response.strip(),
+                "processing_time": processing_time,
+                "tokens_generated": tokens_generated
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Streaming generation error: {e}")
+            import traceback
+            traceback.print_exc()
+            yield {"type": "error", "error": str(e)}
     
     def get_status(self) -> Dict[str, Any]:
         """Get service status."""

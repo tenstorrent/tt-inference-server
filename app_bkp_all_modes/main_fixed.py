@@ -14,7 +14,7 @@ from typing import Dict, Any
 import uvicorn
 from fastapi import FastAPI, WebSocket, HTTPException, UploadFile, File, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, FileResponse, Response
+from fastapi.responses import HTMLResponse, FileResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import SOCKET-based services (connect to running servers)
@@ -317,6 +317,155 @@ async def clear_history(request: Request):
         return {"status": "ok", "message": "History cleared"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/chat-stream")
+async def chat_stream(request: Request):
+    """Stream chat response with sentences, generating TTS audio for each.
+    
+    Returns Server-Sent Events (SSE) stream with events:
+      - sentence: {text: "...", audio_url: "/api/tts-chunk/..."}
+      - done: {full_response: "...", processing_time: ...}
+      - error: {message: "..."}
+    """
+    import base64
+    
+    try:
+        data = await request.json()
+        user_message = data.get("message", "")
+        session_id = data.get("session_id", "default")
+        mode = data.get("mode")
+
+        if not user_message:
+            raise HTTPException(status_code=400, detail="Message is required")
+
+        # Mode resolution (same as regular chat)
+        if mode:
+            session_modes[session_id] = mode
+        else:
+            detected = detect_mode_from_text(user_message)
+            if detected:
+                mode = detected
+                session_modes[session_id] = mode
+            else:
+                mode = session_modes.get(session_id, "talk")
+
+        system_prompt = get_system_prompt(mode)
+        max_tokens = data.get("max_tokens", get_max_tokens(mode))
+
+        if mode == "docs":
+            doc_text = document_service.get_context_for_prompt(session_id)
+            if doc_text:
+                system_prompt += f"\n\nHere is the document the user provided:\n---\n{doc_text}\n---"
+
+        if mode == "podcast":
+            doc_text = document_service.get_context_for_prompt(session_id)
+            if doc_text:
+                system_prompt += f"\n\nCreate the podcast discussion based on this source material:\n---\n{doc_text}\n---"
+
+        logger.info(f"Streaming chat mode={mode}, session={session_id[:20]}...")
+
+        if session_id not in conversation_history:
+            conversation_history[session_id] = []
+        history = conversation_history[session_id]
+        
+        if mode in ("podcast", "story"):
+            chat_history = []
+        else:
+            history.append({"role": "user", "content": user_message[:200]})
+            chat_history = history[:-1]
+
+        async def generate_stream():
+            """SSE generator that streams sentences with inline audio."""
+            full_response = ""
+            sentence_count = 0
+            
+            # Speaker IDs for podcast multi-voice
+            PODCAST_SPEAKERS = {"host": 7306, "guest": 1138}
+            current_speaker = None  # Track current speaker for podcast mode
+            
+            try:
+                async for chunk in llama_service.generate_response_streaming(
+                    user_message,
+                    max_tokens=max_tokens,
+                    conversation_history=chat_history,
+                    system_prompt=system_prompt,
+                ):
+                    if chunk["type"] == "sentence":
+                        sentence_text = chunk["text"]
+                        sentence_count += 1
+                        
+                        # For podcast mode: detect and handle [HOST]: / [GUEST]: tags
+                        speaker_id = None
+                        display_text = sentence_text
+                        
+                        if mode == "podcast":
+                            # Check for speaker tags at start of sentence
+                            import re
+                            speaker_match = re.match(r'^\s*\[?(HOST|GUEST)\]?\s*:?\s*', sentence_text, re.IGNORECASE)
+                            if speaker_match:
+                                role = speaker_match.group(1).lower()
+                                current_speaker = role
+                                # Strip the tag from text for TTS
+                                clean_text = sentence_text[speaker_match.end():].strip()
+                                if clean_text:
+                                    sentence_text = clean_text
+                                else:
+                                    # Tag only, no content - skip TTS
+                                    yield f"data: {json_lib.dumps({'type': 'sentence', 'text': display_text, 'audio_b64': '', 'sentence_num': sentence_count, 'role': current_speaker})}\n\n"
+                                    continue
+                            
+                            # Use current speaker's voice
+                            if current_speaker:
+                                speaker_id = PODCAST_SPEAKERS.get(current_speaker, 7306)
+                        
+                        # Generate TTS for this sentence
+                        try:
+                            tts_result = await tts_service.synthesize(sentence_text, speaker_id=speaker_id)
+                            audio_path = tts_result.get("audio_path")
+                            
+                            # Read audio file and encode as base64
+                            audio_b64 = ""
+                            if audio_path and os.path.exists(audio_path):
+                                with open(audio_path, "rb") as f:
+                                    audio_b64 = base64.b64encode(f.read()).decode('utf-8')
+                            
+                            yield f"data: {json_lib.dumps({'type': 'sentence', 'text': display_text, 'audio_b64': audio_b64, 'sentence_num': sentence_count, 'role': current_speaker})}\n\n"
+                        except Exception as tts_err:
+                            logger.error(f"TTS error for sentence {sentence_count}: {tts_err}")
+                            yield f"data: {json_lib.dumps({'type': 'sentence', 'text': display_text, 'audio_b64': '', 'sentence_num': sentence_count, 'role': current_speaker})}\n\n"
+                    
+                    elif chunk["type"] == "done":
+                        full_response = chunk["full_response"]
+                        
+                        # Save to history
+                        if mode not in ("podcast", "story"):
+                            history.append({"role": "assistant", "content": full_response[:200]})
+                            if len(history) > MAX_HISTORY_TURNS * 2:
+                                conversation_history[session_id] = history[-(MAX_HISTORY_TURNS * 2):]
+                        
+                        yield f"data: {json_lib.dumps({'type': 'done', 'full_response': full_response, 'processing_time': chunk.get('processing_time', 0), 'mode': mode})}\n\n"
+                    
+                    elif chunk["type"] == "error":
+                        yield f"data: {json_lib.dumps({'type': 'error', 'message': chunk.get('error', 'Unknown error')})}\n\n"
+                
+            except Exception as e:
+                logger.error(f"Stream error: {e}")
+                yield f"data: {json_lib.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Chat stream error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/text-to-speech")

@@ -56,7 +56,7 @@ class SpeechT5TTNNServer:
         self.device = ttnn.open_device(
             device_id=device_id,
             l1_small_size=300000,
-            trace_region_size=20000000,
+            trace_region_size=100000000,  # 100MB like Whisper (was 20MB - caused trace overflow)
         )
         self.device.enable_program_cache()
 
@@ -70,6 +70,13 @@ class SpeechT5TTNNServer:
         print("[3/6] Loading speaker embeddings...")
         embeddings_dataset = load_dataset("Matthijs/cmu-arctic-xvectors", split="validation")
         self.speaker_embeddings = torch.tensor(embeddings_dataset[speaker_id]["xvector"]).unsqueeze(0)
+        
+        # Pre-load speakers for podcast multi-voice support
+        self.PODCAST_SPEAKERS = {"host": 7306, "guest": 1138}
+        self.speaker_cache = {speaker_id: self.speaker_embeddings}
+        for role, sid in self.PODCAST_SPEAKERS.items():
+            self.speaker_cache[sid] = torch.tensor(embeddings_dataset[sid]["xvector"]).unsqueeze(0)
+            print(f"  Loaded speaker {sid} ({role})")
 
         # Create TTNN models
         print("[4/6] Creating TTNN encoder...")
@@ -162,6 +169,28 @@ class SpeechT5TTNNServer:
             decoder_config=self.decoder_config,
         )
 
+    def _synthesize_segment_with_speaker(self, text: str, speaker_id: int):
+        """Synthesize text with a specific speaker using CPU path (for podcast multi-speaker).
+        
+        TTNN decoder is compiled with single speaker, so we use HuggingFace CPU inference
+        for multi-speaker podcast segments.
+        """
+        from transformers import SpeechT5ForTextToSpeech
+        
+        # Lazy load CPU model for podcast
+        if not hasattr(self, '_cpu_model'):
+            print("  Loading CPU model for multi-speaker podcast...")
+            self._cpu_model = SpeechT5ForTextToSpeech.from_pretrained("microsoft/speecht5_tts")
+            self._cpu_model.eval()
+        
+        speaker_emb = self.speaker_cache.get(speaker_id, self.speaker_embeddings)
+        
+        inputs = self.processor(text=text, return_tensors="pt")
+        with self.torch.no_grad():
+            speech = self._cpu_model.generate_speech(inputs["input_ids"], speaker_emb, vocoder=self.vocoder)
+        
+        return speech, {}
+
     def _split_into_sentences(self, text: str) -> list:
         """Split text into sentences for processing."""
         import re
@@ -213,7 +242,7 @@ class SpeechT5TTNNServer:
             audio_chunks = []
             total_stats = {'token_per_sec': 0, 'count': 0}
             
-            for sentence in sentences:
+            for i, sentence in enumerate(sentences):
                 if not sentence:
                     continue
                 speech, stats = self._synthesize_segment(sentence)
@@ -222,6 +251,10 @@ class SpeechT5TTNNServer:
                 total_stats['count'] += 1
                 # Explicitly delete speech tensor to free memory
                 del speech
+                # Sync device after every 3 segments to prevent trace accumulation
+                if (i + 1) % 3 == 0:
+                    self.ttnn.synchronize_device(self.device)
+                    gc.collect()
             
             # Concatenate all audio chunks with small pause between sentences
             pause = np.zeros(int(16000 * 0.15), dtype=np.float32)  # 150ms pause
@@ -307,8 +340,68 @@ class SpeechT5TTNNServer:
                         conn.sendall(json.dumps({"status": "bye"}).encode())
                         break
 
+                    # Handle podcast multi-speaker synthesis
+                    if req.get("cmd") == "podcast":
+                        segments = req.get("segments", [])
+                        output_path = req.get("output_path", "/tmp/podcast_output.wav")
+                        
+                        if not segments:
+                            conn.sendall(json.dumps({"status": "error", "error": "no segments provided"}).encode())
+                            continue
+                        
+                        print(f"\n[Podcast] Generating {len(segments)} segments...")
+                        t0 = time.time()
+                        request_count += 1
+                        
+                        try:
+                            import numpy as np
+                            all_speech = []
+                            silence_gap = np.zeros(int(16000 * 0.3), dtype=np.float32)  # 0.3s gap between speakers
+                            
+                            for i, seg in enumerate(segments):
+                                seg_text = seg.get("text", "").strip()
+                                seg_role = seg.get("role", "host").lower()
+                                if not seg_text:
+                                    continue
+                                
+                                # Get speaker for this role
+                                sid = self.PODCAST_SPEAKERS.get(seg_role, self.PODCAST_SPEAKERS["guest"])
+                                
+                                print(f"  [{i+1}/{len(segments)}] {seg_role.upper()}: {seg_text[:40]}...")
+                                
+                                # Synthesize with role's speaker (using CPU fallback for multi-speaker)
+                                # TTNN decoder is compiled with single speaker, so use CPU vocoder path
+                                speech, stats = self._synthesize_segment_with_speaker(seg_text, sid)
+                                all_speech.append(speech.squeeze().detach().numpy() if hasattr(speech, 'detach') else speech)
+                                all_speech.append(silence_gap)
+                            
+                            # Concatenate all segments
+                            final_audio = np.concatenate(all_speech) if all_speech else np.zeros(1600)
+                            self.sf.write(output_path, final_audio, samplerate=16000)
+                            
+                            elapsed_ms = (time.time() - t0) * 1000
+                            audio_duration = len(final_audio) / 16000
+                            successful_requests += 1
+                            
+                            print(f"  Podcast done in {elapsed_ms:.0f}ms (audio: {audio_duration:.2f}s)")
+                            
+                            conn.sendall(json.dumps({
+                                "status": "ok",
+                                "audio_path": output_path,
+                                "time_ms": elapsed_ms,
+                                "audio_duration": audio_duration,
+                            }).encode())
+                        except Exception as e:
+                            import traceback
+                            failed_requests += 1
+                            print(f"  Podcast error: {e}")
+                            traceback.print_exc()
+                            conn.sendall(json.dumps({"status": "error", "error": str(e)}).encode())
+                        continue
+
                     text = req.get("text", "")
                     output = req.get("output_path", "/tmp/tts_out.wav")
+                    speaker_id = req.get("speaker_id")  # Optional: for multi-voice
 
                     if not text:
                         conn.sendall(json.dumps({"status": "error", "error": "no text"}).encode())
@@ -316,9 +409,10 @@ class SpeechT5TTNNServer:
 
                     request_count += 1
                     
-                    # WORKAROUND: Refresh traces every 8 requests to prevent hang at ~17
+                    # WORKAROUND: Refresh traces every 5 requests to prevent hang at ~17
                     # The TTNN trace infrastructure accumulates state that causes hangs
-                    if request_count > 1 and request_count % 8 == 0:
+                    # Note: Long texts split into segments, so refresh more frequently
+                    if request_count > 1 and request_count % 5 == 0:
                         print(f"\n[TTS #{request_count}] Refreshing traces (preventive maintenance)...")
                         try:
                             # Release all traces
@@ -335,11 +429,23 @@ class SpeechT5TTNNServer:
                         except Exception as e:
                             print(f"  Warning: Trace refresh failed: {e}")
                     
-                    print(f"\n[TTS #{request_count}] '{text[:50]}{'...' if len(text) > 50 else ''}'")
+                    speaker_label = f" [speaker:{speaker_id}]" if speaker_id else ""
+                    print(f"\n[TTS #{request_count}]{speaker_label} '{text[:50]}{'...' if len(text) > 50 else ''}'")
                     t0 = time.time()
 
                     try:
-                        stats = self._synthesize(text, output)
+                        # If speaker_id is provided, use CPU path for multi-speaker
+                        if speaker_id is not None and speaker_id in self.speaker_cache:
+                            import numpy as np
+                            speech, _ = self._synthesize_segment_with_speaker(text, speaker_id)
+                            audio_np = speech.squeeze().detach().numpy() if hasattr(speech, 'detach') else speech
+                            # Add silence at end
+                            silence = np.zeros(int(16000 * 0.2), dtype=audio_np.dtype)
+                            audio_np = np.concatenate([audio_np, silence])
+                            self.sf.write(output, audio_np, samplerate=16000)
+                            stats = {}
+                        else:
+                            stats = self._synthesize(text, output)
                         ms = (time.time() - t0) * 1000
                         successful_requests += 1
                         print(f"  Generated in {ms:.0f}ms, tokens/sec: {stats.get('token_per_sec', 0):.1f}")

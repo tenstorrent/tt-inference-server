@@ -68,10 +68,17 @@ class TTSService:
             # Don't raise - allow pipeline to continue
             self.is_warmed_up = False
     
-    async def synthesize(self, text: str, fast: bool = True) -> Dict[str, Any]:
-        """Synthesize speech from text."""
+    async def synthesize(self, text: str, fast: bool = True, speaker_id: int = None) -> Dict[str, Any]:
+        """Synthesize speech from text.
+        
+        Args:
+            text: Text to synthesize
+            fast: Unused, kept for compatibility
+            speaker_id: Optional speaker ID for multi-voice (e.g., podcast)
+                       7306 = host voice, 1138 = guest voice
+        """
         # Log text length for debugging
-        logger.debug(f"TTS text length: {len(text)} chars")
+        logger.debug(f"TTS text length: {len(text)} chars, speaker_id: {speaker_id}")
         
         logger.info(f"🔊 TTS: {text[:50]}...")
         
@@ -79,14 +86,19 @@ class TTSService:
             import time
             output_path = os.path.join(self.output_dir, f"tts_{int(time.time() * 1000)}.wav")
             
+            # Build request with optional speaker_id
+            request_data = {
+                "text": text,
+                "output_path": output_path
+            }
+            if speaker_id is not None:
+                request_data["speaker_id"] = speaker_id
+            
             # Send to server
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
-                lambda: self._send_request({
-                    "text": text,
-                    "output_path": output_path
-                })
+                lambda: self._send_request(request_data)
             )
             
             if response.get("status") == "ok":

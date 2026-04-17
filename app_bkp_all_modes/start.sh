@@ -73,24 +73,26 @@ cd /home/container_app_user/tt-metal
 python /home/container_app_user/voice-assistant/servers/face_auth_server.py > /tmp/face_auth_server.log 2>&1
 '
 
-# 6. Start Whisper Server (Device 2)
-echo "[6/7] Starting Whisper Server (Device 2)..."
+# 6. Start Whisper Server (Device 3)
+echo "[6/7] Starting Whisper Server (Device 3)..."
+docker exec -d $CONTAINER bash -c '
+source /home/container_app_user/tt-metal/python_env/bin/activate
+export PYTHONPATH="/usr/local/lib/python3.10/dist-packages:/home/container_app_user/tt-metal:$PYTHONPATH"
+export TT_MESH_GRAPH_DESC_PATH=/home/container_app_user/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto
+export TT_VISIBLE_DEVICES=3
+cd /home/container_app_user/tt-metal
+python /home/container_app_user/voice-assistant/servers/whisper_server.py > /tmp/whisper_server.log 2>&1
+'
+
+# Start TTS Server (SpeechT5 TTNN on Device 2)
+echo "       Starting TTS Server (SpeechT5 TTNN, Device 2)..."
 docker exec -d $CONTAINER bash -c '
 source /home/container_app_user/tt-metal/python_env/bin/activate
 export PYTHONPATH="/usr/local/lib/python3.10/dist-packages:/home/container_app_user/tt-metal:$PYTHONPATH"
 export TT_MESH_GRAPH_DESC_PATH=/home/container_app_user/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto
 export TT_VISIBLE_DEVICES=2
 cd /home/container_app_user/tt-metal
-python /home/container_app_user/voice-assistant/servers/whisper_server.py > /tmp/whisper_server.log 2>&1
-'
-
-# Start TTS Server (SpeechT5 on CPU - only 3 TT devices available: 0,1,2)
-echo "       Starting TTS Server (SpeechT5 CPU)..."
-docker exec -d $CONTAINER bash -c '
-source /home/container_app_user/tt-metal/python_env/bin/activate
-export PYTHONPATH="/usr/local/lib/python3.10/dist-packages:/home/container_app_user/tt-metal:$PYTHONPATH"
-cd /home/container_app_user/tt-metal
-python /home/container_app_user/voice-assistant/servers/speecht5_server.py --speaker-id 7306 > /tmp/tts_server.log 2>&1
+python /home/container_app_user/voice-assistant/servers/speecht5_ttnn_server.py --speaker-id 7306 > /tmp/tts_server.log 2>&1
 '
 
 # Wait for servers to start
