@@ -33,6 +33,10 @@
       "description": "Session management for slot assignments"
     },
     {
+      "name": "Models",
+      "description": "Model listing endpoints"
+    },
+    {
       "name": "Health",
       "description": "Server health and liveness endpoints"
     },
@@ -272,6 +276,54 @@
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "tags": ["Models"],
+        "summary": "List models",
+        "description": "Lists the currently available models. Returns model IDs that can be used in the `model` field of chat completion requests.",
+        "operationId": "listModels",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "List of available models",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "type": "string",
+                      "enum": ["list"]
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Model identifier",
+                            "example": "deepseek-ai/DeepSeek-R1-0528"
+                          },
+                          "object": {
+                            "type": "string",
+                            "enum": ["model"]
+                          },
+                          "owned_by": {
+                            "type": "string",
+                            "example": "tenstorrent"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }
