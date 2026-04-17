@@ -222,11 +222,9 @@ void SessionManager::evictOldSessions() {
   std::vector<Entry> heap;
   heap.reserve(evictionCount + 1);
 
-  sessions.forEach([&heap, &newer, evictionCount](const std::string& id,
-                                                  domain::Session& session) {
-    if (session.isInFlight()) {
-      return;
-    }
+  sessions.forEach([&heap, &newer, evictionCount](
+                       const std::string& id, const domain::Session& session) {
+    if (session.isInFlight()) return;
 
     auto t = session.getLastActivityTime();
     if (heap.size() < evictionCount) {

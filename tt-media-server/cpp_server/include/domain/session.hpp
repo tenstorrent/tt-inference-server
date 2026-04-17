@@ -63,6 +63,10 @@ class Session {
    * The close executes automatically when the in-flight request completes.
    */
   bool isPendingClose() const { return pending_close_; }
+
+  /**
+   * Mark the session for deferred close.
+   */
   void setPendingClose(bool pendingClose) { pending_close_ = pendingClose; }
 
   /**
