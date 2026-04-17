@@ -332,6 +332,22 @@
                 "mock_mode": false
             }
         },
+        "WebSocketSTTLiveTest": {
+            "module": "server_tests.test_cases.websocket_stt_live_test",
+            "markers": [
+                "e2e",
+                "smoke",
+                "audio",
+                "whisper"
+            ],
+            "test_config": {
+                "test_timeout": 120,
+                "retry_attempts": 1,
+                "retry_delay": 10,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
         "CnnLoadTest": {
             "module": "server_tests.test_cases.cnn_load_test",
             "markers": [

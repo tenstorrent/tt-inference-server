@@ -175,6 +175,41 @@
                         "num_of_devices": 1,
                         "dataset": "60s"
                     }
+                },
+                {
+                    "template": "WebSocketSTTLiveTest",
+                    "enabled": true,
+                    "description": "WebSocket STT streaming: connect, send 6s PCM, verify transcript"
+                }
+            ]
+        },
+        {
+            "id": "whisper-n300",
+            "weights": [
+                "whisper-large-v3"
+            ],
+            "device": "n300",
+            "model_marker": "whisper",
+            "test_cases": [
+                {
+                    "template": "WebSocketSTTLiveTest",
+                    "enabled": true,
+                    "description": "WebSocket STT streaming: connect, send 6s PCM, verify transcript"
+                }
+            ]
+        },
+        {
+            "id": "whisper-p150",
+            "weights": [
+                "whisper-large-v3"
+            ],
+            "device": "p150",
+            "model_marker": "whisper",
+            "test_cases": [
+                {
+                    "template": "WebSocketSTTLiveTest",
+                    "enabled": true,
+                    "description": "WebSocket STT streaming: connect, send 6s PCM, verify transcript"
                 }
             ]
         },
@@ -217,6 +252,11 @@
                     "template": "AudioTranscriptionParamTest",
                     "enabled": true,
                     "description": "Test audio transcription params"
+                },
+                {
+                    "template": "WebSocketSTTLiveTest",
+                    "enabled": true,
+                    "description": "WebSocket STT streaming: connect, send 6s PCM, verify transcript"
                 }
             ]
         },
@@ -277,6 +317,11 @@
                     "template": "AudioTranscriptionParamTest",
                     "enabled": true,
                     "description": "Test audio transcription params"
+                },
+                {
+                    "template": "WebSocketSTTLiveTest",
+                    "enabled": true,
+                    "description": "WebSocket STT streaming: connect, send 6s PCM, verify transcript"
                 }
             ]
         }
