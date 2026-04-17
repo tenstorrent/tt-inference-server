@@ -14,6 +14,22 @@
 
 namespace tt::services {
 
+namespace {
+// Linear backoff for failed slot allocation results: start at BASE, grow by
+// STEP per consecutive failure, clamped at CAP.
+constexpr std::chrono::milliseconds ALLOCATION_RETRY_BASE_DELAY{500};
+constexpr std::chrono::milliseconds ALLOCATION_RETRY_DELAY_STEP{250};
+constexpr std::chrono::milliseconds ALLOCATION_RETRY_MAX_DELAY{3000};
+// Flat backoff when the IPC request queue is full (transient backpressure).
+constexpr std::chrono::milliseconds IPC_QUEUE_FULL_RETRY_DELAY{50};
+
+std::chrono::milliseconds computeAllocationRetryDelay(int failureCount) {
+  auto delay = ALLOCATION_RETRY_BASE_DELAY +
+               ALLOCATION_RETRY_DELAY_STEP * failureCount;
+  return std::min(delay, ALLOCATION_RETRY_MAX_DELAY);
+}
+}  // namespace
+
 SessionManager::SessionManager() {
   try {
     memoryRequestQueue = std::make_unique<ipc::MemoryRequestQueue>(
@@ -324,12 +340,12 @@ void SessionManager::sendAsyncAllocationRequest(
       });
     } else {
       pa.attemptsRemaining--;
-      pa.retryAt =
-          std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+      pa.retryAt = std::chrono::steady_clock::now() + IPC_QUEUE_FULL_RETRY_DELAY;
       TT_LOG_DEBUG(
           "[SessionManager] sendAsyncAllocationRequest: queuing retry for "
-          "sessionId={}, attemptsRemaining={}",
-          pa.session.getSessionId(), pa.attemptsRemaining);
+          "sessionId={}, attemptsRemaining={}, delayMs={}",
+          pa.session.getSessionId(), pa.attemptsRemaining,
+          IPC_QUEUE_FULL_RETRY_DELAY.count());
       pendingAllocationsRetryQueue.push(std::move(pa));
     }
   } else {
@@ -394,13 +410,15 @@ void SessionManager::handleMemoryResult(
         [onCompletion = std::move(pendingAllocation.onCompletion),
          session = pendingAllocation.session]() { onCompletion(session); });
   } else if (pendingAllocation.attemptsRemaining > 0) {
+    int failureCount = static_cast<int>(tt::config::sessionAllocationMaxRetries()) -
+                       pendingAllocation.attemptsRemaining;
     pendingAllocation.attemptsRemaining--;
-    pendingAllocation.retryAt =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    auto delay = computeAllocationRetryDelay(failureCount);
+    pendingAllocation.retryAt = std::chrono::steady_clock::now() + delay;
     TT_LOG_DEBUG(
         "[SessionManager] handleMemoryResult: FAILURE for sessionId={}, "
-        "retrying in 500ms, attemptsRemaining={}",
-        pendingAllocation.session.getSessionId(),
+        "retrying in {}ms, attemptsRemaining={}",
+        pendingAllocation.session.getSessionId(), delay.count(),
         pendingAllocation.attemptsRemaining);
     pendingAllocationsRetryQueue.push(std::move(pendingAllocation));
   } else {
