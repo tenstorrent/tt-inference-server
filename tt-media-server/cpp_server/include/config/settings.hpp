@@ -171,4 +171,7 @@ bool useDeepseekMdFormat();
  * in src/config/settings.cpp. */
 LLMConfig llmEngineConfig();
 
+/** Model from MODEL. Default: defaults::MODEL. */
+Model model();
+
 }  // namespace tt::config
