@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import os
 import tempfile
 import time
+from multiprocessing import Event
 from unittest.mock import patch
 
 import pytest
-from multiprocessing import Event
 from config.constants import JobTypes
 from domain.base_request import BaseRequest
 from utils.job_manager import (

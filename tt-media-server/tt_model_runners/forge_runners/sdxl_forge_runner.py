@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
 import time
@@ -8,10 +8,9 @@ import time
 os.environ["TT_RUNTIME_ENABLE_PROGRAM_CACHE"] = "1"
 
 import torch
-from PIL import Image
-
 from config.constants import SupportedModels
 from domain.image_generate_request import ImageGenerateRequest
+from PIL import Image
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.logger import log_exception_chain

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import os
 import pickle
@@ -8,7 +8,6 @@ import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from ipc.video_shm import VideoRequest, VideoResponse, VideoStatus
 from tt_model_runners.sp_runner import SPRunner
 
