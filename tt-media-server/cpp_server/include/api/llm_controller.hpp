@@ -49,7 +49,7 @@ class LLMController : public drogon::HttpController<LLMController> {
 
   /**
    * POST /v1/responses/input_tokens
-   * OpenAI-compatible responses endpoint.
+   * OpenAI-compatible responses input tokens endpoint.
    */
   void responsesInputTokens(
       const drogon::HttpRequestPtr& req,

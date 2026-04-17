@@ -16,7 +16,8 @@
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
 #include "domain/models_response.hpp"
-#include "domain/response_input_tokens.hpp"
+#include "domain/response_input_tokens_request.hpp"
+#include "domain/response_input_tokens_response.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
@@ -108,13 +109,6 @@ void LLMController::responsesInputTokens(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::responses_input_tokens");
 
-  if (!service) {
-    callback(errorResponse(drogon::k503ServiceUnavailable,
-                           "LLM service is not available",
-                           "service_unavailable"));
-    return;
-  }
-
   auto json = req->getJsonObject();
   if (!json) {
     callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
@@ -134,21 +128,27 @@ void LLMController::responsesInputTokens(
     return;
   }
 
-  const domain::ResponsesRequest& respReq = parsedOpt->responses;
+  domain::ResponseInputTokensRequest& parsed = *parsedOpt;
 
-  TT_LOG_INFO("[LLMController] /v1/responses/input_tokens task_id={} model={}",
-              respReq.task_id, respReq.model.value_or("default"));
+  TT_LOG_INFO("[LLMController] /v1/responses/input_tokens {}",
+              parsed.toString());
 
-  if (respReq.input.isNull() ||
-      (respReq.input.isArray() && respReq.input.empty()) ||
-      (respReq.input.isString() && respReq.input.asString().empty())) {
+  if (parsed.input.isNull() ||
+      (parsed.input.isArray() && parsed.input.empty()) ||
+      (parsed.input.isString() && parsed.input.asString().empty())) {
     callback(errorResponse(drogon::k400BadRequest,
                            "input is required and must not be empty",
                            "invalid_request_error", Json::Value("input")));
     return;
   }
 
-  domain::LLMRequest llmRequest = respReq.toLLMRequest();
+  if (!service->isModelReady()) {
+    callback(errorResponse(drogon::k503ServiceUnavailable, "Model is not ready",
+                           "service_unavailable"));
+    return;
+  }
+
+  domain::LLMRequest llmRequest = parsed.toResponsesRequest().toLLMRequest();
   try {
     service->preProcess(llmRequest);
   } catch (const std::exception& e) {

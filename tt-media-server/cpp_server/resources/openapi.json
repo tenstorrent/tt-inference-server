@@ -26,7 +26,7 @@
     },
     {
       "name": "Responses",
-      "description": "OpenAI Responses API–compatible responses endpoints"
+      "description": "OpenAI-compatible responses endpoints"
     },
     {
       "name": "Embeddings",
@@ -111,7 +111,7 @@
       "post": {
         "tags": ["Responses"],
         "summary": "Count input tokens",
-        "description": "Returns the tokenizer input token count for a Responses-style request body (same parameters as creating a response). Does not run inference. Aligns with OpenAI POST /v1/responses/input_tokens.",
+        "description": "Returns the tokenizer input token count. Does not run inference.",
         "operationId": "countResponseInputTokens",
         "security": [{ "BearerAuth": [] }],
         "requestBody": {
@@ -132,7 +132,15 @@
             }
           },
           "400": {
-            "description": "Invalid request (e.g. missing input, parse error, input too long)",
+            "description": "Invalid request (e.g. missing or empty messages)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" }
@@ -140,7 +148,7 @@
             }
           },
           "503": {
-            "description": "LLM service not available",
+            "description": "Model not ready",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" }
