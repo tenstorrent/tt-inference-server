@@ -148,7 +148,12 @@ void LLMController::chatCompletions(
     return chatResponse.toJsonString();
   };
 
-  handleRequest(request, std::move(formatter), std::move(callback));
+  auto streamFormatterFactory = []() -> std::shared_ptr<StreamEventFormatter> {
+    return std::make_shared<ChatCompletionEventFormatter>();
+  };
+
+  handleRequest(request, std::move(formatter), std::move(streamFormatterFactory),
+                std::move(callback));
 }
 
 void LLMController::responses(
@@ -174,7 +179,9 @@ void LLMController::responses(
     return;
   }
 
-  domain::ResponsesRequest& respReq = *respReqOpt;
+  auto respReqPtr =
+      std::make_shared<domain::ResponsesRequest>(std::move(*respReqOpt));
+  const domain::ResponsesRequest& respReq = *respReqPtr;
 
   TT_LOG_INFO("[LLMController] /v1/responses task_id={} model={}",
               respReq.task_id, respReq.model.value_or("default"));
@@ -235,11 +242,18 @@ void LLMController::responses(
     return Json::writeString(writer, resp.toOpenaiJson());
   };
 
-  handleRequest(request, std::move(formatter), std::move(callback));
+  auto streamFormatterFactory =
+      [respReqPtr, samplingParams]() -> std::shared_ptr<StreamEventFormatter> {
+    return std::make_shared<ResponsesEventFormatter>(respReqPtr, samplingParams);
+  };
+
+  handleRequest(request, std::move(formatter), std::move(streamFormatterFactory),
+                std::move(callback));
 }
 
 void LLMController::handleRequest(
     std::shared_ptr<domain::LLMRequest> request, ResponseFormatter formatter,
+    StreamFormatterFactory streamFormatterFactory,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   if (!service->isModelReady()) {
     callback(errorResponse(drogon::k503ServiceUnavailable, "Model is not ready",
@@ -248,7 +262,8 @@ void LLMController::handleRequest(
   }
 
   if (request->stream) {
-    handleStreaming(request, std::move(callback));
+    handleStreaming(request, std::move(streamFormatterFactory),
+                    std::move(callback));
     return;
   }
 
@@ -322,6 +337,7 @@ void LLMController::handleRequest(
 
 void LLMController::handleStreaming(
     std::shared_ptr<domain::LLMRequest> reqPtr,
+    StreamFormatterFactory streamFormatterFactory,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleStreaming");
 
@@ -329,10 +345,12 @@ void LLMController::handleStreaming(
   auto cb =
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
+  auto factory = std::make_shared<StreamFormatterFactory>(
+      std::move(streamFormatterFactory));
 
   resolveSession(
       reqPtr, loop,
-      [this, reqPtr, cb, loop](SessionInfo sessionInfo) {
+      [this, reqPtr, cb, loop, factory](SessionInfo sessionInfo) {
         try {
           service->preProcess(*reqPtr);
 
@@ -354,7 +372,11 @@ void LLMController::handleStreaming(
           params.service = service;
           params.sessionManager = sessionManager;
 
-          auto writer = SseStreamWriter::create(loop, std::move(params));
+          std::shared_ptr<StreamEventFormatter> formatter =
+              (*factory) ? (*factory)()
+                         : std::make_shared<ChatCompletionEventFormatter>();
+          auto writer = SseStreamWriter::create(loop, std::move(params),
+                                                std::move(formatter));
 
           auto streamingCallback = [writer](const domain::LLMStreamChunk& chunk,
                                             bool isFinal) {
@@ -364,6 +386,7 @@ void LLMController::handleStreaming(
           };
 
           if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
+            // preprocess is already called
             service->submitStreamingRequest(*reqPtr, streamingCallback, true);
           } else if (tt::config::llmMode() ==
                      tt::config::LLMMode::DECODE_ONLY) {
@@ -372,7 +395,7 @@ void LLMController::handleStreaming(
               TT_LOG_DEBUG(
                   "[LLMController] Using prefill on decode for sessionId: {}",
                   reqPtr->sessionId.value_or("none"));
-              service->submitStreamingRequest(*reqPtr, streamingCallback);
+              service->submitStreamingRequest(*reqPtr, streamingCallback, true);
             } else {
               TT_LOG_DEBUG(
                   "[LLMController] Using disaggregated prefill for request "
@@ -433,6 +456,7 @@ void LLMController::createSession(
     return;
   }
 
+  // Parse optional slot_id from request body
   std::optional<uint32_t> slotId;
   auto json = req->getJsonObject();
   if (json && json->isMember("slot_id")) {

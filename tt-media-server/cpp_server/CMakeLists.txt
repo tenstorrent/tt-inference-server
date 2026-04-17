@@ -495,6 +495,7 @@ set(SOURCES
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
     src/api/sse_stream_writer.cpp
+    src/api/stream_event_formatter.cpp
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp

@@ -20,6 +20,8 @@
 
 namespace tt::api {
 
+class StreamEventFormatter;
+
 struct StreamParams {
   std::string completionId;
   std::string model;
@@ -35,8 +37,9 @@ struct StreamParams {
 
 class SseStreamWriter : public std::enable_shared_from_this<SseStreamWriter> {
  public:
-  static std::shared_ptr<SseStreamWriter> create(trantor::EventLoop* loop,
-                                                 StreamParams params);
+  static std::shared_ptr<SseStreamWriter> create(
+      trantor::EventLoop* loop, StreamParams params,
+      std::shared_ptr<StreamEventFormatter> formatter);
 
   SseStreamWriter(const SseStreamWriter&) = delete;
   SseStreamWriter& operator=(const SseStreamWriter&) = delete;
@@ -49,7 +52,8 @@ class SseStreamWriter : public std::enable_shared_from_this<SseStreamWriter> {
   drogon::HttpResponsePtr buildResponse();
 
  private:
-  explicit SseStreamWriter(trantor::EventLoop* loop, StreamParams params);
+  SseStreamWriter(trantor::EventLoop* loop, StreamParams params,
+                  std::shared_ptr<StreamEventFormatter> formatter);
 
   void sendSse(const std::string& sse,
                std::function<void()> onDisconnect = nullptr);
@@ -72,8 +76,11 @@ class SseStreamWriter : public std::enable_shared_from_this<SseStreamWriter> {
   std::optional<std::chrono::high_resolution_clock::time_point>
       second_token_time_;
   std::atomic<bool> first_content_chunk_{true};
+  std::string accumulated_text_;
+  std::optional<std::string> last_finish_reason_;
 
   StreamParams params_;
+  std::shared_ptr<StreamEventFormatter> formatter_;
 };
 
 }  // namespace tt::api
