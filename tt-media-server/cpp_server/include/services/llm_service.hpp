@@ -18,6 +18,7 @@
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
 #include "services/streamable.hpp"
+#include "services/tool_call_parser.hpp"
 #include "utils/concurrent_map.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 #include "worker/worker_manager.hpp"
@@ -89,6 +90,7 @@ class LLMService
   const tt::utils::tokenizers::Tokenizer* tokenizer_;
   std::unordered_set<int64_t> stop_token_set_;
   std::unique_ptr<ReasoningParser> reasoning_parser_;
+  std::unique_ptr<IToolCallParser> tool_call_parser_;
 };
 
 }  // namespace tt::services

@@ -52,6 +52,7 @@ struct LLMChoice {
   std::optional<std::string> finish_reason;
   std::optional<int64_t> token_id;
   std::optional<std::string> reasoning;
+  std::optional<Json::Value> tool_calls;
 };
 
 /**

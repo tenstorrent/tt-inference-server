@@ -36,6 +36,7 @@ LLMService::LLMService()
 
   worker_manager_ = std::make_unique<tt::worker::WorkerManager>(numWorkers);
   reasoning_parser_ = std::make_unique<ReasoningParser>();
+  tool_call_parser_ = createToolCallParser(tt::config::modelType());
 
   TT_LOG_INFO("[LLMService] Initialized (workers={})", numWorkers);
   queue_manager_ =
@@ -386,6 +387,23 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
 
       // Replace text with answer only (reasoning stripped)
       choice.text = std::move(result.answer);
+    }
+  }
+
+  // Parse tool calls from the response
+  if (tool_call_parser_) {
+    for (auto& choice : response.choices) {
+      TT_LOG_DEBUG("[LLMService] Parsing text for tool calls (length={}): {}",
+                   choice.text.length(),
+                   choice.text.substr(0, std::min<size_t>(200, choice.text.length())));
+
+      auto toolCalls = tool_call_parser_->parseComplete(choice.text);
+      if (toolCalls.has_value() && !toolCalls->empty()) {
+        TT_LOG_DEBUG("[LLMService] Found {} tool calls", toolCalls->size());
+        choice.tool_calls = std::move(toolCalls);
+        choice.text = tool_call_parser_->stripMarkers(choice.text);
+        choice.finish_reason = "tool_calls";
+      }
     }
   }
 }
