@@ -49,6 +49,7 @@ constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 64;
 constexpr bool USE_DEEPSEEK_MD_FORMAT = false;
+constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 

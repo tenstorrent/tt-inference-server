@@ -175,6 +175,11 @@ size_t pmMaxUsers() {
   return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
 }
 
+unsigned warmupTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("WARMUP_TIMEOUT_MS", defaults::WARMUP_TIMEOUT_MS));
+}
+
 bool useDeepseekMdFormat() {
   return static_cast<bool>(
       envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));
