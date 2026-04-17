@@ -78,7 +78,7 @@ std::string DeepseekTokenizer::applyChatTemplate(
   }
 
   if (tools.has_value() && !tools->empty()) {
-    const std::string tools_description =
+    const std::string toolsDescription =
         std::string(
             "You are a helpful assistant with tool calling capabilities. "
             "When a tool call is needed, you MUST use the following format to "
@@ -92,7 +92,7 @@ std::string DeepseekTokenizer::applyChatTemplate(
         "## Tools\n\n### Function\n\nYou have the following functions "
         "available:\n\n";
 
-    out << tools_description;
+    out << toolsDescription;
     for (const auto& tool : *tools) {
       out << "- `" << tool.functionDefinition.name << "`:\n```json\n"
           << (tool.toJson()) << "\n```\n";
