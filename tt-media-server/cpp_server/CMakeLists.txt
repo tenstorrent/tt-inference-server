@@ -515,7 +515,7 @@ set(SOURCES
     src/sockets/inter_server_service.cpp
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp
-    src/worker/worker_metrics.cpp
+    src/worker/single_process_worker_metrics.cpp
     src/worker/worker_metrics_shm.cpp
     src/worker/worker_metrics_aggregator.cpp
     src/worker/sp_pipeline_worker_metrics_renderer.cpp

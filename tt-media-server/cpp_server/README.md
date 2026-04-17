@@ -812,7 +812,7 @@ via the existing `/metrics` endpoint, alongside the server-side metrics.
    `prebuildGauges`, read scratch via your layout's indices in `render`,
    and decide what (if anything) to emit when `is_alive == false`.
 4. In your runner's hot path, call
-  `WorkerMetrics::scratchStoreU64(<your index>, value)` (or
+  `SingleProcessWorkerMetrics::scratchStoreU64(<your index>, value)` (or
    `scratchAddU64` for counters).
 5. In `main.cpp`, register the renderer for your `MetricsLayout` value
   and add the mapping in `metricsLayoutFromConfig()`.

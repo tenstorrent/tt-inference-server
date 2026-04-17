@@ -27,7 +27,7 @@
 #include "utils/service_factory.hpp"
 #include "worker/sp_pipeline_worker_metrics_renderer.hpp"
 #include "worker/worker_manager.hpp"
-#include "worker/worker_metrics.hpp"
+#include "worker/single_process_worker_metrics.hpp"
 #include "worker/worker_metrics_aggregator.hpp"
 #include "worker/worker_metrics_shm.hpp"
 
@@ -63,8 +63,8 @@ int main(int argc, char* argv[]) {
     tracy_config::tracyStartupWorker(workerId);
     tt::utils::ZeroOverheadLogger::initialize();
 
-    tt::worker::WorkerMetrics::instance().initialize(workerId,
-                                                     metricsLayoutFromConfig());
+    tt::worker::SingleProcessWorkerMetrics::instance().initialize(
+        workerId, metricsLayoutFromConfig());
 
     tt::worker::WorkerConfig cfg =
         tt::worker::makeWorkerConfigForProcess(workerId);

@@ -72,17 +72,18 @@ void WorkerMetricsAggregator::refresh() {
   if (!layout_tags_verified_) {
     bool all_attached = true;
     for (size_t i = 0; i < layout_by_worker_.size(); ++i) {
-      uint32_t tag = region_->slots[i].metrics_layout.load(
+      uint8_t tag = region_->slots[i].metrics_layout.load(
           std::memory_order_acquire);
-      if (tag == static_cast<uint32_t>(MetricsLayout::UNKNOWN)) {
+      if (tag == static_cast<uint8_t>(MetricsLayout::UNKNOWN)) {
         all_attached = false;  // worker hasn't attached yet, retry next scrape
         continue;
       }
-      if (tag != static_cast<uint32_t>(layout_by_worker_[i])) {
+      if (tag != static_cast<uint8_t>(layout_by_worker_[i])) {
         TT_LOG_ERROR(
             "[WorkerMetricsAggregator] Worker {} layout tag mismatch: slot "
             "says {}, main configured {}",
-            i, tag, static_cast<uint32_t>(layout_by_worker_[i]));
+            i, static_cast<uint32_t>(tag),
+            static_cast<uint32_t>(layout_by_worker_[i]));
       }
     }
     if (all_attached) {

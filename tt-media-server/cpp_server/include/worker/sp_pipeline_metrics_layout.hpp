@@ -13,7 +13,7 @@ namespace tt::worker::sp_pipeline {
  * Scratch-area index convention for the sp_pipeline runner family
  * (tagged in shared memory as MetricsLayout::SP_PIPELINE_RUNNER).
  *
- * Both writer (worker-side runner via WorkerMetrics) and reader
+ * Both writer (worker-side runner via SingleProcessWorkerMetrics) and reader
  * (main-side SpPipelineWorkerMetricsRenderer) include this header so they
  * agree on what each scratch slot means.
  *

@@ -11,7 +11,8 @@
 namespace tt::worker {
 
 /**
- * Per-worker metrics writer backed by a POSIX shared-memory slot.
+ * Per-worker metrics writer for single-process workers, backed by a POSIX
+ * shared-memory slot.
  *
  * On initialize() the worker attaches to the segment created by main and
  * claims slots[workerId], stamping its pid and metrics_layout. The hot path
@@ -24,9 +25,9 @@ namespace tt::worker {
  * scratchStoreU64 / scratchAddU64 primitives with that layout's own
  * index constants.
  */
-class WorkerMetrics {
+class SingleProcessWorkerMetrics {
  public:
-  static WorkerMetrics& instance();
+  static SingleProcessWorkerMetrics& instance();
 
   /**
    * Attach to the shared region (name from settings::workerMetricsShmName())
@@ -47,7 +48,7 @@ class WorkerMetrics {
   void scratchAddU64(size_t idx, uint64_t delta);
 
  private:
-  WorkerMetrics() = default;
+  SingleProcessWorkerMetrics() = default;
 
   static uint64_t nowMs();
 

@@ -33,7 +33,7 @@ constexpr size_t WORKER_SCRATCH_U64_COUNT = 32;
  * during initialize() so the main-side aggregator can dispatch to the
  * correct renderer. Append-only; never renumber existing values.
  */
-enum class MetricsLayout : uint32_t {
+enum class MetricsLayout : uint8_t {
   UNKNOWN = 0,
   SP_PIPELINE_RUNNER = 1,
   SDXL = 2,
@@ -50,9 +50,10 @@ enum class MetricsLayout : uint32_t {
  * Slot is cache-line aligned to avoid false sharing across workers.
  */
 struct alignas(64) WorkerSlot {
-  std::atomic<int32_t> pid;             // 0 = unclaimed
-  std::atomic<uint32_t> metrics_layout;  // MetricsLayout
-  std::atomic<uint32_t> generation;      // bumped on slot reclaim
+  std::atomic<int32_t> pid;            // 0 = unclaimed
+  std::atomic<uint8_t> metrics_layout;  // MetricsLayout
+  // 3 bytes of implicit padding follow before `generation` (4-byte aligned).
+  std::atomic<uint32_t> generation;  // bumped on slot reclaim
   uint32_t reserved;
   std::atomic<uint64_t> scratch[WORKER_SCRATCH_U64_COUNT];
 };

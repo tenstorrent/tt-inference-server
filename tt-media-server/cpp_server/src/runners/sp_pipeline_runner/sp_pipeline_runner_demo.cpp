@@ -14,7 +14,7 @@
 #include "profiling/tracy.hpp"
 #include "services/memory_services/contiguous_memory_manager.hpp"
 #include "utils/logger.hpp"
-#include "worker/worker_metrics.hpp"
+#include "worker/single_process_worker_metrics.hpp"
 
 namespace tt::runners {
 
@@ -125,7 +125,7 @@ void SpPipelineRunnerDemo::memoryLoop() {
 }
 
 void SpPipelineRunnerDemo::step() {
-  tt::worker::WorkerMetrics::instance().updateStepHeartbeat();
+  tt::worker::SingleProcessWorkerMetrics::instance().updateStepHeartbeat();
   drainDecodeResults();
 
   if (inFlightCount >= maxInFlightCount) {
@@ -144,7 +144,7 @@ void SpPipelineRunnerDemo::step() {
           static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
     }
 
-    tt::worker::WorkerMetrics::instance().incrementActiveRequests();
+    tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
     modelRunner->write(
         taskId, seq->getTokenIds(), seq->getSamplingParams().max_tokens.value(),
         sp_pipeline::RequestPhase::PREFILL, seq->getSamplingParams().fast_mode);
@@ -158,7 +158,7 @@ void SpPipelineRunnerDemo::drainDecodeResults() {
   std::vector<tt::runners::llm_engine::TokenResult> results;
   decodeQueue.popMany(results, maxInFlightCount);
   for (const auto& dr : results) {
-    tt::worker::WorkerMetrics::instance().updateOutputHeartbeat();
+    tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
     auto it = activeSequences.find(dr.taskId);
     if (it == activeSequences.end()) {
       TT_LOG_WARN(
@@ -170,7 +170,7 @@ void SpPipelineRunnerDemo::drainDecodeResults() {
 
     if (dr.isError) {
       ipc::pushErrorToken(*resultQueue, dr.taskId);
-      tt::worker::WorkerMetrics::instance().decrementActiveRequests();
+      tt::worker::SingleProcessWorkerMetrics::instance().decrementActiveRequests();
       activeSequences.erase(it);
       --inFlightCount;
       continue;
@@ -189,7 +189,7 @@ void SpPipelineRunnerDemo::drainDecodeResults() {
     ipc::pushToken(*resultQueue, dr.taskId, dr.tokenId, finished);
 
     if (finished) {
-      tt::worker::WorkerMetrics::instance().decrementActiveRequests();
+      tt::worker::SingleProcessWorkerMetrics::instance().decrementActiveRequests();
       activeSequences.erase(it);
       --inFlightCount;
     }

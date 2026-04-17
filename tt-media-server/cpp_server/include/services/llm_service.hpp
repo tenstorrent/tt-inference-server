@@ -54,7 +54,9 @@ class LLMService
 
   /** Borrowed pointer to the worker manager, used by main to wire the
    * worker metrics aggregator. Lifetime tied to this LLMService. */
-  tt::worker::WorkerManager* workerManager() { return worker_manager_.get(); }
+  tt::worker::WorkerManager* workerManager() const {
+    return worker_manager_.get();
+  }
 
  protected:
   void postProcess(domain::LLMResponse& response) const override;
