@@ -56,7 +56,6 @@ class VLLMLoraRunner(BaseDeviceRunner):
             additional_config={
                 "enable_const_eval": True,
                 "min_context_len": 32,
-                "cpu_sampling": True,
                 "optimization_level": 1,
             },
         )
