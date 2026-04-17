@@ -47,6 +47,13 @@ struct ChatMessage {
     if (json.isMember("tool_call_id") && !json["tool_call_id"].isNull()) {
       msg.tool_call_id = json["tool_call_id"].asString();
     }
+
+    // Validate: tool messages must have tool_call_id
+    if (msg.role == "tool" && !msg.tool_call_id.has_value()) {
+      throw std::invalid_argument(
+          "Message with role='tool' must include 'tool_call_id' field");
+    }
+
     return msg;
   }
 

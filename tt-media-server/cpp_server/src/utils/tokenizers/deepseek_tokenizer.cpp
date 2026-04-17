@@ -90,12 +90,11 @@ std::string DeepseekTokenizer::applyChatTemplate(
         "\n\n"
         "Make sure the JSON is valid.\n"
         "## Tools\n\n### Function\n\nYou have the following functions "
-        "available:\n\n";
+           "available:\n\n";
 
-    out << toolsDescription;
     for (const auto& tool : *tools) {
       out << "- `" << tool.functionDefinition.name << "`:\n```json\n"
-          << (tool.toJson()) << "\n```\n";
+          << tool.toJson() << "\n```\n";
     }
   }
 
@@ -111,12 +110,13 @@ std::string DeepseekTokenizer::applyChatTemplate(
       }
       out << dsUserTag << m.content;
     } else if (m.role == "assistant") {
+      if (inToolOutputs) {
+        out << dsToolOutputsEnd;
+        inToolOutputs = false;
+      }
+
       // Check if this assistant message has tool calls
       if (m.tool_calls.has_value() && !m.tool_calls->empty()) {
-        if (inToolOutputs) {
-          out << dsToolOutputsEnd;
-          inToolOutputs = false;
-        }
         if (!m.content.empty()) {
           out << dsAssistantTag << m.content;
         }
@@ -130,10 +130,6 @@ std::string DeepseekTokenizer::applyChatTemplate(
         out << dsToolCallsEnd << dsEndOfSentence;
 
       } else {
-        if (inToolOutputs) {
-          out << dsToolOutputsEnd;
-          inToolOutputs = false;
-        }
         out << dsAssistantTag << m.content;
       }
     } else if (m.role == "tool") {
