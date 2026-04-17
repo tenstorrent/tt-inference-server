@@ -71,3 +71,7 @@ class CompletionRequest(BaseRequest):
     truncate_prompt_tokens: Annotated[int, Field(ge=-1, le=_LONG_INFO.max)] | None = (
         None
     )
+
+    # PEFT adapter checkpoint, e.g. "{job_id}/ckpt-step-{step}".
+    # When set, base model is read from the adapter's config automatically.
+    adapter: str | None = None
