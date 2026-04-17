@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import pytest
-from pydantic import ValidationError
-
+from domain.image_edit_request import ImageEditRequest
 from domain.image_generate_request import ImageGenerateRequest
 from domain.image_to_image_request import ImageToImageRequest
-from domain.image_edit_request import ImageEditRequest
+from pydantic import ValidationError
 
 
 class TestImageGenerateRequestLoraFields:

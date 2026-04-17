@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2024 Tenstorrent USA, Inc.
 
 # Docker entry point script:
 # ensures CONTAINER_APP_USERNAME has read/write permissions to:

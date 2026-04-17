@@ -1,29 +1,41 @@
 {
     "_description": "Test suites for TTS model category (SpeechT5)",
     "_category": "TTS",
-    "test_suites": [
+    "test_matrices": [
         {
-            "id": "speecht5-n150",
-            "weights": ["speecht5_tts"],
-            "device": "n150",
-            "model_marker": "speecht5",
+            "models": [
+                "speecht5"
+            ],
+            "devices": [
+                "n150",
+                "p150"
+            ],
             "test_cases": [
-                {"template": "SpeechT5TTSTest", "enabled": true, "description": "SpeechT5 TTS functionality test"},
-                {"template": "TestTTSServerHealth", "enabled": true, "description": "TTS server health test", "targets": {"tts_generation_time": 10, "sample_count": 10, "compare_audio": true}},
-                {"template": "TTSParamTest", "enabled": true, "description": "TTS parameter variations test"},
-                {"template": "TTSIntegrationTest", "enabled": true, "description": "TTS error handling and validation test"}
-            ]
-        },
-        {
-            "id": "speecht5-p150",
-            "weights": ["speecht5_tts"],
-            "device": "p150",
-            "model_marker": "speecht5",
-            "test_cases": [
-                {"template": "SpeechT5TTSTest", "enabled": true, "description": "SpeechT5 TTS functionality test"},
-                {"template": "TestTTSServerHealth", "enabled": true, "description": "TTS server health test", "targets": {"tts_generation_time": 10, "sample_count": 10, "compare_audio": true}},
-                {"template": "TTSParamTest", "enabled": true, "description": "TTS parameter variations test"},
-                {"template": "TTSIntegrationTest", "enabled": true, "description": "TTS error handling and validation test"}
+                {
+                    "template": "SpeechT5TTSTest",
+                    "enabled": true,
+                    "description": "SpeechT5 TTS functionality test"
+                },
+                {
+                    "template": "TestTTSServerHealth",
+                    "enabled": true,
+                    "description": "TTS server health test",
+                    "targets": {
+                        "tts_generation_time": 10,
+                        "sample_count": 10,
+                        "compare_audio": true
+                    }
+                },
+                {
+                    "template": "TTSParamTest",
+                    "enabled": true,
+                    "description": "TTS parameter variations test"
+                },
+                {
+                    "template": "TTSIntegrationTest",
+                    "enabled": true,
+                    "description": "TTS error handling and validation test"
+                }
             ]
         }
     ]

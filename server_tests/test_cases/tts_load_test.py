@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import asyncio
 import json
@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import aiohttp
+
 from server_tests.base_test import BaseTest
 
 logger = logging.getLogger(__name__)
@@ -146,8 +147,9 @@ class TTSLoadTest(BaseTest):
         )
 
         try:
-            from datasets import load_dataset
             import itertools
+
+            from datasets import load_dataset
 
             # Try with streaming first
             try:
@@ -266,8 +268,8 @@ class TTSLoadTest(BaseTest):
                             result = json.loads(full_response_bytes.decode("utf-8"))
                             audio_duration = result.get("duration", 0)
                         elif "audio/wav" in content_type:
-                            import wave
                             import io
+                            import wave
 
                             with wave.open(io.BytesIO(full_response_bytes)) as wav:
                                 audio_duration = (

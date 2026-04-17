@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 import io
 import os
 import zipfile
@@ -15,7 +15,6 @@ from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 from security.org_id_checker import get_org_id
 from utils.build_catalog import build_training_catalog
-
 
 router = APIRouter()
 

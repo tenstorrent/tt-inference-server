@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 """
 Integration tests for TTS API - focuses on error handling and input validation.
@@ -18,6 +18,7 @@ import logging
 import time
 
 import aiohttp
+
 from server_tests.base_test import BaseTest
 
 logger = logging.getLogger(__name__)

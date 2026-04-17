@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 
-from domain.base_request import BaseRequest
-from config.constants import DatasetLoaders, DeviceTypes, TrainingOptimizers
-from pydantic import PrivateAttr, Field
 from multiprocessing import Event
+
+from config.constants import DatasetLoaders, DeviceTypes, TrainingOptimizers
+from domain.base_request import BaseRequest
+from pydantic import Field, PrivateAttr
 
 
 class TrainingRequest(BaseRequest):
