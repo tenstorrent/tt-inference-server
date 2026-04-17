@@ -275,6 +275,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/sp_prefill_runner/i_sp_prefill_model_runner.cpp
     src/runners/sp_prefill_runner/sp_prefill_model_runner.cpp
     src/services/guided_decoder_manager.cpp
+    src/services/deepseek_tool_call_parser.cpp
 )
 
 # Add pipeline_manager-dependent sources only when ENABLE_BLAZE is ON
@@ -417,6 +418,28 @@ target_include_directories(structured_output_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# Tool call parser test
+add_executable(test_tool_call_parser tests/test_tool_call_parser.cpp)
+target_link_libraries(test_tool_call_parser PRIVATE
+    llm_runner_lib
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+target_include_directories(test_tool_call_parser PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
+# Chat template with tools test
+add_executable(test_chat_template_tools tests/test_chat_template_tools.cpp)
+target_link_libraries(test_chat_template_tools PRIVATE
+    llm_runner_lib
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+target_include_directories(test_chat_template_tools PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -426,6 +449,10 @@ gtest_discover_tests(test_tokenizer)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(cancellation_test)
 gtest_discover_tests(structured_output_test)
+
+# Register tool call tests
+add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
+add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
