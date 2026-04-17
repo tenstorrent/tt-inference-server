@@ -17,6 +17,7 @@ python-multipart
 silero_vad
 tqdm
 uvicorn
+websockets
 whisperx==3.4.3
 requests
 num2words
