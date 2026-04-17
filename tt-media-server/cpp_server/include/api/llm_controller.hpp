@@ -6,8 +6,11 @@
 #include <drogon/drogon.h>
 #include <json/json.h>
 
+#include <functional>
 #include <memory>
+#include <string>
 
+#include "domain/llm_response.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
@@ -83,6 +86,19 @@ class LLMController : public drogon::HttpController<LLMController> {
   std::shared_ptr<services::LLMService> service;
   std::shared_ptr<services::DisaggregationService> disaggregationService;
   std::shared_ptr<services::SessionManager> sessionManager;
+
+  using ResponseFormatter =
+      std::function<std::string(const domain::LLMResponse&)>;
+
+  /**
+   * Common non-streaming request handler. Checks model readiness, routes
+   * streaming to handleStreaming, otherwise resolves session and submits.
+   * Uses `formatter` to convert the LLMResponse into a JSON string body.
+   */
+  void handleRequest(
+      std::shared_ptr<domain::LLMRequest> request,
+      ResponseFormatter formatter,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**
    * Handle streaming chat completion (SSE). Emits ChatCompletionStreamChunk

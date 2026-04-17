@@ -16,15 +16,18 @@
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
 #include "domain/models_response.hpp"
+#include "domain/responses_request.hpp"
+#include "domain/responses_response.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
+#include "utils/mapper.hpp"
 #include "utils/service_container.hpp"
 
 namespace tt::api {
 
 void LLMController::models(
-    const drogon::HttpRequestPtr& _,
+    const drogon::HttpRequestPtr& /*req*/,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   domain::ModelsResponse response;
   response.data.push_back({toString(tt::config::model())});
@@ -137,85 +140,15 @@ void LLMController::chatCompletions(
     return;
   }
 
-  if (!service->isModelReady()) {
-    callback(errorResponse(drogon::k503ServiceUnavailable, "Model is not ready",
-                           "service_unavailable"));
-    return;
-  }
-
   auto request = std::make_shared<domain::LLMRequest>(chatReq.toLLMRequest());
 
-  if (request->stream) {
-    handleStreaming(request, std::move(callback));
-  } else {
-    auto* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
-    auto cb =
-        std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
-            std::move(callback));
+  auto formatter = [](const domain::LLMResponse& completion) -> std::string {
+    auto chatResponse =
+        domain::ChatCompletionResponse::fromLLMResponse(completion);
+    return chatResponse.toJsonString();
+  };
 
-    resolveSession(
-        request, loop,
-        [this, request, cb](SessionInfo) {
-          try {
-            auto sessionId = request->sessionId;
-            auto startTime = std::chrono::high_resolution_clock::now();
-            auto completion = service->submitRequest(std::move(*request));
-            auto endTime = std::chrono::high_resolution_clock::now();
-
-            completion.id = "chatcmpl-" + completion.id;
-
-            auto totalDuration =
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    endTime - startTime);
-            if (totalDuration.count() > 0 &&
-                completion.usage.completion_tokens > 0) {
-              completion.usage.ttft_ms =
-                  static_cast<double>(totalDuration.count());
-              if (completion.usage.completion_tokens > 1) {
-                completion.usage.tps = completion.usage.completion_tokens *
-                                       1000.0 / totalDuration.count();
-              }
-            }
-
-            if (sessionId.has_value()) {
-              completion.usage.sessionId = sessionId;
-            }
-
-            auto chatResponse =
-                domain::ChatCompletionResponse::fromLLMResponse(completion);
-            auto resp = drogon::HttpResponse::newHttpResponse();
-            resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-            resp->setBody(chatResponse.toJsonString());
-
-            if (sessionId.has_value() && sessionManager) {
-              sessionManager->setSessionInFlight(sessionId.value(), false);
-            }
-
-            (*cb)(resp);
-          } catch (const services::QueueFullException& e) {
-            auto sessionId = request->sessionId;
-            if (sessionId.has_value() && sessionManager) {
-              sessionManager->setSessionInFlight(sessionId.value(), false);
-            }
-            (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
-                                "rate_limit_exceeded"));
-          }
-        },
-        [cb](const SessionError& err) {
-          TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
-                       err.message);
-          if (err.type == SessionErrorType::RATE_LIMIT) {
-            (*cb)(errorResponse(drogon::k429TooManyRequests, err.message,
-                                "rate_limit_exceeded"));
-          } else {
-            (*cb)(errorResponse(
-                drogon::k503ServiceUnavailable,
-                std::string("Failed to allocate memory resources: ") +
-                    err.message,
-                "service_unavailable"));
-          }
-        });
-  }
+  handleRequest(request, std::move(formatter), std::move(callback));
 }
 
 void LLMController::responses(
@@ -229,6 +162,165 @@ void LLMController::responses(
                            "invalid_request_error"));
     return;
   }
+
+  std::optional<domain::ResponsesRequest> respReqOpt;
+  try {
+    uint32_t taskId = tt::utils::TaskIDGenerator::generate();
+    respReqOpt =
+        domain::ResponsesRequest::fromJson(*json, std::move(taskId));
+  } catch (const std::exception& e) {
+    callback(errorResponse(drogon::k400BadRequest,
+                           std::string("Failed to parse request: ") + e.what(),
+                           "invalid_request_error"));
+    return;
+  }
+
+  domain::ResponsesRequest& respReq = *respReqOpt;
+
+  TT_LOG_INFO("[LLMController] /v1/responses task_id={} model={}",
+              respReq.task_id, respReq.model.value_or("default"));
+
+  auto request = std::make_shared<domain::LLMRequest>(respReq.toLLMRequest());
+  auto samplingParams = tt::utils::mapper::mapSamplingParams(*request);
+
+  auto formatter =
+      [respReq, samplingParams](
+          const domain::LLMResponse& completion) -> std::string {
+    int64_t createdAt = static_cast<int64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
+
+    Json::Value output(Json::arrayValue);
+    for (const auto& choice : completion.choices) {
+      Json::Value item;
+      item["type"] = "message";
+      item["id"] = "msg_" + std::to_string(choice.index);
+      item["status"] = "completed";
+      item["role"] = "assistant";
+
+      Json::Value content(Json::arrayValue);
+      Json::Value textPart;
+      textPart["type"] = "output_text";
+      textPart["text"] = choice.text;
+      content.append(std::move(textPart));
+
+      if (choice.reasoning.has_value()) {
+        Json::Value reasoningPart;
+        reasoningPart["type"] = "reasoning";
+        reasoningPart["text"] = *choice.reasoning;
+        content.append(std::move(reasoningPart));
+      }
+
+      item["content"] = std::move(content);
+      output.append(std::move(item));
+    }
+
+    domain::ResponseUsage usage;
+    usage.input_tokens = completion.usage.prompt_tokens;
+    usage.output_tokens = completion.usage.completion_tokens;
+    usage.total_tokens = completion.usage.total_tokens;
+
+    std::string status =
+        (!completion.choices.empty() &&
+         completion.choices[0].finish_reason.value_or("stop") == "length")
+            ? "incomplete"
+            : "completed";
+
+    auto resp = domain::ResponsesResponse::fromRequest(
+        completion.task_id, respReq, samplingParams, completion.model,
+        createdAt, std::move(output), std::move(status), std::move(usage));
+
+    Json::StreamWriterBuilder writer;
+    writer["indentation"] = "";
+    writer["emitUTF8"] = true;
+    return Json::writeString(writer, resp.toOpenaiJson());
+  };
+
+  handleRequest(request, std::move(formatter), std::move(callback));
+}
+
+void LLMController::handleRequest(
+    std::shared_ptr<domain::LLMRequest> request,
+    ResponseFormatter formatter,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+  if (!service->isModelReady()) {
+    callback(errorResponse(drogon::k503ServiceUnavailable, "Model is not ready",
+                           "service_unavailable"));
+    return;
+  }
+
+  if (request->stream) {
+    handleStreaming(request, std::move(callback));
+    return;
+  }
+
+  auto* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
+  auto cb =
+      std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
+          std::move(callback));
+  auto fmt = std::make_shared<ResponseFormatter>(std::move(formatter));
+
+  resolveSession(
+      request, loop,
+      [this, request, cb, fmt](SessionInfo) {
+        try {
+          auto sessionId = request->sessionId;
+          auto startTime = std::chrono::high_resolution_clock::now();
+          auto completion = service->submitRequest(std::move(*request));
+          auto endTime = std::chrono::high_resolution_clock::now();
+
+          completion.id = "chatcmpl-" + completion.id;
+
+          auto totalDuration =
+              std::chrono::duration_cast<std::chrono::milliseconds>(endTime -
+                                                                    startTime);
+          if (totalDuration.count() > 0 &&
+              completion.usage.completion_tokens > 0) {
+            completion.usage.ttft_ms =
+                static_cast<double>(totalDuration.count());
+            if (completion.usage.completion_tokens > 1) {
+              completion.usage.tps = completion.usage.completion_tokens *
+                                     1000.0 / totalDuration.count();
+            }
+          }
+
+          if (sessionId.has_value()) {
+            completion.usage.sessionId = sessionId;
+          }
+
+          auto resp = drogon::HttpResponse::newHttpResponse();
+          resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+          resp->setBody((*fmt)(completion));
+
+          if (sessionId.has_value() && sessionManager) {
+            sessionManager->setSessionInFlight(sessionId.value(), false);
+          }
+
+          (*cb)(resp);
+        } catch (const services::QueueFullException& e) {
+          auto sessionId = request->sessionId;
+          if (sessionId.has_value() && sessionManager) {
+            sessionManager->setSessionInFlight(sessionId.value(), false);
+          }
+          (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
+                              "rate_limit_exceeded"));
+        }
+      },
+      [cb](const SessionError& err) {
+        TT_LOG_ERROR("[LLMController] Session resolution failed: {}",
+                     err.message);
+        if (err.type == SessionErrorType::RATE_LIMIT) {
+          (*cb)(errorResponse(drogon::k429TooManyRequests, err.message,
+                              "rate_limit_exceeded"));
+        } else {
+          (*cb)(errorResponse(
+              drogon::k503ServiceUnavailable,
+              std::string("Failed to allocate memory resources: ") +
+                  err.message,
+              "service_unavailable"));
+        }
+      });
 }
 
 void LLMController::handleStreaming(
@@ -275,7 +367,6 @@ void LLMController::handleStreaming(
           };
 
           if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
-            // preprocess is already called
             service->submitStreamingRequest(*reqPtr, streamingCallback, true);
           } else if (tt::config::llmMode() ==
                      tt::config::LLMMode::DECODE_ONLY) {
@@ -345,7 +436,6 @@ void LLMController::createSession(
     return;
   }
 
-  // Parse optional slot_id from request body
   std::optional<uint32_t> slotId;
   auto json = req->getJsonObject();
   if (json && json->isMember("slot_id")) {

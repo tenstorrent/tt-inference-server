@@ -297,9 +297,11 @@ void SessionManager::createSession(
 
 void SessionManager::sendAsyncAllocationRequest(
     PendingAllocation& pendingAllocation) {
-  auto task =
-      domain::ManageMemoryTask(tt::utils::TaskIDGenerator::generate(),
-                               domain::MemoryManagementAction::ALLOCATE);
+  auto task = domain::ManageMemoryTask{
+      tt::utils::TaskIDGenerator::generate(),
+      domain::MemoryManagementAction::ALLOCATE,
+      domain::KvMemoryLayout::Paged,
+      {}};
   TT_LOG_DEBUG(
       "[SessionManager] sendAsyncAllocationRequest: taskId={}, "
       "sessionId={}, attemptsRemaining={}",
