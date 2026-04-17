@@ -106,6 +106,7 @@ class ModelRunners(Enum):
     TRAINING_LLAMA_LORA = "training-llama-lora"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     LORA_SINGLE_CHIP = "lora-single-chip"
+    VLLM_LORA = "vllm-lora"
     MOCK = "mock"
     SP_RUNNER = "sp_runner"
     LLM_TEST = "llm_test"
@@ -144,6 +145,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.LLM_TEST,
         ModelRunners.LLAMA_RUNNER,
         ModelRunners.LORA_SINGLE_CHIP,
+        ModelRunners.VLLM_LORA,
     },
     ModelServices.EMBEDDING: {
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
@@ -219,6 +221,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TRAINING_LLAMA_LORA: {ModelNames.LLAMA_3_1_8B},
     ModelRunners.LORA_SINGLE_CHIP: {ModelNames.GEMMA_1_1_2B_IT},
+    ModelRunners.VLLM_LORA: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TT_XLA_SDXL: {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
         ModelNames.STABLE_DIFFUSION_XL_512,

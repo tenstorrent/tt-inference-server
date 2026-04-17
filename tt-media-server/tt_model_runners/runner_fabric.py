@@ -102,6 +102,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.forge_runners.lora_single_chip_runner",
         fromlist=["LoraSingleChipRunner"],
     ).LoraSingleChipRunner(wid),
+    ModelRunners.VLLM_LORA: lambda wid: __import__(
+        "tt_model_runners.vllm_lora_basic_runner",
+        fromlist=["VLLMLoraRunner"],
+    ).VLLMLoraRunner(wid),
     ModelRunners.TRAINING_LLAMA_LORA: lambda wid: __import__(
         "tt_model_runners.forge_training_runners.training_llama_lora_runner",
         fromlist=["TrainingLlamaLoraRunner"],
