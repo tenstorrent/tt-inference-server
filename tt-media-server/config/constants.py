@@ -34,6 +34,7 @@ class SupportedModels(Enum):
     QWEN_3_8B = "Qwen/Qwen3-8B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
+    FALCON3_7B_INSTRUCT = "tiiuae/Falcon3-7B-Instruct"
 
 
 # MODEL environment variable
@@ -74,6 +75,7 @@ class ModelNames(Enum):
     QWEN_3_8B = "Qwen3-8B"
     SPEECHT5_TTS = "speecht5_tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
+    FALCON3_7B_INSTRUCT = "Falcon3-7B-Instruct"
 
 
 class ModelRunners(Enum):
@@ -214,6 +216,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.LLAMA_3_1_8B_INSTRUCT,
         ModelNames.QWEN_3_4B,
         ModelNames.QWEN_3_8B,
+        ModelNames.FALCON3_7B_INSTRUCT,
     },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
