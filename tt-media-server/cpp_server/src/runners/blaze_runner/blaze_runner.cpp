@@ -109,9 +109,8 @@ bool BlazeRunner::warmup() {
   }
 
   if (!receivedToken) {
-    TT_LOG_ERROR(
-        "[BlazeRunner] Warmup timed out waiting for token after {} ms",
-        timeout.count());
+    TT_LOG_ERROR("[BlazeRunner] Warmup timed out waiting for token after {} ms",
+                 timeout.count());
     return false;
   }
 
