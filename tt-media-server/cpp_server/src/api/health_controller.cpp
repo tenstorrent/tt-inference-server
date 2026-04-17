@@ -47,11 +47,8 @@ void HealthController::health(
 
   bool socketHealthy = true;
   if (socket_) {
-    auto socketStatus = socket_->getStatus();
-    if (socketStatus != "disabled") {
-      response["socket_status"] = socketStatus;
-      socketHealthy = socket_->isConnected();
-    }
+    response["socket_status"] = socket_->getStatus();
+    socketHealthy = socket_->isConnected();
   }
 
   if (hasAliveWorkers && socketHealthy) {
@@ -95,10 +92,7 @@ void HealthController::ready(
         static_cast<Json::UInt64>(status.max_queue_size);
 
     if (socket_) {
-      auto socketStatus = socket_->getStatus();
-      if (socketStatus != "disabled") {
-        response["socket_status"] = socketStatus;
-      }
+      response["socket_status"] = socket_->getStatus();
     }
 
     Json::Value workers(Json::arrayValue);
