@@ -12,11 +12,11 @@
 #include "config/runner_config.hpp"
 #include "runners/llm_runner/sequence.hpp"
 
-namespace sp_prefill {
+namespace blaze_prefill {
 
-class ISpPrefillModelRunner {
+class IBlazePrefillModelRunner {
  public:
-  virtual ~ISpPrefillModelRunner() = default;
+  virtual ~IBlazePrefillModelRunner() = default;
 
   // Prefill runner always does prefill, returns the single result token
   // (nullopt if stopped before result arrives)
@@ -25,7 +25,7 @@ class ISpPrefillModelRunner {
   virtual void exit() = 0;
 };
 
-std::unique_ptr<ISpPrefillModelRunner> makeModelRunner(
+std::unique_ptr<IBlazePrefillModelRunner> makeModelRunner(
     const tt::config::LLMConfig& config);
 
-}  // namespace sp_prefill
+}  // namespace blaze_prefill
