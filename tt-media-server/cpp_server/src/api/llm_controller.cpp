@@ -16,6 +16,7 @@
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
 #include "domain/models_response.hpp"
+#include "domain/responses_request.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
@@ -100,6 +101,65 @@ void LLMController::resolveSession(
     TT_LOG_WARN("[LLMController] SessionManager not available");
     onResolved(info);
   }
+}
+
+void LLMController::responsesInputTokens(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+  ZoneScopedN("API::responses_input_tokens");
+
+  if (!service) {
+    callback(errorResponse(drogon::k503ServiceUnavailable,
+                           "LLM service is not available",
+                           "service_unavailable"));
+    return;
+  }
+
+  auto json = req->getJsonObject();
+  if (!json) {
+    callback(errorResponse(drogon::k400BadRequest, "Invalid JSON body",
+                           "invalid_request_error"));
+    return;
+  }
+
+  std::optional<domain::ResponsesRequest> respReqOpt;
+  try {
+    uint32_t taskId = tt::utils::TaskIDGenerator::generate();
+    respReqOpt = domain::ResponsesRequest::fromJson(*json, std::move(taskId));
+  } catch (const std::exception& e) {
+    callback(errorResponse(drogon::k400BadRequest,
+                           std::string("Failed to parse request: ") + e.what(),
+                           "invalid_request_error"));
+    return;
+  }
+
+  const domain::ResponsesRequest& respReq = *respReqOpt;
+
+  TT_LOG_INFO("[LLMController] /v1/responses/input_tokens task_id={} model={}",
+              respReq.task_id, respReq.model.value_or("default"));
+
+  if (respReq.input.isNull() ||
+      (respReq.input.isArray() && respReq.input.empty()) ||
+      (respReq.input.isString() && respReq.input.asString().empty())) {
+    callback(errorResponse(drogon::k400BadRequest,
+                           "input is required and must not be empty",
+                           "invalid_request_error", Json::Value("input")));
+    return;
+  }
+
+  domain::LLMRequest llmRequest = respReq.toLLMRequest();
+  try {
+    service->preProcess(llmRequest);
+  } catch (const std::exception& e) {
+    callback(errorResponse(drogon::k400BadRequest, e.what(),
+                           "invalid_request_error"));
+    return;
+  }
+
+  Json::Value response;
+  response["input_tokens"] = llmRequest.prompt_tokens_count;
+  response["model"] = llmRequest.model.value_or("default");
+  callback(drogon::HttpResponse::newHttpJsonResponse(response));
 }
 
 void LLMController::chatCompletions(
