@@ -166,8 +166,7 @@ void LLMController::responses(
   std::optional<domain::ResponsesRequest> respReqOpt;
   try {
     uint32_t taskId = tt::utils::TaskIDGenerator::generate();
-    respReqOpt =
-        domain::ResponsesRequest::fromJson(*json, std::move(taskId));
+    respReqOpt = domain::ResponsesRequest::fromJson(*json, std::move(taskId));
   } catch (const std::exception& e) {
     callback(errorResponse(drogon::k400BadRequest,
                            std::string("Failed to parse request: ") + e.what(),
@@ -183,9 +182,8 @@ void LLMController::responses(
   auto request = std::make_shared<domain::LLMRequest>(respReq.toLLMRequest());
   auto samplingParams = tt::utils::mapper::mapSamplingParams(*request);
 
-  auto formatter =
-      [respReq, samplingParams](
-          const domain::LLMResponse& completion) -> std::string {
+  auto formatter = [respReq, samplingParams](
+                       const domain::LLMResponse& completion) -> std::string {
     int64_t createdAt = static_cast<int64_t>(
         std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch())
@@ -241,8 +239,7 @@ void LLMController::responses(
 }
 
 void LLMController::handleRequest(
-    std::shared_ptr<domain::LLMRequest> request,
-    ResponseFormatter formatter,
+    std::shared_ptr<domain::LLMRequest> request, ResponseFormatter formatter,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   if (!service->isModelReady()) {
     callback(errorResponse(drogon::k503ServiceUnavailable, "Model is not ready",

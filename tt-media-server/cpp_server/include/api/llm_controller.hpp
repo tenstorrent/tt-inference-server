@@ -96,8 +96,7 @@ class LLMController : public drogon::HttpController<LLMController> {
    * Uses `formatter` to convert the LLMResponse into a JSON string body.
    */
   void handleRequest(
-      std::shared_ptr<domain::LLMRequest> request,
-      ResponseFormatter formatter,
+      std::shared_ptr<domain::LLMRequest> request, ResponseFormatter formatter,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**
