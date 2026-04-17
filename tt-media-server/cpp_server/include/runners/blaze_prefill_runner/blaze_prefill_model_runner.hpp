@@ -7,27 +7,23 @@
 #include <cstdint>
 #include <cstdlib>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "ipc/slot_ring_buffer.hpp"
-#include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
+#include "runners/blaze_prefill_runner/i_blaze_prefill_model_runner.hpp"
 
-namespace tt::runners::sp_pipeline {
+namespace blaze_prefill {
 
-using DecodeCallback =
-    std::function<void(const tt::runners::llm_engine::TokenResult&)>;
-
-class SpPipelineModelRunner : public ISpPipelineModelRunner {
+class BlazePrefillModelRunner : public IBlazePrefillModelRunner {
  public:
-  explicit SpPipelineModelRunner(DecodeCallback callback);
-  ~SpPipelineModelRunner() override;
+  BlazePrefillModelRunner();
+  ~BlazePrefillModelRunner() override;
 
-  SpPipelineModelRunner(const SpPipelineModelRunner&) = delete;
-  SpPipelineModelRunner& operator=(const SpPipelineModelRunner&) = delete;
+  BlazePrefillModelRunner(const BlazePrefillModelRunner&) = delete;
+  BlazePrefillModelRunner& operator=(const BlazePrefillModelRunner&) = delete;
 
-  void write(uint32_t taskId, const std::vector<int64_t>& tokenIds,
-             uint32_t maxTokens, RequestPhase phase, bool fastMode) override;
+  std::optional<tt::runners::llm_engine::TokenResult> forward(
+      uint32_t taskId, const std::vector<int64_t>& tokenIds) override;
   void exit() override;
 
  private:
@@ -44,14 +40,10 @@ class SpPipelineModelRunner : public ISpPipelineModelRunner {
     std::string read;
   };
 
-  void readerLoop();
-
-  DecodeCallback decodeCallback;
   ShmNames shmNames;
   tt::ipc::PrefillSlotBuffer deviceInput;
   tt::ipc::DecodeSlotBuffer deviceOutput;
   std::atomic<bool> stop{false};
-  std::thread readerThread;
 };
 
-}  // namespace tt::runners::sp_pipeline
+}  // namespace blaze_prefill

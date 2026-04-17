@@ -76,14 +76,7 @@ inline LLMMode llmModeFromString(const std::string& v) {
   return LLMMode::REGULAR;
 }
 
-enum class ModelRunnerType {
-  MOCK,
-  PIPELINE,
-  LLAMA,
-  MOCK_PIPELINE,
-  PIPELINE_MANAGER,
-  PREFILL
-};
+enum class ModelRunnerType { MOCK, PIPELINE, LLAMA, MOCK_PIPELINE, PREFILL };
 
 enum class Model {
   DEEPSEEK_R1_0528,

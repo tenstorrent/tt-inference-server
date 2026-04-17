@@ -4,6 +4,8 @@
 #pragma once
 
 #include "config/runner_config.hpp"
+#include "config/settings.hpp"
+#include "config/types.hpp"
 #include "llm_runner/sequence.hpp"
 #include "pipeline_manager/pipeline_manager_types.hpp"
 
@@ -55,6 +57,27 @@ inline pm::ISRequest makeContinueRequest(
   req.slot_id = slotId;
   fillSequenceFields(req, seq);
   return req;
+}
+
+inline pm::PipelineConfig makePipelineConfig() {
+  auto modelRunnerType = tt::config::llmEngineConfig().runner_type;
+  switch (modelRunnerType) {
+    case tt::config::ModelRunnerType::PIPELINE:
+      return pm::SocketConfig{
+          .h2d_socket_id = tt::config::h2dSocketId(),
+          .d2h_socket_id = tt::config::d2hSocketId(),
+          .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
+          .use_deepseek_md_format = tt::config::useDeepseekMdFormat(),
+      };
+    case tt::config::ModelRunnerType::MOCK_PIPELINE:
+      return pm::PipelineSimulatorConfig{
+          .num_stages = 64,
+          .stage_duration_us = 44,
+          .decode_token_id = 220,
+      };
+    default:
+      throw std::invalid_argument("Invalid model runner type");
+  }
 }
 
 }  // namespace tt::runners::blaze_utils

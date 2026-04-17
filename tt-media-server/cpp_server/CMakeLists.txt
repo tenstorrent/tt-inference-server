@@ -266,11 +266,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/services/memory_services/memory_manager.cpp
     src/services/memory_services/paged_memory_manager.cpp
     src/services/memory_services/contiguous_memory_manager.cpp
-    src/runners/blaze_runner/sp_pipeline_runner_demo.cpp
-    src/runners/blaze_runner/i_sp_pipeline_model_runner.cpp
-    src/runners/blaze_runner/sp_pipeline_model_runner.cpp
-    src/runners/blaze_runner/mock_device_pipeline.cpp
-    src/runners/blaze_runner/mock_sp_pipeline_model_runner.cpp
     src/runners/blaze_prefill_runner/blaze_prefill_runner.cpp
     src/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.cpp
     src/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/sp_pipeline_runner/blaze_runner.hpp"
+#include "runners/blaze_runner/blaze_runner.hpp"
 
 #include <cassert>
 #include <cstring>
@@ -12,7 +12,7 @@
 #include "domain/manage_memory.hpp"
 #include "ipc/token_push.hpp"
 #include "llm_runner/sequence.hpp"
-#include "runners/sp_pipeline_runner/blaze_utils.hpp"
+#include "runners/blaze_runner/blaze_utils.hpp"
 #include "services/memory_services/blaze_memory_manager.hpp"
 #include "utils/logger.hpp"
 
@@ -27,16 +27,11 @@ BlazeRunner::BlazeRunner(const config::LLMConfig& config,
       resultQueue(resultQueue),
       taskQueue(taskQueue) {
   TT_LOG_INFO("BlazeRunner: Constructing PipelineManager with SocketConfig...");
-  pm::SocketConfig socketConfig{
-      .h2d_socket_id = tt::config::h2dSocketId(),
-      .d2h_socket_id = tt::config::d2hSocketId(),
-      .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
-      .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
-  // pm::MockConfig mock = {};
-  pm::ManagerParams managerParams{
+  auto pipelineConfig = utils::makePipelineConfig();
+  auto managerParams = pm::ManagerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
-      std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
+      std::make_unique<pm::PipelineManager>(pipelineConfig, managerParams);
   TT_LOG_INFO("BlazeRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
   TT_LOG_INFO(
