@@ -51,8 +51,6 @@ class ConcurrentMap {
     return value;
   }
 
-  // Atomically take the value only if pred(value) returns true.
-  // Returns nullopt if the key is absent or the predicate returns false.
   template <typename Pred>
   std::optional<Value> takeIf(const Key& key, Pred&& pred) {
     std::lock_guard lock(mutex);

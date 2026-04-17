@@ -64,9 +64,8 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
   TT_LOG_DEBUG("[SessionManager] closeSession called for sessionId={}",
                sessionId);
 
-  // Atomically check in-flight status and remove the session only if idle.
-  // Removing an in-flight session without this guard would deallocate the KV
-  // slot while the active request is still using it (issue #2907).
+  // Removing an in-flight session would deallocate the KV slot while the
+  // active request is still using it.
   auto session = sessions.takeIf(
       sessionId, [](const domain::Session& s) { return !s.isInFlight(); });
 
@@ -221,10 +220,8 @@ void SessionManager::evictOldSessions() {
                heap.size());
   size_t evicted = 0;
   for (const auto& [_, sessionId] : heap) {
-    // Use takeIf to atomically check the in-flight flag and remove the session.
-    // Without this, a concurrent acquireSessionSlot call could mark the session
-    // in-flight between the forEach check above and the take here, causing a
-    // dealloc request to be sent for a slot that is actively in use.
+    // A concurrent acquireSessionSlot call may mark the session in-flight
+    // between the forEach above and here; takeIf skips it atomically.
     auto session = sessions.takeIf(
         sessionId, [](const domain::Session& s) { return !s.isInFlight(); });
     if (!session.has_value()) {
