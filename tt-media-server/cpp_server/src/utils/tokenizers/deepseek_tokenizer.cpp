@@ -99,19 +99,64 @@ std::string DeepseekTokenizer::applyChatTemplate(
     }
   }
 
+  bool inToolOutputs = false;
+  bool isFirstToolOutput = true;
+
   for (const auto& m : messages) {
     if (m.role == "system") continue;
     if (m.role == "user") {
+      if (inToolOutputs) {
+        out << dsToolOutputsEnd;
+        inToolOutputs = false;
+      }
       out << dsUserTag << m.content;
     } else if (m.role == "assistant") {
-      out << dsAssistantTag << m.content;
-      if (cfg_.add_eos_token) out << cfg_.eos_token;
+      // Check if this assistant message has tool calls
+      if (m.tool_calls.has_value() && !m.tool_calls->empty()) {
+        if (inToolOutputs) {
+          out << dsToolOutputsEnd;
+          inToolOutputs = false;
+        }
+        if (!m.content.empty()) {
+          out << dsAssistantTag << m.content;
+        }
+
+        out << dsToolCallsBegin;
+        for (const auto& toolCall : m.tool_calls.value()) {
+          out << dsToolCallBegin << "function" << dsToolSep
+              << toolCall.functionCall.name << "\n```json\n"
+              << toolCall.functionCall.arguments << "\n```" << dsToolCallEnd;
+        }
+        out << dsToolCallsEnd << dsEndOfSentence;
+
+      } else {
+        if (inToolOutputs) {
+          out << dsToolOutputsEnd;
+          inToolOutputs = false;
+        }
+        out << dsAssistantTag << m.content;
+      }
+    } else if (m.role == "tool") {
+      if (!inToolOutputs) {
+        out << dsToolOutputsBegin;
+        inToolOutputs = true;
+        isFirstToolOutput = true;
+      }
+      if (!isFirstToolOutput) {
+        out << "\n";
+      }
+      out << dsToolOutputBegin << m.content << dsToolOutputEnd;
+      isFirstToolOutput = false;
     }
   }
 
+  if (inToolOutputs) {
+    out << dsToolOutputsEnd;
+  }
   if (addGenerationPrompt) {
     out << dsAssistantTag;
   }
+
   return out.str();
 }
 
