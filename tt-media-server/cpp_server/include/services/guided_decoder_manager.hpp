@@ -29,7 +29,10 @@ class GuidedDecoderManager {
   void initRequest(uint32_t taskId,
                    const tt::runners::llm_engine::SamplingParams& params);
 
-  std::vector<int32_t> getNextAllowedTokenIds(uint32_t taskId);
+  void fillNextBitmask(uint32_t taskId, std::vector<int32_t>& bitmask);
+
+  int vocabSize() const;
+  int bitmaskSize() const;
 
   TokenAcceptResult acceptToken(uint32_t taskId, int32_t tokenId);
 
