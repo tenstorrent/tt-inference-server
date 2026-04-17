@@ -19,7 +19,7 @@ namespace tt::worker {
  * no syscalls, no allocations, no locks.
  *
  * Convenience methods (updateStepHeartbeat etc.) are valid only when the
- * worker was initialized with MetricsLayout::LLM and target the indices
+ * worker was initialized with MetricsLayout::SP_PIPELINE_RUNNER and target the indices
  * declared in sp_pipeline_metrics_layout.hpp. For other layouts, use the
  * scratchStoreU64 / scratchAddU64 primitives with that layout's own
  * index constants.
@@ -36,7 +36,7 @@ class WorkerMetrics {
    */
   void initialize(int workerId, MetricsLayout layout);
 
-  // ----- sp_pipeline (MetricsLayout::LLM) convenience writers ---------------
+  // ----- sp_pipeline (MetricsLayout::SP_PIPELINE_RUNNER) convenience writers ---------------
   void updateStepHeartbeat();
   void updateOutputHeartbeat();
   void incrementActiveRequests();

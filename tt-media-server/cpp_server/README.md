@@ -790,15 +790,26 @@ via the existing `/metrics` endpoint, alongside the server-side metrics.
   scratch area.
 - **Layout enum names what the bytes mean, not who wrote them.** A future
   second runner that produces the same operational signals as the current
-  `SpPipelineRunner` would reuse `MetricsLayout::LLM` and the existing
+  `SpPipelineRunner` would reuse `MetricsLayout::SP_PIPELINE_RUNNER` and the existing
   renderer, instead of declaring a new layout.
+- **Per-worker renderer is resolved once at startup.** In any given
+  deployment main already knows which runner each worker will execute
+  (same binary, same config), and that assignment cannot change at
+  runtime. `WorkerMetricsAggregator::initialize()` takes
+  `vector<MetricsLayout>` and `prebuildAll()` caches one
+  `IWorkerMetricsRenderer*` per worker, so `refresh()` on the scrape path
+  is a straight `renderer_by_worker_[i]->render(slots[i], is_alive)`
+  walk - no atomic load of the tag and no hash-map lookup per scrape.
+  The slot still carries `metrics_layout` for offline debugging
+  (`xxd /dev/shm/tt_worker_metrics`) and a one-shot startup consistency
+  check that main's config agrees with what each worker actually wrote.
 
 ### Architecture
 
 ```mermaid
 flowchart LR
     subgraph Workers
-        W0["Worker 0<br/>(MetricsLayout::LLM)"]
+        W0["Worker 0<br/>(MetricsLayout::SP_PIPELINE_RUNNER)"]
         W1["Worker 1<br/>(MetricsLayout::SDXL, future)"]
     end
 
@@ -814,14 +825,14 @@ flowchart LR
         EP["GET /metrics"]
 
         subgraph Renderers["Renderer registry (by MetricsLayout)"]
-            RL["SpPipelineWorkerMetricsRenderer<br/>(MetricsLayout::LLM)"]
+            RL["SpPipelineWorkerMetricsRenderer<br/>(MetricsLayout::SP_PIPELINE_RUNNER)"]
             RX["SdxlWorkerMetricsRenderer<br/>(future)"]
         end
     end
 
     SHM -->|"atomic load at scrape"| AGG
     WMG -->|"is_alive[]"| AGG
-    AGG -->|"dispatch by metrics_layout"| Renderers
+    AGG -->|"cached renderer[workerId]"| Renderers
     Renderers -->|"Set() gauges"| REG
     REG --> EP
 ```
@@ -849,7 +860,7 @@ sequenceDiagram
 
     Note over Main: scrape arrives
     Main->>SHM: load all slots
-    Main->>Main: dispatch by metrics_layout, render
+    Main->>Main: renderer_by_worker_[i]->render(slot, is_alive)
 
     Note over Main: shutdown
     Main->>SHM: munmap + shm_unlink
@@ -905,11 +916,15 @@ classDiagram
         +get(/metrics) Response
     }
     class WorkerMetricsAggregator {
+        +initialize(region, mgr, layout_by_worker)
         +registerRenderer(MetricsLayout, IRenderer)
+        +prebuildAll()
         +refresh()
         +renderText() string
         -region_ : WorkerMetricsShmRegion*
         -mgr_ : WorkerManager*
+        -layout_by_worker_ : vector~MetricsLayout~
+        -renderer_by_worker_ : vector~IRenderer*~
     }
     class IWorkerMetricsRenderer {
         <<interface>>
@@ -923,7 +938,7 @@ classDiagram
     }
     class PrometheusRegistry["prometheus::Registry"]
     MetricsController --> WorkerMetricsAggregator : refresh()+renderText()
-    WorkerMetricsAggregator --> IWorkerMetricsRenderer : dispatch by layout
+    WorkerMetricsAggregator --> IWorkerMetricsRenderer : cached per worker
     IWorkerMetricsRenderer <|.. SpPipelineWorkerMetricsRenderer
     IWorkerMetricsRenderer <|.. SdxlWorkerMetricsRenderer
     WorkerMetricsAggregator --> WorkerManager : is_alive lookup

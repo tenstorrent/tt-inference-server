@@ -35,7 +35,7 @@ constexpr size_t WORKER_SCRATCH_U64_COUNT = 32;
  */
 enum class MetricsLayout : uint32_t {
   UNKNOWN = 0,
-  LLM = 1,
+  SP_PIPELINE_RUNNER = 1,
   SDXL = 2,
   EMBEDDING = 3,
 };

@@ -14,6 +14,8 @@
 #include <iostream>
 #include <memory>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "api/error_response.hpp"
 #include "config/defaults.hpp"
@@ -46,7 +48,7 @@ void signalHandler(int signal) {
 tt::worker::MetricsLayout metricsLayoutFromConfig() {
   switch (tt::config::modelService()) {
     case tt::config::ModelService::LLM:
-      return tt::worker::MetricsLayout::LLM;
+      return tt::worker::MetricsLayout::SP_PIPELINE_RUNNER;
     case tt::config::ModelService::EMBEDDING:
       return tt::worker::MetricsLayout::EMBEDDING;
   }
@@ -156,9 +158,11 @@ int main(int argc, char* argv[]) {
     if (llm) {
       mgr = llm->workerManager();
     }
-    agg.initialize(shmRegion, mgr, numWorkers);
+    std::vector<tt::worker::MetricsLayout> layoutByWorker(
+        numWorkers, metricsLayoutFromConfig());
+    agg.initialize(shmRegion, mgr, std::move(layoutByWorker));
     agg.registerRenderer(
-        tt::worker::MetricsLayout::LLM,
+        tt::worker::MetricsLayout::SP_PIPELINE_RUNNER,
         std::make_unique<tt::worker::SpPipelineWorkerMetricsRenderer>());
     agg.prebuildAll();
   }

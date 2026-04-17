@@ -11,7 +11,7 @@ namespace tt::worker::sp_pipeline {
 
 /**
  * Scratch-area index convention for the sp_pipeline runner family
- * (tagged in shared memory as MetricsLayout::LLM).
+ * (tagged in shared memory as MetricsLayout::SP_PIPELINE_RUNNER).
  *
  * Both writer (worker-side runner via WorkerMetrics) and reader
  * (main-side SpPipelineWorkerMetricsRenderer) include this header so they

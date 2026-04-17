@@ -51,7 +51,7 @@ void WorkerMetrics::initialize(int workerId, MetricsLayout layout) {
   slot_->pid.store(static_cast<int32_t>(getpid()), std::memory_order_release);
 
   // Seed sp_pipeline timestamps so age starts at ~0 instead of since-epoch.
-  if (layout == MetricsLayout::LLM) {
+  if (layout == MetricsLayout::SP_PIPELINE_RUNNER) {
     auto now = nowMs();
     slot_->scratch[sp_pipeline::SCRATCH_STEP_EPOCH_MS].store(
         now, std::memory_order_relaxed);

@@ -14,7 +14,7 @@
 namespace tt::worker {
 
 /**
- * Renderer for slots tagged MetricsLayout::LLM (currently produced by
+ * Renderer for slots tagged MetricsLayout::SP_PIPELINE_RUNNER (currently produced by
  * SpPipelineRunner / SpPipelineRunnerDemo). Translates the sp_pipeline
  * scratch indices into the externally-visible Prometheus series:
  *   - tt_worker_alive
@@ -24,7 +24,7 @@ namespace tt::worker {
  *
  * Class is named after the layout it reads (sp_pipeline), not after the
  * runner that writes it, so a future second runner producing the same
- * MetricsLayout::LLM can reuse this renderer unchanged.
+ * MetricsLayout::SP_PIPELINE_RUNNER can reuse this renderer unchanged.
  */
 class SpPipelineWorkerMetricsRenderer : public IWorkerMetricsRenderer {
  public:
