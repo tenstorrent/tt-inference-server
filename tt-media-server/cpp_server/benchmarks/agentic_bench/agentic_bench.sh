@@ -17,9 +17,16 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 TARGET="${TARGET:-http://localhost:8000}"
 MODEL="${MODEL:-deepseek-ai/DeepSeek-R1-0528}"
 PROCESSOR=""                 # defaults to MODEL at resolve time
-RATE="${RATE:-0.15}"
 DURATION="${DURATION:-28800}"    # 8 h
 CHUNK="${CHUNK:-900}"            # 15 min
+
+# Concurrency target (via Little's Law)
+#   target_concurrency = mean rate (req/s) x average turn latency (s)
+# Set --rate directly if you know the right number, or set
+# --target-concurrency + --avg-turn-sec and we compute --rate for you.
+RATE=""                                              # unset => derive from target/avg
+TARGET_CONCURRENCY="${TARGET_CONCURRENCY:-64}"       # 64 sessions default
+AVG_TURN_SEC="${AVG_TURN_SEC:-40}"                   # seconds per turn on real cpp_server; mock is much faster
 
 TURNS="${TURNS:-6}"
 PROMPT_TOKENS="${PROMPT_TOKENS:-2000}"
@@ -54,9 +61,17 @@ Target & duration:
   --target URL              OpenAI-compatible base URL       [http://localhost:8000]
   --model NAME              Model id for the backend         [deepseek-ai/DeepSeek-R1-0528]
   --processor NAME          HF tokenizer id                  [<same as --model>]
-  --rate RPS                Poisson mean req/s               [0.15]
   --duration SEC            Total run seconds (0 = forever)  [28800]    # 8h
   --chunk SEC               Sub-run chunk seconds            [900]      # 15 min
+
+Concurrency (Little's Law: target_concurrency = rate x avg_turn_latency)
+  --rate RPS                Poisson mean requests/sec. If not set, computed
+                            from --target-concurrency / --avg-turn-sec.
+  --target-concurrency N    Target in-flight turns (~active sessions)  [64]
+  --avg-turn-sec S          Expected per-turn latency in seconds       [40]
+                            Rough guides: DeepSeek-R1 real HW ~ 30-60s,
+                            cpp_server mock pipeline ~ 1-5s.
+                            Watch Grafana and re-tune if off.
 
 Agentic-shape synthetic data (maps to guidellm --data key=value,...):
   --turns N                 Turns per conversation           [6]
@@ -111,6 +126,8 @@ parse_args() {
       --model|--model=*)                        _read_opt MODEL "$@"; shift $_SHIFT ;;
       --processor|--processor=*)                _read_opt PROCESSOR "$@"; shift $_SHIFT ;;
       --rate|--rate=*)                          _read_opt RATE "$@"; shift $_SHIFT ;;
+      --target-concurrency|--target-concurrency=*) _read_opt TARGET_CONCURRENCY "$@"; shift $_SHIFT ;;
+      --avg-turn-sec|--avg-turn-sec=*)          _read_opt AVG_TURN_SEC "$@"; shift $_SHIFT ;;
       --duration|--duration=*)                  _read_opt DURATION "$@"; shift $_SHIFT ;;
       --chunk|--chunk=*)                        _read_opt CHUNK "$@"; shift $_SHIFT ;;
       --turns|--turns=*)                        _read_opt TURNS "$@"; shift $_SHIFT ;;
@@ -161,6 +178,17 @@ resolve() {
   [[ -z "$PROCESSOR" ]] && PROCESSOR="$MODEL"
   [[ -z "$OUT" ]]       && OUT="./runs/$(date +%Y%m%d_%H%M%S)"
 
+  # If --rate wasn't given, derive it from Little's Law.
+  if [[ -z "$RATE" ]]; then
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "error: python3 required to compute --rate from --target-concurrency/--avg-turn-sec" >&2; exit 1
+    fi
+    RATE=$(python3 -c "print(f'{${TARGET_CONCURRENCY}/${AVG_TURN_SEC}:.3f}')")
+    RATE_DERIVED=1
+  else
+    RATE_DERIVED=0
+  fi
+
   if ! command -v guidellm >/dev/null 2>&1; then
     echo "error: 'guidellm' not on PATH. Install with:" >&2
     echo "   pip install $SCRIPT_DIR/../../guidellm" >&2
@@ -201,7 +229,7 @@ save_config() {
   {
     echo "# agentic_bench.sh config snapshot"
     echo "# $(date -u +%FT%TZ)"
-    for v in TARGET MODEL PROCESSOR RATE DURATION CHUNK \
+    for v in TARGET MODEL PROCESSOR RATE TARGET_CONCURRENCY AVG_TURN_SEC DURATION CHUNK \
              TURNS PROMPT_TOKENS PROMPT_TOKENS_STDEV PROMPT_TOKENS_MIN PROMPT_TOKENS_MAX \
              OUTPUT_TOKENS OUTPUT_TOKENS_STDEV OUTPUT_TOKENS_MIN OUTPUT_TOKENS_MAX \
              PREFIX_TOKENS PREFIX_COUNT OUT MAX_ERRORS WARMUP EXTRAS; do
@@ -255,7 +283,11 @@ main() {
   echo "==> run dir: $OUT"
   echo "==> target:  $TARGET"
   echo "==> model:   $MODEL"
-  echo "==> rate:    ${RATE} req/s (Poisson)"
+  if (( RATE_DERIVED == 1 )); then
+    echo "==> rate:    ${RATE} req/s (Poisson; derived: ${TARGET_CONCURRENCY} target / ${AVG_TURN_SEC}s avg turn)"
+  else
+    echo "==> rate:    ${RATE} req/s (Poisson; explicit --rate)"
+  fi
   echo "==> plan:    $(( DURATION > 0 ? (DURATION + CHUNK - 1) / CHUNK : 0 )) chunks of ${CHUNK}s each (total ${DURATION}s)"
   if [[ -n "$API_KEY" ]]; then
     echo "==> auth:    Bearer <api key set, length ${#API_KEY}>"

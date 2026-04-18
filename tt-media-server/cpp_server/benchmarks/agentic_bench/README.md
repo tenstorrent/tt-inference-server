@@ -79,7 +79,11 @@ Help: `./agentic_bench.sh --help`.
   `<script type="application/json" id="data">…</script>` inside the
   same file, so CSV/JSON consumers lose nothing.
 - **No `/metrics` or `tt-smi` scraping inside this tool.** Capture those
-  with your Grafana/Prometheus stack and correlate on wall clock.
+  with the shared [cpp_server/monitoring/](../../monitoring/) stack
+  (Prometheus scrapes the server's `/metrics` plus per-binary CPU /
+  memory / threads via process-exporter, Grafana auto-provisions both
+  dashboards). Correlate on wall clock with the benchmark's
+  `report.html` timeline.
 
 ## CLI reference
 
