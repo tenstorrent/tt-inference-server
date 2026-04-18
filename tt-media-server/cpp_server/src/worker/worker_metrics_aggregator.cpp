@@ -19,10 +19,10 @@ WorkerMetricsAggregator& WorkerMetricsAggregator::instance() {
 
 void WorkerMetricsAggregator::initialize(
     const WorkerMetricsShm* shm, WorkerManager* mgr,
-    std::vector<MetricsLayout> layout_by_worker) {
+    std::vector<MetricsLayout> layoutByWorker) {
   shm_ = shm;
   mgr_ = mgr;
-  layout_by_worker_ = std::move(layout_by_worker);
+  layout_by_worker_ = std::move(layoutByWorker);
   renderer_by_worker_.assign(layout_by_worker_.size(), nullptr);
   layout_tags_verified_ = false;
   registry_ = std::make_shared<prometheus::Registry>();
@@ -68,11 +68,11 @@ void WorkerMetricsAggregator::refresh() {
   // config/runner-code drift (it can never disagree at runtime otherwise
   // because main and worker are the same binary).
   if (!layout_tags_verified_) {
-    bool all_attached = true;
+    bool allAttached = true;
     for (size_t i = 0; i < layout_by_worker_.size(); ++i) {
       MetricsLayout tag = shm_->layout(i);
       if (tag == MetricsLayout::UNKNOWN) {
-        all_attached = false;  // worker hasn't attached yet, retry next scrape
+        allAttached = false;  // worker hasn't attached yet, retry next scrape
         continue;
       }
       if (tag != layout_by_worker_[i]) {
@@ -83,7 +83,7 @@ void WorkerMetricsAggregator::refresh() {
             static_cast<uint32_t>(layout_by_worker_[i]));
       }
     }
-    if (all_attached) {
+    if (allAttached) {
       layout_tags_verified_ = true;
     }
   }
@@ -96,8 +96,8 @@ void WorkerMetricsAggregator::refresh() {
   for (size_t i = 0; i < renderer_by_worker_.size(); ++i) {
     IWorkerMetricsRenderer* renderer = renderer_by_worker_[i];
     if (renderer == nullptr) continue;
-    bool is_alive = (i < infos.size()) && infos[i].is_alive;
-    renderer->render(*shm_, static_cast<int>(i), is_alive);
+    bool isAlive = (i < infos.size()) && infos[i].is_alive;
+    renderer->render(*shm_, static_cast<int>(i), isAlive);
   }
 }
 
