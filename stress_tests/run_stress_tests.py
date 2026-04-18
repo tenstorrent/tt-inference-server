@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
 import os
@@ -21,6 +21,7 @@ sys.path.insert(0, str(project_root))
 from stress_tests import StressTests
 from stress_tests.stress_tests_args import StressTestsArgs
 from workflows.model_spec import ModelSpec
+from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import DeviceTypes
 from workflows.workflow_config import (
     WORKFLOW_STRESS_TESTS_CONFIG,
@@ -35,9 +36,9 @@ logger = logging.getLogger(__name__)
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run Stress Tests.")
     parser.add_argument(
-        "--model-spec-json",
+        "--runtime-model-spec-json",
         type=str,
-        help="Use model specification from JSON file",
+        help="Use runtime model specification from JSON file",
         required=True,
     )
     parser.add_argument(
@@ -53,18 +54,16 @@ def parse_arguments():
         help="JWT secret for generating token to set API_KEY",
         default=os.getenv("JWT_SECRET", ""),
     )
-    # Add these optional arguments to match what run_workflows.py passes
-    # They're redundant with model-spec-json but needed for compatibility
     parser.add_argument(
         "--model",
         type=str,
-        help="Model name (redundant with model-spec-json, kept for compatibility)",
+        help="Model name (kept for compatibility)",
         required=False,
     )
     parser.add_argument(
         "--device",
         type=str,
-        help="Device name (redundant with model-spec-json, kept for compatibility)",
+        help="Device name (kept for compatibility)",
         required=False,
     )
 
@@ -87,13 +86,13 @@ if __name__ == "__main__":
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
 
-    model_spec = ModelSpec.from_json(args.model_spec_json)
+    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
-    # Extract CLI args from model_spec
-    cli_args = model_spec.cli_args
-    device_str = cli_args.get("device")
-    disable_trace_capture = cli_args.get("disable_trace_capture", False)
-    workflow_args = cli_args.get("workflow_args")
+    # runtime config loaded from JSON
+    device_str = runtime_config.device
+    disable_trace_capture = runtime_config.disable_trace_capture
+    workflow_args = runtime_config.workflow_args
 
     # Parse workflow_args if provided (same logic as was in run_workflows.py)
     parsed_workflow_args = {}
@@ -121,7 +120,7 @@ if __name__ == "__main__":
     logger.info(f"device=: {device_str}")
     assert device == model_spec.device_type
 
-    service_port = cli_args.get("service_port", os.getenv("SERVICE_PORT", "8000"))
+    service_port = runtime_config.service_port
     logger.info(f"service_port=: {service_port}")
     logger.info(f"run_mode=: {parsed_workflow_args.get('run_mode', 'multiple')}")
     logger.info(
@@ -134,7 +133,7 @@ if __name__ == "__main__":
 
     # Create consolidated stress tests arguments from multiple sources
     stress_args = StressTestsArgs.from_sources(
-        args, cli_args, model_spec, parsed_workflow_args
+        args, runtime_config, model_spec, parsed_workflow_args
     )
     run_stress_test = StressTests(stress_args, model_spec)
 

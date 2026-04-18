@@ -29,4 +29,4 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Max Context Length | 131072 |
 | Implementation Code | [forge-vllm-plugin](https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin) |
 | tt-metal Commit | `2496be4` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.0-2496be4` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.9.0-2496be4` |

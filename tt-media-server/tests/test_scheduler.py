@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import sys
@@ -237,6 +237,24 @@ class TestScheduler:
 
         assert scheduler.worker_info["0"]["queue_index"] == 0
         mock_process_cls.assert_called_once()
+
+    @patch("model_services.scheduler.Process")
+    def test_start_worker_uses_device_worker_for_non_dynamic(
+        self, mock_process_cls, scheduler, mock_process
+    ):
+        """Test _start_worker routes to device_worker when not dynamic batcher."""
+        from device_workers.device_worker import device_worker
+
+        mock_process_cls.return_value = mock_process
+        scheduler.result_queues_by_worker = {0: create_mock_queue()}
+        scheduler.worker_info = {}
+        scheduler.settings.model_runner = "mock"
+        scheduler.settings.use_dynamic_batcher = False
+
+        scheduler._start_worker(worker_id="0")
+
+        call_args = mock_process_cls.call_args
+        assert call_args.kwargs["target"] == device_worker
 
     @patch("model_services.scheduler.Process")
     def test_restart_worker_passes_existing_queue_index_to_start_worker(

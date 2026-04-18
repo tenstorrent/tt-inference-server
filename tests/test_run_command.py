@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 """
 Tests for run_command error handling and check parameter behavior.
@@ -29,6 +29,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from workflows.runtime_config import RuntimeConfig
 from workflows.utils import run_command
 
 
@@ -339,24 +340,35 @@ class TestSystemSoftwareValidationCheckFalse:
 
     def test_system_validation_uses_check_false(self):
         """Test system software validation command uses check=False (default)."""
-        from run import validate_local_setup
+        from workflows.validate_setup import validate_local_setup
 
         mock_model_spec = MagicMock()
-        mock_model_spec.cli_args.workflow = "server"
-        mock_model_spec.cli_args.skip_system_sw_validation = False
+        mock_runtime_config = RuntimeConfig(
+            model="test",
+            workflow="server",
+            device="n150",
+            skip_system_sw_validation=False,
+        )
 
-        with patch("run.get_default_workflow_root_log_dir") as mock_log_dir, patch(
-            "run.ensure_readwriteable_dir"
-        ), patch("run.VENV_CONFIGS") as mock_venv_configs, patch(
-            "run.run_command", return_value=0
-        ) as mock_run, patch("run.get_repo_root_path", return_value=Path("/fake/repo")):
+        with patch(
+            "workflows.validate_setup.get_default_workflow_root_log_dir"
+        ) as mock_log_dir, patch(
+            "workflows.validate_setup.ensure_readwriteable_dir"
+        ), patch("workflows.validate_setup.VENV_CONFIGS") as mock_venv_configs, patch(
+            "workflows.validate_setup.run_command", return_value=0
+        ) as mock_run, patch(
+            "workflows.validate_setup.get_repo_root_path",
+            return_value=Path("/fake/repo"),
+        ):
             mock_log_dir.return_value = Path("/fake/logs")
             mock_venv_config = MagicMock()
             mock_venv_config.venv_python = "/fake/python"
             mock_venv_config.setup.return_value = True
             mock_venv_configs.__getitem__.return_value = mock_venv_config
 
-            validate_local_setup(mock_model_spec, "/fake/json/path")
+            validate_local_setup(
+                mock_model_spec, mock_runtime_config, "/fake/json/path"
+            )
 
             # Verify run_command was called with check=False (default)
             mock_run.assert_called_once()
@@ -364,17 +376,26 @@ class TestSystemSoftwareValidationCheckFalse:
 
     def test_system_validation_raises_valueerror_on_failure(self):
         """Test system software validation failure raises ValueError."""
-        from run import validate_local_setup
+        from workflows.validate_setup import validate_local_setup
 
         mock_model_spec = MagicMock()
-        mock_model_spec.cli_args.workflow = "server"
-        mock_model_spec.cli_args.skip_system_sw_validation = False
+        mock_runtime_config = RuntimeConfig(
+            model="test",
+            workflow="server",
+            device="n150",
+            skip_system_sw_validation=False,
+        )
 
-        with patch("run.get_default_workflow_root_log_dir") as mock_log_dir, patch(
-            "run.ensure_readwriteable_dir"
-        ), patch("run.VENV_CONFIGS") as mock_venv_configs, patch(
-            "run.run_command", return_value=1
-        ), patch("run.get_repo_root_path", return_value=Path("/fake/repo")):
+        with patch(
+            "workflows.validate_setup.get_default_workflow_root_log_dir"
+        ) as mock_log_dir, patch(
+            "workflows.validate_setup.ensure_readwriteable_dir"
+        ), patch("workflows.validate_setup.VENV_CONFIGS") as mock_venv_configs, patch(
+            "workflows.validate_setup.run_command", return_value=1
+        ), patch(
+            "workflows.validate_setup.get_repo_root_path",
+            return_value=Path("/fake/repo"),
+        ):
             mock_log_dir.return_value = Path("/fake/logs")
             mock_venv_config = MagicMock()
             mock_venv_config.venv_python = "/fake/python"
@@ -384,7 +405,9 @@ class TestSystemSoftwareValidationCheckFalse:
             with pytest.raises(
                 ValueError, match="validating system software dependencies failed"
             ):
-                validate_local_setup(mock_model_spec, "/fake/json/path")
+                validate_local_setup(
+                    mock_model_spec, mock_runtime_config, "/fake/json/path"
+                )
 
 
 # =============================================================================
@@ -511,8 +534,11 @@ class TestWorkflowExecutionCheckFalse:
         mock_model_spec = MagicMock()
         mock_model_spec.model_name = "test-model"
         mock_model_spec.model_id = "test-model-id"
-        mock_model_spec.cli_args.workflow = "tests"
-        mock_model_spec.cli_args.device = "n150"
+        mock_runtime_config = RuntimeConfig(
+            model="test-model",
+            workflow="tests",
+            device="n150",
+        )
 
         with patch("workflows.run_workflows.WorkflowType") as mock_wf_type, patch(
             "workflows.run_workflows.WORKFLOW_CONFIGS"
@@ -533,7 +559,7 @@ class TestWorkflowExecutionCheckFalse:
             mock_venv_config.venv_python = "/fake/python"
             mock_venvs.__getitem__.return_value = mock_venv_config
 
-            setup = WorkflowSetup(mock_model_spec, "/fake/json")
+            setup = WorkflowSetup(mock_model_spec, mock_runtime_config, "/fake/json")
 
             # This should NOT raise - just return non-zero code
             return_code = setup.run_workflow_script()

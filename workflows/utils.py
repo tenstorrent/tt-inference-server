@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from __future__ import annotations
 
@@ -315,13 +315,41 @@ def load_dotenv(dotenv_path=default_dotenv_path, logger=logger):
 
 
 def write_dotenv(env_vars, dotenv_path=default_dotenv_path, logger=logger):
-    """Writes environment variables to a .env file"""
+    """Writes environment variables to a .env file, merging with existing content.
+
+    If the .env file exists, existing values are preserved unless explicitly
+    overwritten by env_vars. New variables are appended.
+
+    Args:
+        env_vars: Dict of environment variables to write/update
+        dotenv_path: Path to the .env file (default: repo_root/.env)
+        logger: Logger instance
+
+    Returns:
+        True on success
+    """
     dotenv_path = Path(dotenv_path)
 
+    # Read existing content if file exists
+    existing_vars = {}
+    if dotenv_path.exists():
+        with open(dotenv_path, "r") as file:
+            for line in file:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    existing_vars[key.strip()] = value.strip()
+
+    # Merge: new values override existing
+    merged_vars = {**existing_vars, **env_vars}
+
+    # Write merged content
     with open(dotenv_path, "w") as file:
-        for key, value in env_vars.items():
+        for key, value in merged_vars.items():
             file.write(f"{key}={value}\n")
-            logger.info(f"writting env var to .env file: {key}")
+            if key in env_vars:
+                logger.info(f"writing env var to .env file: {key}")
+
     logger.info(f"Environment variables written to {dotenv_path}")
     return True
 
@@ -352,11 +380,13 @@ def get_default_hf_home_path() -> Path:
     return Path(default_hf_home)
 
 
-def get_weights_hf_cache_dir(hf_repo: str) -> Path:
-    local_repo_name = hf_repo.replace("/", "--")
-    hf_home = get_default_hf_home_path()
+def get_default_persistent_volume_root(repo_root: Optional[Path] = None) -> Path:
+    root = repo_root or get_repo_root_path()
+    return Path(root).resolve() / "persistent_volume"
 
-    # Check both potential snapshot directory locations
+
+def resolve_hf_snapshot_dir(hf_repo: str, hf_home: Path) -> Optional[Path]:
+    local_repo_name = hf_repo.replace("/", "--")
     possible_snapshot_dirs = [
         hf_home / f"models--{local_repo_name}" / "snapshots",
         hf_home / "hub" / f"models--{local_repo_name}" / "snapshots",
@@ -373,11 +403,13 @@ def get_weights_hf_cache_dir(hf_repo: str) -> Path:
     if not valid_snapshot_dir:
         return None
 
-    # Get the most recent snapshot
     snapshots = list(valid_snapshot_dir.glob("*"))
-    most_recent_snapshot = max(snapshots, key=lambda p: p.stat().st_mtime)
+    return max(snapshots, key=lambda p: p.stat().st_mtime)
 
-    return most_recent_snapshot
+
+def get_weights_hf_cache_dir(hf_repo: str) -> Path:
+    hf_home = get_default_hf_home_path()
+    return resolve_hf_snapshot_dir(hf_repo, hf_home)
 
 
 def is_streaming_enabled_for_whisper(self) -> bool:
@@ -453,3 +485,99 @@ def get_num_calls(self) -> int:
         )
 
     return 2
+
+
+# =============================================================================
+# Permission Checking Utilities
+# =============================================================================
+
+
+def get_groups_for_uid(uid: int) -> set[int]:
+    """Return the set of GIDs that a given UID belongs to on this host.
+
+    Args:
+        uid: Numeric UID to lookup
+
+    Returns:
+        Set of GIDs the UID belongs to, including primary group and
+        supplementary groups. Returns empty set if UID doesn't exist
+        on the host.
+    """
+    import grp
+    import pwd
+
+    gids = set()
+    try:
+        pw = pwd.getpwuid(uid)
+        gids.add(pw.pw_gid)
+        username = pw.pw_name
+        for group in grp.getgrall():
+            if username in group.gr_mem:
+                gids.add(group.gr_gid)
+    except KeyError:
+        # UID doesn't exist on the host; can only rely on "other" bits
+        pass
+    return gids
+
+
+def check_path_permissions_for_uid(
+    path, uid: int, need_write: bool = False
+) -> tuple[bool, str]:
+    """Check whether the given UID can access a path based on POSIX permission bits.
+
+    Best-effort pre-flight check. Cannot detect ACLs, SELinux, or other
+    security modules, but catches common UID/permission mismatches.
+
+    Args:
+        path: Filesystem path to check.
+        uid: Numeric UID that will access the path (i.e. --image-user).
+        need_write: If True, also check write permission.
+
+    Returns:
+        Tuple of (ok: bool, reason: str). reason is empty when ok is True.
+    """
+    import stat
+
+    path = Path(path)
+    if not path.exists():
+        return False, f"path does not exist: {path}"
+
+    st = path.stat()
+    mode = st.st_mode
+    gids = get_groups_for_uid(uid)
+
+    if uid == st.st_uid:
+        has_read = bool(mode & stat.S_IRUSR)
+        has_write = bool(mode & stat.S_IWUSR)
+        has_exec = bool(mode & stat.S_IXUSR)
+        scope = "owner"
+    elif st.st_gid in gids:
+        has_read = bool(mode & stat.S_IRGRP)
+        has_write = bool(mode & stat.S_IWGRP)
+        has_exec = bool(mode & stat.S_IXGRP)
+        scope = "group"
+    else:
+        has_read = bool(mode & stat.S_IROTH)
+        has_write = bool(mode & stat.S_IWOTH)
+        has_exec = bool(mode & stat.S_IXOTH)
+        scope = "other"
+
+    if not has_read:
+        return False, (
+            f"UID {uid} lacks read permission ({scope}) on {path} "
+            f"(owner={st.st_uid}, gid={st.st_gid}, mode={oct(mode)})"
+        )
+
+    if path.is_dir() and not has_exec:
+        return False, (
+            f"UID {uid} lacks execute/traverse permission ({scope}) on directory {path} "
+            f"(owner={st.st_uid}, gid={st.st_gid}, mode={oct(mode)})"
+        )
+
+    if need_write and not has_write:
+        return False, (
+            f"UID {uid} lacks write permission ({scope}) on {path} "
+            f"(owner={st.st_uid}, gid={st.st_gid}, mode={oct(mode)})"
+        )
+
+    return True, ""

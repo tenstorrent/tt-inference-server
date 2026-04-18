@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+# Google C++ style for tt-media-server cpp_server (see https://google.github.io/styleguide/cppguide.html)
+BasedOnStyle: Google
+Language: Cpp
+Standard: c++20

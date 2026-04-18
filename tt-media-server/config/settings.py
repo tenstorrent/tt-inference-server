@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
 from functools import lru_cache
 from typing import Optional
 
 from config.constants import (
+    MODEL_NAME_OVERRIDES,
     MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
+    SDXL_VALID_IMAGE_RESOLUTIONS,
     AudioTasks,
     DeviceIds,
     DeviceTypes,
@@ -30,7 +32,7 @@ logger = TTLogger()
 class Settings(BaseSettings):
     # General settings
     environment: str = "development"
-    device: Optional[str] = None
+    device: Optional[str] = "n150"
 
     # Device settings
     device_ids: str = DeviceIds.DEVICE_IDS_32.value
@@ -47,9 +49,13 @@ class Settings(BaseSettings):
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
     model_weights_path: str = ""
+    chat_template_kwargs: dict = {}  # extra kwargs passed to apply_chat_template
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
-    download_weights_from_service: bool = False
+    download_weights_from_service: bool = True
+
+    # SDXL resolution (applies to text-to-image only, not img2img/inpainting)
+    sdxl_image_resolution: tuple = (1024, 1024)
 
     # Queue and batch settings
     max_queue_size: int = 5000
@@ -69,6 +75,7 @@ class Settings(BaseSettings):
 
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
+    weights_distribution_timeout_seconds: int = 1200
 
     # Job management settings
     max_jobs: int = 10000
@@ -100,6 +107,13 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+        self.sdxl_image_resolution = tuple(self.sdxl_image_resolution)
+        if self.sdxl_image_resolution not in SDXL_VALID_IMAGE_RESOLUTIONS:
+            raise ValueError(
+                f"Invalid sdxl_image_resolution={self.sdxl_image_resolution}, "
+                f"must be one of {SDXL_VALID_IMAGE_RESOLUTIONS}"
+            )
 
         model_to_run = os.getenv("MODEL")
         logger.info(
@@ -174,28 +188,64 @@ class Settings(BaseSettings):
             logger.warning(
                 f"max_batch_size {self.max_batch_size} is less than max_num_seqs {self.vllm.max_num_seqs} in vllm settings, set max_batch_size to {self.vllm.max_num_seqs}"
             )
+            self.max_batch_size = self.vllm.max_num_seqs
 
-    def _set_device_pairs_overrides(self):
+    def _set_device_pairs_overrides(self) -> None:
         logger.info(
             f"_set_device_pairs_overrides: is_galaxy={self.is_galaxy}, "
-            f"device_mesh_shape={self.device_mesh_shape}, "
-            f"device_ids(before)={self.device_ids!r}"
+            f"mesh={self.device_mesh_shape}, device_ids(before)={self.device_ids!r}"
         )
-        if self.is_galaxy:
-            device_manager = DeviceManager()
-            devices = None
-            if self.device_mesh_shape == (1, 1) and self.use_greedy_based_allocation:
-                devices = device_manager.get_single_devices_from_system()
-            if self.device_mesh_shape == (2, 1):
-                devices = device_manager.get_device_pairs_from_system()
-            elif self.device_mesh_shape == (2, 4):
-                devices = device_manager.get_device_groups_of_eight_from_system()
-            if devices:
-                self.device_ids = ",".join([f"({device})" for device in devices])
+
+        if not self.is_galaxy:
+            return
+
+        dm = DeviceManager()
+        devices = []
+        mesh = self.device_mesh_shape
+
+        try:
+            if mesh == (1, 1) and self.use_greedy_based_allocation:
+                devices = dm.get_single_devices()
+
+            elif mesh == (2, 1):
                 logger.info(
-                    f"_set_device_pairs_overrides: galaxy override applied, "
-                    f"device_ids(after)={self.device_ids!r}"
+                    "Running Galaxy TP2 device discovery (test_system_health, may take 10-15s)..."
                 )
+                devices = dm.get_device_pairs()
+                logger.info(
+                    f"Galaxy TP2 discovery returned {len(devices) if devices else 0} pairs"
+                )
+                if not devices:
+                    raise RuntimeError(
+                        "Galaxy TP2 (2,1): device discovery returned no pairs. "
+                        "Ensure test_system_health binary is available and "
+                        "Cluster.ReportSystemHealth succeeds."
+                    )
+
+            elif mesh == (2, 4):
+                devices = dm.get_device_groups_of_eight()
+                if not devices:
+                    raise RuntimeError(
+                        "Galaxy TP8 (2,4): device discovery returned no groups. "
+                        "Ensure tt-smi is available and returns at least 8 devices per tray."
+                    )
+
+        except Exception as e:
+            if mesh in ((2, 1), (2, 4)):
+                raise RuntimeError(
+                    f"Device discovery failed for mesh {mesh}: {e}. "
+                    "Cannot start without valid device pairs."
+                ) from e
+            logger.error(f"Device discovery failed for mesh {mesh}: {e}")
+            return
+
+        self.device_ids = ",".join(
+            f"({d})" if isinstance(d, int) else f"({','.join(map(str, d))})"
+            for d in devices
+        )
+        logger.info(
+            f"_set_device_pairs_overrides: galaxy override applied, device_ids(after)={self.device_ids!r}"
+        )
 
     def _set_throttling_overrides(self):
         if self.model_runner in [
@@ -213,6 +263,7 @@ class Settings(BaseSettings):
             "SD_3_5_FAST": (4, 8),
             "SD_3_5_BASE": (2, 4),
             "TP2": (2, 1),
+            "SP_MESH_4X32": (4, 32),
         }
         for env_var, mesh_shape in env_mesh_map.items():
             value = os.getenv(env_var)
@@ -256,11 +307,19 @@ class Settings(BaseSettings):
             if supported_model:
                 self.model_weights_path = supported_model.value
 
-            # Apply all configuration values
+            # Apply all configuration values (env vars take precedence)
             for key, value in matching_config.items():
                 if hasattr(self, key):
+                    if key.upper() in os.environ:
+                        continue
                     if key == "vllm" and isinstance(value, dict):
                         value = VLLMSettings(**value)
+                    setattr(self, key, value)
+
+            # Apply per-model overrides (e.g. chat_template_kwargs for Qwen3)
+            model_overrides = MODEL_NAME_OVERRIDES.get(model_name_enum, {})
+            for key, value in model_overrides.items():
+                if hasattr(self, key):
                     setattr(self, key, value)
         if any(
             self.model_runner == r.value

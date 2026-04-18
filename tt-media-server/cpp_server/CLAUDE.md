@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a high-performance C++ implementation of the TT Media Server using the Drogon web framework. It's designed as a benchmark comparison to the Python FastAPI server by providing an identical OpenAI-compatible API with minimal overhead. The server supports both LLM completions and embeddings with a sophisticated LLM engine featuring paged attention, prefix caching, and preemption.
+This is a high-performance C++ implementation of the TT Media Server using the Drogon web framework. It's designed as a benchmark comparison to the Python FastAPI server by providing an identical OpenAI-compatible API with minimal overhead. The server supports LLM chat completions and embeddings with a sophisticated LLM engine featuring paged attention, prefix caching, and preemption.
 
 ## Build and Development Commands
 
 ### Building the Project
 
 ```bash
-# Standard release build
+# Standard release build (tokenizers for all models are pre-fetched automatically)
 ./build.sh
 
 # Development builds
@@ -19,6 +19,8 @@ This is a high-performance C++ implementation of the TT Media Server using the D
 ./build.sh --asan           # AddressSanitizer + LeakSanitizer for memory debugging
 ./build.sh --tsan           # ThreadSanitizer for race condition detection
 ```
+
+Model selection is at runtime via `LLM_DEVICE_BACKEND` env var (default: `mock` = DeepSeek V3; `llama` = Llama 3.1 8B Instruct).
 
 ### Running the Server
 
@@ -44,7 +46,7 @@ cd build && ctest --output-on-failure
 
 # Individual test binaries
 ./build/scheduler_test        # LLM engine scheduler tests
-./build/llm_engine_test      # LLM engine integration tests
+./build/llm_runner_test       # LLM runner integration tests
 ./build/sequence_test        # Sequence management tests
 ./build/test_tokenizer       # Tokenizer functionality tests
 
@@ -71,13 +73,13 @@ The server follows a layered architecture mirroring the Python implementation:
 - **API Layer**: Drogon HTTP controllers (`api/`) providing OpenAI-compatible endpoints
 - **Services Layer**: Business logic (`services/`) handling request processing and validation
 - **Workers**: Multiprocess worker architecture (`worker/`) with IPC communication
-- **LLM Engine**: Sophisticated inference engine (`runners/llm_engine/`) with paged attention
+- **LLM engine**: Inference engine (`runners/llm_runner/`; namespace `tt::runners::llm_engine`) with paged attention; CMake target `llm_runner_lib`
 - **Runners**: Multiple runner implementations (`runners/`) for different backends
 - **Domain Objects**: Request/response models (`domain/`) matching OpenAI API spec
 
 ### LLM Engine Features
 
-The core LLM engine (`include/runners/llm_engine/`) provides:
+The core LLM engine (`include/runners/llm_runner/`) provides:
 - **Paged Attention**: KV cache managed in fixed-size blocks with block tables
 - **Prefix Caching**: Content-addressable blocks for sharing common prefixes
 - **Prefill/Decode Separation**: Separate batch types, prefill prioritized over decode
@@ -87,13 +89,17 @@ The core LLM engine (`include/runners/llm_engine/`) provides:
 ### Service Modes
 
 The server operates in two modes via `MODEL_SERVICE` environment variable:
-- **LLM Mode** (`llm`): Provides `/v1/completions` and `/v1/chat/completions`
+- **LLM Mode** (`llm`): Provides `/v1/chat/completions`
 - **Embedding Mode** (`embedding`): Provides `/v1/embeddings`
 
-### Runner Types
+### Runner Types and Model Selection
 
-Single runner implementation selected via `MODEL_RUNNER` environment variable:
-- **`llm_test`**: CPU-based test runner generating 120k tokens/sec for benchmarking
+Runner type and tokenizer are selected via `LLM_DEVICE_BACKEND` environment variable. This selects the
+tokenizer strategy (chat template, stop tokens, decode filtering) at runtime via
+the `Tokenizer` subclass hierarchy (`utils/tokenizers/tokenizer.hpp`):
+
+- **`mock`** or **`pipeline`** (default when unset: `mock`): Mock or TT device runner, DeepSeek V3 tokenizer strategy
+- **`llama`**: Python-based runner via pybind11, Llama 3.1 8B Instruct tokenizer strategy
 
 ## Configuration System
 
@@ -102,9 +108,8 @@ Configuration follows the same pattern as the Python server - defaults in `confi
 ### Key Environment Variables
 
 - `MODEL_SERVICE`: `llm` or `embedding` (default: `llm`)
-- `MODEL_RUNNER`: `llm_test` (default: `llm_test`)
+- `LLM_DEVICE_BACKEND`: `mock` or `pipeline` (DeepSeek V3), `llama` (Llama 3.1 8B Instruct) — selects runner + tokenizer strategy (default: `mock`)
 - `DEVICE_IDS`: Bracket-pair device list like `(0,1,2,3),(4,5,6,7)` defining workers
-- `MAX_BATCH_SIZE`: Max requests per batch for embedding service
 - `MAX_BATCH_DELAY_TIME_MS`: Max wait time to fill batches
 - `OPENAI_API_KEY`: Bearer token for API authentication (default: `your-secret-key`)
 
@@ -134,8 +139,8 @@ The project uses modern C++20 with strict compiler warnings and sanitizer suppor
 ### Logging
 
 - Main server uses Drogon logging (in `./logs/` directory)
-- LLM engine uses structured logging with `[DEBUG] [llm_engine:...]` prefix
-- Enable LLM engine debug logging with `-DLLM_ENGINE_DEBUG_BUILD=ON`
+- LLM engine uses the standard `TT_LOG_*` macros (spdlog-backed, defined in `utils/logger.hpp`)
+- Configure log level at runtime with `TT_LOG_LEVEL` env var (trace, debug, info, warn, error, critical, off)
 
 ## Dependencies and Prerequisites
 
@@ -153,16 +158,13 @@ The project uses modern C++20 with strict compiler warnings and sanitizer suppor
 
 ### Tokenizer Support
 
-The server automatically downloads DeepSeek V3 tokenizer files during build:
-- `tokenizers/tokenizer.json`
-- `tokenizers/tokenizer_config.json`
+The build script pre-fetches tokenizer files for all supported models into
+per-model subdirectories under `tokenizers/`:
+- `tokenizers/deepseek-ai/DeepSeek-R1-0528/tokenizer.json` + `tokenizer_config.json`
+- `tokenizers/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json` + `tokenizer_config.json`
 
-Manual download if needed:
-```bash
-mkdir -p tokenizers
-wget -O tokenizers/tokenizer.json https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/main/tokenizer.json
-wget -O tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/main/tokenizer_config.json
-```
+The active tokenizer is selected at runtime based on `LLM_DEVICE_BACKEND`. To add a
+new model, manually download tokenizer files into `tokenizers/<org>/<model>/`.
 
 ## Performance Characteristics
 
@@ -175,7 +177,6 @@ wget -O tokenizers/tokenizer_config.json https://huggingface.co/deepseek-ai/Deep
 ## API Compatibility
 
 The server provides OpenAI-compatible endpoints:
-- `POST /v1/completions` - Text completion with streaming support
 - `POST /v1/chat/completions` - Chat completion with streaming support
 - `POST /v1/embeddings` - Text embeddings (embedding mode only)
 - `GET /health` - Health check

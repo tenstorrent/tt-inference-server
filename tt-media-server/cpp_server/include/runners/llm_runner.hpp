@@ -1,41 +1,56 @@
 #pragma once
 
 #include <atomic>
-#include <cstdint>
 #include <memory>
+#include <thread>
 
-#include "runners/runner_interface.hpp"
-#include "runners/llm_runner/config.hpp"
+#include "config/runner_config.hpp"
+#include "ipc/boost_ipc_queue.hpp"
+#include "ipc/cancel_queue.hpp"
+#include "ipc/result_queue.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 #include "runners/llm_runner/scheduler.hpp"
 #include "runners/llm_runner/task_queue.hpp"
-#include "ipc/shared_memory.hpp"
+#include "runners/runner_interface.hpp"
+
+namespace tt::services {
+class MemoryManager;
+class GuidedDecoderManager;
+}  // namespace tt::services
 
 namespace tt::runners {
-  using namespace llm_engine;
+using namespace tt::runners::llm_engine;
 
 class LLMRunner : public IRunner {
  public:
-  LLMRunner(const Config& config, ipc::TokenRingBuffer<65536>* result_queue, ITaskQueue* task_queue);
+  LLMRunner(const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
+            ITaskQueue* taskQueue, ipc::ICancelQueue* cancelQueue = nullptr);
   ~LLMRunner() override;
 
   Scheduler& scheduler() { return *scheduler_; }
 
   void run() override;
   void stop() override;
-  const char* runner_type() const override { return "LLMRunner"; }
+  const char* runnerType() const { return "LLMRunner"; }
 
  private:
   void step();
-  void drain_decode_results();
+  void memoryLoop();
   void exit();
+  void applyGuidedDecodingMasks(const std::vector<Sequence*>& seqs,
+                                bool isPrefill);
 
-  Config config_;
-  ipc::TokenRingBuffer<65536>* result_queue_;
+  config::LLMConfig config_;
+  ipc::IResultQueue* result_queue_;
+  ipc::ICancelQueue* cancel_queue_;  // nullable; owned by caller
   std::unique_ptr<IModelRunner> model_runner_;
   std::unique_ptr<Scheduler> scheduler_;
-  DecodeQueue decode_queue_;
   std::atomic<bool> stopped_{false};
+
+  std::unique_ptr<tt::services::MemoryManager> memoryManager;
+  std::thread memoryThread;
+
+  std::unique_ptr<tt::services::GuidedDecoderManager> guidedDecoder;
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners

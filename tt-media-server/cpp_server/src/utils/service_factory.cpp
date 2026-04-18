@@ -1,45 +1,72 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "utils/service_factory.hpp"
+
+#include <memory>
+
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
-#include "services/llm_service.hpp"
+#include "services/disaggregation_service.hpp"
 #include "services/embedding_service.hpp"
-#include "config/constants.hpp"
 #include "services/llm_service.hpp"
-#include "services/embedding_service.hpp"
-
-#include <iostream>
+#include "services/session_manager.hpp"
+#include "sockets/inter_server_service.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::utils::service_factory {
 
-void register_services() {
-    tracy_config::TracyStartMainProcess();
+void initializeServices() {
+  tracy_config::tracyStartMainProcess();
 
-    if (tt::config::is_llm_service_enabled()) {
-        auto llm = std::make_shared<services::LLMService>();
-        llm->start();
-        register_service(std::move(llm));
-        std::cout << "[ServiceFactory] LLM service registered and started\n" << std::flush;
-    }
+  auto& c = ServiceContainer::instance();
 
-    if (tt::config::is_embedding_service()) {
-        auto emb = std::make_shared<services::EmbeddingService>();
-        emb->start();
-        register_service(std::move(emb));
-        std::cout << "[ServiceFactory] Embedding service registered and started\n" << std::flush;
+  std::shared_ptr<services::LLMService> llm;
+  std::shared_ptr<services::EmbeddingService> embedding;
+  std::shared_ptr<sockets::InterServerService> socket;
+  std::shared_ptr<services::DisaggregationService> disaggregation;
+  std::shared_ptr<services::SessionManager> sessionManager;
+
+  // Create SessionManager for all modes
+  sessionManager = std::make_shared<services::SessionManager>();
+
+  // Only construct services for MODEL_SERVICE (see config::modelService()).
+  // Additional modes (e.g. videogen) extend config::ModelService and add cases.
+  switch (tt::config::modelService()) {
+    case tt::config::ModelService::LLM: {
+      llm = std::make_shared<services::LLMService>();
+      auto mode = tt::config::llmMode();
+      if (mode != tt::config::LLMMode::REGULAR) {
+        socket = std::make_shared<sockets::InterServerService>();
+        socket->initializeFromConfig();
+        disaggregation = std::make_shared<services::DisaggregationService>(
+            mode, llm, socket);
+      }
+      break;
     }
+    case tt::config::ModelService::EMBEDDING:
+      embedding = std::make_shared<services::EmbeddingService>();
+      break;
+  }
+
+  c.initialize(std::move(llm), std::move(embedding), std::move(socket),
+               std::move(disaggregation), std::move(sessionManager));
+
+  if (c.llm()) {
+    c.llm()->start();
+    TT_LOG_INFO("[ServiceFactory] LLM service started");
+  }
+  if (c.disaggregation()) {
+    c.disaggregation()->start();
+    TT_LOG_INFO("[ServiceFactory] Disaggregation service started");
+  }
+  if (c.embedding()) {
+    c.embedding()->start();
+    TT_LOG_INFO("[ServiceFactory] Embedding service started");
+  }
+  if (c.sessionManager()) {
+    TT_LOG_INFO("[ServiceFactory] Session manager initialized");
+  }
 }
 
-std::shared_ptr<services::IService> get_configured_service() {
-    switch (tt::config::model_service()) {
-        case tt::config::ModelService::LLM:
-            return get_service_by_type<services::LLMService>();
-        case tt::config::ModelService::EMBEDDING:
-            return get_service_by_type<services::EmbeddingService>();
-    }
-    return nullptr;
-}
-
-} // namespace tt::utils::service_factory
+}  // namespace tt::utils::service_factory

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 """
 Generate Model Support documentation from MODEL_SPECS.
@@ -65,7 +65,7 @@ class HardwarePageGroup:
 
 # Mapping inference engine to documentation link (reused from update_model_spec.py)
 INFERENCE_ENGINE_README_LINKS = {
-    InferenceEngine.VLLM.value: "../../../vllm-tt-metal-llama3/README.md",
+    InferenceEngine.VLLM.value: "../../../vllm-tt-metal/README.md",
     InferenceEngine.MEDIA.value: "../../../tt-media-server/README.md",
     InferenceEngine.FORGE.value: "../../../tt-media-server/README.md",
 }
@@ -77,12 +77,13 @@ DEVICE_HARDWARE_LINKS = {
     DeviceTypes.N300: "https://tenstorrent.com/hardware/wormhole",
     DeviceTypes.GALAXY: "https://tenstorrent.com/hardware/galaxy",
     DeviceTypes.GALAXY_T3K: "https://tenstorrent.com/hardware/galaxy",
+    DeviceTypes.DUAL_GALAXY: "https://tenstorrent.com/hardware/galaxy",
+    DeviceTypes.QUAD_GALAXY: "https://tenstorrent.com/hardware/galaxy",
     DeviceTypes.P100: "https://tenstorrent.com/hardware/blackhole",
     DeviceTypes.P150: "https://tenstorrent.com/hardware/blackhole",
-    DeviceTypes.P300: "https://tenstorrent.com/hardware/blackhole",
     DeviceTypes.P150X4: "https://tenstorrent.com/hardware/tt-quietbox",
-    DeviceTypes.P300X2: "https://tenstorrent.com/hardware/tt-quietbox",
     DeviceTypes.P150X8: "https://tenstorrent.com/hardware/tt-loudbox",
+    DeviceTypes.BLACKHOLE_GALAXY: "https://tenstorrent.com/hardware/galaxy",
 }
 
 # Shared instances for devices that map to the same page
@@ -98,21 +99,26 @@ _BH_SINGLE_CARD_PAGE_GROUP = HardwarePageGroup(
     name="P100/P150",
     device_ordering=(DeviceTypes.P100, DeviceTypes.P150),
 )
+_DUAL_GALAXY_PAGE_GROUP = HardwarePageGroup.from_device_type(DeviceTypes.DUAL_GALAXY)
+_QUAD_GALAXY_PAGE_GROUP = HardwarePageGroup.from_device_type(DeviceTypes.QUAD_GALAXY)
 
 # Maps DeviceTypes to their hardware page group configuration
 # - Key: DeviceType
 # - Value: HardwarePageGroup with name (for headers) and device_ordering (page layout)
 # Multiple DeviceTypes can map to the same HardwarePageGroup instance
 DEVICE_HARDWARE_PAGE_GROUPS_MAPPING: Dict[DeviceTypes, HardwarePageGroup] = {
+    DeviceTypes.DUAL_GALAXY: _DUAL_GALAXY_PAGE_GROUP,
+    DeviceTypes.QUAD_GALAXY: _QUAD_GALAXY_PAGE_GROUP,
     DeviceTypes.GALAXY: _GALAXY_PAGE_GROUP,
     DeviceTypes.GALAXY_T3K: _GALAXY_PAGE_GROUP,
-    DeviceTypes.P300X2: HardwarePageGroup.from_device_type(DeviceTypes.P300X2),
+    DeviceTypes.BLACKHOLE_GALAXY: HardwarePageGroup.from_device_type(
+        DeviceTypes.BLACKHOLE_GALAXY
+    ),
     DeviceTypes.P150X8: HardwarePageGroup.from_device_type(DeviceTypes.P150X8),
     DeviceTypes.P150X4: HardwarePageGroup.from_device_type(DeviceTypes.P150X4),
-    DeviceTypes.P300: _BH_SINGLE_CARD_PAGE_GROUP,
-    DeviceTypes.T3K: HardwarePageGroup.from_device_type(DeviceTypes.T3K),
     DeviceTypes.P150: _BH_SINGLE_CARD_PAGE_GROUP,
     DeviceTypes.P100: _BH_SINGLE_CARD_PAGE_GROUP,
+    DeviceTypes.T3K: HardwarePageGroup.from_device_type(DeviceTypes.T3K),
     DeviceTypes.N300: _WH_SINGLE_CARD_PAGE_GROUP,
     DeviceTypes.N150: _WH_SINGLE_CARD_PAGE_GROUP,
 }
@@ -552,6 +558,46 @@ def generate_model_page_group_page(
             )
             lines.append("")
 
+        # docker run command (skip for multihost - requires special deployment)
+        if target_template.inference_engine == InferenceEngine.VLLM.value:
+            is_multihost = device.is_multihost()
+            if is_multihost:
+                # Multihost requires Controller/Worker architecture, link to guide
+                lines.append(
+                    f"**Note:** {product_name} requires multi-host deployment with Controller and Worker containers. "
+                    "See the [Multi-Host Deployment Guide](../../multihost_deployment.md) for detailed setup instructions."
+                )
+                lines.append("")
+            else:
+                docker_image = (
+                    target_template.docker_image
+                    or generate_default_docker_link(
+                        target_template.version,
+                        target_template.tt_metal_commit,
+                        target_template.vllm_commit,
+                        multihost=is_multihost,
+                    )
+                )
+                lines.append("**docker run command**")
+                lines.append("")
+                lines.append("```bash")
+                lines.extend(
+                    [
+                        "docker run \\",
+                        '  --env "HF_TOKEN=$HF_TOKEN" \\',
+                        "  --ipc host \\",
+                        "  --publish 8000:8000 \\",
+                        "  --device /dev/tenstorrent \\",
+                        "  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \\",
+                        f"  --volume volume_id_{model_name}:/home/container_app_user/cache_root \\",
+                        f"  {docker_image} \\",
+                        f"  --model {model_name} \\",
+                        f"  --tt-device {device.name.lower()}",
+                    ]
+                )
+                lines.append("```")
+                lines.append("")
+
         # run.py command
         lines.append("**via run.py command**")
         lines.append("")
@@ -572,7 +618,10 @@ def generate_model_page_group_page(
             docker_image = target_template.docker_image
         else:
             docker_image = generate_default_docker_link(
-                VERSION, target_template.tt_metal_commit, target_template.vllm_commit
+                VERSION,
+                target_template.tt_metal_commit,
+                target_template.vllm_commit,
+                multihost=device.is_multihost(),
             )
 
         # Model Parameters table

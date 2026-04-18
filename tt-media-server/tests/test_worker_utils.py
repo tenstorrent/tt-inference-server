@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import os
@@ -27,6 +27,9 @@ sys.modules["config.settings"] = mock_settings_module
 sys.modules["telemetry.telemetry_client"] = Mock()
 sys.modules["telemetry.telemetry_client"].get_telemetry_client = Mock()
 
+# Mock vllm_settings (needed by config.constants at import time)
+sys.modules["config.vllm_settings"] = Mock()
+
 # Mock torch utils
 mock_set_torch_thread_limits = Mock()
 sys.modules["utils.torch_utils"] = Mock()
@@ -44,6 +47,7 @@ sys.modules["tt_model_runners.runner_fabric"] = Mock()
 # Now import the modules under test
 from device_workers.worker_utils import initialize_device_worker
 from utils.runner_utils import (
+    _setup_blackhole_mesh_config,
     _setup_galaxy_mesh_config,
     setup_cpu_threading_limits,
     setup_runner_environment,
@@ -153,24 +157,43 @@ class TestSetupRunnerEnvironment:
 
                         mock_get_telemetry.assert_called_once()
 
-    def test_calls_galaxy_setup_when_enabled(self):
-        """Test that galaxy mesh config is set up when is_galaxy is True"""
+    def test_calls_galaxy_setup_when_enabled_for_whisper(self):
+        """Test that galaxy mesh config is set up when is_galaxy is True for qualifying runner"""
         with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
             with patch("utils.runner_utils.set_torch_thread_limits"):
                 with patch("utils.runner_utils.get_telemetry_client"):
                     with patch(
                         "utils.runner_utils._setup_galaxy_mesh_config"
                     ) as mock_galaxy:
-                        # Create settings with galaxy enabled
                         mock_settings_galaxy = Mock()
                         mock_settings_galaxy.enable_telemetry = False
                         mock_settings_galaxy.is_galaxy = True
+                        mock_settings_galaxy.model_runner = "tt-whisper"
                         mock_settings_galaxy.default_throttle_level = None
 
                         with patch("utils.runner_utils.settings", mock_settings_galaxy):
                             setup_runner_environment("0")
 
                             mock_galaxy.assert_called_once_with("/opt/tt-metal")
+
+    def test_skips_galaxy_setup_for_non_qualifying_runner(self):
+        """Test that galaxy mesh config is NOT set up for runners like tt-sdxl-trace"""
+        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
+                with patch("utils.runner_utils.get_telemetry_client"):
+                    with patch(
+                        "utils.runner_utils._setup_galaxy_mesh_config"
+                    ) as mock_galaxy:
+                        mock_settings_galaxy = Mock()
+                        mock_settings_galaxy.enable_telemetry = False
+                        mock_settings_galaxy.is_galaxy = True
+                        mock_settings_galaxy.model_runner = "tt-sdxl-trace"
+                        mock_settings_galaxy.default_throttle_level = None
+
+                        with patch("utils.runner_utils.settings", mock_settings_galaxy):
+                            setup_runner_environment("0")
+
+                            mock_galaxy.assert_not_called()
 
     def test_custom_cpu_threads(self):
         """Test custom cpu_threads parameter"""
@@ -383,7 +406,7 @@ class TestInitializeDeviceWorker:
                         initialize_device_worker("0", mock_logger)
 
                     mock_loop.close.assert_called_once()
-                    mock_logger.error.assert_called_once()
+                    assert mock_logger.error.call_count == 1
 
     def test_closes_device_on_exception(self):
         """Test that device is closed if exception occurs after device_runner is created"""
@@ -423,6 +446,155 @@ def reset_mocks():
     mock_settings.enable_telemetry = False
     mock_settings.is_galaxy = False
     mock_settings.device_mesh_shape = (1, 1)
+
+
+class TestSetupBlackholeMeshConfig:
+    """Test cases for _setup_blackhole_mesh_config function"""
+
+    def test_sets_p150_mesh_descriptor(self):
+        """Test mesh descriptor is set for p150 device"""
+        mock_settings_bh = Mock()
+        mock_settings_bh.device = "p150"
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("utils.runner_utils.settings", mock_settings_bh):
+                _setup_blackhole_mesh_config("/opt/tt-metal")
+
+                expected_path = (
+                    "/opt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/"
+                    "p150_mesh_graph_descriptor.textproto"
+                )
+                assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == expected_path
+
+    def test_sets_p300_mesh_descriptor(self):
+        """Test mesh descriptor is set for p300 device"""
+        mock_settings_bh = Mock()
+        mock_settings_bh.device = "p300"
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("utils.runner_utils.settings", mock_settings_bh):
+                _setup_blackhole_mesh_config("/opt/tt-metal")
+
+                expected_path = (
+                    "/opt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/"
+                    "p300_mesh_graph_descriptor.textproto"
+                )
+                assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == expected_path
+
+    def test_skips_descriptor_for_unknown_device(self):
+        """Test that TT_MESH_GRAPH_DESC_PATH is not set for unknown BH device"""
+        mock_settings_bh = Mock()
+        mock_settings_bh.device = "unknown_device"
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("utils.runner_utils.settings", mock_settings_bh):
+                _setup_blackhole_mesh_config("/opt/tt-metal")
+
+                assert "TT_MESH_GRAPH_DESC_PATH" not in os.environ
+
+
+class TestSetupRunnerEnvironmentBlackhole:
+    """Test BH device branch in setup_runner_environment"""
+
+    def test_calls_blackhole_setup_for_bh_device_with_qualifying_runner(self):
+        """Test that _setup_blackhole_mesh_config is called for a BH device with whisper"""
+        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
+                with patch("utils.runner_utils.get_telemetry_client"):
+                    with patch(
+                        "utils.runner_utils._setup_blackhole_mesh_config"
+                    ) as mock_bh:
+                        mock_settings_bh = Mock()
+                        mock_settings_bh.enable_telemetry = False
+                        mock_settings_bh.is_galaxy = False
+                        mock_settings_bh.device = "p150"
+                        mock_settings_bh.model_runner = "tt-whisper"
+                        mock_settings_bh.default_throttle_level = None
+
+                        with patch("utils.runner_utils.settings", mock_settings_bh):
+                            setup_runner_environment("0")
+
+                            mock_bh.assert_called_once_with("/opt/tt-metal")
+
+    def test_calls_blackhole_setup_for_speecht5(self):
+        """Test that _setup_blackhole_mesh_config is called for speecht5 on BH"""
+        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
+                with patch("utils.runner_utils.get_telemetry_client"):
+                    with patch(
+                        "utils.runner_utils._setup_blackhole_mesh_config"
+                    ) as mock_bh:
+                        mock_settings_bh = Mock()
+                        mock_settings_bh.enable_telemetry = False
+                        mock_settings_bh.is_galaxy = False
+                        mock_settings_bh.device = "p300"
+                        mock_settings_bh.model_runner = "tt-speecht5-tts"
+                        mock_settings_bh.default_throttle_level = None
+
+                        with patch("utils.runner_utils.settings", mock_settings_bh):
+                            setup_runner_environment("0")
+
+                            mock_bh.assert_called_once_with("/opt/tt-metal")
+
+    def test_skips_blackhole_setup_for_sdxl_on_bh_device(self):
+        """Test that _setup_blackhole_mesh_config is NOT called for tt-sdxl-trace on BH"""
+        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
+                with patch("utils.runner_utils.get_telemetry_client"):
+                    with patch(
+                        "utils.runner_utils._setup_blackhole_mesh_config"
+                    ) as mock_bh:
+                        mock_settings_bh = Mock()
+                        mock_settings_bh.enable_telemetry = False
+                        mock_settings_bh.is_galaxy = False
+                        mock_settings_bh.device = "p150x8"
+                        mock_settings_bh.model_runner = "tt-sdxl-trace"
+                        mock_settings_bh.default_throttle_level = None
+
+                        with patch("utils.runner_utils.settings", mock_settings_bh):
+                            setup_runner_environment("0")
+
+                            mock_bh.assert_not_called()
+
+    def test_skips_blackhole_setup_for_flux_on_bh_device(self):
+        """Test that _setup_blackhole_mesh_config is NOT called for flux on BH"""
+        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
+                with patch("utils.runner_utils.get_telemetry_client"):
+                    with patch(
+                        "utils.runner_utils._setup_blackhole_mesh_config"
+                    ) as mock_bh:
+                        mock_settings_bh = Mock()
+                        mock_settings_bh.enable_telemetry = False
+                        mock_settings_bh.is_galaxy = False
+                        mock_settings_bh.device = "p150x8"
+                        mock_settings_bh.model_runner = "tt-flux.1-dev"
+                        mock_settings_bh.default_throttle_level = None
+
+                        with patch("utils.runner_utils.settings", mock_settings_bh):
+                            setup_runner_environment("0")
+
+                            mock_bh.assert_not_called()
+
+    def test_does_not_call_blackhole_setup_for_non_bh_device(self):
+        """Test that _setup_blackhole_mesh_config is not called for non-BH device"""
+        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
+                with patch("utils.runner_utils.get_telemetry_client"):
+                    with patch(
+                        "utils.runner_utils._setup_blackhole_mesh_config"
+                    ) as mock_bh:
+                        mock_settings_non_bh = Mock()
+                        mock_settings_non_bh.enable_telemetry = False
+                        mock_settings_non_bh.is_galaxy = False
+                        mock_settings_non_bh.device = "n300"
+                        mock_settings_non_bh.model_runner = "tt-whisper"
+                        mock_settings_non_bh.default_throttle_level = None
+
+                        with patch("utils.runner_utils.settings", mock_settings_non_bh):
+                            setup_runner_environment("0")
+
+                            mock_bh.assert_not_called()
 
 
 if __name__ == "__main__":

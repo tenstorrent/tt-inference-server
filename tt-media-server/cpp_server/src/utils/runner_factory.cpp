@@ -1,33 +1,59 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "utils/runner_factory.hpp"
-#include "config/settings.hpp"
-#include "runners/llm_runner.hpp"
-#include "runners/embedding_runner.hpp"
 
-#include <iostream>
+#include "runners/embedding_runner.hpp"
+#include "runners/llm_runner.hpp"
+#include "runners/sp_prefill_runner/blaze_prefill_runner.hpp"
+#include "sp_pipeline_runner/sp_pipeline_runner_demo.hpp"
+#ifdef ENABLE_BLAZE
+#include "runners/sp_pipeline_runner/blaze_runner.hpp"
+#endif
+#include "utils/logger.hpp"
 
 namespace tt::utils::runner_factory {
 
-std::unique_ptr<runners::IRunner> create_runner(
-    config::ModelService service,
-    const runners::RunnerConfig& config,
-    ipc::TokenRingBuffer<65536>* result_queue,
-    llm_engine::ITaskQueue* task_queue) {
-
-    switch (service) {
-        case config::ModelService::EMBEDDING: {
-            std::cout << "[RunnerFactory] Creating Embedding runner\n" << std::flush;
-            return std::make_unique<runners::EmbeddingRunner>("device_0", 0);
-        }
-        case config::ModelService::LLM:
-        default: {
-            std::cout << "[RunnerFactory] Creating LLM runner\n" << std::flush;
-            auto& cfg = std::get<llm_engine::Config>(config);
-            return std::make_unique<tt::runners::LLMRunner>(cfg, result_queue, task_queue);
-        }
+std::unique_ptr<runners::IRunner> createRunner(
+    config::ModelService service, const config::RunnerConfig& config,
+    ipc::IResultQueue* resultQueue,
+    tt::runners::llm_engine::ITaskQueue* taskQueue,
+    ipc::ICancelQueue* cancelQueue) {
+  switch (service) {
+    case config::ModelService::EMBEDDING: {
+      TT_LOG_INFO("[RunnerFactory] Creating Embedding runner");
+      return std::make_unique<runners::EmbeddingRunner>("device_0", 0);
     }
+    case config::ModelService::LLM:
+    default: {
+      auto& cfg = std::get<config::LLMConfig>(config);
+
+      if (cfg.runner_type == config::ModelRunnerType::PIPELINE ||
+          cfg.runner_type == config::ModelRunnerType::MOCK_PIPELINE) {
+        TT_LOG_INFO("[RunnerFactory] Creating SP Pipeline runner (demo)");
+        return std::make_unique<runners::SpPipelineRunnerDemo>(cfg, resultQueue,
+                                                               taskQueue);
+      }
+
+#ifdef ENABLE_BLAZE
+      if (cfg.runner_type == config::ModelRunnerType::PIPELINE_MANAGER) {
+        TT_LOG_INFO("[RunnerFactory] Creating Blaze runner (pipeline_manager)");
+        return std::make_unique<runners::BlazeRunner>(cfg, resultQueue,
+                                                      taskQueue);
+      }
+#endif
+
+      if (cfg.runner_type == config::ModelRunnerType::PREFILL) {
+        TT_LOG_INFO("[RunnerFactory] Creating Blaze Prefill runner");
+        return std::make_unique<runners::BlazePrefillRunner>(cfg, resultQueue,
+                                                             taskQueue);
+      }
+
+      TT_LOG_INFO("[RunnerFactory] Creating LLM runner (mock)");
+      return std::make_unique<tt::runners::LLMRunner>(cfg, resultQueue,
+                                                      taskQueue, cancelQueue);
+    }
+  }
 }
 
-} // namespace tt::utils::runner_factory
+}  // namespace tt::utils::runner_factory

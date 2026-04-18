@@ -1,56 +1,79 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
-#include <concepts>
-#include <functional>
-#include <string>
+#include <limits>
+#include <memory>
+#include <stdexcept>
 #include <vector>
 
 #include "domain/base_request.hpp"
 #include "domain/base_response.hpp"
+#include "utils/logger.hpp"
+#include "worker/worker_info.hpp"
+
 namespace tt::services {
 
-struct WorkerInfo {
-    std::string worker_id;
-    bool is_ready;
-    size_t processed_requests;
+class QueueFullException : public std::runtime_error {
+ public:
+  QueueFullException()
+      : std::runtime_error("Request queue is full, please retry later") {}
 };
 
 struct SystemStatus {
-    bool model_ready;
-    size_t queue_size;
-    size_t max_queue_size;
-    std::string device;
-    std::vector<WorkerInfo> worker_info;
+  bool model_ready;
+  size_t queue_size;
+  size_t max_queue_size;
+  std::vector<tt::worker::WorkerInfo> worker_info;
 };
 
 class IService {
-public:
-    virtual ~IService() = default;
-    virtual void start() = 0;
-    virtual void stop() = 0;
-    virtual bool is_model_ready() const = 0;
-    virtual SystemStatus get_system_status() const = 0;
+ public:
+  virtual ~IService() = default;
+  virtual void start() = 0;
+  virtual void stop() = 0;
+  virtual bool isModelReady() const = 0;
+  virtual SystemStatus getSystemStatus() const = 0;
 };
 
-template<std::derived_from<domain::BaseRequest> RequestType, std::derived_from<domain::BaseResponse> ResponseType>
+template <std::derived_from<domain::BaseRequest> RequestType,
+          std::derived_from<domain::BaseResponse> ResponseType>
 class BaseService : public IService {
-public:
-    virtual ~BaseService() = default;
+ public:
+  virtual ~BaseService() = default;
 
-    ResponseType submit_request(RequestType request) {
-        pre_process(request);
-        auto response = process_request(std::move(request));
-        post_process(response);
-        return response;
-    }
+  ResponseType submitRequest(RequestType request) {
+    preProcess(request);
+    auto response = processRequest(std::move(request));
+    postProcess(response);
+    return response;
+  }
 
-protected:
-    virtual ResponseType process_request(RequestType request) = 0;
-    virtual void pre_process(RequestType& request) const = 0;
-    virtual void post_process(ResponseType& response) const = 0;
+  SystemStatus getSystemStatus() const override {
+    SystemStatus status;
+    status.model_ready = isModelReady();
+    status.queue_size = currentQueueSize();
+    status.max_queue_size = max_queue_size_;
+    status.worker_info = getWorkerInfo();
+    return status;
+  }
+
+  bool isModelReady() const override { return false; }
+
+ protected:
+  virtual ResponseType processRequest(RequestType request) = 0;
+  virtual void preProcess(RequestType& /*request*/) const {
+    if (currentQueueSize() >= max_queue_size_) throw QueueFullException{};
+  }
+  virtual void postProcess(ResponseType& response) const = 0;
+  virtual size_t currentQueueSize() const = 0;
+
+  virtual std::vector<tt::worker::WorkerInfo> getWorkerInfo() const {
+    return {};
+  }
+
+  size_t max_queue_size_ = std::numeric_limits<size_t>::max();
 };
 
-} // namespace tt::services
+}  // namespace tt::services

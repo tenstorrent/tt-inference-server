@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import importlib
 import sys
@@ -10,6 +10,7 @@ from typing import Iterable, List, Optional, Set, Tuple
 import pytest
 
 from workflows.model_spec import MODEL_SPECS
+from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import DeviceTypes
 
 
@@ -157,3 +158,86 @@ def test_benchmark_configs_selected_models_print_sweeps(
     print("isl,osl,max_concurrency:")
     for isl, osl, c in triplets:
         print(f"{isl},{osl},{c}")
+
+
+@pytest.mark.parametrize(
+    "model_name,device",
+    [
+        ("Qwen3-8B", DeviceTypes.N150),
+        ("gemma-3-4b-it", DeviceTypes.N150),
+    ],
+)
+def test_select_smoke_test_benchmark_config(
+    monkeypatch, model_name: str, device: DeviceTypes
+):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+    model_id = _find_model_id(
+        model_name=model_name, device=device, impl_name="tt-transformers"
+    )
+
+    config = benchmark_config.BENCHMARK_CONFIGS[model_id]
+    smoke_config = benchmark_config.select_smoke_test_benchmark_config(config, device)
+
+    assert smoke_config.model_id == config.model_id
+    assert len(smoke_config.tasks) == 1
+    assert smoke_config.tasks[0].param_map[device] == config.tasks[0].param_map[device]
+
+
+def test_select_smoke_test_benchmark_config_adds_smoke_pair_without_targets(
+    monkeypatch,
+):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+
+    perf_task = benchmark_config.BenchmarkTask(param_map={DeviceTypes.N150: []})
+    sweep_task = benchmark_config.BenchmarkTask(
+        param_map={
+            DeviceTypes.N150: [
+                BenchmarkTaskParams(
+                    isl=128,
+                    osl=128,
+                    max_concurrency=32,
+                    num_prompts=256,
+                )
+            ]
+        }
+    )
+    config = benchmark_config.BenchmarkConfig(
+        model_id="smoke-test-model",
+        tasks=[perf_task, sweep_task],
+    )
+
+    smoke_config = benchmark_config.select_smoke_test_benchmark_config(
+        config, DeviceTypes.N150
+    )
+
+    assert len(smoke_config.tasks) == 1
+    smoke_sweep_params = smoke_config.tasks[0].param_map[DeviceTypes.N150]
+    assert len(smoke_sweep_params) == 1
+    assert (
+        smoke_sweep_params[0].isl,
+        smoke_sweep_params[0].osl,
+    ) == benchmark_config.SMOKE_TEST_BENCHMARK_PAIR
+    assert smoke_sweep_params[0].max_concurrency == 1
+    assert smoke_sweep_params[0].num_prompts == benchmark_config.get_num_prompts(
+        *benchmark_config.SMOKE_TEST_BENCHMARK_PAIR, 1
+    )
+    assert getattr(smoke_sweep_params[0], "task_type", "text") == "text"
+
+
+def test_select_smoke_test_benchmark_config_skips_non_text_sweeps(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+
+    perf_task = benchmark_config.BenchmarkTask(param_map={DeviceTypes.N150: []})
+    sweep_task = benchmark_config.BenchmarkTaskCNN(
+        param_map={DeviceTypes.N150: [BenchmarkTaskParamsCNN(num_eval_runs=5)]}
+    )
+    config = benchmark_config.BenchmarkConfig(
+        model_id="smoke-test-model",
+        tasks=[perf_task, sweep_task],
+    )
+
+    smoke_config = benchmark_config.select_smoke_test_benchmark_config(
+        config, DeviceTypes.N150
+    )
+
+    assert smoke_config.tasks == []

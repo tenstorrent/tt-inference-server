@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 import asyncio
 import os
 import traceback
@@ -130,7 +130,7 @@ class VLLMForgeLlama70BRunner(BaseDeviceRunner):
 
         yield CompletionOutput(
             type=FINAL_TYPE,
-            data=CompletionResult(text="final_text"),
+            data=CompletionResult(text=""),
         )
 
     async def process_request_non_streaming(

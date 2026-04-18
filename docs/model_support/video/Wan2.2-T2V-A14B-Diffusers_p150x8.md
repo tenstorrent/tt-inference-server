@@ -9,7 +9,6 @@
 `Wan2.2-T2V-A14B-Diffusers` is also supported on hardware:
 
 - [WH Galaxy](Wan2.2-T2V-A14B-Diffusers_galaxy.md)
-- [BH QuietBox GE (2xP300)](Wan2.2-T2V-A14B-Diffusers_p300x2.md)
 - [BH 4xP150](Wan2.2-T2V-A14B-Diffusers_p150x4.md)
 - [WH LoudBox/QuietBox](Wan2.2-T2V-A14B-Diffusers_t3k.md)
 
@@ -35,4 +34,4 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Max Batch Size | 1 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers) |
 | tt-metal Commit | `555f240` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.0-555f240` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.1-555f240` |

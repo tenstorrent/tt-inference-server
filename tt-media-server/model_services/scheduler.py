@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import os
@@ -280,15 +280,15 @@ class Scheduler:
                     self.error_queue.get
                 )
 
+                if result_key is None:
+                    self.listener_running = False
+                    break
+
                 self.worker_info[worker_id]["error_count"] += 1
 
                 self.logger.warning(
                     f"Worker {worker_id} error count is : {self.worker_info[worker_id]['error_count']}"
                 )
-
-                if result_key is None:
-                    self.listener_running = False
-                    break
 
                 self.logger.error(f"Error in worker {result_key}: {error}")
 
@@ -304,7 +304,7 @@ class Scheduler:
                     await queue.put(Exception(error))
 
             except Exception as e:
-                self.logger.error(f"Error in error_listener: {e}", exc_info=True)
+                self.logger.error(f"Error in error_listener: {e}")
 
         self.logger.info("Error listener stopped")
 

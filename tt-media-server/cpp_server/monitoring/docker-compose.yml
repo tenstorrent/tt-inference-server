@@ -1,0 +1,72 @@
+# Monitoring stack for TT Media Server (C++ inference server)
+#
+# The inference server runs in its own container (a sibling). Connect it to
+# the shared 'tt_net' network so Prometheus can reach it by container name:
+#
+#   docker network create tt_net
+#   docker network connect tt_net <your-inference-container-name>
+#
+# Then start the monitoring stack, telling Prometheus which container to scrape:
+#
+#   SERVER_TARGET=$(hostname):8000 \
+#     docker compose -f monitoring/docker-compose.yml up -d
+#
+# SERVER_TARGET defaults to 'tt-inference-server:8000'.
+# Open Grafana at http://localhost:3000  (admin / admin)
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: tt_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    environment:
+      - SERVER_TARGET=${SERVER_TARGET:-tt-inference-server:8000}
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml.tmpl:ro
+      - prometheus_data:/prometheus
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        sed "s|__SERVER_TARGET__|$$SERVER_TARGET|g"
+        /etc/prometheus/prometheus.yml.tmpl > /tmp/prometheus.yml
+        && exec /bin/prometheus
+        --config.file=/tmp/prometheus.yml
+        --storage.tsdb.path=/prometheus
+        --storage.tsdb.retention.time=15d
+        --web.enable-lifecycle
+    networks:
+      - monitoring
+      - tt_net
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: tt_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/tt_media_server.json
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    driver: bridge
+  tt_net:
+    external: true
+    name: ${TT_NET:-tt_net}
+
+volumes:
+  prometheus_data:
+  grafana_data:

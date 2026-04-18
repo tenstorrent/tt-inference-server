@@ -1,185 +1,187 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "sockets/inter_server_service.hpp"
-#include <iostream>
+
+#include <string>
+
+#include "config/settings.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::sockets {
 
-InterServerService::InterServerService()
-    : socket_manager_(SocketManager::getInstance()) {
-    setupMessageHandlers();
-}
+InterServerService::InterServerService() { setupMessageHandlers(); }
 
-InterServerService::~InterServerService() {
-    stop();
-}
+InterServerService::~InterServerService() { stop(); }
 
 bool InterServerService::initializeFromConfig() {
-    auto role = tt::config::socket_role();
+  auto mode = tt::config::llmMode();
 
-    if (role == tt::config::SocketRole::NONE) {
-        std::cout << "[InterServerService] Socket communication disabled (SOCKET_ROLE not set)" << std::endl;
-        enabled_ = false;
-        return false;
-    }
+  if (mode == tt::config::LLMMode::REGULAR) {
+    TT_LOG_INFO(
+        "[InterServerService] Socket communication disabled (regular mode)");
+    enabled_ = false;
+    return false;
+  }
 
-    auto host = tt::config::socket_host();
-    auto port = tt::config::socket_port();
+  auto host = tt::config::socketHost();
+  auto port = tt::config::socketPort();
 
-    bool success = false;
+  bool success = false;
 
-    if (role == tt::config::SocketRole::SERVER) {
-        std::cout << "[InterServerService] Initializing as server on port " << port << std::endl;
-        success = socket_manager_.initializeAsServer(port);
-    } else if (role == tt::config::SocketRole::CLIENT) {
-        std::cout << "[InterServerService] Initializing as client to " << host << ":" << port << std::endl;
-        success = socket_manager_.initializeAsClient(host, port);
-    }
+  if (mode == tt::config::LLMMode::DECODE_ONLY) {
+    TT_LOG_INFO("[InterServerService] Initializing as server on port {}", port);
+    success = socket_manager_.initializeAsServer(port);
+  } else if (mode == tt::config::LLMMode::PREFILL_ONLY) {
+    TT_LOG_INFO("[InterServerService] Initializing as client to {}:{}", host,
+                port);
+    success = socket_manager_.initializeAsClient(host, port);
+  }
 
-    if (success) {
-        enabled_ = true;
-        std::cout << "[InterServerService] Socket communication initialized successfully" << std::endl;
-    } else {
-        enabled_ = false;
-        std::cerr << "[InterServerService] Failed to initialize socket communication" << std::endl;
-    }
+  if (success) {
+    enabled_ = true;
+    TT_LOG_INFO(
+        "[InterServerService] Socket communication initialized successfully");
+  } else {
+    enabled_ = false;
+    TT_LOG_ERROR(
+        "[InterServerService] Failed to initialize socket communication");
+  }
 
-    return success;
+  return success;
 }
 
 void InterServerService::start() {
-    if (!enabled_) {
-        return;
-    }
+  if (!enabled_) {
+    return;
+  }
 
-    socket_manager_.start();
-    std::cout << "[InterServerService] Started socket communication" << std::endl;
+  socket_manager_.start();
+  TT_LOG_INFO("[InterServerService] Started socket communication");
 }
 
 void InterServerService::stop() {
-    if (!enabled_) {
-        return;
-    }
+  if (!enabled_) {
+    return;
+  }
 
-    socket_manager_.stop();
-    std::cout << "[InterServerService] Stopped socket communication" << std::endl;
+  socket_manager_.stop();
+  TT_LOG_INFO("[InterServerService] Stopped socket communication");
 }
 
-bool InterServerService::isEnabled() const {
-    return enabled_;
+bool InterServerService::isEnabled() const { return enabled_; }
+
+bool InterServerService::sendPrefillRequest(
+    uint32_t taskId, const std::string& prompt,
+    const std::vector<int64_t>& tokenIds, std::optional<int> maxTokens,
+    std::optional<uint32_t> slotId) {
+  if (!enabled_) {
+    return false;
+  }
+
+  PrefillRequestMessage message(taskId);
+  message.prompt = prompt;
+  message.token_ids = tokenIds;
+  message.max_tokens = maxTokens;
+  message.slot_id = slotId;
+
+  return socket_manager_.sendObject("prefill_request", message);
 }
 
-bool InterServerService::forwardTask(const std::string& task_id,
-                                    const std::string& prompt,
-                                    int max_tokens,
-                                    float temperature,
-                                    const std::vector<std::string>& stop_sequences) {
-    if (!enabled_) {
-        return false;
-    }
+bool InterServerService::sendPrefillResult(
+    const PrefillResultMessage& message) {
+  if (!enabled_) {
+    return false;
+  }
 
-    TaskForwardMessage message;
-    message.task_id = task_id;
-    message.prompt = prompt;
-    message.max_tokens = max_tokens;
-    message.temperature = temperature;
-    message.stop_sequences = stop_sequences;
-
-    return socket_manager_.sendObject("task_forward", message);
+  return socket_manager_.sendObject("prefill_result", message);
 }
 
-bool InterServerService::sendTaskResult(const std::string& task_id,
-                                       const std::string& result,
-                                       bool finished,
-                                       int tokens_generated,
-                                       double processing_time_ms) {
-    if (!enabled_) {
-        return false;
-    }
+bool InterServerService::sendHealthCheck(const std::string& serverId,
+                                         double cpuUsage, double memoryUsage,
+                                         int activeTasks) {
+  if (!enabled_) {
+    return false;
+  }
 
-    TaskResultMessage message;
-    message.task_id = task_id;
-    message.generated_text = result;
-    message.finished = finished;
-    message.tokens_generated = tokens_generated;
-    message.processing_time_ms = processing_time_ms;
+  HealthCheckMessage message;
+  message.server_id = serverId;
+  message.cpu_usage = cpuUsage;
+  message.memory_usage = memoryUsage;
+  message.active_tasks = activeTasks;
 
-    return socket_manager_.sendObject("task_result", message);
+  return socket_manager_.sendObject("health_check", message);
 }
 
-bool InterServerService::sendHealthCheck(const std::string& server_id,
-                                        double cpu_usage,
-                                        double memory_usage,
-                                        int active_tasks) {
-    if (!enabled_) {
-        return false;
-    }
-
-    HealthCheckMessage message;
-    message.server_id = server_id;
-    message.cpu_usage = cpu_usage;
-    message.memory_usage = memory_usage;
-    message.active_tasks = active_tasks;
-
-    return socket_manager_.sendObject("health_check", message);
+void InterServerService::onPrefillRequested(PrefillRequestedCallback callback) {
+  prefill_requested_callback_ = callback;
 }
 
-void InterServerService::setTaskForwardCallback(TaskCallback callback) {
-    task_forward_callback_ = callback;
-}
-
-void InterServerService::setTaskResultCallback(TaskCallback callback) {
-    task_result_callback_ = callback;
+void InterServerService::onPrefillComplete(PrefillCompleteCallback callback) {
+  prefill_complete_callback_ = callback;
 }
 
 void InterServerService::setHealthCheckCallback(HealthCallback callback) {
-    health_check_callback_ = callback;
+  health_check_callback_ = callback;
+}
+
+void InterServerService::setConnectionLostCallback(
+    std::function<void()> callback) {
+  socket_manager_.setConnectionLostCallback(std::move(callback));
 }
 
 bool InterServerService::isConnected() const {
-    return enabled_ && socket_manager_.isConnected();
+  return enabled_ && socket_manager_.isConnected();
 }
 
 std::string InterServerService::getStatus() const {
-    if (!enabled_) {
-        return "disabled";
-    }
-    return socket_manager_.getStatus();
+  if (!enabled_) {
+    return "disabled";
+  }
+  return socket_manager_.getStatus();
 }
 
 void InterServerService::setupMessageHandlers() {
-    // Handle incoming task forwards
-    socket_manager_.registerHandler<TaskForwardMessage>("task_forward",
-        [this](const TaskForwardMessage& message) {
-            std::cout << "[InterServerService] Received task forward: " << message.task_id
-                      << " - " << message.prompt.substr(0, 50) << "..." << std::endl;
-            if (task_forward_callback_) {
-                task_forward_callback_(message.task_id, message.prompt, false);
-            }
-        });
+  // Handle incoming prefill requests
+  socket_manager_.registerHandler<PrefillRequestMessage>(
+      "prefill_request", [this](const PrefillRequestMessage& message) {
+        TT_LOG_INFO(
+            "[InterServerService] Received prefill request: {} (tokens: {})",
+            message.task_id, message.token_ids.size());
+        if (prefill_requested_callback_) {
+          prefill_requested_callback_(message);
+        }
+      });
 
-    // Handle incoming task results
-    socket_manager_.registerHandler<TaskResultMessage>("task_result",
-        [this](const TaskResultMessage& message) {
-            std::cout << "[InterServerService] Received task result: " << message.task_id
-                      << " - " << message.generated_text.substr(0, 50) << "..." << std::endl;
-            if (task_result_callback_) {
-                task_result_callback_(message.task_id, message.generated_text, message.finished);
-            }
-        });
+  // Handle incoming prefill results
+  socket_manager_.registerHandler<PrefillResultMessage>(
+      "prefill_result", [this](const PrefillResultMessage& message) {
+        TT_LOG_INFO(
+            "[InterServerService] Received prefill result: {} - text: '{}', "
+            "remaining: {}, token_ids: {}",
+            message.task_id, message.generated_text.substr(0, 50),
+            message.remaining_tokens.has_value()
+                ? std::to_string(message.remaining_tokens.value())
+                : "none",
+            message.token_ids.size());
+        if (prefill_complete_callback_) {
+          prefill_complete_callback_(message);
+        }
+      });
 
-    // Handle incoming health checks
-    socket_manager_.registerHandler<HealthCheckMessage>("health_check",
-        [this](const HealthCheckMessage& message) {
-            std::cout << "[InterServerService] Received health check from: " << message.server_id
-                      << " (CPU: " << message.cpu_usage << "%, Memory: " << message.memory_usage
-                      << "%, Tasks: " << message.active_tasks << ")" << std::endl;
-            if (health_check_callback_) {
-                health_check_callback_(message.server_id, message.cpu_usage,
-                                     message.memory_usage, message.active_tasks);
-            }
-        });
+  // Handle incoming health checks
+  socket_manager_.registerHandler<HealthCheckMessage>(
+      "health_check", [this](const HealthCheckMessage& message) {
+        TT_LOG_DEBUG(
+            "[InterServerService] Received health check from: {} (CPU: {}%, "
+            "Memory: {}%, Tasks: {})",
+            message.server_id, message.cpu_usage, message.memory_usage,
+            message.active_tasks);
+        if (health_check_callback_) {
+          health_check_callback_(message.server_id, message.cpu_usage,
+                                 message.memory_usage, message.active_tasks);
+        }
+      });
 }
 
-} // namespace tt::sockets
+}  // namespace tt::sockets

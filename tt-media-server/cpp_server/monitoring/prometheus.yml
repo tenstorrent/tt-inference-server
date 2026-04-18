@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: "tt_media_server"
+    # TARGET is substituted at container startup by docker-compose (envsubst).
+    # Set SERVER_TARGET=<container-name>:<port> when running docker compose.
+    static_configs:
+      - targets:
+          - "__SERVER_TARGET__"
+        labels:
+          instance: "tt_media_server"
+    metrics_path: /metrics
+    scheme: http
+    scrape_timeout: 4s

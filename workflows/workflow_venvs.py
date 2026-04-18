@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 from __future__ import annotations
 
 import logging
@@ -345,7 +345,7 @@ def setup_evals_video(
     )
     setup_succeeded = (
         run_command(
-            command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests datasets open-clip-torch pyjwt==2.7.0 pillow==11.1 imageio imageio-ffmpeg",
+            command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests datasets open-clip-torch==2.26.1 pyjwt==2.7.0 pillow==11.1 imageio imageio-ffmpeg",
             logger=logger,
         )
         == 0
@@ -401,7 +401,7 @@ def setup_evals_run_script(
     )
     setup_succeeded = (
         run_command(
-            command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch pyjwt==2.7.0 pillow==11.1 imageio imageio-ffmpeg",
+            command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests transformers protobuf sentencepiece datasets open-clip-torch==2.26.1 pyjwt==2.7.0 pillow==11.1 imageio imageio-ffmpeg",
             logger=logger,
         )
         == 0
@@ -442,7 +442,7 @@ def setup_benchmarks_run_script(
     )
     setup_succeeded = (
         run_command(
-            command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets open-clip-torch pyjwt==2.7.0 pillow==11.1",
+            command=f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} requests sentencepiece protobuf transformers datasets open-clip-torch==2.26.1 pyjwt==2.7.0 pillow==11.1",
             logger=logger,
         )
         == 0

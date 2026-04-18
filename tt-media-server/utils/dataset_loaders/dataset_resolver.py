@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from config.constants import DatasetLoaders
 from utils.dataset_loaders.base_dataset import BaseDataset
@@ -12,6 +12,12 @@ AVAILABLE_DATASET_LOADERS = {
             "utils.dataset_loaders.sst2.sst2_dataset",
             fromlist=["SSTDataset"],
         ).SSTDataset(model_name, max_sequence_length, split, collate_fn)
+    ),
+    DatasetLoaders.ALPACA: lambda model_name, max_sequence_length, split, collate_fn: (
+        __import__(
+            "utils.dataset_loaders.alpaca.alpaca_dataset",
+            fromlist=["AlpacaDataset"],
+        ).AlpacaDataset(model_name, max_sequence_length, split, collate_fn)
     ),
 }
 

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import json
 import logging
@@ -235,11 +235,11 @@ class CnnClientStrategy(BaseMediaStrategy):
                 }
         """
         # Lazy import to avoid loading 'datasets' library at module import time
-        from tests.server_tests.test_cases.vision_evals_test import (
+        from server_tests.test_cases.vision_evals_test import (
             VisionEvalsTest,
             VisionEvalsTestRequest,
         )
-        from tests.server_tests.test_classes import TestConfig
+        from server_tests.test_classes import TestConfig
 
         logger.info("Running mobilenetv2 eval.")
 

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
 from contextlib import asynccontextmanager
@@ -23,8 +23,8 @@ env = "development"
 async def lifespan(app: FastAPI):
     service_resolver().start_workers()
     yield
-    service_resolver().stop_workers()
     await get_job_manager().shutdown()
+    service_resolver().stop_workers()
 
 
 app = FastAPI(

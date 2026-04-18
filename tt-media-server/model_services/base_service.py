@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 from abc import ABC
@@ -190,6 +190,10 @@ class BaseService(ABC):
                     # Wait only when queue is empty
                     chunk = await asyncio.wait_for(queue.get(), timeout=dynamic_timeout)
 
+                # Propagate worker errors to the endpoint layer
+                if isinstance(chunk, Exception):
+                    raise chunk
+
                 # Type-based dispatch (faster than isinstance)
                 chunk_type = chunk.get("type")
 
@@ -211,11 +215,6 @@ class BaseService(ABC):
         except asyncio.TimeoutError:
             self.logger.error(
                 f"Streaming timed out chunks for task {request._task_id} after {dynamic_timeout}s"
-            )
-            raise
-        except Exception as e:
-            self.logger.error(
-                f"Model-level streaming failed for task {request._task_id}: {e}"
             )
             raise
         finally:

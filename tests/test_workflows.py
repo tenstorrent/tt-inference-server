@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import importlib
 import json
 import os
 import tempfile
@@ -13,11 +14,13 @@ from unittest.mock import mock_open, patch
 import pytest
 
 from run import main
+from server_tests.test_config import TEST_CONFIGS
 from workflows.model_spec import (
     MODEL_SPECS,
     get_model_id,
 )
-from workflows.run_workflows import run_workflows
+from workflows.run_workflows import WorkflowResult, run_workflows
+from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import HostSetupManager
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -166,40 +169,49 @@ class TestWorkflowExecution:
 
     def test_release_workflow_sequence(self):
         """Test release workflow sequence logic."""
-        args = Namespace(
-            model="Llama-3.1-8B-Instruct",
-            impl="tt-transformers",
-            device="n150",
-            workflow="release",
-            run_id="test",
-            disable_trace_capture=False,
-        )
+        configured_model_name = next(iter(TEST_CONFIGS))
         model_spec = Namespace(
-            cli_args=args,
-            model_name="meta-llama/Llama-3.1-8B-Instruct",  # Match TEST_CONFIGS key format (no HF prefix)
+            model_name=configured_model_name,
+        )
+        runtime_config = RuntimeConfig(
+            model=configured_model_name,
+            workflow="release",
+            device="n150",
+            impl="tt-transformers",
+            disable_trace_capture=False,
         )
 
         # Track workflow calls in order
         workflow_calls = []
 
-        def mock_run_single(model_spec_arg, json_fpath):
-            # Capture workflow name at time of call
-            workflow_calls.append(model_spec_arg.cli_args.workflow)
-            return 0
+        def mock_run_single(model_spec_arg, runtime_config_arg, json_fpath):
+            workflow_type = WorkflowType.from_string(runtime_config_arg.workflow)
+            workflow_calls.append(workflow_type.name)
+            return WorkflowResult(
+                workflow_name=workflow_type.name.lower(),
+                return_code=len(workflow_calls) - 1,
+            )
 
-        # Mock run_single_workflow to return success codes
+        # Mock run_single_workflow to return ordered named results
         with patch(
             "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
         ) as mock_run_single:
-            return_codes = run_workflows(model_spec, "test_json_path.json")
+            workflow_results = run_workflows(
+                model_spec, runtime_config, "test_json_path.json"
+            )
 
-            # Verify all expected workflows were called
-            assert len(return_codes) == 4  # benchmarks, evals, reports, spec_tests
-            assert all(code == 0 for code in return_codes)
-            assert mock_run_single.call_count == 4
+            expected_results = [
+                WorkflowResult(workflow_name="evals", return_code=0),
+                WorkflowResult(workflow_name="benchmarks", return_code=1),
+                WorkflowResult(workflow_name="spec_tests", return_code=2),
+                WorkflowResult(workflow_name="tests", return_code=3),
+                WorkflowResult(workflow_name="reports", return_code=4),
+            ]
 
-            # The order should be BENCHMARKS, EVALS, REPORTS
-            expected_order = ["EVALS", "BENCHMARKS", "SPEC_TESTS", "REPORTS"]
+            assert workflow_results == expected_results
+            assert mock_run_single.call_count == 5
+
+            expected_order = ["EVALS", "BENCHMARKS", "SPEC_TESTS", "TESTS", "REPORTS"]
             assert workflow_calls == expected_order, (
                 f"Expected {expected_order}, got {workflow_calls}"
             )
@@ -208,6 +220,78 @@ class TestWorkflowExecution:
             # Note: The args object is modified in place, so we rely on the implementation details
             # First workflow should start without trace capture disabled
             # Subsequent workflows should have trace capture disabled
+
+    def test_release_workflow_omits_tests_when_unconfigured(self):
+        """Test release skips the pytest workflow for models without test config."""
+        model_spec = Namespace(
+            model_name="missing-model",
+        )
+        runtime_config = RuntimeConfig(
+            model="MissingModel",
+            workflow="release",
+            device="n150",
+            impl="tt-transformers",
+            disable_trace_capture=False,
+        )
+        workflow_calls = []
+
+        def mock_run_single(model_spec_arg, runtime_config_arg, json_fpath):
+            workflow_type = WorkflowType.from_string(runtime_config_arg.workflow)
+            workflow_calls.append(workflow_type.name)
+            return WorkflowResult(
+                workflow_name=workflow_type.name.lower(),
+                return_code=len(workflow_calls) - 1,
+            )
+
+        with patch(
+            "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
+        ):
+            workflow_results = run_workflows(
+                model_spec, runtime_config, "test_json_path.json"
+            )
+
+        assert workflow_calls == ["EVALS", "BENCHMARKS", "SPEC_TESTS", "REPORTS"]
+        assert workflow_results == [
+            WorkflowResult(workflow_name="evals", return_code=0),
+            WorkflowResult(workflow_name="benchmarks", return_code=1),
+            WorkflowResult(workflow_name="spec_tests", return_code=2),
+            WorkflowResult(workflow_name="reports", return_code=3),
+        ]
+
+    def test_non_release_workflow_includes_reports_result(self):
+        """Test non-release workflows preserve result order and append reports."""
+        model_spec = Namespace(
+            model_name="meta-llama/Llama-3.1-8B-Instruct",
+        )
+        runtime_config = RuntimeConfig(
+            model="Llama-3.1-8B-Instruct",
+            workflow="benchmarks",
+            device="n150",
+            impl="tt-transformers",
+            disable_trace_capture=False,
+        )
+        workflow_calls = []
+
+        def mock_run_single(model_spec_arg, runtime_config_arg, json_fpath):
+            workflow_type = WorkflowType.from_string(runtime_config_arg.workflow)
+            workflow_calls.append(workflow_type.name)
+            return WorkflowResult(
+                workflow_name=workflow_type.name.lower(),
+                return_code=len(workflow_calls),
+            )
+
+        with patch(
+            "workflows.run_workflows.run_single_workflow", side_effect=mock_run_single
+        ):
+            workflow_results = run_workflows(
+                model_spec, runtime_config, "test_json_path.json"
+            )
+
+        assert workflow_calls == ["BENCHMARKS", "REPORTS"]
+        assert workflow_results == [
+            WorkflowResult(workflow_name="benchmarks", return_code=1),
+            WorkflowResult(workflow_name="reports", return_code=2),
+        ]
 
 
 class TestHostSetupIntegration:
@@ -225,7 +309,6 @@ class TestHostSetupIntegration:
         env_vars = {
             "HF_TOKEN": "hf_test_token_123456",
             "JWT_SECRET": "test_jwt_secret_123",
-            "PERSISTENT_VOLUME_ROOT": str(temp_dir / "persistent_volume"),
             "HF_HOME": str(temp_dir / "hf_home"),
             "SERVICE_PORT": "8000",
         }
@@ -283,14 +366,71 @@ class TestHostSetupIntegration:
         with patch("builtins.open", mock_open(read_data=mock_meminfo)) as mock_file:
             yield mock_file
 
-    def test_setup_host_huggingface_source(
-        self, temp_dir, mock_env_vars, mock_system_calls, mock_ram_check
-    ):
-        """Test host setup with HuggingFace model source."""
+    def test_setup_config_default_mode(self):
+        """Test SetupConfig in default Docker volume mode (no host_volume, no host_hf_cache)."""
         model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
         model_spec = MODEL_SPECS[model_id]
 
-        # Create setup manager
+        manager = HostSetupManager(
+            model_spec=model_spec,
+            automatic=True,
+            jwt_secret="test_jwt_secret",
+            hf_token="hf_test_token_123456",
+        )
+        config = manager.setup_config
+
+        assert config.docker_volume_name.startswith("volume_id_")
+        assert config.host_model_volume_root is None
+        assert config.host_model_weights_mount_dir is None
+        assert config.container_model_weights_path == (
+            config.cache_root / "weights" / model_spec.model_name
+        )
+
+    def test_setup_config_host_volume_mode(self, temp_dir):
+        """Test SetupConfig with --host-volume."""
+        model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+        model_spec = MODEL_SPECS[model_id]
+
+        host_volume = str(temp_dir / "persistent_volume")
+        manager = HostSetupManager(
+            model_spec=model_spec,
+            automatic=True,
+            jwt_secret="test_jwt_secret",
+            hf_token="hf_test_token_123456",
+            host_volume=host_volume,
+        )
+        config = manager.setup_config
+
+        assert config.host_model_volume_root is not None
+        assert config.persistent_volume_root.resolve() == Path(host_volume).resolve()
+        assert config.host_tt_metal_cache_dir is not None
+
+    def test_setup_config_host_hf_cache_mode(self, temp_dir):
+        """Test SetupConfig with --host-hf-cache."""
+        model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+        model_spec = MODEL_SPECS[model_id]
+
+        hf_cache = str(temp_dir / "hf_home")
+        manager = HostSetupManager(
+            model_spec=model_spec,
+            automatic=True,
+            jwt_secret="test_jwt_secret",
+            hf_token="hf_test_token_123456",
+            host_hf_cache=hf_cache,
+        )
+        config = manager.setup_config
+
+        assert Path(config.host_hf_cache).resolve() == Path(hf_cache).resolve()
+        assert config.container_readonly_model_weights_dir is not None
+        assert config.container_model_weights_mount_dir is not None
+
+    def test_setup_host_default_mode_skips_download(
+        self, temp_dir, mock_env_vars, mock_system_calls, mock_ram_check
+    ):
+        """Test default Docker volume mode: check_setup returns True, no host download."""
+        model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+        model_spec = MODEL_SPECS[model_id]
+
         manager = HostSetupManager(
             model_spec=model_spec,
             automatic=True,
@@ -298,20 +438,34 @@ class TestHostSetupIntegration:
             hf_token="hf_test_token_123456",
         )
 
-        # Mock the setup flow properly
-        with patch.object(manager, "check_setup", return_value=False), patch.object(
-            manager, "check_model_weights_dir", return_value=True
-        ), patch.object(manager, "setup_weights_huggingface") as mock_setup_weights:
-            # Run setup
-            manager.run_setup()
+        # In default mode, check_setup should return True (container handles download)
+        assert manager.check_setup() is True
 
-            # Verify that HF environment was set up
-            assert str(manager.setup_config.host_hf_home) == str(temp_dir / "hf_home")
+    def test_setup_host_host_volume_mode(
+        self, temp_dir, mock_env_vars, mock_system_calls, mock_ram_check
+    ):
+        """Test host setup with --host-volume."""
+        model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+        model_spec = MODEL_SPECS[model_id]
+
+        host_volume = str(temp_dir / "persistent_volume")
+        manager = HostSetupManager(
+            model_spec=model_spec,
+            automatic=True,
+            jwt_secret="test_jwt_secret",
+            hf_token="hf_test_token_123456",
+            host_volume=host_volume,
+        )
+
+        with patch.object(manager, "check_setup", return_value=False), patch.object(
+            manager, "setup_weights_huggingface"
+        ) as mock_setup_weights:
+            manager.run_setup()
             assert mock_setup_weights.called
 
-        # Verify that setup completed successfully
         assert manager.setup_config.model_source == ModelSource.HUGGINGFACE.value
-        assert manager.setup_config.persistent_volume_root.exists()
+        assert manager.setup_config.host_model_volume_root is not None
+        assert manager.setup_config.host_model_volume_root.exists()
 
     def test_error_handling_insufficient_resources(
         self, temp_dir, mock_env_vars, mock_system_calls, mock_ram_check
@@ -327,11 +481,14 @@ class TestHostSetupIntegration:
         model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
         model_spec = MODEL_SPECS[model_id]
 
+        host_volume = str(temp_dir / "persistent_volume")
+        (temp_dir / "persistent_volume").mkdir(parents=True, exist_ok=True)
         manager = HostSetupManager(
             model_spec=model_spec,
             automatic=True,
             jwt_secret="test_jwt_secret",
             hf_token="hf_test_token_123456",
+            host_volume=host_volume,
         )
 
         # Should raise assertion error due to insufficient disk space
@@ -379,7 +536,6 @@ class TestMainWorkflowIntegration:
         env_vars = {
             "HF_TOKEN": "hf_test_token_123456",
             "JWT_SECRET": "test_jwt_secret_123",
-            "PERSISTENT_VOLUME_ROOT": str(temp_dir / "persistent_volume"),
             "HF_HOME": str(temp_dir / "hf_home"),
             "SERVICE_PORT": "8000",
             "AUTOMATIC_HOST_SETUP": "1",
@@ -408,21 +564,199 @@ class TestMainWorkflowIntegration:
         ]
 
         with patch("sys.argv", test_args), patch(
-            "run.run_workflows", return_value=[0]
+            "run.run_workflows",
+            return_value=[WorkflowResult(workflow_name="benchmarks", return_code=0)],
         ) as mock_run_workflows, patch(
-            "workflows.run_workflows.run_single_workflow"
-        ) as mock_run_single, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
-            mock_run_workflows.return_value = [0]
-            mock_run_single.return_value = 0
-
             # Run main
             result = main()
 
             # Verify workflow ran without setup_host
             assert mock_run_workflows.called
             assert result == 0
+
+    def test_main_returns_one_when_any_workflow_fails(
+        self, temp_dir, mock_env_vars, mock_version_file
+    ):
+        """Test main run.py returns failure when any workflow result is non-zero."""
+        test_args = [
+            "run.py",
+            "--model",
+            "Llama-3.1-8B-Instruct",
+            "--device",
+            "n150",
+            "--workflow",
+            "benchmarks",
+        ]
+
+        with patch("sys.argv", test_args), patch(
+            "run.run_workflows",
+            return_value=[
+                WorkflowResult(workflow_name="benchmarks", return_code=1),
+                WorkflowResult(workflow_name="reports", return_code=0),
+            ],
+        ) as mock_run_workflows, patch(
+            "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
+        ), patch("workflows.log_setup.setup_run_logger"):
+            result = main()
+
+            assert mock_run_workflows.called
+            assert result == 1
+
+    def test_main_release_raises_when_validate_setup_fails(
+        self, temp_dir, mock_env_vars, mock_version_file
+    ):
+        """Test release propagates setup validation exceptions."""
+        test_args = [
+            "run.py",
+            "--model",
+            "Llama-3.1-8B-Instruct",
+            "--device",
+            "n150",
+            "--workflow",
+            "release",
+        ]
+
+        with patch("sys.argv", test_args), patch(
+            "run.validate_setup",
+            side_effect=RuntimeError("validation failed"),
+        ), patch("run.run_workflows") as mock_run_workflows, patch(
+            "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
+        ), patch("workflows.log_setup.setup_run_logger"):
+            with pytest.raises(RuntimeError, match="validation failed"):
+                main()
+
+        assert not mock_run_workflows.called
+
+    def test_main_release_raises_when_server_setup_fails(
+        self, temp_dir, mock_env_vars, mock_version_file
+    ):
+        """Test release propagates host setup exceptions."""
+        test_args = [
+            "run.py",
+            "--model",
+            "Llama-3.1-8B-Instruct",
+            "--device",
+            "n150",
+            "--workflow",
+            "release",
+            "--docker-server",
+        ]
+
+        with patch("sys.argv", test_args), patch("run.validate_setup"), patch(
+            "run.setup_host",
+            side_effect=RuntimeError("host setup failed"),
+        ), patch("run.run_workflows") as mock_run_workflows, patch(
+            "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
+        ), patch("workflows.log_setup.setup_run_logger"):
+            with pytest.raises(RuntimeError, match="host setup failed"):
+                main()
+
+        assert not mock_run_workflows.called
+
+    def test_main_release_raises_when_server_start_fails(
+        self, temp_dir, mock_env_vars, mock_version_file
+    ):
+        """Test release propagates inference server startup exceptions."""
+        test_args = [
+            "run.py",
+            "--model",
+            "Llama-3.1-8B-Instruct",
+            "--device",
+            "n150",
+            "--workflow",
+            "release",
+            "--docker-server",
+        ]
+
+        with patch("sys.argv", test_args), patch("run.validate_setup"), patch(
+            "run.setup_host",
+            return_value=Namespace(),
+        ), patch(
+            "run.run_docker_server",
+            side_effect=RuntimeError("docker start failed"),
+        ), patch("run.run_workflows") as mock_run_workflows, patch(
+            "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
+        ), patch("workflows.log_setup.setup_run_logger"):
+            with pytest.raises(RuntimeError, match="docker start failed"):
+                main()
+
+        assert not mock_run_workflows.called
+
+    def test_main_release_raises_when_run_workflows_raises(
+        self, temp_dir, mock_env_vars, mock_version_file
+    ):
+        """Test release propagates workflow orchestration exceptions."""
+        test_args = [
+            "run.py",
+            "--model",
+            "Llama-3.1-8B-Instruct",
+            "--device",
+            "n150",
+            "--workflow",
+            "release",
+        ]
+
+        with patch("sys.argv", test_args), patch(
+            "run.run_workflows",
+            side_effect=RuntimeError("venv setup failed"),
+        ), patch(
+            "run.validate_setup",
+        ), patch(
+            "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
+        ), patch("workflows.log_setup.setup_run_logger"):
+            with pytest.raises(RuntimeError, match="venv setup failed"):
+                main()
+
+    def test_main_release_ignores_docker_server_status_after_workflows(
+        self, temp_dir, mock_env_vars, mock_version_file
+    ):
+        """Test release does not perform a Docker status post-check."""
+        test_args = [
+            "run.py",
+            "--model",
+            "Llama-3.1-8B-Instruct",
+            "--device",
+            "n150",
+            "--workflow",
+            "release",
+            "--docker-server",
+        ]
+
+        mock_server_handle = {
+            "container_name": "tt-inference-server-test",
+            "container_id": "abc123",
+            "docker_log_file_path": str(temp_dir / "docker.log"),
+            "service_port": "8000",
+        }
+
+        with patch("sys.argv", test_args), patch(
+            "run.validate_setup",
+        ), patch(
+            "run.setup_host",
+            return_value=Namespace(),
+        ), patch(
+            "run.run_docker_server",
+            return_value=mock_server_handle,
+        ), patch(
+            "run.run_workflows",
+            return_value=[
+                WorkflowResult(workflow_name="evals", return_code=0),
+                WorkflowResult(workflow_name="benchmarks", return_code=0),
+                WorkflowResult(workflow_name="spec_tests", return_code=0),
+                WorkflowResult(workflow_name="tests", return_code=0),
+                WorkflowResult(workflow_name="reports", return_code=0),
+            ],
+        ), patch("subprocess.run") as mock_subprocess_run, patch(
+            "run.get_current_commit_sha", return_value="deadbeefdead"
+        ), patch(
+            "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
+        ), patch("workflows.log_setup.setup_run_logger"):
+            result = main()
+
+        assert result == 0
+        mock_subprocess_run.assert_not_called()
 
     def test_error_handling_invalid_model(self, mock_env_vars):
         """Test error handling for invalid model configuration."""
@@ -439,6 +773,92 @@ class TestMainWorkflowIntegration:
         with patch("sys.argv", test_args):
             with pytest.raises(SystemExit):  # argparse should exit on invalid choice
                 main()
+
+
+class TestSpecTestsBehavior:
+    """Test spec-tests return codes for missing config and interruption."""
+
+    def test_spec_tests_no_matching_suites_returns_one(self):
+        spec_tests_run = importlib.import_module("server_tests.run_spec_tests")
+        args = Namespace(
+            runtime_model_spec_json="runtime.json",
+            model="missing-model",
+            device="n150",
+            model_category=None,
+            markers=None,
+            match_all_markers=False,
+            exclude_markers=None,
+            test_name=None,
+            suite_category=None,
+            skip_prerequisites=False,
+            list_markers=False,
+            list_tests=False,
+            output_path=None,
+            hf_token="",
+        )
+
+        with patch.object(spec_tests_run, "_configure_logging"), patch.object(
+            spec_tests_run, "parse_args", return_value=args
+        ), patch.object(spec_tests_run, "_apply_filters", return_value=[]):
+            result = spec_tests_run.main()
+
+        assert result == 1
+
+    def test_spec_tests_keyboard_interrupt_returns_130(self):
+        spec_tests_run = importlib.import_module("server_tests.run_spec_tests")
+        args = Namespace(
+            runtime_model_spec_json="runtime.json",
+            model="stable-diffusion-xl-base-1.0",
+            device="n150",
+            model_category=None,
+            markers=None,
+            match_all_markers=False,
+            exclude_markers=None,
+            test_name=None,
+            suite_category=None,
+            skip_prerequisites=False,
+            list_markers=False,
+            list_tests=False,
+            output_path=None,
+            hf_token="",
+        )
+
+        fake_suite = {
+            "id": "fake",
+            "weights": ["fake"],
+            "device": "n150",
+            "test_cases": [
+                {
+                    "name": "FakeCase",
+                    "module": "fake_server_tests_module",
+                    "test_config": {},
+                    "targets": {},
+                    "markers": [],
+                    "description": "",
+                    "enabled": True,
+                }
+            ],
+        }
+
+        class FakeCase:
+            def __init__(self, config, targets):
+                self.config = config
+                self.targets = targets
+                self.description = ""
+
+        fake_module = Namespace(FakeCase=FakeCase)
+
+        with patch.object(spec_tests_run, "_configure_logging"), patch.object(
+            spec_tests_run, "parse_args", return_value=args
+        ), patch.object(
+            spec_tests_run, "_apply_filters", return_value=[fake_suite]
+        ), patch.object(
+            spec_tests_run.importlib, "import_module", return_value=fake_module
+        ), patch.object(spec_tests_run, "ServerRunner") as mock_runner:
+            mock_runner.return_value.run.side_effect = KeyboardInterrupt
+            result = spec_tests_run.main()
+
+        assert result == 130
 
 
 if __name__ == "__main__":

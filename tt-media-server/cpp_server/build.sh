@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 set -e
 
@@ -11,8 +11,12 @@ BUILD_TYPE="Release"
 # Parse arguments
 SANITIZE_THREAD="OFF"
 SANITIZE_ADDRESS="OFF"
+ENABLE_TRACY="OFF"
+ENABLE_BLAZE="OFF"
+CLANG_TIDY="OFF"
 TOOLCHAIN_PATH_ARG=""
 CXX_COMPILER_PATH=""
+KAFKA_ENABLED="OFF"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -27,6 +31,22 @@ while [[ $# -gt 0 ]]; do
         --asan)
             SANITIZE_ADDRESS="ON"
             BUILD_TYPE="Debug"
+            shift
+            ;;
+        --tracy)
+            ENABLE_TRACY="ON"
+            shift
+            ;;
+        --blaze)
+            ENABLE_BLAZE="ON"
+            shift
+            ;;
+        --clang-tidy)
+            CLANG_TIDY="ON"
+            shift
+            ;;
+        --kafka)
+            KAFKA_ENABLED="ON"
             shift
             ;;
         --toolchain-path)
@@ -44,6 +64,10 @@ while [[ $# -gt 0 ]]; do
             echo "  --debug              Build in Debug mode (default: Release)"
             echo "  --tsan               Build with ThreadSanitizer for data-race detection"
             echo "  --asan               Build with AddressSanitizer + LeakSanitizer for memory/leak detection"
+            echo "  --tracy              Build with Tracy profiling instrumentation"
+            echo "  --blaze              Build with tt-blaze pipeline_manager support"
+            echo "  --clang-tidy          Run clang-tidy during build (lint = build, same as tt-metal)"
+            echo "  --kafka              Enable Kafka (CMake KAFKA_ENABLED=ON; needs librdkafka-dev)"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
             echo "  --cxx-compiler-path P  Set C++ compiler (overrides toolchain)"
             echo "  --help               Show this help message"
@@ -67,6 +91,13 @@ echo "  Building TT Media Server (C++ Drogon)"
 echo "  Build type: ${BUILD_TYPE}"
 echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
 echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
+echo "  Tracy: ${ENABLE_TRACY}"
+echo "  Blaze: ${ENABLE_BLAZE}"
+echo "  Clang-Tidy: ${CLANG_TIDY}"
+echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
+echo "  Tracy profiling: ${ENABLE_TRACY}"
+echo "  Clang-tidy: ${CLANG_TIDY}"
+echo "  Kafka (KAFKA_ENABLED): ${KAFKA_ENABLED}"
 echo "=============================================="
 
 # Ensure cargo (Rust) is in PATH for tokenizers-cpp
@@ -129,38 +160,85 @@ if [ "${DROGON_FOUND}" -eq 0 ]; then
     fi
 fi
 
-# Download tokenizer and tokenizer_config if not present
+# ---------------------------------------------------------------------------
+# Pre-fetch tokenizer files for all supported models
+# ---------------------------------------------------------------------------
 TOKENIZER_DIR="${SCRIPT_DIR}/tokenizers"
-TOKENIZER_JSON="${TOKENIZER_DIR}/tokenizer.json"
-TOKENIZER_CONFIG_JSON="${TOKENIZER_DIR}/tokenizer_config.json"
-HF_DEEPSEEK_REPO="https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/main"
-
 mkdir -p "${TOKENIZER_DIR}"
 
-if [ ! -f "${TOKENIZER_JSON}" ]; then
-    echo ""
-    echo "Tokenizer not found. Downloading DeepSeek V3 tokenizer..."
-    if wget -q -O "${TOKENIZER_JSON}" "${HF_DEEPSEEK_REPO}/tokenizer.json"; then
-        echo "Tokenizer downloaded successfully to ${TOKENIZER_JSON}"
-    else
-        echo "Warning: Failed to download tokenizer. You can manually download it later:"
-        echo "  mkdir -p cpp_server/tokenizers"
-        echo "  wget -O cpp_server/tokenizers/tokenizer.json ${HF_DEEPSEEK_REPO}/tokenizer.json"
-    fi
-    echo ""
+HF_TOKEN_RESOLVED="${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}"
+if [ -z "${HF_TOKEN_RESOLVED}" ] && [ -f "${HOME}/.cache/huggingface/token" ]; then
+    HF_TOKEN_RESOLVED=$(cat "${HOME}/.cache/huggingface/token")
 fi
 
-if [ ! -f "${TOKENIZER_CONFIG_JSON}" ]; then
-    echo ""
-    echo "Tokenizer config not found. Downloading tokenizer_config.json..."
-    if wget -q -O "${TOKENIZER_CONFIG_JSON}" "${HF_DEEPSEEK_REPO}/tokenizer_config.json"; then
-        echo "Tokenizer config downloaded successfully to ${TOKENIZER_CONFIG_JSON}"
-    else
-        echo "Warning: Failed to download tokenizer_config.json. Chat template may use defaults."
-        echo "  wget -O cpp_server/tokenizers/tokenizer_config.json ${HF_DEEPSEEK_REPO}/tokenizer_config.json"
+download_tokenizer() {
+    local model_name="$1"
+    local hf_repo="$2"
+    local requires_auth="$3"
+
+    local model_dir="${TOKENIZER_DIR}/${model_name}"
+    local tok_json="${model_dir}/tokenizer.json"
+    local tok_config="${model_dir}/tokenizer_config.json"
+
+    # Skip download if tokenizer files already exist (faster rebuilds, no HF_TOKEN needed)
+    if [ -f "${tok_json}" ] && [ -f "${tok_config}" ]; then
+        echo "  Using existing ${model_name} tokenizer."
+        return 0
     fi
-    echo ""
-fi
+
+    if [ "${requires_auth}" = "true" ] && [ -z "${HF_TOKEN_RESOLVED}" ]; then
+        echo "  Skipping ${model_name} (gated model — set HF_TOKEN to download)."
+        return 0
+    fi
+
+    local wget_args=()
+    if [ "${requires_auth}" = "true" ] && [ -n "${HF_TOKEN_RESOLVED}" ]; then
+        wget_args=(--header "Authorization: Bearer ${HF_TOKEN_RESOLVED}")
+    fi
+
+    mkdir -p "${model_dir}"
+
+    echo "Downloading ${model_name} tokenizer..."
+    if wget -q "${wget_args[@]}" -O "${tok_json}" "${hf_repo}/tokenizer.json" 2>&1; then
+        echo "  tokenizer.json downloaded to ${tok_json}"
+    else
+        rm -f "${tok_json}"
+        echo "  ERROR: Failed to download ${model_name} tokenizer.json."
+        echo "  URL: ${hf_repo}/tokenizer.json"
+        if [ "${requires_auth}" = "true" ]; then
+            echo "  This is a gated model. Make sure you have:"
+            echo "    1. A valid HF_TOKEN set in your environment"
+            echo "    2. Accepted the model license at https://huggingface.co/${model_name}"
+        fi
+        echo "  Debug: wget ${wget_args[*]} -S -O /dev/null ${hf_repo}/tokenizer.json"
+        return 1
+    fi
+
+    if wget -q "${wget_args[@]}" -O "${tok_config}" "${hf_repo}/tokenizer_config.json" 2>&1; then
+        echo "  tokenizer_config.json downloaded to ${tok_config}"
+    else
+        rm -f "${tok_config}"
+        echo "  ERROR: Failed to download ${model_name} tokenizer_config.json."
+        return 1
+    fi
+}
+
+echo ""
+echo "Pre-fetching tokenizer files for supported models..."
+
+# DeepSeek R1-0528 (public, no auth) — required for default build
+download_tokenizer \
+    "deepseek-ai/DeepSeek-R1-0528" \
+    "https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/main" \
+    "false"
+
+# Llama 3.1 8B Instruct (gated, requires HF_TOKEN)
+download_tokenizer \
+    "meta-llama/Llama-3.1-8B-Instruct" \
+    "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/raw/main" \
+    "true"
+
+echo ""
 
 # TT_METAL_HOME: enables Metal C++ API includes and intellisense
 # TT-metal headers use the reflect library which requires Clang (fails with GCC).
@@ -210,9 +288,12 @@ CMAKE_ARGS=(
     -DCMAKE_BUILD_TYPE="${BUILD_TYPE}"
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-    -DLLM_ENGINE_DEBUG_BUILD=OFF
     -DSANITIZE_THREAD="${SANITIZE_THREAD}"
     -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
+    -DENABLE_TRACY="${ENABLE_TRACY}"
+    -DENABLE_BLAZE="${ENABLE_BLAZE}"
+    -DCLANG_TIDY="${CLANG_TIDY}"
+    -DKAFKA_ENABLED="${KAFKA_ENABLED}"
 )
 [ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
 

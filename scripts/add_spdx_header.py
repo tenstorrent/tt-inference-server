@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from pathlib import Path
 from datetime import datetime
@@ -14,7 +14,7 @@ SPDX_HEADER = """# SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © """
 
-SPDX_DATE = str(current_year) + " Tenstorrent AI ULC\n"
+SPDX_DATE = str(current_year) + " Tenstorrent USA, Inc.\n"
 
 
 def add_spdx_header(file_path):
@@ -29,7 +29,7 @@ if __name__ == "__main__":
     # List of directories to process here
     repo_root = Path(__file__).resolve().parent.parent
     directories_to_process = [
-        repo_root / "vllm-tt-metal-llama3",
+        repo_root / "vllm-tt-metal",
         repo_root / "tt-metal-yolov4",
         repo_root / "tests",
         repo_root / "utils",

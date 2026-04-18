@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 """
 Standalone CLI tool for parsing a single workflow_logs_* directory.
@@ -79,7 +79,7 @@ Examples:
     if not parsed_data:
         logger.error(f"Failed to parse workflow logs from: {workflow_logs_path}")
         logger.error(
-            "Please check that the directory exists and contains valid run_specs/ and reports_output/ subdirectories"
+            "Please check that the directory exists and contains valid runtime_model_specs/ (or run_specs/) and reports_output/ subdirectories"
         )
         return 1
 

@@ -28,14 +28,14 @@ Browse models by type:
 
 Browse models by hardware:
 
+- [Dual WH Galaxy](docs/model_support/models_by_hardware.md#dual-wh-galaxy)
+- [Quad WH Galaxy](docs/model_support/models_by_hardware.md#quad-wh-galaxy)
 - [WH Galaxy](docs/model_support/models_by_hardware.md#wh-galaxy)
-- [BH QuietBox GE (2xP300)](docs/model_support/models_by_hardware.md#bh-quietbox-ge-2xp300)
 - [BH LoudBox](docs/model_support/models_by_hardware.md#bh-loudbox)
 - [BH 4xP150](docs/model_support/models_by_hardware.md#bh-4xp150)
-- [BH P300](docs/model_support/models_by_hardware.md#bh-p300)
-- [WH LoudBox/QuietBox](docs/model_support/models_by_hardware.md#wh-loudboxquietbox)
 - [p150](docs/model_support/models_by_hardware.md#p150)
 - [p100](docs/model_support/models_by_hardware.md#p100)
+- [WH LoudBox/QuietBox](docs/model_support/models_by_hardware.md#wh-loudboxquietbox)
 - [n300](docs/model_support/models_by_hardware.md#n300)
 - [n150](docs/model_support/models_by_hardware.md#n150)
 <!-- MODEL_SUPPORT_END -->

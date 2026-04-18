@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
 
@@ -8,7 +8,7 @@ import torch
 from config.constants import SupportedModels
 from diffusers import StableDiffusionXLImg2ImgPipeline
 from domain.image_to_image_request import ImageToImageRequest
-from models.experimental.stable_diffusion_xl_base.tt.tt_sdxl_img2img_pipeline import (
+from models.demos.stable_diffusion_xl_base.tt.tt_sdxl_img2img_pipeline import (
     TtSDXLImg2ImgPipeline,
     TtSDXLImg2ImgPipelineConfig,
 )
