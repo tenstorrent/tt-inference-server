@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+#include "worker/worker_metrics_shm.hpp"
+
 #include <gtest/gtest.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include <string>
-
-#include "worker/worker_metrics_shm.hpp"
 
 namespace {
 
