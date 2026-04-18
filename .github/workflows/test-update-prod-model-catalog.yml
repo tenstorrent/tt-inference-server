@@ -10,7 +10,7 @@ jobs:
     name: Update prod model catalog with dev specification
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -22,3 +22,24 @@ jobs:
 
       - name: Update prod model catalog
         run: python3 scripts/release/update_prod_model_catalog.py
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          if git diff --quiet .github/workflows/models-catalog-prod.json; then
+            echo "No changes to models-catalog-prod.json"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "models-catalog-prod.json was modified"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit updated prod catalog
+        if: steps.check_changes.outputs.changed == 'true'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_user_name: catalog-bot
+          commit_user_email: bot@example.com
+          commit_message: "chore: update models-catalog-prod.json from dev specification"
+          branch: ${{ github.ref_name }}
+          file_pattern: .github/workflows/models-catalog-prod.json
