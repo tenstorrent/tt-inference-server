@@ -1,0 +1,24 @@
+name: Test - udate prod model catalog with dev specification
+
+on:
+  push:
+    branches:
+      - "vcankovic/test-update-prod-model-catalog-with-dev"
+
+jobs:
+  update-prod-model-catalog:
+    name: Update prod model catalog with dev specification
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Update prod model catalog
+        run: python3 scripts/release/update_prod_model_catalog.py
