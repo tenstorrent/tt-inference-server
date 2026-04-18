@@ -24,8 +24,8 @@ import sys
 from pathlib import Path
 
 # Paths are relative to the repository root (where the script is invoked from)
-DEV_CATALOG_PATH = "models-catalog-dev.json"
-PROD_CATALOG_PATH = "models-catalog-prod.json"
+DEV_CATALOG_PATH = ".github/workflows/models-catalog-dev.json"
+PROD_CATALOG_PATH = ".github/workflows/models-catalog-prod.json"
 CI_CONFIG_PATH = ".github/workflows/models-ci-config.json"
 
 
