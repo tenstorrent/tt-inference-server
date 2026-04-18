@@ -19,7 +19,8 @@ SingleProcessWorkerMetrics& SingleProcessWorkerMetrics::instance() {
   return inst;
 }
 
-void SingleProcessWorkerMetrics::initialize(int workerId, MetricsLayout layout) {
+void SingleProcessWorkerMetrics::initialize(int workerId,
+                                            MetricsLayout layout) {
   workerId_ = workerId;
   layout_ = layout;
 

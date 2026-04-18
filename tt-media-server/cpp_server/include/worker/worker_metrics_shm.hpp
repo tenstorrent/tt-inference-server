@@ -83,8 +83,8 @@ class WorkerMetricsShm {
   }
 
   void setLayout(size_t workerId, MetricsLayout layout) {
-    region_->slots[workerId].metrics_layout.store(
-        static_cast<uint8_t>(layout), std::memory_order_release);
+    region_->slots[workerId].metrics_layout.store(static_cast<uint8_t>(layout),
+                                                  std::memory_order_release);
   }
 
   MetricsLayout layout(size_t workerId) const {
@@ -94,8 +94,7 @@ class WorkerMetricsShm {
   }
 
   void bumpGeneration(size_t workerId) {
-    region_->slots[workerId].generation.fetch_add(1,
-                                                  std::memory_order_acq_rel);
+    region_->slots[workerId].generation.fetch_add(1, std::memory_order_acq_rel);
   }
 
   // ----- per-slot scratch accessors ----------------------------------------

@@ -4,7 +4,6 @@
 #include "worker/worker_metrics_aggregator.hpp"
 
 #include <sstream>
-
 #include <vector>
 
 #include "utils/logger.hpp"
@@ -28,9 +27,8 @@ void WorkerMetricsAggregator::initialize(
   layout_tags_verified_ = false;
   registry_ = std::make_shared<prometheus::Registry>();
   initialized_ = true;
-  TT_LOG_INFO(
-      "[WorkerMetricsAggregator] Initialized for {} workers, shm={}",
-      layout_by_worker_.size(), static_cast<const void*>(shm));
+  TT_LOG_INFO("[WorkerMetricsAggregator] Initialized for {} workers, shm={}",
+              layout_by_worker_.size(), static_cast<const void*>(shm));
 }
 
 void WorkerMetricsAggregator::registerRenderer(

@@ -69,8 +69,7 @@ void SpPipelineWorkerMetricsRenderer::render(const WorkerMetricsShm& shm,
   uint64_t stepMs = shm.loadScratch(slot, sp_pipeline::SCRATCH_STEP_EPOCH_MS);
   uint64_t outputMs =
       shm.loadScratch(slot, sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS);
-  uint64_t active =
-      shm.loadScratch(slot, sp_pipeline::SCRATCH_ACTIVE_REQUESTS);
+  uint64_t active = shm.loadScratch(slot, sp_pipeline::SCRATCH_ACTIVE_REQUESTS);
 
   g.alive->Set(is_alive ? 1.0 : 0.0);
   g.step_age->Set(ageSeconds(stepMs, now));

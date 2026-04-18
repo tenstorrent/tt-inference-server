@@ -14,9 +14,9 @@
 namespace tt::worker {
 
 /**
- * Renderer for slots tagged MetricsLayout::SP_PIPELINE_RUNNER (currently produced by
- * SpPipelineRunner / SpPipelineRunnerDemo). Translates the sp_pipeline
- * scratch indices into the externally-visible Prometheus series:
+ * Renderer for slots tagged MetricsLayout::SP_PIPELINE_RUNNER (currently
+ * produced by SpPipelineRunner / SpPipelineRunnerDemo). Translates the
+ * sp_pipeline scratch indices into the externally-visible Prometheus series:
  *   - tt_worker_alive
  *   - tt_worker_heartbeat_age_seconds
  *   - tt_worker_last_output_age_seconds

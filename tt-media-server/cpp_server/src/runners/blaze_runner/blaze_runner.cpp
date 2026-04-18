@@ -206,7 +206,8 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   auto taskId = seq.taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
   if (finished) {
-    tt::worker::SingleProcessWorkerMetrics::instance().decrementActiveRequests();
+    tt::worker::SingleProcessWorkerMetrics::instance()
+        .decrementActiveRequests();
   }
 }
 

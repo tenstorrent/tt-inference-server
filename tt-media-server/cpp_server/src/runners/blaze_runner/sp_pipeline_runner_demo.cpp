@@ -144,7 +144,8 @@ void SpPipelineRunnerDemo::step() {
           static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
     }
 
-    tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
+    tt::worker::SingleProcessWorkerMetrics::instance()
+        .incrementActiveRequests();
     modelRunner->write(
         taskId, seq->getTokenIds(), seq->getSamplingParams().max_tokens.value(),
         sp_pipeline::RequestPhase::PREFILL, seq->getSamplingParams().fast_mode);
@@ -170,7 +171,8 @@ void SpPipelineRunnerDemo::drainDecodeResults() {
 
     if (dr.isError) {
       ipc::pushErrorToken(*resultQueue, dr.taskId);
-      tt::worker::SingleProcessWorkerMetrics::instance().decrementActiveRequests();
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .decrementActiveRequests();
       activeSequences.erase(it);
       --inFlightCount;
       continue;
@@ -189,7 +191,8 @@ void SpPipelineRunnerDemo::drainDecodeResults() {
     ipc::pushToken(*resultQueue, dr.taskId, dr.tokenId, finished);
 
     if (finished) {
-      tt::worker::SingleProcessWorkerMetrics::instance().decrementActiveRequests();
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .decrementActiveRequests();
       activeSequences.erase(it);
       --inFlightCount;
     }
