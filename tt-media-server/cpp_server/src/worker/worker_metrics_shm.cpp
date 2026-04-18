@@ -58,18 +58,18 @@ std::unique_ptr<WorkerMetricsShm> WorkerMetricsShm::create(std::string name,
     return nullptr;
   }
 
-  constexpr size_t REGION_SIZE = sizeof(Region);
+  constexpr size_t regionSize = sizeof(Region);
 
-  if (ftruncate(fd, static_cast<off_t>(REGION_SIZE)) != 0) {
+  if (ftruncate(fd, static_cast<off_t>(regionSize)) != 0) {
     TT_LOG_ERROR("[WorkerMetricsShm] ftruncate({}, {}) failed: {}", name,
-                 REGION_SIZE, strerror(errno));
+                 regionSize, strerror(errno));
     close(fd);
     shm_unlink(name.c_str());
     return nullptr;
   }
 
   void* mapped =
-      mmap(nullptr, REGION_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+      mmap(nullptr, regionSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   close(fd);
   if (mapped == MAP_FAILED) {
     TT_LOG_ERROR("[WorkerMetricsShm] mmap({}) failed: {}", name,
@@ -78,7 +78,7 @@ std::unique_ptr<WorkerMetricsShm> WorkerMetricsShm::create(std::string name,
     return nullptr;
   }
 
-  std::memset(mapped, 0, REGION_SIZE);
+  std::memset(mapped, 0, regionSize);
   auto* region = static_cast<Region*>(mapped);
   region->magic.store(WORKER_METRICS_SHM_MAGIC, std::memory_order_release);
   region->num_workers.store(static_cast<uint32_t>(numWorkers),
@@ -86,7 +86,7 @@ std::unique_ptr<WorkerMetricsShm> WorkerMetricsShm::create(std::string name,
 
   TT_LOG_INFO(
       "[WorkerMetricsShm] Created shared region '{}' ({} bytes, {} slots)",
-      name, REGION_SIZE, numWorkers);
+      name, regionSize, numWorkers);
 
   return std::unique_ptr<WorkerMetricsShm>(
       new WorkerMetricsShm(region, std::move(name), /*owns=*/true));
@@ -100,9 +100,9 @@ std::unique_ptr<WorkerMetricsShm> WorkerMetricsShm::open(std::string name) {
     return nullptr;
   }
 
-  constexpr size_t REGION_SIZE = sizeof(Region);
+  constexpr size_t regionSize = sizeof(Region);
   void* mapped =
-      mmap(nullptr, REGION_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+      mmap(nullptr, regionSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   close(fd);
   if (mapped == MAP_FAILED) {
     TT_LOG_ERROR("[WorkerMetricsShm] mmap({}) failed: {}", name,
@@ -117,7 +117,7 @@ std::unique_ptr<WorkerMetricsShm> WorkerMetricsShm::open(std::string name) {
         "[WorkerMetricsShm] Region '{}' magic mismatch: 0x{:x} (expected "
         "0x{:x})",
         name, magic, WORKER_METRICS_SHM_MAGIC);
-    munmap(mapped, REGION_SIZE);
+    munmap(mapped, regionSize);
     return nullptr;
   }
 
