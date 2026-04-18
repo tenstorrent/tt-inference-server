@@ -2386,7 +2386,6 @@ vlm_templates = [
                 override_tt_config={
                     "fabric_config": "FABRIC_1D",
                     "trace_region_size": 60000000,
-                    "trace_mode": "none",
                 },
             ),
 
