@@ -34,10 +34,13 @@ def load_json(path: str) -> dict:
         return json.load(f)
 
 
+def serialize(data: dict) -> str:
+    return json.dumps(data, indent=2) + "\n"
+
+
 def save_json(path: str, data: dict) -> None:
     with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
+        f.write(serialize(data))
 
 
 def strip_org_prefix(key: str) -> str:
@@ -63,6 +66,7 @@ def find_dev_key(model_name: str, dev_index: dict) -> str | None:
 def run(dry_run: bool = False) -> None:
     dev_data = load_json(DEV_CATALOG_PATH)
     prod_data = load_json(PROD_CATALOG_PATH)
+    prod_original_serialized = serialize(prod_data)
     ci_config = load_json(CI_CONFIG_PATH)
 
     dev_specs = dev_data["model_specs"]
@@ -163,7 +167,13 @@ def run(dry_run: bool = False) -> None:
         prod_specs[dev_key] = dev_specs[dev_key]
         print(f"  ADDED    {dev_key}")
 
-    save_json(PROD_CATALOG_PATH, prod_data)
+    new_text = serialize(prod_data)
+    if new_text == prod_original_serialized:
+        print("\nNo effective changes — models-catalog-prod.json is already up to date.")
+        return
+
+    with open(PROD_CATALOG_PATH, "w") as f:
+        f.write(new_text)
     print(
         f"\nmodels-catalog-prod.json written to {PROD_CATALOG_PATH}"
         f"  ({len(to_update)} updated, {len(to_add)} added)"
