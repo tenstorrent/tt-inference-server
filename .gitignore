@@ -61,7 +61,9 @@ scripts/examples/example_data
 !benchmarking/benchmark_targets/*.json
 !release_model_spec.json
 !tt-media-server/static/demos/images.json
-.github/workflows/*.json
+!.github/workflows/*.json
+!models-catalog-dev.json
+!models-catalog-prod.json
 
 venv*/**
 tt-media-server/venv-worker
