@@ -38,6 +38,8 @@ struct SamplingParams {
   bool skip_special_tokens = true;
   bool spaces_between_special_tokens = true;
   std::optional<std::vector<int>> allowed_token_ids;
+  std::optional<std::vector<int32_t>> token_bitmask;
+  int bitmask_vocab_size = 0;
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
   bool fast_mode = false;

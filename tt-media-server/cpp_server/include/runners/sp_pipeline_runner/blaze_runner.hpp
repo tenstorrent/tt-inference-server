@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -17,21 +17,22 @@
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 #include "services/memory_services/async_memory_manager.hpp"
+
 namespace tt::runners {
 
 namespace pm = tt_blaze::pipeline_manager;
 
-class SpPipelineRunner : public IRunner {
+class BlazeRunner : public IRunner {
  public:
-  SpPipelineRunner(const tt::config::LLMConfig& config,
-                   ipc::IResultQueue* resultQueue,
-                   tt::runners::llm_engine::ITaskQueue* taskQueue);
-  ~SpPipelineRunner() override;
+  BlazeRunner(const tt::config::LLMConfig& config,
+              ipc::IResultQueue* resultQueue,
+              tt::runners::llm_engine::ITaskQueue* taskQueue);
+  ~BlazeRunner() override;
 
   void run() override;
   void stop() override;
   bool warmup() override;
-  const char* runnerType() const override { return "SpPipelineRunner"; }
+  const char* runnerType() const override { return "BlazeRunner"; }
 
  private:
   void step();

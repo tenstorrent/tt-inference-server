@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -10,17 +10,17 @@
 #include <vector>
 
 #include "ipc/slot_ring_buffer.hpp"
-#include "runners/sp_prefill_runner/i_sp_prefill_model_runner.hpp"
+#include "runners/sp_prefill_runner/i_blaze_prefill_model_runner.hpp"
 
-namespace sp_prefill {
+namespace blaze_prefill {
 
-class SpPrefillModelRunner : public ISpPrefillModelRunner {
+class BlazePrefillModelRunner : public IBlazePrefillModelRunner {
  public:
-  SpPrefillModelRunner();
-  ~SpPrefillModelRunner() override;
+  BlazePrefillModelRunner();
+  ~BlazePrefillModelRunner() override;
 
-  SpPrefillModelRunner(const SpPrefillModelRunner&) = delete;
-  SpPrefillModelRunner& operator=(const SpPrefillModelRunner&) = delete;
+  BlazePrefillModelRunner(const BlazePrefillModelRunner&) = delete;
+  BlazePrefillModelRunner& operator=(const BlazePrefillModelRunner&) = delete;
 
   std::optional<tt::runners::llm_engine::TokenResult> forward(
       uint32_t taskId, const std::vector<int64_t>& tokenIds) override;
@@ -46,4 +46,4 @@ class SpPrefillModelRunner : public ISpPrefillModelRunner {
   std::atomic<bool> stop{false};
 };
 
-}  // namespace sp_prefill
+}  // namespace blaze_prefill

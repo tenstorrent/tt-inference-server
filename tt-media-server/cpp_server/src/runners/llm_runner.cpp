@@ -137,11 +137,16 @@ void LLMRunner::applyGuidedDecodingMasks(const std::vector<Sequence*>& seqs,
     if (isPrefill && seq->getSamplingParams().hasGuidedDecoding()) {
       guidedDecoder->initRequest(seq->taskId, seq->getSamplingParams());
     }
-    if (guidedDecoder->hasGuidedDecoding(seq->taskId)) {
-      auto allowed = guidedDecoder->getNextAllowedTokenIds(seq->taskId);
-      std::vector<int> allowedInt(allowed.begin(), allowed.end());
-      seq->getMutableSamplingParams().allowed_token_ids = std::move(allowedInt);
-    }
+  }
+
+  int vocabSize = guidedDecoder->vocabSize();
+  for (Sequence* seq : seqs) {
+    if (!guidedDecoder->hasGuidedDecoding(seq->taskId)) continue;
+    auto& sp = seq->getMutableSamplingParams();
+    std::vector<int32_t> bitmask;
+    guidedDecoder->fillNextBitmask(seq->taskId, bitmask);
+    sp.token_bitmask = std::move(bitmask);
+    sp.bitmask_vocab_size = vocabSize;
   }
 }
 

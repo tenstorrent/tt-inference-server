@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #include "api/llm_controller.hpp"
 
@@ -15,6 +15,7 @@
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
+#include "domain/models_response.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
@@ -22,12 +23,23 @@
 
 namespace tt::api {
 
+void LLMController::models(
+    const drogon::HttpRequestPtr& _,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+  domain::ModelsResponse response;
+  response.data.push_back({toString(tt::config::model())});
+  auto resp = drogon::HttpResponse::newHttpJsonResponse(response.toJson());
+  callback(resp);
+}
+
 LLMController::LLMController() {
   if (!tt::config::isLlmServiceEnabled()) {
     TT_LOG_INFO(
         "[LLMController] Skipping initialization (TT_model_SERVICE != llm)");
     return;
   }
+
+  tt::config::model();
 
   const auto& c = tt::utils::ServiceContainer::instance();
   service = c.llm();

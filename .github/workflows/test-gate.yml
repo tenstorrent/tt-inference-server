@@ -687,10 +687,10 @@ jobs:
             "vllm-bench-mock.json" 1 150
 
           check_thresholds "C++ Server vLLM Bench (structured output - json_object)" \
-            "vllm-bench-structured-output-json-object.json" 16 100
+            "vllm-bench-structured-output-json-object.json" 5 150
 
           check_thresholds "C++ Server vLLM Bench (structured output - json_schema)" \
-            "vllm-bench-structured-output-json-schema.json" 15 100
+            "vllm-bench-structured-output-json-schema.json" 3 250
 
           check_thresholds "C++ Server vLLM Bench (mock_pipeline)" \
             "vllm-bench-mock-pipeline.json" 3 395

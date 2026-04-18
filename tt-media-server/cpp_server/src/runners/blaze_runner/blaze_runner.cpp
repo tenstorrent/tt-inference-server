@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/sp_pipeline_runner/sp_pipeline_runner.hpp"
+#include "runners/sp_pipeline_runner/blaze_runner.hpp"
 
 #include <cassert>
-#include <chrono>
 #include <cstring>
 #include <pipeline_manager/pipeline_manager_types.hpp>
 #include <thread>
@@ -13,23 +12,22 @@
 #include "domain/manage_memory.hpp"
 #include "ipc/token_push.hpp"
 #include "llm_runner/sequence.hpp"
-#include "runners/sp_pipeline_runner/sp_pipeline_utils.hpp"
-#include "services/memory_services/sp_pipeline_memory_manager.hpp"
+#include "runners/sp_pipeline_runner/blaze_utils.hpp"
+#include "services/memory_services/blaze_memory_manager.hpp"
 #include "utils/logger.hpp"
 #include "worker/single_process_worker_metrics.hpp"
 
 namespace tt::runners {
-namespace utils = sp_pipeline_utils;
+namespace utils = blaze_utils;
 
-SpPipelineRunner::SpPipelineRunner(
-    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
-    tt::runners::llm_engine::ITaskQueue* taskQueue)
+BlazeRunner::BlazeRunner(const config::LLMConfig& config,
+                         ipc::IResultQueue* resultQueue,
+                         tt::runners::llm_engine::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
       taskQueue(taskQueue) {
-  TT_LOG_INFO(
-      "SpPipelineRunner: Constructing PipelineManager with SocketConfig...");
+  TT_LOG_INFO("BlazeRunner: Constructing PipelineManager with SocketConfig...");
   pm::SocketConfig socketConfig{
       .h2d_socket_id = tt::config::h2dSocketId(),
       .d2h_socket_id = tt::config::d2hSocketId(),
@@ -40,35 +38,34 @@ SpPipelineRunner::SpPipelineRunner(
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
       std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
-  TT_LOG_INFO(
-      "SpPipelineRunner: PipelineManager constructed, calling start()...");
+  TT_LOG_INFO("BlazeRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
   TT_LOG_INFO(
-      "SpPipelineRunner: PipelineManager started, creating MemoryManager...");
-  memoryManager = std::make_unique<tt::services::SpPipelineMemoryManager>(
+      "BlazeRunner: PipelineManager started, creating MemoryManager...");
+  memoryManager = std::make_unique<tt::services::BlazeMemoryManager>(
       *pipelineManager, [this](uint32_t slotId) { evictSlot(slotId); });
-  TT_LOG_INFO("SpPipelineRunner: Constructor complete");
+  TT_LOG_INFO("BlazeRunner: Constructor complete");
 }
 
-SpPipelineRunner::~SpPipelineRunner() {
+BlazeRunner::~BlazeRunner() {
   stop();
   if (pipelineManager) {
     pipelineManager->stop();
   }
 }
 
-void SpPipelineRunner::run() {
+void BlazeRunner::run() {
   while (!stopped.load(std::memory_order_relaxed)) {
     try {
       step();
     } catch (const std::exception& e) {
-      TT_LOG_ERROR("SpPipelineRunner: Exception in run: {}", e.what());
+      TT_LOG_ERROR("BlazeRunner: Exception in run: {}", e.what());
       throw;
     }
   }
 }
 
-bool SpPipelineRunner::warmup() {
+bool BlazeRunner::warmup() {
   tt::runners::llm_engine::SamplingParams warmupParams;
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
@@ -79,66 +76,65 @@ bool SpPipelineRunner::warmup() {
   auto warmupSeq = std::make_unique<tt::runners::llm_engine::Sequence>(
       warmupTaskId, 1, warmupTokens, warmupParams);
 
-  TT_LOG_INFO("SpPipelineRunner: warmup - pushing ALLOCATE request...");
+  TT_LOG_INFO("BlazeRunner: warmup - pushing ALLOCATE request...");
   pipelineManager->push_request(utils::makeAllocateRequest(0));
 
-  TT_LOG_INFO("SpPipelineRunner: warmup - waiting for ALLOCATE response...");
+  TT_LOG_INFO("BlazeRunner: warmup - waiting for ALLOCATE response...");
   pm::PMResponse response{};
   while (!pipelineManager->try_pop_response(response)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
   auto slotId = response.slot_id;
-  TT_LOG_INFO("SpPipelineRunner: warmup - got slot_id={}", slotId);
+  TT_LOG_INFO("BlazeRunner: warmup - got slot_id={}", slotId);
   if (slotId == pm::INVALID_SLOT) {
-    TT_LOG_ERROR("SpPipelineRunner: Warmup failed with error");
+    TT_LOG_ERROR("BlazeRunner: Warmup failed with error");
     return false;
   }
 
-  TT_LOG_INFO("SpPipelineRunner: warmup - pushing SUBMIT request...");
+  TT_LOG_INFO("BlazeRunner: warmup - pushing SUBMIT request...");
   pipelineManager->push_request(utils::makeSubmitRequest(slotId, *warmupSeq));
-  const int maxAttempts = 1000;
-  int attempts = 0;
+
+  const auto timeout = std::chrono::milliseconds(tt::config::warmupTimeoutMs());
+  const auto pollInterval = std::chrono::milliseconds(10);
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
   bool receivedToken = false;
   auto output = pm::OutputMessage{};
 
-  while (attempts < maxAttempts && !receivedToken) {
-    receivedToken = pipelineManager->try_pop_output(output);
-    if (receivedToken) {
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (pipelineManager->try_pop_output(output)) {
+      receivedToken = true;
       break;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    attempts++;
+    std::this_thread::sleep_for(pollInterval);
   }
 
   if (!receivedToken) {
-    TT_LOG_ERROR("[SpPipelineRunner] Warmup timed out waiting for token");
+    TT_LOG_ERROR("[BlazeRunner] Warmup timed out waiting for token after {} ms",
+                 timeout.count());
     return false;
   }
 
-  TT_LOG_INFO("SpPipelineRunner: Warmup successful");
+  TT_LOG_INFO("BlazeRunner: Warmup successful");
   pipelineManager->push_request(utils::makeCancelRequest(slotId));
   return true;
 }
 
-void SpPipelineRunner::stop() {
-  stopped.store(true, std::memory_order_relaxed);
-}
+void BlazeRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
 
-void SpPipelineRunner::step() {
+void BlazeRunner::step() {
   tt::worker::SingleProcessWorkerMetrics::instance().updateStepHeartbeat();
   auto memoryRequest = getMemoryRequest();
   if (memoryRequest.has_value()) {
-    TT_LOG_DEBUG(
-        "[SpPipelineRunner] step: got memoryRequest taskId={}, action={}",
-        memoryRequest->taskId, static_cast<int>(memoryRequest->action));
+    TT_LOG_DEBUG("[BlazeRunner] step: got memoryRequest taskId={}, action={}",
+                 memoryRequest->taskId,
+                 static_cast<int>(memoryRequest->action));
     handleMemoryRequest(*memoryRequest);
   }
   auto response = getResponse();
   if (response.has_value()) {
-    TT_LOG_DEBUG(
-        "[SpPipelineRunner] step: got PMResponse request_id={}, slot_id={}",
-        response->request_id, response->slot_id);
+    TT_LOG_DEBUG("[BlazeRunner] step: got PMResponse request_id={}, slot_id={}",
+                 response->request_id, response->slot_id);
     handleResponse(*response);
   }
   auto output = getOutput();
@@ -148,7 +144,7 @@ void SpPipelineRunner::step() {
   auto request = getRequest();
   if (request) {
     TT_LOG_DEBUG(
-        "[SpPipelineRunner] step: got Sequence taskId={}, slotId={}, "
+        "[BlazeRunner] step: got Sequence taskId={}, slotId={}, "
         "numPromptTokens={}, totalTokens={}",
         request->taskId, request->getKVCacheSlot(),
         request->getNumPromptTokens(), request->getTokenIds().size());
@@ -156,7 +152,7 @@ void SpPipelineRunner::step() {
   }
 }
 
-std::optional<pm::PMResponse> SpPipelineRunner::getResponse() {
+std::optional<pm::PMResponse> BlazeRunner::getResponse() {
   pm::PMResponse response;
   if (pipelineManager->try_pop_response(response)) {
     return response;
@@ -164,7 +160,7 @@ std::optional<pm::PMResponse> SpPipelineRunner::getResponse() {
   return std::nullopt;
 }
 
-std::optional<pm::OutputMessage> SpPipelineRunner::getOutput() {
+std::optional<pm::OutputMessage> BlazeRunner::getOutput() {
   pm::OutputMessage output;
   if (pipelineManager->try_pop_output(output)) {
     return output;
@@ -172,33 +168,32 @@ std::optional<pm::OutputMessage> SpPipelineRunner::getOutput() {
   return std::nullopt;
 }
 
-std::unique_ptr<tt::runners::llm_engine::Sequence>
-SpPipelineRunner::getRequest() {
+std::unique_ptr<tt::runners::llm_engine::Sequence> BlazeRunner::getRequest() {
   auto req = taskQueue->tryPop();
   if (!req) return nullptr;
   return req;
 }
 
-inline void SpPipelineRunner::handleMemoryRequest(
+inline void BlazeRunner::handleMemoryRequest(
     const tt::domain::ManageMemoryTask& request) {
   memoryManager->handleRequest(request);
 }
 
-inline void SpPipelineRunner::handleResponse(const pm::PMResponse& response) {
+inline void BlazeRunner::handleResponse(const pm::PMResponse& response) {
   memoryManager->handleResponse(response.request_id, response.slot_id);
 }
 
 inline std::optional<tt::domain::ManageMemoryTask>
-SpPipelineRunner::getMemoryRequest() {
+BlazeRunner::getMemoryRequest() {
   return memoryManager->getRequest();
 }
 
-void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
+void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
   auto it = running.find(output.slot_id);
   if (it == running.end()) {
     TT_LOG_ERROR(
-        "[SpPipelineRunner] handleOutput: output for unknown slot_id={}, "
+        "[BlazeRunner] handleOutput: output for unknown slot_id={}, "
         "token_id={}, is_complete={}",
         output.slot_id, output.token_id, output.is_complete);
     return;
@@ -215,20 +210,19 @@ void SpPipelineRunner::handleOutput(const pm::OutputMessage& output) {
   }
 }
 
-inline void SpPipelineRunner::evictSlot(uint32_t slotId) {
+inline void BlazeRunner::evictSlot(uint32_t slotId) {
   auto it = running.find(slotId);
   if (it != running.end()) {
-    TT_LOG_DEBUG(
-        "[SpPipelineRunner] evictSlot: slotId={}, was running taskId={}",
-        slotId, it->second->taskId);
+    TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={}, was running taskId={}",
+                 slotId, it->second->taskId);
   } else {
-    TT_LOG_DEBUG("[SpPipelineRunner] evictSlot: slotId={} (not in running map)",
+    TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={} (not in running map)",
                  slotId);
   }
   running.erase(slotId);
 }
 
-void SpPipelineRunner::handleRequest(
+void BlazeRunner::handleRequest(
     std::unique_ptr<tt::runners::llm_engine::Sequence> request) {
   tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
   auto slotId = request->getKVCacheSlot();
@@ -237,7 +231,7 @@ void SpPipelineRunner::handleRequest(
   bool isNew = !request->isContinuation();
 
   TT_LOG_DEBUG(
-      "[SpPipelineRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
+      "[BlazeRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
       "isContinuation={}, numPromptTokens={}, totalTokens={}, runningSlots={}",
       request->taskId, slotId, isNew, request->isContinuation(),
       request->getNumPromptTokens(), request->getTokenIds().size(),
@@ -246,22 +240,20 @@ void SpPipelineRunner::handleRequest(
   if (isNew) {
     if (request->getSamplingParams().hasGuidedDecoding()) {
       TT_LOG_WARN(
-          "[SpPipelineRunner] task_id={} has response_format constraint but "
+          "[BlazeRunner] task_id={} has response_format constraint but "
           "SP Pipeline does not support per-step guided decoding yet. "
           "Output may not conform to the requested schema.",
           request->taskId);
     }
 
-    TT_LOG_DEBUG(
-        "[SpPipelineRunner] handleRequest: SUBMIT taskId={}, slotId={}",
-        request->taskId, slotId);
+    TT_LOG_DEBUG("[BlazeRunner] handleRequest: SUBMIT taskId={}, slotId={}",
+                 request->taskId, slotId);
     pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
     running[slotId] = std::move(request);
     return;
   } else {
-    TT_LOG_DEBUG(
-        "[SpPipelineRunner] handleRequest: CONTINUE taskId={}, slotId={}",
-        request->taskId, slotId);
+    TT_LOG_DEBUG("[BlazeRunner] handleRequest: CONTINUE taskId={}, slotId={}",
+                 request->taskId, slotId);
     pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
     running[slotId] = std::move(request);
   }

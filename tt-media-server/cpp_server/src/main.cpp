@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #include <drogon/drogon.h>
 #include <netinet/tcp.h>
@@ -25,9 +25,9 @@
 #include "utils/logger.hpp"
 #include "utils/service_container.hpp"
 #include "utils/service_factory.hpp"
+#include "worker/single_process_worker_metrics.hpp"
 #include "worker/sp_pipeline_worker_metrics_renderer.hpp"
 #include "worker/worker_manager.hpp"
-#include "worker/single_process_worker_metrics.hpp"
 #include "worker/worker_metrics_aggregator.hpp"
 #include "worker/worker_metrics_shm.hpp"
 
