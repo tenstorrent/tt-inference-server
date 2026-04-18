@@ -2337,8 +2337,8 @@ vlm_templates = [
             "allenai/Molmo2-8B",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="c2700e9",
-        vllm_commit="ba84dbf0",
+        tt_metal_commit="6db02d0b",
+        vllm_commit="736a14c5",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         device_model_specs=[
@@ -2368,6 +2368,25 @@ vlm_templates = [
                     "fabric_config": "FABRIC_1D_RING",
                 },
             ),
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY_T3K,
+                max_concurrency=32,
+                max_context=8 * 1024,
+                default_impl=True,
+                vllm_args={
+                    "trust_remote_code": True,
+                    "allowed_local_media_path": "/",
+                    "media_io_kwargs": '{"video":{"num_frames":384}}',
+                },
+                env_vars={
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto",
+                },
+                override_tt_config={
+                    "fabric_config": "FABRIC_1D",
+                    "trace_region_size": 60000000,
+                },
+            ),
+
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={

@@ -578,6 +578,18 @@ def set_runtime_env_vars(model_spec_json):
             logger.warning(
                 f"env var {key} is already set to {original_value}, overriding with {value}"
             )
+        # Resolve TT_MESH_GRAPH_DESC_PATH to absolute path for local server
+        if key == "TT_MESH_GRAPH_DESC_PATH" and not os.path.isabs(value):
+            tt_metal_home = os.environ.get("TT_METAL_HOME", "")
+            if tt_metal_home:
+                # Extract the relative portion after "tt-metal/" or "tt_metal/"
+                # The Docker path is like "../../tt-metal/tt_metal/fabric/..."
+                parts = value.split("tt_metal/", 1)
+                if len(parts) == 2:
+                    resolved = os.path.join(tt_metal_home, "tt_metal", parts[1])
+                    if os.path.exists(resolved):
+                        logger.info(f"Resolved {key} to absolute path: {resolved}")
+                        value = resolved
         logger.info(f"setting env var: {key}={value}")
         os.environ[key] = value
 
