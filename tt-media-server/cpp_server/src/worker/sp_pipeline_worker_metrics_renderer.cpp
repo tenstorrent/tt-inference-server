@@ -58,21 +58,19 @@ void SpPipelineWorkerMetricsRenderer::prebuildGauges(
   gauges_[workerId] = g;
 }
 
-void SpPipelineWorkerMetricsRenderer::render(const WorkerSlot& slot,
+void SpPipelineWorkerMetricsRenderer::render(const WorkerMetricsShm& shm,
                                              int workerId, bool is_alive) {
   auto it = gauges_.find(workerId);
   if (it == gauges_.end()) return;
   WorkerGauges& g = it->second;
 
+  const size_t slot = static_cast<size_t>(workerId);
   uint64_t now = nowMs();
-  uint64_t stepMs =
-      slot.scratch[sp_pipeline::SCRATCH_STEP_EPOCH_MS].load(
-          std::memory_order_relaxed);
+  uint64_t stepMs = shm.loadScratch(slot, sp_pipeline::SCRATCH_STEP_EPOCH_MS);
   uint64_t outputMs =
-      slot.scratch[sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS].load(
-          std::memory_order_relaxed);
-  uint64_t active = slot.scratch[sp_pipeline::SCRATCH_ACTIVE_REQUESTS].load(
-      std::memory_order_relaxed);
+      shm.loadScratch(slot, sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS);
+  uint64_t active =
+      shm.loadScratch(slot, sp_pipeline::SCRATCH_ACTIVE_REQUESTS);
 
   g.alive->Set(is_alive ? 1.0 : 0.0);
   g.step_age->Set(ageSeconds(stepMs, now));

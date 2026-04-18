@@ -140,18 +140,19 @@ int main(int argc, char* argv[]) {
     TT_LOG_WARN("[Main] Failed to create log directory: {}", strerror(errno));
   }
 
-  // Create the worker-metrics shared-memory region BEFORE workers are spawned
-  // (initializeServices() starts the WorkerManager which fork+execv's workers).
+  // Create the worker-metrics shared-memory segment BEFORE workers are spawned
+  // (initializeServices() starts the WorkerManager which fork+execv's
+  // workers). The unique_ptr below owns the lifecycle: its destructor
+  // munmaps and shm_unlinks on scope exit, so there is no explicit teardown.
   const std::string shmName = tt::config::workerMetricsShmName();
   const size_t numWorkers = tt::config::numWorkers();
-  tt::worker::WorkerMetricsShmRegion* shmRegion =
-      tt::worker::createSharedRegion(shmName, numWorkers);
+  auto shm = tt::worker::WorkerMetricsShm::create(shmName, numWorkers);
 
   tt::utils::service_factory::initializeServices();
 
   // Wire the aggregator now that the WorkerManager exists. Workers may still
   // be attaching to the segment; renderers tolerate empty/UNKNOWN slots.
-  if (shmRegion != nullptr) {
+  if (shm != nullptr) {
     auto& agg = tt::worker::WorkerMetricsAggregator::instance();
     tt::worker::WorkerManager* mgr = nullptr;
     auto llm = tt::utils::ServiceContainer::instance().llm();
@@ -160,7 +161,7 @@ int main(int argc, char* argv[]) {
     }
     std::vector<tt::worker::MetricsLayout> layoutByWorker(
         numWorkers, metricsLayoutFromConfig());
-    agg.initialize(shmRegion, mgr, std::move(layoutByWorker));
+    agg.initialize(shm.get(), mgr, std::move(layoutByWorker));
     agg.registerRenderer(
         tt::worker::MetricsLayout::SP_PIPELINE_RUNNER,
         std::make_unique<tt::worker::SpPipelineWorkerMetricsRenderer>());
@@ -258,10 +259,7 @@ int main(int argc, char* argv[]) {
   // Run the server
   drogon::app().run();
 
-  if (shmRegion != nullptr) {
-    tt::worker::destroySharedRegion(shmRegion, shmName);
-  }
-
+  // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.
   TT_LOG_INFO("[Main] Server shutdown complete");
   return 0;
 }

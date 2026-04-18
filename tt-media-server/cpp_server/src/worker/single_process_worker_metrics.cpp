@@ -24,41 +24,36 @@ void SingleProcessWorkerMetrics::initialize(int workerId, MetricsLayout layout) 
   layout_ = layout;
 
   const std::string shmName = tt::config::workerMetricsShmName();
-  WorkerMetricsShmRegion* region = openSharedRegion(shmName);
-  if (region == nullptr) {
+  shm_ = WorkerMetricsShm::open(shmName);
+  if (shm_ == nullptr) {
     TT_LOG_CRITICAL(
         "[SingleProcessWorkerMetrics] Worker {} failed to attach to shm '{}'; "
         "metrics disabled",
         workerId, shmName);
-    slot_ = nullptr;
     return;
   }
 
-  uint32_t numSlots = region->num_workers.load(std::memory_order_acquire);
-  if (workerId < 0 || static_cast<uint32_t>(workerId) >= numSlots) {
+  size_t numSlots = shm_->numWorkers();
+  if (workerId < 0 || static_cast<size_t>(workerId) >= numSlots) {
     TT_LOG_CRITICAL(
         "[SingleProcessWorkerMetrics] Worker id {} out of range "
         "(num_workers={}); metrics disabled",
         workerId, numSlots);
-    slot_ = nullptr;
+    shm_.reset();
     return;
   }
 
-  slot_ = &region->slots[workerId];
-  slot_->generation.fetch_add(1, std::memory_order_acq_rel);
-  slot_->metrics_layout.store(static_cast<uint8_t>(layout),
-                              std::memory_order_release);
-  slot_->pid.store(static_cast<int32_t>(getpid()), std::memory_order_release);
+  shm_->bumpGeneration(workerId);
+  shm_->setLayout(workerId, layout);
+  shm_->setPid(workerId, static_cast<int32_t>(getpid()));
 
   // Seed sp_pipeline timestamps so age starts at ~0 instead of since-epoch.
   if (layout == MetricsLayout::SP_PIPELINE_RUNNER) {
     auto now = nowMs();
-    slot_->scratch[sp_pipeline::SCRATCH_STEP_EPOCH_MS].store(
-        now, std::memory_order_relaxed);
-    slot_->scratch[sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS].store(
-        now, std::memory_order_relaxed);
-    slot_->scratch[sp_pipeline::SCRATCH_ACTIVE_REQUESTS].store(
-        0, std::memory_order_relaxed);
+    shm_->storeScratch(workerId, sp_pipeline::SCRATCH_STEP_EPOCH_MS, now);
+    shm_->storeScratch(workerId, sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS,
+                       now);
+    shm_->storeScratch(workerId, sp_pipeline::SCRATCH_ACTIVE_REQUESTS, 0);
   }
 
   TT_LOG_INFO(
@@ -75,41 +70,39 @@ uint64_t SingleProcessWorkerMetrics::nowMs() {
 }
 
 void SingleProcessWorkerMetrics::updateStepHeartbeat() {
-  if (slot_ == nullptr) return;
-  slot_->scratch[sp_pipeline::SCRATCH_STEP_EPOCH_MS].store(
-      nowMs(), std::memory_order_relaxed);
+  if (shm_ == nullptr) return;
+  shm_->storeScratch(workerId_, sp_pipeline::SCRATCH_STEP_EPOCH_MS, nowMs());
 }
 
 void SingleProcessWorkerMetrics::updateOutputHeartbeat() {
-  if (slot_ == nullptr) return;
-  slot_->scratch[sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS].store(
-      nowMs(), std::memory_order_relaxed);
+  if (shm_ == nullptr) return;
+  shm_->storeScratch(workerId_, sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS,
+                     nowMs());
 }
 
 void SingleProcessWorkerMetrics::incrementActiveRequests() {
-  if (slot_ == nullptr) return;
-  uint64_t prev = slot_->scratch[sp_pipeline::SCRATCH_ACTIVE_REQUESTS]
-                      .fetch_add(1, std::memory_order_relaxed);
+  if (shm_ == nullptr) return;
+  uint64_t prev =
+      shm_->fetchAddScratch(workerId_, sp_pipeline::SCRATCH_ACTIVE_REQUESTS, 1);
   if (prev == 0) {
-    slot_->scratch[sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS].store(
-        nowMs(), std::memory_order_relaxed);
+    shm_->storeScratch(workerId_, sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS,
+                       nowMs());
   }
 }
 
 void SingleProcessWorkerMetrics::decrementActiveRequests() {
-  if (slot_ == nullptr) return;
-  slot_->scratch[sp_pipeline::SCRATCH_ACTIVE_REQUESTS].fetch_sub(
-      1, std::memory_order_relaxed);
+  if (shm_ == nullptr) return;
+  shm_->fetchSubScratch(workerId_, sp_pipeline::SCRATCH_ACTIVE_REQUESTS, 1);
 }
 
 void SingleProcessWorkerMetrics::scratchStoreU64(size_t idx, uint64_t value) {
-  if (slot_ == nullptr || idx >= WORKER_SCRATCH_U64_COUNT) return;
-  slot_->scratch[idx].store(value, std::memory_order_relaxed);
+  if (shm_ == nullptr || idx >= WORKER_SCRATCH_U64_COUNT) return;
+  shm_->storeScratch(workerId_, idx, value);
 }
 
 void SingleProcessWorkerMetrics::scratchAddU64(size_t idx, uint64_t delta) {
-  if (slot_ == nullptr || idx >= WORKER_SCRATCH_U64_COUNT) return;
-  slot_->scratch[idx].fetch_add(delta, std::memory_order_relaxed);
+  if (shm_ == nullptr || idx >= WORKER_SCRATCH_U64_COUNT) return;
+  shm_->fetchAddScratch(workerId_, idx, delta);
 }
 
 }  // namespace tt::worker

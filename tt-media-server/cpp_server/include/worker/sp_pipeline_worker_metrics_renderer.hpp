@@ -29,7 +29,8 @@ namespace tt::worker {
 class SpPipelineWorkerMetricsRenderer : public IWorkerMetricsRenderer {
  public:
   void prebuildGauges(prometheus::Registry& registry, int workerId) override;
-  void render(const WorkerSlot& slot, int workerId, bool is_alive) override;
+  void render(const WorkerMetricsShm& shm, int workerId,
+              bool is_alive) override;
 
  private:
   struct WorkerGauges {

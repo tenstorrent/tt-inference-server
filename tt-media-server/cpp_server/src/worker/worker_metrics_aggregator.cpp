@@ -19,9 +19,9 @@ WorkerMetricsAggregator& WorkerMetricsAggregator::instance() {
 }
 
 void WorkerMetricsAggregator::initialize(
-    const WorkerMetricsShmRegion* region, WorkerManager* mgr,
+    const WorkerMetricsShm* shm, WorkerManager* mgr,
     std::vector<MetricsLayout> layout_by_worker) {
-  region_ = region;
+  shm_ = shm;
   mgr_ = mgr;
   layout_by_worker_ = std::move(layout_by_worker);
   renderer_by_worker_.assign(layout_by_worker_.size(), nullptr);
@@ -29,8 +29,8 @@ void WorkerMetricsAggregator::initialize(
   registry_ = std::make_shared<prometheus::Registry>();
   initialized_ = true;
   TT_LOG_INFO(
-      "[WorkerMetricsAggregator] Initialized for {} workers, region={}",
-      layout_by_worker_.size(), static_cast<const void*>(region));
+      "[WorkerMetricsAggregator] Initialized for {} workers, shm={}",
+      layout_by_worker_.size(), static_cast<const void*>(shm));
 }
 
 void WorkerMetricsAggregator::registerRenderer(
@@ -62,7 +62,7 @@ IWorkerMetricsRenderer* WorkerMetricsAggregator::rendererFor(
 }
 
 void WorkerMetricsAggregator::refresh() {
-  if (!initialized_ || region_ == nullptr) return;
+  if (!initialized_ || shm_ == nullptr) return;
   std::lock_guard<std::mutex> lock(refresh_mutex_);
 
   // One-time sanity check that what each worker actually wrote into its
@@ -72,13 +72,12 @@ void WorkerMetricsAggregator::refresh() {
   if (!layout_tags_verified_) {
     bool all_attached = true;
     for (size_t i = 0; i < layout_by_worker_.size(); ++i) {
-      uint8_t tag = region_->slots[i].metrics_layout.load(
-          std::memory_order_acquire);
-      if (tag == static_cast<uint8_t>(MetricsLayout::UNKNOWN)) {
+      MetricsLayout tag = shm_->layout(i);
+      if (tag == MetricsLayout::UNKNOWN) {
         all_attached = false;  // worker hasn't attached yet, retry next scrape
         continue;
       }
-      if (tag != static_cast<uint8_t>(layout_by_worker_[i])) {
+      if (tag != layout_by_worker_[i]) {
         TT_LOG_ERROR(
             "[WorkerMetricsAggregator] Worker {} layout tag mismatch: slot "
             "says {}, main configured {}",
@@ -100,7 +99,7 @@ void WorkerMetricsAggregator::refresh() {
     IWorkerMetricsRenderer* renderer = renderer_by_worker_[i];
     if (renderer == nullptr) continue;
     bool is_alive = (i < infos.size()) && infos[i].is_alive;
-    renderer->render(region_->slots[i], static_cast<int>(i), is_alive);
+    renderer->render(*shm_, static_cast<int>(i), is_alive);
   }
 }
 

@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 namespace tt::worker {
@@ -24,7 +25,6 @@ namespace tt::worker {
  * without negotiating a common header.
  */
 
-constexpr uint32_t WORKER_METRICS_SHM_MAGIC = 0x54545744;  // "TTWD"
 constexpr size_t MAX_WORKER_SLOTS = 32;
 constexpr size_t WORKER_SCRATCH_U64_COUNT = 32;
 
@@ -41,51 +41,117 @@ enum class MetricsLayout : uint8_t {
 };
 
 /**
- * Per-worker slot. The dispatch tag (pid, metrics_layout, generation) is
- * the only contract the transport itself enforces. The 32 atomic u64 scratch
- * cells are interpreted by the layout-specific writer (worker side) and
- * renderer (main side) sharing a layout header (e.g.
- * sp_pipeline_metrics_layout.hpp).
+ * RAII owner of the POSIX shared-memory segment backing worker metrics.
  *
- * Slot is cache-line aligned to avoid false sharing across workers.
- */
-struct alignas(64) WorkerSlot {
-  std::atomic<int32_t> pid;            // 0 = unclaimed
-  std::atomic<uint8_t> metrics_layout;  // MetricsLayout
-  // 3 bytes of implicit padding follow before `generation` (4-byte aligned).
-  std::atomic<uint32_t> generation;  // bumped on slot reclaim
-  uint32_t reserved;
-  std::atomic<uint64_t> scratch[WORKER_SCRATCH_U64_COUNT];
-};
-static_assert(sizeof(WorkerSlot) == 320, "WorkerSlot layout drift");
-
-struct WorkerMetricsShmRegion {
-  std::atomic<uint32_t> magic;
-  std::atomic<uint32_t> num_workers;
-  WorkerSlot slots[MAX_WORKER_SLOTS];
-};
-
-/**
- * Create the shared-memory region (main process only).
+ * All access to the segment (metadata reads/writes, per-slot scratch
+ * load/store/increment) goes through this class's inline accessors; the
+ * underlying bytes are treated as an implementation detail, so callers never
+ * hold a raw pointer into shm RAM.
  *
- * Defensively unlinks any stale segment of the same name first, then
- * shm_open(O_CREAT|O_RDWR), ftruncate to sizeof(WorkerMetricsShmRegion),
- * mmap, and initialize the header. Returns nullptr on failure (logged).
+ * Two factories distinguish the two roles of the single binary:
+ *   - create(): main process. Allocates the segment, zero-initializes it,
+ *     stamps the magic/num_workers header. Destructor munmaps and
+ *     shm_unlinks the name (main owns the segment lifecycle).
+ *   - open():   worker process. Attaches to the segment main already
+ *     created and validates the magic. Destructor only munmaps; the
+ *     segment name stays alive for other workers and for main.
  */
-WorkerMetricsShmRegion* createSharedRegion(const std::string& name,
-                                           size_t numWorkers);
+class WorkerMetricsShm {
+ public:
+  /** Main-side factory. Returns nullptr on failure (logged). */
+  static std::unique_ptr<WorkerMetricsShm> create(std::string name,
+                                                  size_t numWorkers);
 
-/**
- * Attach to an existing region (worker process). Validates magic
- * and returns nullptr (with a log line) on mismatch.
- */
-WorkerMetricsShmRegion* openSharedRegion(const std::string& name);
+  /** Worker-side factory. Returns nullptr on failure (logged). */
+  static std::unique_ptr<WorkerMetricsShm> open(std::string name);
 
-/**
- * Tear down the region created by createSharedRegion (main process only).
- * munmap + shm_unlink. Safe to call with a nullptr region.
- */
-void destroySharedRegion(WorkerMetricsShmRegion* region,
-                         const std::string& name);
+  ~WorkerMetricsShm();
+
+  WorkerMetricsShm(const WorkerMetricsShm&) = delete;
+  WorkerMetricsShm& operator=(const WorkerMetricsShm&) = delete;
+
+  // ----- metadata accessors -------------------------------------------------
+
+  size_t numWorkers() const {
+    return region_->num_workers.load(std::memory_order_acquire);
+  }
+
+  // ----- per-slot metadata accessors ---------------------------------------
+
+  void setPid(size_t workerId, int32_t pid) {
+    region_->slots[workerId].pid.store(pid, std::memory_order_release);
+  }
+
+  void setLayout(size_t workerId, MetricsLayout layout) {
+    region_->slots[workerId].metrics_layout.store(
+        static_cast<uint8_t>(layout), std::memory_order_release);
+  }
+
+  MetricsLayout layout(size_t workerId) const {
+    return static_cast<MetricsLayout>(
+        region_->slots[workerId].metrics_layout.load(
+            std::memory_order_acquire));
+  }
+
+  void bumpGeneration(size_t workerId) {
+    region_->slots[workerId].generation.fetch_add(1,
+                                                  std::memory_order_acq_rel);
+  }
+
+  // ----- per-slot scratch accessors ----------------------------------------
+
+  uint64_t loadScratch(size_t workerId, size_t idx) const {
+    return region_->slots[workerId].scratch[idx].load(
+        std::memory_order_relaxed);
+  }
+
+  void storeScratch(size_t workerId, size_t idx, uint64_t value) {
+    region_->slots[workerId].scratch[idx].store(value,
+                                                std::memory_order_relaxed);
+  }
+
+  /** Returns the previous value. */
+  uint64_t fetchAddScratch(size_t workerId, size_t idx, uint64_t delta) {
+    return region_->slots[workerId].scratch[idx].fetch_add(
+        delta, std::memory_order_relaxed);
+  }
+
+  /** Returns the previous value. */
+  uint64_t fetchSubScratch(size_t workerId, size_t idx, uint64_t delta) {
+    return region_->slots[workerId].scratch[idx].fetch_sub(
+        delta, std::memory_order_relaxed);
+  }
+
+ private:
+  /**
+   * Per-worker slot. The dispatch tag (pid, metrics_layout, generation) is
+   * the only contract the transport itself enforces. The 32 atomic u64
+   * scratch cells are interpreted by the layout-specific writer and
+   * renderer that share a layout header (e.g. sp_pipeline_metrics_layout).
+   *
+   * Slot is cache-line aligned to avoid false sharing across workers.
+   */
+  struct alignas(64) Slot {
+    std::atomic<int32_t> pid;             // 0 = unclaimed
+    std::atomic<uint8_t> metrics_layout;  // MetricsLayout
+    // 3 bytes of implicit padding follow before `generation` (4-byte aligned).
+    std::atomic<uint32_t> generation;  // bumped on slot reclaim
+    uint32_t reserved;
+    std::atomic<uint64_t> scratch[WORKER_SCRATCH_U64_COUNT];
+  };
+  static_assert(sizeof(Slot) == 320, "Slot layout drift");
+
+  struct Region {
+    std::atomic<uint32_t> magic;
+    std::atomic<uint32_t> num_workers;
+    Slot slots[MAX_WORKER_SLOTS];
+  };
+
+  WorkerMetricsShm(Region* region, std::string name, bool owns);
+
+  Region* region_{nullptr};
+  std::string name_;
+  bool owns_{false};  // true = created by main; false = opened by worker
+};
 
 }  // namespace tt::worker

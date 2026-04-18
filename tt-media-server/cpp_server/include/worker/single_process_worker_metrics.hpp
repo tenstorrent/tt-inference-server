@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 
 #include "worker/worker_metrics_shm.hpp"
 
@@ -54,7 +55,7 @@ class SingleProcessWorkerMetrics {
 
   int workerId_{0};
   MetricsLayout layout_{MetricsLayout::UNKNOWN};
-  WorkerSlot* slot_{nullptr};
+  std::unique_ptr<WorkerMetricsShm> shm_;
 };
 
 }  // namespace tt::worker

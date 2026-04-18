@@ -28,9 +28,10 @@ class IWorkerMetricsRenderer {
   /** Register all gauges this renderer ever emits for the given worker. */
   virtual void prebuildGauges(prometheus::Registry& registry, int workerId) = 0;
 
-  /** Update gauges from the slot's scratch area. is_alive is sourced from
+  /** Update gauges from the shm slot. is_alive is sourced from
    *  WorkerManager (waitpid-based liveness). */
-  virtual void render(const WorkerSlot& slot, int workerId, bool is_alive) = 0;
+  virtual void render(const WorkerMetricsShm& shm, int workerId,
+                      bool is_alive) = 0;
 };
 
 }  // namespace tt::worker

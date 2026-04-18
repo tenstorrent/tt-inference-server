@@ -50,13 +50,13 @@ class WorkerMetricsAggregator {
 
   /**
    * Wire the aggregator. Must be called once from main, after the shm
-   * region has been created and the WorkerManager has been constructed
-   * (workers may still be starting up; renderers tolerate empty slots).
+   * has been created and the WorkerManager has been constructed (workers
+   * may still be starting up; renderers tolerate empty slots).
    *
    * layout_by_worker[i] is the MetricsLayout that worker i will write
    * into its slot. Size must equal numWorkers.
    */
-  void initialize(const WorkerMetricsShmRegion* region, WorkerManager* mgr,
+  void initialize(const WorkerMetricsShm* shm, WorkerManager* mgr,
                   std::vector<MetricsLayout> layout_by_worker);
 
   /** Register a renderer for a layout. May be called only between
@@ -85,7 +85,7 @@ class WorkerMetricsAggregator {
   IWorkerMetricsRenderer* rendererFor(MetricsLayout layout);
 
   bool initialized_{false};
-  const WorkerMetricsShmRegion* region_{nullptr};
+  const WorkerMetricsShm* shm_{nullptr};
   WorkerManager* mgr_{nullptr};
 
   std::vector<MetricsLayout> layout_by_worker_;
