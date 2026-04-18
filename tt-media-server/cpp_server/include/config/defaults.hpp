@@ -46,6 +46,7 @@ constexpr const char* TT_CANCEL_QUEUE = "tt_cancels";
 constexpr const char* TT_WARMUP_SIGNALS_QUEUE = "tt_warmup_signals";
 constexpr const char* TT_MEMORY_REQUEST_QUEUE = "tt_mem_requests";
 constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
+constexpr const char* TT_WORKER_METRICS_SHM = "/tt_worker_metrics";
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 64;
 constexpr bool USE_DEEPSEEK_MD_FORMAT = false;

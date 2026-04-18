@@ -211,6 +211,10 @@ std::string ttMemoryResultQueueName() {
   return envString("TT_MEMORY_RESULT_QUEUE", defaults::TT_MEMORY_RESULT_QUEUE);
 }
 
+std::string workerMetricsShmName() {
+  return envString("TT_WORKER_METRICS_SHM", defaults::TT_WORKER_METRICS_SHM);
+}
+
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;

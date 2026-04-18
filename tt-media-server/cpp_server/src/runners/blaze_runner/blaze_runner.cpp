@@ -15,6 +15,7 @@
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "services/memory_services/blaze_memory_manager.hpp"
 #include "utils/logger.hpp"
+#include "worker/single_process_worker_metrics.hpp"
 
 namespace tt::runners {
 namespace utils = blaze_utils;
@@ -122,6 +123,7 @@ bool BlazeRunner::warmup() {
 void BlazeRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
 
 void BlazeRunner::step() {
+  tt::worker::SingleProcessWorkerMetrics::instance().updateStepHeartbeat();
   auto memoryRequest = getMemoryRequest();
   if (memoryRequest.has_value()) {
     TT_LOG_DEBUG("[BlazeRunner] step: got memoryRequest taskId={}, action={}",
@@ -187,6 +189,7 @@ BlazeRunner::getMemoryRequest() {
 }
 
 void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
+  tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
   auto it = running.find(output.slot_id);
   if (it == running.end()) {
     TT_LOG_ERROR(
@@ -202,6 +205,10 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   bool finished = output.is_complete || hitStop;
   auto taskId = seq.taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
+  if (finished) {
+    tt::worker::SingleProcessWorkerMetrics::instance()
+        .decrementActiveRequests();
+  }
 }
 
 inline void BlazeRunner::evictSlot(uint32_t slotId) {
@@ -218,6 +225,7 @@ inline void BlazeRunner::evictSlot(uint32_t slotId) {
 
 void BlazeRunner::handleRequest(
     std::unique_ptr<tt::runners::llm_engine::Sequence> request) {
+  tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
 
