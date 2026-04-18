@@ -2366,6 +2366,7 @@ vlm_templates = [
                 },
                 override_tt_config={
                     "fabric_config": "FABRIC_1D_RING",
+                    "trace_region_size": 60000000,
                 },
             ),
             DeviceModelSpec(
