@@ -37,7 +37,7 @@ SpPrefillModelRunner::forward(uint32_t taskId,
           taskId, tokenId, readBuf.tokenIds.size());
       return tt::runners::llm_engine::TokenResult(readBuf.taskId, tokenId);
     }
-    TT_LOG_DEBUG("SpPrefillModelRunner: Shared memory read failed");
+
     std::this_thread::yield();
   }
   TT_LOG_DEBUG(

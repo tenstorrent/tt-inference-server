@@ -33,6 +33,7 @@ class SpPrefillRunner : public IRunner {
   tt::runners::llm_engine::ITaskQueue* taskQueue;
   std::unique_ptr<sp_prefill::ISpPrefillModelRunner> modelRunner;
   std::atomic<bool> stopped{false};
+  std::atomic<size_t> consecutiveErrors{0};
 };
 
 }  // namespace tt::runners
