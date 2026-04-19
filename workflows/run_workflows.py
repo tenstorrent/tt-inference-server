@@ -150,7 +150,11 @@ def run_workflows(model_spec, runtime_config, json_fpath):
         workflow_results.append(
             run_single_workflow(model_spec, runtime_config, json_fpath)
         )
-        if WorkflowType.from_string(runtime_config.workflow) != WorkflowType.REPORTS:
+        skip_auto_reports = {WorkflowType.REPORTS, WorkflowType.INF_SERVER_V2}
+        if (
+            WorkflowType.from_string(runtime_config.workflow)
+            not in skip_auto_reports
+        ):
             runtime_config.workflow = WorkflowType.REPORTS.name
             workflow_results.append(
                 run_single_workflow(model_spec, runtime_config, json_fpath)

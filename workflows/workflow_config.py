@@ -100,6 +100,14 @@ WORKFLOW_REPORT_CONFIG = WorkflowConfig(
     run_script_path=get_repo_root_path() / "workflows" / "run_reports.py",
     workflow_run_script_venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,
 )
+#Added for tt-inference-server-v2 testing
+WORKFLOW_INF_SERVER_V2_CONFIG = WorkflowConfig(
+    workflow_type=WorkflowType.INF_SERVER_V2,
+    run_script_path=get_repo_root_path()
+    / "tt-inference-server-v2"
+    / "run_inf_server_v2.py",
+    workflow_run_script_venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,
+)
 
 # Define WorkflowConfig instances in a list
 workflow_config_list = [
@@ -110,6 +118,7 @@ workflow_config_list = [
     WORKFLOW_SERVER_CONFIG,
     WORKFLOW_SPEC_TESTS_CONFIG,
     WORKFLOW_REPORT_CONFIG,
+    WORKFLOW_INF_SERVER_V2_CONFIG,
 ]
 
 # Generate a dictionary keyed by the workflow name for each WorkflowConfig instance
