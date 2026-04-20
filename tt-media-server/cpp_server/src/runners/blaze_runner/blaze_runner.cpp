@@ -205,8 +205,7 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
     return;
   }
   auto& context = it->second;
-  bool hitStop = !context.ignoreEos &&
-                 stopTokenIds.count(output.token_id) > 0;
+  bool hitStop = !context.ignoreEos && stopTokenIds.count(output.token_id) > 0;
   bool finished = output.is_complete || hitStop;
   auto taskId = context.taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
@@ -281,13 +280,17 @@ void BlazeRunner::handleRequest(
     TT_LOG_DEBUG("[BlazeRunner] handleRequest: SUBMIT taskId={}, slotId={}",
                  request->taskId, slotId);
     pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
-    slotContexts.insert_or_assign(slotId, blaze_utils::SlotContext{request->taskId, request->getSamplingParams().ignore_eos});
+    slotContexts.insert_or_assign(
+        slotId, blaze_utils::SlotContext{
+                    request->taskId, request->getSamplingParams().ignore_eos});
     return;
   } else {
     TT_LOG_DEBUG("[BlazeRunner] handleRequest: CONTINUE taskId={}, slotId={}",
                  request->taskId, slotId);
     pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
-    slotContexts.insert_or_assign(slotId, blaze_utils::SlotContext{request->taskId, request->getSamplingParams().ignore_eos});
+    slotContexts.insert_or_assign(
+        slotId, blaze_utils::SlotContext{
+                    request->taskId, request->getSamplingParams().ignore_eos});
   }
 }
 
