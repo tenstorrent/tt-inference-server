@@ -154,15 +154,10 @@ std::string visibleDevicesForWorker(size_t workerIndex) {
   return "";
 }
 
-std::string h2dSocketId() {
+std::string blazeSocketDescriptorPrefix() {
   static const std::string cached =
-      envString("H2D_SOCKET_ID", defaults::H2D_SOCKET_ID);
-  return cached;
-}
-
-std::string d2hSocketId() {
-  static const std::string cached =
-      envString("D2H_SOCKET_ID", defaults::D2H_SOCKET_ID);
+      envString("BLAZE_SOCKET_DESCRIPTOR_PREFIX",
+                defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX);
   return cached;
 }
 

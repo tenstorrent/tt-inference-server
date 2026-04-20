@@ -130,11 +130,9 @@ unsigned sessionAllocationMaxRetries();
  * defaults::PREFILL_TIMEOUT_MS. */
 unsigned prefillTimeoutMs();
 
-/** H2D socket ID from H2D_SOCKET_ID. Default: defaults::H2D_SOCKET_ID. */
-std::string h2dSocketId();
-
-/** D2H socket ID from D2H_SOCKET_ID. Default: defaults::D2H_SOCKET_ID. */
-std::string d2hSocketId();
+/** Blaze socket descriptor prefix from BLAZE_SOCKET_DESCRIPTOR_PREFIX. Default:
+ * defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX. */
+std::string blazeSocketDescriptorPrefix();
 
 /** Pipeline manager connect timeout (ms) from PM_CONNECT_TIMEOUT_MS. Default:
  * defaults::PM_CONNECT_TIMEOUT_MS. */
