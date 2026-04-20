@@ -29,8 +29,8 @@ BlazeRunner::BlazeRunner(const config::LLMConfig& config,
       taskQueue(taskQueue) {
   TT_LOG_INFO("BlazeRunner: Constructing PipelineManager with SocketConfig...");
   pm::SocketConfig socketConfig{
-      .h2d_socket_id = tt::config::h2dSocketId(),
-      .d2h_socket_id = tt::config::d2hSocketId(),
+      .h2d_socket_id = tt::config::h2dSocketId() + "_h2d",
+      .d2h_socket_id = tt::config::d2hSocketId() + "_d2h",
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
   // pm::MockConfig mock = {};

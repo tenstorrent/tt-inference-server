@@ -38,8 +38,8 @@ constexpr const char* KAFKA_GROUP_ID = "migration-workers";
 
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 
-constexpr const char* H2D_SOCKET_ID = "deepseek_h2d";
-constexpr const char* D2H_SOCKET_ID = "deepseek_d2h";
+constexpr const char* H2D_SOCKET_ID = "deepseek";
+constexpr const char* D2H_SOCKET_ID = "deepseek";
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";
 constexpr const char* TT_CANCEL_QUEUE = "tt_cancels";
