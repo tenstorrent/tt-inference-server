@@ -30,7 +30,12 @@ class Session {
   /**
    * Get the session ID (UUID).
    */
-  std::string getSessionId() const { return session_id_; }
+  size_t getSessionId() const { return session_id_; }
+
+  /**
+   * Set the session ID (hash). Used when registering under a new prefix hash.
+   */
+  void setSessionId(size_t sessionId) { session_id_ = sessionId; }
 
   /**
    * Get the assigned slot ID.
@@ -94,7 +99,7 @@ class Session {
   }
 
  private:
-  std::string session_id_;
+  size_t session_id_;
   uint32_t slot_id_;
   bool in_flight_{false};
   bool pending_close_{false};

@@ -258,6 +258,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/llm_runner/sequence.cpp
     src/runners/llm_runner/sampling_params.cpp
     src/utils/logger.cpp
+    src/utils/conversation_hasher.cpp
     src/config/settings.cpp
     src/utils/tokenizers/tokenizer.cpp
     src/utils/tokenizers/deepseek_tokenizer.cpp

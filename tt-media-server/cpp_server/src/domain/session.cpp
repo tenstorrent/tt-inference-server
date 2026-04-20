@@ -10,10 +10,14 @@ namespace tt::domain {
 
 Session::Session(uint32_t slotId)
     : slot_id_(slotId), last_activity_time_(std::chrono::system_clock::now()) {
-  session_id_ = generateUuid();
+  // Session ID will be set to the conversation hash during registration
+  // For now, use a placeholder value
+  session_id_ = 0;
 }
 
 std::string Session::generateUuid() {
+  // DEPRECATED: Session IDs are now content-addressable hashes, not UUIDs.
+  // This function is kept for backward compatibility but should not be called.
   static std::mutex genMutex;
   static std::random_device rd;
   static std::mt19937_64 gen(rd());
