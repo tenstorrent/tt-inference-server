@@ -34,12 +34,18 @@ class SSTDataset(BaseDataset):
         self._prepare_dataset()
 
     def _tokenize_function(self, example):
-        prompt = PROMPT_TEMPLATE.substitute(input=example["sentence"])
+        user_content = PROMPT_TEMPLATE.substitute(input=example["sentence"])
+        prompt = self.tokenizer.apply_chat_template(
+            [{"role": "user", "content": user_content}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
         response = RESPONSE_TEMPLATE.substitute(label=LBL2VALUE[example["label"]])
-        full_text = prompt + response + self.tokenizer.eos_token
+        full_text = prompt + response + "<end_of_turn>" + self.tokenizer.eos_token
 
         encoding = self.tokenizer(
-            full_text, truncation=False, padding=False, return_tensors="pt"
+            full_text, truncation=False, padding=False, return_tensors="pt",
+            add_special_tokens=False,
         )
 
         input_ids = encoding["input_ids"].squeeze(0)
@@ -47,7 +53,8 @@ class SSTDataset(BaseDataset):
 
         labels = input_ids.clone()
         prompt_encoding = self.tokenizer(
-            prompt, truncation=False, padding=False, return_tensors="pt"
+            prompt, truncation=False, padding=False, return_tensors="pt",
+            add_special_tokens=False,
         )
         prompt_input_ids = prompt_encoding["input_ids"].squeeze(0)
         prompt_len = prompt_input_ids.size(0)
@@ -64,7 +71,7 @@ class SSTDataset(BaseDataset):
     def _prepare_dataset(self):
         raw_dataset = load_dataset(DATASET_BENCHMARK, DATASET_NAME, split=self.split)
 
-        tokenized_dataset = raw_dataset.map(self._tokenize_function)
+        tokenized_dataset = raw_dataset.map(self._tokenize_function, load_from_cache_file=False)
         self.full_dataset = tokenized_dataset.filter(
             lambda example: example["len"] <= self.max_length
         )
