@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <thread>
@@ -40,6 +41,7 @@ class SpPipelineRunnerDemo : public IRunner {
   void step();
   void drainDecodeResults();
   void memoryLoop();
+  void checkOutputHang();
 
   tt::config::LLMConfig config;
   std::unordered_set<int64_t> stopTokenIds;
@@ -56,6 +58,9 @@ class SpPipelineRunnerDemo : public IRunner {
 
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
   std::thread memoryThread;
+
+  std::chrono::steady_clock::time_point lastOutputTime;
+  std::chrono::milliseconds outputHangTimeout;
 };
 
 }  // namespace tt::runners

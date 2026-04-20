@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "runners/sp_pipeline_runner/sp_pipeline_runner_demo.hpp"
 
 #include <cassert>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <thread>
@@ -14,6 +15,7 @@
 #include "profiling/tracy.hpp"
 #include "services/memory_services/contiguous_memory_manager.hpp"
 #include "utils/logger.hpp"
+#include "worker/single_process_worker_metrics.hpp"
 
 namespace tt::runners {
 
@@ -25,7 +27,9 @@ SpPipelineRunnerDemo::SpPipelineRunnerDemo(
       resultQueue(resultQueue),
       taskQueue(taskQueue),
       decodeQueue(config.max_in_flight_count),
-      maxInFlightCount(config.max_in_flight_count * 30) {
+      maxInFlightCount(config.max_in_flight_count * 30),
+      lastOutputTime(std::chrono::steady_clock::now()),
+      outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY ||
       tt::config::llmMode() == config::LLMMode::REGULAR) {
     memoryManager = std::make_unique<services::ContiguousMemoryManager>();
@@ -124,7 +128,9 @@ void SpPipelineRunnerDemo::memoryLoop() {
 }
 
 void SpPipelineRunnerDemo::step() {
+  tt::worker::SingleProcessWorkerMetrics::instance().updateStepHeartbeat();
   drainDecodeResults();
+  checkOutputHang();
 
   if (inFlightCount >= maxInFlightCount) {
     return;
@@ -142,6 +148,12 @@ void SpPipelineRunnerDemo::step() {
           static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
     }
 
+    if (inFlightCount == 0) {
+      lastOutputTime = std::chrono::steady_clock::now();
+    }
+
+    tt::worker::SingleProcessWorkerMetrics::instance()
+        .incrementActiveRequests();
     modelRunner->write(
         taskId, seq->getTokenIds(), seq->getSamplingParams().max_tokens.value(),
         sp_pipeline::RequestPhase::PREFILL, seq->getSamplingParams().fast_mode);
@@ -151,12 +163,33 @@ void SpPipelineRunnerDemo::step() {
   }
 }
 
+void SpPipelineRunnerDemo::checkOutputHang() {
+  if (inFlightCount == 0) {
+    lastOutputTime = std::chrono::steady_clock::now();
+    return;
+  }
+  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - lastOutputTime);
+  if (elapsed <= outputHangTimeout) {
+    return;
+  }
+  TT_LOG_CRITICAL(
+      "[SpPipelineRunnerDemo] Output hang detected: no model output for {} ms "
+      "with {} active request(s) (threshold={} ms). Self-terminating worker "
+      "so infrastructure can restart the server.",
+      elapsed.count(), inFlightCount, outputHangTimeout.count());
+  // See BlazeRunner::checkOutputHang for rationale on using abort() here.
+  std::abort();
+}
+
 void SpPipelineRunnerDemo::drainDecodeResults() {
   std::vector<tt::runners::llm_engine::TokenResult> results;
   decodeQueue.popMany(results, maxInFlightCount);
   for (const auto& dr : results) {
+    tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
+    lastOutputTime = std::chrono::steady_clock::now();
     auto it = activeSequences.find(dr.taskId);
-    if (it == activeSequences.end()) {  // safeguard for too many decode results
+    if (it == activeSequences.end()) {
       TT_LOG_WARN(
           "[SpPipelineRunnerDemo] task_id not found in active_sequences_: {}",
           dr.taskId);
@@ -166,6 +199,8 @@ void SpPipelineRunnerDemo::drainDecodeResults() {
 
     if (dr.isError) {
       ipc::pushErrorToken(*resultQueue, dr.taskId);
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .decrementActiveRequests();
       activeSequences.erase(it);
       --inFlightCount;
       continue;
@@ -184,6 +219,8 @@ void SpPipelineRunnerDemo::drainDecodeResults() {
     ipc::pushToken(*resultQueue, dr.taskId, dr.tokenId, finished);
 
     if (finished) {
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .decrementActiveRequests();
       activeSequences.erase(it);
       --inFlightCount;
     }

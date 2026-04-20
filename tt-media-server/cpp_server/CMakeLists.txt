@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 cmake_minimum_required(VERSION 3.19)
 project(tt_media_server_cpp CXX)
@@ -266,22 +266,22 @@ set(LLM_RUNNER_LIB_SOURCES
     src/services/memory_services/memory_manager.cpp
     src/services/memory_services/paged_memory_manager.cpp
     src/services/memory_services/contiguous_memory_manager.cpp
-    src/runners/sp_pipeline_runner/sp_pipeline_runner_demo.cpp
-    src/runners/sp_pipeline_runner/i_sp_pipeline_model_runner.cpp
-    src/runners/sp_pipeline_runner/sp_pipeline_model_runner.cpp
-    src/runners/sp_pipeline_runner/mock_device_pipeline.cpp
-    src/runners/sp_pipeline_runner/mock_sp_pipeline_model_runner.cpp
-    src/runners/sp_prefill_runner/sp_prefill_runner.cpp
-    src/runners/sp_prefill_runner/i_sp_prefill_model_runner.cpp
-    src/runners/sp_prefill_runner/sp_prefill_model_runner.cpp
+    src/runners/blaze_runner/sp_pipeline_runner_demo.cpp
+    src/runners/blaze_runner/i_sp_pipeline_model_runner.cpp
+    src/runners/blaze_runner/sp_pipeline_model_runner.cpp
+    src/runners/blaze_runner/mock_device_pipeline.cpp
+    src/runners/blaze_runner/mock_sp_pipeline_model_runner.cpp
+    src/runners/blaze_prefill_runner/blaze_prefill_runner.cpp
+    src/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.cpp
+    src/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
     src/services/guided_decoder_manager.cpp
 )
 
 # Add pipeline_manager-dependent sources only when ENABLE_BLAZE is ON
 if(ENABLE_BLAZE)
     list(APPEND LLM_RUNNER_LIB_SOURCES
-        src/runners/sp_pipeline_runner/sp_pipeline_runner.cpp
-        src/services/memory_services/sp_pipeline_memory_manager.cpp
+        src/runners/blaze_runner/blaze_runner.cpp
+        src/services/memory_services/blaze_memory_manager.cpp
     )
     message(STATUS "llm_runner_lib: including pipeline_manager-dependent sources (ENABLE_BLAZE=ON)")
 endif()
@@ -417,6 +417,15 @@ target_include_directories(structured_output_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(worker_metrics_shm_test
+    tests/worker_metrics_shm_test.cpp
+    src/worker/worker_metrics_shm.cpp
+)
+target_link_libraries(worker_metrics_shm_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(worker_metrics_shm_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -426,6 +435,7 @@ gtest_discover_tests(test_tokenizer)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(cancellation_test)
 gtest_discover_tests(structured_output_test)
+gtest_discover_tests(worker_metrics_shm_test)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -515,6 +525,10 @@ set(SOURCES
     src/sockets/inter_server_service.cpp
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp
+    src/worker/single_process_worker_metrics.cpp
+    src/worker/worker_metrics_shm.cpp
+    src/worker/worker_metrics_aggregator.cpp
+    src/worker/sp_pipeline_worker_metrics_renderer.cpp
 )
 
 # Create executable

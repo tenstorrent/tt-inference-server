@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -17,21 +18,22 @@
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 #include "services/memory_services/async_memory_manager.hpp"
+
 namespace tt::runners {
 
 namespace pm = tt_blaze::pipeline_manager;
 
-class SpPipelineRunner : public IRunner {
+class BlazeRunner : public IRunner {
  public:
-  SpPipelineRunner(const tt::config::LLMConfig& config,
-                   ipc::IResultQueue* resultQueue,
-                   tt::runners::llm_engine::ITaskQueue* taskQueue);
-  ~SpPipelineRunner() override;
+  BlazeRunner(const tt::config::LLMConfig& config,
+              ipc::IResultQueue* resultQueue,
+              tt::runners::llm_engine::ITaskQueue* taskQueue);
+  ~BlazeRunner() override;
 
   void run() override;
   void stop() override;
   bool warmup() override;
-  const char* runnerType() const override { return "SpPipelineRunner"; }
+  const char* runnerType() const override { return "BlazeRunner"; }
 
  private:
   void step();
@@ -46,6 +48,7 @@ class SpPipelineRunner : public IRunner {
   void handleRequest(
       std::unique_ptr<tt::runners::llm_engine::Sequence> request);
   void evictSlot(uint32_t slotId);
+  void checkOutputHang();
 
   tt::config::LLMConfig config;
   std::unordered_set<int64_t> stopTokenIds;
@@ -57,5 +60,8 @@ class SpPipelineRunner : public IRunner {
       running;
   std::atomic<bool> stopped{false};
   std::unique_ptr<tt::services::AsyncMemoryManager> memoryManager;
+
+  std::chrono::steady_clock::time_point lastOutputTime;
+  std::chrono::milliseconds outputHangTimeout;
 };
 }  // namespace tt::runners

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import json
 import time
@@ -8,13 +8,14 @@ import uuid
 
 from config.settings import settings
 from domain.completion_request import CompletionRequest
-from open_ai_api.chat import _count_tokens
 from fastapi import APIRouter, Depends, HTTPException, Security
-from utils.logger import TTLogger
 from fastapi.responses import JSONResponse, StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
+from utils.logger import TTLogger
+
+from open_ai_api.chat import _count_tokens
 
 logger = TTLogger()
 router = APIRouter()

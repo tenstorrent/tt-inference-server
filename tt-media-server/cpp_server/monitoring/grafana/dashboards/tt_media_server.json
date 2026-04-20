@@ -132,8 +132,8 @@
       },
       "gridPos": {
         "h": 3,
-        "w": 4,
-        "x": 8,
+        "w": 6,
+        "x": 6,
         "y": 1
       },
       "id": 1,
@@ -193,9 +193,9 @@
       },
       "gridPos": {
         "h": 3,
-        "w": 4,
-        "x": 8,
-        "y": 4
+        "w": 6,
+        "x": 12,
+        "y": 1
       },
       "id": 5,
       "options": {
@@ -218,6 +218,67 @@
         }
       ],
       "title": "Decoding Users",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Number of active sessions currently managed by the server",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 40
+              },
+              {
+                "color": "red",
+                "value": 60
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "id": 101,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "tt_num_active_sessions",
+          "legendFormat": "Active Sessions"
+        }
+      ],
+      "title": "Active Sessions",
       "type": "stat"
     },
     {
@@ -248,8 +309,8 @@
       "gridPos": {
         "h": 3,
         "w": 6,
-        "x": 12,
-        "y": 1
+        "x": 6,
+        "y": 4
       },
       "id": 6,
       "options": {
@@ -302,8 +363,8 @@
       "gridPos": {
         "h": 3,
         "w": 6,
-        "x": 18,
-        "y": 1
+        "x": 12,
+        "y": 4
       },
       "id": 7,
       "options": {
@@ -364,8 +425,8 @@
       },
       "gridPos": {
         "h": 3,
-        "w": 12,
-        "x": 12,
+        "w": 6,
+        "x": 18,
         "y": 4
       },
       "id": 4,
@@ -684,6 +745,118 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Active sessions and in-flight requests over time",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Active Sessions"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "In-Flight Requests"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Decoding Requests"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 102,
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "tt_num_active_sessions",
+          "legendFormat": "Active Sessions"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "tt_num_requests_in_flight",
+          "legendFormat": "In-Flight Requests"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "tt_num_decoding_requests",
+          "legendFormat": "Decoding Requests"
+        }
+      ],
+      "title": "Sessions & Requests Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "description": "Latency between consecutive decode steps (inter-token latency)",
       "fieldConfig": {
         "defaults": {
@@ -704,7 +877,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 32
       },
       "id": 20,
       "options": {
@@ -767,7 +940,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 24
+        "y": 32
       },
       "id": 21,
       "options": {
@@ -838,7 +1011,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 33
+        "y": 41
       },
       "id": 30,
       "options": {
@@ -921,10 +1094,10 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 41
+        "y": 49
       },
-      "id": 104,
-      "title": "Infrastructure (per-process CPU / memory / threads)",
+      "id": 200,
+      "title": "Worker Health",
       "type": "row"
     },
     {
@@ -932,7 +1105,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "CPU usage per binary, aggregated across all instances. 100% = one full core.",
+      "description": "Seconds since each worker last called step(). A spike means the worker process froze.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -940,189 +1113,27 @@
           },
           "custom": {
             "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
             "fillOpacity": 10,
-            "stacking": {
-              "mode": "none"
-            },
-            "showPoints": "never"
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 42
-      },
-      "id": 105,
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (groupname) (rate(namedprocess_namegroup_cpu_seconds_total[1m])) * 100",
-          "legendFormat": "{{groupname}}"
-        }
-      ],
-      "title": "CPU % per binary",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Resident set size per binary (summed over instances).",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
             "lineWidth": 1,
-            "fillOpacity": 10,
-            "stacking": {
-              "mode": "none"
-            },
-            "showPoints": "never"
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
           },
-          "unit": "decmbytes"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 42
-      },
-      "id": 106,
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 30
+              }
+            ]
           },
-          "expr": "sum by (groupname) (namedprocess_namegroup_memory_bytes{memtype=\"resident\"}) / 1024 / 1024",
-          "legendFormat": "{{groupname}}"
-        }
-      ],
-      "title": "Memory RSS (MB) per binary",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Total kernel thread count per binary.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "stacking": {
-              "mode": "none"
-            },
-            "showPoints": "never"
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 42
-      },
-      "id": 107,
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (groupname) (namedprocess_namegroup_num_threads)",
-          "legendFormat": "{{groupname}}"
-        }
-      ],
-      "title": "Threads per binary",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Open fds per binary.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "stacking": {
-              "mode": "none"
-            },
-            "showPoints": "never"
-          },
-          "unit": "short"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -1132,18 +1143,11 @@
         "x": 0,
         "y": 50
       },
-      "id": 108,
+      "id": 202,
       "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
@@ -1152,11 +1156,11 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (groupname) (namedprocess_namegroup_open_filedesc)",
-          "legendFormat": "{{groupname}}"
+          "expr": "tt_worker_heartbeat_age_seconds",
+          "legendFormat": "Worker {{worker_id}}"
         }
       ],
-      "title": "Open file descriptors",
+      "title": "Heartbeat Age",
       "type": "timeseries"
     },
     {
@@ -1164,7 +1168,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Instances per binary. Drops indicate crashes / restarts.",
+      "description": "Seconds since each worker last produced a token, shown only while the worker has active requests. A sustained spike indicates a pipeline stall (e.g. H2D hang).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1172,15 +1176,27 @@
           },
           "custom": {
             "drawStyle": "line",
-            "lineInterpolation": "stepAfter",
-            "lineWidth": 2,
-            "fillOpacity": 20,
-            "stacking": {
-              "mode": "none"
-            },
-            "showPoints": "never"
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
           },
-          "unit": "short"
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 60
+              }
+            ]
+          },
+          "unit": "s"
         },
         "overrides": []
       },
@@ -1190,18 +1206,11 @@
         "x": 8,
         "y": 50
       },
-      "id": 109,
+      "id": 203,
       "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "lastNotNull",
-            "min"
-          ]
-        },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
@@ -1210,11 +1219,11 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "namedprocess_namegroup_num_procs",
-          "legendFormat": "{{groupname}}"
+          "expr": "tt_worker_last_output_age_seconds and on(worker_id) tt_worker_active_requests > 0",
+          "legendFormat": "Worker {{worker_id}}"
         }
       ],
-      "title": "Process count per binary",
+      "title": "Output Staleness",
       "type": "timeseries"
     },
     {
@@ -1222,7 +1231,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Major = pages fetched from disk (memory pressure signal). Minor = normal allocations.",
+      "description": "Number of requests currently being processed by each worker.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1230,15 +1239,12 @@
           },
           "custom": {
             "drawStyle": "line",
-            "lineInterpolation": "linear",
+            "fillOpacity": 10,
             "lineWidth": 1,
-            "fillOpacity": 5,
-            "stacking": {
-              "mode": "none"
-            },
             "showPoints": "never"
           },
-          "unit": "ops"
+          "unit": "none",
+          "decimals": 0
         },
         "overrides": []
       },
@@ -1248,18 +1254,11 @@
         "x": 16,
         "y": 50
       },
-      "id": 110,
+      "id": 204,
       "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "mean",
-            "max"
-          ]
-        },
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "none"
         }
       },
       "targets": [
@@ -1268,19 +1267,11 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (groupname) (rate(namedprocess_namegroup_major_page_faults_total[1m]))",
-          "legendFormat": "{{groupname}} major"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (groupname) (rate(namedprocess_namegroup_minor_page_faults_total[1m]))",
-          "legendFormat": "{{groupname}} minor"
+          "expr": "tt_worker_active_requests",
+          "legendFormat": "Worker {{worker_id}}"
         }
       ],
-      "title": "Page faults /s per binary",
+      "title": "Worker Active Requests",
       "type": "timeseries"
     }
   ],

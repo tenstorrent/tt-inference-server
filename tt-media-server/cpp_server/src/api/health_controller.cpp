@@ -1,20 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "api/health_controller.hpp"
 
 #include <chrono>
 
 #include "config/settings.hpp"
+#include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
 #include "utils/service_container.hpp"
 
 namespace tt::api {
 
 HealthController::HealthController() {
-  service_ = tt::utils::ServiceContainer::instance().configuredService();
-  TT_LOG_INFO("[HealthController] Initialized (service={})",
-              (service_ ? "yes" : "no"));
+  auto& container = tt::utils::ServiceContainer::instance();
+  service_ = container.configuredService();
+  socket_ = container.socket();
+  TT_LOG_INFO("[HealthController] Initialized (service={}, socket={})",
+              (service_ ? "yes" : "no"), (socket_ ? "yes" : "no"));
 }
 
 void HealthController::health(
@@ -26,15 +29,17 @@ void HealthController::health(
           std::chrono::system_clock::now().time_since_epoch())
           .count());
 
-  // Check if any workers are alive
   bool hasAliveWorkers = false;
+  bool hasReadyWorkers = false;
   if (service_) {
     try {
       auto status = service_->getSystemStatus();
       for (const auto& w : status.worker_info) {
         if (w.is_alive) {
           hasAliveWorkers = true;
-          break;
+        }
+        if (w.is_ready) {
+          hasReadyWorkers = true;
         }
       }
     } catch (const std::exception& e) {
@@ -43,12 +48,34 @@ void HealthController::health(
     }
   }
 
-  if (hasAliveWorkers) {
+  bool socketHealthy = true;
+  if (socket_) {
+    response["socket_status"] = socket_->getStatus();
+    socketHealthy = socket_->isConnected();
+  }
+
+  if (hasReadyWorkers && hasAliveWorkers && socketHealthy) {
     response["status"] = "healthy";
     callback(drogon::HttpResponse::newHttpJsonResponse(response));
+  } else if (!hasAliveWorkers) {
+    response["status"] = "unhealthy";
+    if (!hasAliveWorkers) {
+      response["error"] = "no workers are alive";
+    } else {
+      response["error"] = "socket not connected";
+    }
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k503ServiceUnavailable);
+    callback(resp);
+  } else if (!hasReadyWorkers) {
+    response["status"] = "unhealthy";
+    response["error"] = "no workers are ready";
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k503ServiceUnavailable);
+    callback(resp);
   } else {
     response["status"] = "unhealthy";
-    response["error"] = "no workers are alive";
+    response["error"] = "socket not connected";
     auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
     resp->setStatusCode(drogon::k503ServiceUnavailable);
     callback(resp);
@@ -78,6 +105,10 @@ void HealthController::ready(
     response["queue_size"] = static_cast<Json::UInt64>(status.queue_size);
     response["max_queue_size"] =
         static_cast<Json::UInt64>(status.max_queue_size);
+
+    if (socket_) {
+      response["socket_status"] = socket_->getStatus();
+    }
 
     Json::Value workers(Json::arrayValue);
     for (const auto& w : status.worker_info) {
