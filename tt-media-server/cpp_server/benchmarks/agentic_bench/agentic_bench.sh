@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# agentic_bench.sh - long-running agentic-shape multi-turn Poisson soak
-#                    against an OpenAI-compatible endpoint, driven by
-#                    GuideLLM.
+# agentic_bench.sh - single-shot agentic-shape multi-turn Poisson soak
+#                    against an OpenAI-compatible endpoint, driven by GuideLLM.
 #
-# Rolling sub-runs for SIGINT safety; a single self-contained report.html
-# is produced at the end.
+# On SIGINT the underlying guidellm subprocess is terminated and the partial
+# results for the current run may be lost (GuideLLM writes benchmarks.json
+# only at end-of-run). Acceptable; data loss tolerated.
 #
 set -Eeuo pipefail
 
@@ -16,17 +16,16 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 # -----------------------------------------------------------------------------
 TARGET="${TARGET:-http://localhost:8000}"
 MODEL="${MODEL:-deepseek-ai/DeepSeek-R1-0528}"
-PROCESSOR=""                 # defaults to MODEL at resolve time
-DURATION="${DURATION:-28800}"    # 8 h
-CHUNK="${CHUNK:-900}"            # 15 min
+PROCESSOR=""                                        # defaults to MODEL at resolve time
+DURATION="${DURATION:-28800}"                       # 8 h
 
 # Concurrency target (via Little's Law)
 #   target_concurrency = mean rate (req/s) x average turn latency (s)
 # Set --rate directly if you know the right number, or set
 # --target-concurrency + --avg-turn-sec and we compute --rate for you.
-RATE=""                                              # unset => derive from target/avg
-TARGET_CONCURRENCY="${TARGET_CONCURRENCY:-64}"       # 64 sessions default
-AVG_TURN_SEC="${AVG_TURN_SEC:-40}"                   # seconds per turn on real cpp_server; mock is much faster
+RATE=""                                             # unset => derive from target/avg
+TARGET_CONCURRENCY="${TARGET_CONCURRENCY:-64}"
+AVG_TURN_SEC="${AVG_TURN_SEC:-40}"                  # DeepSeek-R1 real HW ~40s; mock is much faster
 
 TURNS="${TURNS:-6}"
 PROMPT_TOKENS="${PROMPT_TOKENS:-2000}"
@@ -62,7 +61,6 @@ Target & duration:
   --model NAME              Model id for the backend         [deepseek-ai/DeepSeek-R1-0528]
   --processor NAME          HF tokenizer id                  [<same as --model>]
   --duration SEC            Total run seconds (0 = forever)  [28800]    # 8h
-  --chunk SEC               Sub-run chunk seconds            [900]      # 15 min
 
 Concurrency (Little's Law: target_concurrency = rate x avg_turn_latency)
   --rate RPS                Poisson mean requests/sec. If not set, computed
@@ -86,22 +84,22 @@ Agentic-shape synthetic data (maps to guidellm --data key=value,...):
   --prefix-tokens N         Size of each shared system prompt[4000]
   --prefix-count N          Pool size of distinct prefixes   [8]
 
-  Note on prefix cost: prefix_count x prefix_tokens prefixes are
-  pre-generated eagerly in a single DataLoader worker using the model
-  tokenizer. With DeepSeek-R1-style tokenizers this is serial Python
-  work. Keep prefix_count x prefix_tokens <= ~40k for fast startup
-  (seconds). Very large products can deadlock the GuideLLM
-  DataLoader -> scheduler pipe before the first request is ever sent.
+  Note on prefix cost: prefix_count x prefix_tokens prefixes are pre-generated
+  eagerly in a single DataLoader worker using the model tokenizer. With
+  DeepSeek-R1-style tokenizers this is serial Python work. Keep
+  prefix_count x prefix_tokens <= ~40k for fast startup (seconds). Very
+  large products can deadlock the GuideLLM DataLoader -> scheduler pipe
+  before the first request is ever sent.
 
 Auth (OpenAI-compatible Bearer token):
   --api-key KEY             Sent as Authorization: Bearer KEY.
-                            Also honors $OPENAI_API_KEY. If unset no
-                            Authorization header is sent.
+                            Also honors $OPENAI_API_KEY.
+                            If unset, no Authorization header is sent.
 
 Output & reliability:
   --out DIR                 Run directory                    [./runs/<ts>]
-  --max-errors N            Stop chunk after N errors        [500]
-  --warmup FRAC             Per-chunk warmup fraction        [0.05]
+  --max-errors N            Stop run after N errors          [500]
+  --warmup FRAC             Warmup fraction of duration      [0.05]
   --extras 'JSON'           Extra guidellm --extras          [""]
   --dry-run                 Print the guidellm command and exit
   --help                    Show this and exit
@@ -109,10 +107,9 @@ Output & reliability:
 Everything after `--` is forwarded verbatim to `guidellm benchmark`.
 
 Interrupt:
-  SIGINT (Ctrl-C) lets the current chunk finish naturally, then merges
-  all completed chunks into one report.html. Prior chunks are always
-  intact; worst-case data loss is the in-flight requests of the chunk
-  that was running at SIGINT time.
+  SIGINT (Ctrl-C) kills the guidellm subprocess immediately; since
+  GuideLLM writes benchmarks.json only at end-of-run, the partial
+  results for the current run are lost. Acceptable by design.
 EOF
 }
 
@@ -129,7 +126,6 @@ parse_args() {
       --target-concurrency|--target-concurrency=*) _read_opt TARGET_CONCURRENCY "$@"; shift $_SHIFT ;;
       --avg-turn-sec|--avg-turn-sec=*)          _read_opt AVG_TURN_SEC "$@"; shift $_SHIFT ;;
       --duration|--duration=*)                  _read_opt DURATION "$@"; shift $_SHIFT ;;
-      --chunk|--chunk=*)                        _read_opt CHUNK "$@"; shift $_SHIFT ;;
       --turns|--turns=*)                        _read_opt TURNS "$@"; shift $_SHIFT ;;
       --prompt-tokens|--prompt-tokens=*)        _read_opt PROMPT_TOKENS "$@"; shift $_SHIFT ;;
       --prompt-tokens-stdev|--prompt-tokens-stdev=*) _read_opt PROMPT_TOKENS_STDEV "$@"; shift $_SHIFT ;;
@@ -194,9 +190,6 @@ resolve() {
     echo "   pip install $SCRIPT_DIR/../../guidellm" >&2
     exit 1
   fi
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "error: python3 not on PATH" >&2; exit 1
-  fi
 
   DATA="turns=${TURNS}"
   DATA+=",prompt_tokens=${PROMPT_TOKENS}"
@@ -210,32 +203,29 @@ resolve() {
   DATA+=",prefix_count=${PREFIX_COUNT}"
   DATA+=",prefix_tokens=${PREFIX_TOKENS}"
 
-  # GuideLLM takes backend auth via --backend-kwargs JSON. We build it
-  # here so users just set --api-key / $OPENAI_API_KEY and don't touch
-  # JSON themselves.
+  # GuideLLM takes backend auth via --backend-kwargs JSON. We build it here so
+  # users just set --api-key / $OPENAI_API_KEY and don't touch JSON themselves.
   BACKEND_KWARGS=""
   if [[ -n "$API_KEY" ]]; then
-    # compact JSON, escape double-quotes in the key just in case
     local escaped_key=${API_KEY//\"/\\\"}
     BACKEND_KWARGS="{\"api_key\":\"${escaped_key}\"}"
   fi
 }
 
 # -----------------------------------------------------------------------------
-# Write a reproducibility config snapshot
+# Reproducibility config snapshot (api key is masked)
 # -----------------------------------------------------------------------------
 save_config() {
   local out="$1/config.txt"
   {
     echo "# agentic_bench.sh config snapshot"
     echo "# $(date -u +%FT%TZ)"
-    for v in TARGET MODEL PROCESSOR RATE TARGET_CONCURRENCY AVG_TURN_SEC DURATION CHUNK \
+    for v in TARGET MODEL PROCESSOR RATE TARGET_CONCURRENCY AVG_TURN_SEC DURATION \
              TURNS PROMPT_TOKENS PROMPT_TOKENS_STDEV PROMPT_TOKENS_MIN PROMPT_TOKENS_MAX \
              OUTPUT_TOKENS OUTPUT_TOKENS_STDEV OUTPUT_TOKENS_MIN OUTPUT_TOKENS_MAX \
              PREFIX_TOKENS PREFIX_COUNT OUT MAX_ERRORS WARMUP EXTRAS; do
       printf '%s=%s\n' "$v" "${!v}"
     done
-    # never dump the raw API key into files
     if [[ -n "${API_KEY}" ]]; then
       printf 'API_KEY=<set, length %d>\n' "${#API_KEY}"
     else
@@ -247,7 +237,7 @@ save_config() {
 }
 
 # -----------------------------------------------------------------------------
-# Main loop
+# Main
 # -----------------------------------------------------------------------------
 main() {
   parse_args "$@"
@@ -260,16 +250,14 @@ main() {
     printf '  --processor %q \\\n'    "$PROCESSOR"
     printf '  --profile poisson \\\n'
     printf '  --rate %q \\\n'         "$RATE"
-    printf '  --max-seconds %q \\\n'  "$CHUNK"
+    printf '  --max-seconds %q \\\n'  "$DURATION"
     printf '  --max-errors %q \\\n'   "$MAX_ERRORS"
     printf '  --warmup %q \\\n'       "$WARMUP"
     printf '  --request-type chat_completions \\\n'
     printf '  --data %q \\\n'         "$DATA"
-    [[ -n "$EXTRAS" ]] && printf '  --extras %q \\\n' "$EXTRAS"
-    if [[ -n "$BACKEND_KWARGS" ]]; then
-      printf '  --backend-kwargs %q \\\n' "$BACKEND_KWARGS"
-    fi
-    printf '  --output-path <chunk_dir>/benchmarks.json'
+    [[ -n "$EXTRAS" ]]          && printf '  --extras %q \\\n'         "$EXTRAS"
+    [[ -n "$BACKEND_KWARGS" ]]  && printf '  --backend-kwargs %q \\\n' "$BACKEND_KWARGS"
+    printf '  --output-path %q' "$OUT/benchmarks.json"
     if (( ${#PASSTHROUGH[@]} > 0 )); then
       printf ' \\\n  '
       printf '%q ' "${PASSTHROUGH[@]}"
@@ -288,72 +276,37 @@ main() {
   else
     echo "==> rate:    ${RATE} req/s (Poisson; explicit --rate)"
   fi
-  echo "==> plan:    $(( DURATION > 0 ? (DURATION + CHUNK - 1) / CHUNK : 0 )) chunks of ${CHUNK}s each (total ${DURATION}s)"
+  echo "==> duration: ${DURATION}s"
   if [[ -n "$API_KEY" ]]; then
     echo "==> auth:    Bearer <api key set, length ${#API_KEY}>"
   else
     echo "==> auth:    none (no --api-key / \$OPENAI_API_KEY set)"
   fi
-  echo "==> prefix:  ${PREFIX_COUNT} x ${PREFIX_TOKENS} tokens ($(( PREFIX_COUNT * PREFIX_TOKENS )) total) - pre-generated once per chunk"
+  echo "==> prefix:  ${PREFIX_COUNT} x ${PREFIX_TOKENS} tokens ($(( PREFIX_COUNT * PREFIX_TOKENS )) total) - pre-generated at startup"
   echo
 
-  STOP=0
-  trap '
-    if (( STOP == 0 )); then
-      echo; echo "==> SIGINT received - current chunk will finish, then merge and exit."
-      STOP=1
-    fi
-  ' INT TERM
+  extras_args=()
+  [[ -n "$EXTRAS" ]]         && extras_args=(--extras "$EXTRAS")
+  backend_args=()
+  [[ -n "$BACKEND_KWARGS" ]] && backend_args=(--backend-kwargs "$BACKEND_KWARGS")
+  passthrough_args=()
+  (( ${#PASSTHROUGH[@]} > 0 )) && passthrough_args=("${PASSTHROUGH[@]}")
 
-  merger="$SCRIPT_DIR/scripts/merge_report.py"
-  trap '
-    if [[ -f "$merger" ]]; then
-      echo "==> merging chunks into report.html"
-      python3 "$merger" "$OUT" || echo "merge_report.py failed (chunks still on disk in $OUT)"
-    fi
-  ' EXIT
-
-  i=0
-  elapsed=0
-  while (( STOP == 0 )) && { (( DURATION == 0 )) || (( elapsed < DURATION )); }; do
-    chunk_sec=$CHUNK
-    if (( DURATION > 0 )) && (( elapsed + chunk_sec > DURATION )); then
-      chunk_sec=$(( DURATION - elapsed ))
-    fi
-
-    chunk_dir="$OUT/chunk_$(printf '%04d' "$i")"
-    mkdir -p "$chunk_dir"
-    echo "==> chunk $i - ${chunk_sec}s (elapsed ${elapsed}/${DURATION}s)"
-
-    extras_args=()
-    [[ -n "$EXTRAS" ]] && extras_args=(--extras "$EXTRAS")
-    backend_args=()
-    [[ -n "$BACKEND_KWARGS" ]] && backend_args=(--backend-kwargs "$BACKEND_KWARGS")
-    passthrough_args=()
-    (( ${#PASSTHROUGH[@]} > 0 )) && passthrough_args=("${PASSTHROUGH[@]}")
-
-    if ! guidellm benchmark \
-          --target "$TARGET" \
-          --model "$MODEL" \
-          --processor "$PROCESSOR" \
-          --profile poisson \
-          --rate "$RATE" \
-          --max-seconds "$chunk_sec" \
-          --max-errors "$MAX_ERRORS" \
-          --warmup "$WARMUP" \
-          --request-type chat_completions \
-          --data "$DATA" \
-          "${extras_args[@]}" \
-          "${backend_args[@]}" \
-          --output-path "$chunk_dir/benchmarks.json" \
-          "${passthrough_args[@]}"; then
-      echo "!! chunk $i failed; continuing (artifacts under $chunk_dir)"
-    fi
-
-    elapsed=$(( elapsed + chunk_sec ))
-    i=$(( i + 1 ))
-  done
-  echo "==> loop finished (chunks=$i, elapsed=${elapsed}s)"
+  exec guidellm benchmark \
+    --target "$TARGET" \
+    --model "$MODEL" \
+    --processor "$PROCESSOR" \
+    --profile poisson \
+    --rate "$RATE" \
+    --max-seconds "$DURATION" \
+    --max-errors "$MAX_ERRORS" \
+    --warmup "$WARMUP" \
+    --request-type chat_completions \
+    --data "$DATA" \
+    "${extras_args[@]}" \
+    "${backend_args[@]}" \
+    --output-path "$OUT/benchmarks.json" \
+    "${passthrough_args[@]}"
 }
 
 main "$@"
