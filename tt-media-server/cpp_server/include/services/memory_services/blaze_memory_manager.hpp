@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -11,14 +11,14 @@
 
 namespace tt::services {
 
-class SpPipelineMemoryManager : public AsyncMemoryManager {
+class BlazeMemoryManager : public AsyncMemoryManager {
   using onEvictCb = std::function<void(uint32_t slotId)>;
 
  public:
-  SpPipelineMemoryManager(
+  BlazeMemoryManager(
       tt_blaze::pipeline_manager::PipelineManager& pipelineManager,
       onEvictCb onEvict);
-  ~SpPipelineMemoryManager() = default;
+  ~BlazeMemoryManager() = default;
 
   void handleRequest(const domain::ManageMemoryTask& request) override;
 

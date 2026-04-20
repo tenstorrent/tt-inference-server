@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "config/settings.hpp"
 
@@ -175,6 +175,11 @@ size_t pmMaxUsers() {
   return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
 }
 
+unsigned warmupTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("WARMUP_TIMEOUT_MS", defaults::WARMUP_TIMEOUT_MS));
+}
+
 bool useDeepseekMdFormat() {
   return static_cast<bool>(
       envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));
@@ -204,6 +209,10 @@ std::string ttMemoryRequestQueueName() {
 
 std::string ttMemoryResultQueueName() {
   return envString("TT_MEMORY_RESULT_QUEUE", defaults::TT_MEMORY_RESULT_QUEUE);
+}
+
+std::string workerMetricsShmName() {
+  return envString("TT_WORKER_METRICS_SHM", defaults::TT_WORKER_METRICS_SHM);
 }
 
 LLMConfig llmEngineConfig() {
@@ -333,6 +342,11 @@ unsigned sessionAllocationMaxRetries() {
   return static_cast<unsigned>(
       envUlong("SESSION_ALLOCATION_MAX_RETRIES",
                defaults::SESSION_ALLOCATION_MAX_RETRIES));
+}
+
+unsigned prefillTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
 }
 
 }  // namespace tt::config

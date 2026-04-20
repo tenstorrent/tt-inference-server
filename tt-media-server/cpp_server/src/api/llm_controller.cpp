@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #include "api/llm_controller.hpp"
 
@@ -362,17 +362,27 @@ void LLMController::closeSession(
     const drogon::HttpRequestPtr& /*req*/,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback,
     const std::string& sessionId) const {
-  bool success = sessionManager->closeSession(sessionId);
+  using tt::services::CloseSessionResult;
+  auto result = sessionManager->closeSession(sessionId);
 
-  if (success) {
-    Json::Value response;
-    response["success"] = true;
-    response["message"] = "Session closed";
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
-    callback(resp);
-  } else {
-    callback(
-        errorResponse(drogon::k404NotFound, "Session not found", "not_found"));
+  switch (result) {
+    case CloseSessionResult::SUCCESS: {
+      Json::Value response;
+      response["success"] = true;
+      response["message"] = "Session closed";
+      callback(drogon::HttpResponse::newHttpJsonResponse(response));
+      break;
+    }
+    case CloseSessionResult::IN_FLIGHT:
+      callback(errorResponse(drogon::k409Conflict,
+                             "Session has an active request in flight; retry "
+                             "after the request completes",
+                             "session_in_flight"));
+      break;
+    case CloseSessionResult::NOT_FOUND:
+      callback(errorResponse(drogon::k404NotFound, "Session not found",
+                             "not_found"));
+      break;
   }
 }
 

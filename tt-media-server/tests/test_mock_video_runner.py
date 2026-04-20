@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 """Mock video runner: pipeline output shape and export hook (conftest mocks torch/diffusers)."""
 
@@ -9,7 +9,6 @@ import sys
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
-
 from ipc.video_shm import VideoRequest, VideoStatus
 from tt_model_runners import mock_video_runner as mvr
 
