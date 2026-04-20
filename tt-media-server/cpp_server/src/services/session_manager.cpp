@@ -82,24 +82,46 @@ void SessionManager::readerLoop() {
   }
 }
 
-bool SessionManager::closeSession(const std::string& sessionId) {
+CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
   TT_LOG_DEBUG("[SessionManager] closeSession called for sessionId={}",
                sessionId);
-  auto session = sessions.take(sessionId);
-  if (!session.has_value()) {
+
+  auto executeClose = [&](const domain::Session& s) {
+    if (s.getSlotId() != domain::INVALID_SLOT_ID) {
+      sendDeallocRequest(sessionId, s.getSlotId());
+    }
+    TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
+  };
+
+  auto session = sessions.takeIf(
+      sessionId, [](const domain::Session& s) { return !s.isInFlight(); });
+  if (session.has_value()) {
+    executeClose(*session);
+    return CloseSessionResult::SUCCESS;
+  }
+
+  bool found = sessions.modify(
+      sessionId, [](domain::Session& s) { s.setPendingClose(true); });
+  if (!found) {
     TT_LOG_WARN("[SessionManager] Session not found: {}", sessionId);
-    return false;
+    return CloseSessionResult::NOT_FOUND;
   }
 
-  uint32_t slotId = session->getSlotId();
-  TT_LOG_DEBUG("[SessionManager] closeSession sessionId={} has slotId={}",
-               sessionId, slotId);
-  if (slotId != domain::INVALID_SLOT_ID) {
-    sendDeallocRequest(sessionId, slotId);
+  // The in-flight request may have completed between the takeIf and modify;
+  // resolve the race with one more attempt.
+  auto deferred = sessions.takeIf(sessionId, [](const domain::Session& s) {
+    return s.isPendingClose() && !s.isInFlight();
+  });
+  if (deferred.has_value()) {
+    executeClose(*deferred);
+    return CloseSessionResult::SUCCESS;
   }
 
-  TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
-  return true;
+  TT_LOG_WARN(
+      "[SessionManager] closeSession: sessionId={} is in-flight, "
+      "will close when request completes",
+      sessionId);
+  return CloseSessionResult::IN_FLIGHT;
 }
 
 bool SessionManager::assignSlotId(const std::string& sessionId,
@@ -138,7 +160,6 @@ uint32_t SessionManager::acquireSessionSlot(const std::string& sessionId) {
   sessions.modify(sessionId, [&result, &wasInFlight](domain::Session& s) {
     wasInFlight = s.isInFlight();
     if (wasInFlight) {
-      // Session is already in flight, don't modify
       return;
     }
     s.updateActivityTime();
@@ -174,9 +195,23 @@ void SessionManager::setSessionInFlight(const std::string& sessionId,
   if (!found) {
     TT_LOG_WARN("[SessionManager] Session not found for in-flight update: {}",
                 sessionId);
-  } else {
-    TT_LOG_DEBUG("[SessionManager] Set session {} in-flight: {}", sessionId,
-                 inFlight);
+    return;
+  }
+  TT_LOG_DEBUG("[SessionManager] Set session {} in-flight: {}", sessionId,
+               inFlight);
+
+  if (!inFlight) {
+    auto session = sessions.takeIf(sessionId, [](const domain::Session& s) {
+      return s.isPendingClose() && !s.isInFlight();
+    });
+    if (session.has_value()) {
+      uint32_t slotId = session->getSlotId();
+      if (slotId != domain::INVALID_SLOT_ID) {
+        sendDeallocRequest(sessionId, slotId);
+      }
+      TT_LOG_INFO("[SessionManager] Deferred close executed for session: {}",
+                  sessionId);
+    }
   }
 }
 
@@ -209,11 +244,9 @@ void SessionManager::evictOldSessions() {
   std::vector<Entry> heap;
   heap.reserve(evictionCount + 1);
 
-  sessions.forEach([&heap, &newer, evictionCount](const std::string& id,
-                                                  domain::Session& session) {
-    if (session.isInFlight()) {
-      return;
-    }
+  sessions.forEach([&heap, &newer, evictionCount](
+                       const std::string& id, const domain::Session& session) {
+    if (session.isInFlight()) return;
 
     auto t = session.getLastActivityTime();
     if (heap.size() < evictionCount) {
@@ -230,10 +263,14 @@ void SessionManager::evictOldSessions() {
                heap.size());
   size_t evicted = 0;
   for (const auto& [_, sessionId] : heap) {
-    auto session = sessions.take(sessionId);
+    // A concurrent acquireSessionSlot call may mark the session in-flight
+    // between the forEach above and here; takeIf skips it atomically.
+    auto session = sessions.takeIf(
+        sessionId, [](const domain::Session& s) { return !s.isInFlight(); });
     if (!session.has_value()) {
       TT_LOG_DEBUG(
-          "[SessionManager] evictOldSessions: session {} already removed",
+          "[SessionManager] evictOldSessions: session {} already removed or "
+          "now in-flight, skipping",
           sessionId);
       continue;
     }

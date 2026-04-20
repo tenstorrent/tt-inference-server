@@ -51,6 +51,21 @@ class ConcurrentMap {
     return value;
   }
 
+  template <typename Pred>
+  std::optional<Value> takeIf(const Key& key, Pred&& pred) {
+    std::lock_guard lock(mutex);
+    auto it = map_.find(key);
+    if (it == map_.end()) {
+      return std::nullopt;
+    }
+    if (!pred(it->second)) {
+      return std::nullopt;
+    }
+    auto value = std::move(it->second);
+    map_.erase(it);
+    return value;
+  }
+
   bool contains(const Key& key) const {
     std::lock_guard lock(mutex);
     return map_.find(key) != map_.end();
