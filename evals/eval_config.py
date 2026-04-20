@@ -2963,6 +2963,73 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="allenai/OLMo-3.1-32B-Think",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=80.6,
+                    published_score_ref="https://huggingface.co/allenai/OLMo-3.1-32B-Think",
+                    gpu_reference_score=80.6,
+                    gpu_reference_score_ref="https://huggingface.co/allenai/OLMo-3.1-32B-Think",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "model": "allenai/OLMo-3.1-32B-Think",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 32768,
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=57.5,
+                    published_score_ref="https://huggingface.co/allenai/OLMo-3.1-32B-Think",
+                    gpu_reference_score=57.5,
+                    gpu_reference_score_ref="https://huggingface.co/allenai/OLMo-3.1-32B-Think",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "model": "allenai/OLMo-3.1-32B-Think",
+                    "base_url": "http://127.0.0.1:8000/v1/completions",
+                    "tokenizer_backend": "huggingface",
+                    "max_length": 32768,
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
 ]
 
 
