@@ -216,7 +216,6 @@ struct ChatCompletionRequest : BaseRequest {
   LLMRequest toLLMRequest() const {
     LLMRequest out(task_id);
     out.model = model;
-
     out.prompt =
         tt::utils::tokenizers::activeTokenizer().applyChatTemplate(messages);
 

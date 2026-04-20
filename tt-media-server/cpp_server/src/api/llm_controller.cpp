@@ -57,8 +57,7 @@ LLMController::LLMController() {
 
 void LLMController::resolveSession(
     std::shared_ptr<domain::LLMRequest> req,
-    const std::vector<domain::ChatMessage>& messages,
-    trantor::EventLoop* loop,
+    const std::vector<domain::ChatMessage>& messages, trantor::EventLoop* loop,
     std::function<void(SessionInfo)> onResolved,
     std::function<void(const SessionError&)> onError) const {
   SessionInfo info;
@@ -67,20 +66,26 @@ void LLMController::resolveSession(
   auto routingInfo = tt::utils::computePrefixCachingInfo(messages);
 
   TT_LOG_INFO(
-      "[LLMController] Routing: hasPriorTurn={}, lookupHash={}, registrationHash={}",
+      "[LLMController] Routing: hasPriorTurn={}, lookupHash={}, "
+      "registrationHash={}",
       routingInfo.hasPriorTurn,
-      routingInfo.lookupHash.has_value() ? std::to_string(*routingInfo.lookupHash) : "none",
+      routingInfo.lookupHash.has_value()
+          ? std::to_string(*routingInfo.lookupHash)
+          : "none",
       routingInfo.registrationHash);
 
   // New hash-based routing: try to find a session by prefix hash
-  if (routingInfo.hasPriorTurn && routingInfo.lookupHash.has_value() && sessionManager) {
+  if (routingInfo.hasPriorTurn && routingInfo.lookupHash.has_value() &&
+      sessionManager) {
     try {
-      auto acquired = sessionManager->tryAcquireByPrefixHash(*routingInfo.lookupHash);
+      auto acquired =
+          sessionManager->tryAcquireByPrefixHash(*routingInfo.lookupHash);
 
       if (acquired.has_value()) {
         // HIT: found matching session, send delta only
         TT_LOG_INFO(
-            "[LLMController] Prefix cache HIT: hash={}, sessionId={}, slotId={}, sending delta",
+            "[LLMController] Prefix cache HIT: hash={}, sessionId={}, "
+            "slotId={}, sending delta",
             *routingInfo.lookupHash, acquired->sessionId, acquired->slotId);
         req->slotId = acquired->slotId;
         req->sessionId = acquired->sessionId;  // Use stable UUID from session
@@ -89,7 +94,8 @@ void LLMController::resolveSession(
         info.validSessionFound = true;
 
         // Register under new hash for next turn
-        sessionManager->registerPrefixHash(acquired->sessionId, routingInfo.registrationHash);
+        sessionManager->registerPrefixHash(acquired->sessionId,
+                                           routingInfo.registrationHash);
 
         onResolved(info);
         return;
@@ -109,7 +115,8 @@ void LLMController::resolveSession(
 
   // Legacy path: explicit sessionId provided by client
   // Try to acquire existing session by UUID
-  if (req->sessionId.has_value() && sessionManager && !routingInfo.hasPriorTurn) {
+  if (req->sessionId.has_value() && sessionManager &&
+      !routingInfo.hasPriorTurn) {
     try {
       auto slotId = sessionManager->acquireSessionSlot(req->sessionId.value());
       if (slotId != domain::INVALID_SLOT_ID) {
@@ -125,7 +132,10 @@ void LLMController::resolveSession(
       }
     } catch (const std::exception& e) {
       // Session error (e.g., in-flight) - reset and fall through to new session
-      TT_LOG_WARN("[LLMController] Session acquisition failed: {}, creating new session", e.what());
+      TT_LOG_WARN(
+          "[LLMController] Session acquisition failed: {}, creating new "
+          "session",
+          e.what());
       req->sessionId.reset();
     }
   }
@@ -140,10 +150,13 @@ void LLMController::resolveSession(
 
           // Register session under registration hash for next turn's lookup
           if (sessionManager) {
-            sessionManager->registerPrefixHash(session.getSessionId(), routingInfo.registrationHash);
+            sessionManager->registerPrefixHash(session.getSessionId(),
+                                               routingInfo.registrationHash);
             TT_LOG_INFO(
-                "[LLMController] New session: sessionId={}, slotId={}, registered under hash={}",
-                session.getSessionId(), session.getSlotId(), routingInfo.registrationHash);
+                "[LLMController] New session: sessionId={}, slotId={}, "
+                "registered under hash={}",
+                session.getSessionId(), session.getSlotId(),
+                routingInfo.registrationHash);
           }
 
           SessionInfo info;
@@ -152,7 +165,9 @@ void LLMController::resolveSession(
         [onError](std::string_view err) {
           onError({SessionErrorType::ALLOCATION_FAIL, std::string(err)});
         },
-        loop, "", routingInfo.registrationHash);  // Pass registration hash as initial hash
+        loop, "",
+        routingInfo
+            .registrationHash);  // Pass registration hash as initial hash
     return;
   }
 

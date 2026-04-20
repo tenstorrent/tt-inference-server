@@ -55,8 +55,7 @@ std::optional<std::vector<domain::ChatMessage>> extractPriorTurnPrefix(
  * @param prefix Chat messages to hash (should already have system stripped)
  * @return 64-bit hash value
  */
-uint64_t hashConversationPrefix(
-    const std::vector<domain::ChatMessage>& prefix);
+uint64_t hashConversationPrefix(const std::vector<domain::ChatMessage>& prefix);
 
 /**
  * Render the LAST user message on its own, with addGenerationPrompt=true and
@@ -66,17 +65,21 @@ uint64_t hashConversationPrefix(
  * @param messages Input chat messages (must end with user message)
  * @return Rendered delta prompt for the last user turn
  */
-std::string renderLastUserTurn(const std::vector<domain::ChatMessage>& messages);
+std::string renderLastUserTurn(
+    const std::vector<domain::ChatMessage>& messages);
 
 /**
  * Routing information computed from conversation messages for prefix caching.
  * Used by the controller to determine session lookup and registration.
  */
 struct PrefixCachingInfo {
-  std::optional<uint64_t> lookupHash;  // Hash of prior-turn prefix (for session lookup)
-  uint64_t registrationHash = 0;       // Hash of current conversation (for next turn's lookup)
-  std::string deltaPrompt;             // Last user turn rendered (for continuations)
-  bool hasPriorTurn = false;           // True if assistant messages exist (enables lookup)
+  std::optional<uint64_t>
+      lookupHash;  // Hash of prior-turn prefix (for session lookup)
+  uint64_t registrationHash =
+      0;  // Hash of current conversation (for next turn's lookup)
+  std::string deltaPrompt;  // Last user turn rendered (for continuations)
+  bool hasPriorTurn =
+      false;  // True if assistant messages exist (enables lookup)
 };
 
 /**

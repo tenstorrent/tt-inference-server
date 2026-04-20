@@ -81,10 +81,10 @@ class SessionManager {
    * Returns:
    *   AcquiredSession — session found and successfully locked; contains both
    *                     slotId and sessionId (UUID). Caller owns the in-flight
-   *                     state and MUST call setSessionInFlight(sessionId, false)
-   *                     when the request completes (success or error).
-   *   nullopt         — no session registered under this hash. Caller should
-   *                     fall back to createSession.
+   *                     state and MUST call setSessionInFlight(sessionId,
+   * false) when the request completes (success or error). nullopt         — no
+   * session registered under this hash. Caller should fall back to
+   * createSession.
    *
    * Throws:
    *   SessionInFlightException — all sessions under this hash are already

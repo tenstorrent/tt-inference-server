@@ -181,7 +181,8 @@ void SseStreamWriter::abort() {
                 params_.taskId);
     params_.service->abortRequest(params_.taskId);
     if (params_.sessionId.has_value() && params_.sessionManager) {
-      params_.sessionManager->setSessionInFlight(params_.sessionId.value(), false);
+      params_.sessionManager->setSessionInFlight(params_.sessionId.value(),
+                                                 false);
     }
   }
 }
