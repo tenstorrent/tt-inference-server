@@ -59,6 +59,15 @@ ServerMetrics::ServerMetrics() {
            .Help("Number of completed requests labelled by finish reason")
            .Register(*registry_);
 
+  http_requests_family_ =
+      &prometheus::BuildCounter()
+           .Name("tt_http_requests_total")
+           .Help(
+               "HTTP requests served by the Drogon app, labelled by method "
+               "and response status code. 2xx/3xx are successes; 4xx/5xx "
+               "are failures.")
+           .Register(*registry_);
+
   // ----- gauges ----------------------------------------------------------
   queue_depth_ =
       &prometheus::BuildGauge()
@@ -175,6 +184,14 @@ void ServerMetrics::setQueueDepth(double n) {
 void ServerMetrics::setActiveSessionsCount(double n) {
   // Called when sessions are created/removed — write directly.
   active_sessions_->Set(n);
+}
+
+void ServerMetrics::onHttpResponse(const std::string& method, int statusCode) {
+  http_requests_family_
+      ->Add({{"model_name", model_name_},
+             {"method", method},
+             {"status_code", std::to_string(statusCode)}})
+      .Increment();
 }
 
 // -----------------------------------------------------------------------------
