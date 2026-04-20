@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+
+import threading
 
 from model_services.scheduler import Scheduler
-import threading
 
 # scheduler is singleton
 _current_scheduler_holder = None

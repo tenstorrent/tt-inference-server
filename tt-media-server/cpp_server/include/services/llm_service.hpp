@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -52,6 +52,12 @@ class LLMService
    * Idempotent and thread-safe.
    */
   void abortRequest(uint32_t taskId);
+
+  /** Borrowed pointer to the worker manager, used by main to wire the
+   * worker metrics aggregator. Lifetime tied to this LLMService. */
+  tt::worker::WorkerManager* workerManager() const {
+    return worker_manager_.get();
+  }
 
  protected:
   void postProcess(domain::LLMResponse& response) const override;

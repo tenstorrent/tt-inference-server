@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "utils/id_generator.hpp"
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #include <signal.h>
 #include <sys/wait.h>

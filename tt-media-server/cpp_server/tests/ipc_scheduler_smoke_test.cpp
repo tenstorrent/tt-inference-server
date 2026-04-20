@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "utils/id_generator.hpp"
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 //
 // Smoke test: two processes communicate through a Boost IPC task queue.
 //

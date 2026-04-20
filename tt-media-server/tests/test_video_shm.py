@@ -1,18 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import os
 import pickle
 import struct
+import sys
 import threading
 import time
 import uuid
+from unittest.mock import Mock, patch
 
 import pytest
-
-import sys
-from unittest.mock import Mock, patch
 
 sys.modules["ttnn"] = Mock()
 
@@ -38,7 +37,6 @@ from ipc.video_shm import (
     cleanup_orphaned_video_files,
     video_result_path,
 )
-
 
 # ── Helpers ──
 

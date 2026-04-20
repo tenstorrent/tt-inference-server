@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "worker/worker_manager.hpp"
 
+#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -28,6 +29,11 @@ namespace {
 [[noreturn]] void execWorkerProcessHelper(
     size_t workerId,
     const std::unordered_map<std::string, std::string>& envVars) {
+  // Request SIGTERM when the parent (main server) process dies so that workers
+  // do not become orphaned under PID 1 if the main process crashes.  This
+  // survives execv, so it only needs to be set once here in the child.
+  prctl(PR_SET_PDEATHSIG, SIGTERM);
+
   for (const auto& [key, value] : envVars) {
     setenv(key.c_str(), value.c_str(), 1);
   }

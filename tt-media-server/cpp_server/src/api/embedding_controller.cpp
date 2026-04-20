@@ -1,81 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "utils/id_generator.hpp"
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #include <chrono>
-#include <condition_variable>
-#include <functional>
-#include <mutex>
 #include <optional>
-#include <queue>
-#include <random>
-#include <sstream>
-#include <thread>
-#include <vector>
 
 #include "api/embedding_controller.hpp"
 #include "api/error_response.hpp"
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
-#include "profiling/tracy.hpp"
 #include "services/base_service.hpp"
 #include "utils/logger.hpp"
 #include "utils/service_container.hpp"
+#include "utils/thread_pool.hpp"
 
 namespace tt::api {
 
 namespace {
-// Simple thread pool for handling response callbacks
-class CallbackThreadPool {
- public:
-  CallbackThreadPool(size_t numThreads = 8) : stop(false) {
-    for (size_t i = 0; i < numThreads; ++i) {
-      workers.emplace_back([this] {
-        while (true) {
-          std::function<void()> task;
-          {
-            std::unique_lock lock(mutex);
-            cv.wait(lock, [this] { return stop || !tasks.empty(); });
-            if (stop && tasks.empty()) return;
-            task = std::move(tasks.front());
-            tasks.pop();
-          }
-          task();
-        }
-      });
-    }
-  }
-
-  ~CallbackThreadPool() {
-    {
-      std::lock_guard lock(mutex);
-      stop = true;
-    }
-    cv.notify_all();
-    for (auto& worker : workers) {
-      if (worker.joinable()) worker.join();
-    }
-  }
-
-  void submit(std::function<void()> task) {
-    {
-      std::lock_guard lock(mutex);
-      tasks.push(std::move(task));
-    }
-    cv.notify_one();
-  }
-
- private:
-  std::vector<std::thread> workers;
-  std::queue<std::function<void()>> tasks;
-  TRACY_LOCKABLE(std::mutex, mutex);
-  std::condition_variable_any cv;
-  bool stop;
-};
-
-// Global thread pool for callbacks
-CallbackThreadPool& getCallbackPool() {
-  static CallbackThreadPool pool(tt::config::defaults::CALLBACK_POOL_THREADS);
+tt::utils::ThreadPool& getCallbackPool() {
+  static tt::utils::ThreadPool pool(
+      tt::config::defaults::CALLBACK_POOL_THREADS);
   return pool;
 }
 }  // namespace

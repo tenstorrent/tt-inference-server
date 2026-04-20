@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -85,6 +85,7 @@ struct ChatCompletionRequest : BaseRequest {
   // Tool calling support
   std::optional<std::vector<tool_calls::Tool>> tools;
   std::optional<tool_calls::ToolChoice> tool_choice;
+  bool parallel_tool_calls = true;
 
   static ChatCompletionRequest fromJson(const Json::Value& json,
                                         uint32_t taskId) {
@@ -201,6 +202,10 @@ struct ChatCompletionRequest : BaseRequest {
     if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
       req.tool_choice = tool_calls::ToolChoice::fromJson(json["tool_choice"]);
     }
+    if (json.isMember("parallel_tool_calls") &&
+        !json["parallel_tool_calls"].isNull())
+      req.parallel_tool_calls =
+          getBool(json["parallel_tool_calls"], "parallel_tool_calls");
 
     if (req.tool_choice.has_value()) {
       if (!req.tools.has_value() || req.tools->empty()) {
@@ -269,6 +274,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.repetition_penalty = repetition_penalty;
     out.length_penalty = length_penalty;
     out.stop_token_ids = stop_token_ids;
+    out.parallel_tool_calls = parallel_tool_calls;
     out.include_stop_str_in_output = include_stop_str_in_output;
     out.ignore_eos = ignore_eos;
     out.min_tokens = min_tokens;

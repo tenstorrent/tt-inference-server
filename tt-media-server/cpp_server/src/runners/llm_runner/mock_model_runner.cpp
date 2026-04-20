@@ -38,7 +38,26 @@ class MockModelRunner : public IModelRunner {
   void exit() override { TT_LOG_DEBUG("[model_runner:mock] exit"); }
 
  private:
+  static bool isBitmaskSet(const std::vector<int32_t>& bitmask, int tokenId) {
+    return (static_cast<uint32_t>(bitmask[tokenId / 32]) >> (tokenId % 32)) & 1;
+  }
+
   static uint64_t pickToken(const Sequence* seq, uint64_t defaultToken) {
+    const auto& bitmask = seq->getSamplingParams().token_bitmask;
+    if (bitmask.has_value()) {
+      int target = static_cast<int>(defaultToken);
+      int vocabSize = seq->getSamplingParams().bitmask_vocab_size;
+      if (target < vocabSize && isBitmaskSet(*bitmask, target)) {
+        return defaultToken;
+      }
+      for (size_t w = 0; w < bitmask->size(); ++w) {
+        auto word = static_cast<uint32_t>((*bitmask)[w]);
+        if (word != 0) {
+          return static_cast<uint64_t>(w * 32 + __builtin_ctz(word));
+        }
+      }
+      return defaultToken;
+    }
     const auto& allowed = seq->getSamplingParams().allowed_token_ids;
     if (!allowed.has_value() || allowed->empty()) return defaultToken;
 

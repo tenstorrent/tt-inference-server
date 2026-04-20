@@ -41,7 +41,7 @@ void testDeepSeekToolCallParsing() {
     std::cout << "✓ Test 1 passed: Single tool call\n";
   }
 
-  // Test 2: Multiple tool calls
+  // Test 2: Multiple tool calls, with parallelToolCalls set to true
   {
     std::string input =
         "<｜tool▁calls▁begin｜>"
@@ -72,7 +72,8 @@ void testDeepSeekToolCallParsing() {
     assert(toolCall2["id"].asString() == "call_1");
     assert(toolCall2["function"]["name"].asString() == "get_time");
 
-    std::cout << "✓ Test 2 passed: Multiple tool calls\n";
+    std::cout << "✓ Test 2 passed: Multiple tool calls with parallelToolCalls "
+                 "set to true\n";
   }
 
   // Test 3: No tool calls
@@ -140,6 +141,36 @@ void testDeepSeekToolCallParsing() {
     assert(args.find("San Francisco") != std::string::npos);
 
     std::cout << "✓ Test 5 passed: Tool call with surrounding text\n";
+  }
+
+  // Test 6: Multiple tool calls, with parallelToolCalls set to false
+  {
+    std::string input =
+        "<｜tool▁calls▁begin｜>"
+        "<｜tool▁call▁begin｜>function<｜tool▁sep｜>get_weather\n"
+        "```json\n"
+        "{\"location\":\"San Francisco\"}\n"
+        "```\n"
+        "<｜tool▁call▁end｜>"
+        "<｜tool▁call▁begin｜>function<｜tool▁sep｜>get_time\n"
+        "```json\n"
+        "{\"timezone\":\"America/Los_Angeles\"}\n"
+        "```\n"
+        "<｜tool▁call▁end｜>"
+        "<｜tool▁calls▁end｜>";
+
+    auto result = parser->parseComplete(input, false);
+    assert(result.has_value());
+    assert(result->isArray());
+    assert(result->size() == 1);
+
+    // First tool call
+    auto& toolCall1 = (*result)[0];
+    assert(toolCall1["id"].asString() == "call_0");
+    assert(toolCall1["function"]["name"].asString() == "get_weather");
+
+    std::cout << "✓ Test 6 passed: Multiple tool calls with parallelToolCalls "
+                 "set to false\n";
   }
 
   std::cout << "✅ All DeepSeek tool call parsing tests passed!\n";

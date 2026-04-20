@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 import math
 
 from config.constants import (
@@ -12,6 +12,7 @@ from config.constants import (
     TrainingOptimizers,
     TrainingTrainers,
 )
+
 from utils.dataset_loaders.dataset_resolver import AVAILABLE_DATASET_LOADERS
 
 TRAINING_CATALOG_DATA = {

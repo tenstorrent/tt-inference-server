@@ -1,19 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-from typing import List
 import os
+from typing import List
 
 import torch
 import torch_xla
 import torch_xla.runtime as xr
+from domain.completion_request import CompletionRequest
+from domain.completion_response import CompletionOutput, CompletionResult
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer, StaticCache
 from transformers.modeling_outputs import CausalLMOutputWithPast
-
-from domain.completion_request import CompletionRequest
-from domain.completion_response import CompletionOutput, CompletionResult
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.adapter_resolver import AdapterInfo, resolve_adapter
 from utils.decorators import log_execution_time

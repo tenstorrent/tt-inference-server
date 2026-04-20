@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 ## This script cleans up the environment by unsetting specific environment variables
 
 #!/usr/bin/env python3
 import os
-import sys
 import subprocess
+import sys
 
 # Unset environment variables
 vars_to_unset = ["TT_METAL_HOME", "ARCH_NAME", "WH_ARCH_YAML", "PYTHONPATH"]

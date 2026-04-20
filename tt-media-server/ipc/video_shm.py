@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 """Video shared memory IPC for cross-process video generation.
 
@@ -36,7 +36,8 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from multiprocessing import resource_tracker, shared_memory as _shm
+from multiprocessing import resource_tracker
+from multiprocessing import shared_memory as _shm
 from typing import Callable
 
 

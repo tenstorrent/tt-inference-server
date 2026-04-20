@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import json
 from unittest.mock import patch
 
 import pytest
-
 from utils.adapter_resolver import resolve_adapter
 
 

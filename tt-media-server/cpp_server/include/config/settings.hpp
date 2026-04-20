@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -126,6 +126,10 @@ std::string kafkaGroupId();
  * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
 unsigned sessionAllocationMaxRetries();
 
+/** Prefill timeout in milliseconds from PREFILL_TIMEOUT_MS. Default:
+ * defaults::PREFILL_TIMEOUT_MS. */
+unsigned prefillTimeoutMs();
+
 /** H2D socket ID from H2D_SOCKET_ID. Default: defaults::H2D_SOCKET_ID. */
 std::string h2dSocketId();
 
@@ -139,6 +143,10 @@ unsigned pmConnectTimeoutMs();
 /** Pipeline manager max users from PM_MAX_USERS. Default:
  * defaults::PM_MAX_USERS. */
 size_t pmMaxUsers();
+
+/** Warmup timeout (ms) while waiting for the first token during runner warmup.
+ * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
+unsigned warmupTimeoutMs();
 
 /** Task queue name from TT_TASK_QUEUE. Default: defaults::TT_TASK_QUEUE. */
 std::string ttTaskQueueName();
@@ -162,6 +170,11 @@ std::string ttWarmupSignalsQueueName();
 /** Memory result queue name from TT_MEMORY_RESULT_QUEUE. Default:
  * defaults::TT_MEMORY_RESULT_QUEUE. */
 std::string ttMemoryResultQueueName();
+
+/** POSIX shared-memory segment name backing the worker metrics transport.
+ * From TT_WORKER_METRICS_SHM. Default: defaults::TT_WORKER_METRICS_SHM.
+ * Inherited across fork+execv so main and worker resolve to the same name. */
+std::string workerMetricsShmName();
 
 /** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
  * defaults::USE_DEEPSEEK_MD_FORMAT. */

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #pragma once
 
 #include <atomic>
@@ -21,6 +21,11 @@ class ConcurrentQueue {
   void push(const T& value) {
     std::lock_guard lock(mutex);
     pending.push_back(value);
+  }
+
+  void push(T&& value) {
+    std::lock_guard lock(mutex);
+    pending.push_back(std::move(value));
   }
 
   std::vector<T> drain() {

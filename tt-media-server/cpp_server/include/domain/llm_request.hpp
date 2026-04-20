@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -113,6 +113,8 @@ struct LLMRequest : BaseRequest {
   std::optional<int> truncate_prompt_tokens;
   int prompt_tokens_count = 0;
   bool fast_mode = false;
+
+  bool parallel_tool_calls = true;
 
   // Structured output constraint
   std::optional<ResponseFormat> response_format;

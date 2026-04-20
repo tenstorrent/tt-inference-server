@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from model_services.queues.memory_queue import SharedMemoryChunkQueue
 from model_services.queues.tt_faster_fifo_queue import TTFasterFifoQueue
