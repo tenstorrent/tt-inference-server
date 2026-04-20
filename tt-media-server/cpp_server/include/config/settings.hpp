@@ -126,6 +126,10 @@ std::string kafkaGroupId();
  * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
 unsigned sessionAllocationMaxRetries();
 
+/** Prefill timeout in milliseconds from PREFILL_TIMEOUT_MS. Default:
+ * defaults::PREFILL_TIMEOUT_MS. */
+unsigned prefillTimeoutMs();
+
 /** H2D socket ID from H2D_SOCKET_ID. Default: defaults::H2D_SOCKET_ID. */
 std::string h2dSocketId();
 
