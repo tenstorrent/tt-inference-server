@@ -514,6 +514,117 @@
       ],
       "title": "Avg Tokens per Request",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
+      "id": 200,
+      "title": "Worker Health",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Seconds since each worker last called step(). A spike means the worker process froze.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 30 }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 42 },
+      "id": 202,
+      "options": { "tooltip": { "mode": "multi", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "tt_worker_heartbeat_age_seconds",
+          "legendFormat": "Worker {{worker_id}}"
+        }
+      ],
+      "title": "Heartbeat Age",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Seconds since each worker last produced a token, shown only while the worker has active requests. A sustained spike indicates a pipeline stall (e.g. H2D hang).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 60 }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 42 },
+      "id": 203,
+      "options": { "tooltip": { "mode": "multi", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "tt_worker_last_output_age_seconds and on(worker_id) tt_worker_active_requests > 0",
+          "legendFormat": "Worker {{worker_id}}"
+        }
+      ],
+      "title": "Output Staleness",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Number of requests currently being processed by each worker.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 42 },
+      "id": 204,
+      "options": { "tooltip": { "mode": "multi", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "tt_worker_active_requests",
+          "legendFormat": "Worker {{worker_id}}"
+        }
+      ],
+      "title": "Worker Active Requests",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",
