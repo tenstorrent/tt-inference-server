@@ -18,6 +18,7 @@
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 #include "services/memory_services/async_memory_manager.hpp"
+#include "runners/sp_pipeline_runner/blaze_utils.hpp"
 
 namespace tt::runners {
 
@@ -56,11 +57,11 @@ class BlazeRunner : public IRunner {
   tt::runners::llm_engine::ITaskQueue* taskQueue;
   std::unique_ptr<pm::PipelineManager> pipelineManager;
   std::unordered_map<uint32_t,
-                     std::unique_ptr<tt::runners::llm_engine::Sequence>>
-      running;
+                     blaze_utils::SlotContext>
+      slotContexts;
   std::atomic<bool> stopped{false};
   std::unique_ptr<tt::services::AsyncMemoryManager> memoryManager;
-
+  uint32_t inFlightRequests = 0;
   std::chrono::steady_clock::time_point lastOutputTime;
   std::chrono::milliseconds outputHangTimeout;
 };

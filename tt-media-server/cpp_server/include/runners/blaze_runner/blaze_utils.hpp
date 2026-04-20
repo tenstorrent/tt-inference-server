@@ -58,6 +58,10 @@ inline pm::ISRequest makeContinueRequest(
   fillSequenceFields(req, seq);
   return req;
 }
+struct SlotContext {
+  uint32_t taskId;
+  bool ignoreEos;
+};
 
 inline pm::PipelineConfig makePipelineConfig() {
   auto modelRunnerType = tt::config::llmEngineConfig().runner_type;
