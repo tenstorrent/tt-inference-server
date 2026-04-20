@@ -30,13 +30,16 @@ void HealthController::health(
           .count());
 
   bool hasAliveWorkers = false;
+  bool hasReadyWorkers = false;
   if (service_) {
     try {
       auto status = service_->getSystemStatus();
       for (const auto& w : status.worker_info) {
         if (w.is_alive) {
           hasAliveWorkers = true;
-          break;
+        }
+        if (w.is_ready) {
+          hasReadyWorkers = true;
         }
       }
     } catch (const std::exception& e) {
@@ -51,16 +54,28 @@ void HealthController::health(
     socketHealthy = socket_->isConnected();
   }
 
-  if (hasAliveWorkers && socketHealthy) {
+  if (hasReadyWorkers && hasAliveWorkers && socketHealthy) {
     response["status"] = "healthy";
     callback(drogon::HttpResponse::newHttpJsonResponse(response));
-  } else {
+  } else if (!hasAliveWorkers) {
     response["status"] = "unhealthy";
     if (!hasAliveWorkers) {
       response["error"] = "no workers are alive";
     } else {
       response["error"] = "socket not connected";
     }
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k503ServiceUnavailable);
+    callback(resp);
+  } else if (!hasReadyWorkers) {
+    response["status"] = "unhealthy";
+    response["error"] = "no workers are ready";
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k503ServiceUnavailable);
+    callback(resp);
+  } else {
+    response["status"] = "unhealthy";
+    response["error"] = "socket not connected";
     auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
     resp->setStatusCode(drogon::k503ServiceUnavailable);
     callback(resp);
