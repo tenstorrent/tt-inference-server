@@ -1013,6 +1013,7 @@ llm_templates = [
                 vllm_args={
                     "data_parallel_size": 4,
                     "max_num_seqs": 32,  # override the default inferred by max_concurrency
+                    "async_scheduling": True,
                 },
                 override_tt_config={
                     "sample_on_device_mode": "all",
