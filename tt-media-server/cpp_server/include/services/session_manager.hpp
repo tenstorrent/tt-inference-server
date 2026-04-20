@@ -129,13 +129,13 @@ class SessionManager {
   };
 
   struct DeferredDealloc {
-    size_t sessionId;
+    std::string sessionId;
     uint32_t slotId;
   };
 
   void sendAsyncAllocationRequest(PendingAllocation& pendingAllocation);
   void evictOldSessions();
-  void sendDeallocRequest(const size_t& sessionId, uint32_t slotId);
+  void sendDeallocRequest(const std::string& sessionId, uint32_t slotId);
   void readerLoop();
   void retryFailedAllocations();
   void retryFailedDeallocs();

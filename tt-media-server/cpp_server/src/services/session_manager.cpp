@@ -87,7 +87,7 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
           // Close immediately
           uint32_t slotId = it->getSlotId();
           if (slotId != domain::INVALID_SLOT_ID) {
-            sendDeallocRequest(hash, slotId);
+            sendDeallocRequest(sessionId, slotId);
           }
           sessionList.erase(it);
           TT_LOG_INFO(
@@ -234,7 +234,7 @@ void SessionManager::setSessionInFlight(const std::string& sessionId,
         if (!inFlight && session.isPendingClose()) {
           uint32_t slotId = session.getSlotId();
           if (slotId != domain::INVALID_SLOT_ID) {
-            sendDeallocRequest(foundHash, slotId);
+            sendDeallocRequest(sessionId, slotId);
           }
         }
         return;  // Exit forEach early
@@ -333,11 +333,13 @@ void SessionManager::evictOldSessions() {
       for (auto it = list.begin(); it != list.end(); ++it) {
         if (!it->isInFlight()) {
           uint32_t slotId = it->getSlotId();
+          std::string sessionId = it->getSessionId();
           TT_LOG_DEBUG(
-              "[SessionManager] evictOldSessions: evicting hash={}, slotId={}",
-              hash, slotId);
+              "[SessionManager] evictOldSessions: evicting sessionId={}, "
+              "slotId={}",
+              sessionId, slotId);
           if (slotId != domain::INVALID_SLOT_ID) {
-            sendDeallocRequest(hash, slotId);
+            sendDeallocRequest(sessionId, slotId);
           }
           list.erase(it);
           found = true;
@@ -359,7 +361,7 @@ void SessionManager::evictOldSessions() {
   }
 }
 
-void SessionManager::sendDeallocRequest(const size_t& sessionId,
+void SessionManager::sendDeallocRequest(const std::string& sessionId,
                                         uint32_t slotId) {
   if (!memoryRequestQueue) {
     return;
