@@ -40,7 +40,7 @@ class IToolCallParser {
    * ]
    */
   virtual std::optional<Json::Value> parseComplete(
-      const std::string& text) const = 0;
+      const std::string& text, const bool& parallelToolCalls = true) const = 0;
 
   /**
    * Strip tool call markers from the text, leaving only regular content.

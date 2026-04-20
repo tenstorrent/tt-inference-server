@@ -27,7 +27,8 @@ namespace {
 class DeepSeekToolCallParser : public IToolCallParser {
  public:
   std::optional<Json::Value> parseComplete(
-      const std::string& text) const override {
+      const std::string& text,
+      const bool& parallelToolCalls = true) const override {
     // Look for tool call markers
     if (text.find("<｜tool▁calls▁begin｜>") == std::string::npos) {
       return std::nullopt;
@@ -41,6 +42,9 @@ class DeepSeekToolCallParser : public IToolCallParser {
     // approach: find the markers and extract content between them
     size_t pos = 0;
     while (true) {
+      if (!parallelToolCalls && toolCallsArray.size() == 1) {
+        return toolCallsArray;
+      }
       // Find next tool call
       size_t callBegin = text.find("<｜tool▁call▁begin｜>", pos);
       if (callBegin == std::string::npos) break;

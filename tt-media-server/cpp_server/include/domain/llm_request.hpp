@@ -114,6 +114,8 @@ struct LLMRequest : BaseRequest {
   int prompt_tokens_count = 0;
   bool fast_mode = false;
 
+  bool parallel_tool_calls = true;
+
   // Structured output constraint
   std::optional<ResponseFormat> response_format;
 
