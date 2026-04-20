@@ -47,10 +47,11 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             adapter_info = resolve_adapter(request.adapter)
             self._load_adapter(adapter_info)
         else:
+            self._unload_adapter()
             base_name = request.model or self.settings.model_weights_path
             self._load_base_model(base_name)
 
-        compiled_model = self._get_compiled_model()
+        compiled_model = self._compile_model()
 
         prompt = (
             request.prompt
@@ -94,17 +95,26 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             self.logger.info(
                 f"Switching adapter: {self._active_adapter.adapter_path} -> {adapter_info.adapter_path}"
             )
-            if isinstance(self._active_model, PeftModel):
-                self._base_model = self._active_model.unload()
-                if hasattr(self._base_model, "peft_config"):
-                    delattr(self._base_model, "peft_config")
+            self._unload_adapter()
         self._load_base_model(adapter_info.base_model_name)
-        self._teardown_compiled()
+        self._discard_compiled_model()
         self._active_model = PeftModel.from_pretrained(
             self._base_model, adapter_info.adapter_path
         )
         self._active_adapter = adapter_info
         self.logger.info(f"Loaded adapter from {adapter_info.adapter_path}")
+
+    def _unload_adapter(self):
+        if self._active_adapter is None:
+            return
+        self.logger.info(f"Unloading adapter: {self._active_adapter.adapter_path}")
+        if isinstance(self._active_model, PeftModel):
+            self._base_model = self._active_model.unload()
+            if hasattr(self._base_model, "peft_config"):
+                delattr(self._base_model, "peft_config")
+        self._active_model = self._base_model
+        self._active_adapter = None
+        self._discard_compiled_model()
 
     def _load_base_model(self, model_name: str):
         if not model_name:
@@ -117,7 +127,7 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             self.logger.info(
                 f"Switching base model: {self._base_model.name_or_path} -> {model_name}"
             )
-        self._teardown_compiled()
+        self._discard_compiled_model()
         self._base_model = AutoModelForCausalLM.from_pretrained(
             model_name, dtype=torch.bfloat16, use_cache=True
         )
@@ -127,13 +137,13 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         self._active_adapter = None
         self.logger.info(f"Loaded base model: {model_name}")
 
-    def _teardown_compiled(self):
+    def _discard_compiled_model(self):
         if self._compiled_model is not None:
             del self._compiled_model
             self._compiled_model = None
             torch._dynamo.reset()
 
-    def _get_compiled_model(self):
+    def _compile_model(self):
         if self._compiled_model is None:
             self._active_model.eval()
             self._active_model.to(self.device)
