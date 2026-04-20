@@ -95,19 +95,17 @@ PrefixCachingInfo computePrefixCachingInfo(
     const std::vector<domain::ChatMessage>& messages) {
   PrefixCachingInfo info;
 
-  // Strip system messages and compute registration hash from full conversation
+  // Strip system messages
   auto nonSystemMessages = stripSystemMessages(messages);
+
+  // registrationHash = always hash of full current conversation
   info.registrationHash = hashConversationPrefix(nonSystemMessages);
 
-  // Check for prior turn: need at least 2 messages with assistant before last user
-  if (nonSystemMessages.size() >= 2 &&
-      nonSystemMessages[nonSystemMessages.size() - 2].role == "assistant") {
+  // Try to extract prior turn prefix (excluding last [assistant, user] pair)
+  auto priorPrefix = extractPriorTurnPrefix(messages);
+  if (priorPrefix.has_value()) {
     info.hasPriorTurn = true;
-
-    // Compute lookup hash from prior-turn prefix (without last [assistant, user] pair)
-    std::vector<domain::ChatMessage> priorPrefix(nonSystemMessages.begin(),
-                                                  nonSystemMessages.end() - 2);
-    info.lookupHash = hashConversationPrefix(priorPrefix);
+    info.lookupHash = hashConversationPrefix(*priorPrefix);
     info.deltaPrompt = renderLastUserTurn(messages);
   } else {
     info.hasPriorTurn = false;

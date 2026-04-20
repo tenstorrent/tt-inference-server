@@ -54,46 +54,56 @@ class SessionManager {
   void createSession(
       std::function<void(const tt::domain::Session&)> onCompletion,
       std::function<void(std::string_view errorMessage)> onError,
-      trantor::EventLoop* eventLoop, const std::string& requestPrompt);
+      trantor::EventLoop* eventLoop, const std::string& requestPrompt,
+      size_t initialHash = 0);
 
-  CloseSessionResult closeSession(const size_t sessionId);
-  bool assignSlotId(const size_t& sessionId, uint32_t slotId);
-  uint32_t getSlotIdBySessionId(const size_t& sessionId) const;
-  uint32_t acquireSessionSlot(const size_t& sessionId);
-  std::optional<domain::Session> getSession(const size_t& sessionId) const;
+  CloseSessionResult closeSession(const std::string& sessionId);
+  bool assignSlotId(const std::string& sessionId, uint32_t slotId);
+  uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
+  uint32_t acquireSessionSlot(const std::string& sessionId);
+  std::optional<domain::Session> getSession(const std::string& sessionId) const;
   size_t getActiveSessionCount() const;
 
-  void setSessionInFlight(const size_t& sessionId, bool inFlight);
+  void setSessionInFlight(const std::string& sessionId, bool inFlight);
+
+  /**
+   * Result of tryAcquireByPrefixHash containing both slot and session IDs.
+   */
+  struct AcquiredSession {
+    uint32_t slotId;
+    std::string sessionId;
+  };
 
   /**
    * Try to find a session whose registered prefix hash matches, and
    * atomically mark it in-flight so no concurrent request can steal it.
    *
    * Returns:
-   *   slotId  — session found and successfully locked; caller owns the
-   *             in-flight state and MUST call setSessionInFlight(slotId,
-   *             false) when the request completes (success or error).
-   *   nullopt — no session registered under this hash. Caller should fall
-   *             back to createSession.
+   *   AcquiredSession — session found and successfully locked; contains both
+   *                     slotId and sessionId (UUID). Caller owns the in-flight
+   *                     state and MUST call setSessionInFlight(sessionId, false)
+   *                     when the request completes (success or error).
+   *   nullopt         — no session registered under this hash. Caller should
+   *                     fall back to createSession.
    *
    * Throws:
    *   SessionInFlightException — all sessions under this hash are already
    *                              serving other requests. Controller maps
    *                              this to HTTP 429.
    */
-  std::optional<uint32_t> tryAcquireByPrefixHash(uint64_t prefixHash);
+  std::optional<AcquiredSession> tryAcquireByPrefixHash(uint64_t prefixHash);
 
   /**
-   * Route future lookups of `prefixHash` to this slot. This registers the
-   * slot under the given hash so the next turn's lookup can find it.
+   * Route future lookups of `prefixHash` to this session. This registers the
+   * session under the given hash so the next turn's lookup can find it.
    *
-   * If the slot was previously registered under a different hash, it is
+   * If the session was previously registered under a different hash, it is
    * removed from that hash's list and added to the new hash's list.
    *
-   * Concurrency: safe to call while the slot is in-flight; readers see
+   * Concurrency: safe to call while the session is in-flight; readers see
    * either the old or new hash atomically.
    */
-  void registerPrefixHash(uint32_t slotId, uint64_t prefixHash);
+  void registerPrefixHash(const std::string& sessionId, uint64_t prefixHash);
 
  private:
   struct PendingAllocation {

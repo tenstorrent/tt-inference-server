@@ -168,12 +168,8 @@ void SseStreamWriter::finalizeStream() {
       (*self->stream_ptr_)->close();
 
       if (self->params_.sessionId.has_value() && self->params_.sessionManager) {
-        try {
-          size_t hash = std::stoull(self->params_.sessionId.value());
-          self->params_.sessionManager->setSessionInFlight(hash, false);
-        } catch (const std::exception&) {
-          // Ignore if sessionId is not a valid hash
-        }
+        self->params_.sessionManager->setSessionInFlight(
+            self->params_.sessionId.value(), false);
       }
     }
   });
@@ -185,12 +181,7 @@ void SseStreamWriter::abort() {
                 params_.taskId);
     params_.service->abortRequest(params_.taskId);
     if (params_.sessionId.has_value() && params_.sessionManager) {
-      try {
-        size_t hash = std::stoull(params_.sessionId.value());
-        params_.sessionManager->setSessionInFlight(hash, false);
-      } catch (const std::exception&) {
-        // Ignore if sessionId is not a valid hash
-      }
+      params_.sessionManager->setSessionInFlight(params_.sessionId.value(), false);
     }
   }
 }

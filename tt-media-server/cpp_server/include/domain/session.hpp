@@ -24,18 +24,24 @@ class Session {
   /**
    * Create a new session with a generated UUID.
    * @param slotId Optional slot ID (max uint32_t means unassigned)
+   * @param initialHash Optional initial content hash (0 if not provided)
    */
-  explicit Session(uint32_t slotId = INVALID_SLOT_ID);
+  explicit Session(uint32_t slotId = INVALID_SLOT_ID, size_t initialHash = 0);
 
   /**
-   * Get the session ID (UUID).
+   * Get the stable session ID (UUID).
    */
-  size_t getSessionId() const { return session_id_; }
+  std::string getSessionId() const { return session_id_; }
 
   /**
-   * Set the session ID (hash). Used when registering under a new prefix hash.
+   * Get the current content hash.
    */
-  void setSessionId(size_t sessionId) { session_id_ = sessionId; }
+  size_t getHash() const { return hash_; }
+
+  /**
+   * Update the content hash (called when conversation state changes).
+   */
+  void setHash(size_t hash) { hash_ = hash; }
 
   /**
    * Get the assigned slot ID.
@@ -94,12 +100,14 @@ class Session {
   Json::Value toJson() const {
     Json::Value json;
     json["session_id"] = session_id_;
+    json["hash"] = static_cast<Json::UInt64>(hash_);
     json["slot_id"] = slot_id_;
     return json;
   }
 
  private:
-  size_t session_id_;
+  std::string session_id_;  // Stable UUID, never changes
+  size_t hash_;             // Current content hash, changes with conversation
   uint32_t slot_id_;
   bool in_flight_{false};
   bool pending_close_{false};

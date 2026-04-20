@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "domain/base_request.hpp"
-#include "domain/chat_message.hpp"
 #include "domain/json_field.hpp"
 #include "domain/response_format.hpp"
 

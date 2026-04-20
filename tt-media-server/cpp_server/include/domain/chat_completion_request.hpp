@@ -217,7 +217,6 @@ struct ChatCompletionRequest : BaseRequest {
     LLMRequest out(task_id);
     out.model = model;
 
-    // Apply full chat template (used for new sessions or cache misses)
     out.prompt =
         tt::utils::tokenizers::activeTokenizer().applyChatTemplate(messages);
 
