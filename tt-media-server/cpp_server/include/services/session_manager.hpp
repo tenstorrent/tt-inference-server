@@ -36,6 +36,12 @@ class SessionInFlightException : public SessionRateLimitException {
             "requests per session are not supported.") {}
 };
 
+enum class CloseSessionResult {
+  SUCCESS,
+  NOT_FOUND,
+  IN_FLIGHT,  // session exists but has an active request; dealloc deferred
+};
+
 class SessionManager {
  public:
   SessionManager();
@@ -50,7 +56,7 @@ class SessionManager {
       trantor::EventLoop* eventLoop,
       std::optional<uint32_t> slotId = std::nullopt);
 
-  bool closeSession(const std::string& sessionId);
+  CloseSessionResult closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
   uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
   uint32_t acquireSessionSlot(const std::string& sessionId);

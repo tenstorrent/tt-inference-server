@@ -23,6 +23,11 @@ class ConcurrentQueue {
     pending.push_back(value);
   }
 
+  void push(T&& value) {
+    std::lock_guard lock(mutex);
+    pending.push_back(std::move(value));
+  }
+
   std::vector<T> drain() {
     std::lock_guard lock(mutex);
     std::vector<T> out;

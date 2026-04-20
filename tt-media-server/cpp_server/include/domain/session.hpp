@@ -59,6 +59,17 @@ class Session {
   void setInFlight(bool inFlight) { in_flight_ = inFlight; }
 
   /**
+   * Returns true if closeSession was called while a request was in-flight.
+   * The close executes automatically when the in-flight request completes.
+   */
+  bool isPendingClose() const { return pending_close_; }
+
+  /**
+   * Mark the session for deferred close.
+   */
+  void setPendingClose(bool pendingClose) { pending_close_ = pendingClose; }
+
+  /**
    * Get the last activity time.
    */
   std::chrono::system_clock::time_point getLastActivityTime() const {
@@ -86,6 +97,7 @@ class Session {
   std::string session_id_;
   uint32_t slot_id_;
   bool in_flight_{false};
+  bool pending_close_{false};
   std::chrono::system_clock::time_point last_activity_time_;
 
   /**
