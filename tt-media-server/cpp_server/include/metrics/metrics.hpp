@@ -71,6 +71,17 @@ class ServerMetrics {
    */
   void setQueueDepth(double n);
 
+  /**
+   * Record one completed HTTP request/response pair. Called from the Drogon
+   * pre-sending advice hook. `status_code` is the numeric HTTP status
+   * (200, 4xx, 5xx).
+   *
+   * Writes directly to the counter; Prometheus counters are internally
+   * thread-safe, and HTTP response rate is orders of magnitude lower than
+   * token rate, so no queueing is necessary.
+   */
+  void onHttpResponse(const std::string& method, int status_code);
+
   /** Render the full registry in Prometheus text exposition format. */
   std::string renderText() const;
 
@@ -141,6 +152,7 @@ class ServerMetrics {
   prometheus::Counter* prompt_tokens_total_{nullptr};
   prometheus::Counter* generation_tokens_total_{nullptr};
   prometheus::Family<prometheus::Counter>* request_success_family_{nullptr};
+  prometheus::Family<prometheus::Counter>* http_requests_family_{nullptr};
 
   // --- gauges ---
   prometheus::Gauge* queue_depth_{nullptr};
