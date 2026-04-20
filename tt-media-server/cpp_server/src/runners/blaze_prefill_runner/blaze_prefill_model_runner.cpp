@@ -21,7 +21,7 @@ BlazePrefillModelRunner::~BlazePrefillModelRunner() { exit(); }
 
 std::optional<tt::runners::llm_engine::TokenResult>
 BlazePrefillModelRunner::forward(uint32_t taskId,
-                                  const std::vector<int64_t>& tokenIds) {
+                                 const std::vector<int64_t>& tokenIds) {
   const auto timeoutMs = tt::config::prefillTimeoutMs();
   auto startTime = std::chrono::steady_clock::now();
 
