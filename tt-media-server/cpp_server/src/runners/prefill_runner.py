@@ -170,6 +170,15 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_sigterm)
     signal.signal(signal.SIGINT, _handle_sigterm)
 
+    # TODO: multi-subcontext support (prefill + decode in one MPI job).
+    # When tt-metal PR #42000 (sub-context API) lands and the dual-rank-bindings
+    # launcher feature is implemented, we'll need to:
+    #   1. Detect our sub-context:  subcontext_id = int(os.environ["TT_RUN_SUBCONTEXT_ID"])
+    #   2. If we're not the prefill sub-context, early-exit (decode has its own runner).
+    #   3. Split MPI_COMM_WORLD by subcontext_id so bcast()/scatter() stay within prefill:
+    #        comm = MPI.COMM_WORLD.Split(color=subcontext_id, key=rank)
+    #   4. Dispatch fabric config based on sub-context instead of hardcoding.
+    # See models/demos/deepseek_v3_b1/docs/example_dual_rankbindings_one_psd.md in tt-metal.
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     world_size = comm.Get_size()
@@ -178,7 +187,7 @@ def main() -> None:
 
     # -- Open the global 32x4 mesh (all ranks) --
     ttnn.init_distributed_context()
-    # TODO: fabric config, router config from real config
+    # TODO: fabric config, router config from real config (see sub-context TODO above)
     mesh_device = ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(*GLOBAL_MESH_SHAPE))
 
     # -- Build the pipeline (all ranks) --
