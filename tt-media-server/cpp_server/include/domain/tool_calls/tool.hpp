@@ -4,7 +4,7 @@
 
 #include <string>
 
-#include "function_definiton.hpp"
+#include "function_definition.hpp"
 
 namespace tt::domain::tool_calls {
 
