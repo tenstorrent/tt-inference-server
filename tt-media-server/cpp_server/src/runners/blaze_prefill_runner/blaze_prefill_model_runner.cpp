@@ -20,8 +20,8 @@ BlazePrefillModelRunner::BlazePrefillModelRunner()
 BlazePrefillModelRunner::~BlazePrefillModelRunner() { exit(); }
 
 std::optional<tt::runners::llm_engine::TokenResult>
-SpPrefillModelRunner::forward(uint32_t taskId,
-                              const std::vector<int64_t>& tokenIds) {
+BlazePrefillModelRunner::forward(uint32_t taskId,
+                                  const std::vector<int64_t>& tokenIds) {
   const auto timeoutMs = tt::config::prefillTimeoutMs();
   auto startTime = std::chrono::steady_clock::now();
 
@@ -44,7 +44,7 @@ SpPrefillModelRunner::forward(uint32_t taskId,
 
     if (elapsed >= timeoutMs) {
       TT_LOG_ERROR(
-          "SpPrefillModelRunner: Prefill timeout for task {} after {}ms "
+          "BlazePrefillModelRunner: Prefill timeout for task {} after {}ms "
           "(limit: {}ms, tokens: {})",
           taskId, elapsed, timeoutMs, tokenIds.size());
 
@@ -52,13 +52,13 @@ SpPrefillModelRunner::forward(uint32_t taskId,
       size_t errorCount =
           consecutiveErrors.fetch_add(1, std::memory_order_relaxed) + 1;
 
-      TT_LOG_ERROR("SpPrefillModelRunner: Consecutive errors: {}/{}",
+      TT_LOG_ERROR("BlazePrefillModelRunner: Consecutive errors: {}/{}",
                    errorCount, MAX_CONSECUTIVE_ERRORS);
 
       // Check if we should terminate
       if (errorCount >= MAX_CONSECUTIVE_ERRORS) {
         TT_LOG_CRITICAL(
-            "SpPrefillModelRunner: Max consecutive errors ({}) reached. "
+            "BlazePrefillModelRunner: Max consecutive errors ({}) reached. "
             "Terminating worker process.",
             MAX_CONSECUTIVE_ERRORS);
         std::exit(1);  // Kill the worker process
@@ -85,13 +85,13 @@ SpPrefillModelRunner::forward(uint32_t taskId,
             consecutiveErrors.fetch_add(1, std::memory_order_relaxed) + 1;
 
         TT_LOG_ERROR(
-            "SpPrefillModelRunner: Error token received for task {}. "
+            "BlazePrefillModelRunner: Error token received for task {}. "
             "Consecutive errors: {}/{}",
             taskId, errorCount, MAX_CONSECUTIVE_ERRORS);
 
         if (errorCount >= MAX_CONSECUTIVE_ERRORS) {
           TT_LOG_CRITICAL(
-              "SpPrefillModelRunner: Max consecutive errors ({}) reached. "
+              "BlazePrefillModelRunner: Max consecutive errors ({}) reached. "
               "Terminating worker process.",
               MAX_CONSECUTIVE_ERRORS);
           std::exit(1);
@@ -107,7 +107,7 @@ SpPrefillModelRunner::forward(uint32_t taskId,
   }
 
   TT_LOG_DEBUG(
-      "SpPrefillModelRunner: forward exiting without Shared memory response "
+      "BlazePrefillModelRunner: forward exiting without Shared memory response "
       "(stop)");
   return std::nullopt;
 }
