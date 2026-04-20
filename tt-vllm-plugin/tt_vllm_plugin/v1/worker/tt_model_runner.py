@@ -379,7 +379,15 @@ class TTModelRunner:
 
         for req_idx in range(num_reqs):
             req_id = input_batch.req_ids[req_idx]
-            is_prefill = req_id in scheduled_new_req_ids
+            num_scheduled = scheduler_output.num_scheduled_tokens[req_id]
+            num_computed = input_batch.num_computed_tokens_cpu[req_idx]
+            # prefix cache FULL HIT
+            is_full_hit = (
+                req_id in scheduled_new_req_ids
+                and num_scheduled == 1
+                and num_computed >= input_batch.num_prompt_tokens[req_idx] - 1
+            )
+            is_prefill = (req_id in scheduled_new_req_ids) and not is_full_hit
             is_prefill_list.append(is_prefill)
 
         is_prefill_tensor = torch.tensor(is_prefill_list, dtype=torch.bool)

@@ -67,8 +67,8 @@ class TTPlatform(Platform):
             cache_config.block_size = 16
 
         # Disable prefix caching for TT backend (not yet supported)
-        logger.info("Prefix caching is not yet supported for TT backend; disabling it.")
-        vllm_config.cache_config.enable_prefix_caching = False
+        # logger.info("Prefix caching is not yet supported for TT backend; disabling it.")
+        # vllm_config.cache_config.enable_prefix_caching = False
 
         parallel_config = vllm_config.parallel_config
         if parallel_config.worker_cls == "auto":
