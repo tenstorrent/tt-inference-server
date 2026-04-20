@@ -91,4 +91,29 @@ std::string renderLastUserTurn(
   return "";
 }
 
+PrefixCachingInfo computePrefixCachingInfo(
+    const std::vector<domain::ChatMessage>& messages) {
+  PrefixCachingInfo info;
+
+  // Strip system messages and compute registration hash from full conversation
+  auto nonSystemMessages = stripSystemMessages(messages);
+  info.registrationHash = hashConversationPrefix(nonSystemMessages);
+
+  // Check for prior turn: need at least 2 messages with assistant before last user
+  if (nonSystemMessages.size() >= 2 &&
+      nonSystemMessages[nonSystemMessages.size() - 2].role == "assistant") {
+    info.hasPriorTurn = true;
+
+    // Compute lookup hash from prior-turn prefix (without last [assistant, user] pair)
+    std::vector<domain::ChatMessage> priorPrefix(nonSystemMessages.begin(),
+                                                  nonSystemMessages.end() - 2);
+    info.lookupHash = hashConversationPrefix(priorPrefix);
+    info.deltaPrompt = renderLastUserTurn(messages);
+  } else {
+    info.hasPriorTurn = false;
+  }
+
+  return info;
+}
+
 }  // namespace tt::utils

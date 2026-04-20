@@ -124,13 +124,6 @@ struct LLMRequest : BaseRequest {
   bool continuation =
       false;  // True if this request continues an existing session
 
-  // Prefix caching routing fields (computed by ChatCompletionRequest::toLLMRequest())
-  std::optional<std::vector<ChatMessage>> priorTurnPrefix;  // Conversation minus last [assistant, user] pair
-  std::optional<uint64_t> lookupHash;      // Hash of priorTurnPrefix (for session lookup)
-  uint64_t registrationHash = 0;           // Hash of current conversation (for next turn's lookup)
-  std::string deltaPrompt;                 // Last user turn rendered (for continuations)
-  bool hasPriorTurn = false;               // True if assistant messages exist
-
   std::string toString() const {
     std::string promptInfo;
     if (auto* s = std::get_if<std::string>(&prompt)) {

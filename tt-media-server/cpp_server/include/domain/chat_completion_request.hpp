@@ -15,7 +15,6 @@
 #include "domain/json_field.hpp"
 #include "domain/llm_request.hpp"
 #include "domain/response_format.hpp"
-#include "utils/conversation_hasher.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::domain {
@@ -218,22 +217,9 @@ struct ChatCompletionRequest : BaseRequest {
     LLMRequest out(task_id);
     out.model = model;
 
-    // Apply full chat template (fallback prompt for new sessions)
+    // Apply full chat template (used for new sessions or cache misses)
     out.prompt =
         tt::utils::tokenizers::activeTokenizer().applyChatTemplate(messages);
-
-    // Compute prefix caching routing fields
-    out.priorTurnPrefix = tt::utils::extractPriorTurnPrefix(messages);
-    out.hasPriorTurn = out.priorTurnPrefix.has_value();
-
-    if (out.hasPriorTurn) {
-      out.lookupHash = tt::utils::hashConversationPrefix(*out.priorTurnPrefix);
-      out.deltaPrompt = tt::utils::renderLastUserTurn(messages);
-    }
-
-    // Registration hash: current conversation minus system (for NEXT turn's lookup)
-    auto currentPrefix = tt::utils::stripSystemMessages(messages);
-    out.registrationHash = tt::utils::hashConversationPrefix(currentPrefix);
 
     out.echo = echo;
     out.max_tokens = max_tokens;

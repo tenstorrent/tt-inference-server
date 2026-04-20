@@ -17,6 +17,7 @@
 #include "domain/chat_completion_response.hpp"
 #include "domain/models_response.hpp"
 #include "profiling/tracy.hpp"
+#include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 #include "utils/service_container.hpp"
@@ -55,29 +56,34 @@ LLMController::LLMController() {
 }
 
 void LLMController::resolveSession(
-    std::shared_ptr<domain::LLMRequest> req, trantor::EventLoop* loop,
+    std::shared_ptr<domain::LLMRequest> req,
+    const std::vector<domain::ChatMessage>& messages,
+    trantor::EventLoop* loop,
     std::function<void(SessionInfo)> onResolved,
     std::function<void(const SessionError&)> onError) const {
   SessionInfo info;
 
+  // Compute routing information from messages
+  auto routingInfo = tt::utils::computePrefixCachingInfo(messages);
+
   // New hash-based routing: try to find a session by prefix hash
-  if (req->hasPriorTurn && req->lookupHash.has_value() && sessionManager) {
+  if (routingInfo.hasPriorTurn && routingInfo.lookupHash.has_value() && sessionManager) {
     try {
-      auto slotId = sessionManager->tryAcquireByPrefixHash(*req->lookupHash);
+      auto slotId = sessionManager->tryAcquireByPrefixHash(*routingInfo.lookupHash);
 
       if (slotId.has_value()) {
         // HIT: found matching session, send delta only
         TT_LOG_INFO(
             "[LLMController] Prefix cache HIT: hash={}, slotId={}, sending delta",
-            *req->lookupHash, *slotId);
+            *routingInfo.lookupHash, *slotId);
         req->slotId = *slotId;
         req->continuation = true;
-        req->prompt = std::string(req->deltaPrompt);  // Switch to delta prompt
-        req->sessionId = std::to_string(*req->lookupHash);  // Set session ID to lookup hash as string
+        req->prompt = routingInfo.deltaPrompt;  // Switch to delta prompt
+        req->sessionId = std::to_string(routingInfo.registrationHash);  // Set session ID to registration hash (current state)
         info.validSessionFound = true;
 
         // Register under new hash for next turn
-        sessionManager->registerPrefixHash(*slotId, req->registrationHash);
+        sessionManager->registerPrefixHash(*slotId, routingInfo.registrationHash);
 
         onResolved(info);
         return;
@@ -85,11 +91,11 @@ void LLMController::resolveSession(
       // MISS: lookup hash not found, fall through to new session allocation
       TT_LOG_INFO(
           "[LLMController] Prefix cache MISS: hash={}, allocating new session",
-          *req->lookupHash);
+          *routingInfo.lookupHash);
     } catch (const services::SessionInFlightException& e) {
       // All sessions with this hash are busy
       TT_LOG_WARN("[LLMController] All sessions busy for hash={}: {}",
-                  *req->lookupHash, e.what());
+                  *routingInfo.lookupHash, e.what());
       onError({SessionErrorType::RATE_LIMIT, e.what()});
       return;
     }
@@ -97,7 +103,7 @@ void LLMController::resolveSession(
 
   // Legacy path: explicit sessionId (deprecated, sessionId is now a hash)
   // Try to parse sessionId as a hash for backward compatibility
-  if (req->sessionId.has_value() && sessionManager && !req->hasPriorTurn) {
+  if (req->sessionId.has_value() && sessionManager && !routingInfo.hasPriorTurn) {
     try {
       // Try to parse sessionId as a numeric hash
       size_t hash = std::stoull(req->sessionId.value());
@@ -123,17 +129,17 @@ void LLMController::resolveSession(
   // No prior turn OR lookup miss: allocate new session
   if (sessionManager) {
     sessionManager->createSession(
-        [req, this, onResolved](const domain::Session& session) {
-          req->sessionId = std::to_string(req->registrationHash);  // Use registration hash as session ID (string)
+        [req, routingInfo, this, onResolved](const domain::Session& session) {
+          req->sessionId = std::to_string(routingInfo.registrationHash);  // Use registration hash as session ID (string)
           req->slotId = session.getSlotId();
           req->continuation = false;
 
           // Register slot under registration hash for next turn's lookup
           if (sessionManager) {
-            sessionManager->registerPrefixHash(session.getSlotId(), req->registrationHash);
+            sessionManager->registerPrefixHash(session.getSlotId(), routingInfo.registrationHash);
             TT_LOG_INFO(
                 "[LLMController] New session: slotId={}, registered under hash={}",
-                session.getSlotId(), req->registrationHash);
+                session.getSlotId(), routingInfo.registrationHash);
           }
 
           SessionInfo info;
@@ -196,7 +202,7 @@ void LLMController::chatCompletions(
   auto request = std::make_shared<domain::LLMRequest>(chatReq.toLLMRequest());
 
   if (request->stream) {
-    handleStreaming(request, std::move(callback));
+    handleStreaming(request, chatReq.messages, std::move(callback));
   } else {
     auto* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
     auto cb =
@@ -204,7 +210,7 @@ void LLMController::chatCompletions(
             std::move(callback));
 
     resolveSession(
-        request, loop,
+        request, chatReq.messages, loop,
         [this, request, cb](SessionInfo) {
           try {
             auto sessionId = request->sessionId;
@@ -280,6 +286,7 @@ void LLMController::chatCompletions(
 
 void LLMController::handleStreaming(
     std::shared_ptr<domain::LLMRequest> reqPtr,
+    const std::vector<domain::ChatMessage>& messages,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleStreaming");
 
@@ -289,7 +296,7 @@ void LLMController::handleStreaming(
           std::move(callback));
 
   resolveSession(
-      reqPtr, loop,
+      reqPtr, messages, loop,
       [this, reqPtr, cb, loop](SessionInfo sessionInfo) {
         try {
           service->preProcess(*reqPtr);

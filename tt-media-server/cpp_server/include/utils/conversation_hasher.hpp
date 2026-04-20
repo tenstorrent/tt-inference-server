@@ -68,4 +68,26 @@ uint64_t hashConversationPrefix(
  */
 std::string renderLastUserTurn(const std::vector<domain::ChatMessage>& messages);
 
+/**
+ * Routing information computed from conversation messages for prefix caching.
+ * Used by the controller to determine session lookup and registration.
+ */
+struct PrefixCachingInfo {
+  std::optional<uint64_t> lookupHash;  // Hash of prior-turn prefix (for session lookup)
+  uint64_t registrationHash = 0;       // Hash of current conversation (for next turn's lookup)
+  std::string deltaPrompt;             // Last user turn rendered (for continuations)
+  bool hasPriorTurn = false;           // True if assistant messages exist (enables lookup)
+};
+
+/**
+ * Compute prefix caching routing information from conversation messages.
+ * This is the entry point for controllers to extract all routing data needed
+ * for hash-based session lookup and registration.
+ *
+ * @param messages Input chat messages (should end with user message)
+ * @return Complete routing information for prefix caching
+ */
+PrefixCachingInfo computePrefixCachingInfo(
+    const std::vector<domain::ChatMessage>& messages);
+
 }  // namespace tt::utils
