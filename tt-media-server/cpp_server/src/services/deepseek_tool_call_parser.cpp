@@ -60,7 +60,7 @@ class DeepSeekToolCallParser : public IToolCallParser {
 
       // Extract the content between markers
       std::string callContent =
-          text.substr(callBegin + 20, callEnd - (callBegin + 20));
+          text.substr(callBegin + K_TOOL_CALLS_BEGIN.size(), callEnd - (callBegin + K_TOOL_CALLS_BEGIN.size() +1));
 
       // Extract function name (after "function<｜tool▁sep｜>")
       size_t sepPos = callContent.find(K_TOOL_SEP);
@@ -70,7 +70,7 @@ class DeepSeekToolCallParser : public IToolCallParser {
       }
 
       // Function name is between separator and newline/backticks
-      size_t nameStart = sepPos + 13;  // Length of "<｜tool▁sep｜>"
+      size_t nameStart = sepPos + K_TOOL_SEP.size();  // Length of "<｜tool▁sep｜>"
       size_t nameEnd = callContent.find("\n", nameStart);
       if (nameEnd == std::string::npos) {
         nameEnd = callContent.find("```", nameStart);
@@ -162,7 +162,7 @@ class DeepSeekToolCallParser : public IToolCallParser {
     if (startPos != std::string::npos) {
       size_t endPos = result.find(K_TOOL_CALLS_END, startPos);
       if (endPos != std::string::npos) {
-        result.erase(startPos, endPos - startPos + 19);
+        result.erase(startPos, endPos - startPos + K_TOOL_CALLS_END.size());
       }
     }
 
