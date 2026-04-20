@@ -27,7 +27,6 @@ void BlazePrefillRunner::run() {
     // Get next sequence from task queue
     auto sequence = taskQueue->tryPop();
     if (!sequence) {
-      TT_LOG_DEBUG("[BlazePrefillRunner] No sequence from task queue");
       std::this_thread::yield();
       continue;
     }

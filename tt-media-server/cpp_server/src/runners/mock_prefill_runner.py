@@ -154,12 +154,10 @@ def run_rank0_coordinator() -> None:
                 if msg is None:
                     break
 
-                task_id_str = msg.task_id.decode("utf-8", errors="ignore").rstrip(
-                    "\x00"
-                )
+                task_id = msg.task_id  # Now an int (uint32_t)
 
                 print(
-                    f"Rank 0: Received prefill request task_id={task_id_str}, "
+                    f"Rank 0: Received prefill request task_id={task_id}, "
                     f"num_tokens={len(msg.token_ids)}, "
                     f"tokens={msg.token_ids[:5]}{'...' if len(msg.token_ids) > 5 else ''}",
                     file=sys.stderr,
@@ -179,10 +177,10 @@ def run_rank0_coordinator() -> None:
                 # Return exactly one token (first token from reasoning sequence)
                 prefill_token = 128798  # <think> token
 
-                p2c.write_token(msg.task_id, prefill_token)
+                p2c.write_token(task_id, prefill_token)
 
                 print(
-                    f"Rank 0: Sent prefill token {prefill_token} for task {task_id_str}",
+                    f"Rank 0: Sent prefill token {prefill_token} for task {task_id}",
                     file=sys.stderr,
                 )
 

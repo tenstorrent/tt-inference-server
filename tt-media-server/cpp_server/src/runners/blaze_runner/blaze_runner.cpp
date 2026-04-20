@@ -4,6 +4,8 @@
 #include "runners/sp_pipeline_runner/blaze_runner.hpp"
 
 #include <cassert>
+#include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <pipeline_manager/pipeline_manager_types.hpp>
 #include <thread>
@@ -15,6 +17,7 @@
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "services/memory_services/blaze_memory_manager.hpp"
 #include "utils/logger.hpp"
+#include "worker/single_process_worker_metrics.hpp"
 
 namespace tt::runners {
 namespace utils = blaze_utils;
@@ -25,11 +28,13 @@ BlazeRunner::BlazeRunner(const config::LLMConfig& config,
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
-      taskQueue(taskQueue) {
+      taskQueue(taskQueue),
+      lastOutputTime(std::chrono::steady_clock::now()),
+      outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   TT_LOG_INFO("BlazeRunner: Constructing PipelineManager with SocketConfig...");
   pm::SocketConfig socketConfig{
-      .h2d_socket_id = tt::config::h2dSocketId(),
-      .d2h_socket_id = tt::config::d2hSocketId(),
+      .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_h2d",
+      .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
   // pm::MockConfig mock = {};
@@ -122,6 +127,7 @@ bool BlazeRunner::warmup() {
 void BlazeRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
 
 void BlazeRunner::step() {
+  tt::worker::SingleProcessWorkerMetrics::instance().updateStepHeartbeat();
   auto memoryRequest = getMemoryRequest();
   if (memoryRequest.has_value()) {
     TT_LOG_DEBUG("[BlazeRunner] step: got memoryRequest taskId={}, action={}",
@@ -148,6 +154,7 @@ void BlazeRunner::step() {
         request->getNumPromptTokens(), request->getTokenIds().size());
     handleRequest(std::move(request));
   }
+  checkOutputHang();
 }
 
 std::optional<pm::PMResponse> BlazeRunner::getResponse() {
@@ -187,6 +194,8 @@ BlazeRunner::getMemoryRequest() {
 }
 
 void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
+  tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
+  lastOutputTime = std::chrono::steady_clock::now();
   auto it = running.find(output.slot_id);
   if (it == running.end()) {
     TT_LOG_ERROR(
@@ -202,6 +211,32 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   bool finished = output.is_complete || hitStop;
   auto taskId = seq.taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
+  if (finished) {
+    tt::worker::SingleProcessWorkerMetrics::instance()
+        .decrementActiveRequests();
+  }
+}
+
+void BlazeRunner::checkOutputHang() {
+  if (running.empty()) {
+    lastOutputTime = std::chrono::steady_clock::now();
+    return;
+  }
+  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - lastOutputTime);
+  if (elapsed <= outputHangTimeout) {
+    return;
+  }
+  TT_LOG_CRITICAL(
+      "[BlazeRunner] Output hang detected: no model output for {} ms with {} "
+      "active slot(s) (threshold={} ms). Self-terminating worker so "
+      "infrastructure can restart the server.",
+      elapsed.count(), running.size(), outputHangTimeout.count());
+  // Use abort() so the existing fatalSignalHandler prints a visible
+  // "killed by signal SIGABRT" line and the WorkerManager parent logs the
+  // worker crash. Skipping destructors is acceptable here: the model/device
+  // is already wedged and we want the worker gone ASAP.
+  std::abort();
 }
 
 inline void BlazeRunner::evictSlot(uint32_t slotId) {
@@ -218,6 +253,10 @@ inline void BlazeRunner::evictSlot(uint32_t slotId) {
 
 void BlazeRunner::handleRequest(
     std::unique_ptr<tt::runners::llm_engine::Sequence> request) {
+  if (running.empty()) {
+    lastOutputTime = std::chrono::steady_clock::now();
+  }
+  tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
 

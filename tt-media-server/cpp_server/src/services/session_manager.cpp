@@ -14,6 +14,27 @@
 
 namespace tt::services {
 
+namespace {
+constexpr std::chrono::milliseconds ALLOCATION_RETRY_BASE_DELAY{2000};
+constexpr std::chrono::milliseconds ALLOCATION_RETRY_DELAY_STEP{700};
+std::chrono::milliseconds allocationRetryMaxDelay =
+    ALLOCATION_RETRY_BASE_DELAY +
+    ALLOCATION_RETRY_DELAY_STEP *
+        (tt::config::sessionAllocationMaxRetries() - 1);
+constexpr std::chrono::milliseconds IPC_QUEUE_FULL_RETRY_DELAY{50};
+
+std::chrono::milliseconds computeAllocationRetryDelay(int failureCount) {
+  auto delay =
+      ALLOCATION_RETRY_BASE_DELAY + ALLOCATION_RETRY_DELAY_STEP * failureCount;
+  return std::min(delay, allocationRetryMaxDelay);
+}
+
+int computeFailureCount(int attemptsRemaining) {
+  return static_cast<int>(tt::config::sessionAllocationMaxRetries()) -
+         attemptsRemaining;
+}
+}  // namespace
+
 SessionManager::SessionManager() {
   try {
     memoryRequestQueue = std::make_unique<ipc::MemoryRequestQueue>(
@@ -60,24 +81,46 @@ void SessionManager::readerLoop() {
   }
 }
 
-bool SessionManager::closeSession(const std::string& sessionId) {
+CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
   TT_LOG_DEBUG("[SessionManager] closeSession called for sessionId={}",
                sessionId);
-  auto session = sessions.take(sessionId);
-  if (!session.has_value()) {
+
+  auto executeClose = [&](const domain::Session& s) {
+    if (s.getSlotId() != domain::INVALID_SLOT_ID) {
+      sendDeallocRequest(sessionId, s.getSlotId());
+    }
+    TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
+  };
+
+  auto session = sessions.takeIf(
+      sessionId, [](const domain::Session& s) { return !s.isInFlight(); });
+  if (session.has_value()) {
+    executeClose(*session);
+    return CloseSessionResult::SUCCESS;
+  }
+
+  bool found = sessions.modify(
+      sessionId, [](domain::Session& s) { s.setPendingClose(true); });
+  if (!found) {
     TT_LOG_WARN("[SessionManager] Session not found: {}", sessionId);
-    return false;
+    return CloseSessionResult::NOT_FOUND;
   }
 
-  uint32_t slotId = session->getSlotId();
-  TT_LOG_DEBUG("[SessionManager] closeSession sessionId={} has slotId={}",
-               sessionId, slotId);
-  if (slotId != domain::INVALID_SLOT_ID) {
-    sendDeallocRequest(sessionId, slotId);
+  // The in-flight request may have completed between the takeIf and modify;
+  // resolve the race with one more attempt.
+  auto deferred = sessions.takeIf(sessionId, [](const domain::Session& s) {
+    return s.isPendingClose() && !s.isInFlight();
+  });
+  if (deferred.has_value()) {
+    executeClose(*deferred);
+    return CloseSessionResult::SUCCESS;
   }
 
-  TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
-  return true;
+  TT_LOG_WARN(
+      "[SessionManager] closeSession: sessionId={} is in-flight, "
+      "will close when request completes",
+      sessionId);
+  return CloseSessionResult::IN_FLIGHT;
 }
 
 bool SessionManager::assignSlotId(const std::string& sessionId,
@@ -116,7 +159,6 @@ uint32_t SessionManager::acquireSessionSlot(const std::string& sessionId) {
   sessions.modify(sessionId, [&result, &wasInFlight](domain::Session& s) {
     wasInFlight = s.isInFlight();
     if (wasInFlight) {
-      // Session is already in flight, don't modify
       return;
     }
     s.updateActivityTime();
@@ -152,9 +194,23 @@ void SessionManager::setSessionInFlight(const std::string& sessionId,
   if (!found) {
     TT_LOG_WARN("[SessionManager] Session not found for in-flight update: {}",
                 sessionId);
-  } else {
-    TT_LOG_DEBUG("[SessionManager] Set session {} in-flight: {}", sessionId,
-                 inFlight);
+    return;
+  }
+  TT_LOG_DEBUG("[SessionManager] Set session {} in-flight: {}", sessionId,
+               inFlight);
+
+  if (!inFlight) {
+    auto session = sessions.takeIf(sessionId, [](const domain::Session& s) {
+      return s.isPendingClose() && !s.isInFlight();
+    });
+    if (session.has_value()) {
+      uint32_t slotId = session->getSlotId();
+      if (slotId != domain::INVALID_SLOT_ID) {
+        sendDeallocRequest(sessionId, slotId);
+      }
+      TT_LOG_INFO("[SessionManager] Deferred close executed for session: {}",
+                  sessionId);
+    }
   }
 }
 
@@ -187,11 +243,9 @@ void SessionManager::evictOldSessions() {
   std::vector<Entry> heap;
   heap.reserve(evictionCount + 1);
 
-  sessions.forEach([&heap, &newer, evictionCount](const std::string& id,
-                                                  domain::Session& session) {
-    if (session.isInFlight()) {
-      return;
-    }
+  sessions.forEach([&heap, &newer, evictionCount](
+                       const std::string& id, const domain::Session& session) {
+    if (session.isInFlight()) return;
 
     auto t = session.getLastActivityTime();
     if (heap.size() < evictionCount) {
@@ -208,10 +262,14 @@ void SessionManager::evictOldSessions() {
                heap.size());
   size_t evicted = 0;
   for (const auto& [_, sessionId] : heap) {
-    auto session = sessions.take(sessionId);
+    // A concurrent acquireSessionSlot call may mark the session in-flight
+    // between the forEach above and here; takeIf skips it atomically.
+    auto session = sessions.takeIf(
+        sessionId, [](const domain::Session& s) { return !s.isInFlight(); });
     if (!session.has_value()) {
       TT_LOG_DEBUG(
-          "[SessionManager] evictOldSessions: session {} already removed",
+          "[SessionManager] evictOldSessions: session {} already removed or "
+          "now in-flight, skipping",
           sessionId);
       continue;
     }
@@ -325,11 +383,12 @@ void SessionManager::sendAsyncAllocationRequest(
     } else {
       pa.attemptsRemaining--;
       pa.retryAt =
-          std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+          std::chrono::steady_clock::now() + IPC_QUEUE_FULL_RETRY_DELAY;
       TT_LOG_DEBUG(
           "[SessionManager] sendAsyncAllocationRequest: queuing retry for "
-          "sessionId={}, attemptsRemaining={}",
-          pa.session.getSessionId(), pa.attemptsRemaining);
+          "sessionId={}, attemptsRemaining={}, delayMs={}",
+          pa.session.getSessionId(), pa.attemptsRemaining,
+          IPC_QUEUE_FULL_RETRY_DELAY.count());
       pendingAllocationsRetryQueue.push(std::move(pa));
     }
   } else {
@@ -394,13 +453,14 @@ void SessionManager::handleMemoryResult(
         [onCompletion = std::move(pendingAllocation.onCompletion),
          session = pendingAllocation.session]() { onCompletion(session); });
   } else if (pendingAllocation.attemptsRemaining > 0) {
+    int failureCount = computeFailureCount(pendingAllocation.attemptsRemaining);
     pendingAllocation.attemptsRemaining--;
-    pendingAllocation.retryAt =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    auto delay = computeAllocationRetryDelay(failureCount);
+    pendingAllocation.retryAt = std::chrono::steady_clock::now() + delay;
     TT_LOG_DEBUG(
         "[SessionManager] handleMemoryResult: FAILURE for sessionId={}, "
-        "retrying in 500ms, attemptsRemaining={}",
-        pendingAllocation.session.getSessionId(),
+        "retrying in {}ms, attemptsRemaining={}",
+        pendingAllocation.session.getSessionId(), delay.count(),
         pendingAllocation.attemptsRemaining);
     pendingAllocationsRetryQueue.push(std::move(pendingAllocation));
   } else {
