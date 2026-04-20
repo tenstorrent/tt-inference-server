@@ -33,7 +33,6 @@ void SpPrefillRunner::run() {
     TT_LOG_DEBUG("[SpPrefillRunner] Starting prefill for task {}",
                  sequence->taskId);
 
-    // Run forward - timeout and error handling is done in model runner
     auto result =
         modelRunner->forward(sequence->taskId, sequence->getTokenIds());
 
