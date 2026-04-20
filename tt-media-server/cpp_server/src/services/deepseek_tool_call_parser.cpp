@@ -14,11 +14,11 @@ namespace tt::services {
 
 namespace {
 
-constexpr std::string_view kToolCallsBegin = "<｜tool▁calls▁begin｜>";
-constexpr std::string_view kToolCallsEnd = "<｜tool▁calls▁end｜>";
-constexpr std::string_view kToolCallBegin = "<｜tool▁call▁begin｜>";
-constexpr std::string_view kToolCallEnd = "<｜tool▁call▁end｜>";
-constexpr std::string_view kToolSep = "<｜tool▁sep｜>";
+constexpr std::string_view K_TOOL_CALLS_BEGIN = "<｜tool▁calls▁begin｜>";
+constexpr std::string_view K_TOOL_CALLS_END = "<｜tool▁calls▁end｜>";
+constexpr std::string_view K_TOOL_CALL_BEGIN = "<｜tool▁call▁begin｜>";
+constexpr std::string_view K_TOOL_CALL_END = "<｜tool▁call▁end｜>";
+constexpr std::string_view K_TOOL_SEP = "<｜tool▁sep｜>";
 
 /**
  * DeepSeek tool call format parser.
@@ -36,7 +36,7 @@ class DeepSeekToolCallParser : public IToolCallParser {
       const std::string& text,
       const bool& parallelToolCalls = true) const override {
     // Look for tool call markers
-    if (text.find(kToolCallsBegin) == std::string::npos) {
+    if (text.find(K_TOOL_CALLS_BEGIN) == std::string::npos) {
       return std::nullopt;
     }
 
@@ -52,10 +52,10 @@ class DeepSeekToolCallParser : public IToolCallParser {
         return toolCallsArray;
       }
       // Find next tool call
-      size_t callBegin = text.find(kToolCallBegin, pos);
+      size_t callBegin = text.find(K_TOOL_CALL_BEGIN, pos);
       if (callBegin == std::string::npos) break;
 
-      size_t callEnd = text.find(kToolCallEnd, callBegin);
+      size_t callEnd = text.find(K_TOOL_CALL_END, callBegin);
       if (callEnd == std::string::npos) break;
 
       // Extract the content between markers
@@ -63,7 +63,7 @@ class DeepSeekToolCallParser : public IToolCallParser {
           text.substr(callBegin + 20, callEnd - (callBegin + 20));
 
       // Extract function name (after "function<｜tool▁sep｜>")
-      size_t sepPos = callContent.find(kToolSep);
+      size_t sepPos = callContent.find(K_TOOL_SEP);
       if (sepPos == std::string::npos) {
         pos = callEnd + 1;
         continue;
@@ -158,9 +158,9 @@ class DeepSeekToolCallParser : public IToolCallParser {
 
     // Remove everything between <｜tool▁calls▁begin｜> and
     // <｜tool▁calls▁end｜>
-    size_t startPos = result.find(kToolCallsBegin);
+    size_t startPos = result.find(K_TOOL_CALLS_BEGIN);
     if (startPos != std::string::npos) {
-      size_t endPos = result.find(kToolCallsEnd, startPos);
+      size_t endPos = result.find(K_TOOL_CALLS_END, startPos);
       if (endPos != std::string::npos) {
         result.erase(startPos, endPos - startPos + 19);
       }
