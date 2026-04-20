@@ -63,7 +63,7 @@ class SessionManager {
   std::optional<domain::Session> getSession(const std::string& sessionId) const;
   size_t getActiveSessionCount() const;
 
-  void setSessionInFlight(const std::string& sessionId, bool inFlight);
+  void releaseInFlight(const std::string& sessionId);
 
  private:
   struct PendingAllocation {

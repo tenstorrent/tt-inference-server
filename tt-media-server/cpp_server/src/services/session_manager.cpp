@@ -72,14 +72,18 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
   };
 
   auto session = sessions.takeIf(
-      sessionId, [](const domain::Session& s) { return !s.isInFlight(); });
+      sessionId, [](const domain::Session& s) { return s.isIdle(); });
   if (session.has_value()) {
     executeClose(*session);
     return CloseSessionResult::SUCCESS;
   }
 
-  bool found = sessions.modify(
-      sessionId, [](domain::Session& s) { s.setPendingClose(true); });
+  bool found = sessions.modify(sessionId, [](domain::Session& s) {
+    if (!s.markPendingClose()) {
+      TT_LOG_WARN("[Session] markPendingClose: unexpected state {}",
+                  static_cast<int>(s.getState()));
+    }
+  });
   if (!found) {
     TT_LOG_WARN("[SessionManager] Session not found: {}", sessionId);
     return CloseSessionResult::NOT_FOUND;
@@ -87,9 +91,8 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
 
   // The in-flight request may have completed between the takeIf and modify;
   // resolve the race with one more attempt.
-  auto deferred = sessions.takeIf(sessionId, [](const domain::Session& s) {
-    return s.isPendingClose() && !s.isInFlight();
-  });
+  auto deferred = sessions.takeIf(
+      sessionId, [](const domain::Session& s) { return s.isClosing(); });
   if (deferred.has_value()) {
     executeClose(*deferred);
     return CloseSessionResult::SUCCESS;
@@ -136,12 +139,12 @@ uint32_t SessionManager::acquireSessionSlot(const std::string& sessionId) {
   bool wasInFlight = false;
 
   sessions.modify(sessionId, [&result, &wasInFlight](domain::Session& s) {
-    wasInFlight = s.isInFlight();
+    wasInFlight = !s.isIdle();
     if (wasInFlight) {
       return;
     }
     s.updateActivityTime();
-    s.setInFlight(true);
+    s.markInFlight();
     result = s.getSlotId();
   });
 
@@ -165,31 +168,30 @@ std::optional<domain::Session> SessionManager::getSession(
 
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
 
-void SessionManager::setSessionInFlight(const std::string& sessionId,
-                                        bool inFlight) {
-  bool found = sessions.modify(
-      sessionId, [inFlight](domain::Session& s) { s.setInFlight(inFlight); });
+void SessionManager::releaseInFlight(const std::string& sessionId) {
+  bool found = sessions.modify(sessionId, [](domain::Session& s) {
+    if (!s.clearInFlight()) {
+      TT_LOG_WARN("[Session] clearInFlight: unexpected state {}",
+                  static_cast<int>(s.getState()));
+    }
+  });
 
   if (!found) {
     TT_LOG_WARN("[SessionManager] Session not found for in-flight update: {}",
                 sessionId);
     return;
   }
-  TT_LOG_DEBUG("[SessionManager] Set session {} in-flight: {}", sessionId,
-               inFlight);
+  TT_LOG_DEBUG("[SessionManager] Released in-flight for session {}", sessionId);
 
-  if (!inFlight) {
-    auto session = sessions.takeIf(sessionId, [](const domain::Session& s) {
-      return s.isPendingClose() && !s.isInFlight();
-    });
-    if (session.has_value()) {
-      uint32_t slotId = session->getSlotId();
-      if (slotId != domain::INVALID_SLOT_ID) {
-        sendDeallocRequest(sessionId, slotId);
-      }
-      TT_LOG_INFO("[SessionManager] Deferred close executed for session: {}",
-                  sessionId);
+  auto session = sessions.takeIf(
+      sessionId, [](const domain::Session& s) { return s.isClosing(); });
+  if (session.has_value()) {
+    uint32_t slotId = session->getSlotId();
+    if (slotId != domain::INVALID_SLOT_ID) {
+      sendDeallocRequest(sessionId, slotId);
     }
+    TT_LOG_INFO("[SessionManager] Deferred close executed for session: {}",
+                sessionId);
   }
 }
 
@@ -224,7 +226,7 @@ void SessionManager::evictOldSessions() {
 
   sessions.forEach([&heap, &newer, evictionCount](
                        const std::string& id, const domain::Session& session) {
-    if (session.isInFlight()) return;
+    if (!session.isIdle()) return;
 
     auto t = session.getLastActivityTime();
     if (heap.size() < evictionCount) {
@@ -244,7 +246,7 @@ void SessionManager::evictOldSessions() {
     // A concurrent acquireSessionSlot call may mark the session in-flight
     // between the forEach above and here; takeIf skips it atomically.
     auto session = sessions.takeIf(
-        sessionId, [](const domain::Session& s) { return !s.isInFlight(); });
+        sessionId, [](const domain::Session& s) { return s.isIdle(); });
     if (!session.has_value()) {
       TT_LOG_DEBUG(
           "[SessionManager] evictOldSessions: session {} already removed or "
@@ -420,7 +422,7 @@ void SessionManager::handleMemoryResult(
                  !result.slotIds.empty();
   if (success) {
     pendingAllocation.session.setSlotId(result.slotIds.front());
-    pendingAllocation.session.setInFlight(true);
+    pendingAllocation.session.markInFlight();
     sessions.insert(pendingAllocation.session.getSessionId(),
                     pendingAllocation.session);
     TT_LOG_DEBUG(

@@ -188,14 +188,14 @@ void LLMController::chatCompletions(
             resp->setBody(chatResponse.toJsonString());
 
             if (sessionId.has_value() && sessionManager) {
-              sessionManager->setSessionInFlight(sessionId.value(), false);
+              sessionManager->releaseInFlight(sessionId.value());
             }
 
             (*cb)(resp);
           } catch (const services::QueueFullException& e) {
             auto sessionId = request->sessionId;
             if (sessionId.has_value() && sessionManager) {
-              sessionManager->setSessionInFlight(sessionId.value(), false);
+              sessionManager->releaseInFlight(sessionId.value());
             }
             (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                                 "rate_limit_exceeded"));
