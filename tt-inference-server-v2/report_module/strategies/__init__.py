@@ -4,7 +4,7 @@
 
 from report_module.strategies.aiperf_report import AiPerfStrategy
 from report_module.strategies.genai_perf_report import GenAiPerfStrategy
-from report_module.strategies.markdown_report import MarkdownReportStrategy
+from report_module.strategies.test_report import TestReportStrategy
 from report_module.strategies.parameter_support_tests import (
     ParameterSupportTestsStrategy,
 )

@@ -15,10 +15,10 @@ from report_module.report_generator import ReportGenerator
 from report_module.strategies import (
     AiPerfStrategy,
     GenAiPerfStrategy,
-    MarkdownReportStrategy,
     ParameterSupportTestsStrategy,
     StandardReportStrategy,
     StressTestsStrategy,
+    TestReportStrategy,
 )
 from report_module.types import ReportRequest, ReportResult, build_context
 
@@ -28,7 +28,7 @@ ALL_STRATEGIES = [
     StandardReportStrategy,
     AiPerfStrategy,
     GenAiPerfStrategy,
-    MarkdownReportStrategy,
+    TestReportStrategy,
     ParameterSupportTestsStrategy,
     StressTestsStrategy,
 ]

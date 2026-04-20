@@ -16,10 +16,6 @@ import logging
 from typing import Any, Callable, Dict, List, Tuple
 
 from report_module.types import NOT_MEASURED_STR
-from workflows.utils import (
-    is_preprocessing_enabled_for_whisper,
-    is_streaming_enabled_for_whisper,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -98,23 +94,14 @@ def create_vlm_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     return _build_display_dict(result, display_cols, value_overrides=overrides)
 
 
-class _ModelSpecWrapper:
-    """Adapter so whisper helpers can accept a bare ``ModelSpec``.
+def create_audio_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
+    """Audio (whisper) sweep row → display dict.
 
-    ``is_streaming_enabled_for_whisper`` / ``is_preprocessing_enabled_for_whisper``
-    expect an object exposing ``.model_spec``; this wrapper provides that
-    attribute without changing the helpers' public contract.
+    Expects ``result`` to already carry ``streaming_enabled`` and
+    ``preprocessing_enabled`` boolean-ish values injected upstream from
+    the ``ModelSpec``; this keeps every sweep formatter in this module
+    on the same pure ``(row) -> Dict[str, str]`` contract.
     """
-
-    __slots__ = ("model_spec",)
-
-    def __init__(self, spec: Any) -> None:
-        self.model_spec = spec
-
-
-def create_audio_display_dict(
-    result: Dict[str, Any], model_spec: Any
-) -> Dict[str, str]:
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
         ("num_requests", "Num Requests"),
@@ -125,12 +112,7 @@ def create_audio_display_dict(
         ("t/s/u", "T/S/U"),
         ("rtr", "RTR"),
     ]
-    wrapper = _ModelSpecWrapper(model_spec)
-    overrides = {
-        "streaming_enabled": str(is_streaming_enabled_for_whisper(wrapper)),
-        "preprocessing_enabled": str(is_preprocessing_enabled_for_whisper(wrapper)),
-    }
-    return _build_display_dict(result, display_cols, value_overrides=overrides)
+    return _build_display_dict(result, display_cols)
 
 
 def create_tts_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
@@ -199,6 +181,7 @@ def create_video_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
 TASK_TYPE_FORMATTER_MAP: Dict[str, Callable[..., Dict[str, str]]] = {
     "text": create_text_display_dict,
     "vlm": create_vlm_display_dict,
+    "audio": create_audio_display_dict,
     "tts": create_tts_display_dict,
     "text_to_speech": create_tts_display_dict,
     "embedding": create_embedding_display_dict,

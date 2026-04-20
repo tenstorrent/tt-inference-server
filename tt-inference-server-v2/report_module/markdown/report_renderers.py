@@ -2,10 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-"""Markdown renderers for benchmark target tables and evaluation reports.
+"""Markdown renderers for benchmark, stress-test and evaluation release sections.
 
 These functions accept pre-computed data (flat dicts, row lists) and return
-markdown strings.  They are consumed by StandardReportStrategy but live here
+markdown strings.  They are consumed by the report strategies but live here
 so that rendering is decoupled from data computation.
 """
 
@@ -14,7 +14,10 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 from report_module.markdown.table_builder import get_markdown_table
+from report_module.types import NOT_MEASURED_STR
 from workflows.workflow_types import ModelType, ReportCheckTypes
+
+ColumnSpec = Tuple[str, str, int]
 
 
 def build_check_columns(target_checks: Optional[Dict]) -> List[Tuple[str, str]]:
@@ -99,6 +102,99 @@ def benchmark_vlm_release_markdown(
     ]
     check_cols = build_check_columns(target_checks)
     return render_target_table(release_raw, base_cols, check_cols)
+
+
+# -- Stress-test release rendering -------------------------------------------
+
+_STRESS_CONFIG_COLUMNS: Tuple[ColumnSpec, ...] = (
+    ("input_sequence_length", "ISL", 0),
+    ("output_sequence_length", "OSL", 0),
+    ("max_con", "Concurrency", 0),
+    ("num_prompts", "Num Prompts", 0),
+)
+
+_STRESS_SIMPLE_METRIC_COLUMNS: Tuple[ColumnSpec, ...] = (
+    ("mean_ttft_ms", "TTFT (ms)", 1),
+    ("mean_tpot_ms", "TPOT (ms)", 1),
+    ("mean_itl_ms", "ITL (ms)", 1),
+    ("mean_e2el_ms", "E2EL (ms)", 1),
+)
+
+_STRESS_PERCENTILE_METRIC_GROUPS: Tuple[Tuple[str, str], ...] = (
+    ("ttft", "TTFT"),
+    ("tpot", "TPOT"),
+    ("itl", "ITL"),
+    ("e2el", "E2EL"),
+)
+
+_STRESS_PERCENTILE_SUFFIXES: Tuple[str, ...] = (
+    "mean", "p5", "p25", "p50", "p95", "p99",
+)
+
+_STRESS_THROUGHPUT_COLUMNS: Tuple[ColumnSpec, ...] = (
+    ("mean_tps", "Tput User (TPS)", 2),
+    ("tps_decode_throughput", "Tput Decode (TPS)", 1),
+)
+
+
+def _build_stress_detailed_columns() -> Tuple[ColumnSpec, ...]:
+    """Expand the percentile metric grid into per-column specs.
+
+    Produces, in order, mean / p5 / p25 / p50 / p95 / p99 for each of
+    TTFT, TPOT, ITL, E2EL.
+    """
+    columns: List[ColumnSpec] = []
+    for metric_key, metric_label in _STRESS_PERCENTILE_METRIC_GROUPS:
+        for suffix in _STRESS_PERCENTILE_SUFFIXES:
+            if suffix == "mean":
+                data_key = f"mean_{metric_key}_ms"
+                header = f"{metric_label} (ms)"
+            else:
+                data_key = f"{suffix}_{metric_key}_ms"
+                header = f"{suffix.upper()} {metric_label} (ms)"
+            columns.append((data_key, header, 1))
+    return tuple(columns)
+
+
+_STRESS_DETAILED_METRIC_COLUMNS: Tuple[ColumnSpec, ...] = _build_stress_detailed_columns()
+
+
+def _format_numeric_cell(value: Any, decimals: int) -> str:
+    """Format a numeric cell with fixed decimals; ``NOT_MEASURED_STR`` for missing/NaN."""
+    if value is None or value == "" or value == NOT_MEASURED_STR:
+        return NOT_MEASURED_STR
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if numeric != numeric:  # NaN guard
+        return NOT_MEASURED_STR
+    if decimals == 0:
+        return str(int(numeric))
+    return f"{numeric:.{decimals}f}"
+
+
+def stress_tests_release_markdown(
+    release_raw: List[Dict[str, Any]], percentile: bool = False
+) -> str:
+    """Render the stress-test release table.
+
+    ``percentile=True`` expands each metric into mean + p5/p25/p50/p95/p99
+    columns; otherwise a simple mean-only table is produced.
+    """
+    metric_cols = (
+        _STRESS_DETAILED_METRIC_COLUMNS if percentile else _STRESS_SIMPLE_METRIC_COLUMNS
+    )
+    columns = _STRESS_CONFIG_COLUMNS + metric_cols + _STRESS_THROUGHPUT_COLUMNS
+
+    display_dicts: List[Dict[str, str]] = [
+        {
+            header: _format_numeric_cell(row.get(data_key), decimals)
+            for data_key, header, decimals in columns
+        }
+        for row in release_raw
+    ]
+    return get_markdown_table(display_dicts)
 
 
 _TIERED_TARGETS_CNN_IMAGE_VIDEO = [

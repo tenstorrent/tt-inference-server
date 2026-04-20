@@ -36,7 +36,7 @@ class ReportFileSaver:
         output_dir.mkdir(parents=True, exist_ok=True)
         md_name = result.md_filename or f"summary_{context.report_id}.md"
         md_path = output_dir / md_name
-        self._write_markdown(md_content, md_path)
+        self.write_markdown(md_content, md_path)
         return md_path
 
     def save_release_bundle(
@@ -77,18 +77,16 @@ class ReportFileSaver:
         release_md = "\n\n".join(preamble + sections)
 
         md_path = release_dir / f"report_{context.report_id}.md"
-        self._write_markdown(release_md, md_path)
+        self.write_markdown(release_md, md_path)
 
         json_path = data_dir / f"report_data_{context.report_id}.json"
-        self._write_json(release_data, json_path)
+        self.write_json(release_data, json_path)
 
         logger.info(f"Saved release bundle: md={md_path}, json={json_path}")
         return md_path
 
-    # -- Private helpers -------------------------------------------------------
-
     @staticmethod
-    def _write_markdown(content: str, path: Path) -> None:
+    def write_markdown(content: str, path: Path) -> None:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
@@ -97,11 +95,15 @@ class ReportFileSaver:
             logger.exception(f"Failed to save markdown to: {path}")
 
     @staticmethod
-    def _write_json(data: Any, path: Path) -> None:
+    def write_json(
+        data: Any, path: Path, indent: int = 4, strict: bool = False
+    ) -> None:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4, default=str)
+                json.dump(data, f, indent=indent, default=str)
             logger.info(f"Saved JSON to: {path}")
         except Exception:
             logger.exception(f"Failed to save JSON to: {path}")
+            if strict:
+                raise

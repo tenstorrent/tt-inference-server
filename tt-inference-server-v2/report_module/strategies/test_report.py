@@ -2,13 +2,18 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
-"""Write-side helpers for per-run server-test JSON reports.
+"""Server-test reports: write-side helpers and REPORTS-phase strategy.
 
-Owns the JSON schema and the canonical on-disk location for the artefacts
-produced by ``server_tests/tests_runner.py``. The companion rendering
-module :mod:`report_module.strategies.markdown_report` reads the JSONs
-this module writes and is the only thing registered as a
-``ReportStrategy`` in the reports pipeline.
+Single home for the ``server_tests`` release key. Owns:
+
+* the JSON schema and canonical on-disk location for per-run ``test_report_*.json``
+  artefacts produced by ``server_tests/tests_runner.py`` at TESTS time
+  
+* the REPORTS-phase :class:`TestReportStrategy` that scans those JSONs,
+  renders each into a sibling ``.md`` via
+  :class:`~report_module.markdown.visualizer.MarkdownVisualizer`, persists
+  them through :class:`~report_module.report_file_saver.ReportFileSaver`,
+  and assembles the combined ``server_tests`` section of the release report.
 """
 
 from __future__ import annotations
@@ -18,7 +23,12 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+from report_module.base_strategy import ReportStrategy
+from report_module.markdown.visualizer import MarkdownVisualizer
+from report_module.report_file_saver import ReportFileSaver
+from report_module.types import ReportContext, ReportResult
 
 if TYPE_CHECKING:
     from server_tests.test_classes import TestReport
@@ -31,6 +41,9 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 TEST_REPORTS_DIRNAME = "test_reports"
 TEST_REPORT_FILE_PREFIX = "test_report_"
 TEST_REPORT_TIMESTAMP_FMT = "%Y%m%d_%H%M%S"
+
+_FILE_SEPARATOR = "\n\n---\n\n"
+_JSON_GLOB = f"{TEST_REPORT_FILE_PREFIX}*.json"
 
 
 def resolve_test_reports_dir() -> Path:
@@ -79,16 +92,15 @@ def build_test_report_data(artifacts: TestRunArtifacts) -> Dict[str, Any]:
 
 
 def write_test_report_json(
-    output_dir: Path, artifacts: TestRunArtifacts
+    output_dir: Path,
+    artifacts: TestRunArtifacts,
+    file_saver: Optional[ReportFileSaver] = None,
 ) -> Path:
-    """Persist ``test_report_<ts>.json`` under *output_dir*; return its path."""
-    output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = artifacts.generated_at.strftime(TEST_REPORT_TIMESTAMP_FMT)
     path = output_dir / f"{TEST_REPORT_FILE_PREFIX}{timestamp}.json"
     data = build_test_report_data(artifacts)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, default=str)
-    logger.info(f"Wrote test report JSON: {path}")
+    saver = file_saver or ReportFileSaver()
+    saver.write_json(data, path, indent=2, strict=True)
     return path
 
 
@@ -105,3 +117,71 @@ def _report_to_dict(report: "TestReport") -> Dict[str, Any]:
         "result": report.result,
         "logs": report.logs,
     }
+
+
+class TestReportStrategy(ReportStrategy):
+    """REPORTS-phase strategy: render per-run markdown from ``test_report_*.json``
+    files and assemble the combined ``server_tests`` release section.
+    """
+
+    name = "server_tests"
+
+    def __init__(self, file_saver: Optional[ReportFileSaver] = None) -> None:
+        self._file_saver = file_saver or ReportFileSaver()
+
+    def is_applicable(self, context: ReportContext) -> bool:
+        reports_dir = resolve_test_reports_dir()
+        if not reports_dir.exists():
+            logger.info(f"Server tests directory not found: {reports_dir}")
+            return False
+        if not any(reports_dir.glob(_JSON_GLOB)):
+            logger.info(f"No server test JSONs in {reports_dir}")
+            return False
+        return True
+
+    def generate(self, context: ReportContext) -> Dict[str, ReportResult]:
+        reports_dir = resolve_test_reports_dir()
+        json_files = sorted(reports_dir.glob(_JSON_GLOB))
+        logger.info(f"Rendering {len(json_files)} server test JSON(s)")
+
+        sections, data = self._render_all(json_files)
+        if not sections:
+            return {self.name: ReportResult.empty(self.name)}
+
+        release_md = (
+            f"### Server Test Results for {context.model_name} "
+            f"on {context.device_str}\n\n"
+            f"{_FILE_SEPARATOR.join(sections)}"
+        )
+        return {
+            self.name: ReportResult(
+                name=self.name,
+                markdown=release_md,
+                data=data,
+            )
+        }
+
+    def _render_all(
+        self, json_files: List[Path]
+    ) -> Tuple[List[str], List[Dict[str, Any]]]:
+        sections: List[str] = []
+        data: List[Dict[str, Any]] = []
+        for json_path in json_files:
+            parsed = _load_json(json_path)
+            if parsed is None:
+                continue
+            md_body = MarkdownVisualizer.build_test_report_markdown(parsed)
+            md_path = json_path.with_suffix(".md")
+            self._file_saver.write_markdown(md_body, md_path)
+            sections.append(f"#### {json_path.stem}\n\n{md_body}")
+            data.append(parsed)
+        return sections, data
+
+
+def _load_json(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        logger.exception(f"Could not parse test report: {path}")
+        return None

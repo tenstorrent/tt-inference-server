@@ -13,29 +13,21 @@ from typing import Any, Dict, List, Optional, Tuple
 from benchmarking.benchmark_config import cap_benchmark_params
 from evals.eval_config import EVAL_CONFIGS
 from report_module.base_strategy import ReportStrategy
-from report_module.markdown.formatters import (
-    create_audio_display_dict,
-    create_cnn_display_dict,
-    create_embedding_display_dict,
-    create_image_generation_display_dict,
-    create_text_display_dict,
-    create_tts_display_dict,
-    create_video_display_dict,
-    create_vlm_display_dict,
-)
-from report_module.markdown.report_renderers import (
-    benchmark_release_markdown,
-    benchmark_vlm_release_markdown,
-    generate_evals_release_markdown,
-    generate_evals_summary_table,
-    tiered_targets_markdown,
-)
-from report_module.markdown.table_builder import get_markdown_table
+from report_module.markdown.report_renderers import tiered_targets_markdown
+from report_module.markdown.visualizer import MarkdownVisualizer
 from report_module.parsing.benchmark_parser import process_benchmark_files
 from report_module.parsing.benchmark_summary import build_summary_row
 from report_module.parsing.common import deduplicate_by_config
+from report_module.parsing.target_checks import (
+    compute_text_target_checks,
+    compute_vlm_target_checks,
+)
 from report_module.types import ReportContext, ReportResult
 from workflows.model_spec import ModelSpec
+from workflows.utils import (
+    is_preprocessing_enabled_for_whisper,
+    is_streaming_enabled_for_whisper,
+)
 from workflows.workflow_types import ModelType, ReportCheckTypes
 
 logger = logging.getLogger(__name__)
@@ -70,17 +62,15 @@ _MODEL_TYPE_TO_TASK_LABEL = {
 }
 
 
-class StandardReportStrategy(ReportStrategy):
-    """Standard report: benchmark sweeps + targets + accuracy evaluations.
+class _WhisperSpecWrapper:
 
-    Returns multiple ReportResults keyed by sub-section name:
-    - "benchmarks"         : sweep display tables (release.md) + reorganised
-                             per-run data (release.json "benchmarks" key).
-    - "benchmarks_summary" : target-check tables (release.md) + aggregated
-                             summary rows with ``target_checks`` (release.json
-                             "benchmarks_summary" key).
-    - "evals"              : accuracy evaluation tables with scoring.
-    """
+    __slots__ = ("model_spec",)
+
+    def __init__(self, model_spec: ModelSpec) -> None:
+        self.model_spec = model_spec
+
+
+class StandardReportStrategy(ReportStrategy):
 
     SUB_SECTIONS = (
         SUB_SECTION_BENCHMARKS,
@@ -147,11 +137,17 @@ class StandardReportStrategy(ReportStrategy):
                 ),
             }
 
+        self._inject_whisper_flags(rows_by_tool, context.model_spec)
+
         all_results: List[Dict[str, Any]] = []
         for rows in rows_by_tool.values():
             all_results.extend(rows)
 
-        sweep_md = self._build_sweep_markdown(context, rows_by_tool)
+        sweep_md = MarkdownVisualizer.build_benchmark_sweeps_markdown(
+            rows_by_tool=rows_by_tool,
+            model_name=context.model_name,
+            device_str=context.device_str,
+        )
 
         if self._is_text_vlm_model(context.model_spec):
             targets_md, summary_data = self._build_target_markdown(
@@ -211,76 +207,23 @@ class StandardReportStrategy(ReportStrategy):
             rows_by_tool[tool_label] = process_benchmark_files(files)
         return rows_by_tool
 
-    def _build_sweep_markdown(
-        self,
-        context: ReportContext,
-        rows_by_tool: Dict[str, List[Dict[str, Any]]],
-    ) -> str:
-        sections_by_type: Dict[str, List[str]] = {
-            "text": [], "image": [], "audio": [], "tts": [],
-            "embedding": [], "cnn": [], "video": [],
-        }
-
-        for tool_label, rows in rows_by_tool.items():
-            self._append_sweep_sections(
-                sections_by_type,
-                rows,
-                tool_label,
-                context.model_name,
-                context.device_str,
-                context.model_spec,
-            )
-
-        ordered_sections = (
-            sections_by_type["text"]
-            + sections_by_type["image"]
-            + sections_by_type["audio"]
-            + sections_by_type["tts"]
-            + sections_by_type["embedding"]
-            + sections_by_type["cnn"]
-            + sections_by_type["video"]
-        )
-
-        if not ordered_sections:
-            return ""
-
-        header = f"### Performance Benchmark Sweeps for {context.model_name} on {context.device_str}\n\n"
-        return header + "\n\n".join(ordered_sections)
-
     @staticmethod
-    def _append_sweep_sections(
-        sections: Dict[str, List[str]],
-        rows: List[Dict[str, Any]],
-        tool_label: str,
-        model_name: str,
-        device_str: str,
+    def _inject_whisper_flags(
+        rows_by_tool: Dict[str, List[Dict[str, Any]]],
         model_spec: ModelSpec,
     ) -> None:
-        type_map = {
-            "text": ("Text-to-Text Performance", create_text_display_dict),
-            "vlm": ("Vision-Language Performance", create_vlm_display_dict),
-            "audio": ("Audio", create_audio_display_dict),
-            "tts": ("Text-to-Speech", create_tts_display_dict),
-            "embedding": ("Embedding", create_embedding_display_dict),
-            "cnn": ("CNN", create_cnn_display_dict),
-            "image": ("Image", create_image_generation_display_dict),
-            "video": ("Video", create_video_display_dict),
-        }
-
-        for task_type, (label, display_fn) in type_map.items():
-            typed_rows = [r for r in rows if r.get("task_type") == task_type]
-            if not typed_rows:
-                continue
-
-            if display_fn is create_audio_display_dict:
-                display_dicts = [display_fn(r, model_spec) for r in typed_rows]
-            else:
-                display_dicts = [display_fn(r) for r in typed_rows]
-
-            md_table = get_markdown_table(display_dicts)
-            heading = f"#### {tool_label} {label} Benchmark Sweeps for {model_name} on {device_str}\n\n"
-            bucket = "image" if task_type == "vlm" else task_type
-            sections[bucket].append(heading + md_table)
+       
+        if "whisper" not in model_spec.hf_model_repo.lower():
+            return
+        wrapper = _WhisperSpecWrapper(model_spec)
+        streaming = str(is_streaming_enabled_for_whisper(wrapper))
+        preprocessing = str(is_preprocessing_enabled_for_whisper(wrapper))
+        for rows in rows_by_tool.values():
+            for row in rows:
+                if row.get("task_type") != "audio":
+                    continue
+                row["streaming_enabled"] = streaming
+                row["preprocessing_enabled"] = preprocessing
 
     # ── Benchmark target checks ──────────────────────────────────────────
 
@@ -301,47 +244,26 @@ class StandardReportStrategy(ReportStrategy):
         text_refs = [p for p in perf_refs if getattr(p, "task_type", "text") == "text"]
         vlm_refs = [p for p in perf_refs if getattr(p, "task_type", "text") == "vlm"]
 
-        sections: List[str] = []
-        target_data: List[Dict[str, Any]] = []
-
-        if text_refs and text_rows:
-            text_targets = _compute_text_target_checks(text_rows, text_refs, model_spec, context.device_str)
-            flat = _flatten_target_checks(text_targets)
-            heading = f"#### Text-to-Text Performance Benchmark Targets {context.model_name} on {context.device_str}\n\n"
-            tc = text_targets[0].get("target_checks") if text_targets else None
-            sections.append(heading + benchmark_release_markdown(flat, target_checks=tc))
-            target_data.extend(text_targets)
-        elif text_rows:
-            sections.append(
-                f"#### Text-to-Text Performance Benchmark Results {context.model_name} on {context.device_str}\n\n"
-                "No performance targets defined for text benchmarks.\n\n"
-            )
-
-        if vlm_refs and vlm_rows:
-            vlm_targets = _compute_vlm_target_checks(vlm_rows, vlm_refs, model_spec, context.device_str)
-            flat = _flatten_target_checks(vlm_targets)
-            heading = f"#### VLM Performance Benchmark Results {context.model_name} on {context.device_str}\n\n"
-            tc = vlm_targets[0].get("target_checks") if vlm_targets else None
-            sections.append(heading + benchmark_vlm_release_markdown(flat, target_checks=tc))
-            target_data.extend(vlm_targets)
-        elif vlm_rows:
-            sections.append(
-                f"#### VLM Benchmark Results {context.model_name} on {context.device_str}\n\n"
-                "No performance targets defined for VLM benchmarks.\n\n"
-            )
-
-        if not sections:
-            md = (
-                f"### Performance Benchmark Targets {context.model_name} on {context.device_str}\n\n"
-                "No performance targets defined for this model and device combination.\n"
-            )
-            return md, []
-
-        md = (
-            f"### Performance Benchmark Targets {context.model_name} on {context.device_str}\n\n"
-            + "\n\n".join(sections)
+        text_targets = (
+            compute_text_target_checks(text_rows, text_refs, model_spec, context.device_str)
+            if text_refs and text_rows
+            else []
         )
-        return md, target_data
+        vlm_targets = (
+            compute_vlm_target_checks(vlm_rows, vlm_refs, model_spec, context.device_str)
+            if vlm_refs and vlm_rows
+            else []
+        )
+
+        md = MarkdownVisualizer.build_benchmark_targets_markdown(
+            text_target_rows=text_targets,
+            vlm_target_rows=vlm_targets,
+            text_rows_without_refs=bool(text_rows and not text_refs),
+            vlm_rows_without_refs=bool(vlm_rows and not vlm_refs),
+            model_name=context.model_name,
+            device_str=context.device_str,
+        )
+        return md, text_targets + vlm_targets
 
     @staticmethod
     def _get_capped_perf_refs(model_spec: ModelSpec) -> List:
@@ -369,11 +291,9 @@ class StandardReportStrategy(ReportStrategy):
             return "", []
 
         task_label = _MODEL_TYPE_TO_TASK_LABEL.get(model_type_name, model_type_name)
-        header = f"### Performance Benchmark Targets {context.model_name} on {context.device_str}\n\n"
 
-        sections: List[str] = []
-        summary_data: List[Dict[str, Any]] = []
-
+        tool_tables: List[Tuple[str, str]] = []
+        rendered_summaries: List[Tuple[str, Dict[str, Any]]] = []
         for tool_label, rows in rows_by_tool.items():
             typed_rows = [r for r in rows if r.get("task_type") == task_type_key]
             if not typed_rows:
@@ -386,21 +306,17 @@ class StandardReportStrategy(ReportStrategy):
             table = tiered_targets_markdown(summary, model_type_name)
             if not table:
                 continue
-            heading = (
-                f"#### {tool_label} {task_label} Performance Benchmark Targets "
-                f"{context.model_name} on {context.device_str}\n\n"
-            )
-            sections.append(heading + table)
-            summary_data.append({"tool": tool_label, **summary})
+            tool_tables.append((tool_label, table))
+            rendered_summaries.append((tool_label, summary))
 
-        if not sections:
-            return (
-                header
-                + "No performance targets defined for this model and device combination.\n",
-                summary_data,
-            )
-
-        return header + "\n\n".join(sections), summary_data
+        md = MarkdownVisualizer.build_tiered_summary_markdown(
+            tool_tables=tool_tables,
+            task_label=task_label,
+            model_name=context.model_name,
+            device_str=context.device_str,
+        )
+        summary_data = [{"tool": tool, **summary} for tool, summary in rendered_summaries]
+        return md, summary_data
 
     # ── Accuracy evaluations ─────────────────────────────────────────────
 
@@ -444,14 +360,18 @@ class StandardReportStrategy(ReportStrategy):
         report_rows = _evals_release_report_data(
             results, meta_data, model_spec, context.device_str
         )
-        release_markdown = generate_evals_release_markdown(report_rows)
-        release_str = f"### Accuracy Evaluations for {context.model_name} on {context.device_str}\n\n{release_markdown}"
-        summary_md = generate_evals_summary_table(results, meta_data)
+        release_md, summary_md = MarkdownVisualizer.build_evals_markdown(
+            report_rows,
+            context.model_name,
+            context.device_str,
+            results=results,
+            meta_data=meta_data,
+        )
 
         return {
             SUB_SECTION_EVALS: ReportResult(
                 name=SUB_SECTION_EVALS,
-                markdown=release_str,
+                markdown=release_md,
                 data=report_rows,
                 display_markdown=summary_md,
                 md_filename=f"summary_{context.report_id}.md",
@@ -461,14 +381,16 @@ class StandardReportStrategy(ReportStrategy):
     def _generate_simple_eval(
         self, context: ReportContext, raw_evals_data: List[Dict[str, Any]]
     ) -> Dict[str, ReportResult]:
-        release_str = f"### Accuracy Evaluations for {context.model_name} on {context.device_str}\n\nMD summary to do"
+        release_md, summary_md = MarkdownVisualizer.build_evals_markdown(
+            [], context.model_name, context.device_str
+        )
 
         return {
             SUB_SECTION_EVALS: ReportResult(
                 name=SUB_SECTION_EVALS,
-                markdown=release_str,
+                markdown=release_md,
                 data=raw_evals_data,
-                display_markdown=release_str,
+                display_markdown=summary_md,
                 md_filename=f"summary_{context.report_id}.md",
             )
         }
@@ -730,161 +652,3 @@ def _build_na_eval_row(
         "metadata": meta_data.get(task.task_name),
     }
 
-
-# ── Benchmark target check computation ──────────────────────────────────
-
-
-def _flatten_target_checks(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    flat_rows = []
-    for row in rows:
-        flat = {k: v for k, v in row.items() if k != "target_checks"}
-        for target_name, checks in row.get("target_checks", {}).items():
-            for metric, value in checks.items():
-                flat[f"{target_name}_{metric}"] = value
-        flat_rows.append(flat)
-    return flat_rows
-
-
-def _compute_perf_target_check(
-    measured: float, reference: Optional[float], tolerance: float, higher_is_better: bool
-) -> Tuple[Optional[float], ReportCheckTypes]:
-    """Compute ratio and pass/fail check for a single metric against a reference."""
-    if reference is None or reference <= 0:
-        return None, ReportCheckTypes.NA
-    ratio = measured / reference
-    if higher_is_better:
-        passed = ratio > (1 - tolerance)
-    else:
-        passed = ratio < (1 + tolerance)
-    return ratio, ReportCheckTypes.from_result(passed)
-
-
-def _build_target_checks_for_ref(
-    res: Dict[str, Any], perf_target
-) -> Dict[str, Any]:
-    target_check: Dict[str, Any] = {}
-
-    if perf_target.ttft_ms is not None:
-        assert perf_target.ttft_ms > 0, f"ttft_ms is not > 0: {perf_target.ttft_ms}"
-        ratio, check = _compute_perf_target_check(
-            res["mean_ttft_ms"], perf_target.ttft_ms, perf_target.tolerance, higher_is_better=False
-        )
-        target_check.update(ttft=perf_target.ttft_ms, ttft_ratio=ratio, ttft_check=check)
-    else:
-        target_check["ttft_check"] = ReportCheckTypes.NA
-
-    if perf_target.tput_user is not None:
-        assert perf_target.tput_user > 0, f"tput_user is not > 0: {perf_target.tput_user}"
-        ratio, check = _compute_perf_target_check(
-            res["mean_tps"], perf_target.tput_user, perf_target.tolerance, higher_is_better=True
-        )
-        target_check.update(tput_user=perf_target.tput_user, tput_user_ratio=ratio, tput_user_check=check)
-    else:
-        target_check["tput_user_check"] = ReportCheckTypes.NA
-
-    if perf_target.tput is not None:
-        assert perf_target.tput > 0, f"tput is not > 0: {perf_target.tput}"
-        ratio, check = _compute_perf_target_check(
-            res["tps_decode_throughput"], perf_target.tput, perf_target.tolerance, higher_is_better=True
-        )
-        target_check.update(tput=perf_target.tput, tput_ratio=ratio, tput_check=check)
-    else:
-        target_check["tput_check"] = ReportCheckTypes.NA
-
-    return target_check
-
-
-_NA_TARGET_CHECKS = {
-    "ttft_check": ReportCheckTypes.NA,
-    "tput_user_check": ReportCheckTypes.NA,
-    "tput_check": ReportCheckTypes.NA,
-}
-
-
-def _compute_text_target_checks(
-    text_rows: List[Dict[str, Any]],
-    text_refs: List,
-    model_spec: ModelSpec,
-    device_str: str,
-) -> List[Dict[str, Any]]:
-    res_dict = {
-        (r["input_sequence_length"], r["output_sequence_length"], r["max_con"]): r
-        for r in text_rows
-    }
-
-    perf_results: Dict[tuple, Dict[str, Any]] = {}
-    for p_ref in text_refs:
-        key = (p_ref.isl, p_ref.osl, p_ref.max_concurrency)
-        res = res_dict.get(key)
-        entry: Dict[str, Any] = {
-            "isl": p_ref.isl,
-            "osl": p_ref.osl,
-            "max_concurrency": res["max_con"] if res else p_ref.max_concurrency,
-            "model": model_spec.model_name,
-            "device": device_str,
-        }
-        if res:
-            entry.update(ttft=res["mean_ttft_ms"], tput_user=res["mean_tps"], tput=res["tps_decode_throughput"])
-            entry["target_checks"] = {
-                tgt_name: _build_target_checks_for_ref(res, perf_target)
-                for tgt_name, perf_target in p_ref.targets.items()
-            }
-        else:
-            entry.update(ttft="N/A", tput_user="N/A", tput="N/A")
-            entry["target_checks"] = {
-                tgt_name: dict(_NA_TARGET_CHECKS)
-                for tgt_name in p_ref.targets
-            }
-        perf_results[key] = entry
-
-    return [perf_results[k] for k in sorted(perf_results)]
-
-
-def _compute_vlm_target_checks(
-    vlm_rows: List[Dict[str, Any]],
-    vlm_refs: List,
-    model_spec: ModelSpec,
-    device_str: str,
-) -> List[Dict[str, Any]]:
-    res_dict = {
-        (
-            r.get("isl", r.get("input_sequence_length", 0)),
-            r.get("osl", r.get("output_sequence_length", 0)),
-            r["image_height"],
-            r["image_width"],
-            r["images_per_prompt"],
-            r["max_con"],
-        ): r
-        for r in vlm_rows
-    }
-
-    perf_results: Dict[tuple, Dict[str, Any]] = {}
-    for p_ref in vlm_refs:
-        key = (p_ref.isl, p_ref.osl, p_ref.image_height, p_ref.image_width, p_ref.images_per_prompt, p_ref.max_concurrency)
-        res = res_dict.get(key)
-        entry: Dict[str, Any] = {
-            "isl": p_ref.isl,
-            "osl": p_ref.osl,
-            "max_concurrency": res["max_con"] if res else p_ref.max_concurrency,
-            "image_height": p_ref.image_height,
-            "image_width": p_ref.image_width,
-            "images_per_prompt": p_ref.images_per_prompt,
-            "num_requests": res["num_requests"] if res else "N/A",
-            "model": model_spec.model_name,
-            "device": device_str,
-        }
-        if res:
-            entry.update(ttft=res["mean_ttft_ms"], tput_user=res["mean_tps"], tput=res["tps_decode_throughput"])
-            entry["target_checks"] = {
-                tgt_name: _build_target_checks_for_ref(res, perf_target)
-                for tgt_name, perf_target in p_ref.targets.items()
-            }
-        else:
-            entry.update(ttft="N/A", tput_user="N/A", tput="N/A")
-            entry["target_checks"] = {
-                tgt_name: dict(_NA_TARGET_CHECKS)
-                for tgt_name in p_ref.targets
-            }
-        perf_results[key] = entry
-
-    return [perf_results[k] for k in sorted(perf_results)]

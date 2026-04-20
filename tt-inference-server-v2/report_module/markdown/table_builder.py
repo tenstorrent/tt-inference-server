@@ -14,8 +14,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -167,30 +166,3 @@ def get_markdown_table(
     )
 
     return table_str + end_notes + explain_str
-
-
-def save_markdown_table(
-    markdown_str: str,
-    filepath: str,
-    add_title: Optional[str] = None,
-    add_notes: Optional[List[str]] = None,
-) -> None:
-    """Write a markdown string to *filepath*, optionally prepending a title."""
-    path = Path(filepath)
-    if path.suffix.lower() != ".md":
-        path = path.with_suffix(".md")
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    content: List[str] = []
-    if add_title:
-        content.extend([f"# {add_title}", ""])
-    content.append(markdown_str)
-    if add_notes:
-        content.extend(add_notes)
-
-    try:
-        path.write_text("\n".join(content), encoding="utf-8")
-        logger.info(f"Saved markdown table to: {path}")
-    except Exception:
-        logger.exception(f"Failed to save markdown table to: {path}")
