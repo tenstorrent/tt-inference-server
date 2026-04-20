@@ -7,7 +7,6 @@
 #include <chrono>
 #include <thread>
 
-#include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
 #include "utils/id_generator.hpp"
@@ -18,19 +17,19 @@ namespace tt::services {
 namespace {
 constexpr std::chrono::milliseconds ALLOCATION_RETRY_BASE_DELAY{2000};
 constexpr std::chrono::milliseconds ALLOCATION_RETRY_DELAY_STEP{700};
-constexpr std::chrono::milliseconds ALLOCATION_RETRY_MAX_DELAY =
+std::chrono::milliseconds allocationRetryMaxDelay =
     ALLOCATION_RETRY_BASE_DELAY +
     ALLOCATION_RETRY_DELAY_STEP *
-        (tt::config::defaults::SESSION_ALLOCATION_MAX_RETRIES - 1);
+        (tt::config::sessionAllocationMaxRetries() - 1);
 constexpr std::chrono::milliseconds IPC_QUEUE_FULL_RETRY_DELAY{50};
 
-inline std::chrono::milliseconds computeAllocationRetryDelay(int failureCount) {
+std::chrono::milliseconds computeAllocationRetryDelay(int failureCount) {
   auto delay =
       ALLOCATION_RETRY_BASE_DELAY + ALLOCATION_RETRY_DELAY_STEP * failureCount;
-  return std::min(delay, ALLOCATION_RETRY_MAX_DELAY);
+  return std::min(delay, allocationRetryMaxDelay);
 }
 
-inline int computeFailureCount(int attemptsRemaining) {
+int computeFailureCount(int attemptsRemaining) {
   return static_cast<int>(tt::config::sessionAllocationMaxRetries()) -
          attemptsRemaining;
 }
