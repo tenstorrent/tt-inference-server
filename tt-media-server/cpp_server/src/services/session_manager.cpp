@@ -87,6 +87,7 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
                sessionId);
 
   auto executeClose = [&](const domain::Session& s) {
+    abortCallbacks_.take(sessionId);  // clean up any stale abort callback
     if (s.getSlotId() != domain::INVALID_SLOT_ID) {
       sendDeallocRequest(sessionId, s.getSlotId());
     }
