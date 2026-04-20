@@ -3,6 +3,15 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 """Report-time rendering of server-test JSONs.
+
+At REPORTS workflow time, scans the JSONs written by
+:mod:`report_module.strategies.test_report`, renders each into a
+per-run markdown file next to its JSON, and builds the combined
+``server_tests`` section embedded in the release report.
+
+Owns the ``server_tests`` release key (previously held by
+``TestReportStrategy``) so the downstream release JSON schema and the
+``<output>/server_tests/summary_<report_id>.md`` path are preserved.
 """
 
 from __future__ import annotations

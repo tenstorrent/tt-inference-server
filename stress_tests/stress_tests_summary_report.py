@@ -4,7 +4,6 @@
 
 import json
 import os
-import csv
 import re
 from typing import Dict, List, Any, Union, Tuple
 import argparse
@@ -266,29 +265,6 @@ def process_benchmark_files(files: List[str], pattern: str) -> List[Dict[str, An
     return sorted(results, key=lambda x: x["timestamp"])
 
 
-def save_to_csv(results: List[Dict[str, Any]], file_path: Union[Path, str]) -> None:
-    if not results:
-        return
-
-    # Get headers from first result (assuming all results have same structure)
-    headers = list(results[0].keys())
-
-    try:
-        with open(file_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            # Write headers
-            writer.writerow(headers)
-            # Write data rows
-            for result in results:
-                row = [str(result.get(header, NOT_MEASURED_STR)) for header in headers]
-                writer.writerow(row)
-
-        print(f"\nResults saved to: {file_path}")
-
-    except Exception as e:
-        print(f"Error saving CSV file: {e}")
-
-
 def create_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     # Define display columns mapping
     display_cols: List[Tuple[str, str]] = [
@@ -515,20 +491,12 @@ def generate_report(files, output_dir, report_id, metadata={}):
     assert len(files) > 0, "No stress test files found."
     results = process_benchmark_files(files, pattern="stress_test_*.json")
 
-    # Save to CSV
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     # Generate and print Markdown table
     model_name = metadata["model_name"]
     device = results[0].get("device")
     if "device" in metadata:
         assert metadata["device"] == device, "Device mismatch in metadata"
 
-    # save stats
-    data_file_path = output_dir / "data" / f"stress_test_stats_{report_id}.csv"
-    data_file_path.parent.mkdir(parents=True, exist_ok=True)
-    save_to_csv(results, data_file_path)
 
     # Separate text and image stress tests
     text_results = [r for r in results if r.get("task_type") == "text"]
@@ -569,7 +537,7 @@ def generate_report(files, output_dir, report_id, metadata={}):
 
     release_str = display_md_str
     release_raw = results
-    return release_str, release_raw, disp_md_path, data_file_path
+    return release_str, release_raw, disp_md_path
 
 
 def main():
@@ -580,7 +548,7 @@ def main():
     output_dir = args.output_dir
     if not output_dir:
         output_dir = Path(os.environ.get("CACHE_ROOT", ""), "stress_test_results")
-    release_str, release_raw, disp_md_path, data_file_path = generate_report(
+    release_str, release_raw, disp_md_path = generate_report(
         args.files, output_dir, metadata={}
     )
     print("Markdown Table:")

@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 
 
 class ReportFileSaver:
+    """Centralised file persistence for all report artefacts.
+
+    Handles markdown and JSON writes so individual strategies never
+    touch the file system directly.
+    """
 
     def save(self, result: ReportResult, context: ReportContext) -> Optional[Path]:
         """Persist the per-strategy markdown file and return its path.

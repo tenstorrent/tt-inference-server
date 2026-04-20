@@ -152,17 +152,72 @@ def _tput_check(measured: float, threshold: float) -> ReportCheckTypes:
     return ReportCheckTypes.from_result(measured > threshold)
 
 
+def _build_target_checks_cnn_image_video(
+    targets: PerformanceTargets, tput_user: float, metrics: Dict[str, Any]
+) -> Dict[str, Dict[str, Any]]:
+    target_tput_user = targets.tput_user
+    if target_tput_user is None:
+        raise ValueError("CNN/IMAGE/VIDEO target requires tput_user")
+    return {
+        tier: {
+            "ttft": metrics[f"{tier}_ttft"] / 1000,
+            "ttft_ratio": metrics[f"{tier}_ttft_ratio"],
+            "ttft_check": metrics[f"{tier}_ttft_check"],
+            "tput_check": _tput_check(
+                tput_user, target_tput_user / TIER_MULTIPLIERS[tier]
+            ),
+        }
+        for tier in TIER_MULTIPLIERS
+        if f"{tier}_ttft" in metrics
+    }
+
+
+def _build_target_checks_audio(
+    metrics: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    return {
+        tier: {
+            "ttft": metrics[f"{tier}_ttft"],
+            "ttft_ratio": metrics[f"{tier}_ttft_ratio"],
+            "ttft_check": metrics[f"{tier}_ttft_check"],
+        }
+        for tier in TIER_MULTIPLIERS
+        if f"{tier}_ttft" in metrics
+    }
+
+
+def _build_target_checks_tts(
+    metrics: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    checks: Dict[str, Dict[str, Any]] = {}
+    for tier in TIER_MULTIPLIERS:
+        has_ttft = f"{tier}_ttft" in metrics
+        has_rtr = f"{tier}_rtr_check" in metrics
+        if not has_ttft and not has_rtr:
+            continue
+        entry: Dict[str, Any] = {}
+        if has_ttft:
+            entry["ttft"] = metrics[f"{tier}_ttft"]
+            entry["ttft_ratio"] = metrics[f"{tier}_ttft_ratio"]
+            entry["ttft_check"] = metrics[f"{tier}_ttft_check"]
+        if has_rtr:
+            entry["rtr"] = metrics[f"{tier}_rtr"]
+            entry["rtr_ratio"] = metrics[f"{tier}_rtr_ratio"]
+            entry["rtr_check"] = metrics[f"{tier}_rtr_check"]
+        checks[tier] = entry
+    return checks
+
+
 _EMBEDDING_METRIC_KEYS = ("tput_user", "tput_prefill", "e2el_ms")
 
 
-def _build_target_checks(
+def _build_target_checks_embedding(
     metrics: Dict[str, Any],
-    keys: List[str],
 ) -> Dict[str, Dict[str, Any]]:
     checks: Dict[str, Dict[str, Any]] = {}
     for tier in TIER_MULTIPLIERS:
         entry: Dict[str, Any] = {}
-        for key in keys:
+        for key in _EMBEDDING_METRIC_KEYS:
             if f"{tier}_{key}" not in metrics:
                 continue
             entry[key] = metrics[f"{tier}_{key}"]
@@ -170,19 +225,6 @@ def _build_target_checks(
             entry[f"{key}_check"] = metrics[f"{tier}_{key}_check"]
         if entry:
             checks[tier] = entry
-    return checks
-
-
-def _build_target_checks_cnn_image_video(
-    targets: PerformanceTargets, tput_user: float, metrics: Dict[str, Any]
-) -> Dict[str, Dict[str, Any]]:
-    target_tput_user = targets.tput_user
-    if target_tput_user is None:
-        raise ValueError("CNN/IMAGE/VIDEO target requires tput_user")
-    checks = _build_target_checks(metrics, ["ttft"])
-    for tier, entry in checks.items():
-        entry["ttft"] = entry["ttft"] / 1000
-        entry["tput_check"] = _tput_check(tput_user, target_tput_user / TIER_MULTIPLIERS[tier])
     return checks
 
 
@@ -326,12 +368,12 @@ def _build_cnn_image_audio_tts_summary(
             targets, tput_user, metrics
         )
     elif model_type == ModelType.AUDIO.name:
-        target_checks = _build_target_checks(metrics, ["ttft"])
+        target_checks = _build_target_checks_audio(metrics)
     elif model_type == ModelType.TEXT_TO_SPEECH.name:
-        target_checks = _build_target_checks(metrics, ["ttft", "rtr"])
+        target_checks = _build_target_checks_tts(metrics)
     else:
         logger.warning(f"Unsupported model type for summary: {model_type}")
-        target_checks = _build_target_checks(metrics, ["ttft"])
+        target_checks = _build_target_checks_audio(metrics)
 
     row = _format_cnn_image_audio_tts_row(model_spec, device_str, summary)
     row["target_checks"] = target_checks
@@ -366,7 +408,7 @@ def _build_embedding_summary(
         ),
     ]
     metrics = calculate_target_metrics(metric_configs)
-    target_checks = _build_target_checks(metrics, list(_EMBEDDING_METRIC_KEYS))
+    target_checks = _build_target_checks_embedding(metrics)
     if not target_checks:
         logger.info(
             f"No embedding targets defined for {model_spec.model_name} "

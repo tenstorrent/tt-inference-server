@@ -5,8 +5,22 @@
 """Stress test report strategy.
 
 Consumes ``stress_test_<model_id>_*.json`` files produced by the
-``stress_tests`` workflow  and
+``stress_tests`` workflow (see ``stress_tests/run_stress_tests.py``) and
 emits the ``stress_tests`` section of the release bundle.
+
+The strategy mirrors the four steps performed by
+``workflows/run_reports.py::stress_test_generate_report``:
+
+1. Discover ``stress_test_<model_id>_*.json`` under
+   ``<workflow_log_dir>/stress_tests_output/``.
+2. Parse each JSON via
+   :func:`report_module.parsing.stress_test_parser.process_stress_test_files`
+   into a list of normalised metric dicts (``release_raw``).
+3. Render a markdown table — simple (means only) or detailed
+   (per-metric percentiles) based on ``context.percentile_report``.
+4. Return a :class:`ReportResult` so the aggregator can place the raw
+   list under the ``stress_tests`` key of the release JSON and the file
+   saver can persist the per-strategy markdown.
 """
 
 from __future__ import annotations

@@ -39,6 +39,16 @@ class ReportGenerator:
         return list(self._strategies)
 
     def generate(self, context: ReportContext) -> Dict[str, ReportResult]:
+        """Run every applicable strategy and return results keyed by name.
+
+        Each strategy returns a dict of named ReportResults.  Composite
+        strategies may contribute multiple entries.  Results are saved
+        individually via the file saver.
+
+        Each strategy is wrapped in a try/except so a single failure does
+        not block others.  Failed strategies are logged and omitted from the
+        returned dict.
+        """
         results: Dict[str, ReportResult] = OrderedDict()
 
         for strategy in self._strategies:
@@ -62,6 +72,7 @@ class ReportGenerator:
         return results
 
     def generate_and_save_release(self, context: ReportContext) -> Dict[str, ReportResult]:
+        """Run all strategies then assemble the release bundle."""
         results = self.generate(context)
         release_data = self._aggregator.aggregate(results, context)
         self._file_saver.save_release_bundle(results, context, release_data=release_data)

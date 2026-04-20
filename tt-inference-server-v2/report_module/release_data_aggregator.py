@@ -3,6 +3,11 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 """Assembles the release JSON payload from per-strategy results.
+
+Kept deliberately small: the orchestrator calls ``aggregate`` once, the
+file saver writes the result, and any future cross-result computation
+(acceptance criteria, summary markdown, etc.) can be layered in here
+without touching individual strategies.
 """
 
 from __future__ import annotations

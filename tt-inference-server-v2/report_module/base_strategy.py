@@ -39,7 +39,8 @@ class ReportStrategy(ABC):
 
     @abstractmethod
     def is_applicable(self, context: ReportContext) -> bool:
-        """
+        """Return False to skip this report for a given model/config.
+
         Strategies that should always run return True unconditionally.
         Strategies gated by command selection check context.
         """

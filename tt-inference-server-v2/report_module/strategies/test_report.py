@@ -3,6 +3,12 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 """Write-side helpers for per-run server-test JSON reports.
+
+Owns the JSON schema and the canonical on-disk location for the artefacts
+produced by ``server_tests/tests_runner.py``. The companion rendering
+module :mod:`report_module.strategies.markdown_report` reads the JSONs
+this module writes and is the only thing registered as a
+``ReportStrategy`` in the reports pipeline.
 """
 
 from __future__ import annotations

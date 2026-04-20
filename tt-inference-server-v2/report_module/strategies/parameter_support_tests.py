@@ -22,7 +22,21 @@ _REPORT_FILE_GLOB = "parameter_report_*.json"
 
 
 class ParameterSupportTestsStrategy(ReportStrategy):
-    """vLLM parameter-support test report."""
+    """vLLM parameter-support test report.
+
+    Scans the latest ``tests_output/test_<model_id>__*`` run directory for
+    ``parameter_report_*.json`` files, produced by ``server_tests`` parameter
+    coverage checks, and emits:
+
+    - ``markdown``: release section ``### Test Results for <model> on <device>``
+      followed by the rendered vLLM parameter coverage markdown.
+    - ``data``    : list containing the merged parameter report dict (keys
+      ``endpoint_url``, ``model_name``, ``model_impl``, ``results``).  Single
+      reports pass through unchanged; multiple reports are merged in order.
+    - A ``summary_<report_id>.md`` file saved under
+      ``<output>/parameter_support_tests/`` by the shared
+      :class:`ReportFileSaver`.
+    """
 
     name = "parameter_support_tests"
 

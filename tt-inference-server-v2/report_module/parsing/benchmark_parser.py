@@ -50,16 +50,10 @@ def _get_task_type(model_id: str) -> str:
 
 _IMAGE_GEN_KEYWORDS = ("stable-diffusion", "sdxl", "sd-", "sd3")
 
-_DEVICES = (
-    "N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2"
-    "|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy"
-)
-_DEVICE_GROUP = r"(?:_(?P<device>" + _DEVICES + r"))?"
-
 _AIPERF_IMAGE_PATTERN = re.compile(
     r"^aiperf_benchmark_"
     r"(?P<model>.+?)"
-    + _DEVICE_GROUP +
+    r"(?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?"
     r"_(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})"
     r"_isl-(?P<isl>\d+)_osl-(?P<osl>\d+)_maxcon-(?P<maxcon>\d+)_n-(?P<n>\d+)"
     r"_images-(?P<images_per_prompt>\d+)_height-(?P<image_height>\d+)_width-(?P<image_width>\d+)"
@@ -69,7 +63,7 @@ _AIPERF_IMAGE_PATTERN = re.compile(
 _AIPERF_TEXT_PATTERN = re.compile(
     r"^aiperf_benchmark_"
     r"(?P<model>.+?)"
-    + _DEVICE_GROUP +
+    r"(?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?"
     r"_(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})"
     r"_isl-(?P<isl>\d+)_osl-(?P<osl>\d+)_maxcon-(?P<maxcon>\d+)_n-(?P<n>\d+)"
     r"\.json$"
@@ -78,7 +72,7 @@ _AIPERF_TEXT_PATTERN = re.compile(
 _IMAGE_PATTERN = re.compile(
     r"^(?:genai_)?benchmark_"
     r"(?P<model>.+?)"
-    + _DEVICE_GROUP +
+    r"(?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?"
     r"_(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})"
     r"_isl-(?P<isl>\d+)_osl-(?P<osl>\d+)_maxcon-(?P<maxcon>\d+)_n-(?P<n>\d+)"
     r"_images-(?P<images_per_prompt>\d+)_height-(?P<image_height>\d+)_width-(?P<image_width>\d+)"
@@ -88,7 +82,7 @@ _IMAGE_PATTERN = re.compile(
 _TEXT_PATTERN = re.compile(
     r"^(?:genai_)?benchmark_"
     r"(?P<model>.+?)"
-    + _DEVICE_GROUP +
+    r"(?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|galaxy_t3k|t3k|tg|galaxy))?"
     r"_(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})"
     r"_isl-(?P<isl>\d+)_osl-(?P<osl>\d+)_maxcon-(?P<maxcon>\d+)_n-(?P<n>\d+)"
     r"\.json$"
@@ -97,7 +91,7 @@ _TEXT_PATTERN = re.compile(
 _CNN_PATTERN = re.compile(
     r"^benchmark_"
     r"(?P<model_id>id_.+?)"
-    + _DEVICE_GROUP +
+    r"(?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?"
     r"_(?P<timestamp>\d+\.?\d*)"
     r"\.json$"
 )
@@ -215,21 +209,12 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     return _process_default(data, params, filename)
 
 
-def _derive_tps(data: Dict[str, Any]):
-    mean_tpot_ms = data.get("mean_tpot_ms")
-    if not mean_tpot_ms or mean_tpot_ms <= 0:
-        return None, None
-    mean_tpot = max(mean_tpot_ms, 1e-6)
-    mean_tps = 1000.0 / mean_tpot
-    std_tps = None
-    if data.get("std_tpot_ms"):
-        std_tps = mean_tps - (1000.0 / (mean_tpot + data["std_tpot_ms"]))
-    return mean_tps, std_tps
-
-
 def _process_aiperf(data, params, filename):
     mean_tpot_ms = data.get("mean_tpot_ms", 0)
-    mean_tps, std_tps = _derive_tps(data)
+    mean_tps = (1000.0 / mean_tpot_ms) if mean_tpot_ms and mean_tpot_ms > 0 else None
+    std_tps = None
+    if mean_tps and data.get("std_tpot_ms"):
+        std_tps = mean_tps - (1000.0 / (mean_tpot_ms + data["std_tpot_ms"]))
 
     actual_max_con = min(params["max_con"], params["num_requests"])
     tps_decode = mean_tps * actual_max_con if mean_tps else None
@@ -385,7 +370,13 @@ def _process_video(data, params, filename):
 
 def _process_default(data, params, filename):
     mean_tpot_ms = data.get("mean_tpot_ms")
-    mean_tps, std_tps = _derive_tps(data)
+    if mean_tpot_ms:
+        mean_tpot = max(mean_tpot_ms, 1e-6)
+        mean_tps = 1000.0 / mean_tpot
+        std_tps = (mean_tps - (1000.0 / (mean_tpot + data["std_tpot_ms"]))) if data.get("std_tpot_ms") else None
+    else:
+        mean_tps = None
+        std_tps = None
 
     actual_max_con = min(params["max_con"], params["num_requests"])
     tps_decode = mean_tps * actual_max_con if mean_tps else None

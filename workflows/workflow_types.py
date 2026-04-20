@@ -14,7 +14,6 @@ class WorkflowType(IntEnum):
     SERVER = auto()
     RELEASE = auto()
     SPEC_TESTS = auto()
-    INF_SERVER_V2 = auto() #Added for tt-inference-server-v2 testing
 
     @classmethod
     def from_string(cls, name: str):

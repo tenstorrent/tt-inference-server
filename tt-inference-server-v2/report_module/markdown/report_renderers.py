@@ -3,6 +3,10 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 """Markdown renderers for benchmark target tables and evaluation reports.
+
+These functions accept pre-computed data (flat dicts, row lists) and return
+markdown strings.  They are consumed by StandardReportStrategy but live here
+so that rendering is decoupled from data computation.
 """
 
 from __future__ import annotations
