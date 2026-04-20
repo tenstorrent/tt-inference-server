@@ -234,6 +234,13 @@ void LLMController::handleStreaming(
         try {
           service->preProcess(*reqPtr);
 
+          if (reqPtr->sessionId.has_value() && sessionManager) {
+            auto taskId = reqPtr->task_id;
+            sessionManager->setSessionAbortCallback(
+                reqPtr->sessionId.value(),
+                [svc = service, taskId]() { svc->abortRequest(taskId); });
+          }
+
           StreamParams params;
           params.completionId = "chatcmpl-" + std::to_string(reqPtr->task_id);
           params.model = reqPtr->model.value_or("default");
@@ -373,12 +380,6 @@ void LLMController::closeSession(
       callback(drogon::HttpResponse::newHttpJsonResponse(response));
       break;
     }
-    case CloseSessionResult::IN_FLIGHT:
-      callback(errorResponse(drogon::k409Conflict,
-                             "Session has an active request in flight; retry "
-                             "after the request completes",
-                             "session_in_flight"));
-      break;
     case CloseSessionResult::NOT_FOUND:
       callback(errorResponse(drogon::k404NotFound, "Session not found",
                              "not_found"));

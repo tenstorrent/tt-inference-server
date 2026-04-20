@@ -112,20 +112,29 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
     return CloseSessionResult::NOT_FOUND;
   }
 
+  // Immediately abort the in-flight request if an abort callback was
+  // registered.
+  auto abortCallback = abortCallbacks_.take(sessionId);
+  if (abortCallback.has_value()) {
+    (*abortCallback)();
+    TT_LOG_INFO("[SessionManager] Aborted in-flight request for session: {}",
+                sessionId);
+  } else {
+    TT_LOG_WARN(
+        "[SessionManager] closeSession: sessionId={} is in-flight but no abort "
+        "callback registered; will close when request completes",
+        sessionId);
+  }
+
   // The in-flight request may have completed between the takeIf and modify;
   // resolve the race with one more attempt.
   auto deferred = sessions.takeIf(
       sessionId, [](const domain::Session& s) { return s.isClosing(); });
   if (deferred.has_value()) {
     executeClose(*deferred);
-    return CloseSessionResult::SUCCESS;
   }
 
-  TT_LOG_WARN(
-      "[SessionManager] closeSession: sessionId={} is in-flight, "
-      "will close when request completes",
-      sessionId);
-  return CloseSessionResult::IN_FLIGHT;
+  return CloseSessionResult::SUCCESS;
 }
 
 bool SessionManager::assignSlotId(const std::string& sessionId,
@@ -209,6 +218,8 @@ void SessionManager::releaseInFlight(const std::string& sessionId) {
   }
   TT_LOG_DEBUG("[SessionManager] Released in-flight for session {}", sessionId);
 
+  abortCallbacks_.take(sessionId);  // clear abort callback once request is done
+
   auto session = sessions.takeIf(
       sessionId, [](const domain::Session& s) { return s.isClosing(); });
   if (session.has_value()) {
@@ -220,6 +231,11 @@ void SessionManager::releaseInFlight(const std::string& sessionId) {
                 sessionId);
     updateSessionCountMetric();
   }
+}
+
+void SessionManager::setSessionAbortCallback(const std::string& sessionId,
+                                             std::function<void()> onAbort) {
+  abortCallbacks_.insert(sessionId, std::move(onAbort));
 }
 
 void SessionManager::evictOldSessions() {
