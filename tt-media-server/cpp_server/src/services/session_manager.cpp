@@ -9,6 +9,7 @@
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
+#include "metrics/metrics.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
 
@@ -90,6 +91,7 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
       sendDeallocRequest(sessionId, s.getSlotId());
     }
     TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
+    updateSessionCountMetric();
   };
 
   auto session = sessions.takeIf(
@@ -216,6 +218,7 @@ void SessionManager::releaseInFlight(const std::string& sessionId) {
     }
     TT_LOG_INFO("[SessionManager] Deferred close executed for session: {}",
                 sessionId);
+    updateSessionCountMetric();
   }
 }
 
@@ -293,6 +296,7 @@ void SessionManager::evictOldSessions() {
         "[SessionManager] Evicted {} oldest session(s) (active: {}/{}, "
         "threshold: {}%)",
         evicted, activeCount, maxSessions, evictionRate);
+    updateSessionCountMetric();
   }
 }
 
@@ -338,6 +342,7 @@ void SessionManager::createSession(
     sessions.insert(session.getSessionId(), session);
     TT_LOG_INFO("[SessionManager] Created session with pre-assigned slot: {}",
                 slotId.value());
+    updateSessionCountMetric();
     callerEventLoop->queueInLoop([onCompletion = std::move(onCompletion),
                                   session]() { onCompletion(session); });
     return;
@@ -458,6 +463,7 @@ void SessionManager::handleMemoryResult(
         "[SessionManager] handleMemoryResult: SUCCESS sessionId={}, "
         "assigned slotId={}",
         pendingAllocation.session.getSessionId(), result.slotIds.front());
+    updateSessionCountMetric();
     pendingAllocation.eventLoop->queueInLoop(
         [onCompletion = std::move(pendingAllocation.onCompletion),
          session = pendingAllocation.session]() { onCompletion(session); });
@@ -497,6 +503,12 @@ void SessionManager::retryFailedDeallocs() {
         deferredDealloc.sessionId, deferredDealloc.slotId);
     sendDeallocRequest(deferredDealloc.sessionId, deferredDealloc.slotId);
   }
+}
+
+void SessionManager::updateSessionCountMetric() {
+  size_t count = sessions.size();
+  tt::metrics::ServerMetrics::instance().setActiveSessionsCount(
+      static_cast<double>(count));
 }
 
 }  // namespace tt::services

@@ -96,6 +96,13 @@ ServerMetrics::ServerMetrics() {
            .Register(*registry_)
            .Add({});
 
+  active_sessions_ =
+      &prometheus::BuildGauge()
+           .Name("tt_num_active_sessions")
+           .Help("Number of active sessions currently managed by the server")
+           .Register(*registry_)
+           .Add({});
+
   // ----- latency summaries (exact quantiles, 60 s sliding window) ----------
   e2e_latency_seconds_ =
       &prometheus::BuildSummary()
@@ -172,6 +179,11 @@ void ServerMetrics::onRequestCompleted(uint32_t taskId,
 void ServerMetrics::setQueueDepth(double n) {
   // Called twice per request (not per token) — write directly.
   queue_depth_->Set(n);
+}
+
+void ServerMetrics::setActiveSessionsCount(double n) {
+  // Called when sessions are created/removed — write directly.
+  active_sessions_->Set(n);
 }
 
 void ServerMetrics::onHttpResponse(const std::string& method, int statusCode) {

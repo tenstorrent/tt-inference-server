@@ -72,6 +72,12 @@ class ServerMetrics {
   void setQueueDepth(double n);
 
   /**
+   * Update the active sessions gauge.
+   * Called directly from SessionManager when sessions are created or removed.
+   */
+  void setActiveSessionsCount(double n);
+
+  /**
    * Record one completed HTTP request/response pair. Called from the Drogon
    * pre-sending advice hook. `status_code` is the numeric HTTP status
    * (200, 4xx, 5xx).
@@ -158,6 +164,7 @@ class ServerMetrics {
   prometheus::Gauge* queue_depth_{nullptr};
   prometheus::Gauge* max_queue_size_{nullptr};
   prometheus::Gauge* decoding_requests_{nullptr};
+  prometheus::Gauge* active_sessions_{nullptr};
 
   // --- latency summaries (exact quantiles via CKMS, 60 s sliding window) ---
   prometheus::Summary* e2e_latency_seconds_{nullptr};

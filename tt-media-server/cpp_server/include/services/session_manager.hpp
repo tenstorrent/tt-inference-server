@@ -100,6 +100,7 @@ class SessionManager {
   void retryFailedAllocations();
   void retryFailedDeallocs();
   void handleMemoryResult(const domain::ManageMemoryResult& result);
+  void updateSessionCountMetric();
 
   mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
 
