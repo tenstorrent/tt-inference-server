@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -47,6 +48,7 @@ class BlazeRunner : public IRunner {
   void handleRequest(
       std::unique_ptr<tt::runners::llm_engine::Sequence> request);
   void evictSlot(uint32_t slotId);
+  void checkOutputHang();
 
   tt::config::LLMConfig config;
   std::unordered_set<int64_t> stopTokenIds;
@@ -58,5 +60,8 @@ class BlazeRunner : public IRunner {
       running;
   std::atomic<bool> stopped{false};
   std::unique_ptr<tt::services::AsyncMemoryManager> memoryManager;
+
+  std::chrono::steady_clock::time_point lastOutputTime;
+  std::chrono::milliseconds outputHangTimeout;
 };
 }  // namespace tt::runners

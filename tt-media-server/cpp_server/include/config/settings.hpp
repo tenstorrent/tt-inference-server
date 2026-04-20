@@ -144,6 +144,11 @@ size_t pmMaxUsers();
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
 unsigned warmupTimeoutMs();
 
+/** Max time (ms) without any model output while at least one request is in
+ * flight before the runner self-terminates the worker process. From
+ * OUTPUT_HANG_TIMEOUT_MS. Default: defaults::OUTPUT_HANG_TIMEOUT_MS. */
+unsigned outputHangTimeoutMs();
+
 /** Task queue name from TT_TASK_QUEUE. Default: defaults::TT_TASK_QUEUE. */
 std::string ttTaskQueueName();
 

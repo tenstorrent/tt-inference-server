@@ -180,6 +180,11 @@ unsigned warmupTimeoutMs() {
       envUlong("WARMUP_TIMEOUT_MS", defaults::WARMUP_TIMEOUT_MS));
 }
 
+unsigned outputHangTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
+}
+
 bool useDeepseekMdFormat() {
   return static_cast<bool>(
       envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));

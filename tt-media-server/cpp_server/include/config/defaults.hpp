@@ -51,6 +51,13 @@ constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 64;
 constexpr bool USE_DEEPSEEK_MD_FORMAT = false;
 constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
+/**
+ * Max time (ms) the runner may go without producing a model output while at
+ * least one request is in flight before it self-terminates the worker
+ * process. Self-terminating lets the infrastructure monitoring stack notice
+ * the crash and restart the server instead of hanging silently.
+ */
+constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 10000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 
