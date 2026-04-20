@@ -516,7 +516,7 @@ for model_id, model_spec in MODEL_SPECS.items():
     else:
         perf_ref_task = BenchmarkTask(param_map={device: capped_perf_reference})
 
-    tasks = [perf_ref_task]
+    tasks = [] if bool(os.getenv("SKIP_BENCHMARK_TARGETS")) else [perf_ref_task]
     # optionally skip the benchmark sweeps and only run the perf reference targets
     if not bool(os.getenv("ONLY_BENCHMARK_TARGETS")):
         # Make benchmark sweeps table for this device

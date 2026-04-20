@@ -390,6 +390,17 @@ def register_tt_models(impl_id=None):
     else:
         os.environ["TT_QWEN3_TEXT_VER"] = "tt_transformers"
 
+    # OLMo3 path selection based on impl_id
+    if impl_id == "olmo3_32b_galaxy":
+        os.environ["TT_OLMO3_TEXT_VER"] = "olmo3_32b_galaxy"
+        # vLLM may map Olmo3ForCausalLM -> Olmo2ForCausalLM internally, so the resolved
+        # TT architecture can be TTOlmo2ForCausalLM; register both.
+        _olmo3_tt_path = (
+            "models.demos.llama3_70b_galaxy.tt.generator_vllm:OLMo3ForCausalLM"
+        )
+        ModelRegistry.register_model("TTOlmo2ForCausalLM", _olmo3_tt_path)
+        ModelRegistry.register_model("TTOlmo3ForCausalLM", _olmo3_tt_path)
+
     # Arcee AFM-4.5B - Text
     ModelRegistry.register_model(
         "TTArceeForCausalLM",

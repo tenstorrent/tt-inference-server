@@ -82,5 +82,20 @@ def register_models():
             "Molmo2 model may not be available. Ensure tt-metal is in Python path."
         )
 
-    # Add additional model registrations here as needed
-    # ModelRegistry.register_model("AnotherModel", "path.to:ModelClass")
+    # Register OLMo-3.1-32B-Think
+    # vLLM may resolve the HF architecture as Olmo2ForCausalLM or Olmo3ForCausalLM,
+    # so register both TT variants to the same implementation.
+    try:
+        _olmo3_tt_path = (
+            "models.demos.llama3_70b_galaxy.tt.generator_vllm:OLMo3ForCausalLM"
+        )
+        ModelRegistry.register_model("TTOlmo2ForCausalLM", _olmo3_tt_path)
+        ModelRegistry.register_model("TTOlmo3ForCausalLM", _olmo3_tt_path)
+        print("Registered OLMo-3.1-32B-Think model")
+    except Exception as e:
+        import logging
+
+        logging.warning(
+            f"Failed to register TTOlmo2ForCausalLM/TTOlmo3ForCausalLM (OLMo-3.1-32B-Think): {e}. "
+            "OLMo model may not be available. Ensure tt-metal is in Python path."
+        )

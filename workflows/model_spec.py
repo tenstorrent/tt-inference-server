@@ -222,6 +222,12 @@ qwen3_32b_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_70b_galaxy",
 )
+olmo3_32b_galaxy_impl = ImplSpec(
+    impl_id="olmo3_32b_galaxy",
+    impl_name="olmo3-32b-galaxy",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/llama3_70b_galaxy",
+)
 gpt_oss_impl = ImplSpec(
     impl_id="gpt_oss",
     impl_name="gpt-oss",
@@ -1496,6 +1502,47 @@ llm_templates = [
             ),
         ),
         status=ModelStatusTypes.COMPLETE,
+        has_builtin_warmup=True,
+    ),
+    ModelSpecTemplate(
+        weights=[
+            "allenai/OLMo-3.1-32B-Think",
+        ],
+        impl=olmo3_32b_galaxy_impl,
+        tt_metal_commit="2f4681f6119",
+        vllm_commit="8f36910",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=32,
+                max_context=33280,
+                default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 1,
+                    "max_num_seqs": 32,
+                    "block_size": 64,
+                },
+                override_tt_config={
+                    "dispatch_core_axis": "col",
+                    "sample_on_device_mode": "all",
+                    "fabric_config": "FABRIC_1D_RING",
+                    "worker_l1_size": 1344544,
+                    "trace_region_size": 184915840,
+                },
+            ),
+        ],
+        system_requirements=SystemRequirements(
+            firmware=VersionRequirement(
+                specifier=">=18.6.0",
+                mode=VersionMode.STRICT,
+            ),
+            kmd=VersionRequirement(
+                specifier=">=2.1.0",
+                mode=VersionMode.STRICT,
+            ),
+        ),
+        status=ModelStatusTypes.EXPERIMENTAL,
         has_builtin_warmup=True,
     ),
     ModelSpecTemplate(
