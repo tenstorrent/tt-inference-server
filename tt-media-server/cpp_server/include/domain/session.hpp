@@ -20,15 +20,13 @@ namespace tt::domain {
  *   IDLE          --(markInFlight)-----> IN_FLIGHT
  *   IN_FLIGHT     --(clearInFlight)----> IDLE
  *   IN_FLIGHT     --(markPendingClose)-> PENDING_CLOSE
- *   PENDING_CLOSE --(clearInFlight)----> CLOSING  (transient; immediately
- *                                                  consumed by SessionManager)
+ *   PENDING_CLOSE --(clearInFlight)----> CLOSING
  */
 enum class SessionState {
   IDLE,           // no active request
   IN_FLIGHT,      // request actively being processed
-  PENDING_CLOSE,  // closeSession called while in-flight; deferred until
-                  // complete
-  CLOSING,        // request completed, deferred close is being executed
+  PENDING_CLOSE,  // close requested; slot freed once in-flight request finishes
+  CLOSING,        // in-flight request finished; slot deallocation pending
 };
 
 class Session {
