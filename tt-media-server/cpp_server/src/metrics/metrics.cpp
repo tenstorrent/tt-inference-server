@@ -174,11 +174,11 @@ void ServerMetrics::setQueueDepth(double n) {
   queue_depth_->Set(n);
 }
 
-void ServerMetrics::onHttpResponse(const std::string& method, int status_code) {
+void ServerMetrics::onHttpResponse(const std::string& method, int statusCode) {
   http_requests_family_
       ->Add({{"model_name", model_name_},
              {"method", method},
-             {"status_code", std::to_string(status_code)}})
+             {"status_code", std::to_string(statusCode)}})
       .Increment();
 }
 

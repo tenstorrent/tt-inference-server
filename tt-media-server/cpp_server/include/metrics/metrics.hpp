@@ -80,7 +80,7 @@ class ServerMetrics {
    * thread-safe, and HTTP response rate is orders of magnitude lower than
    * token rate, so no queueing is necessary.
    */
-  void onHttpResponse(const std::string& method, int status_code);
+  void onHttpResponse(const std::string& method, int statusCode);
 
   /** Render the full registry in Prometheus text exposition format. */
   std::string renderText() const;
