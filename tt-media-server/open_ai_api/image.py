@@ -32,8 +32,11 @@ async def generate_image(
         HTTPException: If image generation fails.
     """
     try:
+        import time as _time
+        _t0 = _time.time()
         result = await service.process_request(image_generate_request)
-        return JSONResponse(content={"images": result})
+        _elapsed = round(_time.time() - _t0, 2)
+        return JSONResponse(content={"images": result, "generation_time": _elapsed})
     except HTTPException as e:
         raise e
     except Exception as e:

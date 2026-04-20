@@ -8,7 +8,8 @@ from config.settings import get_settings
 from domain.base_request import BaseRequest
 from pydantic import Field, PrivateAttr, field_validator
 
-# Flux models support fewer inference steps than other image models
+# Some models support fewer inference steps than the default minimum
+_LOW_STEP_RUNNERS = {"tt-flux.1-dev", "tt-flux.1-schnell", "tt-z-image-turbo"}
 _FLUX_RUNNERS = {"tt-flux.1-dev", "tt-flux.1-schnell"}
 _FLUX_MIN_INFERENCE_STEPS = 4
 _DEFAULT_MIN_INFERENCE_STEPS = 12
@@ -34,11 +35,10 @@ class BaseImageRequest(BaseRequest):
         if v is None:
             return v
         model_runner = get_settings().model_runner
-        min_steps = (
-            _FLUX_MIN_INFERENCE_STEPS
-            if model_runner in _FLUX_RUNNERS
-            else _DEFAULT_MIN_INFERENCE_STEPS
-        )
+        if model_runner in _LOW_STEP_RUNNERS:
+            min_steps = _FLUX_MIN_INFERENCE_STEPS
+        else:
+            min_steps = _DEFAULT_MIN_INFERENCE_STEPS
         if v < min_steps:
             raise ValueError(
                 f"num_inference_steps must be >= {min_steps} for {model_runner}, got {v}"
