@@ -165,7 +165,10 @@ uint32_t SessionManager::acquireSessionSlot(const std::string& sessionId) {
       return;
     }
     s.updateActivityTime();
-    s.markInFlight();
+    if (!s.markInFlight()) {
+      TT_LOG_WARN("[Session] markInFlight: unexpected state {}",
+                  static_cast<int>(s.getState()));
+    }
     result = s.getSlotId();
   });
 
@@ -444,7 +447,11 @@ void SessionManager::handleMemoryResult(
                  !result.slotIds.empty();
   if (success) {
     pendingAllocation.session.setSlotId(result.slotIds.front());
-    pendingAllocation.session.markInFlight();
+    if (!pendingAllocation.session.markInFlight()) {
+      TT_LOG_WARN("[Session] markInFlight: unexpected state {} for session {}",
+                  static_cast<int>(pendingAllocation.session.getState()),
+                  pendingAllocation.session.getSessionId());
+    }
     sessions.insert(pendingAllocation.session.getSessionId(),
                     pendingAllocation.session);
     TT_LOG_DEBUG(
