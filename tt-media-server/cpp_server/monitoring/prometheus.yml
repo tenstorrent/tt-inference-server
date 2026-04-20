@@ -6,19 +6,23 @@ scrape_configs:
   - job_name: "tt_media_server"
     # TARGET is substituted at container startup by docker-compose (envsubst).
     # Set SERVER_TARGET=<container-name>:<port> when running docker compose.
-    #
-    # Worker metrics (tt_worker_*) are exported by the main process at the
-    # same /metrics endpoint via shared memory; no separate scrape job is
-    # needed.
-    #
-    # Canonical pipeline-stall expression (use this in alerts and the
-    # watchdog):
-    #   tt_worker_last_output_age_seconds > T and tt_worker_active_requests > 0
     static_configs:
       - targets:
           - "__SERVER_TARGET__"
         labels:
           instance: "tt_media_server"
+    metrics_path: /metrics
+    scheme: http
+    scrape_timeout: 4s
+
+  # Host process metrics (CPU / memory / threads / fds per binary).
+  # Exposed by the process-exporter service on the monitoring network.
+  - job_name: "tt_processes"
+    static_configs:
+      - targets:
+          - "process-exporter:9256"
+        labels:
+          instance: "tt_media_server_host"
     metrics_path: /metrics
     scheme: http
     scrape_timeout: 4s

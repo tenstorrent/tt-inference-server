@@ -40,6 +40,24 @@ services:
       - monitoring
       - tt_net
 
+  # Per-process CPU/memory/threads for the cpp_server host processes.
+  # Uses pid: host + read-only /proc mount so the container sees every
+  # host process. No changes needed on the cpp_server side.
+  process-exporter:
+    image: ncabatoff/process-exporter:0.8.7
+    container_name: tt_process_exporter
+    restart: unless-stopped
+    pid: host
+    privileged: true          # needed to read /proc/<pid> across namespaces
+    command:
+      - "--procfs=/host/proc"
+      - "--config.path=/etc/process-exporter/config.yml"
+    volumes:
+      - /proc:/host/proc:ro
+      - ./process-exporter.yml:/etc/process-exporter/config.yml:ro
+    networks:
+      - monitoring
+
   grafana:
     image: grafana/grafana:10.4.2
     container_name: tt_grafana
