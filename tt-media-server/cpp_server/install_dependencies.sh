@@ -42,13 +42,13 @@ fi
 
 $SUDO apt-get update -qq
 $SUDO apt-get install -y --no-install-recommends "${APT_PKGS[@]}"
-if ! command -v clang-format-20 >/dev/null 2>&1; then
+if ! command -v clang-format-20 >/dev/null 2>&1 || ! command -v clang-tidy-20 >/dev/null 2>&1; then
     LLVM_SH="/tmp/llvm.sh"
     curl -sSL -o "${LLVM_SH}" https://apt.llvm.org/llvm.sh
     chmod +x "${LLVM_SH}"
     $SUDO "${LLVM_SH}" 20
     rm -f "${LLVM_SH}"
-    $SUDO apt-get install -y --no-install-recommends clang-format-20
+    $SUDO apt-get install -y --no-install-recommends clang-format-20 clang-tidy-20
 fi
 $SUDO rm -rf /var/lib/apt/lists/*
 

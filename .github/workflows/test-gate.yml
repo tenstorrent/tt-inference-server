@@ -13,11 +13,16 @@ jobs:
     outputs:
       should-test: ${{ steps.filter.outputs.code }}
       cpp-server: ${{ steps.filter.outputs.cpp_server }}
+      cpp-format-files: ${{ steps.filter.outputs.cpp_format_files }}
+      cpp-lint-files: ${{ steps.filter.outputs.cpp_lint_files }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          # `list-files: shell` makes cpp_format/cpp_lint outputs be a
+          # shell-escaped, space-separated list of changed paths (repo-root relative).
+          list-files: shell
           filters: |
             code:
               - '**.py'
@@ -26,6 +31,16 @@ jobs:
               - '.github/workflows/*.yml'
             cpp_server:
               - 'tt-media-server/cpp_server/**'
+            cpp_format:
+              - added|modified: 'tt-media-server/cpp_server/include/**/*.{cpp,hpp,h}'
+              - added|modified: 'tt-media-server/cpp_server/src/**/*.{cpp,hpp,h}'
+              - added|modified: 'tt-media-server/cpp_server/tests/**/*.{cpp,hpp,h}'
+              - added|modified: 'tt-media-server/cpp_server/benchmarks/**/*.{cpp,hpp,h}'
+            cpp_lint:
+              - added|modified: 'tt-media-server/cpp_server/include/**/*.cpp'
+              - added|modified: 'tt-media-server/cpp_server/src/**/*.cpp'
+              - added|modified: 'tt-media-server/cpp_server/tests/**/*.cpp'
+              - added|modified: 'tt-media-server/cpp_server/benchmarks/**/*.cpp'
 
   lint:
     needs: detect-changes
@@ -388,45 +403,55 @@ jobs:
   cpp-format-check:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
-    name: C++ Lint & Format Check
+    name: C++ Format Check
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    defaults:
-      run:
-        working-directory: tt-media-server
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Validate OpenAPI spec against registered routes
+        working-directory: tt-media-server
         run: |
           pip install openapi-spec-validator --quiet
           cd cpp_server
           python3 tools/validate_openapi.py
 
-      - name: Install C++ build dependencies
-        run: cpp_server/install_dependencies.sh
+      - name: No C++ files changed
+        if: ${{ needs.detect-changes.outputs.cpp-format-files == '' }}
+        run: echo "No C++ source/header files changed under cpp_server/. Skipping clang-format."
 
-      - name: C++ format check (.clang-format)
+      - name: Install clang-format-20
+        if: ${{ needs.detect-changes.outputs.cpp-format-files != '' }}
         run: |
-          cd cpp_server
-          if ! find include src tests benchmarks -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
-            | xargs -0 -r clang-format-20 --dry-run --Werror >/dev/null 2>&1; then
+          curl -sSL -o /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 20
+          sudo apt-get install -y --no-install-recommends clang-format-20
+          rm -f /tmp/llvm.sh
+
+      - name: C++ format check on changed files (.clang-format)
+        if: ${{ needs.detect-changes.outputs.cpp-format-files != '' }}
+        run: |
+          # Paths are repo-root relative; clang-format walks up from each file
+          # to discover tt-media-server/cpp_server/.clang-format.
+          files="${{ needs.detect-changes.outputs.cpp-format-files }}"
+          echo "Checking format of changed files:"
+          printf '  %s\n' $files
+          if ! clang-format-20 --dry-run --Werror $files; then
             echo '::error::Some C++ files are not formatted per .clang-format.'
             echo 'To fix locally, run from repo root:'
-            echo '  cd tt-media-server/cpp_server && find include src tests benchmarks -type f \( -name '"'"'*.cpp'"'"' -o -name '"'"'*.h'"'"' -o -name '"'"'*.hpp'"'"' \) -print0 | xargs -0 clang-format-20 -i'
+            echo "  clang-format-20 -i $files"
             exit 1
           fi
 
-      - name: C++ lint check (build with clang-tidy)
-        run: |
-          cd cpp_server
-          ./build.sh --clang-tidy
-
   cpp-build:
-    needs: detect-changes
+    # Gate the (expensive) build on the (cheap) format check. If formatting
+    # is wrong we skip the build entirely and downstream benchmark jobs are
+    # auto-skipped because they depend on cpp-build.
+    needs: [detect-changes, cpp-format-check]
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Build & Unit Tests
     runs-on: ubuntu-latest
@@ -448,6 +473,28 @@ jobs:
           cd cpp_server
           ./build.sh
           cd ..
+
+      - name: C++ lint check (clang-tidy on changed files)
+        # Run BEFORE unit tests so a lint failure fails the job fast and
+        # cancels downstream benchmark jobs. Re-uses compile_commands.json
+        # produced by the build above; does NOT build again.
+        # Only changed .cpp translation units are analyzed — header changes
+        # are picked up via the TUs that include them.
+        if: ${{ needs.detect-changes.outputs.cpp-lint-files != '' }}
+        working-directory: ${{ github.workspace }}
+        run: |
+          files="${{ needs.detect-changes.outputs.cpp-lint-files }}"
+          echo "Linting changed C++ source files:"
+          printf '  %s\n' $files
+          clang-tidy-20 \
+            -p tt-media-server/cpp_server/build \
+            --warnings-as-errors='*' \
+            --quiet \
+            $files
+
+      - name: No C++ source files to lint
+        if: ${{ needs.detect-changes.outputs.cpp-lint-files == '' }}
+        run: echo "No C++ .cpp files changed under cpp_server/. Skipping clang-tidy."
 
       - name: Run C++ unit tests
         run: |
