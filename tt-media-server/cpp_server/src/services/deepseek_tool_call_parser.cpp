@@ -14,6 +14,12 @@ namespace tt::services {
 
 namespace {
 
+constexpr std::string_view kToolCallsBegin = "<｜tool▁calls▁begin｜>";
+constexpr std::string_view kToolCallsEnd = "<｜tool▁calls▁end｜>";
+constexpr std::string_view kToolCallBegin = "<｜tool▁call▁begin｜>";
+constexpr std::string_view kToolCallEnd = "<｜tool▁call▁end｜>";
+constexpr std::string_view kToolSep = "<｜tool▁sep｜>";
+
 /**
  * DeepSeek tool call format parser.
  *
@@ -30,7 +36,7 @@ class DeepSeekToolCallParser : public IToolCallParser {
       const std::string& text,
       const bool& parallelToolCalls = true) const override {
     // Look for tool call markers
-    if (text.find("<｜tool▁calls▁begin｜>") == std::string::npos) {
+    if (text.find(kToolCallsBegin) == std::string::npos) {
       return std::nullopt;
     }
 
@@ -46,10 +52,10 @@ class DeepSeekToolCallParser : public IToolCallParser {
         return toolCallsArray;
       }
       // Find next tool call
-      size_t callBegin = text.find("<｜tool▁call▁begin｜>", pos);
+      size_t callBegin = text.find(kToolCallBegin, pos);
       if (callBegin == std::string::npos) break;
 
-      size_t callEnd = text.find("<｜tool▁call▁end｜>", callBegin);
+      size_t callEnd = text.find(kToolCallEnd, callBegin);
       if (callEnd == std::string::npos) break;
 
       // Extract the content between markers
@@ -57,7 +63,7 @@ class DeepSeekToolCallParser : public IToolCallParser {
           text.substr(callBegin + 20, callEnd - (callBegin + 20));
 
       // Extract function name (after "function<｜tool▁sep｜>")
-      size_t sepPos = callContent.find("<｜tool▁sep｜>");
+      size_t sepPos = callContent.find(kToolSep);
       if (sepPos == std::string::npos) {
         pos = callEnd + 1;
         continue;
@@ -152,9 +158,9 @@ class DeepSeekToolCallParser : public IToolCallParser {
 
     // Remove everything between <｜tool▁calls▁begin｜> and
     // <｜tool▁calls▁end｜>
-    size_t startPos = result.find("<｜tool▁calls▁begin｜>");
+    size_t startPos = result.find(kToolCallsBegin);
     if (startPos != std::string::npos) {
-      size_t endPos = result.find("<｜tool▁calls▁end｜>", startPos);
+      size_t endPos = result.find(kToolCallsEnd, startPos);
       if (endPos != std::string::npos) {
         result.erase(startPos, endPos - startPos + 19);
       }
