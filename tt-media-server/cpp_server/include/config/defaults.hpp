@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -47,9 +47,13 @@ constexpr const char* TT_CANCEL_QUEUE = "tt_cancels";
 constexpr const char* TT_WARMUP_SIGNALS_QUEUE = "tt_warmup_signals";
 constexpr const char* TT_MEMORY_REQUEST_QUEUE = "tt_mem_requests";
 constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
+constexpr const char* TT_WORKER_METRICS_SHM = "/tt_worker_metrics";
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 64;
 constexpr bool USE_DEEPSEEK_MD_FORMAT = false;
+constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
+
+constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 
 constexpr const char* SERVER_HOST = "0.0.0.0";
 constexpr uint16_t SERVER_PORT = 8000;

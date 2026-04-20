@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-from unittest.mock import Mock
 import sys
+from unittest.mock import Mock
+
 from config.constants import ModelServices
 
 # Mock ALL problematic modules BEFORE any imports
@@ -26,8 +27,8 @@ mock_image_service.ImageService = MockImageService
 sys.modules["model_services.image_service"] = mock_image_service
 
 # Now we can safely import
-from resolver import service_resolver
 from model_services.base_service import BaseService
+from resolver import service_resolver
 
 
 def setup_module(module):

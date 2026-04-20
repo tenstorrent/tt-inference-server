@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import subprocess
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-
 from utils.video_manager import (
     VideoManager,
     _normalize_channels,

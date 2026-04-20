@@ -1,18 +1,17 @@
-# SPDX-FileCopyrightText: (c) 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: (c) 2025 Tenstorrent USA, Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 from datasets import load_dataset
-from transformers import AutoTokenizer, DataCollatorForSeq2Seq
 from torch.utils.data import DataLoader
-
+from transformers import AutoTokenizer, DataCollatorForSeq2Seq
+from utils.dataset_loaders.base_dataset import BaseDataset
 from utils.dataset_loaders.sst2.sst2_utils import (
-    PROMPT_TEMPLATE,
-    RESPONSE_TEMPLATE,
-    LBL2VALUE,
     DATASET_BENCHMARK,
     DATASET_NAME,
+    LBL2VALUE,
+    PROMPT_TEMPLATE,
+    RESPONSE_TEMPLATE,
 )
-from utils.dataset_loaders.base_dataset import BaseDataset
 
 
 class SSTDataset(BaseDataset):

@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import asyncio
 import logging
 import time
 
 import aiohttp
+
 from server_tests.base_test import BaseTest
 
 logger = logging.getLogger(__name__)

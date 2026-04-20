@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 
@@ -20,8 +20,7 @@ std::unique_ptr<ISpPipelineModelRunner> makeModelRunner(
     case ModelRunnerType::MOCK_PIPELINE:
       return std::make_unique<MockSpPipelineModelRunner>(std::move(callback));
     default:
-      throw std::invalid_argument(
-          "Invalid model runner type for SpPipelineRunner");
+      throw std::invalid_argument("Invalid model runner type for BlazeRunner");
   }
 }
 
