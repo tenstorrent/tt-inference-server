@@ -211,6 +211,10 @@ std::string ttMemoryResultQueueName() {
   return envString("TT_MEMORY_RESULT_QUEUE", defaults::TT_MEMORY_RESULT_QUEUE);
 }
 
+std::string workerMetricsShmName() {
+  return envString("TT_WORKER_METRICS_SHM", defaults::TT_WORKER_METRICS_SHM);
+}
+
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
@@ -336,6 +340,11 @@ unsigned sessionAllocationMaxRetries() {
   return static_cast<unsigned>(
       envUlong("SESSION_ALLOCATION_MAX_RETRIES",
                defaults::SESSION_ALLOCATION_MAX_RETRIES));
+}
+
+unsigned prefillTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
 }
 
 }  // namespace tt::config

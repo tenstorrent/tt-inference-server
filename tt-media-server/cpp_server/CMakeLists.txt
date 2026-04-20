@@ -412,6 +412,15 @@ target_include_directories(structured_output_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(worker_metrics_shm_test
+    tests/worker_metrics_shm_test.cpp
+    src/worker/worker_metrics_shm.cpp
+)
+target_link_libraries(worker_metrics_shm_test PRIVATE llm_runner_lib GTest::gtest_main)
+target_include_directories(worker_metrics_shm_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -421,6 +430,7 @@ gtest_discover_tests(test_tokenizer)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(cancellation_test)
 gtest_discover_tests(structured_output_test)
+gtest_discover_tests(worker_metrics_shm_test)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -510,6 +520,10 @@ set(SOURCES
     src/sockets/inter_server_service.cpp
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp
+    src/worker/single_process_worker_metrics.cpp
+    src/worker/worker_metrics_shm.cpp
+    src/worker/worker_metrics_aggregator.cpp
+    src/worker/sp_pipeline_worker_metrics_renderer.cpp
 )
 
 # Create executable
