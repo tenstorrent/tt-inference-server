@@ -44,6 +44,9 @@ class SpPrefillModelRunner : public ISpPrefillModelRunner {
   tt::ipc::PrefillSlotBuffer deviceInput;
   tt::ipc::DecodeSlotBuffer deviceOutput;
   std::atomic<bool> stop{false};
+  std::atomic<size_t> consecutiveErrors{0};
+
+  static constexpr size_t MAX_CONSECUTIVE_ERRORS = 5;
 };
 
 }  // namespace sp_prefill
