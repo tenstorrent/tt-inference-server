@@ -6,10 +6,8 @@ from multiprocessing import Manager
 
 from model_services.base_job_service import BaseJobService
 from config.constants import (
-    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     TRAINING_STORE_ADAPTERS_DIR,
     JobTypes,
-    ModelRunners,
 )
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
@@ -20,9 +18,7 @@ class TrainingService(BaseJobService):
     def __init__(self):
         self.settings = get_settings()
         self._manager = Manager()
-        runner_enum = ModelRunners(self.settings.model_runner)
-        model_names = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner_enum, set())
-        self._model_name = next(iter(model_names)).value
+        self._model_name = self.settings.model_weights_path
         super().__init__()
 
     async def create_job(

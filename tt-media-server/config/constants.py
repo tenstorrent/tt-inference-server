@@ -103,7 +103,7 @@ class ModelRunners(Enum):
     TT_XLA_SEGFORMER = "tt-xla-segformer"
     TT_XLA_UNET = "tt-xla-unet"
     TT_XLA_VIT = "tt-xla-vit"
-    TRAINING_LLAMA_LORA = "training-llama-lora"
+    TRAINING_LORA = "training-lora"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     LORA_SINGLE_CHIP = "lora-single-chip"
     MOCK = "mock"
@@ -171,7 +171,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.TRAINING: {
         ModelRunners.TRAINING_GEMMA_LORA,
-        ModelRunners.TRAINING_LLAMA_LORA,
+        ModelRunners.TRAINING_LORA,
     },
     ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
@@ -217,7 +217,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
-    ModelRunners.TRAINING_LLAMA_LORA: {ModelNames.LLAMA_3_1_8B},
+    ModelRunners.TRAINING_LORA: {ModelNames.LLAMA_3_1_8B, ModelNames.QWEN_3_8B},
     ModelRunners.LORA_SINGLE_CHIP: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TT_XLA_SDXL: {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
@@ -314,6 +314,7 @@ class TrainingTrainers(Enum):
 class ModelDisplayNames(Enum):
     GEMMA_1_1_2B_IT = "Gemma 1.1 2B Instruct"
     LLAMA_3_1_8B = "Llama 3.1 8B"
+    QWEN_3_8B = "Qwen 3 8B"
 
 
 class TrainingOptimizers(Enum):

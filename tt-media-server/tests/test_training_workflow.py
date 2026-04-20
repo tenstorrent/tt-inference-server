@@ -71,7 +71,7 @@ class TestLlamaTrainingServiceCreateJob:
     @pytest.fixture
     def mock_settings(self):
         settings = MagicMock()
-        settings.model_runner = "training-llama-lora"
+        settings.model_runner = "training-lora"
         settings.device = "p300"
         settings.download_weights_from_service = False
         return settings

@@ -39,24 +39,39 @@ class TestBuildModelsCatalog:
         assert model["model_config"] == SupportedModels.GEMMA_1_1_2B_IT.value
         assert model["supported"] is True
 
-    def test_training_llama_runner_returns_model(self):
-        models = _build_models_catalog(ModelRunners.TRAINING_LLAMA_LORA.value)
+    def test_training_lora_runner_returns_all_models_without_filter(self):
+        models = _build_models_catalog(ModelRunners.TRAINING_LORA.value)
         required_keys = {"id", "display_name", "supported", "model_config"}
         for model in models:
             assert set(model.keys()) == required_keys
+        assert len(models) == 2
+        model_ids = {m["id"] for m in models}
+        assert ModelNames.LLAMA_3_1_8B.value in model_ids
+        assert ModelNames.QWEN_3_8B.value in model_ids
+
+    def test_training_lora_runner_filters_by_weights_path(self):
+        models = _build_models_catalog(
+            ModelRunners.TRAINING_LORA.value,
+            model_weights_path=SupportedModels.LLAMA_3_1_8B.value,
+        )
         assert len(models) == 1
-        model = models[0]
-        assert model["id"] == ModelNames.LLAMA_3_1_8B.value
-        assert model["display_name"] == ModelDisplayNames.LLAMA_3_1_8B.value
-        assert model["model_config"] == SupportedModels.LLAMA_3_1_8B.value
-        assert model["supported"] is True
+        assert models[0]["id"] == ModelNames.LLAMA_3_1_8B.value
+        assert models[0]["display_name"] == ModelDisplayNames.LLAMA_3_1_8B.value
+        assert models[0]["model_config"] == SupportedModels.LLAMA_3_1_8B.value
+
+        models = _build_models_catalog(
+            ModelRunners.TRAINING_LORA.value,
+            model_weights_path=SupportedModels.QWEN_3_8B.value,
+        )
+        assert len(models) == 1
+        assert models[0]["id"] == ModelNames.QWEN_3_8B.value
 
     def test_raises_when_model_missing_from_enums(self):
         fake_model = enum.Enum("FakeModel", {"FAKE_MODEL": "fake-model"}).FAKE_MODEL
         fake_map = {ModelRunners.TRAINING_GEMMA_LORA: {fake_model}}
         with patch("utils.build_catalog.MODEL_RUNNER_TO_MODEL_NAMES_MAP", fake_map):
             with pytest.raises(
-                ValueError, match="SupportedModels and ModelDisplayNames"
+                (KeyError, ValueError),
             ):
                 _build_models_catalog(ModelRunners.TRAINING_GEMMA_LORA.value)
 
@@ -180,9 +195,14 @@ class TestBuildTrainingCatalog:
         assert len(catalog["clusters"]) == 1
         assert catalog["clusters"][0]["id"] == DeviceTypes.P150.value
 
-    def test_llama_catalog_has_correct_model_and_cluster(self):
+    def test_lora_catalog_filters_to_active_model(self):
         catalog = build_training_catalog(
-            ModelRunners.TRAINING_LLAMA_LORA.value, DeviceTypes.P300.value, (1, 2), 1
+            ModelRunners.TRAINING_LORA.value,
+            DeviceTypes.P300.value,
+            (1, 2),
+            1,
+            model_weights_path=SupportedModels.LLAMA_3_1_8B.value,
         )
+        assert len(catalog["models"]) == 1
         assert catalog["models"][0]["id"] == ModelNames.LLAMA_3_1_8B.value
         assert catalog["clusters"][0]["id"] == DeviceTypes.P300.value

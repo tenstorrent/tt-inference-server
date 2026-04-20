@@ -281,12 +281,25 @@ class Settings(BaseSettings):
     def _set_config_overrides(self, model_to_run: str, device: str):
         model_name_enum = ModelNames(model_to_run)
 
-        # Find the appropriate model runner for this model name
+        # If MODEL_RUNNER was explicitly set, use it directly instead of
+        # scanning all runners (the same model can appear in multiple runners).
+        explicit_runner = os.getenv("MODEL_RUNNER")
         model_runner_enum = None
-        for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
-            if model_name_enum in model_names:
-                model_runner_enum = runner
-                break
+        if explicit_runner:
+            try:
+                candidate = ModelRunners(explicit_runner)
+                if model_name_enum in MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(
+                    candidate, set()
+                ):
+                    model_runner_enum = candidate
+            except ValueError:
+                pass
+
+        if model_runner_enum is None:
+            for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
+                if model_name_enum in model_names:
+                    model_runner_enum = runner
+                    break
 
         if model_runner_enum:
             device_type_enum = DeviceTypes(device)

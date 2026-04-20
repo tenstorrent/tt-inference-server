@@ -26,20 +26,22 @@ TRAINING_CATALOG_DATA = {
 }
 
 
-def _build_models_catalog(model_runner: str):
+def _build_models_catalog(model_runner: str, model_weights_path: str = ""):
     try:
         runner_enum = ModelRunners(model_runner)
     except ValueError:
         return []
     models = []
     for model_name in MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner_enum, set()):
+        model_config = SupportedModels[model_name.name].value
+        if model_weights_path and model_config != model_weights_path:
+            continue
         try:
-            model_config = SupportedModels[model_name.name].value
             display_name = ModelDisplayNames[model_name.name].value
         except KeyError:
             raise ValueError(
                 f"Model '{model_name.name}' for runner '{model_runner}' "
-                f"must have an entry in SupportedModels and ModelDisplayNames"
+                f"must have an entry in ModelDisplayNames"
             )
         models.append(
             {
@@ -78,9 +80,13 @@ def _build_clusters_catalog(device: str, device_mesh_shape: tuple, num_workers: 
 
 
 def build_training_catalog(
-    model_runner: str, device: str, device_mesh_shape: tuple, num_workers: int
+    model_runner: str,
+    device: str,
+    device_mesh_shape: tuple,
+    num_workers: int,
+    model_weights_path: str = "",
 ):
-    models = _build_models_catalog(model_runner)
+    models = _build_models_catalog(model_runner, model_weights_path)
     clusters = _build_clusters_catalog(device, device_mesh_shape, num_workers)
 
     datasets = [
