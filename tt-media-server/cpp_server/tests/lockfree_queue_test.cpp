@@ -287,4 +287,7 @@ TEST(LockFreeQueueTest, SpscMixedSingleAndBatch) {
   }
 }
 
+constexpr size_t double_value(size_t x) { return x * 2; }
+static_assert(double_value(7) == 14, "double_value should double its input");
+
 }  // namespace
