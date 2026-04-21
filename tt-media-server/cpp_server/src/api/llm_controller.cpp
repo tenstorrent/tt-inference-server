@@ -56,14 +56,13 @@ LLMController::LLMController() {
 }
 
 void LLMController::resolveSession(
-    std::shared_ptr<domain::LLMRequest> req,
-    const std::vector<domain::ChatMessage>& messages, trantor::EventLoop* loop,
+    std::shared_ptr<domain::LLMRequest> req, trantor::EventLoop* loop,
     std::function<void(SessionInfo)> onResolved,
     std::function<void(const SessionError&)> onError) const {
   SessionInfo info;
 
-  // Compute routing information from messages
-  auto routingInfo = tt::utils::computePrefixCachingInfo(messages);
+  // Compute routing information from the request's chat messages.
+  auto routingInfo = tt::utils::computePrefixCachingInfo(req->messages);
 
   TT_LOG_INFO(
       "[LLMController] Routing: hasPriorTurn={}, lookupHash={}, "
@@ -221,7 +220,7 @@ void LLMController::chatCompletions(
   auto request = std::make_shared<domain::LLMRequest>(chatReq.toLLMRequest());
 
   if (request->stream) {
-    handleStreaming(request, chatReq.messages, std::move(callback));
+    handleStreaming(request, std::move(callback));
   } else {
     auto* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
     auto cb =
@@ -229,7 +228,7 @@ void LLMController::chatCompletions(
             std::move(callback));
 
     resolveSession(
-        request, chatReq.messages, loop,
+        request, loop,
         [this, request, cb](SessionInfo) {
           try {
             auto sessionId = request->sessionId;
@@ -295,7 +294,6 @@ void LLMController::chatCompletions(
 
 void LLMController::handleStreaming(
     std::shared_ptr<domain::LLMRequest> reqPtr,
-    const std::vector<domain::ChatMessage>& messages,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   ZoneScopedN("API::handleStreaming");
 
@@ -305,7 +303,7 @@ void LLMController::handleStreaming(
           std::move(callback));
 
   resolveSession(
-      reqPtr, messages, loop,
+      reqPtr, loop,
       [this, reqPtr, cb, loop](SessionInfo sessionInfo) {
         try {
           service->preProcess(*reqPtr);

@@ -7,9 +7,7 @@
 #include <json/json.h>
 
 #include <memory>
-#include <vector>
 
-#include "domain/chat_message.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
@@ -83,7 +81,6 @@ class LLMController : public drogon::HttpController<LLMController> {
    */
   void handleStreaming(
       std::shared_ptr<domain::LLMRequest> reqPtr,
-      const std::vector<domain::ChatMessage>& messages,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   struct SessionInfo {
@@ -105,7 +102,6 @@ class LLMController : public drogon::HttpController<LLMController> {
    * Throws std::runtime_error if session creation fails.
    */
   void resolveSession(std::shared_ptr<domain::LLMRequest> req,
-                      const std::vector<domain::ChatMessage>& messages,
                       trantor::EventLoop* loop,
                       std::function<void(SessionInfo)> onResolved,
                       std::function<void(const SessionError&)> onError) const;

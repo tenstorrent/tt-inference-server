@@ -44,6 +44,12 @@ enum class CloseSessionResult {
 
 class SessionManager {
  public:
+  // Result of tryAcquireByPrefixHash: the session's UUID and pre-assigned slot.
+  struct AcquiredSession {
+    std::string sessionId;
+    uint32_t slotId;
+  };
+
   SessionManager();
   ~SessionManager();
 
@@ -70,14 +76,6 @@ class SessionManager {
   // active request. It is cleared automatically once the session is released.
   void setSessionAbortCallback(const std::string& sessionId,
                                std::function<void()> onAbort);
-
-  /**
-   * Result of tryAcquireByPrefixHash containing both slot and session IDs.
-   */
-  struct AcquiredSession {
-    uint32_t slotId;
-    std::string sessionId;
-  };
 
   /**
    * Try to find a session whose registered prefix hash matches, and

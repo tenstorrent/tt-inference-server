@@ -20,25 +20,34 @@ namespace tt::utils {
  */
 
 /**
- * Remove messages whose role is "system". Order of remaining messages is
- * preserved. Used by both registration and lookup-prefix extraction.
+ * Remove messages whose role is "tool" or "function" (legacy). Order of
+ * remaining messages is preserved. Tool-result messages are treated as
+ * ephemeral turns that should not participate in prefix identity -- they're
+ * deterministic outputs of the preceding assistant's tool_calls, and dropping
+ * them lets the [assistant, user] trailing-pair detection work across
+ * tool-using conversations.
+ *
+ * System / developer messages are left intact: they belong to the stable
+ * conversation prefix and must contribute to the hash.
  *
  * @param messages Input chat messages
- * @return Messages with system messages filtered out
+ * @return Messages with tool/function messages filtered out
  */
-std::vector<domain::ChatMessage> stripSystemMessages(
+std::vector<domain::ChatMessage> stripToolMessages(
     const std::vector<domain::ChatMessage>& messages);
 
 /**
- * Return the prefix used to LOOK UP a continuing session: non-system
- * messages with the trailing [assistant, user] pair removed.
+ * Return the prefix used to LOOK UP a continuing session: messages with
+ * tool/function entries removed and the trailing [assistant, user] pair
+ * stripped.
  *
  * Returns std::nullopt when the trailing pair doesn't exist (fresh
  * conversation, or malformed client that sends two user turns in a row).
  * Callers treat nullopt as "skip the lookup, go straight to new session".
  *
  * Precondition: messages.back().role == "user" is expected (new turn).
- * If messages[-2].role != "assistant" after stripping system, returns nullopt.
+ * If messages[-2].role != "assistant" after stripping tool/function messages,
+ * returns nullopt.
  *
  * @param messages Input chat messages (must end with user message)
  * @return Prior-turn prefix or nullopt if no prior turn exists
@@ -50,9 +59,10 @@ std::optional<std::vector<domain::ChatMessage>> extractPriorTurnPrefix(
  * Stable 64-bit hash of a chat-message prefix, computed from the rendered
  * chat template with addGenerationPrompt=false. Two callers produce matching
  * hashes across turns iff the underlying message list is byte-identical
- * (modulo system, which is stripped upstream).
+ * (modulo tool/function turns, which are stripped upstream).
  *
- * @param prefix Chat messages to hash (should already have system stripped)
+ * @param prefix Chat messages to hash (should already have tool/function
+ *               messages stripped)
  * @return 64-bit hash value
  */
 uint64_t hashConversationPrefix(const std::vector<domain::ChatMessage>& prefix);

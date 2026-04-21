@@ -9,13 +9,13 @@
 
 namespace tt::utils {
 
-std::vector<domain::ChatMessage> stripSystemMessages(
+std::vector<domain::ChatMessage> stripToolMessages(
     const std::vector<domain::ChatMessage>& messages) {
   std::vector<domain::ChatMessage> result;
   result.reserve(messages.size());
 
   for (const auto& msg : messages) {
-    if (msg.role != "system") {
+    if (msg.role != "tool" && msg.role != "function") {
       result.push_back(msg);
     }
   }
@@ -30,25 +30,27 @@ std::optional<std::vector<domain::ChatMessage>> extractPriorTurnPrefix(
     return std::nullopt;
   }
 
-  // Strip system messages first
-  auto nonSystemMessages = stripSystemMessages(messages);
+  // Drop tool/function turns so the trailing-pair detection works across
+  // tool-using conversations. System/developer messages are kept because they
+  // belong to the stable prefix identity.
+  auto turns = stripToolMessages(messages);
 
   // Need at least 2 messages: [assistant, user] to strip
-  if (nonSystemMessages.size() < 2) {
+  if (turns.size() < 2) {
     return std::nullopt;
   }
 
   // Check if second-to-last is assistant
-  if (nonSystemMessages[nonSystemMessages.size() - 2].role != "assistant") {
+  if (turns[turns.size() - 2].role != "assistant") {
     return std::nullopt;
   }
 
   // Remove the trailing [assistant, user] pair
   std::vector<domain::ChatMessage> priorPrefix;
-  priorPrefix.reserve(nonSystemMessages.size() - 2);
+  priorPrefix.reserve(turns.size() - 2);
 
-  for (size_t i = 0; i < nonSystemMessages.size() - 2; ++i) {
-    priorPrefix.push_back(nonSystemMessages[i]);
+  for (size_t i = 0; i < turns.size() - 2; ++i) {
+    priorPrefix.push_back(turns[i]);
   }
 
   // If the result is empty, return nullopt (no prior turn)
@@ -95,11 +97,12 @@ PrefixCachingInfo computePrefixCachingInfo(
     const std::vector<domain::ChatMessage>& messages) {
   PrefixCachingInfo info;
 
-  // Strip system messages
-  auto nonSystemMessages = stripSystemMessages(messages);
+  // Drop tool/function turns before hashing; system/developer messages stay
+  // as part of the stable prefix identity.
+  auto turns = stripToolMessages(messages);
 
   // registrationHash = always hash of full current conversation
-  info.registrationHash = hashConversationPrefix(nonSystemMessages);
+  info.registrationHash = hashConversationPrefix(turns);
 
   // Try to extract prior turn prefix (excluding last [assistant, user] pair)
   auto priorPrefix = extractPriorTurnPrefix(messages);

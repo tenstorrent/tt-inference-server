@@ -695,7 +695,7 @@ SessionManager::tryAcquireByPrefixHash(uint64_t prefixHash) {
             continue;
           }
           session.updateActivityTime();
-          result = AcquiredSession{session.getSlotId(), session.getSessionId()};
+          result = AcquiredSession{session.getSessionId(), session.getSlotId()};
           TT_LOG_INFO(
               "[SessionManager] tryAcquireByPrefixHash: acquired "
               "sessionId={}, slotId={} for hash={}",
