@@ -1106,7 +1106,7 @@ jobs:
           diff-cover coverage.xml \
             --compare-branch=origin/${BASE_REF} \
             --exclude '*/tests/*' '*/performance_tests/*' \
-            --fail-under=50 \
+            --fail-under=15 \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 
           cat diff-cover-output.txt

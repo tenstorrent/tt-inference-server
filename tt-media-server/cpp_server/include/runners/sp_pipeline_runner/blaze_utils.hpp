@@ -56,5 +56,9 @@ inline pm::ISRequest makeContinueRequest(
   fillSequenceFields(req, seq);
   return req;
 }
+struct SlotContext {
+  uint32_t taskId;
+  bool ignoreEos;
+};
 
 }  // namespace tt::runners::blaze_utils
