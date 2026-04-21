@@ -1,0 +1,19 @@
+{{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tt-inference-server.configmapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tt-inference-server.labels" . | nindent 4 }}
+data:
+  {{- if eq $cfg.serverType "media" }}
+  MODEL: {{ .Values.model | quote }}
+  DEVICE: {{ .Values.device | quote }}
+  CACHE_ROOT: "/home/container_app_user/cache_root"
+  {{- end }}
+  {{- range $cfg.extraEnv }}
+  {{- if .value }}
+  {{ .name }}: {{ .value | quote }}
+  {{- end }}
+  {{- end }}
