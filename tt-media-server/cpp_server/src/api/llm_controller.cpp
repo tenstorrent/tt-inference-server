@@ -57,12 +57,14 @@ LLMController::LLMController() {
 void LLMController::resolveSession(
     std::shared_ptr<domain::LLMRequest> req, trantor::EventLoop* loop,
     std::function<void(SessionInfo)> onResolved,
-    std::function<void(const SessionError&)> onError) const {
+    std::function<void(const SessionError&)> onError,
+    std::function<void()> cancelFn) const {
   SessionInfo info;
 
   if (req->sessionId.has_value() && sessionManager) {
     try {
-      auto slotId = sessionManager->acquireSessionSlot(req->sessionId.value());
+      auto slotId = sessionManager->acquireInFlight(req->sessionId.value(),
+                                                    std::move(cancelFn));
       if (slotId != domain::INVALID_SLOT_ID) {
         req->slotId = slotId;
         req->continuation = true;
@@ -83,9 +85,11 @@ void LLMController::resolveSession(
 
   if (!req->sessionId.has_value() && sessionManager) {
     sessionManager->createSession(
-        [req, onResolved](const domain::Session& session) {
+        [req, onResolved, cancelFn = std::move(cancelFn),
+         mgr = sessionManager](const domain::Session& session) mutable {
           req->sessionId = session.getSessionId();
-          req->slotId = session.getSlotId();
+          req->slotId =
+              mgr->acquireInFlight(session.getSessionId(), std::move(cancelFn));
           SessionInfo info;
           onResolved(info);
         },
@@ -228,18 +232,15 @@ void LLMController::handleStreaming(
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
 
+  auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
+    svc->abortRequest(taskId);
+  };
+
   resolveSession(
       reqPtr, loop,
       [this, reqPtr, cb, loop](SessionInfo sessionInfo) {
         try {
           service->preProcess(*reqPtr);
-
-          if (reqPtr->sessionId.has_value() && sessionManager) {
-            auto taskId = reqPtr->task_id;
-            sessionManager->setSessionAbortCallback(
-                reqPtr->sessionId.value(),
-                [svc = service, taskId]() { svc->abortRequest(taskId); });
-          }
 
           StreamParams params;
           params.completionId = "chatcmpl-" + std::to_string(reqPtr->task_id);
@@ -314,7 +315,8 @@ void LLMController::handleStreaming(
                   err.message,
               "service_unavailable"));
         }
-      });
+      },
+      std::move(cancelFn));
 }
 
 bool LLMController::shouldDoPrefillOnDecode(const domain::LLMRequest& request,
