@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import base64
+import urllib.request
 from io import BytesIO
 
 import numpy as np
@@ -105,9 +106,14 @@ class ImageManager:
         Returns:
             PIL Image object
         """
-        if base64_string.startswith("data:"):
-            base64_string = base64_string.split(",")[1]
-        image_bytes = base64.b64decode(base64_string)
+        if base64_string.startswith("http://") or base64_string.startswith("https://"):
+            with urllib.request.urlopen(base64_string) as resp:
+                image_bytes = resp.read()
+        else:
+            if base64_string.startswith("data:"):
+                base64_string = base64_string.split(",")[1]
+            base64_string += "=" * (-len(base64_string) % 4)
+            image_bytes = base64.b64decode(base64_string)
         image = Image.open(BytesIO(image_bytes))
 
         if image.mode != target_mode:

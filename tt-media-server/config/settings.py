@@ -263,6 +263,7 @@ class Settings(BaseSettings):
             ModelRunners.TT_QWEN_IMAGE.value,
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,
+            ModelRunners.TT_WAN_2_2_I2V.value,
         ]:
             self.default_throttle_level = None
 

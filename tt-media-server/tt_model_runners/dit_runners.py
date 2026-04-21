@@ -22,9 +22,11 @@ from models.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion
     StableDiffusion3Pipeline,
 )
 from models.tt_dit.pipelines.wan.pipeline_wan import WanPipeline
+from models.tt_dit.pipelines.wan.pipeline_wan_i2v import ImagePrompt, WanPipelineI2V
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
+from utils.image_manager import ImageManager
 from utils.logger import log_exception_chain
 
 dit_runner_log_map = {
@@ -34,6 +36,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
+    ModelRunners.TT_WAN_2_2_I2V.value: "Wan22-I2V",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -319,7 +322,15 @@ class TTWan22Runner(TTDiTRunner):
 
     def create_pipeline(self):
         try:
-            return WanPipeline.create_pipeline(mesh_device=self.ttnn_device)
+            if self.ttnn_device.shape.mesh_size() >= 32:  # GLX: (4,8) or (4,32)
+                target_height, target_width = 720, 1280
+            else:
+                target_height, target_width = 480, 832
+            return WanPipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                target_height=target_height,
+                target_width=target_width,
+            )
         except Exception as e:
             log_exception_chain(
                 self.logger,
@@ -384,3 +395,69 @@ class TTWan22Runner(TTDiTRunner):
                 config.max_packet_payload_size_bytes = 8192
                 device_params["fabric_router_config"] = config
         return device_params
+
+
+class TTWan22I2VRunner(TTWan22Runner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.image_manager = ImageManager("img")
+
+    def create_pipeline(self):
+        try:
+            if self.ttnn_device.shape.mesh_size() >= 32:  # GLX: (4,8) or (4,32)
+                target_height, target_width = 720, 1280
+            else:
+                target_height, target_width = 480, 832
+            return WanPipelineI2V.create_pipeline(
+                mesh_device=self.ttnn_device,
+                target_height=target_height,
+                target_width=target_width,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Wan I2V pipeline creation failed",
+                e,
+            )
+            raise
+
+    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
+    def run(self, requests: list[VideoGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running inference")
+        request = requests[0]
+        if self.pipeline.mesh_device.shape.mesh_size() >= 32:
+            width, height = 1280, 720
+        else:
+            width, height = 832, 480
+        num_frames = 81
+        pipeline_args = {
+            "prompt": request.prompt,
+            "height": height,
+            "width": width,
+            "num_frames": num_frames,
+            "num_inference_steps": request.num_inference_steps,
+            "guidance_scale": 4.0,
+            "guidance_scale_2": 3.0,
+            "seed": int(request.seed or 0),
+            "traced": True,
+        }
+        if request.image_frames:
+            pipeline_args["image_prompt"] = [
+                ImagePrompt(
+                    image=self.image_manager.base64_to_pil_image(
+                        f.image, target_size=(width, height), target_mode="RGB"
+                    ),
+                    frame_pos=f.frame_pos,
+                )
+                for f in request.image_frames
+            ]
+        elif request.image:
+            pipeline_args["image_prompt"] = self.image_manager.base64_to_pil_image(
+                request.image, target_size=(width, height), target_mode="RGB"
+            )
+        if bool(request.negative_prompt):
+            pipeline_args["negative_prompt"] = request.negative_prompt
+        frames = self.pipeline(**pipeline_args)
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        return frames
