@@ -7,7 +7,6 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from pathlib import Path
 from typing import Dict, List
 
 from report_module.report_file_saver import ReportFileSaver

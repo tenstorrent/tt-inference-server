@@ -10,3 +10,12 @@ from report_module.strategies.parameter_support_tests import (
 )
 from report_module.strategies.standard_report import StandardReportStrategy
 from report_module.strategies.stress_tests_report import StressTestsStrategy
+
+__all__ = [
+    "AiPerfStrategy",
+    "GenAiPerfStrategy",
+    "TestReportStrategy",
+    "ParameterSupportTestsStrategy",
+    "StandardReportStrategy",
+    "StressTestsStrategy",
+]

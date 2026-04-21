@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -14,7 +13,7 @@ from typing import Any, Dict, List, Optional
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
 from workflows.utils import get_default_workflow_root_log_dir
-from workflows.workflow_types import DeviceTypes, InferenceEngine
+from workflows.workflow_types import DeviceTypes
 
 logger = logging.getLogger(__name__)
 

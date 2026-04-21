@@ -5,7 +5,7 @@
 import json
 import os
 import re
-from typing import Dict, List, Any, Union, Tuple
+from typing import Dict, List, Any, Tuple
 import argparse
 from pathlib import Path
 import unicodedata
