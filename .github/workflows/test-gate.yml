@@ -816,7 +816,7 @@ jobs:
       - name: Start Prefill server (connects to decode server)
         run: |
           cd cpp_server/build
-          LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          LLM_DEVICE_BACKEND=mock LLM_MODE=prefill SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
             ./tt_media_server_cpp -p 8002 > ../../prefill_server.log 2>&1 &
           echo $! > ../../prefill_server.pid
           cd ../..
