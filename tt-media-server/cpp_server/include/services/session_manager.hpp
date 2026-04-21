@@ -58,19 +58,29 @@ class SessionManager {
   CloseSessionResult closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
   uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
-  uint32_t acquireSessionSlot(const std::string& sessionId);
+
+  // Mark the session in-flight and register the cancel function atomically.
+  // The cancel function is invoked immediately if closeSession is called while
+  // the session is in-flight. Pass a null function for non-cancellable requests.
+  // Returns the slot ID assigned to the session (INVALID_SLOT_ID if not set).
+  uint32_t acquireInFlight(const std::string& sessionId,
+                           std::function<void()> cancelFn);
+
   std::optional<domain::Session> getSession(const std::string& sessionId) const;
   size_t getActiveSessionCount() const;
 
   void releaseInFlight(const std::string& sessionId);
 
-  // Register a callback to be invoked immediately if closeSession is called
-  // while the session has an in-flight request. The callback should abort the
-  // active request. It is cleared automatically once the session is released.
-  void setSessionAbortCallback(const std::string& sessionId,
-                               std::function<void()> onAbort);
-
  private:
+  // Bundles a session with the function needed to cancel its active request.
+  // cancelFn is set when the session is in-flight and null when idle. Keeping
+  // both in the same map entry ensures they are always read and written under
+  // the same lock — no risk of the two getting out of sync.
+  struct ManagedSession {
+    domain::Session session;
+    std::function<void()> cancelFn;
+  };
+
   struct PendingAllocation {
     tt::domain::Session session;
     std::function<void(const tt::domain::Session&)> onCompletion;
@@ -109,8 +119,7 @@ class SessionManager {
   void handleMemoryResult(const domain::ManageMemoryResult& result);
   void updateSessionCountMetric();
 
-  mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
-  utils::ConcurrentMap<std::string, std::function<void()>> abortCallbacks_;
+  mutable utils::ConcurrentMap<std::string, ManagedSession> sessions;
 
   std::unique_ptr<ipc::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::MemoryResultQueue> memoryResultQueue;

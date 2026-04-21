@@ -60,6 +60,12 @@ std::string createSessionWithSlot(tt::services::SessionManager& manager,
   return future.get();
 }
 
+// Convenience: acquire with no cancel function.
+uint32_t acquireInFlight(tt::services::SessionManager& manager,
+                         const std::string& sessionId) {
+  return manager.acquireInFlight(sessionId, nullptr);
+}
+
 // ---------------------------------------------------------------------------
 // SessionManager lifecycle tests
 // ---------------------------------------------------------------------------
@@ -83,47 +89,47 @@ TEST(SessionManagerLifecycle, CloseNonExistentSession_ReturnsNotFound) {
             tt::services::CloseSessionResult::NOT_FOUND);
 }
 
-TEST(SessionManagerLifecycle, AcquireSlot_ReturnsPreAssignedSlotId) {
+TEST(SessionManagerLifecycle, AcquireInFlight_ReturnsPreAssignedSlotId) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
   auto sessionId = createSessionWithSlot(manager, lf.loop, 7u);
   ASSERT_FALSE(sessionId.empty());
 
-  EXPECT_EQ(manager.acquireSessionSlot(sessionId), 7u);
+  EXPECT_EQ(acquireInFlight(manager, sessionId), 7u);
   manager.releaseInFlight(sessionId);
 }
 
-TEST(SessionManagerLifecycle, AcquireSlot_InFlightSession_Throws) {
+TEST(SessionManagerLifecycle, AcquireInFlight_AlreadyInFlight_Throws) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
   auto sessionId = createSessionWithSlot(manager, lf.loop, 8u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.acquireSessionSlot(sessionId);  // IDLE -> IN_FLIGHT
-  EXPECT_THROW(manager.acquireSessionSlot(sessionId),
+  acquireInFlight(manager, sessionId);
+  EXPECT_THROW(acquireInFlight(manager, sessionId),
                tt::services::SessionInFlightException);
   manager.releaseInFlight(sessionId);
 }
 
-TEST(SessionManagerLifecycle, DeferredClose_FinalizedOnReleaseInFlight) {
-  // CLOSE_REQUESTED path: the session must stay in the map until
-  // releaseInFlight completes the CLOSE_REQUESTED -> CLOSING -> finalized
-  // transition.
+TEST(SessionManagerLifecycle, CloseWhileInFlight_RemovesSessionImmediately) {
+  // closeSession must remove the session and trigger dealloc immediately,
+  // even when the session is in-flight. releaseInFlight called afterwards
+  // should be a safe no-op.
   tt::services::SessionManager manager;
   LoopFixture lf;
 
   auto sessionId = createSessionWithSlot(manager, lf.loop, 9u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.acquireSessionSlot(sessionId);  // IDLE -> IN_FLIGHT
-  manager.closeSession(sessionId);        // IN_FLIGHT -> CLOSE_REQUESTED
-  EXPECT_TRUE(manager.getSession(sessionId).has_value());  // still present
+  acquireInFlight(manager, sessionId);
+  manager.closeSession(sessionId);
+  EXPECT_FALSE(manager.getSession(sessionId).has_value());
 
-  manager.releaseInFlight(
-      sessionId);  // CLOSE_REQUESTED -> CLOSING -> finalized
-  EXPECT_FALSE(manager.getSession(sessionId).has_value());  // now gone
+  // releaseInFlight called by the SSE writer after the request drains must
+  // not crash or assert, even though the session is already gone.
+  EXPECT_NO_THROW(manager.releaseInFlight(sessionId));
 }
 
 TEST(SessionManagerLifecycle, GetActiveSessionCount_ReflectsLifecycle) {
@@ -152,10 +158,10 @@ TEST(SessionManagerLifecycle, AcquireAfterRelease_Succeeds) {
   auto sessionId = createSessionWithSlot(manager, lf.loop, 11u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.acquireSessionSlot(sessionId);  // IDLE -> IN_FLIGHT
-  manager.releaseInFlight(sessionId);     // IN_FLIGHT -> IDLE
+  acquireInFlight(manager, sessionId);
+  manager.releaseInFlight(sessionId);
 
-  EXPECT_NO_THROW(manager.acquireSessionSlot(sessionId));
+  EXPECT_NO_THROW(acquireInFlight(manager, sessionId));
   manager.releaseInFlight(sessionId);
 }
 
@@ -205,60 +211,104 @@ TEST(SessionManagerLifecycle,
 }
 
 // ---------------------------------------------------------------------------
-// SessionManager abort callback tests
+// SessionManager close-while-in-flight tests
 // ---------------------------------------------------------------------------
 
-TEST(SessionManagerAbort, AbortCallbackInvokedOnCloseWhileInFlight) {
+TEST(SessionManagerClose, CloseInFlight_RemovesSessionImmediately) {
   tt::services::SessionManager manager;
   LoopFixture lf;
 
   auto sessionId = createSessionWithSlot(manager, lf.loop, 42u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.acquireSessionSlot(sessionId);  // IDLE -> IN_FLIGHT
+  acquireInFlight(manager, sessionId);
 
-  std::atomic<bool> abortCalled{false};
-  manager.setSessionAbortCallback(sessionId,
-                                  [&abortCalled]() { abortCalled = true; });
-
-  auto result = manager.closeSession(sessionId);
-
-  EXPECT_EQ(result, tt::services::CloseSessionResult::SUCCESS);
-  EXPECT_TRUE(abortCalled.load());
+  EXPECT_EQ(manager.closeSession(sessionId),
+            tt::services::CloseSessionResult::SUCCESS);
+  EXPECT_FALSE(manager.getSession(sessionId).has_value());
 }
 
-TEST(SessionManagerAbort, CloseSessionReturnsSuccessRegardlessOfInFlight) {
+TEST(SessionManagerClose, CloseInFlight_FiresCancelFn_AtomicWithAcquire) {
+  // Cancel and in-flight state are set atomically by acquireInFlight.
+  // closeSession must fire the cancel function immediately.
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 45u);
+  ASSERT_FALSE(sessionId.empty());
+
+  std::atomic<bool> cancelCalled{false};
+  manager.acquireInFlight(sessionId, [&cancelCalled]() { cancelCalled = true; });
+
+  manager.closeSession(sessionId);
+
+  EXPECT_TRUE(cancelCalled.load());
+  EXPECT_FALSE(manager.getSession(sessionId).has_value());
+}
+
+TEST(SessionManagerClose, CloseIdle_NoCancelFired) {
+  // Idle sessions have no in-flight request; closeSession must not fire any
+  // cancel (there is none registered).
+  tt::services::SessionManager manager;
+  LoopFixture lf;
+
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 46u);
+  ASSERT_FALSE(sessionId.empty());
+
+  // Close without ever calling acquireInFlight — no cancel should be needed.
+  EXPECT_EQ(manager.closeSession(sessionId),
+            tt::services::CloseSessionResult::SUCCESS);
+  EXPECT_FALSE(manager.getSession(sessionId).has_value());
+}
+
+TEST(SessionManagerClose, ReleaseInFlight_AfterClose_IsNoOp) {
+  // Simulates the SSE writer calling releaseInFlight after the session was
+  // already removed by a concurrent closeSession.
   tt::services::SessionManager manager;
   LoopFixture lf;
 
   auto sessionId = createSessionWithSlot(manager, lf.loop, 43u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.acquireSessionSlot(sessionId);  // IDLE -> IN_FLIGHT
-  // No abort callback registered (e.g. non-streaming request)
+  acquireInFlight(manager, sessionId);
+  manager.closeSession(sessionId);
 
-  auto result = manager.closeSession(sessionId);
-  EXPECT_EQ(result, tt::services::CloseSessionResult::SUCCESS);
+  EXPECT_NO_THROW(manager.releaseInFlight(sessionId));
+  EXPECT_EQ(manager.getActiveSessionCount(), 0u);
 }
 
-TEST(SessionManagerAbort, AbortCallbackClearedAfterRequestCompletesNormally) {
+TEST(SessionManagerClose, CancelFn_ClearedOnNormalCompletion) {
+  // If the request completes normally, releaseInFlight must clear the cancel
+  // function so a subsequent close does not fire stale cancel logic.
   tt::services::SessionManager manager;
   LoopFixture lf;
 
   auto sessionId = createSessionWithSlot(manager, lf.loop, 44u);
   ASSERT_FALSE(sessionId.empty());
 
-  manager.acquireSessionSlot(sessionId);  // IDLE -> IN_FLIGHT
+  std::atomic<bool> cancelCalled{false};
+  manager.acquireInFlight(sessionId, [&cancelCalled]() { cancelCalled = true; });
 
-  std::atomic<bool> abortCalled{false};
-  manager.setSessionAbortCallback(sessionId,
-                                  [&abortCalled]() { abortCalled = true; });
+  manager.releaseInFlight(sessionId);  // normal completion clears cancel fn
+  manager.closeSession(sessionId);     // should not fire cancel
 
-  manager.releaseInFlight(sessionId);  // IN_FLIGHT -> IDLE, clears callback
+  EXPECT_FALSE(cancelCalled.load());
+}
 
-  manager.closeSession(sessionId);
+TEST(SessionManagerClose, ReleaseInFlight_NormalCompletion_SessionStaysIdle) {
+  tt::services::SessionManager manager;
+  LoopFixture lf;
 
-  EXPECT_FALSE(abortCalled.load());
+  auto sessionId = createSessionWithSlot(manager, lf.loop, 47u);
+  ASSERT_FALSE(sessionId.empty());
+
+  acquireInFlight(manager, sessionId);
+  manager.releaseInFlight(sessionId);
+
+  // Session still present and acquirable again.
+  EXPECT_TRUE(manager.getSession(sessionId).has_value());
+  EXPECT_NO_THROW(acquireInFlight(manager, sessionId));
+  manager.releaseInFlight(sessionId);
 }
 
 }  // namespace
