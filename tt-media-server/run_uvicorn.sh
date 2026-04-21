@@ -6,11 +6,6 @@
 set -eo pipefail
 
 if [ "$1" != "--skip-venv" ]; then
-    if [ -z "${TT_METAL_HOME}" ]; then
-        echo "Error: TT_METAL_HOME is not set" >&2
-        exit 1
-    fi
-    # shellcheck disable=SC1091
     source "${TT_METAL_HOME}/python_env/bin/activate"
 fi
 
