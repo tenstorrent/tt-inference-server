@@ -103,6 +103,11 @@ class Settings(BaseSettings):
     enable_telemetry: bool = True
     prometheus_endpoint: str = "/metrics"
 
+    # Video generation settings
+    use_async_video: bool = (
+        True  # If False, video is generated synchronously and returned directly
+    )
+
     model_config = SettingsConfigDict(env_file=".env")
 
     def __init__(self, **kwargs):
