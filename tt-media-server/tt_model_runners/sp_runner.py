@@ -22,7 +22,6 @@ from __future__ import annotations
 import os
 from types import SimpleNamespace
 
-from config.settings import settings
 from ipc.video_shm import (
     VideoRequest,
     VideoShm,
@@ -138,7 +137,7 @@ class SPRunner(BaseDeviceRunner):
         self._input_shm.write_request(video_req)
         self.logger.info(f"[SP] Request {task_id} sent to SHM input")
 
-        timeout_s = settings.video_request_timeout_seconds
+        timeout_s = self.settings.video_request_timeout_seconds
         resp = self._output_shm.read_response(timeout_s=timeout_s)
         if resp is None:
             # Surface a greppable signature so the scheduler's error_listener
