@@ -143,10 +143,9 @@ bool SessionManager::assignSlotId(const std::string& sessionId,
 
 uint32_t SessionManager::getSlotIdBySessionId(
     const std::string& sessionId) const {
-  uint32_t result = domain::INVALID_SLOT_ID;
-  sessions.modify(sessionId, [&result](ManagedSession& ms) {
-    result = ms.session.getSlotId();
-  });
+  auto ms = sessions.get(sessionId);
+  uint32_t result =
+      ms.has_value() ? ms->session.getSlotId() : domain::INVALID_SLOT_ID;
   TT_LOG_DEBUG(
       "[SessionManager] getSlotIdBySessionId sessionId={} -> slotId={}",
       sessionId, result);
@@ -450,7 +449,7 @@ void SessionManager::handleMemoryResult(
         pendingAllocation.session.getSessionId());
     pendingAllocation.eventLoop->queueInLoop(
         [onError = std::move(pendingAllocation.onError)]() {
-          onError("Failed to allocate slot id: All attemps have failed");
+          onError("Failed to allocate slot id: All attempts have failed");
         });
   }
 }
