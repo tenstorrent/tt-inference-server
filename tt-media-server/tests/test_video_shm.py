@@ -46,15 +46,18 @@ def _unique_name(prefix: str = "test_vshm") -> str:
 
 
 def _force_cleanup_shm(name: str) -> None:
-    """Best-effort removal of a SHM region from /dev/shm/."""
-    try:
-        from multiprocessing import shared_memory
+    """Best-effort removal of a SHM region (and its ``<name>_state`` sibling)
+    from ``/dev/shm/``. Every ``VideoShm`` now owns two segments under the
+    create-or-attach model, so both must be unlinked between tests."""
+    from multiprocessing import shared_memory
 
-        s = shared_memory.SharedMemory(name=name, create=False)
-        s.close()
-        s.unlink()
-    except FileNotFoundError:
-        pass
+    for target in (name, f"{name}{VideoShm._STATE_SUFFIX}"):
+        try:
+            s = shared_memory.SharedMemory(name=target, create=False)
+            s.close()
+            s.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _make_request(**overrides) -> VideoRequest:
@@ -217,16 +220,23 @@ class TestVideoShmLifecycle:
         with pytest.raises(FileNotFoundError):
             shared_memory.SharedMemory(name=name, create=False)
 
-    def test_open_create_replaces_existing(self):
-        """open(create=True) unlinks stale SHM and recreates without fd leak."""
-        name = _unique_name("recreate")
+    def test_open_is_idempotent_when_segment_exists(self):
+        """Under the create-or-attach model, a second open() on an existing
+        segment must succeed (attach), not raise. The `create` kwarg is
+        accepted for backward-compat but ignored — behaviour is always
+        create-if-missing-else-attach."""
+        name = _unique_name("reopen")
         shm1 = VideoShm(name, mode="input")
-        shm1.open(create=True)
+        shm1.open()
 
         shm2 = VideoShm(name, mode="input")
-        shm2.open(create=True)
+        shm2.open()  # attaches; must not unlink or recreate
         assert shm2._shm is not None
         assert shm2._buf is not None
+
+        # Cross-handle visibility: a write through shm1 is seen by shm2.
+        struct.pack_into("<i", shm1._buf, 0, 0xBEEF)
+        assert struct.unpack_from("<i", shm2._buf, 0)[0] == 0xBEEF
 
         shm1.close()
         shm2.close()
@@ -432,22 +442,22 @@ class TestResponseRoundtrip:
 
 
 class TestSlotStateTransitions:
-    def test_slot_starts_free(self, input_shm):
+    def test_slot_starts_empty(self, input_shm):
         state = struct.unpack_from("<i", input_shm._buf, 0)[0]
-        assert state == VideoShm._FREE
+        assert state == VideoShm._EMPTY
 
-    def test_write_sets_taken(self, input_pair):
+    def test_write_sets_filled(self, input_pair):
         writer, _ = input_pair
         writer.write_request(_make_request())
         state = struct.unpack_from("<i", writer._buf, 0)[0]
-        assert state == VideoShm._TAKEN
+        assert state == VideoShm._FILLED
 
-    def test_read_sets_free(self, input_pair):
+    def test_read_sets_empty(self, input_pair):
         writer, reader = input_pair
         writer.write_request(_make_request())
         reader.read_request()
         state = struct.unpack_from("<i", reader._buf, 0)[0]
-        assert state == VideoShm._FREE
+        assert state == VideoShm._EMPTY
 
 
 # ── Ring buffer wrapping ──
@@ -457,23 +467,31 @@ class TestRingBufferWrapping:
     def test_position_wraps_after_slots(self, input_pair):
         writer, reader = input_pair
         req = _make_request()
-        for _ in range(VideoShm.INPUT_SLOTS + 2):
+        total = VideoShm.INPUT_SLOTS + 2
+        for _ in range(total):
             writer.write_request(req)
             got = reader.read_request()
             assert got is not None
             assert got.task_id == req.task_id
-        assert writer._pos == 2
-        assert reader._pos == 2
+        # Indices live in the <name>_state SHM segment and are monotonic u64
+        # counters (not mod-slots) — the slot index is derived as (idx % _slots).
+        assert writer._get_writer_index() == total
+        assert reader._get_reader_index() == total
+        assert writer._get_writer_index() % VideoShm.INPUT_SLOTS == 2
+        assert reader._get_reader_index() % VideoShm.INPUT_SLOTS == 2
 
     def test_responses_wrap(self, output_pair):
         writer, reader = output_pair
-        for i in range(VideoShm.OUTPUT_SLOTS + 1):
+        total = VideoShm.OUTPUT_SLOTS + 1
+        for i in range(total):
             resp = _make_response(file_path=f"/dev/shm/tt_video_wrap_{i}.pkl")
             writer.write_response(resp)
             got = reader.read_response()
             assert got.file_path == f"/dev/shm/tt_video_wrap_{i}.pkl"
-        assert writer._pos == 1
-        assert reader._pos == 1
+        assert writer._get_writer_index() == total
+        assert reader._get_reader_index() == total
+        assert writer._get_writer_index() % VideoShm.OUTPUT_SLOTS == 1
+        assert reader._get_reader_index() % VideoShm.OUTPUT_SLOTS == 1
 
 
 # ── Shutdown signaling ──
@@ -531,7 +549,7 @@ class TestShutdownSignaling:
 
         for i in range(VideoShm.INPUT_SLOTS):
             off = i * shm._slot_size
-            struct.pack_into("<i", shm._buf, off, VideoShm._TAKEN)
+            struct.pack_into("<i", shm._buf, off, VideoShm._FILLED)
 
         def trigger_shutdown():
             nonlocal shutdown
@@ -555,7 +573,7 @@ class TestShutdownSignaling:
 
         for i in range(VideoShm.OUTPUT_SLOTS):
             off = i * shm._slot_size
-            struct.pack_into("<i", shm._buf, off, VideoShm._TAKEN)
+            struct.pack_into("<i", shm._buf, off, VideoShm._FILLED)
 
         def trigger_shutdown():
             nonlocal shutdown
