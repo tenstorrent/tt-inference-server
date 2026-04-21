@@ -59,28 +59,9 @@ std::string LlamaTokenizer::applyChatTemplate(
     out << "Environment: ipython\n";
   }
 
-  out << llamaSystemPreamble;
+  out << llamaSystemPreamble << systemContent << llamaEot;
 
-  // Add tools in system message if toolsInUserMessage is false
-  // For Llama 3.1, we default to toolsInUserMessage=true
-  bool toolsInUserMessage = true;
-
-  if (tools.has_value() && !tools->empty() && !toolsInUserMessage) {
-    out << "You have access to the following functions. To call a function, "
-        << "please respond with JSON for a function call. "
-        << "Respond in the format {\"name\": function name, \"parameters\": "
-        << "dictionary of argument name and its value}. "
-        << "Do not use variables.\n\n";
-
-    for (const auto& tool : *tools) {
-      out << toolToJsonString(tool) << "\n\n";
-    }
-  }
-
-  out << systemContent << llamaEot;
-
-  // Add tools in user message if toolsInUserMessage is true
-  if (tools.has_value() && !tools->empty() && toolsInUserMessage) {
+  if (tools.has_value() && !tools->empty()) {
     if (filteredMessages.empty()) {
       throw std::runtime_error(
           "Cannot put tools in the first user message when there's no first "
