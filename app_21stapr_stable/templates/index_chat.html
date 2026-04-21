@@ -1,0 +1,2551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TT Voice Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a24;
+            --border-color: #2a2a3a;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b0;
+            --text-muted: #606070;
+            --accent-purple: #8b5cf6;
+            --accent-green: #22c55e;
+            --accent-yellow: #eab308;
+            --accent-red: #ef4444;
+            --accent-blue: #3b82f6;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            background-image: 
+                linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            min-height: 100vh;
+            color: var(--text-primary);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            text-decoration: none;
+        }
+
+        .home-link:hover {
+            color: var(--accent-purple);
+        }
+
+        .powered-by {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-decoration: none;
+            padding-left: 12px;
+            border-left: 1px solid var(--border-color);
+        }
+
+        .powered-by:hover {
+            color: var(--text-secondary);
+        }
+
+        .powered-by:hover img {
+            opacity: 1 !important;
+        }
+
+        .logo-divider {
+            width: 1px;
+            height: 20px;
+            background: var(--border-color);
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            background: var(--bg-card);
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-purple);
+        }
+
+        .status-dot.recording { background: var(--accent-red); animation: pulse 1s infinite; }
+        .status-dot.thinking { background: var(--accent-yellow); animation: pulse 1s infinite; }
+        .status-dot.speaking { background: var(--accent-green); animation: pulse 1s infinite; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .header-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .header-btn:hover {
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        /* Main Content */
+        .main-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 900px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Chat Messages */
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding-bottom: 20px;
+        }
+
+        .message {
+            margin-bottom: 24px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .message-sender {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .message-sender.user { color: var(--accent-blue); }
+        .message-sender.assistant { color: var(--accent-purple); }
+
+        .message-time {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .timing-badge {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            background: var(--bg-card);
+            padding: 2px 8px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+        }
+
+        .message-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            line-height: 1.6;
+            color: var(--text-primary);
+        }
+
+        .message.user .message-content {
+            border-left: 3px solid var(--accent-blue);
+        }
+
+        .message.assistant .message-content {
+            border-left: 3px solid var(--accent-purple);
+        }
+
+        /* Audio Player */
+        .audio-player {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 12px;
+            padding: 8px 12px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+        }
+
+        .play-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            background: var(--accent-purple);
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .play-btn:hover {
+            background: #7c3aed;
+            transform: scale(1.05);
+        }
+
+        .audio-progress {
+            flex: 1;
+            height: 4px;
+            background: var(--border-color);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .audio-progress-bar {
+            height: 100%;
+            background: var(--accent-purple);
+            width: 0%;
+            transition: width 0.1s;
+        }
+
+        .copy-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            color: var(--text-primary);
+            background: var(--bg-card);
+        }
+
+        /* Thinking Indicator */
+        .thinking-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 16px;
+            color: var(--text-secondary);
+        }
+
+        .thinking-dots {
+            display: flex;
+            gap: 4px;
+        }
+
+        .thinking-dots span {
+            width: 6px;
+            height: 6px;
+            background: var(--accent-yellow);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+
+        .thinking-dots span:nth-child(1) { animation-delay: 0s; }
+        .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-8px); }
+        }
+
+        /* Bottom Controls */
+        .controls-container {
+            padding: 20px 0;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .controls-options {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+
+        .toggle-option {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 32px;
+            height: 18px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 9px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .toggle-switch.active {
+            background: var(--accent-purple);
+            border-color: var(--accent-purple);
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 12px;
+            height: 12px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+
+        .toggle-switch.active::after {
+            transform: translateX(14px);
+        }
+
+        .record-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .record-btn {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, var(--accent-purple), #6d28d9);
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            transition: all 0.2s;
+            box-shadow: 0 4px 20px rgba(139, 92, 246, 0.3);
+        }
+
+        .record-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 6px 30px rgba(139, 92, 246, 0.4);
+        }
+
+        .record-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .record-btn.recording {
+            background: linear-gradient(135deg, var(--accent-red), #dc2626);
+            animation: pulse-glow 1.5s infinite;
+        }
+
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 4px 20px rgba(239, 68, 68, 0.3); }
+            50% { box-shadow: 0 4px 40px rgba(239, 68, 68, 0.6); }
+        }
+
+        .status-text {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        /* Welcome Banner */
+        .welcome-banner {
+            display: none;
+            background: linear-gradient(135deg, var(--accent-purple), #6d28d9);
+            padding: 16px 24px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            animation: slideDown 0.3s ease;
+        }
+
+        .welcome-banner.show {
+            display: block;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .welcome-text {
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+
+        /* Face Auth Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+
+        .modal h2 {
+            margin-bottom: 16px;
+            font-size: 1.25rem;
+        }
+
+        .camera-preview {
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: var(--bg-primary);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .camera-preview video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent-purple);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #7c3aed;
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border-color);
+        }
+
+        /* Register Form */
+        .register-form {
+            display: none;
+            margin-top: 16px;
+        }
+
+        .register-form.show {
+            display: block;
+        }
+
+        .register-form input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 1rem;
+            margin-bottom: 12px;
+        }
+
+        .register-form input:focus {
+            outline: none;
+            border-color: var(--accent-purple);
+        }
+
+        /* Model Status */
+        .model-status {
+            display: flex;
+            gap: 8px;
+        }
+
+        .model-badge {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            background: var(--bg-card);
+            border-radius: 4px;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .model-badge .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        .model-badge .dot.ready { background: var(--accent-green); }
+        .model-badge .dot.loading { background: var(--accent-yellow); animation: pulse 1s infinite; }
+
+        /* Mode Bar */
+        .mode-bar {
+            display: flex;
+            gap: 10px;
+            padding: 12px 0;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+            overflow-x: auto;
+        }
+
+        .mode-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .mode-btn:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-color: var(--accent-purple);
+        }
+
+        .mode-btn.active {
+            background: rgba(139, 92, 246, 0.15);
+            border-color: var(--accent-purple);
+            color: var(--accent-purple);
+            font-weight: 600;
+        }
+
+        .mode-btn .mode-icon {
+            font-size: 1.1rem;
+        }
+
+        .mode-indicator {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            background: rgba(139, 92, 246, 0.1);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            color: var(--accent-purple);
+            margin-bottom: 12px;
+        }
+
+        .mode-indicator.show {
+            display: flex;
+        }
+
+        /* Document Upload Area */
+        .doc-upload-area {
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            padding: 16px;
+            background: var(--bg-card);
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            transition: all 0.2s;
+        }
+
+        .doc-upload-area.show {
+            display: flex;
+        }
+
+        .doc-upload-area.dragover {
+            border-color: var(--accent-purple);
+            background: rgba(139, 92, 246, 0.05);
+        }
+
+        .doc-upload-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .doc-upload-area input[type="file"] {
+            display: none;
+        }
+
+        .doc-upload-btn {
+            padding: 8px 16px;
+            background: var(--accent-purple);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .doc-upload-btn:hover {
+            background: #7c3aed;
+        }
+
+        .doc-url-input, .doc-text-input {
+            flex: 1;
+            padding: 8px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+        }
+
+        .doc-text-input {
+            min-height: 60px;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        .doc-url-input:focus, .doc-text-input:focus {
+            outline: none;
+            border-color: var(--accent-purple);
+        }
+
+        .doc-status {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .doc-status.success {
+            color: var(--accent-green);
+        }
+
+        .doc-status.error {
+            color: var(--accent-red);
+        }
+
+        /* Podcast Input Panel */
+        .podcast-panel {
+            display: none;
+            flex-direction: column;
+            gap: 0;
+            margin-bottom: 16px;
+        }
+
+        .podcast-panel.show {
+            display: flex;
+        }
+
+        .podcast-section {
+            padding: 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+        }
+
+        .podcast-section:first-child {
+            border-radius: 12px 12px 0 0;
+        }
+
+        .podcast-section:last-child {
+            border-radius: 0 0 12px 12px;
+        }
+
+        .podcast-section-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .podcast-or-divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-top: none;
+            border-bottom: none;
+        }
+
+        .podcast-or-divider::before,
+        .podcast-or-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border-color);
+        }
+
+        .podcast-or-divider span {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .podcast-topic-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .podcast-topic-input {
+            flex: 1;
+            padding: 10px 14px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            font-family: inherit;
+        }
+
+        .podcast-topic-input:focus {
+            outline: none;
+            border-color: var(--accent-purple);
+        }
+
+        .podcast-mic-btn {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .podcast-mic-btn:hover {
+            border-color: var(--accent-purple);
+            color: var(--accent-purple);
+        }
+
+        .podcast-mic-btn.recording {
+            background: var(--accent-red);
+            border-color: var(--accent-red);
+            color: white;
+            animation: pulse-glow 1.5s infinite;
+        }
+
+        .podcast-generate-btn {
+            padding: 10px 20px;
+            background: var(--accent-purple);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .podcast-generate-btn:hover {
+            background: #7c3aed;
+        }
+
+        .podcast-generate-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .podcast-status {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+
+        .podcast-status.success { color: var(--accent-green); }
+        .podcast-status.error { color: var(--accent-red); }
+    </style>
+    <script src="/static/vad/ort.js"></script>
+    <script src="/static/vad/bundle.min.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <a class="logo home-link" href="/" title="Go to Home">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                <span>Home</span>
+            </a>
+            <span class="logo-divider"></span>
+            <div class="status-badge">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusLabel">Ready</span>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="model-status">
+                <div class="model-badge"><span class="dot ready" id="faceStatus"></span>Face</div>
+                <div class="model-badge"><span class="dot ready" id="whisperStatus"></span>Whisper</div>
+                <div class="model-badge"><span class="dot ready" id="llamaStatus"></span>Llama</div>
+                <div class="model-badge"><span class="dot ready" id="ttsStatus"></span>TTS</div>
+            </div>
+
+            <a class="powered-by" href="https://tenstorrent.com" target="_blank" title="Tenstorrent">
+                <span>Powered by</span>
+                <span style="font-weight: 600; color: var(--text-secondary);">Tenstorrent</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-container">
+        <!-- Welcome Banner -->
+        <div class="welcome-banner" id="welcomeBanner">
+            <span class="welcome-text" id="welcomeText">Welcome! How can I help you today?</span>
+        </div>
+
+        <!-- Mode Selection Bar -->
+        <div class="mode-bar" id="modeBar">
+            <button class="mode-btn active" data-mode="talk" onclick="setMode('talk')">
+                <span class="mode-icon">💬</span> Talk Assistant
+            </button>
+            <button class="mode-btn" data-mode="story" onclick="setMode('story')">
+                <span class="mode-icon">📖</span> Story Telling
+            </button>
+            <button class="mode-btn" data-mode="docs" onclick="setMode('docs')">
+                <span class="mode-icon">📄</span> Docs Summary
+            </button>
+            <button class="mode-btn" data-mode="podcast" onclick="setMode('podcast')">
+                <span class="mode-icon">🎙️</span> Podcast
+            </button>
+        </div>
+
+        <!-- Active mode indicator (shows when auto-detected) -->
+        <div class="mode-indicator" id="modeIndicator">
+            <span id="modeIndicatorText"></span>
+        </div>
+
+        <!-- Document Upload Area (visible in Docs mode) -->
+        <div class="doc-upload-area" id="docUploadArea">
+            <div style="font-size: 0.9rem; color: var(--text-secondary);">Upload a document, paste text, or enter a URL:</div>
+            <div class="doc-upload-row">
+                <button class="doc-upload-btn" onclick="document.getElementById('docFileInput').click()">Choose File</button>
+                <input type="file" id="docFileInput" accept=".pdf,.txt,.md,.csv,.json,.py,.js,.html" onchange="uploadDocFile(this)">
+                <span id="docFileName" style="font-size: 0.8rem; color: var(--text-muted);">PDF, TXT, MD, etc.</span>
+            </div>
+            <div class="doc-upload-row">
+                <input type="text" class="doc-url-input" id="docUrlInput" placeholder="https://example.com/article">
+                <button class="doc-upload-btn" onclick="uploadDocUrl()">Fetch URL</button>
+            </div>
+            <textarea class="doc-text-input" id="docTextInput" placeholder="Or paste text here..."></textarea>
+            <div class="doc-upload-row">
+                <button class="doc-upload-btn" onclick="uploadDocText()">Submit Text</button>
+                <span class="doc-status" id="docStatus"></span>
+            </div>
+        </div>
+
+        <!-- Podcast Input Panel (visible in Podcast mode) -->
+        <div class="podcast-panel" id="podcastPanel">
+            <div class="podcast-section">
+                <div class="podcast-section-label">Generate podcast from a document:</div>
+                <div class="doc-upload-row">
+                    <button class="doc-upload-btn" onclick="document.getElementById('podcastFileInput').click()">Choose File</button>
+                    <input type="file" id="podcastFileInput" accept=".pdf,.txt,.md,.csv,.json,.py,.js,.html" onchange="uploadPodcastFile(this)">
+                    <span id="podcastFileName" style="font-size: 0.8rem; color: var(--text-muted);">PDF, TXT, MD, etc.</span>
+                </div>
+                <div class="doc-upload-row" style="margin-top: 8px;">
+                    <input type="text" class="doc-url-input" id="podcastUrlInput" placeholder="https://example.com/article">
+                    <button class="doc-upload-btn" onclick="uploadPodcastUrl()">Fetch URL</button>
+                </div>
+                <textarea class="doc-text-input" id="podcastTextInput" placeholder="Or paste text here..."></textarea>
+                <div class="doc-upload-row">
+                    <button class="doc-upload-btn" onclick="uploadPodcastText()">Submit Text</button>
+                    <span class="podcast-status" id="podcastUploadStatus"></span>
+                </div>
+                <button class="podcast-generate-btn" id="podcastDocGenerateBtn" style="display:none; margin-top: 10px; width: 100%;" onclick="generatePodcastFromDoc()">Generate Podcast</button>
+            </div>
+
+            <div class="podcast-or-divider"><span>or</span></div>
+
+            <div class="podcast-section">
+                <div class="podcast-section-label">Enter a topic to generate podcast:</div>
+                <div class="podcast-topic-row">
+                    <input type="text" class="podcast-topic-input" id="podcastTopicInput" placeholder="e.g. artificial intelligence, climate change...">
+                    <button class="podcast-mic-btn" id="podcastMicBtn" onmousedown="startPodcastMic()" onmouseup="stopPodcastMic()" onmouseleave="stopPodcastMic()">🎤</button>
+                    <button class="podcast-generate-btn" id="podcastGenerateBtn" onclick="submitPodcastTopic()">Generate</button>
+                </div>
+                <div class="podcast-status" id="podcastTopicStatus"></div>
+            </div>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="chat-container" id="chatContainer">
+            <!-- Messages will be added here -->
+        </div>
+
+        <!-- Thinking Indicator -->
+        <div class="thinking-indicator" id="thinkingIndicator" style="display: none;">
+            <div class="thinking-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+            <span id="thinkingText">Generating response...</span>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-container">
+            <div class="controls-options">
+                <label class="toggle-option" onclick="toggleAutoPlay()">
+                    <div class="toggle-switch active" id="autoPlayToggle"></div>
+                    <span>Auto-play</span>
+                </label>
+                <label class="toggle-option" onclick="toggleWakeWord()">
+                    <div class="toggle-switch" id="wakeWordToggle"></div>
+                    <span id="wakeWordLabel">Hey TT</span>
+                </label>
+            </div>
+            <div class="record-section">
+                <button class="record-btn" id="recordBtn" onclick="toggleRecording()">
+                    🎤
+                </button>
+                <span class="status-text" id="controlStatus">Loading voice detection...</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- Face Auth Modal -->
+    <div class="modal-overlay" id="faceAuthModal">
+        <div class="modal">
+            <h2>Face Authentication</h2>
+            <div class="camera-preview">
+                <video id="modalCamera" autoplay playsinline></video>
+            </div>
+            <p id="modalStatus" style="margin-bottom: 16px; color: var(--text-secondary);">Position your face in the camera</p>
+            
+            <div class="register-form" id="registerForm">
+                <input type="text" id="registerName" placeholder="Enter your name">
+            </div>
+            
+            <div class="modal-buttons">
+                <button class="btn btn-primary" id="authBtn" onclick="authenticateFace()">Authenticate</button>
+                <button class="btn btn-secondary" id="registerBtn" onclick="toggleRegisterForm()">Register</button>
+                <button class="btn btn-secondary" onclick="closeFaceAuthModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let isRecording = false;
+        let isProcessing = false;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let currentAudio = null;
+        let userName = 'Guest';
+        let cameraStream = null;
+        let currentMode = 'talk';
+        let abortController = null;
+        let activeTimer = null;
+        let myvad = null;
+        let vadReady = false;
+        let autoPlayEnabled = true;
+        let wakeWordEnabled = false;
+        let wakeVad = null;
+        let wakeWordChecking = false;
+
+        function toggleAutoPlay() {
+            autoPlayEnabled = !autoPlayEnabled;
+            const toggle = document.getElementById('autoPlayToggle');
+            toggle.classList.toggle('active', autoPlayEnabled);
+        }
+
+        async function toggleWakeWord() {
+            wakeWordEnabled = !wakeWordEnabled;
+            const toggle = document.getElementById('wakeWordToggle');
+            const label = document.getElementById('wakeWordLabel');
+            toggle.classList.toggle('active', wakeWordEnabled);
+
+            if (wakeWordEnabled) {
+                label.textContent = 'Hey TT (on)';
+                await startWakeWordListener();
+            } else {
+                label.textContent = 'Hey TT';
+                stopWakeWordListener();
+            }
+        }
+
+        async function startWakeWordListener() {
+            if (wakeVad) {
+                wakeVad.start();
+                console.log('[WakeWord] Resumed listening');
+                return;
+            }
+            try {
+                wakeVad = await vad.MicVAD.new({
+                    positiveSpeechThreshold: 0.8,
+                    negativeSpeechThreshold: 0.35,
+                    minSpeechFrames: 2,
+                    preSpeechPadFrames: 2,
+                    redemptionFrames: 2,
+                    onnxWASMBasePath: "/static/vad/",
+                    baseAssetPath: "/static/vad/",
+                    modelURL: "/static/vad/silero_vad_v5.onnx",
+                    workletURL: "/static/vad/vad.worklet.bundle.min.js",
+                    onSpeechEnd: (audio) => {
+                        if (!wakeWordEnabled || isRecording || isProcessing) return;
+                        checkWakeWord(audio);
+                    },
+                });
+                wakeVad.start();
+                console.log('[WakeWord] Listener started');
+            } catch (err) {
+                console.error('[WakeWord] Failed to start:', err);
+                wakeWordEnabled = false;
+                document.getElementById('wakeWordToggle').classList.remove('active');
+                document.getElementById('wakeWordLabel').textContent = 'Hey TT';
+            }
+        }
+
+        function stopWakeWordListener() {
+            if (wakeVad) {
+                wakeVad.pause();
+                console.log('[WakeWord] Listener paused');
+            }
+        }
+
+        async function checkWakeWord(audioFloat32) {
+            try {
+                const wavBlob = float32ToWav(audioFloat32, 16000);
+                const formData = new FormData();
+                formData.append('audio', wavBlob, 'wake.wav');
+                const resp = await fetch('/api/speech-to-text', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await resp.json();
+                const text = (result.text || '').toLowerCase().trim();
+                console.log('[WakeWord] Heard:', text);
+
+                const clean = text.replace(/[,.'!?]/g, ' ').replace(/\s+/g, ' ').trim();
+                const ttWords = /\b(tt|t t|titi|tidy|didy|diddy|ditty|didi|diti|teddy|titty|deity|duty|midi|tti|dd|td|dt|tv|80|2t|hd|h d|t)\b/;
+                const heyWords = /\b(hey|hay|he|a|sh|h)\b/;
+                const hattiti = /hattiti|hatiti|ha ?t[it]|h\.? ?d/;
+                const matched = hattiti.test(clean) || (heyWords.test(clean) && ttWords.test(clean));
+                console.log(`[WakeWord] clean="${clean}" heyMatch=${heyWords.test(clean)} ttMatch=${ttWords.test(clean)} hattiti=${hattiti.test(clean)} matched=${matched}`);
+
+                if (matched) {
+                    console.log('[WakeWord] ACTIVATED! Heard:', text);
+                    wakeVad.pause();
+                    controlStatus.textContent = 'Hey TT! Speak now — click mic to send';
+                    startRecording();
+                }
+            } catch (err) {
+                console.error('[WakeWord] Check failed:', err);
+            }
+        }
+
+        function float32ToWav(float32Array, sampleRate) {
+            const numSamples = float32Array.length;
+            const buffer = new ArrayBuffer(44 + numSamples * 2);
+            const view = new DataView(buffer);
+            const writeStr = (offset, str) => {
+                for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+            };
+            writeStr(0, 'RIFF');
+            view.setUint32(4, 36 + numSamples * 2, true);
+            writeStr(8, 'WAVE');
+            writeStr(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeStr(36, 'data');
+            view.setUint32(40, numSamples * 2, true);
+            for (let i = 0; i < numSamples; i++) {
+                let s = Math.max(-1, Math.min(1, float32Array[i]));
+                view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        async function initVAD() {
+            try {
+                myvad = await vad.MicVAD.new({
+                    positiveSpeechThreshold: 0.85,
+                    negativeSpeechThreshold: 0.3,
+                    minSpeechFrames: 3,
+                    preSpeechPadFrames: 6,
+                    redemptionFrames: 30,
+                    onnxWASMBasePath: "/static/vad/",
+                    baseAssetPath: "/static/vad/",
+                    modelURL: "/static/vad/silero_vad_v5.onnx",
+                    workletURL: "/static/vad/vad.worklet.bundle.min.js",
+                    onSpeechStart: () => {
+                        if (!isRecording) return;
+                        setStatus('recording', 'Hearing you...');
+                        controlStatus.textContent = 'Listening... auto-sends when you pause';
+                    },
+                    onSpeechEnd: (audio) => {
+                        if (!isRecording) return;
+                        const wavBlob = float32ToWav(audio, 16000);
+                        const duration = Date.now() - recordingStartTime;
+                        stopRecording();
+                        if (duration < 500) {
+                            controlStatus.textContent = 'Recording too short - hold longer';
+                            isProcessing = false;
+                            recordBtn.disabled = false;
+                            setStatus('idle', 'Ready');
+                            return;
+                        }
+                        processAudio(wavBlob);
+                    },
+                });
+                myvad.pause();
+                vadReady = true;
+                console.log('Silero VAD initialized successfully');
+            } catch (err) {
+                console.error('VAD init failed, falling back to manual mode:', err);
+                vadReady = false;
+            }
+        }
+
+        // Session ID for conversation context (unique per browser session)
+        const sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+
+        function setMode(mode) {
+            currentMode = mode;
+            // Update button styles
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.mode === mode);
+            });
+            // Clear history when switching modes for a clean slate
+            fetch('/api/clear-history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId })
+            });
+            // Show indicator
+            const indicator = document.getElementById('modeIndicator');
+            const btn = document.querySelector(`.mode-btn[data-mode="${mode}"]`);
+            if (btn) {
+                const name = btn.textContent.trim();
+                document.getElementById('modeIndicatorText').textContent = 'Mode: ' + name;
+                indicator.classList.add('show');
+                setTimeout(() => indicator.classList.remove('show'), 3000);
+            }
+            // Clear chat area when switching modes
+            document.getElementById('chatContainer').innerHTML = '';
+            controlStatus.textContent = getModeHint(mode);
+            // Show/hide doc upload area
+            updateDocUploadVisibility();
+            // Reset doc status when leaving docs mode
+            if (mode !== 'docs') {
+                document.getElementById('docStatus').textContent = '';
+            }
+        }
+
+        function getModeHint(mode) {
+            if (wakeWordEnabled) {
+                return 'Say "Hey TT" to start, or press mic';
+            }
+            const vadHint = vadReady ? 'Press mic or Space — auto-sends on silence' : 'Hold to speak or press Space';
+            const hints = {
+                'talk': vadHint,
+                'story': vadReady ? 'Press mic and describe the story you want' : 'Ask me to tell you a story...',
+                'docs': 'Upload a document, then ask questions about it',
+                'podcast': 'Tell me a topic to generate a podcast about',
+            };
+            return hints[mode] || vadHint;
+        }
+
+        // --- Document Upload Functions ---
+        function updateDocUploadVisibility() {
+            const area = document.getElementById('docUploadArea');
+            const podcastPanel = document.getElementById('podcastPanel');
+            if (currentMode === 'docs') {
+                area.classList.add('show');
+                podcastPanel.classList.remove('show');
+            } else if (currentMode === 'podcast') {
+                area.classList.remove('show');
+                podcastPanel.classList.add('show');
+                document.getElementById('podcastDocGenerateBtn').style.display = 'none';
+            } else {
+                area.classList.remove('show');
+                podcastPanel.classList.remove('show');
+            }
+        }
+
+        async function uploadDocFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+            document.getElementById('docFileName').textContent = file.name;
+            const status = document.getElementById('docStatus');
+            status.textContent = 'Uploading...';
+            status.className = 'doc-status';
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const resp = await fetch('/api/upload-document?session_id=' + encodeURIComponent(sessionId), {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await resp.json();
+                if (result.error) {
+                    status.textContent = result.error;
+                    status.className = 'doc-status error';
+                } else {
+                    status.textContent = `Loaded: ${result.word_count} words. Ask a question!`;
+                    status.className = 'doc-status success';
+                    addMessage('assistant', `Document loaded (${result.word_count} words). Ask me anything about it -- "summarize this", "what are the key points?", etc.`);
+                }
+            } catch (e) {
+                status.textContent = 'Upload failed: ' + e.message;
+                status.className = 'doc-status error';
+            }
+        }
+
+        async function uploadDocUrl() {
+            const url = document.getElementById('docUrlInput').value.trim();
+            if (!url) return;
+            const status = document.getElementById('docStatus');
+            status.textContent = 'Fetching URL...';
+            status.className = 'doc-status';
+
+            try {
+                const resp = await fetch('/api/upload-document', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url, session_id: sessionId })
+                });
+                const result = await resp.json();
+                if (result.error) {
+                    status.textContent = result.error;
+                    status.className = 'doc-status error';
+                } else {
+                    status.textContent = `Fetched: ${result.word_count} words. Ask a question!`;
+                    status.className = 'doc-status success';
+                    addMessage('assistant', `Webpage loaded (${result.word_count} words). Ask me anything about it!`);
+                }
+            } catch (e) {
+                status.textContent = 'Fetch failed: ' + e.message;
+                status.className = 'doc-status error';
+            }
+        }
+
+        async function uploadDocText() {
+            const text = document.getElementById('docTextInput').value.trim();
+            if (!text) return;
+            const status = document.getElementById('docStatus');
+            status.textContent = 'Processing...';
+            status.className = 'doc-status';
+
+            try {
+                const resp = await fetch('/api/upload-document', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text, session_id: sessionId })
+                });
+                const result = await resp.json();
+                if (result.error) {
+                    status.textContent = result.error;
+                    status.className = 'doc-status error';
+                } else {
+                    status.textContent = `Loaded: ${result.word_count} words. Ask a question!`;
+                    status.className = 'doc-status success';
+                    document.getElementById('docTextInput').value = '';
+                    addMessage('assistant', `Text loaded (${result.word_count} words). Ask me to summarize or answer questions about it!`);
+                }
+            } catch (e) {
+                status.textContent = 'Failed: ' + e.message;
+                status.className = 'doc-status error';
+            }
+        }
+
+        // Drag and drop support for doc upload
+        document.addEventListener('DOMContentLoaded', () => {
+            const area = document.getElementById('docUploadArea');
+            area.addEventListener('dragover', (e) => { e.preventDefault(); area.classList.add('dragover'); });
+            area.addEventListener('dragleave', () => area.classList.remove('dragover'));
+            area.addEventListener('drop', (e) => {
+                e.preventDefault();
+                area.classList.remove('dragover');
+                if (e.dataTransfer.files.length > 0) {
+                    const input = document.getElementById('docFileInput');
+                    input.files = e.dataTransfer.files;
+                    uploadDocFile(input);
+                }
+            });
+        });
+
+        // --- Podcast Upload Functions ---
+        async function uploadPodcastFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+            document.getElementById('podcastFileName').textContent = file.name;
+            const status = document.getElementById('podcastUploadStatus');
+            status.textContent = 'Uploading...';
+            status.className = 'podcast-status';
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const resp = await fetch('/api/upload-document?session_id=' + encodeURIComponent(sessionId) + '&mode=podcast', {
+                    method: 'POST', body: formData
+                });
+                const result = await resp.json();
+                if (result.error) {
+                    status.textContent = result.error;
+                    status.className = 'podcast-status error';
+                } else {
+                    status.textContent = `Loaded ${result.word_count} words.`;
+                    status.className = 'podcast-status success';
+                    showPodcastDocButton();
+                    addMessage('assistant', `Document loaded (${result.word_count} words). Click "Generate Podcast" to create a podcast from it.`);
+                }
+            } catch (e) {
+                status.textContent = 'Upload failed: ' + e.message;
+                status.className = 'podcast-status error';
+            }
+        }
+
+        async function uploadPodcastUrl() {
+            const url = document.getElementById('podcastUrlInput').value.trim();
+            if (!url) return;
+            const status = document.getElementById('podcastUploadStatus');
+            status.textContent = 'Fetching URL...';
+            status.className = 'podcast-status';
+
+            try {
+                const resp = await fetch('/api/upload-document', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url, session_id: sessionId, mode: 'podcast' })
+                });
+                const result = await resp.json();
+                if (result.error) {
+                    status.textContent = result.error;
+                    status.className = 'podcast-status error';
+                } else {
+                    status.textContent = `Fetched ${result.word_count} words.`;
+                    status.className = 'podcast-status success';
+                    showPodcastDocButton();
+                    addMessage('assistant', `Webpage loaded (${result.word_count} words). Click "Generate Podcast" to create a podcast from it.`);
+                }
+            } catch (e) {
+                status.textContent = 'Fetch failed: ' + e.message;
+                status.className = 'podcast-status error';
+            }
+        }
+
+        async function uploadPodcastText() {
+            const text = document.getElementById('podcastTextInput').value.trim();
+            if (!text) return;
+            const status = document.getElementById('podcastUploadStatus');
+            status.textContent = 'Processing...';
+            status.className = 'podcast-status';
+
+            try {
+                const resp = await fetch('/api/upload-document', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text, session_id: sessionId, mode: 'podcast' })
+                });
+                const result = await resp.json();
+                if (result.error) {
+                    status.textContent = result.error;
+                    status.className = 'podcast-status error';
+                } else {
+                    status.textContent = `Loaded ${result.word_count} words.`;
+                    status.className = 'podcast-status success';
+                    document.getElementById('podcastTextInput').value = '';
+                    showPodcastDocButton();
+                    addMessage('assistant', `Text loaded (${result.word_count} words). Click "Generate Podcast" to create a podcast from it.`);
+                }
+            } catch (e) {
+                status.textContent = 'Failed: ' + e.message;
+                status.className = 'podcast-status error';
+            }
+        }
+
+        function showPodcastDocButton() {
+            document.getElementById('podcastDocGenerateBtn').style.display = 'block';
+        }
+
+        async function generatePodcastFromDoc() {
+            document.getElementById('podcastDocGenerateBtn').disabled = true;
+            addMessage('user', 'Generate podcast from the uploaded document');
+            await processChatMessage('Generate a detailed podcast discussion from the uploaded document.');
+            document.getElementById('podcastDocGenerateBtn').disabled = false;
+        }
+
+        // --- Podcast Topic Submission (text or voice) ---
+        async function submitPodcastTopic() {
+            const input = document.getElementById('podcastTopicInput');
+            const topic = input.value.trim();
+            if (!topic) return;
+
+            input.value = '';
+            document.getElementById('podcastGenerateBtn').disabled = true;
+            addMessage('user', topic);
+            await processChatMessage(topic);
+            document.getElementById('podcastGenerateBtn').disabled = false;
+        }
+
+        // Podcast mic: record -> transcribe -> fill input -> auto submit
+        let podcastRecorder = null;
+        let podcastChunks = [];
+
+        async function startPodcastMic() {
+            if (podcastRecorder) return;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 }
+                });
+                const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                    ? 'audio/webm;codecs=opus' : 'audio/webm';
+                podcastRecorder = new MediaRecorder(stream, { mimeType });
+                podcastChunks = [];
+                podcastRecorder.ondataavailable = (e) => { if (e.data.size > 0) podcastChunks.push(e.data); };
+                podcastRecorder.onstop = async () => {
+                    const blob = new Blob(podcastChunks, { type: mimeType });
+                    stream.getTracks().forEach(t => t.stop());
+                    podcastRecorder = null;
+                    document.getElementById('podcastMicBtn').classList.remove('recording');
+
+                    // Transcribe
+                    document.getElementById('podcastTopicStatus').textContent = 'Transcribing...';
+                    const formData = new FormData();
+                    formData.append('audio', blob, 'audio.wav');
+                    try {
+                        const resp = await fetch('/api/speech-to-text', { method: 'POST', body: formData });
+                        const result = await resp.json();
+                        const text = result.text || '';
+                        if (text.trim()) {
+                            document.getElementById('podcastTopicInput').value = text;
+                            document.getElementById('podcastTopicStatus').textContent = '';
+                            submitPodcastTopic();
+                        } else {
+                            document.getElementById('podcastTopicStatus').textContent = 'No speech detected. Try again.';
+                        }
+                    } catch (e) {
+                        document.getElementById('podcastTopicStatus').textContent = 'Transcription failed.';
+                    }
+                };
+                podcastRecorder.start(100);
+                document.getElementById('podcastMicBtn').classList.add('recording');
+            } catch (e) {
+                console.error('Podcast mic error:', e);
+            }
+        }
+
+        function stopPodcastMic() {
+            if (podcastRecorder && podcastRecorder.state === 'recording') {
+                podcastRecorder.stop();
+            }
+        }
+
+        // Enter key submits podcast topic
+        document.addEventListener('DOMContentLoaded', () => {
+            const topicInput = document.getElementById('podcastTopicInput');
+            if (topicInput) {
+                topicInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); submitPodcastTopic(); }
+                });
+            }
+        });
+
+        // Elements
+        const chatContainer = document.getElementById('chatContainer');
+        const recordBtn = document.getElementById('recordBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusLabel = document.getElementById('statusLabel');
+        const controlStatus = document.getElementById('controlStatus');
+        const thinkingIndicator = document.getElementById('thinkingIndicator');
+        const thinkingText = document.getElementById('thinkingText');
+        const welcomeBanner = document.getElementById('welcomeBanner');
+        const welcomeText = document.getElementById('welcomeText');
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            await checkHealth();
+            setupKeyboardShortcuts();
+            await initVAD();
+            controlStatus.textContent = getModeHint(currentMode);
+            
+            // Check if user came from face auth (has user param)
+            const urlParams = new URLSearchParams(window.location.search);
+            const userFromAuth = urlParams.get('user');
+            if (userFromAuth) {
+                userName = userFromAuth;
+                const userDisp = document.getElementById('userDisplay');
+                if (userDisp) userDisp.textContent = '👤 ' + userName;
+                welcomeText.textContent = 'Welcome, ' + userName + '! How can I help you today?';
+                welcomeBanner.classList.add('show');
+                // Auto-play greeting after short delay
+                setTimeout(() => {
+                    playGreeting();
+                }, 500);
+            }
+        });
+
+        async function checkHealth() {
+            try {
+                const response = await fetch('/health');
+                if (response.ok) {
+                    setStatus('idle', 'Ready');
+                }
+            } catch (e) {
+                setStatus('error', 'Connecting...');
+            }
+        }
+
+        function setStatus(state, label) {
+            statusDot.className = 'status-dot ' + state;
+            statusLabel.textContent = label;
+        }
+
+        function setupKeyboardShortcuts() {
+            document.addEventListener('keydown', (e) => {
+                const tag = document.activeElement?.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+                if (e.code === 'Space' && !e.repeat && !isProcessing) {
+                    e.preventDefault();
+                    if (vadReady && isRecording) {
+                        stopRecording();
+                    } else if (!isRecording) {
+                        startRecording();
+                    }
+                }
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                const tag = document.activeElement?.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+                if (e.code === 'Space' && isRecording && !vadReady) {
+                    e.preventDefault();
+                    stopRecording();
+                }
+            });
+
+            recordBtn.addEventListener('mousedown', () => {
+                if (vadReady) {
+                    if (isRecording) {
+                        stopRecording();
+                    } else if (!isProcessing) {
+                        startRecording();
+                    }
+                } else {
+                    if (!isProcessing) startRecording();
+                }
+            });
+            recordBtn.addEventListener('mouseup', () => {
+                if (isRecording && !vadReady) stopRecording();
+            });
+            recordBtn.addEventListener('mouseleave', () => {
+                if (isRecording && !vadReady) stopRecording();
+            });
+        }
+
+        function toggleRecording() {
+            // Handled by mousedown/mouseup
+        }
+
+        let recordingStartTime = 0;
+        
+        async function startRecording() {
+            if (isRecording || isProcessing) return;
+            unlockAudio();
+
+            if (vadReady) {
+                isRecording = true;
+                recordingStartTime = Date.now();
+                recordBtn.classList.add('recording');
+                recordBtn.textContent = '🔴';
+                setStatus('recording', 'Listening');
+                controlStatus.textContent = 'Speak — auto-sends when you pause';
+                myvad.start();
+                return;
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        sampleRate: 16000
+                    }
+                });
+                
+                const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
+                    ? 'audio/webm;codecs=opus' 
+                    : 'audio/webm';
+                    
+                mediaRecorder = new MediaRecorder(stream, { mimeType });
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) audioChunks.push(e.data);
+                };
+                
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: mimeType });
+                    stream.getTracks().forEach(t => t.stop());
+                    
+                    const duration = Date.now() - recordingStartTime;
+                    if (duration < 500) {
+                        controlStatus.textContent = 'Recording too short - hold longer';
+                        isProcessing = false;
+                        recordBtn.disabled = false;
+                        setStatus('idle', 'Ready');
+                        return;
+                    }
+                    
+                    processAudio(audioBlob);
+                };
+
+                mediaRecorder.start(100);
+                recordingStartTime = Date.now();
+                isRecording = true;
+
+                recordBtn.classList.add('recording');
+                recordBtn.textContent = '🔴';
+                setStatus('recording', 'Listening');
+                controlStatus.textContent = 'Release to send';
+
+            } catch (error) {
+                console.error('Mic error:', error);
+                controlStatus.textContent = 'Microphone access denied';
+            }
+        }
+
+        function stopRecording() {
+            if (!isRecording) return;
+
+            if (vadReady) {
+                myvad.pause();
+                isRecording = false;
+                recordBtn.classList.remove('recording');
+                recordBtn.textContent = '🎤';
+                return;
+            }
+
+            if (mediaRecorder) {
+                mediaRecorder.stop();
+                isRecording = false;
+                recordBtn.classList.remove('recording');
+                recordBtn.textContent = '🎤';
+            }
+        }
+
+        async function processChatMessageSSE(userText) {
+            isProcessing = true;
+            unlockAudio();
+            setStatus('thinking', 'Thinking');
+            thinkingIndicator.style.display = 'flex';
+
+            const thinkStart = Date.now();
+            thinkingText.textContent = 'Generating response...';
+            if (activeTimer) clearInterval(activeTimer);
+            activeTimer = setInterval(() => {
+                const elapsed = ((Date.now() - thinkStart) / 1000).toFixed(0);
+                thinkingText.textContent = `Generating response... ${elapsed}s`;
+            }, 1000);
+
+            let assistantText = '';
+            let msgDiv = null;
+            let fullResponse = '';
+            const audioQueue = [];
+            let isPlayingQueue = false;
+
+            async function playAudioQueue() {
+                if (isPlayingQueue) return;
+                isPlayingQueue = true;
+                while (audioQueue.length > 0) {
+                    const b64 = audioQueue.shift();
+                    if (!b64) continue;
+                    try {
+                        const binary = atob(b64);
+                        const bytes = new Uint8Array(binary.length);
+                        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                        await playAudioBuffer(bytes.buffer);
+                    } catch (e) {
+                        console.error('[SSE-Audio] playback error:', e);
+                    }
+                }
+                isPlayingQueue = false;
+            }
+
+            try {
+                const response = await fetch('/api/chat-stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: userText, session_id: sessionId, mode: currentMode }),
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        let event;
+                        try { event = JSON.parse(line.slice(6)); } catch { continue; }
+
+                        if (event.type === 'sentence') {
+                            assistantText += (assistantText ? ' ' : '') + event.text;
+                            if (!msgDiv) {
+                                clearInterval(activeTimer); activeTimer = null;
+                                const thinkDuration = ((Date.now() - thinkStart) / 1000).toFixed(1);
+                                setStatus('speaking', 'Speaking');
+                                thinkingIndicator.style.display = 'none';
+                                addMessage('assistant', assistantText, null, `Generated in ${thinkDuration}s`);
+                                const lastMsg = chatContainer.querySelector('.message.assistant:last-child');
+                                if (lastMsg) {
+                                    msgDiv = lastMsg.querySelector('.message-content');
+                                    const textSpan = document.createElement('span');
+                                    textSpan.className = 'streaming-text';
+                                    textSpan.textContent = assistantText;
+                                    const audioPlayer = msgDiv.querySelector('.audio-player');
+                                    msgDiv.innerHTML = '';
+                                    msgDiv.appendChild(textSpan);
+                                    if (audioPlayer) msgDiv.appendChild(audioPlayer);
+                                }
+                            } else {
+                                const textSpan = msgDiv.querySelector('.streaming-text');
+                                if (textSpan) textSpan.textContent = assistantText;
+                            }
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
+                        } else if (event.type === 'audio') {
+                            if (event.audio_b64) { audioQueue.push(event.audio_b64); playAudioQueue(); }
+                        } else if (event.type === 'done') {
+                            fullResponse = event.full_response || assistantText;
+                            if (msgDiv) { const s = msgDiv.querySelector('.streaming-text'); if (s) s.textContent = fullResponse; }
+                            if (event.mode && event.mode !== currentMode) setMode(event.mode);
+                        } else if (event.type === 'error') {
+                            console.error('Stream error:', event.message);
+                            if (!msgDiv) addMessage('assistant', 'Error: ' + event.message);
+                        }
+                    }
+                }
+                const drainStart = Date.now();
+                while ((audioQueue.length > 0 || isPlayingQueue) && (Date.now() - drainStart < 60000)) {
+                    await playAudioQueue(); await new Promise(r => setTimeout(r, 100));
+                }
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.error('SSE error:', error);
+                    if (!msgDiv) addMessage('assistant', 'Sorry, there was an error: ' + error.message);
+                }
+            } finally {
+                if (activeTimer) { clearInterval(activeTimer); activeTimer = null; }
+                isProcessing = false;
+                thinkingIndicator.style.display = 'none';
+                setStatus('idle', 'Ready');
+                controlStatus.textContent = getModeHint(currentMode);
+                if (wakeWordEnabled && wakeVad) wakeVad.start();
+            }
+        }
+
+        async function processChatMessageWS(userText) {
+            isProcessing = true;
+            unlockAudio();
+            setStatus('thinking', 'Thinking');
+            thinkingIndicator.style.display = 'flex';
+
+            const thinkStart = Date.now();
+            thinkingText.textContent = 'Generating response...';
+            if (activeTimer) clearInterval(activeTimer);
+            activeTimer = setInterval(() => {
+                const elapsed = ((Date.now() - thinkStart) / 1000).toFixed(0);
+                thinkingText.textContent = `Generating response... ${elapsed}s`;
+            }, 1000);
+
+            let assistantText = '';
+            let msgDiv = null;
+            let fullResponse = '';
+
+            const PCM_SAMPLE_RATE = 16000;
+            let nextPlayTime = 0;
+            let audioStarted = false;
+            const allPcmChunks = [];
+
+            function schedulePcmChunk(pcmInt16ArrayBuffer) {
+                const int16 = new Int16Array(pcmInt16ArrayBuffer);
+                if (int16.length === 0) return;
+
+                allPcmChunks.push(new Int16Array(int16));
+
+                if (!persistentAudioCtx || !autoPlayEnabled) return;
+                if (persistentAudioCtx.state === 'suspended') persistentAudioCtx.resume();
+
+                const buf = persistentAudioCtx.createBuffer(1, int16.length, PCM_SAMPLE_RATE);
+                const ch = buf.getChannelData(0);
+                for (let i = 0; i < int16.length; i++) ch[i] = int16[i] / 32768.0;
+
+                const source = persistentAudioCtx.createBufferSource();
+                source.buffer = buf;
+                source.connect(persistentAudioCtx.destination);
+
+                const now = persistentAudioCtx.currentTime;
+                if (!audioStarted || nextPlayTime < now) {
+                    nextPlayTime = now;
+                    audioStarted = true;
+                }
+                source.start(nextPlayTime);
+                nextPlayTime += buf.duration;
+                console.log(`[WS-PCM] Scheduled ${int16.length} samples, dur=${buf.duration.toFixed(2)}s`);
+            }
+
+            function buildWavBlobUrl() {
+                if (allPcmChunks.length === 0) return null;
+                let totalLen = 0;
+                for (const c of allPcmChunks) totalLen += c.length;
+                const merged = new Int16Array(totalLen);
+                let offset = 0;
+                for (const c of allPcmChunks) { merged.set(c, offset); offset += c.length; }
+                const dataBytes = totalLen * 2;
+                const buffer = new ArrayBuffer(44 + dataBytes);
+                const view = new DataView(buffer);
+                const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+                writeStr(0, 'RIFF');
+                view.setUint32(4, 36 + dataBytes, true);
+                writeStr(8, 'WAVE');
+                writeStr(12, 'fmt ');
+                view.setUint32(16, 16, true);
+                view.setUint16(20, 1, true);
+                view.setUint16(22, 1, true);
+                view.setUint32(24, PCM_SAMPLE_RATE, true);
+                view.setUint32(28, PCM_SAMPLE_RATE * 2, true);
+                view.setUint16(32, 2, true);
+                view.setUint16(34, 16, true);
+                writeStr(36, 'data');
+                view.setUint32(40, dataBytes, true);
+                for (let i = 0; i < totalLen; i++) view.setInt16(44 + i * 2, merged[i], true);
+                return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+            }
+
+            try {
+                const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const ws = new WebSocket(`${wsProto}//${location.host}/ws/audio-stream`);
+                ws.binaryType = 'arraybuffer';
+
+                await new Promise((resolve, reject) => {
+                    ws.onopen = resolve;
+                    ws.onerror = reject;
+                });
+
+                ws.send(JSON.stringify({
+                    message: userText,
+                    session_id: sessionId,
+                    mode: currentMode
+                }));
+
+                await new Promise((resolve) => {
+                    ws.onmessage = (event) => {
+                        if (typeof event.data === 'string') {
+                            const msg = JSON.parse(event.data);
+
+                            if (msg.type === 'text') {
+                                assistantText += (assistantText ? ' ' : '') + msg.content;
+
+                                if (!msgDiv) {
+                                    clearInterval(activeTimer);
+                                    activeTimer = null;
+                                    const thinkDuration = ((Date.now() - thinkStart) / 1000).toFixed(1);
+                                    setStatus('speaking', 'Speaking');
+                                    thinkingIndicator.style.display = 'none';
+                                    addMessage('assistant', assistantText, null, `Generated in ${thinkDuration}s`);
+                                    const lastMsg = chatContainer.querySelector('.message.assistant:last-child');
+                                    if (lastMsg) {
+                                        msgDiv = lastMsg.querySelector('.message-content');
+                                        const textSpan = document.createElement('span');
+                                        textSpan.className = 'streaming-text';
+                                        textSpan.textContent = assistantText;
+                                        const audioPlayer = msgDiv.querySelector('.audio-player');
+                                        msgDiv.innerHTML = '';
+                                        msgDiv.appendChild(textSpan);
+                                        if (audioPlayer) msgDiv.appendChild(audioPlayer);
+                                    }
+                                } else {
+                                    const textSpan = msgDiv.querySelector('.streaming-text');
+                                    if (textSpan) textSpan.textContent = assistantText;
+                                }
+                                chatContainer.scrollTop = chatContainer.scrollHeight;
+
+                            } else if (msg.type === 'done') {
+                                fullResponse = msg.full_response || assistantText;
+                                if (msgDiv) {
+                                    const textSpan = msgDiv.querySelector('.streaming-text');
+                                    if (textSpan) textSpan.textContent = fullResponse;
+                                    const replayUrl = buildWavBlobUrl();
+                                    if (replayUrl) {
+                                        const audioEl = msgDiv.querySelector('audio');
+                                        const playBtn = msgDiv.querySelector('.play-btn');
+                                        if (audioEl) audioEl.src = replayUrl;
+                                        if (playBtn) playBtn.disabled = false;
+                                    }
+                                }
+                                if (msg.mode && msg.mode !== currentMode) setMode(msg.mode);
+                                resolve();
+
+                            } else if (msg.type === 'error') {
+                                console.error('WS error:', msg.message);
+                                if (!msgDiv) addMessage('assistant', 'Error: ' + msg.message);
+                                resolve();
+                            }
+
+                        } else {
+                            const pcmData = event.data.slice(4);
+                            schedulePcmChunk(pcmData);
+                        }
+                    };
+
+                    ws.onclose = () => resolve();
+                    ws.onerror = (err) => { console.error('WS error:', err); resolve(); };
+                });
+
+            } catch (error) {
+                console.error('WS processing error:', error);
+                if (!msgDiv) addMessage('assistant', 'Sorry, there was an error: ' + error.message);
+            } finally {
+                if (activeTimer) { clearInterval(activeTimer); activeTimer = null; }
+                // Wait for scheduled audio to finish playing before resetting state
+                if (audioStarted && persistentAudioCtx && nextPlayTime > persistentAudioCtx.currentTime) {
+                    const remainMs = (nextPlayTime - persistentAudioCtx.currentTime) * 1000;
+                    if (remainMs > 0 && remainMs < 120000) {
+                        await new Promise(r => setTimeout(r, remainMs + 100));
+                    }
+                }
+                isProcessing = false;
+                thinkingIndicator.style.display = 'none';
+                setStatus('idle', 'Ready');
+                controlStatus.textContent = getModeHint(currentMode);
+                if (wakeWordEnabled && wakeVad) wakeVad.start();
+            }
+        }
+
+        async function processChatMessageOriginal(userText) {
+            isProcessing = true;
+            unlockAudio();
+            setStatus('thinking', 'Thinking');
+            thinkingIndicator.style.display = 'flex';
+
+            const thinkStart = Date.now();
+            thinkingText.textContent = 'Generating response...';
+            if (activeTimer) clearInterval(activeTimer);
+            activeTimer = setInterval(() => {
+                const elapsed = ((Date.now() - thinkStart) / 1000).toFixed(0);
+                thinkingText.textContent = `Generating response... ${elapsed}s`;
+            }, 1000);
+
+            try {
+                const chatResponse = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: userText, session_id: sessionId, mode: currentMode })
+                });
+                const chatResult = await chatResponse.json();
+                const assistantText = chatResult.response || 'I could not generate a response.';
+
+                clearInterval(activeTimer); activeTimer = null;
+                const thinkDuration = ((Date.now() - thinkStart) / 1000).toFixed(1);
+                setStatus('speaking', 'Speaking');
+                thinkingText.textContent = `Generated in ${thinkDuration}s · Speaking...`;
+
+                addMessage('assistant', assistantText, null, `Generated in ${thinkDuration}s`);
+                thinkingIndicator.style.display = 'none';
+                const replayUrl = await streamAndPlayTTS(assistantText, currentMode);
+                if (replayUrl) {
+                    const lastPlayer = chatContainer.querySelector('.message.assistant:last-child .audio-player');
+                    if (lastPlayer) {
+                        const aud = lastPlayer.querySelector('audio');
+                        const btn = lastPlayer.querySelector('.play-btn');
+                        if (aud) aud.src = replayUrl;
+                        if (btn) btn.disabled = false;
+                    }
+                }
+            } catch (error) {
+                console.error('Processing error:', error);
+                addMessage('assistant', 'Sorry, there was an error: ' + error.message);
+            } finally {
+                if (activeTimer) { clearInterval(activeTimer); activeTimer = null; }
+                isProcessing = false;
+                thinkingIndicator.style.display = 'none';
+                setStatus('idle', 'Ready');
+                controlStatus.textContent = getModeHint(currentMode);
+                if (wakeWordEnabled && wakeVad) wakeVad.start();
+            }
+        }
+
+        async function processChatMessage(userText) {
+            if (currentMode === 'podcast') {
+                return processChatMessageOriginal(userText);
+            }
+            return processChatMessageWS(userText);
+        }
+
+        async function processAudio(audioBlob) {
+            isProcessing = true;
+            unlockAudio();
+            recordBtn.disabled = true;
+            abortController = new AbortController();
+            setStatus('thinking', 'Processing');
+            controlStatus.textContent = 'Processing...';
+
+            try {
+                // 1. Speech to Text
+                setStatus('thinking', 'Transcribing');
+                thinkingText.textContent = 'Transcribing...';
+                thinkingIndicator.style.display = 'flex';
+
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'audio.wav');
+                
+                const sttResponse = await fetch('/api/speech-to-text', {
+                    method: 'POST',
+                    body: formData,
+                    signal: abortController.signal
+                });
+                const sttResult = await sttResponse.json();
+                const userText = sttResult.text || '';
+
+                if (!userText.trim()) {
+                    throw new Error('No speech detected');
+                }
+
+                // Add user message
+                addMessage('user', userText);
+
+                // 2. Stream LLM + TTS via SSE
+                setStatus('thinking', 'Generating');
+                const thinkStart = Date.now();
+                thinkingText.textContent = 'Generating response...';
+                if (activeTimer) clearInterval(activeTimer);
+                activeTimer = setInterval(() => {
+                    const elapsed = ((Date.now() - thinkStart) / 1000).toFixed(0);
+                    thinkingText.textContent = `Generating response... ${elapsed}s`;
+                }, 1000);
+
+                await processChatMessage(userText);
+
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    console.log('Request aborted by user');
+                } else {
+                    console.error('Processing error:', error);
+                    addMessage('assistant', 'Sorry, there was an error: ' + error.message);
+                }
+            } finally {
+                if (activeTimer) { clearInterval(activeTimer); activeTimer = null; }
+                isProcessing = false;
+                recordBtn.disabled = false;
+                abortController = null;
+                thinkingIndicator.style.display = 'none';
+                setStatus('idle', 'Ready');
+                controlStatus.textContent = getModeHint(currentMode);
+                if (wakeWordEnabled && wakeVad) wakeVad.start();
+            }
+        }
+
+        function addMessage(sender, text, audioUrl = null, timingInfo = null) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            
+            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            let audioPlayerHtml = '';
+            if (sender === 'assistant') {
+                const audioId = 'audio-' + Date.now();
+                const src = audioUrl || '';
+                audioPlayerHtml = `
+                    <div class="audio-player">
+                        <button class="play-btn" onclick="playMessageAudio('${audioId}', '')" ${src ? '' : 'disabled'}>▶</button>
+                        <div class="audio-progress">
+                            <div class="audio-progress-bar" id="${audioId}-progress"></div>
+                        </div>
+                        <audio id="${audioId}" src="${src}"></audio>
+                    </div>
+                `;
+            }
+
+            let timingHtml = '';
+            if (timingInfo) {
+                timingHtml = `<span class="timing-badge">${timingInfo}</span>`;
+            }
+
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="message-sender ${sender}">${sender === 'user' ? 'YOU' : 'ASSISTANT'}</span>
+                    <span class="message-time">${time}</span>
+                    ${timingHtml}
+                </div>
+                <div class="message-content">
+                    ${text}
+                    ${audioPlayerHtml}
+                </div>
+                <button class="copy-btn" onclick="copyText('${text.replace(/'/g, "\\'")}')">📋</button>
+            `;
+
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function playMessageAudio(audioId, audioUrl) {
+            const audio = document.getElementById(audioId);
+            const progressBar = document.getElementById(audioId + '-progress');
+            const playBtn = audio.parentElement.querySelector('.play-btn');
+
+            if (audio.paused) {
+                // Stop any currently playing audio
+                if (currentAudio && currentAudio !== audio) {
+                    currentAudio.pause();
+                    currentAudio.currentTime = 0;
+                }
+                
+                audio.play();
+                currentAudio = audio;
+                playBtn.textContent = '⏸';
+
+                audio.ontimeupdate = () => {
+                    const progress = (audio.currentTime / audio.duration) * 100;
+                    progressBar.style.width = progress + '%';
+                };
+
+                audio.onended = () => {
+                    playBtn.textContent = '▶';
+                    progressBar.style.width = '0%';
+                    currentAudio = null;
+                };
+            } else {
+                audio.pause();
+                playBtn.textContent = '▶';
+            }
+        }
+
+        async function playAudioBuffer(arrayBuf) {
+            if (persistentAudioCtx) {
+                if (persistentAudioCtx.state === 'suspended') await persistentAudioCtx.resume();
+                const audioBuf = await persistentAudioCtx.decodeAudioData(arrayBuf);
+                return new Promise((resolve) => {
+                    const source = persistentAudioCtx.createBufferSource();
+                    source.buffer = audioBuf;
+                    source.connect(persistentAudioCtx.destination);
+                    source.onended = () => { currentAudio = null; resolve(); };
+                    currentAudio = source;
+                    source.start(0);
+                    console.log('[Audio] Playing chunk via WebAudio API');
+                });
+            }
+            const blob = new Blob([arrayBuf], { type: 'audio/wav' });
+            const url = URL.createObjectURL(blob);
+            return new Promise((resolve) => {
+                const audio = new Audio(url);
+                currentAudio = audio;
+                audio.onended = () => { currentAudio = null; URL.revokeObjectURL(url); resolve(); };
+                audio.onerror = (e) => { console.error('Audio playback error:', e); currentAudio = null; URL.revokeObjectURL(url); resolve(); };
+                audio.play().then(() => {
+                    console.log('[Audio] Playing chunk via HTMLAudio');
+                }).catch((e) => {
+                    console.error('Audio play() error:', e);
+                    URL.revokeObjectURL(url);
+                    resolve();
+                });
+            });
+        }
+
+        async function playAudio(audioUrl) {
+            try {
+                const resp = await fetch(audioUrl);
+                const arrayBuf = await resp.arrayBuffer();
+                return await playAudioBuffer(arrayBuf);
+            } catch (e) {
+                console.error('playAudio error:', e);
+            }
+        }
+
+        let persistentAudioCtx = null;
+
+        function unlockAudio() {
+            if (!persistentAudioCtx) {
+                persistentAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (persistentAudioCtx.state === 'suspended') {
+                persistentAudioCtx.resume();
+            }
+            const buf = persistentAudioCtx.createBuffer(1, 1, 22050);
+            const src = persistentAudioCtx.createBufferSource();
+            src.buffer = buf;
+            src.connect(persistentAudioCtx.destination);
+            src.start(0);
+            console.log('[Audio] Context unlocked, state:', persistentAudioCtx.state);
+        }
+
+        async function streamAndPlayTTS(text, mode, signal) {
+            const response = await fetch('/api/text-to-speech-stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, mode }),
+                signal
+            });
+
+            if (!response.ok) throw new Error('TTS stream failed');
+
+            const reader = response.body.getReader();
+            const allChunks = [];
+            let buffer = new Uint8Array(0);
+            let playing = false;
+            let audioQueue = [];
+            let streamFinished = false;
+            let finishResolve = null;
+            const finishPromise = new Promise(r => { finishResolve = r; });
+
+            function appendBuffer(a, b) {
+                const c = new Uint8Array(a.length + b.length);
+                c.set(a); c.set(b, a.length);
+                return c;
+            }
+
+            async function playQueue() {
+                if (playing) return;
+                playing = true;
+                while (audioQueue.length > 0) {
+                    const wavData = audioQueue.shift();
+                    allChunks.push(wavData);
+                    if (autoPlayEnabled) {
+                        console.log(`[Stream] Playing chunk ${allChunks.length}, size=${wavData.length}`);
+                        await playAudioBuffer(wavData.buffer.slice(wavData.byteOffset, wavData.byteOffset + wavData.byteLength));
+                    } else {
+                        console.log(`[Stream] Buffered chunk ${allChunks.length}, size=${wavData.length} (auto-play off)`);
+                    }
+                }
+                playing = false;
+                if (streamFinished && audioQueue.length === 0) finishResolve();
+            }
+
+            while (true) {
+                const { value, done: streamDone } = await reader.read();
+                if (value) {
+                    buffer = appendBuffer(buffer, value);
+                    console.log(`[Stream] Received ${value.length} bytes, buffer=${buffer.length}`);
+                }
+
+                while (buffer.length >= 4) {
+                    const chunkLen = (buffer[0] << 24) | (buffer[1] << 16) | (buffer[2] << 8) | buffer[3];
+                    if (buffer.length < 4 + chunkLen) break;
+                    const wavChunk = buffer.slice(4, 4 + chunkLen);
+                    buffer = buffer.slice(4 + chunkLen);
+                    audioQueue.push(wavChunk);
+                    console.log(`[Stream] Queued chunk, len=${chunkLen}, queue=${audioQueue.length}`);
+                    playQueue();
+                }
+
+                if (streamDone) break;
+            }
+
+            streamFinished = true;
+            if (audioQueue.length > 0 || playing) {
+                playQueue();
+                await finishPromise;
+            } else {
+                finishResolve();
+            }
+
+            if (allChunks.length > 0) {
+                const fullBlob = new Blob(allChunks, { type: 'audio/wav' });
+                return URL.createObjectURL(fullBlob);
+            }
+            return null;
+        }
+
+        function copyText(text) {
+            navigator.clipboard.writeText(text);
+        }
+
+        // Face Auth Modal
+        function showFaceAuthModal() {
+            const modal = document.getElementById('faceAuthModal');
+            modal.classList.add('show');
+            document.getElementById('modalStatus').textContent = 'Starting camera...';
+            startCamera();
+        }
+
+        function closeFaceAuthModal() {
+            const modal = document.getElementById('faceAuthModal');
+            modal.classList.remove('show');
+            stopCamera();
+            document.getElementById('registerForm').classList.remove('show');
+            // Reset buttons
+            document.getElementById('registerBtn').textContent = 'Register';
+            document.getElementById('authBtn').textContent = 'Authenticate';
+            document.getElementById('authBtn').onclick = authenticateFace;
+        }
+
+        async function startCamera() {
+            try {
+                console.log('Starting camera...');
+                cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'user', width: 640, height: 480 } 
+                });
+                const video = document.getElementById('modalCamera');
+                video.srcObject = cameraStream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    document.getElementById('modalStatus').textContent = 'Position your face in the camera';
+                    console.log('Camera ready, video size:', video.videoWidth, 'x', video.videoHeight);
+                };
+            } catch (e) {
+                console.error('Camera error:', e);
+                document.getElementById('modalStatus').textContent = 'Camera not available: ' + e.message;
+            }
+        }
+
+        function stopCamera() {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(t => t.stop());
+                cameraStream = null;
+            }
+            const video = document.getElementById('modalCamera');
+            if (video) video.srcObject = null;
+        }
+
+        function toggleRegisterForm() {
+            const form = document.getElementById('registerForm');
+            const btn = document.getElementById('registerBtn');
+            const authBtn = document.getElementById('authBtn');
+            
+            if (form.classList.contains('show')) {
+                form.classList.remove('show');
+                btn.textContent = 'Register';
+                authBtn.textContent = 'Authenticate';
+                authBtn.onclick = authenticateFace;
+                document.getElementById('modalStatus').textContent = 'Position your face in the camera';
+            } else {
+                form.classList.add('show');
+                btn.textContent = 'Cancel';
+                authBtn.textContent = 'Capture & Save';
+                authBtn.onclick = registerFace;
+                document.getElementById('registerName').focus();
+                document.getElementById('modalStatus').textContent = 'Enter name, then click "Capture & Save"';
+            }
+        }
+
+        async function authenticateFace() {
+            const video = document.getElementById('modalCamera');
+            
+            // Check if camera is ready
+            if (!video.srcObject || video.videoWidth === 0) {
+                document.getElementById('modalStatus').textContent = 'Camera not ready. Please wait...';
+                await startCamera();
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            document.getElementById('modalStatus').textContent = 'Authenticating...';
+
+            try {
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+                const formData = new FormData();
+                formData.append('image', blob, 'face.jpg');
+
+                const response = await fetch('/api/face-auth', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (result.authenticated && result.user_id !== 'Guest') {
+                    userName = result.user_id;
+                    document.getElementById('modalStatus').textContent = '✅ Welcome, ' + userName + '!';
+                    welcomeText.textContent = 'Welcome, ' + userName + '! How can I help you today?';
+                    welcomeBanner.classList.add('show');
+                    
+                    setTimeout(() => {
+                        closeFaceAuthModal();
+                        playGreeting();
+                    }, 1500);
+                } else {
+                    document.getElementById('modalStatus').textContent = 'Face not recognized. Try Register.';
+                }
+            } catch (e) {
+                document.getElementById('modalStatus').textContent = 'Authentication failed';
+            }
+        }
+
+        async function registerFace() {
+            const name = document.getElementById('registerName').value.trim();
+            if (!name) {
+                document.getElementById('modalStatus').textContent = 'Please enter a name first!';
+                document.getElementById('registerName').focus();
+                return;
+            }
+
+            const video = document.getElementById('modalCamera');
+            
+            // Check if camera is ready
+            if (!video.srcObject || video.videoWidth === 0) {
+                document.getElementById('modalStatus').textContent = 'Camera not ready. Please wait...';
+                await startCamera();
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            
+            // Check again
+            if (video.videoWidth === 0) {
+                document.getElementById('modalStatus').textContent = 'No camera feed. Check camera permissions.';
+                return;
+            }
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            console.log('Capturing face for:', name, 'Size:', canvas.width, 'x', canvas.height);
+
+            document.getElementById('modalStatus').textContent = 'Capturing and registering...';
+
+            try {
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+                const formData = new FormData();
+                formData.append('image', blob, 'face.jpg');
+
+                const response = await fetch('/api/register-face?name=' + encodeURIComponent(name), {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('modalStatus').textContent = '✅ Registered: ' + name;
+                    userName = name;
+                    setTimeout(() => {
+                        closeFaceAuthModal();
+                        welcomeText.textContent = 'Welcome, ' + userName + '! How can I help you today?';
+                        welcomeBanner.classList.add('show');
+                    }, 1500);
+                } else {
+                    document.getElementById('modalStatus').textContent = '❌ ' + (result.detail || 'Registration failed');
+                }
+            } catch (e) {
+                document.getElementById('modalStatus').textContent = 'Registration failed';
+            }
+        }
+
+        async function playGreeting() {
+            try {
+                unlockAudio();
+                const greeting = `Welcome ${userName}. How can I help you today?`;
+                const replayUrl = await streamAndPlayTTS(greeting, 'talk');
+                if (replayUrl) URL.revokeObjectURL(replayUrl);
+            } catch (e) {
+                console.error('Greeting error:', e);
+            }
+        }
+    </script>
+</body>
+</html>
