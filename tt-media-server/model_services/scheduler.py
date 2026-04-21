@@ -15,6 +15,7 @@ from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
 from fastapi import HTTPException
+from telemetry.multiprocess_setup import mark_worker_dead
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 from utils.simple_queue_factory import get_queue, get_task_queue
@@ -203,15 +204,19 @@ class Scheduler:
         )
 
         # Clean up old process if it exists
+        old_pid = None
         if worker_id in self.worker_info:
             try:
                 old_process = self.worker_info[worker_id]["process"]
+                old_pid = old_process.pid
                 if old_process.is_alive():
                     old_process.terminate()
                     old_process.join(timeout=5.0)
             except Exception as e:
                 self.logger.error(f"Error cleaning up old worker {worker_id}: {e}")
                 self.logger.info(f"Old worker {worker_id} process does not exist")
+
+        mark_worker_dead(old_pid)
 
         # Use same queue index so worker reuses its result queue
         existing_queue_index = old_info.get("queue_index")
@@ -366,6 +371,7 @@ class Scheduler:
 
             for i, worker_element in self.worker_info.items():
                 worker = worker_element["process"]
+                worker_pid = worker.pid
                 if worker.is_alive():
                     worker.join(timeout=10.0)
                     if worker.is_alive():
@@ -374,6 +380,7 @@ class Scheduler:
                         worker.join(timeout=2.0)
                         if worker.is_alive():
                             worker.kill()
+                mark_worker_dead(worker_pid)
 
             self.worker_info = {}
 
