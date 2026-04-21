@@ -38,7 +38,7 @@ void SpPipelineModelRunner::readerLoop() {
   while (!stop.load(std::memory_order_relaxed)) {
     if (deviceOutput.tryRead(readBuf)) {
       uint64_t tokenId = readBuf.tokenIds.empty() ? 0 : readBuf.tokenIds[0];
-      tt::runners::llm_engine::TokenResult result(readBuf.taskId, tokenId);
+      tt::domain::TokenResult result(readBuf.taskId, tokenId);
       decodeCallback(result);
     } else {
       std::this_thread::yield();
