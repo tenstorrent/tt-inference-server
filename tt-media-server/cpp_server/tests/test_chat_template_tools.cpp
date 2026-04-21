@@ -321,30 +321,6 @@ ChatMessage createAssistantWithToolCall(const std::string& content,
   return msg;
 }
 
-// Create an assistant message with multiple tool calls
-ChatMessage createAssistantWithToolCalls(
-    const std::string& content,
-    const std::vector<std::tuple<std::string, std::string, std::string>>&
-        toolCalls) {
-  ChatMessage msg;
-  msg.role = "assistant";
-  msg.content = content;
-
-  std::vector<ToolCall> calls;
-  for (const auto& [id, name, args] : toolCalls) {
-    ToolCall toolCall;
-    toolCall.id = id;
-    toolCall.type = "function";
-    toolCall.functionCall.name = name;
-    toolCall.functionCall.arguments = args;
-    calls.push_back(toolCall);
-  }
-  msg.tool_calls = calls;
-
-  return msg;
-}
-
-// Create a tool output message
 ChatMessage createToolOutputMessage(const std::string& toolCallId,
                                     const std::string& content) {
   ChatMessage msg;
@@ -391,20 +367,16 @@ void testChatTemplateWithSingleTool(const Tokenizer& tokenizer,
   std::cout << "\n=== Testing Single Tool Template (" << config->name()
             << ") ===\n";
 
-  // Create message
   std::vector<ChatMessage> messages = {createUserMessage("Get weather for SF")};
 
-  // Create tool
   std::vector<Tool> tools = {createWeatherTool()};
 
-  // Get actual result
   std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
 
   if (std::string(config->name()) == "Llama") {
     std::cout << "\nGenerated template:\n" << actual << "\n";
   }
 
-  // Build expected output using config - EXACT MATCH FOR ALL TOKENIZERS
   std::ostringstream expected;
   expected << config->bos();
 
@@ -450,21 +422,17 @@ void testChatTemplateWithMultipleTools(const Tokenizer& tokenizer,
   std::cout << "\n=== Testing Multiple Tools Template (" << config->name()
             << ") ===\n";
 
-  // Create message
   std::vector<ChatMessage> messages = {
       createUserMessage("Check weather and time")};
 
-  // Create tools
   std::vector<Tool> tools = {createWeatherTool(), createTimeTool()};
 
-  // Get actual result
   std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
 
   if (std::string(config->name()) == "Llama") {
     std::cout << "\nGenerated template:\n" << actual << "\n";
   }
 
-  // Build expected output using config - EXACT MATCH FOR ALL TOKENIZERS
   std::ostringstream expected;
   expected << config->bos();
 
@@ -524,7 +492,6 @@ void testChatTemplateWithConversationHistory(
     std::cout << "\nGenerated template:\n" << actual << "\n";
   }
 
-  // Build expected output using config - EXACT MATCH FOR ALL TOKENIZERS
   std::ostringstream expected;
   expected << config->bos();
 
@@ -679,7 +646,6 @@ void testChatTemplateWithToolOutputs(const Tokenizer& tokenizer,
     expected << config->assistantTag();
   }
 
-  // Exact match
   if (actual != expected.str()) {
     std::cout << "❌ Mismatch detected!\n";
     std::cout << "\n=== EXPECTED ===\n" << expected.str() << "\n";
@@ -687,7 +653,6 @@ void testChatTemplateWithToolOutputs(const Tokenizer& tokenizer,
     std::cout << "\nExpected length: " << expected.str().length() << "\n";
     std::cout << "Actual length: " << actual.length() << "\n";
 
-    // Find first difference
     for (size_t i = 0; i < std::min(expected.str().length(), actual.length()); ++i) {
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
@@ -715,14 +680,15 @@ void testChatTemplateWithMultipleToolOutputs(
     return;
   }
 
-  ChatMessage assistantMsg = createAssistantWithToolCalls(
-      "", {{"call_1", "get_weather", "{\"location\":\"SF\"}"},
-           {"call_2", "get_weather", "{\"location\":\"LA\"}"}});
+  ChatMessage assistantMsg1 = createAssistantWithToolCall(
+      "", "call_1", "get_weather", "{\"location\":\"SF\"}");
+      ChatMessage assistantMsg2 = createAssistantWithToolCall(
+        "", "call_2", "get_weather", "{\"location\":\"LA\"}");
   ChatMessage toolMsg1 = createToolOutputMessage("call_1", "{\"temp\":72}");
   ChatMessage toolMsg2 = createToolOutputMessage("call_2", "{\"temp\":85}");
 
   std::vector<ChatMessage> messages = {
-      createUserMessage("Get weather for SF and LA"), assistantMsg, toolMsg1,
+      createUserMessage("Get weather for SF and LA"), assistantMsg1, toolMsg1, assistantMsg2,
       toolMsg2};
 
   std::vector<Tool> tools = {createWeatherTool()};
