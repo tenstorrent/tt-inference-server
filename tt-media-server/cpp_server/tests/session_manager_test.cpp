@@ -339,8 +339,8 @@ void runConcurrently(F&& f) {
 TEST(SessionManagerConcurrency, ConcurrentClose_OnlyOneSucceeds) {
   // Two threads race to close the same session. Exactly one must get SUCCESS;
   // the other must get NOT_FOUND. The session must be gone afterwards.
-  constexpr int ITERATIONS = 200;
-  for (int i = 0; i < ITERATIONS; ++i) {
+  constexpr int iterations = 200;
+  for (int i = 0; i < iterations; ++i) {
     tt::services::SessionManager manager;
     LoopFixture lf;
     auto sessionId = createSessionWithSlot(manager, lf.loop, 100u);
@@ -361,8 +361,8 @@ TEST(SessionManagerConcurrency, ConcurrentClose_OnlyOneSucceeds) {
 TEST(SessionManagerConcurrency, ConcurrentAcquire_OnlyOneSucceeds) {
   // Two threads race to acquireInFlight the same session. Exactly one must
   // succeed; the other must throw SessionInFlightException.
-  constexpr int ITERATIONS = 200;
-  for (int i = 0; i < ITERATIONS; ++i) {
+  constexpr int iterations = 200;
+  for (int i = 0; i < iterations; ++i) {
     tt::services::SessionManager manager;
     LoopFixture lf;
     auto sessionId = createSessionWithSlot(manager, lf.loop, 101u);
@@ -386,8 +386,8 @@ TEST(SessionManagerConcurrency,
   // One thread acquires in-flight while another closes. The cancel function
   // must fire at most once regardless of which wins the race. The session
   // must be absent and the count zero after both threads finish.
-  constexpr int ITERATIONS = 200;
-  for (int i = 0; i < ITERATIONS; ++i) {
+  constexpr int iterations = 200;
+  for (int i = 0; i < iterations; ++i) {
     tt::services::SessionManager manager;
     LoopFixture lf;
     auto sessionId = createSessionWithSlot(manager, lf.loop, 102u);
