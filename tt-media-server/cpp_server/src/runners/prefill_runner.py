@@ -191,13 +191,11 @@ def main() -> None:
     mesh_device = ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(*GLOBAL_MESH_SHAPE))
 
     # -- Build the pipeline (all ranks) --
-    # TODO: load real HF config, state_dict, migration_layer
+    # TODO: load real HF config, state_dict
     # hf_config = load_hf_config(...)
     # state_dict = load_state_dict(...)
-    # migration_layer = setup_migration_layer(...)
     hf_config = None
     state_dict = {}
-    migration_layer = None
 
     pipeline_config = TtPrefillPipelineConfig(
         num_layers=NUM_LAYERS,
@@ -211,9 +209,27 @@ def main() -> None:
         hf_config=hf_config,
         state_dict=state_dict,
         config=pipeline_config,
-        migration_layer=migration_layer,
     )
     pipeline.compile()
+
+    # -- Wire migration (rank 0 only) --
+    # Rank 0 is the migration master; worker ranks participate in collective
+    # prefill but leave migration_layer=None (callback skipped automatically).
+    #
+    # TODO: implement once decode runner exists and _migration bindings available:
+    #
+    #   from _migration import make_mpi_endpoint_device, EndpointGrouping, SubordinateInfo
+    #   from models.demos.deepseek_v3_d_p.utils.kv_cache_utils import create_kv_chunk_address_table
+    #
+    #   DECODE_ENDPOINT_ID = int(os.environ.get("TT_MIGRATION_DECODE_ENDPOINT_ID", "2"))
+    #   PREFILL_ENDPOINT_ID = int(os.environ.get("TT_MIGRATION_PREFILL_ENDPOINT_ID", "1"))
+    #
+    #   if rank == 0:
+    #       endpoint = make_mpi_endpoint_device(rank=rank, endpoint_id=PREFILL_ENDPOINT_ID, ...)
+    #       table = create_kv_chunk_address_table(cfg, mesh_device, ..., pipeline.kvpe_cache, ...)
+    #       endpoint.initialize_my_kv_chunk_mapping_table(table)
+    #       # TODO: connect_to_remote_endpoint(decode_grouping) once decode runner is up
+    #       pipeline.setup_migration(endpoint, remote_endpoint_id=DECODE_ENDPOINT_ID)
 
     comm.Barrier()  # all ranks ready
     print(f"Rank {rank}: Setup complete, entering request loop", file=sys.stderr)
