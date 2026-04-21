@@ -61,8 +61,18 @@ class SPRunner(BaseDeviceRunner):
         self._output_shm = VideoShm(
             output_name, mode="output", is_shutdown=self._is_shutdown
         )
-        self._input_shm.open(create=False)
-        self._output_shm.open(create=False)
+        self._input_shm.open()
+        self._output_shm.open()
+        # Self-heal any gap left by a previous server instance that crashed
+        # mid-write (on input) or mid-read (on output). Scoped to this
+        # process's own role, so safe to run with a live runner peer.
+        in_repair = self._input_shm.recover(side="writer")
+        out_repair = self._output_shm.recover(side="reader")
+        if any(in_repair.values()) or any(out_repair.values()):
+            self.logger.warning(
+                f"SPRunner {self.device_id}: crash-recovery repaired prior "
+                f"inconsistency: input={in_repair} output={out_repair}"
+            )
         self.logger.info(
             f"SPRunner {self.device_id}: SHM opened (in={input_name}, out={output_name})"
         )

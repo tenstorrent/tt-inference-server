@@ -116,6 +116,7 @@ RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
 USER ${CONTAINER_APP_USERNAME}
 ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal"
+ENV PYTHON_ENV_DIR="${APP_DIR}/server/venv-worker"
 
 # spinup inference server
 WORKDIR "${APP_DIR}"
