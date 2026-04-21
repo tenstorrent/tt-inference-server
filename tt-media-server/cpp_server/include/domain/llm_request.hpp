@@ -115,6 +115,8 @@ struct LLMRequest : BaseRequest {
   bool fast_mode = false;
   bool disaggregated = false;  // True if this is a disaggregated request
 
+  bool parallel_tool_calls = true;
+
   // Structured output constraint
   std::optional<ResponseFormat> response_format;
 
