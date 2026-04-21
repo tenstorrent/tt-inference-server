@@ -1255,12 +1255,32 @@ jobs:
             | tar xz
           sudo mv kubeconform /usr/local/bin/
 
+      - name: Generate model-device matrix
+        run: |
+          python3 - <<'EOF' > /tmp/helm-matrix.txt
+          import yaml
+          with open('charts/tt-inference-server/values.yaml') as f:
+              v = yaml.safe_load(f)
+          for model, cfg in v['models'].items():
+              for key in cfg:
+                  if key != 'serverType':
+                      print(f"{model},{key}")
+          EOF
+
       - name: Helm template validation
         run: |
-          helm template ci-test charts/tt-inference-server \
-            --set model=Llama-3.1-8B-Instruct \
-            --set device=galaxy \
-            | kubeconform -strict -summary
+          FAILED=0
+          while IFS=',' read -r model device; do
+            echo "--- Validating: $model / $device"
+            if ! helm template ci-test charts/tt-inference-server \
+                --set "model=$model" \
+                --set "device=$device" \
+                | kubeconform -strict -summary; then
+              echo "FAILED: $model / $device"
+              FAILED=1
+            fi
+          done < /tmp/helm-matrix.txt
+          exit $FAILED
 
   ci-gate:
     name: CI Gate
