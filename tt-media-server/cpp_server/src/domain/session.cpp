@@ -5,12 +5,36 @@
 
 #include <iomanip>
 #include <mutex>
+#include <random>
+#include <sstream>
 
 namespace tt::domain {
 
 Session::Session(uint32_t slotId)
     : slot_id_(slotId), last_activity_time_(std::chrono::system_clock::now()) {
   session_id_ = generateUuid();
+}
+
+bool Session::markInFlight() {
+  if (state_ != SessionState::IDLE) return false;
+  state_ = SessionState::IN_FLIGHT;
+  return true;
+}
+
+bool Session::clearInFlight() {
+  if (state_ != SessionState::IN_FLIGHT &&
+      state_ != SessionState::CLOSE_REQUESTED) {
+    return false;
+  }
+  state_ = (state_ == SessionState::IN_FLIGHT) ? SessionState::IDLE
+                                               : SessionState::CLOSING;
+  return true;
+}
+
+bool Session::markCloseRequested() {
+  if (state_ != SessionState::IN_FLIGHT) return false;
+  state_ = SessionState::CLOSE_REQUESTED;
+  return true;
 }
 
 std::string Session::generateUuid() {

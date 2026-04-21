@@ -27,7 +27,9 @@ from ipc.video_shm import (
     VideoStatus,
     cleanup_orphaned_video_files,
 )
+from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
+from utils.decorators import log_execution_time
 
 DEFAULT_VIDEO_HEIGHT = 480
 DEFAULT_VIDEO_WIDTH = 832
@@ -89,6 +91,11 @@ class SPRunner(BaseDeviceRunner):
         self.logger.info(f"SPRunner {self.device_id}: no warmup needed (SHM bridge)")
         return True
 
+    @log_execution_time(
+        "SP-Runner inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
     def run(self, requests):
         request = requests[0]
         task_id = request._task_id
