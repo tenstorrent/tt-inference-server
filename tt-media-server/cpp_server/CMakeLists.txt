@@ -274,7 +274,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/blaze_prefill_runner/blaze_prefill_runner.cpp
     src/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.cpp
     src/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
-    src/services/guided_decoder_manager.cpp
+    src/runners/llm_runner/guided_decoder_manager.cpp
 )
 
 # Add pipeline_manager-dependent sources only when ENABLE_BLAZE is ON

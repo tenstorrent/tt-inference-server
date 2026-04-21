@@ -8,7 +8,7 @@
 #include "config/settings.hpp"
 #include "ipc/token_push.hpp"
 #include "profiling/tracy.hpp"
-#include "services/guided_decoder_manager.hpp"
+#include "runners/llm_runner/guided_decoder_manager.hpp"
 #include "services/memory_services/paged_memory_manager.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
@@ -33,8 +33,8 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
     const auto& tok = tt::utils::tokenizers::activeTokenizer();
     auto encodedVocab = tok.getEncodedVocab();
     int vocabSize = static_cast<int>(encodedVocab.size());
-    guidedDecoder = std::make_unique<services::GuidedDecoderManager>(
-        encodedVocab, vocabSize);
+    guidedDecoder =
+        std::make_unique<GuidedDecoderManager>(encodedVocab, vocabSize);
     TT_LOG_INFO("[LLMRunner] Guided decoder initialized (vocab_size={})",
                 vocabSize);
   } catch (const std::exception& e) {

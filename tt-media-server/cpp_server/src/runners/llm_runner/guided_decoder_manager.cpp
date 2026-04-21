@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "services/guided_decoder_manager.hpp"
+#include "runners/llm_runner/guided_decoder_manager.hpp"
 
 #include <xgrammar/xgrammar.h>
 
 #include <stdexcept>
 #include <unordered_map>
 
-namespace tt::services {
+namespace tt::runners::llm_engine {
 
 struct GuidedDecoderManager::Impl {
   xgrammar::TokenizerInfo tokenizerInfo;
@@ -35,8 +35,8 @@ GuidedDecoderManager::GuidedDecoderManager(
 
 GuidedDecoderManager::~GuidedDecoderManager() = default;
 
-void GuidedDecoderManager::initRequest(
-    uint32_t taskId, const tt::runners::llm_engine::SamplingParams& params) {
+void GuidedDecoderManager::initRequest(uint32_t taskId,
+                                       const SamplingParams& params) {
   if (!params.hasGuidedDecoding()) return;
 
   using tt::config::ResponseFormatType;
@@ -102,4 +102,4 @@ void GuidedDecoderManager::removeRequest(uint32_t taskId) {
   impl->requests.erase(taskId);
 }
 
-}  // namespace tt::services
+}  // namespace tt::runners::llm_engine

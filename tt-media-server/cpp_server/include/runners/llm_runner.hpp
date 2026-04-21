@@ -15,8 +15,11 @@
 
 namespace tt::services {
 class MemoryManager;
-class GuidedDecoderManager;
 }  // namespace tt::services
+
+namespace tt::runners::llm_engine {
+class GuidedDecoderManager;
+}  // namespace tt::runners::llm_engine
 
 namespace tt::runners {
 using namespace tt::runners::llm_engine;
@@ -50,7 +53,7 @@ class LLMRunner : public IRunner {
   std::unique_ptr<tt::services::MemoryManager> memoryManager;
   std::thread memoryThread;
 
-  std::unique_ptr<tt::services::GuidedDecoderManager> guidedDecoder;
+  std::unique_ptr<GuidedDecoderManager> guidedDecoder;
 };
 
 }  // namespace tt::runners
