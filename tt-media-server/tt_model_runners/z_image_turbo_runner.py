@@ -20,8 +20,9 @@ from utils.decorators import log_execution_time
 # Fetched via: bash scripts/fetch_z_image_turbo.sh
 _ZIT_DEMO_DIR = os.environ.get(
     "Z_IMAGE_TURBO_MODEL_DIR",
-    os.path.join(os.path.dirname(__file__), "..", "models", "z_image_turbo_repo",
-                 "z_image_turbo"),
+    os.path.join(
+        os.path.dirname(__file__), "..", "models", "z_image_turbo_repo", "z_image_turbo"
+    ),
 )
 
 MODEL_ID = "Tongyi-MAI/Z-Image-Turbo"
@@ -84,8 +85,12 @@ def _copy_to_persistent(host_pt, persistent_tt, dtype=ttnn.DataType.BFLOAT16):
 
 
 def _compute_mu(
-    h=IMG_LATENT_H, w=IMG_LATENT_W,
-    base_seq=256, max_seq=4096, base_shift=0.5, max_shift=1.15,
+    h=IMG_LATENT_H,
+    w=IMG_LATENT_W,
+    base_seq=256,
+    max_seq=4096,
+    base_shift=0.5,
+    max_shift=1.15,
 ):
     seq = (h // 2) * (w // 2)
     m = (max_shift - base_shift) / (max_seq - base_seq)
@@ -158,15 +163,23 @@ class ZImageTurboRunner(BaseMetalDeviceRunner):
         messages = [{"role": "user", "content": prompt}]
         try:
             formatted = self.tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True, enable_thinking=True,
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=True,
             )
         except TypeError:
             formatted = self.tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True,
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
             )
         input_ids = self.tokenizer(
-            formatted, padding="max_length", truncation=True,
-            max_length=CAP_TOKENS, return_tensors="pt",
+            formatted,
+            padding="max_length",
+            truncation=True,
+            max_length=CAP_TOKENS,
+            return_tensors="pt",
         )["input_ids"]
 
         tt_ids = _to_device_int32(input_ids, mesh)
@@ -241,11 +254,15 @@ class ZImageTurboRunner(BaseMetalDeviceRunner):
         )
 
         self.logger.info(f"Device {self.device_id}: Running warmup generation ...")
-        self.run([ImageGenerateRequest.model_construct(
-            prompt="a cat sitting on a mat",
-            num_inference_steps=DEFAULT_STEPS,
-            seed=42,
-        )])
+        self.run(
+            [
+                ImageGenerateRequest.model_construct(
+                    prompt="a cat sitting on a mat",
+                    num_inference_steps=DEFAULT_STEPS,
+                    seed=42,
+                )
+            ]
+        )
 
         self.logger.info(f"Device {self.device_id}: Z-Image-Turbo warmup complete")
         return True

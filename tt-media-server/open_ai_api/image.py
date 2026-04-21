@@ -33,6 +33,7 @@ async def generate_image(
     """
     try:
         import time as _time
+
         _t0 = _time.time()
         result = await service.process_request(image_generate_request)
         _elapsed = round(_time.time() - _t0, 2)
