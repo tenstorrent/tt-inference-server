@@ -89,6 +89,9 @@ class Sequence {
 
   bool isContinuation() const { return continuation; }
   void setContinuation(bool c) { continuation = c; }
+  
+  bool isDisaggregated() const { return disaggregated; }
+  void setDisaggregated(bool d) { disaggregated = d; }
 
  private:
   SequenceStatus status = SequenceStatus::WAITING;
@@ -101,6 +104,7 @@ class Sequence {
   int blockSize;
   uint32_t kvCacheSlot = tt::domain::INVALID_SLOT_ID;
   bool continuation = false;  // True if this continues an existing session
+  bool disaggregated = false; // True if this is a disaggregated request
 };
 
 }  // namespace tt::runners::llm_engine

@@ -67,6 +67,7 @@ void Sequence::serialize(std::ostream& os) const {
   os.write(reinterpret_cast<const char*>(&blockSize), sizeof(blockSize));
   os.write(reinterpret_cast<const char*>(&kvCacheSlot), sizeof(kvCacheSlot));
   os.write(reinterpret_cast<const char*>(&continuation), sizeof(continuation));
+  os.write(reinterpret_cast<const char*>(&disaggregated), sizeof(disaggregated));
   samplingParams->serialize(os);
 }
 
@@ -100,6 +101,7 @@ Sequence Sequence::deserialize(std::istream& is) {
   is.read(reinterpret_cast<char*>(&seq.blockSize), sizeof(seq.blockSize));
   is.read(reinterpret_cast<char*>(&seq.kvCacheSlot), sizeof(seq.kvCacheSlot));
   is.read(reinterpret_cast<char*>(&seq.continuation), sizeof(seq.continuation));
+  is.read(reinterpret_cast<char*>(&seq.disaggregated), sizeof(seq.disaggregated));
   seq.samplingParams = SamplingParams::deserialize(is);
   return seq;
 }
