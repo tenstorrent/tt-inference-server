@@ -17,16 +17,17 @@ namespace tt::domain {
  * Lifecycle state of a Session.
  *
  * Transitions:
- *   IDLE          --(markInFlight)-----> IN_FLIGHT
- *   IN_FLIGHT     --(clearInFlight)----> IDLE
- *   IN_FLIGHT     --(markPendingClose)-> PENDING_CLOSE
- *   PENDING_CLOSE --(clearInFlight)----> CLOSING
+ *   IDLE            --(markInFlight)-------> IN_FLIGHT
+ *   IN_FLIGHT       --(clearInFlight)------> IDLE
+ *   IN_FLIGHT       --(markCloseRequested)-> CLOSE_REQUESTED
+ *   CLOSE_REQUESTED --(clearInFlight)------> CLOSING
  */
 enum class SessionState {
-  IDLE,           // no active request
-  IN_FLIGHT,      // request actively being processed
-  PENDING_CLOSE,  // close requested; slot freed once in-flight request finishes
-  CLOSING,        // in-flight request finished; slot deallocation pending
+  IDLE,             // no active request
+  IN_FLIGHT,        // request actively being processed
+  CLOSE_REQUESTED,  // close requested while in-flight; waiting for request to
+                    // finish
+  CLOSING,          // request finished; slot deallocation pending
 };
 
 class Session {
@@ -40,16 +41,19 @@ class Session {
 
   bool isIdle() const { return state_ == SessionState::IDLE; }
   bool isInFlight() const { return state_ == SessionState::IN_FLIGHT; }
-  bool isPendingClose() const { return state_ == SessionState::PENDING_CLOSE; }
+  bool isCloseRequested() const {
+    return state_ == SessionState::CLOSE_REQUESTED;
+  }
   bool isClosing() const { return state_ == SessionState::CLOSING; }
 
   SessionState getState() const { return state_; }
 
   // Transition methods return false (without changing state) if the
   // precondition is not met.
-  bool markInFlight();      // IDLE      -> IN_FLIGHT
-  bool clearInFlight();     // IN_FLIGHT -> IDLE  |  PENDING_CLOSE -> CLOSING
-  bool markPendingClose();  // IN_FLIGHT -> PENDING_CLOSE
+  bool markInFlight();  // IDLE            -> IN_FLIGHT
+  bool
+  clearInFlight();  // IN_FLIGHT        -> IDLE  |  CLOSE_REQUESTED -> CLOSING
+  bool markCloseRequested();  // IN_FLIGHT        -> CLOSE_REQUESTED
 
   std::chrono::system_clock::time_point getLastActivityTime() const {
     return last_activity_time_;

@@ -82,29 +82,30 @@ void SessionManager::readerLoop() {
   }
 }
 
+void SessionManager::finalizeSessionClose(const std::string& sessionId,
+                                          const domain::Session& session) {
+  abortCallbacks_.take(sessionId);
+  if (session.getSlotId() != domain::INVALID_SLOT_ID) {
+    sendDeallocRequest(sessionId, session.getSlotId());
+  }
+  TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
+  updateSessionCountMetric();
+}
+
 CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
   TT_LOG_DEBUG("[SessionManager] closeSession called for sessionId={}",
                sessionId);
 
-  auto executeClose = [&](const domain::Session& s) {
-    abortCallbacks_.take(sessionId);  // clean up any stale abort callback
-    if (s.getSlotId() != domain::INVALID_SLOT_ID) {
-      sendDeallocRequest(sessionId, s.getSlotId());
-    }
-    TT_LOG_INFO("[SessionManager] Closed session: {}", sessionId);
-    updateSessionCountMetric();
-  };
-
   auto session = sessions.takeIf(
       sessionId, [](const domain::Session& s) { return s.isIdle(); });
   if (session.has_value()) {
-    executeClose(*session);
+    finalizeSessionClose(sessionId, *session);
     return CloseSessionResult::SUCCESS;
   }
 
   bool found = sessions.modify(sessionId, [](domain::Session& s) {
-    if (!s.markPendingClose()) {
-      TT_LOG_WARN("[Session] markPendingClose: unexpected state {}",
+    if (!s.markCloseRequested()) {
+      TT_LOG_WARN("[Session] markCloseRequested: unexpected state {}",
                   static_cast<int>(s.getState()));
     }
   });
@@ -132,7 +133,7 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
   auto deferred = sessions.takeIf(
       sessionId, [](const domain::Session& s) { return s.isClosing(); });
   if (deferred.has_value()) {
-    executeClose(*deferred);
+    finalizeSessionClose(sessionId, *deferred);
   }
 
   return CloseSessionResult::SUCCESS;
@@ -219,18 +220,13 @@ void SessionManager::releaseInFlight(const std::string& sessionId) {
   }
   TT_LOG_DEBUG("[SessionManager] Released in-flight for session {}", sessionId);
 
-  abortCallbacks_.take(sessionId);  // clear abort callback once request is done
-
   auto session = sessions.takeIf(
       sessionId, [](const domain::Session& s) { return s.isClosing(); });
   if (session.has_value()) {
-    uint32_t slotId = session->getSlotId();
-    if (slotId != domain::INVALID_SLOT_ID) {
-      sendDeallocRequest(sessionId, slotId);
-    }
-    TT_LOG_INFO("[SessionManager] Deferred close executed for session: {}",
-                sessionId);
-    updateSessionCountMetric();
+    finalizeSessionClose(sessionId, *session);
+  } else {
+    abortCallbacks_.take(
+        sessionId);  // clear callback on normal (IDLE) completion
   }
 }
 

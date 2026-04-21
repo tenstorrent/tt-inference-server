@@ -23,7 +23,7 @@ bool Session::markInFlight() {
 
 bool Session::clearInFlight() {
   if (state_ != SessionState::IN_FLIGHT &&
-      state_ != SessionState::PENDING_CLOSE) {
+      state_ != SessionState::CLOSE_REQUESTED) {
     return false;
   }
   state_ = (state_ == SessionState::IN_FLIGHT) ? SessionState::IDLE
@@ -31,9 +31,9 @@ bool Session::clearInFlight() {
   return true;
 }
 
-bool Session::markPendingClose() {
+bool Session::markCloseRequested() {
   if (state_ != SessionState::IN_FLIGHT) return false;
-  state_ = SessionState::PENDING_CLOSE;
+  state_ = SessionState::CLOSE_REQUESTED;
   return true;
 }
 

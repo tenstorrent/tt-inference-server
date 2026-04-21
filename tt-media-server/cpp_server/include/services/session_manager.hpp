@@ -101,6 +101,8 @@ class SessionManager {
   void sendAsyncAllocationRequest(PendingAllocation& pendingAllocation);
   void evictOldSessions();
   void sendDeallocRequest(const std::string& sessionId, uint32_t slotId);
+  void finalizeSessionClose(const std::string& sessionId,
+                            const domain::Session& session);
   void readerLoop();
   void retryFailedAllocations();
   void retryFailedDeallocs();
