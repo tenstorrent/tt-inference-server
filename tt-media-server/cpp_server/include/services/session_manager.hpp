@@ -39,7 +39,6 @@ class SessionInFlightException : public SessionRateLimitException {
 enum class CloseSessionResult {
   SUCCESS,
   NOT_FOUND,
-  IN_FLIGHT,  // session exists but has an active request; dealloc deferred
 };
 
 class SessionManager {
@@ -63,7 +62,13 @@ class SessionManager {
   std::optional<domain::Session> getSession(const std::string& sessionId) const;
   size_t getActiveSessionCount() const;
 
-  void setSessionInFlight(const std::string& sessionId, bool inFlight);
+  void releaseInFlight(const std::string& sessionId);
+
+  // Register a callback to be invoked immediately if closeSession is called
+  // while the session has an in-flight request. The callback should abort the
+  // active request. It is cleared automatically once the session is released.
+  void setSessionAbortCallback(const std::string& sessionId,
+                               std::function<void()> onAbort);
 
  private:
   struct PendingAllocation {
@@ -96,6 +101,8 @@ class SessionManager {
   void sendAsyncAllocationRequest(PendingAllocation& pendingAllocation);
   void evictOldSessions();
   void sendDeallocRequest(const std::string& sessionId, uint32_t slotId);
+  void finalizeSessionClose(const std::string& sessionId,
+                            const domain::Session& session);
   void readerLoop();
   void retryFailedAllocations();
   void retryFailedDeallocs();
@@ -103,6 +110,7 @@ class SessionManager {
   void updateSessionCountMetric();
 
   mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
+  utils::ConcurrentMap<std::string, std::function<void()>> abortCallbacks_;
 
   std::unique_ptr<ipc::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::MemoryResultQueue> memoryResultQueue;

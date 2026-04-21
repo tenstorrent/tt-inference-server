@@ -168,8 +168,8 @@ void SseStreamWriter::finalizeStream() {
       (*self->stream_ptr_)->close();
 
       if (self->params_.sessionId.has_value() && self->params_.sessionManager) {
-        self->params_.sessionManager->setSessionInFlight(
-            self->params_.sessionId.value(), false);
+        self->params_.sessionManager->releaseInFlight(
+            self->params_.sessionId.value());
       }
     }
   });
@@ -181,8 +181,7 @@ void SseStreamWriter::abort() {
                 params_.taskId);
     params_.service->abortRequest(params_.taskId);
     if (params_.sessionId.has_value() && params_.sessionManager) {
-      params_.sessionManager->setSessionInFlight(params_.sessionId.value(),
-                                                 false);
+      params_.sessionManager->releaseInFlight(params_.sessionId.value());
     }
   }
 }
