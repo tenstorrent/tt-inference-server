@@ -20,7 +20,8 @@ static const char* llamaSystemPreamble =
 std::string LlamaTokenizer::applyChatTemplate(
     const std::vector<tt::domain::ChatMessage>& messages,
     bool addGenerationPrompt,
-    const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools) const {
+    const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools)
+    const {
   std::ostringstream out;
 
   // Helper to serialize tool to JSON string
@@ -39,11 +40,12 @@ std::string LlamaTokenizer::applyChatTemplate(
         messages.begin() + 1, messages.end());
   } else if (tools.has_value() && !tools->empty()) {
     // Default system message when tools are provided
-    systemContent = "You are a helpful assistant with tool calling capabilities. "
-                    "Only reply with a tool call if the function exists in the library "
-                    "provided by the user. If it doesn't exist, just reply directly in "
-                    "natural language. When you receive a tool call response, use the "
-                    "output to format an answer to the original user question.";
+    systemContent =
+        "You are a helpful assistant with tool calling capabilities. "
+        "Only reply with a tool call if the function exists in the library "
+        "provided by the user. If it doesn't exist, just reply directly in "
+        "natural language. When you receive a tool call response, use the "
+        "output to format an answer to the original user question.";
   }
 
   // BOS token
@@ -81,7 +83,8 @@ std::string LlamaTokenizer::applyChatTemplate(
   if (tools.has_value() && !tools->empty() && toolsInUserMessage) {
     if (filteredMessages.empty()) {
       throw std::runtime_error(
-          "Cannot put tools in the first user message when there's no first user message!");
+          "Cannot put tools in the first user message when there's no first "
+          "user message!");
     }
 
     // Extract first user message
@@ -90,7 +93,8 @@ std::string LlamaTokenizer::applyChatTemplate(
         filteredMessages.begin() + 1, filteredMessages.end());
 
     out << llamaHeaderStart << "user" << llamaHeaderEnd << "\n\n";
-    out << "Given the following functions, please respond with a JSON for a function call "
+    out << "Given the following functions, please respond with a JSON for a "
+           "function call "
         << "with its proper arguments that best answers the given prompt.\n\n"
         << "Respond in the format {\"name\": function name, \"parameters\": "
         << "dictionary of argument name and its value}. "
@@ -110,7 +114,8 @@ std::string LlamaTokenizer::applyChatTemplate(
     if (m.tool_calls.has_value() && !m.tool_calls->empty()) {
       // Assistant message with tool calls
       if (m.tool_calls->size() != 1) {
-        throw std::runtime_error("This model only supports single tool-calls at once!");
+        throw std::runtime_error(
+            "This model only supports single tool-calls at once!");
       }
 
       const auto& toolCall = (*m.tool_calls)[0];

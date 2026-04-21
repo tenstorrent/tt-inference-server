@@ -45,7 +45,8 @@ struct TokenizerTemplateConfig {
   virtual std::string buildToolOutput(const ChatMessage& message) const = 0;
 
   virtual std::string buildUserMessage(const std::string& content) const = 0;
-  virtual std::string buildAssistantMessage(const std::string& content) const = 0;
+  virtual std::string buildAssistantMessage(
+      const std::string& content) const = 0;
 
   // Name for logging
   virtual const char* name() const = 0;
@@ -149,15 +150,21 @@ const TokenizerTemplateConfig* getDeepSeekConfig() {
 
 struct LlamaTemplateConfig : public TokenizerTemplateConfig {
   const char* bos() const override { return "<|begin_of_text|>"; }
-  const char* userTag() const override { return "<|start_header_id|>user<|end_header_id|>\n\n"; }
-  const char* assistantTag() const override { return "<|start_header_id|>assistant<|end_header_id|>\n\n"; }
+  const char* userTag() const override {
+    return "<|start_header_id|>user<|end_header_id|>\n\n";
+  }
+  const char* assistantTag() const override {
+    return "<|start_header_id|>assistant<|end_header_id|>\n\n";
+  }
   const char* toolCallsBegin() const override { return ""; }
   const char* toolCallBegin() const override { return ""; }
   const char* toolSep() const override { return ""; }
   const char* toolCallEnd() const override { return ""; }
   const char* toolCallsEnd() const override { return ""; }
   const char* toolOutputsBegin() const override { return ""; }
-  const char* toolOutputBegin() const override { return "<|start_header_id|>ipython<|end_header_id|>\n\n"; }
+  const char* toolOutputBegin() const override {
+    return "<|start_header_id|>ipython<|end_header_id|>\n\n";
+  }
   const char* toolOutputEnd() const override { return ""; }
   const char* toolOutputsEnd() const override { return ""; }
   const char* endOfSentence() const override { return "<|eot_id|>"; }
@@ -182,7 +189,8 @@ struct LlamaTemplateConfig : public TokenizerTemplateConfig {
 
     // User header + tool instructions + tool definitions
     out << "<|start_header_id|>user<|end_header_id|>\n\n";
-    out << "Given the following functions, please respond with a JSON for a function call ";
+    out << "Given the following functions, please respond with a JSON for a "
+           "function call ";
     out << "with its proper arguments that best answers the given prompt.\n\n";
     out << "Respond in the format {\"name\": function name, \"parameters\": ";
     out << "dictionary of argument name and its value}. ";
@@ -330,7 +338,7 @@ ChatMessage createToolOutputMessage(const std::string& toolCallId,
 // ============================================================================
 
 void testChatTemplateWithoutTools(const Tokenizer& tokenizer,
-                                   const TokenizerTemplateConfig* config) {
+                                  const TokenizerTemplateConfig* config) {
   std::cout << "\n=== Testing Chat Template Without Tools (" << config->name()
             << ") ===\n";
 
@@ -340,7 +348,8 @@ void testChatTemplateWithoutTools(const Tokenizer& tokenizer,
   msg.content = "What's the weather like?";
   messages.push_back(msg);
 
-  std::string result = tokenizer.applyChatTemplate(messages, true, std::nullopt);
+  std::string result =
+      tokenizer.applyChatTemplate(messages, true, std::nullopt);
 
   // Should not contain tool-related markers when no tools provided
   assert(result.find("tools") == std::string::npos ||
@@ -354,7 +363,7 @@ void testChatTemplateWithoutTools(const Tokenizer& tokenizer,
 }
 
 void testChatTemplateWithSingleTool(const Tokenizer& tokenizer,
-                                     const TokenizerTemplateConfig* config) {
+                                    const TokenizerTemplateConfig* config) {
   std::cout << "\n=== Testing Single Tool Template (" << config->name()
             << ") ===\n";
 
@@ -389,21 +398,25 @@ void testChatTemplateWithSingleTool(const Tokenizer& tokenizer,
     std::cout << "Actual length: " << actual.length() << "\n";
 
     // Find first difference
-    for (size_t i = 0; i < std::min(expected.str().length(), actual.length()); ++i) {
+    for (size_t i = 0; i < std::min(expected.str().length(), actual.length());
+         ++i) {
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
-        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII " << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i] << ")\n";
+        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
+                  << (int)expected.str()[i] << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
+                  << ")\n";
         break;
       }
     }
-    throw std::runtime_error(std::string(config->name()) + " template exact match failed");
+    throw std::runtime_error(std::string(config->name()) +
+                             " template exact match failed");
   }
   std::cout << "✅ Test passed!\n";
 }
 
 void testChatTemplateWithMultipleTools(const Tokenizer& tokenizer,
-                                        const TokenizerTemplateConfig* config) {
+                                       const TokenizerTemplateConfig* config) {
   std::cout << "\n=== Testing Multiple Tools Template (" << config->name()
             << ") ===\n";
 
@@ -439,23 +452,26 @@ void testChatTemplateWithMultipleTools(const Tokenizer& tokenizer,
     std::cout << "Actual length: " << actual.length() << "\n";
 
     // Find first difference
-    for (size_t i = 0; i < std::min(expected.str().length(), actual.length()); ++i) {
+    for (size_t i = 0; i < std::min(expected.str().length(), actual.length());
+         ++i) {
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
-        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII " << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i] << ")\n";
+        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
+                  << (int)expected.str()[i] << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
+                  << ")\n";
         break;
       }
     }
-    throw std::runtime_error(std::string(config->name()) + " multiple tools template exact match failed");
+    throw std::runtime_error(std::string(config->name()) +
+                             " multiple tools template exact match failed");
   }
   std::cout << "✅ Test passed!\n";
 }
 void testChatTemplateWithConversationHistory(
-    const Tokenizer& tokenizer,
-    const TokenizerTemplateConfig* config) {
-  std::cout << "\n=== Testing Conversation History Template ("
-            << config->name() << ") ===\n";
+    const Tokenizer& tokenizer, const TokenizerTemplateConfig* config) {
+  std::cout << "\n=== Testing Conversation History Template (" << config->name()
+            << ") ===\n";
 
   std::vector<ChatMessage> messages = {
       createUserMessage("Check SF weather"),
@@ -496,21 +512,26 @@ void testChatTemplateWithConversationHistory(
     std::cout << "Actual length: " << actual.length() << "\n";
 
     // Find first difference
-    for (size_t i = 0; i < std::min(expected.str().length(), actual.length()); ++i) {
+    for (size_t i = 0; i < std::min(expected.str().length(), actual.length());
+         ++i) {
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
-        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII " << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i] << ")\n";
+        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
+                  << (int)expected.str()[i] << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
+                  << ")\n";
         break;
       }
     }
-    throw std::runtime_error(std::string(config->name()) + " conversation history template exact match failed");
+    throw std::runtime_error(
+        std::string(config->name()) +
+        " conversation history template exact match failed");
   }
   std::cout << "✅ Test passed!\n";
 }
 
 void testChatTemplateEmptyTools(const Tokenizer& tokenizer,
-                                 const TokenizerTemplateConfig* config) {
+                                const TokenizerTemplateConfig* config) {
   std::cout << "\n=== Testing Chat Template With Empty Tools Vector ("
             << config->name() << ") ===\n";
 
@@ -569,7 +590,7 @@ void testToolStructureValidation() {
 }
 
 void testChatTemplateWithToolOutputs(const Tokenizer& tokenizer,
-                                      const TokenizerTemplateConfig* config) {
+                                     const TokenizerTemplateConfig* config) {
   std::cout << "\n=== Testing Chat Template With Tool Outputs ("
             << config->name() << ") ===\n";
 
@@ -618,22 +639,25 @@ void testChatTemplateWithToolOutputs(const Tokenizer& tokenizer,
     std::cout << "\nExpected length: " << expected.str().length() << "\n";
     std::cout << "Actual length: " << actual.length() << "\n";
 
-    for (size_t i = 0; i < std::min(expected.str().length(), actual.length()); ++i) {
+    for (size_t i = 0; i < std::min(expected.str().length(), actual.length());
+         ++i) {
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
-        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII " << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i] << ")\n";
+        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
+                  << (int)expected.str()[i] << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
+                  << ")\n";
         break;
       }
     }
-    throw std::runtime_error(std::string(config->name()) + " tool outputs template exact match failed");
+    throw std::runtime_error(std::string(config->name()) +
+                             " tool outputs template exact match failed");
   }
   std::cout << "✅ Test passed!\n";
 }
 
 void testChatTemplateWithMultipleToolOutputs(
-    const Tokenizer& tokenizer,
-    const TokenizerTemplateConfig* config) {
+    const Tokenizer& tokenizer, const TokenizerTemplateConfig* config) {
   std::cout << "\n=== Testing Chat Template With Multiple Tool Outputs ("
             << config->name() << ") ===\n";
 
@@ -645,14 +669,14 @@ void testChatTemplateWithMultipleToolOutputs(
 
   ChatMessage assistantMsg1 = createAssistantWithToolCall(
       "", "call_1", "get_weather", "{\"location\":\"SF\"}");
-      ChatMessage assistantMsg2 = createAssistantWithToolCall(
-        "", "call_2", "get_weather", "{\"location\":\"LA\"}");
+  ChatMessage assistantMsg2 = createAssistantWithToolCall(
+      "", "call_2", "get_weather", "{\"location\":\"LA\"}");
   ChatMessage toolMsg1 = createToolOutputMessage("call_1", "{\"temp\":72}");
   ChatMessage toolMsg2 = createToolOutputMessage("call_2", "{\"temp\":85}");
 
   std::vector<ChatMessage> messages = {
-      createUserMessage("Get weather for SF and LA"), assistantMsg1, toolMsg1, assistantMsg2,
-      toolMsg2};
+      createUserMessage("Get weather for SF and LA"), assistantMsg1, toolMsg1,
+      assistantMsg2, toolMsg2};
 
   std::vector<Tool> tools = {createWeatherTool()};
 
@@ -668,7 +692,7 @@ void testChatTemplateWithMultipleToolOutputs(
 }
 
 void runTestSuite(const Tokenizer& tokenizer,
-                   const TokenizerTemplateConfig* config) {
+                  const TokenizerTemplateConfig* config) {
   testChatTemplateWithoutTools(tokenizer, config);
   testChatTemplateWithSingleTool(tokenizer, config);
   testChatTemplateWithMultipleTools(tokenizer, config);
@@ -686,24 +710,25 @@ int main(int argc, char* argv[]) {
   std::cout << "╚══════════════════════════════════════════════════════════╝\n";
 
   try {
-      std::cout << "\n"
-                << "════════════════════════════════════════════════════════════\n"
-                << "  Testing DeepSeek Tokenizer\n"
-                << "════════════════════════════════════════════════════════════\n";
+    std::cout
+        << "\n"
+        << "════════════════════════════════════════════════════════════\n"
+        << "  Testing DeepSeek Tokenizer\n"
+        << "════════════════════════════════════════════════════════════\n";
 
-      DeepseekTokenizer deepseekTokenizer(
-          "tokenizers/deepseek-ai/DeepSeek-R1-0528/tokenizer.json");
-      runTestSuite(deepseekTokenizer, getDeepSeekConfig());
+    DeepseekTokenizer deepseekTokenizer(
+        "tokenizers/deepseek-ai/DeepSeek-R1-0528/tokenizer.json");
+    runTestSuite(deepseekTokenizer, getDeepSeekConfig());
 
-      std::cout << "\n"
-                << "════════════════════════════════════════════════════════════\n"
-                << "  Testing Llama Tokenizer\n"
-                << "════════════════════════════════════════════════════════════\n";
+    std::cout
+        << "\n"
+        << "════════════════════════════════════════════════════════════\n"
+        << "  Testing Llama Tokenizer\n"
+        << "════════════════════════════════════════════════════════════\n";
 
-      LlamaTokenizer llamaTokenizer(
-          "tokenizers/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json");
-      runTestSuite(llamaTokenizer, getLlamaConfig());
-
+    LlamaTokenizer llamaTokenizer(
+        "tokenizers/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json");
+    runTestSuite(llamaTokenizer, getLlamaConfig());
 
     std::cout << "\n";
     std::cout
