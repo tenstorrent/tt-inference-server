@@ -5,24 +5,29 @@
 
 #include <cmath>
 
+#include "api/stream_event_formatter.hpp"
 #include "config/settings.hpp"
-#include "domain/chat_completion_response.hpp"
 #include "utils/concurrent_queue.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::api {
 
-SseStreamWriter::SseStreamWriter(trantor::EventLoop* loop, StreamParams params)
-    : loop_(loop), params_(std::move(params)) {
+SseStreamWriter::SseStreamWriter(
+    trantor::EventLoop* loop, StreamParams params,
+    std::shared_ptr<StreamEventFormatter> formatter)
+    : loop_(loop),
+      params_(std::move(params)),
+      formatter_(std::move(formatter)) {
   if (config::enableAccumulatedStreaming()) {
     accumulator_ = std::make_shared<tt::utils::ConcurrentQueue<std::string>>();
   }
 }
 
 std::shared_ptr<SseStreamWriter> SseStreamWriter::create(
-    trantor::EventLoop* loop, StreamParams params) {
+    trantor::EventLoop* loop, StreamParams params,
+    std::shared_ptr<StreamEventFormatter> formatter) {
   return std::shared_ptr<SseStreamWriter>(
-      new SseStreamWriter(loop, std::move(params)));
+      new SseStreamWriter(loop, std::move(params), std::move(formatter)));
 }
 
 void SseStreamWriter::sendSse(const std::string& sse,
@@ -114,6 +119,14 @@ void SseStreamWriter::handleTokenChunk(const domain::LLMStreamChunk& chunk) {
     second_token_time_ = now;
   }
 
+  const std::string accumulatedSoFar = accumulated_text_;
+  if (!chunk.choices.empty()) {
+    accumulated_text_ += chunk.choices[0].text;
+    if (chunk.choices[0].finish_reason.has_value()) {
+      last_finish_reason_ = chunk.choices[0].finish_reason;
+    }
+  }
+
   std::optional<domain::CompletionUsage> usage;
   if (params_.continuousUsage) {
     usage = domain::CompletionUsage{params_.promptTokensCount,
@@ -124,10 +137,6 @@ void SseStreamWriter::handleTokenChunk(const domain::LLMStreamChunk& chunk) {
                                     params_.sessionId};
   }
 
-  auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
-      params_.completionId, params_.model, params_.created, chunk.choices[0],
-      usage);
-
   std::string sse;
   if (first_content_chunk_.exchange(false)) {
     std::optional<domain::CompletionUsage> initialUsage;
@@ -136,12 +145,10 @@ void SseStreamWriter::handleTokenChunk(const domain::LLMStreamChunk& chunk) {
           params_.promptTokensCount, 0, 0, std::nullopt, std::nullopt,
           params_.sessionId};
     }
-    auto initialChunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
-        params_.completionId, params_.model, params_.created, initialUsage);
-    sse = initialChunk.toSSE() + streamChunk.toSSE();
-  } else {
-    sse = streamChunk.toSSE();
+    sse += formatter_->formatInitialEvents(params_, initialUsage);
   }
+  sse += formatter_->formatTokenEvents(params_, chunk, usage, currentTokens,
+                                       accumulatedSoFar);
 
   if (!sse.empty()) {
     auto self = shared_from_this();
@@ -155,16 +162,13 @@ void SseStreamWriter::finalizeStream() {
     if (!self->done_.exchange(true) && *self->stream_ptr_) {
       self->flushAccumulated();
 
-      if (self->params_.includeUsage) {
-        auto usage = self->buildFinalUsage();
-        (*self->stream_ptr_)
-            ->send(domain::ChatCompletionStreamChunk::makeUsageChunk(
-                       self->params_.completionId, self->params_.model,
-                       self->params_.created, usage)
-                       .toSSE());
+      auto usage = self->buildFinalUsage();
+      auto finalSse = self->formatter_->formatFinalEvents(
+          self->params_, usage, self->accumulated_text_,
+          self->last_finish_reason_, self->params_.includeUsage);
+      if (!finalSse.empty()) {
+        (*self->stream_ptr_)->send(finalSse);
       }
-
-      (*self->stream_ptr_)->send("data: [DONE]\n\n");
       (*self->stream_ptr_)->close();
 
       if (self->params_.sessionId.has_value() && self->params_.sessionManager) {

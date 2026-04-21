@@ -6,8 +6,12 @@
 #include <drogon/drogon.h>
 #include <json/json.h>
 
+#include <functional>
 #include <memory>
+#include <string>
 
+#include "api/stream_event_formatter.hpp"
+#include "domain/llm_response.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
@@ -23,6 +27,7 @@ class LLMController : public drogon::HttpController<LLMController> {
   METHOD_LIST_BEGIN
   ADD_METHOD_TO(LLMController::chatCompletions, "/v1/chat/completions",
                 drogon::Post);
+  ADD_METHOD_TO(LLMController::responses, "/v1/responses", drogon::Post);
   ADD_METHOD_TO(LLMController::createSession, "/v1/sessions", drogon::Post);
   ADD_METHOD_TO(LLMController::closeSession, "/v1/sessions/{session_id}",
                 drogon::Delete);
@@ -42,6 +47,14 @@ class LLMController : public drogon::HttpController<LLMController> {
    * OpenAI-compatible chat completions endpoint.
    */
   void chatCompletions(
+      const drogon::HttpRequestPtr& req,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+
+  /**
+   * POST /v1/responses
+   * OpenAI-compatible responses endpoint.
+   */
+  void responses(
       const drogon::HttpRequestPtr& req,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
@@ -75,12 +88,31 @@ class LLMController : public drogon::HttpController<LLMController> {
   std::shared_ptr<services::DisaggregationService> disaggregationService;
   std::shared_ptr<services::SessionManager> sessionManager;
 
+  using ResponseFormatter =
+      std::function<std::string(const domain::LLMResponse&)>;
+  using StreamFormatterFactory =
+      std::function<std::shared_ptr<StreamEventFormatter>()>;
+
   /**
-   * Handle streaming chat completion (SSE). Emits ChatCompletionStreamChunk
-   * objects. Automatically uses accumulated batching when enabled via config.
+   * Common non-streaming request handler. Checks model readiness, routes
+   * streaming to handleStreaming, otherwise resolves session and submits.
+   * Uses `formatter` to convert the LLMResponse into a JSON string body.
+   * `streamFormatterFactory` builds the per-request SSE formatter when the
+   * request is streaming.
+   */
+  void handleRequest(
+      std::shared_ptr<domain::LLMRequest> request, ResponseFormatter formatter,
+      StreamFormatterFactory streamFormatterFactory,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+
+  /**
+   * Handle streaming responses (SSE). The provided factory builds the
+   * per-request StreamEventFormatter that decides the SSE event format
+   * (chat.completion.chunk vs Responses API events, etc.).
    */
   void handleStreaming(
       std::shared_ptr<domain::LLMRequest> reqPtr,
+      StreamFormatterFactory streamFormatterFactory,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   struct SessionInfo {
