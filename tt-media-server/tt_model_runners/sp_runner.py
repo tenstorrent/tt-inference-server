@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 
+from config.settings import settings
 from ipc.video_shm import (
     VideoRequest,
     VideoShm,
@@ -36,7 +37,6 @@ DEFAULT_VIDEO_WIDTH = 832
 DEFAULT_VIDEO_NUM_FRAMES = 81
 DEFAULT_VIDEO_GUIDANCE_SCALE = 3.0
 DEFAULT_VIDEO_GUIDANCE_SCALE_2 = 4.0
-RESPONSE_TIMEOUT_S = 300.0
 
 
 class SPRunner(BaseDeviceRunner):
@@ -120,10 +120,13 @@ class SPRunner(BaseDeviceRunner):
         self._input_shm.write_request(video_req)
         self.logger.info(f"[SP] Request {task_id} sent to SHM input")
 
-        resp = self._output_shm.read_response(timeout_s=RESPONSE_TIMEOUT_S)
+        timeout_s = settings.video_request_timeout_seconds
+        resp = self._output_shm.read_response(timeout_s=timeout_s)
         if resp is None:
-            raise RuntimeError(
-                f"Response timed out after {RESPONSE_TIMEOUT_S}s for task {task_id}"
+            # Surface a greppable signature so the scheduler's error_listener
+            # can classify this as REQUEST_TIMEOUT and /tt-status can report it.
+            raise TimeoutError(
+                f"REQUEST_TIMEOUT: response exceeded {timeout_s}s for task {task_id}"
             )
         if resp.status == VideoStatus.ERROR:
             self._try_unlink(resp.file_path)

@@ -4,6 +4,7 @@
 
 import asyncio
 
+from config.settings import settings
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
@@ -23,7 +24,19 @@ def initialize_device_worker(worker_id: str, logger: TTLogger):
         device_runner.set_device()
         # Use the same loop for model loading
         try:
-            loop.run_until_complete(device_runner.warmup())
+            warmup_timeout_s = settings.warmup_timeout_seconds
+            loop.run_until_complete(
+                asyncio.wait_for(device_runner.warmup(), timeout=warmup_timeout_s)
+            )
+        except asyncio.TimeoutError as e:
+            # Surface a specific, greppable signature so operators and the
+            # status endpoint can tell a warmup hang from a generic error.
+            msg = (
+                f"WARMUP_TIMEOUT: worker {worker_id} warmup exceeded "
+                f"{warmup_timeout_s}s"
+            )
+            logger.error(msg)
+            raise TimeoutError(msg) from e
         except KeyboardInterrupt:
             logger.warning(
                 f"Worker {worker_id} interrupted during model loading - shutting down"
