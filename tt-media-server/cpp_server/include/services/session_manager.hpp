@@ -84,19 +84,6 @@ class SessionManager {
     trantor::EventLoop* eventLoop = nullptr;
     int attemptsRemaining = 0;
     std::chrono::steady_clock::time_point retryAt{};
-
-    PendingAllocation() = default;
-
-    PendingAllocation(
-        const tt::domain::Session& session,
-        std::function<void(const tt::domain::Session&)> onCompletion,
-        std::function<void(std::string_view errorMessage)> onError,
-        trantor::EventLoop* eventLoop, int attemptsRemaining)
-        : session(session),
-          onCompletion(onCompletion),
-          onError(onError),
-          eventLoop(eventLoop),
-          attemptsRemaining(attemptsRemaining) {}
   };
 
   struct DeferredDealloc {

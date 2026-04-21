@@ -13,47 +13,30 @@
 
 namespace tt::domain {
 
-/**
- * Lifecycle state of a Session.
- *
- * Transitions:
- *   IDLE            --(markInFlight)-------> IN_FLIGHT
- *   IN_FLIGHT       --(clearInFlight)------> IDLE
- *   IN_FLIGHT       --(markCloseRequested)-> CLOSE_REQUESTED
- *   CLOSE_REQUESTED --(clearInFlight)------> CLOSING
- */
+// Lifecycle state of a Session.  IDLE <--(clearInFlight)--> IN_FLIGHT.
 enum class SessionState {
-  IDLE,             // no active request
-  IN_FLIGHT,        // request actively being processed
-  CLOSE_REQUESTED,  // close requested while in-flight; waiting for request to
-                    // finish
-  CLOSING,          // request finished; slot deallocation pending
+  IDLE,       // no active request
+  IN_FLIGHT,  // request actively being processed
 };
 
 class Session {
  public:
   explicit Session(uint32_t slotId = INVALID_SLOT_ID);
 
-  std::string getSessionId() const { return session_id_; }
+  const std::string& getSessionId() const { return session_id_; }
   uint32_t getSlotId() const { return slot_id_; }
   void setSlotId(uint32_t slotId) { slot_id_ = slotId; }
   bool hasSlot() const { return slot_id_ != INVALID_SLOT_ID; }
 
   bool isIdle() const { return state_ == SessionState::IDLE; }
   bool isInFlight() const { return state_ == SessionState::IN_FLIGHT; }
-  bool isCloseRequested() const {
-    return state_ == SessionState::CLOSE_REQUESTED;
-  }
-  bool isClosing() const { return state_ == SessionState::CLOSING; }
 
   SessionState getState() const { return state_; }
 
   // Transition methods return false (without changing state) if the
   // precondition is not met.
-  bool markInFlight();  // IDLE            -> IN_FLIGHT
-  bool
-  clearInFlight();  // IN_FLIGHT        -> IDLE  |  CLOSE_REQUESTED -> CLOSING
-  bool markCloseRequested();  // IN_FLIGHT        -> CLOSE_REQUESTED
+  bool markInFlight();   // IDLE      -> IN_FLIGHT
+  bool clearInFlight();  // IN_FLIGHT -> IDLE
 
   std::chrono::system_clock::time_point getLastActivityTime() const {
     return last_activity_time_;

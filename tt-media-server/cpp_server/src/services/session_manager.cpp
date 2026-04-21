@@ -131,10 +131,8 @@ bool SessionManager::assignSlotId(const std::string& sessionId,
 uint32_t SessionManager::getSlotIdBySessionId(
     const std::string& sessionId) const {
   uint32_t result = domain::INVALID_SLOT_ID;
-  sessions.modify(sessionId, [&result](ManagedSession& ms) {
-    ms.session.updateActivityTime();
-    result = ms.session.getSlotId();
-  });
+  sessions.modify(sessionId,
+                  [&result](ManagedSession& ms) { result = ms.session.getSlotId(); });
   TT_LOG_DEBUG(
       "[SessionManager] getSlotIdBySessionId sessionId={} -> slotId={}",
       sessionId, result);
@@ -227,29 +225,22 @@ void SessionManager::evictOldSessions() {
   }
 
   using Entry = std::pair<std::chrono::system_clock::time_point, std::string>;
-  auto newer = [](const Entry& a, const Entry& b) { return a.first < b.first; };
-  std::vector<Entry> heap;
-  heap.reserve(evictionCount + 1);
+  std::vector<Entry> candidates;
 
-  sessions.forEach([&heap, &newer, evictionCount](
-                       const std::string& id, const ManagedSession& ms) {
-    if (!ms.session.isIdle()) return;
-
-    auto t = ms.session.getLastActivityTime();
-    if (heap.size() < evictionCount) {
-      heap.emplace_back(t, id);
-      std::push_heap(heap.begin(), heap.end(), newer);
-    } else if (t < heap.front().first) {
-      std::pop_heap(heap.begin(), heap.end(), newer);
-      heap.back() = {t, id};
-      std::push_heap(heap.begin(), heap.end(), newer);
-    }
+  sessions.forEach([&candidates](const std::string& id, const ManagedSession& ms) {
+    if (ms.session.isIdle())
+      candidates.emplace_back(ms.session.getLastActivityTime(), id);
   });
 
+  size_t n = std::min(evictionCount, candidates.size());
+  std::nth_element(candidates.begin(), candidates.begin() + n, candidates.end(),
+                   [](const Entry& a, const Entry& b) { return a.first < b.first; });
+  candidates.resize(n);
+
   TT_LOG_DEBUG("[SessionManager] evictOldSessions: {} candidates for eviction",
-               heap.size());
+               candidates.size());
   size_t evicted = 0;
-  for (const auto& [_, sessionId] : heap) {
+  for (const auto& [_, sessionId] : candidates) {
     // A concurrent acquireInFlight call may mark the session in-flight
     // between the forEach above and here; takeIf skips it atomically.
     auto ms = sessions.takeIf(
@@ -329,9 +320,13 @@ void SessionManager::createSession(
   }
 
   domain::Session session = domain::Session(domain::INVALID_SLOT_ID);
-  auto pendingAllocation = PendingAllocation(
-      std::move(session), std::move(onCompletion), std::move(onError),
-      callerEventLoop, tt::config::sessionAllocationMaxRetries());
+  PendingAllocation pendingAllocation{
+      .session = std::move(session),
+      .onCompletion = std::move(onCompletion),
+      .onError = std::move(onError),
+      .eventLoop = callerEventLoop,
+      .attemptsRemaining = static_cast<int>(tt::config::sessionAllocationMaxRetries()),
+  };
 
   sendAsyncAllocationRequest(pendingAllocation);
 }
