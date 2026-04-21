@@ -24,11 +24,8 @@ defaults:
   serverType: vllm
   replicaCount: 1
   progressDeadlineSeconds: 3600
-  hostIPC: true
   podAnnotations: {}
   podSecurityContext: {}
-  securityContext:
-    privileged: true
   image:
     pullPolicy: IfNotPresent
     pullSecrets: []
@@ -36,7 +33,6 @@ defaults:
     type: ClusterIP
     port: 8000
     targetPort: 8000
-    protocol: TCP
     annotations: {}
   resources:
     limits:
@@ -52,16 +48,10 @@ defaults:
       enabled: true
       path: /v1/models
       initialDelaySeconds: 2400
-      periodSeconds: 30
-      timeoutSeconds: 5
-      failureThreshold: 3
     readiness:
       enabled: true
       path: /health
       initialDelaySeconds: 2400
-      periodSeconds: 10
-      timeoutSeconds: 5
-      failureThreshold: 3
   nodeSelector: {}
   tolerations: []
   affinity: {}
@@ -129,6 +119,7 @@ models:
   Qwen3-32B:
     serverType: vllm
     galaxy:
+      progressDeadlineSeconds: 4200
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.11.1-bac8b34-7c6685a
@@ -146,6 +137,7 @@ models:
   Llama-3.1-70B-Instruct:
     serverType: vllm
     galaxy:
+      progressDeadlineSeconds: 6000
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.10.0-e867533-8f36910
@@ -163,6 +155,7 @@ models:
   Llama-3.1-70B:
     serverType: vllm
     galaxy:
+      progressDeadlineSeconds: 6000
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.10.0-e867533-8f36910
@@ -180,6 +173,7 @@ models:
   Llama-3.3-70B-Instruct:
     serverType: vllm
     galaxy:
+      progressDeadlineSeconds: 6000
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.10.0-e867533-8f36910
@@ -197,6 +191,7 @@ models:
   DeepSeek-R1-Distill-Llama-70B:
     serverType: vllm
     galaxy:
+      progressDeadlineSeconds: 6000
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.10.0-e867533-8f36910
@@ -214,6 +209,7 @@ models:
   gpt-oss-120b:
     serverType: vllm
     galaxy:
+      progressDeadlineSeconds: 7800
       image:
         repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
         tag: 0.11.1-bac8b34-7c6685a
