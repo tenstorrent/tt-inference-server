@@ -18,4 +18,4 @@ spec:
     - name: http
       port: {{ $cfg.service.port }}
       targetPort: http
-      protocol: {{ $cfg.service.protocol }}
+      protocol: TCP
