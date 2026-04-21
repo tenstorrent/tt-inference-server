@@ -39,12 +39,11 @@ struct TokenizerTemplateConfig {
   virtual std::string buildToolSection(
       const std::vector<Tool>& tools) const = 0;
 
-  virtual std::string buildAssistantWithToolCalls(
+  virtual std::string buildAssistantWithToolCall(
       const ChatMessage& message) const = 0;
 
   virtual std::string buildToolOutput(const ChatMessage& message) const = 0;
 
-  // Build regular messages (with proper ending tokens)
   virtual std::string buildUserMessage(const std::string& content) const = 0;
   virtual std::string buildAssistantMessage(const std::string& content) const = 0;
 
@@ -98,7 +97,7 @@ struct DeepSeekTemplateConfig : public TokenizerTemplateConfig {
     return out.str();
   }
 
-  std::string buildAssistantWithToolCalls(
+  std::string buildAssistantWithToolCall(
       const ChatMessage& message) const override {
     std::ostringstream out;
 
@@ -126,14 +125,12 @@ struct DeepSeekTemplateConfig : public TokenizerTemplateConfig {
   }
 
   std::string buildUserMessage(const std::string& content) const override {
-    // DeepSeek doesn't add endOfSentence after regular user messages
     std::ostringstream out;
     out << userTag() << content;
     return out.str();
   }
 
   std::string buildAssistantMessage(const std::string& content) const override {
-    // DeepSeek doesn't add endOfSentence after regular assistant messages
     std::ostringstream out;
     out << assistantTag() << content;
     return out.str();
@@ -200,7 +197,7 @@ struct LlamaTemplateConfig : public TokenizerTemplateConfig {
     return out.str();
   }
 
-  std::string buildAssistantWithToolCalls(
+  std::string buildAssistantWithToolCall(
       const ChatMessage& message) const override {
     std::ostringstream out;
 
@@ -231,14 +228,12 @@ struct LlamaTemplateConfig : public TokenizerTemplateConfig {
   }
 
   std::string buildUserMessage(const std::string& content) const override {
-    // Llama adds eot_id after every message
     std::ostringstream out;
     out << userTag() << content << endOfSentence();
     return out.str();
   }
 
   std::string buildAssistantMessage(const std::string& content) const override {
-    // Llama adds eot_id after every message
     std::ostringstream out;
     out << assistantTag() << content << endOfSentence();
     return out.str();
@@ -347,10 +342,6 @@ void testChatTemplateWithoutTools(const Tokenizer& tokenizer,
 
   std::string result = tokenizer.applyChatTemplate(messages, true, std::nullopt);
 
-  if (std::string(config->name()) == "Llama") {
-    std::cout << "\nGenerated template:\n" << result << "\n";
-  }
-
   // Should not contain tool-related markers when no tools provided
   assert(result.find("tools") == std::string::npos ||
          result.find(config->toolCallsBegin()) == std::string::npos);
@@ -372,10 +363,6 @@ void testChatTemplateWithSingleTool(const Tokenizer& tokenizer,
   std::vector<Tool> tools = {createWeatherTool()};
 
   std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
-
-  if (std::string(config->name()) == "Llama") {
-    std::cout << "\nGenerated template:\n" << actual << "\n";
-  }
 
   std::ostringstream expected;
   expected << config->bos();
@@ -412,8 +399,6 @@ void testChatTemplateWithSingleTool(const Tokenizer& tokenizer,
     }
     throw std::runtime_error(std::string(config->name()) + " template exact match failed");
   }
-  std::cout << "✅ Exact match!\n";
-
   std::cout << "✅ Test passed!\n";
 }
 
@@ -428,10 +413,6 @@ void testChatTemplateWithMultipleTools(const Tokenizer& tokenizer,
   std::vector<Tool> tools = {createWeatherTool(), createTimeTool()};
 
   std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
-
-  if (std::string(config->name()) == "Llama") {
-    std::cout << "\nGenerated template:\n" << actual << "\n";
-  }
 
   std::ostringstream expected;
   expected << config->bos();
@@ -468,8 +449,6 @@ void testChatTemplateWithMultipleTools(const Tokenizer& tokenizer,
     }
     throw std::runtime_error(std::string(config->name()) + " multiple tools template exact match failed");
   }
-  std::cout << "✅ Exact match!\n";
-
   std::cout << "✅ Test passed!\n";
 }
 void testChatTemplateWithConversationHistory(
@@ -487,10 +466,6 @@ void testChatTemplateWithConversationHistory(
 
   // Get actual result
   std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
-
-  if (std::string(config->name()) == "Llama") {
-    std::cout << "\nGenerated template:\n" << actual << "\n";
-  }
 
   std::ostringstream expected;
   expected << config->bos();
@@ -531,8 +506,6 @@ void testChatTemplateWithConversationHistory(
     }
     throw std::runtime_error(std::string(config->name()) + " conversation history template exact match failed");
   }
-  std::cout << "✅ Exact match!\n";
-
   std::cout << "✅ Test passed!\n";
 }
 
@@ -549,10 +522,6 @@ void testChatTemplateEmptyTools(const Tokenizer& tokenizer,
 
   std::vector<Tool> emptyTools;
   std::string result = tokenizer.applyChatTemplate(messages, true, emptyTools);
-
-  if (std::string(config->name()) == "Llama") {
-    std::cout << "\nGenerated template:\n" << result << "\n";
-  }
 
   assert(!result.empty());
   std::cout << "✓ Chat template with empty tools vector handled\n";
@@ -617,10 +586,6 @@ void testChatTemplateWithToolOutputs(const Tokenizer& tokenizer,
   // Get actual result
   std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
 
-  if (std::string(config->name()) == "Llama") {
-    std::cout << "\nGenerated template:\n" << actual << "\n";
-  }
-
   // Build expected output using config - EXACT MATCH FOR ALL TOKENIZERS
   std::ostringstream expected;
   expected << config->bos();
@@ -630,7 +595,7 @@ void testChatTemplateWithToolOutputs(const Tokenizer& tokenizer,
     // so we just append the content + eot
     expected << config->buildToolSection(tools);
     expected << "What's the weather in SF?" << config->endOfSentence();
-    expected << config->buildAssistantWithToolCalls(assistantMsg);
+    expected << config->buildAssistantWithToolCall(assistantMsg);
     expected << config->toolOutputsBegin();
     expected << config->buildToolOutput(toolMsg);
     expected << config->toolOutputsEnd();
@@ -639,7 +604,7 @@ void testChatTemplateWithToolOutputs(const Tokenizer& tokenizer,
     // For other tokenizers, build normally
     expected << config->buildToolSection(tools);
     expected << config->userTag() << "What's the weather in SF?";
-    expected << config->buildAssistantWithToolCalls(assistantMsg);
+    expected << config->buildAssistantWithToolCall(assistantMsg);
     expected << config->toolOutputsBegin();
     expected << config->buildToolOutput(toolMsg);
     expected << config->toolOutputsEnd();
@@ -663,8 +628,6 @@ void testChatTemplateWithToolOutputs(const Tokenizer& tokenizer,
     }
     throw std::runtime_error(std::string(config->name()) + " tool outputs template exact match failed");
   }
-  std::cout << "✅ Exact match!\n";
-
   std::cout << "✅ Test passed!\n";
 }
 
