@@ -322,11 +322,13 @@ template <typename F>
 void runConcurrently(F&& f) {
   std::atomic<bool> ready{false};
   auto t1 = std::thread([&] {
-    while (!ready.load(std::memory_order_acquire)) {}
+    while (!ready.load(std::memory_order_acquire)) {
+    }
     f();
   });
   auto t2 = std::thread([&] {
-    while (!ready.load(std::memory_order_acquire)) {}
+    while (!ready.load(std::memory_order_acquire)) {
+    }
     f();
   });
   ready.store(true, std::memory_order_release);
@@ -379,7 +381,8 @@ TEST(SessionManagerConcurrency, ConcurrentAcquire_OnlyOneSucceeds) {
   }
 }
 
-TEST(SessionManagerConcurrency, ConcurrentAcquireAndClose_CancelFiredAtMostOnce) {
+TEST(SessionManagerConcurrency,
+     ConcurrentAcquireAndClose_CancelFiredAtMostOnce) {
   // One thread acquires in-flight while another closes. The cancel function
   // must fire at most once regardless of which wins the race. The session
   // must be absent and the count zero after both threads finish.
@@ -393,17 +396,19 @@ TEST(SessionManagerConcurrency, ConcurrentAcquireAndClose_CancelFiredAtMostOnce)
     std::atomic<bool> ready{false};
 
     std::thread acquirer([&] {
-      while (!ready.load(std::memory_order_acquire)) {}
+      while (!ready.load(std::memory_order_acquire)) {
+      }
       try {
-        manager.acquireInFlight(
-            sessionId, [&cancelCount] { cancelCount.fetch_add(1); });
+        manager.acquireInFlight(sessionId,
+                                [&cancelCount] { cancelCount.fetch_add(1); });
         manager.releaseInFlight(sessionId);
       } catch (const tt::services::SessionRateLimitException&) {
       }
     });
 
     std::thread closer([&] {
-      while (!ready.load(std::memory_order_acquire)) {}
+      while (!ready.load(std::memory_order_acquire)) {
+      }
       manager.closeSession(sessionId);
     });
 
