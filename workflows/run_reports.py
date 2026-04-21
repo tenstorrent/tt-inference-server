@@ -1807,9 +1807,7 @@ def benchmark_generate_report(args, server_mode, model_spec, report_id, metadata
         guidellm_text = [
             r for r in guidellm_release_raw if r.get("task_type") == "text"
         ]
-        guidellm_vlm = [
-            r for r in guidellm_release_raw if r.get("task_type") == "vlm"
-        ]
+        guidellm_vlm = [r for r in guidellm_release_raw if r.get("task_type") == "vlm"]
 
         if guidellm_text:
             guidellm_text_display = [create_display_dict(r) for r in guidellm_text]
@@ -3892,9 +3890,7 @@ def main():
         guidellm_detailed_data = None
         if guidellm_data_file_path:
             try:
-                with open(
-                    guidellm_data_file_path, "r", encoding="utf-8"
-                ) as csv_file:
+                with open(guidellm_data_file_path, "r", encoding="utf-8") as csv_file:
                     csv_reader = csv.DictReader(csv_file)
                     guidellm_detailed_data = list(csv_reader)
             except Exception as e:

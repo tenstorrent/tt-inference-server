@@ -68,7 +68,9 @@ WORKFLOW_BENCHMARKS_AIPERF_CONFIG = WorkflowConfig(
 )
 WORKFLOW_BENCHMARKS_GUIDELLM_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.BENCHMARKS,
-    run_script_path=get_repo_root_path() / "benchmarking" / "run_guidellm_benchmarks.py",
+    run_script_path=get_repo_root_path()
+    / "benchmarking"
+    / "run_guidellm_benchmarks.py",
     workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_GUIDELLM,
     # Use default name="benchmarks" for unified output directory across tools.
 )

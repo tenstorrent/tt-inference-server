@@ -3,15 +3,13 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""
-GuideLLM benchmark runner for tt-inference-server.
+# GuideLLM benchmark runner for tt-inference-server.
+# This script integrates GuideLLM into the benchmarks workflow and exposes
+# three scenario presets:
+# - multi_turn_chat
+# - custom_dataset
+# - omni_modal
 
-This script integrates GuideLLM into the benchmarks workflow and exposes
-three scenario presets:
-- multi_turn_chat
-- custom_dataset
-- omni_modal
-"""
 
 import argparse
 import json
@@ -145,7 +143,9 @@ def create_default_multiturn_dataset(dataset_path: Path, samples: int = 50) -> P
     return dataset_path
 
 
-def wait_for_server(model_spec: ModelSpec, runtime_config: RuntimeConfig, jwt_secret: str):
+def wait_for_server(
+    model_spec: ModelSpec, runtime_config: RuntimeConfig, jwt_secret: str
+):
     env_config = EnvironmentConfig()
     env_config.jwt_secret = jwt_secret
     env_config.vllm_api_key = os.getenv("VLLM_API_KEY")
@@ -217,7 +217,9 @@ def build_scenario_runs(
     auth_token: str,
     supported_modalities: List[str],
 ) -> List[GuideRunConfig]:
-    selected_scenarios = workflow_params.get("scenarios") or workflow_params.get("scenario")
+    selected_scenarios = workflow_params.get("scenarios") or workflow_params.get(
+        "scenario"
+    )
     if selected_scenarios:
         scenarios = [value.strip() for value in selected_scenarios.split(",") if value]
     else:
@@ -233,7 +235,9 @@ def build_scenario_runs(
         if dataset:
             multiturn_dataset_path = Path(dataset)
         else:
-            multiturn_dataset_path = output_root / "guidellm_datasets" / "multiturn.jsonl"
+            multiturn_dataset_path = (
+                output_root / "guidellm_datasets" / "multiturn.jsonl"
+            )
             create_default_multiturn_dataset(multiturn_dataset_path)
         runs.append(
             GuideRunConfig(
@@ -241,8 +245,12 @@ def build_scenario_runs(
                 data=str(multiturn_dataset_path),
                 profile=workflow_params.get("multiturn_profile", "synchronous"),
                 output_dir=output_root / "guidellm_multi_turn_chat",
-                max_requests=_parse_int(workflow_params.get("multiturn_max_requests"), 10),
-                max_seconds=_parse_int(workflow_params.get("multiturn_max_seconds"), 120),
+                max_requests=_parse_int(
+                    workflow_params.get("multiturn_max_requests"), 10
+                ),
+                max_seconds=_parse_int(
+                    workflow_params.get("multiturn_max_seconds"), 120
+                ),
                 request_type=workflow_params.get(
                     "multiturn_request_type", "chat_completions"
                 ),
@@ -261,7 +269,9 @@ def build_scenario_runs(
                 data=workflow_params.get("custom_data", "mbpp"),
                 profile=workflow_params.get("custom_profile", "sweep"),
                 output_dir=output_root / "guidellm_custom_dataset",
-                max_requests=_parse_int(workflow_params.get("custom_max_requests"), None),
+                max_requests=_parse_int(
+                    workflow_params.get("custom_max_requests"), None
+                ),
                 max_seconds=_parse_int(workflow_params.get("custom_max_seconds"), 60),
                 data_args=workflow_params.get("custom_data_args"),
                 data_column_mapper=workflow_params.get(
@@ -274,7 +284,9 @@ def build_scenario_runs(
     if "omni_modal" in scenarios:
         modalities_value = workflow_params.get("omni_modalities")
         if modalities_value:
-            modalities = [value.strip().lower() for value in modalities_value.split(",")]
+            modalities = [
+                value.strip().lower() for value in modalities_value.split(",")
+            ]
         else:
             modalities = list(DEFAULT_OMNI_MODALITIES)
 
@@ -308,8 +320,12 @@ def build_scenario_runs(
                 runs.append(
                     GuideRunConfig(
                         name="omni_modal_image",
-                        data=workflow_params.get("omni_image_data", "lmms-lab/MMBench_EN"),
-                        profile=workflow_params.get("omni_image_profile", "synchronous"),
+                        data=workflow_params.get(
+                            "omni_image_data", "lmms-lab/MMBench_EN"
+                        ),
+                        profile=workflow_params.get(
+                            "omni_image_profile", "synchronous"
+                        ),
                         output_dir=output_root / "guidellm_omni_modal_image",
                         max_requests=_parse_int(
                             workflow_params.get("omni_image_max_requests"), 20
@@ -317,7 +333,9 @@ def build_scenario_runs(
                         request_type=workflow_params.get(
                             "omni_image_request_type", "chat_completions"
                         ),
-                        data_args=workflow_params.get("omni_image_data_args", '{"split":"test"}'),
+                        data_args=workflow_params.get(
+                            "omni_image_data_args", '{"split":"test"}'
+                        ),
                         data_column_mapper=workflow_params.get(
                             "omni_image_data_column_mapper",
                             '{"image_column":"image","text_column":"question"}',
@@ -332,8 +350,12 @@ def build_scenario_runs(
                 runs.append(
                     GuideRunConfig(
                         name="omni_modal_video",
-                        data=workflow_params.get("omni_video_data", "lmms-lab/Video-MME"),
-                        profile=workflow_params.get("omni_video_profile", "synchronous"),
+                        data=workflow_params.get(
+                            "omni_video_data", "lmms-lab/Video-MME"
+                        ),
+                        profile=workflow_params.get(
+                            "omni_video_profile", "synchronous"
+                        ),
                         output_dir=output_root / "guidellm_omni_modal_video",
                         max_requests=_parse_int(
                             workflow_params.get("omni_video_max_requests"), 20
@@ -341,7 +363,9 @@ def build_scenario_runs(
                         request_type=workflow_params.get(
                             "omni_video_request_type", "chat_completions"
                         ),
-                        data_args=workflow_params.get("omni_video_data_args", '{"split":"test"}'),
+                        data_args=workflow_params.get(
+                            "omni_video_data_args", '{"split":"test"}'
+                        ),
                         data_column_mapper=workflow_params.get(
                             "omni_video_data_column_mapper",
                             '{"video_column":"url","text_column":"question"}',
@@ -357,9 +381,12 @@ def build_scenario_runs(
                     GuideRunConfig(
                         name="omni_modal_audio",
                         data=workflow_params.get(
-                            "omni_audio_data", "hf-internal-testing/librispeech_asr_dummy"
+                            "omni_audio_data",
+                            "hf-internal-testing/librispeech_asr_dummy",
                         ),
-                        profile=workflow_params.get("omni_audio_profile", "synchronous"),
+                        profile=workflow_params.get(
+                            "omni_audio_profile", "synchronous"
+                        ),
                         output_dir=output_root / "guidellm_omni_modal_audio",
                         max_requests=_parse_int(
                             workflow_params.get("omni_audio_max_requests"), 20
@@ -515,7 +542,10 @@ def adapt_guidellm_to_vllm_metrics(
     if not benchmarks:
         raise ValueError(f"No benchmarks found in {benchmarks_json_path}")
 
-    return [_adapt_one_benchmark(bench, default_run_index=i) for i, bench in enumerate(benchmarks)]
+    return [
+        _adapt_one_benchmark(bench, default_run_index=i)
+        for i, bench in enumerate(benchmarks)
+    ]
 
 
 def emit_normalized_guidellm_result(
