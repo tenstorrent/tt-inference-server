@@ -17,11 +17,9 @@ namespace tt::services {
 class MemoryManager;
 }  // namespace tt::services
 
-namespace tt::runners::llm_engine {
-class GuidedDecoderManager;
-}  // namespace tt::runners::llm_engine
-
 namespace tt::runners {
+
+class GuidedDecoderManager;
 using namespace tt::runners::llm_engine;
 
 class LLMRunner : public IRunner {

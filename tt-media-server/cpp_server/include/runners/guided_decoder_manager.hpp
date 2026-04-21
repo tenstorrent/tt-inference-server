@@ -10,7 +10,7 @@
 
 #include "runners/llm_runner/sampling_params.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::runners {
 
 struct TokenAcceptResult {
   bool accepted = true;
@@ -26,7 +26,8 @@ class GuidedDecoderManager {
   GuidedDecoderManager(const GuidedDecoderManager&) = delete;
   GuidedDecoderManager& operator=(const GuidedDecoderManager&) = delete;
 
-  void initRequest(uint32_t taskId, const SamplingParams& params);
+  void initRequest(uint32_t taskId,
+                   const llm_engine::SamplingParams& params);
 
   void fillNextBitmask(uint32_t taskId, std::vector<int32_t>& bitmask);
 
@@ -44,4 +45,4 @@ class GuidedDecoderManager {
   std::unique_ptr<Impl> impl;
 };
 
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::runners
