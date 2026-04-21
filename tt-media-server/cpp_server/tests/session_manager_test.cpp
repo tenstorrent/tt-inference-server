@@ -313,4 +313,107 @@ TEST(SessionManagerClose, ReleaseInFlight_NormalCompletion_SessionStaysIdle) {
   manager.releaseInFlight(sessionId);
 }
 
+// ---------------------------------------------------------------------------
+// Concurrency tests
+// ---------------------------------------------------------------------------
+
+// Runs a function from two threads simultaneously using a shared latch.
+template <typename F>
+void runConcurrently(F&& f) {
+  std::atomic<bool> ready{false};
+  auto t1 = std::thread([&] {
+    while (!ready.load(std::memory_order_acquire)) {}
+    f();
+  });
+  auto t2 = std::thread([&] {
+    while (!ready.load(std::memory_order_acquire)) {}
+    f();
+  });
+  ready.store(true, std::memory_order_release);
+  t1.join();
+  t2.join();
+}
+
+TEST(SessionManagerConcurrency, ConcurrentClose_OnlyOneSucceeds) {
+  // Two threads race to close the same session. Exactly one must get SUCCESS;
+  // the other must get NOT_FOUND. The session must be gone afterwards.
+  constexpr int ITERATIONS = 200;
+  for (int i = 0; i < ITERATIONS; ++i) {
+    tt::services::SessionManager manager;
+    LoopFixture lf;
+    auto sessionId = createSessionWithSlot(manager, lf.loop, 100u);
+
+    std::atomic<int> successCount{0};
+    runConcurrently([&] {
+      auto result = manager.closeSession(sessionId);
+      if (result == tt::services::CloseSessionResult::SUCCESS) {
+        successCount.fetch_add(1, std::memory_order_relaxed);
+      }
+    });
+
+    EXPECT_EQ(successCount.load(), 1) << "iteration " << i;
+    EXPECT_EQ(manager.getActiveSessionCount(), 0u) << "iteration " << i;
+  }
+}
+
+TEST(SessionManagerConcurrency, ConcurrentAcquire_OnlyOneSucceeds) {
+  // Two threads race to acquireInFlight the same session. Exactly one must
+  // succeed; the other must throw SessionInFlightException.
+  constexpr int ITERATIONS = 200;
+  for (int i = 0; i < ITERATIONS; ++i) {
+    tt::services::SessionManager manager;
+    LoopFixture lf;
+    auto sessionId = createSessionWithSlot(manager, lf.loop, 101u);
+
+    std::atomic<int> acquireCount{0};
+    runConcurrently([&] {
+      try {
+        manager.acquireInFlight(sessionId, nullptr);
+        acquireCount.fetch_add(1, std::memory_order_relaxed);
+      } catch (const tt::services::SessionInFlightException&) {
+      }
+    });
+
+    EXPECT_EQ(acquireCount.load(), 1) << "iteration " << i;
+    manager.releaseInFlight(sessionId);
+  }
+}
+
+TEST(SessionManagerConcurrency, ConcurrentAcquireAndClose_CancelFiredAtMostOnce) {
+  // One thread acquires in-flight while another closes. The cancel function
+  // must fire at most once regardless of which wins the race. The session
+  // must be absent and the count zero after both threads finish.
+  constexpr int ITERATIONS = 200;
+  for (int i = 0; i < ITERATIONS; ++i) {
+    tt::services::SessionManager manager;
+    LoopFixture lf;
+    auto sessionId = createSessionWithSlot(manager, lf.loop, 102u);
+
+    std::atomic<int> cancelCount{0};
+    std::atomic<bool> ready{false};
+
+    std::thread acquirer([&] {
+      while (!ready.load(std::memory_order_acquire)) {}
+      try {
+        manager.acquireInFlight(
+            sessionId, [&cancelCount] { cancelCount.fetch_add(1); });
+        manager.releaseInFlight(sessionId);
+      } catch (const tt::services::SessionRateLimitException&) {
+      }
+    });
+
+    std::thread closer([&] {
+      while (!ready.load(std::memory_order_acquire)) {}
+      manager.closeSession(sessionId);
+    });
+
+    ready.store(true, std::memory_order_release);
+    acquirer.join();
+    closer.join();
+
+    EXPECT_LE(cancelCount.load(), 1) << "iteration " << i;
+    EXPECT_EQ(manager.getActiveSessionCount(), 0u) << "iteration " << i;
+  }
+}
+
 }  // namespace
