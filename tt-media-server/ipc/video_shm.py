@@ -11,16 +11,29 @@ Two modes:
   - "input"  (server -> runner): carries VideoRequest payloads
   - "output" (runner -> server): carries VideoResponse payloads (file-path reference)
 
+Ownership model
+---------------
+Both sides of the ring (server and runner) call ``open()`` which performs a
+POSIX-style *create-or-attach*: the first caller creates, any later caller
+attaches to the existing segment. Neither side unlinks on process exit, so
+either side can restart and resume at the correct ring position. A separate
+``<name>_state`` SHM segment carries monotonic ``writer_index`` / ``reader_index``
+counters (u64 each) so that on restart a process picks up exactly where it
+left off.
+
+Use ``python -m ipc.video_shm_bootstrap {up,down,status}`` for operator-driven
+creation/teardown/inspection of the segments.
+
 The video payload itself is written to a file on ``/dev/shm/`` (RAM-backed tmpfs)
 and only the file path (~100 bytes) is transmitted through the SHM output slot.
 This avoids multiple large memcpy operations for 100-200 MB video blobs.
 
-Runner side (attaches to SHM created by the device worker)::
+Example usage (either side)::
 
     input_shm  = VideoShm("video_in",  mode="input")
     output_shm = VideoShm("video_out", mode="output")
-    input_shm.open(create=False)
-    output_shm.open(create=False)
+    input_shm.open()   # create-or-attach; symmetric on both sides
+    output_shm.open()
 
     req = input_shm.read_request()
     path = video_result_path(req.task_id)
@@ -99,6 +112,12 @@ class VideoResponse:
 class VideoShm:
     """Slot-based ring buffer over POSIX shared memory for video IPC.
 
+    Two SHM segments per ring:
+      - ``<name>``       : the slot array (ring buffer of requests/responses).
+      - ``<name>_state`` : 16 bytes — ``writer_index`` (u64) + ``reader_index`` (u64).
+        Storing these in SHM (rather than as instance attributes) lets a process
+        on either side restart and resume at the correct ring position.
+
     Layout per slot depends on *mode*:
 
     Input slot (2 640 B):
@@ -111,6 +130,10 @@ class VideoShm:
         state(4) task_id(36) status(4)
         error_len(4) error_msg(256)
         file_path_len(4) file_path(256)
+
+    Slot state transitions (writer flips EMPTY→FILLED, reader flips FILLED→EMPTY)
+    remain the sole synchronization mechanism; the indices are cursors used to
+    pick which slot each role acts on next.
 
     The actual video payload is written to a file (see :func:`video_result_path`)
     and only the path is transmitted through SHM.
@@ -127,9 +150,18 @@ class VideoShm:
         1024 * 1024 * 1024
     )  # 1 GB – fits 720p float32 (1280 * 720 * 3 * 81 frames)
 
-    _FREE = 0
-    _TAKEN = 1
+    _EMPTY = 0
+    _FILLED = 1
     _POLL_INTERVAL_S = 0.0001
+
+    # ── State segment layout (<name>_state) ──
+    # Monotonic u64 counters; slot index = counter % _slots.
+    # Writer role flips _EMPTY -> _FILLED on the slot, then bumps writer_index.
+    # Reader role flips _FILLED -> _EMPTY on the slot, then bumps reader_index.
+    _STATE_WRITER_IDX_OFF = 0
+    _STATE_READER_IDX_OFF = 8
+    STATE_SEGMENT_SIZE = 16
+    _STATE_SUFFIX = "_state"
 
     # ── Input slot field offsets ──
     _IN_STATE = 0
@@ -177,49 +209,98 @@ class VideoShm:
         self._total_size = self._slots * self._slot_size
         self._shm: _shm.SharedMemory | None = None
         self._buf: memoryview | None = None
-        self._pos = 0
+        self._state_shm: _shm.SharedMemory | None = None
+        self._state_buf: memoryview | None = None
         self._is_shutdown = is_shutdown
 
     @property
     def name(self) -> str:
         return self._name
 
+    @property
+    def state_name(self) -> str:
+        return f"{self._name}{self._STATE_SUFFIX}"
+
     # ── Lifecycle ──
 
-    def open(self, *, create: bool = True) -> None:
-        if create:
-            try:
-                self._shm = _shm.SharedMemory(
-                    name=self._name, create=True, size=self._total_size
-                )
-            except FileExistsError:
-                temp_shm = _shm.SharedMemory(name=self._name, create=False)
-                temp_shm.unlink()
-                temp_shm.close()
-                self._shm = _shm.SharedMemory(
-                    name=self._name, create=True, size=self._total_size
-                )
-            os.chmod(f"/dev/shm/{self._name}", 0o666)
-        else:
-            self._shm = _shm.SharedMemory(name=self._name, create=False)
-            # Python 3.10 resource_tracker registers every SharedMemory opener
-            # and unlinks the segment on process exit — even for non-creators.
-            # Unregister immediately so the attaching process never destroys
-            # segments owned by another process.
-            resource_tracker.unregister(f"/{self._name}", "shared_memory")
+    def open(self, create: bool | None = None) -> None:
+        """Create-or-attach both the ring segment and the index-state segment.
+
+        The first caller creates; later callers attach. Neither caller unlinks
+        on process exit, so segments (and ring positions) survive restarts.
+
+        The ``create`` keyword is accepted for backward compatibility and is
+        ignored — behaviour is always "create if missing, else attach".
+        """
+        del create  # kept for backward compatibility with older call sites
+        self._shm, _ = self._create_or_attach(self._name, self._total_size)
+        self._state_shm, _ = self._create_or_attach(
+            self.state_name, self.STATE_SEGMENT_SIZE
+        )
         self._buf = self._shm.buf
+        self._state_buf = self._state_shm.buf
+
+    @staticmethod
+    def _create_or_attach(name: str, size: int) -> tuple[_shm.SharedMemory, bool]:
+        """POSIX O_CREAT-style open: create if absent, else attach.
+
+        Returns (segment, created). Always drops the resource_tracker entry so
+        this process never unlinks the segment on exit.
+        """
+        try:
+            shm = _shm.SharedMemory(name=name, create=True, size=size)
+            created = True
+        except FileExistsError:
+            shm = _shm.SharedMemory(name=name, create=False)
+            if shm.size < size:
+                raise RuntimeError(
+                    f"Existing SHM {name!r} size {shm.size} < expected {size}. "
+                    "Layout changed — run `python -m ipc.video_shm_bootstrap down` "
+                    "to reset, or unlink manually."
+                ) from None
+            created = False
+
+        # Always chmod (idempotent) so whoever created it, either side can attach.
+        try:
+            os.chmod(f"/dev/shm/{name}", 0o666)
+        except (PermissionError, FileNotFoundError):
+            pass
+
+        # Critical: nobody should unlink on process exit. Drop resource_tracker
+        # for every caller (creator and attacher alike) — segments are owned
+        # by the operator via the bootstrap CLI, not by any individual process.
+        try:
+            resource_tracker.unregister(f"/{name}", "shared_memory")
+        except KeyError:
+            pass
+
+        return shm, created
 
     def close(self) -> None:
+        """Detach both segments from this process. Does not unlink."""
         if self._shm:
             self._shm.close()
             self._shm = None
             self._buf = None
+        if self._state_shm:
+            self._state_shm.close()
+            self._state_shm = None
+            self._state_buf = None
 
     def unlink(self) -> None:
-        """Remove the SHM region from /dev/shm/. Only the creator should call this."""
-        if self._shm:
+        """Remove the ring and state segments from /dev/shm/.
+
+        Under the current ownership model this is an *operator-only* action
+        (invoked via ``python -m ipc.video_shm_bootstrap down`` or equivalent).
+        Regular workers must not call this during normal shutdown — other
+        processes may still be attached, and unlinking would destroy their
+        ring state.
+        """
+        for shm in (self._shm, self._state_shm):
+            if shm is None:
+                continue
             try:
-                self._shm.unlink()
+                shm.unlink()
             except FileNotFoundError:
                 pass
 
@@ -230,16 +311,35 @@ class VideoShm:
     def __exit__(self, *exc) -> None:
         self.close()
 
+    # ── Shared index state (writer_index / reader_index in SHM) ──
+
+    def _get_writer_index(self) -> int:
+        return struct.unpack_from("<Q", self._state_buf, self._STATE_WRITER_IDX_OFF)[0]
+
+    def _set_writer_index(self, value: int) -> None:
+        struct.pack_into("<Q", self._state_buf, self._STATE_WRITER_IDX_OFF, value)
+
+    def _get_reader_index(self) -> int:
+        return struct.unpack_from("<Q", self._state_buf, self._STATE_READER_IDX_OFF)[0]
+
+    def _set_reader_index(self, value: int) -> None:
+        struct.pack_into("<Q", self._state_buf, self._STATE_READER_IDX_OFF, value)
+
+    def queue_depth(self) -> int:
+        """Number of FILLED slots currently in the ring (writer - reader)."""
+        return self._get_writer_index() - self._get_reader_index()
+
     # ── Input SHM: request read / write ──
 
     def write_request(self, request: VideoRequest) -> None:
         """Write a VideoRequest into the next free input slot (spin-waits)."""
         buf = self._buf
-        off = self._pos * self._slot_size
+        widx = self._get_writer_index()
+        off = (widx % self._slots) * self._slot_size
         state_off = off + self._IN_STATE
 
         while not self._is_shutdown():
-            if struct.unpack_from("<i", buf, state_off)[0] == self._FREE:
+            if struct.unpack_from("<i", buf, state_off)[0] == self._EMPTY:
                 break
             time.sleep(self._POLL_INTERVAL_S)
         else:
@@ -275,18 +375,19 @@ class VideoShm:
             "<f", buf, off + self._IN_GUIDANCE_SCALE_2, request.guidance_scale_2
         )
 
-        struct.pack_into("<i", buf, state_off, self._TAKEN)
-        self._pos = (self._pos + 1) % self._slots
+        struct.pack_into("<i", buf, state_off, self._FILLED)
+        self._set_writer_index(widx + 1)
 
     def read_request(self, timeout_s: float | None = None) -> VideoRequest | None:
         """Blocking read of a VideoRequest from the next input slot."""
         buf = self._buf
-        off = self._pos * self._slot_size
+        ridx = self._get_reader_index()
+        off = (ridx % self._slots) * self._slot_size
         state_off = off + self._IN_STATE
         deadline = (time.monotonic() + timeout_s) if timeout_s is not None else None
 
         while not self._is_shutdown():
-            if struct.unpack_from("<i", buf, state_off)[0] == self._TAKEN:
+            if struct.unpack_from("<i", buf, state_off)[0] == self._FILLED:
                 break
             if deadline is not None and time.monotonic() >= deadline:
                 return None
@@ -316,8 +417,8 @@ class VideoShm:
             "<f", buf, off + self._IN_GUIDANCE_SCALE_2
         )[0]
 
-        struct.pack_into("<i", buf, state_off, self._FREE)
-        self._pos = (self._pos + 1) % self._slots
+        struct.pack_into("<i", buf, state_off, self._EMPTY)
+        self._set_reader_index(ridx + 1)
 
         return VideoRequest(
             task_id=task_id,
@@ -337,11 +438,12 @@ class VideoShm:
     def write_response(self, response: VideoResponse) -> None:
         """Write a VideoResponse into the next free output slot."""
         buf = self._buf
-        off = self._pos * self._slot_size
+        widx = self._get_writer_index()
+        off = (widx % self._slots) * self._slot_size
         state_off = off + self._OUT_STATE
 
         while not self._is_shutdown():
-            if struct.unpack_from("<i", buf, state_off)[0] == self._FREE:
+            if struct.unpack_from("<i", buf, state_off)[0] == self._EMPTY:
                 break
             time.sleep(self._POLL_INTERVAL_S)
         else:
@@ -365,18 +467,19 @@ class VideoShm:
             MAX_FILE_PATH_LEN,
         )
 
-        struct.pack_into("<i", buf, state_off, self._TAKEN)
-        self._pos = (self._pos + 1) % self._slots
+        struct.pack_into("<i", buf, state_off, self._FILLED)
+        self._set_writer_index(widx + 1)
 
     def read_response(self, timeout_s: float | None = None) -> VideoResponse | None:
         """Blocking read of a VideoResponse from the next output slot."""
         buf = self._buf
-        off = self._pos * self._slot_size
+        ridx = self._get_reader_index()
+        off = (ridx % self._slots) * self._slot_size
         state_off = off + self._OUT_STATE
         deadline = (time.monotonic() + timeout_s) if timeout_s is not None else None
 
         while not self._is_shutdown():
-            if struct.unpack_from("<i", buf, state_off)[0] == self._TAKEN:
+            if struct.unpack_from("<i", buf, state_off)[0] == self._FILLED:
                 break
             if deadline is not None and time.monotonic() >= deadline:
                 return None
@@ -393,8 +496,8 @@ class VideoShm:
             buf, off + self._OUT_FILE_PATH_LEN, off + self._OUT_FILE_PATH
         )
 
-        struct.pack_into("<i", buf, state_off, self._FREE)
-        self._pos = (self._pos + 1) % self._slots
+        struct.pack_into("<i", buf, state_off, self._EMPTY)
+        self._set_reader_index(ridx + 1)
 
         return VideoResponse(
             task_id=task_id,

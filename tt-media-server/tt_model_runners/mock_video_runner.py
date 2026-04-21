@@ -152,8 +152,9 @@ def _run_shm_bridge() -> None:
 
     input_shm = VideoShm(input_name, mode="input", is_shutdown=is_shutdown)
     output_shm = VideoShm(output_name, mode="output", is_shutdown=is_shutdown)
-    input_shm.open(create=True)
-    output_shm.open(create=True)
+    # Create-or-attach; symmetric on both sides under the new ownership model.
+    input_shm.open()
+    output_shm.open()
 
     pipeline = MockVideoPipeline()
     logger.info("Mock video SHM runner ready, waiting for requests...")

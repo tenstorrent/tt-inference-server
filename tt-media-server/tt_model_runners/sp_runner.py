@@ -59,8 +59,8 @@ class SPRunner(BaseDeviceRunner):
         self._output_shm = VideoShm(
             output_name, mode="output", is_shutdown=self._is_shutdown
         )
-        self._input_shm.open(create=False)
-        self._output_shm.open(create=False)
+        self._input_shm.open()
+        self._output_shm.open()
         self.logger.info(
             f"SPRunner {self.device_id}: SHM opened (in={input_name}, out={output_name})"
         )
