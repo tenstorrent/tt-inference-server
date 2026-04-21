@@ -270,6 +270,26 @@
         }
       }
     },
+    "Llama-3.2-3B": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "N150"
+          ]
+        }
+      }
+    },
+    "Qwen3-4B": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "N150"
+          ]
+        }
+      }
+    },
     "Qwen3-Embedding-4B": {
       "inference_engine": "FORGE",
       "ci": {
