@@ -9,4 +9,4 @@ if [ "$1" != "--skip-venv" ]; then
     source "${TT_METAL_HOME}/python_env/bin/activate"
 fi
 
-exec uvicorn --host 0.0.0.0 main:app --lifespan on --port "${SERVICE_PORT:-8000}"
+uvicorn --host 0.0.0.0 main:app --lifespan on --port "${SERVICE_PORT:-8000}"
