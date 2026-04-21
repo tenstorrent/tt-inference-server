@@ -1138,7 +1138,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="e867533",
+        tt_metal_commit="6900b0c",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1253,7 +1253,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="555f240",
+        tt_metal_commit="6900b0c",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1285,7 +1285,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="555f240",
+        tt_metal_commit="6900b0c",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1855,7 +1855,7 @@ llm_templates = [
     ModelSpecTemplate(
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
-        tt_metal_commit="55fd115",
+        tt_metal_commit="6900b0c",
         vllm_commit="aa4ae1e",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1886,7 +1886,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="555f240",
+        tt_metal_commit="6900b0c",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -1918,7 +1918,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        tt_metal_commit="555f240",
+        tt_metal_commit="6900b0c",
         vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
@@ -2710,7 +2710,7 @@ audio_tts_templates = [
     ),
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
-        tt_metal_commit="2508216",
+        tt_metal_commit="6900b0c",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2773,7 +2773,7 @@ audio_tts_templates = [
     ),
     ModelSpecTemplate(
         weights=["microsoft/speecht5_tts"],
-        tt_metal_commit="2508216",
+        tt_metal_commit="6900b0c",
         impl=speecht5_impl,
         min_disk_gb=15,
         min_ram_gb=6,
