@@ -121,7 +121,8 @@ TEST(SessionManagerLifecycle, DeferredClose_FinalizedOnReleaseInFlight) {
   manager.closeSession(sessionId);        // IN_FLIGHT -> CLOSE_REQUESTED
   EXPECT_TRUE(manager.getSession(sessionId).has_value());  // still present
 
-  manager.releaseInFlight(sessionId);  // CLOSE_REQUESTED -> CLOSING -> finalized
+  manager.releaseInFlight(
+      sessionId);  // CLOSE_REQUESTED -> CLOSING -> finalized
   EXPECT_FALSE(manager.getSession(sessionId).has_value());  // now gone
 }
 
@@ -195,7 +196,8 @@ TEST(SessionManagerLifecycle, GetSlotIdBySessionId_ReturnsSlotId) {
   EXPECT_EQ(manager.getSlotIdBySessionId(sessionId), 13u);
 }
 
-TEST(SessionManagerLifecycle, GetSlotIdBySessionId_NotFound_ReturnsInvalidSlot) {
+TEST(SessionManagerLifecycle,
+     GetSlotIdBySessionId_NotFound_ReturnsInvalidSlot) {
   tt::services::SessionManager manager;
 
   EXPECT_EQ(manager.getSlotIdBySessionId("no-such-id"),
