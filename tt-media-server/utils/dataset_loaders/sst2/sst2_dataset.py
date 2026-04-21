@@ -41,7 +41,15 @@ class SSTDataset(BaseDataset):
             add_generation_prompt=True,
         )
         response = RESPONSE_TEMPLATE.substitute(label=LBL2VALUE[example["label"]])
-        full_text = prompt + response + "<end_of_turn>" + self.tokenizer.eos_token
+        full_text = self.tokenizer.apply_chat_template(
+            [
+                {"role": "user", "content": user_content},
+                {"role": "assistant", "content": response},
+            ],
+            tokenize=False,
+            add_generation_prompt=False,
+        )
+        # full_text = full_text.rstrip("\n") + self.tokenizer.eos_token
 
         encoding = self.tokenizer(
             full_text, truncation=False, padding=False, return_tensors="pt",

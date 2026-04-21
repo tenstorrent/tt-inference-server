@@ -30,6 +30,7 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         self._active_adapter: AdapterInfo | None = None
         self._base_model = None
         self._tokenizer = None
+        self._stop_token_ids: set[int] = set()
 
     async def warmup(self):
         # single chip setup
@@ -133,9 +134,21 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         )
         self._tokenizer = AutoTokenizer.from_pretrained(model_name)
         self._tokenizer.pad_token = self._tokenizer.eos_token
+        self._stop_token_ids = self._resolve_stop_token_ids(
+            self._base_model, self._tokenizer
+        )
         self._active_model = self._base_model
         self._active_adapter = None
         self.logger.info(f"Loaded base model: {model_name}")
+
+    @staticmethod
+    def _resolve_stop_token_ids(model, tokenizer) -> set[int]:
+        eos = model.generation_config.eos_token_id
+        if eos is None:
+            eos = tokenizer.eos_token_id
+        if eos is None:
+            return set()
+        return {eos} if isinstance(eos, int) else set(eos)
 
     def _discard_compiled_model(self):
         if self._compiled_model is not None:
@@ -261,8 +274,8 @@ class LoraSingleChipRunner(BaseDeviceRunner):
                 for i, output_tokens_list in enumerate(output_tokens):
                     output_tokens_list.append(output_text[i])
 
-                # Check for EOS token and early exit
-                if torch.all(next_token_id == self._tokenizer.eos_token_id):
+                # Early exit on any declared stop token (e.g. <eos>, <end_of_turn>)
+                if all(int(tid) in self._stop_token_ids for tid in next_token_id):
                     return output_tokens[0]
 
                 # Update inputs for next iteration
