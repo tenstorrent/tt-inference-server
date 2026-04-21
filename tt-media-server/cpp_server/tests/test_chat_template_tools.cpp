@@ -6,7 +6,6 @@
 #include <string>
 #include <vector>
 
-#include "domain/chat_completion_request.hpp"
 #include "domain/chat_message.hpp"
 #include "domain/tool_calls/tool.hpp"
 #include "utils/tokenizers/tokenizer.hpp"

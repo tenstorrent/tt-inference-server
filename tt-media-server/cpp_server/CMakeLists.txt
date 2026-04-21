@@ -440,6 +440,17 @@ target_include_directories(test_chat_template_tools PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
 
+# Llama chat template with tools test
+add_executable(test_llama_chat_template_tools tests/test_llama_chat_template_tools.cpp)
+target_link_libraries(test_llama_chat_template_tools PRIVATE
+    llm_runner_lib
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+target_include_directories(test_llama_chat_template_tools PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
 add_executable(worker_metrics_shm_test
     tests/worker_metrics_shm_test.cpp
     src/worker/worker_metrics_shm.cpp
@@ -463,6 +474,7 @@ gtest_discover_tests(worker_metrics_shm_test)
 # Register tool call tests
 add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
+add_test(NAME LlamaChatTemplateTools COMMAND test_llama_chat_template_tools)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
