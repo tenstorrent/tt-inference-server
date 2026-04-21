@@ -99,6 +99,20 @@ class Scheduler:
     def check_is_model_ready(self) -> bool:
         if self.is_ready is not True:
             raise HTTPException(405, "Model is not ready")
+
+        # Check if at least one worker is ready
+        ready_workers = [
+            worker_id
+            for worker_id, info in self.worker_info.items()
+            if info.get("is_ready", False)
+        ]
+
+        if not ready_workers:
+            raise HTTPException(
+                503,
+                "Service unavailable: No workers available.",
+            )
+
         return True
 
     @log_execution_time("Scheduler - starting workers")
@@ -497,6 +511,8 @@ class Scheduler:
                             self.worker_info[worker_id]["restart_count"] = (
                                 self.worker_info[worker_id].get("restart_count", 0) + 1
                             )
+                            # set worker not ready
+                            self.worker_info[worker_id]["is_ready"] = False
                     else:
                         self.logger.error(
                             f"Worker {worker_id} has died too many times ({restart_count}), restart did not help"
