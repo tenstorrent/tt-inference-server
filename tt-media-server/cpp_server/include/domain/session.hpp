@@ -7,9 +7,6 @@
 
 #include <chrono>
 #include <cstdint>
-#include <optional>
-#include <random>
-#include <sstream>
 #include <string>
 
 #include "domain/manage_memory.hpp"
@@ -17,8 +14,22 @@
 namespace tt::domain {
 
 /**
- * Session represents a user session with an optional slot assignment.
+ * Lifecycle state of a Session.
+ *
+ * Transitions:
+ *   IDLE            --(markInFlight)-------> IN_FLIGHT
+ *   IN_FLIGHT       --(clearInFlight)------> IDLE
+ *   IN_FLIGHT       --(markCloseRequested)-> CLOSE_REQUESTED
+ *   CLOSE_REQUESTED --(clearInFlight)------> CLOSING
  */
+enum class SessionState {
+  IDLE,             // no active request
+  IN_FLIGHT,        // request actively being processed
+  CLOSE_REQUESTED,  // close requested while in-flight; waiting for request to
+                    // finish
+  CLOSING,          // request finished; slot deallocation pending
+};
+
 class Session {
  public:
   /**
@@ -48,55 +59,33 @@ class Session {
    * @return Slot ID, or max uint32_t if unassigned
    */
   uint32_t getSlotId() const { return slot_id_; }
-
-  /**
-   * Assign a slot ID to this session.
-   */
   void setSlotId(uint32_t slotId) { slot_id_ = slotId; }
-
-  /**
-   * Check if a slot is assigned.
-   */
   bool hasSlot() const { return slot_id_ != INVALID_SLOT_ID; }
 
-  /**
-   * Check if the session is in-flight (has an active request).
-   */
-  bool isInFlight() const { return in_flight_; }
+  bool isIdle() const { return state_ == SessionState::IDLE; }
+  bool isInFlight() const { return state_ == SessionState::IN_FLIGHT; }
+  bool isCloseRequested() const {
+    return state_ == SessionState::CLOSE_REQUESTED;
+  }
+  bool isClosing() const { return state_ == SessionState::CLOSING; }
 
-  /**
-   * Set the in-flight status of the session.
-   */
-  void setInFlight(bool inFlight) { in_flight_ = inFlight; }
+  SessionState getState() const { return state_; }
 
-  /**
-   * Returns true if closeSession was called while a request was in-flight.
-   * The close executes automatically when the in-flight request completes.
-   */
-  bool isPendingClose() const { return pending_close_; }
+  // Transition methods return false (without changing state) if the
+  // precondition is not met.
+  bool markInFlight();  // IDLE            -> IN_FLIGHT
+  bool
+  clearInFlight();  // IN_FLIGHT        -> IDLE  |  CLOSE_REQUESTED -> CLOSING
+  bool markCloseRequested();  // IN_FLIGHT        -> CLOSE_REQUESTED
 
-  /**
-   * Mark the session for deferred close.
-   */
-  void setPendingClose(bool pendingClose) { pending_close_ = pendingClose; }
-
-  /**
-   * Get the last activity time.
-   */
   std::chrono::system_clock::time_point getLastActivityTime() const {
     return last_activity_time_;
   }
 
-  /**
-   * Update the last activity time to now.
-   */
   void updateActivityTime() {
     last_activity_time_ = std::chrono::system_clock::now();
   }
 
-  /**
-   * Convert to JSON representation.
-   */
   Json::Value toJson() const {
     Json::Value json;
     json["session_id"] = session_id_;
@@ -109,13 +98,9 @@ class Session {
   std::string session_id_;  // Stable UUID, never changes
   size_t hash_;             // Current content hash, changes with conversation
   uint32_t slot_id_;
-  bool in_flight_{false};
-  bool pending_close_{false};
+  SessionState state_{SessionState::IDLE};
   std::chrono::system_clock::time_point last_activity_time_;
 
-  /**
-   * Generate a UUID v4 string.
-   */
   static std::string generateUuid();
 };
 

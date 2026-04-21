@@ -40,7 +40,6 @@ class SessionInFlightException : public SessionRateLimitException {
 enum class CloseSessionResult {
   SUCCESS,
   NOT_FOUND,
-  IN_FLIGHT,  // session exists but has an active request; dealloc deferred
 };
 
 class SessionManager {
@@ -55,7 +54,7 @@ class SessionManager {
       std::function<void(const tt::domain::Session&)> onCompletion,
       std::function<void(std::string_view errorMessage)> onError,
       trantor::EventLoop* eventLoop, const std::string& requestPrompt,
-      size_t initialHash = 0);
+      size_t initialHash = 0, std::optional<uint32_t> slotId = std::nullopt);
 
   CloseSessionResult closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
@@ -64,7 +63,13 @@ class SessionManager {
   std::optional<domain::Session> getSession(const std::string& sessionId) const;
   size_t getActiveSessionCount() const;
 
-  void setSessionInFlight(const std::string& sessionId, bool inFlight);
+  void releaseInFlight(const std::string& sessionId);
+
+  // Register a callback to be invoked immediately if closeSession is called
+  // while the session has an in-flight request. The callback should abort the
+  // active request. It is cleared automatically once the session is released.
+  void setSessionAbortCallback(const std::string& sessionId,
+                               std::function<void()> onAbort);
 
   /**
    * Result of tryAcquireByPrefixHash containing both slot and session IDs.
@@ -81,10 +86,10 @@ class SessionManager {
    * Returns:
    *   AcquiredSession — session found and successfully locked; contains both
    *                     slotId and sessionId (UUID). Caller owns the in-flight
-   *                     state and MUST call setSessionInFlight(sessionId,
-   * false) when the request completes (success or error). nullopt         — no
-   * session registered under this hash. Caller should fall back to
-   * createSession.
+   *                     state and MUST call releaseInFlight(sessionId) when
+   *                     the request completes (success or error).
+   *   nullopt         — no session registered under this hash. Caller should
+   *                     fall back to createSession.
    *
    * Throws:
    *   SessionInFlightException — all sessions under this hash are already
@@ -136,6 +141,8 @@ class SessionManager {
   void sendAsyncAllocationRequest(PendingAllocation& pendingAllocation);
   void evictOldSessions();
   void sendDeallocRequest(const std::string& sessionId, uint32_t slotId);
+  void finalizeSessionClose(const std::string& sessionId,
+                            const domain::Session& session);
   void readerLoop();
   void retryFailedAllocations();
   void retryFailedDeallocs();
@@ -143,6 +150,7 @@ class SessionManager {
   void updateSessionCountMetric();
 
   mutable utils::ConcurrentMap<size_t, std::list<domain::Session>> sessions;
+  utils::ConcurrentMap<std::string, std::function<void()>> abortCallbacks_;
 
   std::unique_ptr<ipc::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::MemoryResultQueue> memoryResultQueue;

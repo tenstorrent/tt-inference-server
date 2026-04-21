@@ -263,14 +263,14 @@ void LLMController::chatCompletions(
             resp->setBody(chatResponse.toJsonString());
 
             if (sessionId.has_value() && sessionManager) {
-              sessionManager->setSessionInFlight(sessionId.value(), false);
+              sessionManager->releaseInFlight(sessionId.value());
             }
 
             (*cb)(resp);
           } catch (const services::QueueFullException& e) {
             auto sessionId = request->sessionId;
             if (sessionId.has_value() && sessionManager) {
-              sessionManager->setSessionInFlight(sessionId.value(), false);
+              sessionManager->releaseInFlight(sessionId.value());
             }
             (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                                 "rate_limit_exceeded"));
@@ -309,6 +309,13 @@ void LLMController::handleStreaming(
       [this, reqPtr, cb, loop](SessionInfo sessionInfo) {
         try {
           service->preProcess(*reqPtr);
+
+          if (reqPtr->sessionId.has_value() && sessionManager) {
+            auto taskId = reqPtr->task_id;
+            sessionManager->setSessionAbortCallback(
+                reqPtr->sessionId.value(),
+                [svc = service, taskId]() { svc->abortRequest(taskId); });
+          }
 
           StreamParams params;
           params.completionId = "chatcmpl-" + std::to_string(reqPtr->task_id);
@@ -447,12 +454,6 @@ void LLMController::closeSession(
       callback(drogon::HttpResponse::newHttpJsonResponse(response));
       break;
     }
-    case CloseSessionResult::IN_FLIGHT:
-      callback(errorResponse(drogon::k409Conflict,
-                             "Session has an active request in flight; retry "
-                             "after the request completes",
-                             "session_in_flight"));
-      break;
     case CloseSessionResult::NOT_FOUND:
       callback(errorResponse(drogon::k404NotFound, "Session not found",
                              "not_found"));
