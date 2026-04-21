@@ -14,12 +14,11 @@
 #include "domain/manage_memory.hpp"
 #include "ipc/result_queue.hpp"
 #include "pipeline_manager/pipeline_manager.hpp"
+#include "runners/blaze_runner/blaze_utils.hpp"
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
-#include "runners/blaze_runner/blaze_utils.hpp"
 #include "services/memory_services/async_memory_manager.hpp"
-#include "runners/blaze_runner/blaze_utils.hpp"
 
 namespace tt::runners {
 
