@@ -553,8 +553,8 @@ jobs:
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
+            --random-input-len 8 \
+            --random-output-len 1024 \
             --num-prompts 1000 \
             --max-concurrency 64 \
             --save-result \
@@ -570,8 +570,8 @@ jobs:
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
+            --random-input-len 8 \
+            --random-output-len 1024 \
             --num-prompts 1000 \
             --max-concurrency 64 \
             --extra-body '{"response_format": {"type": "json_object"}}' \
@@ -588,8 +588,8 @@ jobs:
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
+            --random-input-len 8 \
+            --random-output-len 1024 \
             --num-prompts 1000 \
             --max-concurrency 64 \
             --extra-body '{"response_format": {"type": "json_schema", "json_schema": {"name": "person", "strict": true, "schema": {"type": "object", "properties": {"name": {"type": "string"}, "age": {"type": "integer"}, "city": {"type": "string"}}, "required": ["name", "age", "city"], "additionalProperties": false}}}}' \
@@ -633,8 +633,8 @@ jobs:
             --backend openai-chat \
             --endpoint /v1/chat/completions \
             --dataset-name random \
-            --random-input-len 128 \
-            --random-output-len 128 \
+            --random-input-len 8 \
+            --random-output-len 1024 \
             --num-prompts 1000 \
             --max-concurrency 64 \
             --save-result \
