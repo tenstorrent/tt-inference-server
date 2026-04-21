@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
     weights_distribution_timeout_seconds: int = 1200
+    # SHM response deadline in SPRunner (server-side proxy to video_runner).
+    # Was hardcoded to 300s; exposed here so it can be tuned per deployment.
+    video_request_timeout_seconds: float = 300.0
 
     # Job management settings
     max_jobs: int = 10000
