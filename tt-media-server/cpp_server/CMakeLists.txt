@@ -429,24 +429,13 @@ target_include_directories(test_tool_call_parser PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
 
-# Chat template with tools test
+# Chat template with tools test (supports both DeepSeek and Llama tokenizers)
 add_executable(test_chat_template_tools tests/test_chat_template_tools.cpp)
 target_link_libraries(test_chat_template_tools PRIVATE
     llm_runner_lib
     ${CMAKE_THREAD_LIBS_INIT}
 )
 target_include_directories(test_chat_template_tools PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
-)
-
-# Llama chat template with tools test
-add_executable(test_llama_chat_template_tools tests/test_llama_chat_template_tools.cpp)
-target_link_libraries(test_llama_chat_template_tools PRIVATE
-    llm_runner_lib
-    ${CMAKE_THREAD_LIBS_INIT}
-)
-target_include_directories(test_llama_chat_template_tools PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
@@ -474,7 +463,6 @@ gtest_discover_tests(worker_metrics_shm_test)
 # Register tool call tests
 add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
-add_test(NAME LlamaChatTemplateTools COMMAND test_llama_chat_template_tools)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
