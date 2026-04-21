@@ -164,6 +164,82 @@ def extract_params_from_filename(filename: str) -> Dict[str, Any]:
             "backend": "aiperf",
         }
 
+    # GuideLLM image benchmark pattern (kept symmetric with AIPerf so omni-modal
+    # image runs are categorized as VLM in the reports). The optional
+    # `_sweep-<idx>` suffix appears when GuideLLM ran a sweep profile (one
+    # source benchmarks.json -> multiple normalized files, one per strategy).
+    guidellm_image_pattern = r"""
+        ^guidellm_benchmark_
+        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _isl-(?P<isl>\d+)
+        _osl-(?P<osl>\d+)
+        _maxcon-(?P<maxcon>\d+)
+        _n-(?P<n>\d+)
+        _images-(?P<images_per_prompt>\d+)
+        _height-(?P<image_height>\d+)
+        _width-(?P<image_width>\d+)
+        (?:_sweep-(?P<sweep_index>\d+))?           # Optional GuideLLM sweep index
+        \.json$
+    """
+    match = re.search(guidellm_image_pattern, filename, re.VERBOSE)
+    if match:
+        model_name = match.group("model")
+        is_image_generation = any(
+            img_gen in model_name.lower()
+            for img_gen in ["stable-diffusion", "sdxl", "sd-", "sd3"]
+        )
+        task_type = "image" if is_image_generation else "vlm"
+        sweep_idx = match.group("sweep_index")
+        return {
+            "model_name": model_name,
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "input_sequence_length": int(match.group("isl")),
+            "output_sequence_length": int(match.group("osl")),
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(match.group("n")),
+            "images_per_prompt": int(match.group("images_per_prompt")),
+            "image_height": int(match.group("image_height")),
+            "image_width": int(match.group("image_width")),
+            "sweep_index": int(sweep_idx) if sweep_idx is not None else None,
+            "task_type": task_type,
+            "backend": "guidellm",
+        }
+
+    # GuideLLM text benchmark pattern (multi_turn_chat / custom_dataset /
+    # omni_modal_text scenarios all flatten to the same vLLM-compatible
+    # filename produced by run_guidellm_benchmarks.emit_normalized_guidellm_result).
+    # The optional `_sweep-<idx>` suffix is present only for sweep profiles.
+    guidellm_text_pattern = r"""
+        ^guidellm_benchmark_
+        (?P<model>.+?)                            # Model name (non-greedy, allows everything)
+        (?:_(?P<device>N150|N300|P100|P150|T3K|p150x4|p150x8|p300x2|P300x2|p300|P300|n150x4|TG|GALAXY|n150|n300|p100|p150|t3k|tg|galaxy))?  # Optional device
+        _(?P<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})
+        _isl-(?P<isl>\d+)
+        _osl-(?P<osl>\d+)
+        _maxcon-(?P<maxcon>\d+)
+        _n-(?P<n>\d+)
+        (?:_sweep-(?P<sweep_index>\d+))?           # Optional GuideLLM sweep index
+        \.json$
+    """
+    match = re.search(guidellm_text_pattern, filename, re.VERBOSE)
+    if match:
+        sweep_idx = match.group("sweep_index")
+        return {
+            "model_name": match.group("model"),
+            "timestamp": match.group("timestamp"),
+            "device": match.group("device"),
+            "input_sequence_length": int(match.group("isl")),
+            "output_sequence_length": int(match.group("osl")),
+            "max_con": int(match.group("maxcon")),
+            "num_requests": int(match.group("n")),
+            "sweep_index": int(sweep_idx) if sweep_idx is not None else None,
+            "task_type": "text",
+            "backend": "guidellm",
+        }
+
     # Try the image benchmark pattern
     image_pattern = r"""
         ^(?:genai_)?benchmark_                    # Optional "genai_" prefix, followed by "benchmark_"
@@ -304,10 +380,16 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
     filename = os.path.basename(filepath)
     params = extract_params_from_filename(filename)
 
-    # Handle aiperf benchmark files
-    if params.get("backend") == "aiperf":
-        logger.info(f"Processing AIPerf benchmark file: {filepath}")
-        # AIPerf files already contain metrics in vLLM-compatible format
+    # Handle aiperf and guidellm benchmark files. GuideLLM results are
+    # normalized into the same flat vLLM-compatible schema as AIPerf by
+    # benchmarking/run_guidellm_benchmarks.py::adapt_guidellm_to_vllm_metrics,
+    # so they share the processing branch and only differ in the `backend`
+    # tag carried through to the report.
+    backend_tag = params.get("backend")
+    if backend_tag in ("aiperf", "guidellm"):
+        logger.info(
+            f"Processing {backend_tag} benchmark file (vLLM-compatible schema): {filepath}"
+        )
         mean_tpot_ms = data.get("mean_tpot_ms", 0)
         if mean_tpot_ms and mean_tpot_ms > 0:
             mean_tps = 1000.0 / mean_tpot_ms
@@ -330,7 +412,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "timestamp": params["timestamp"],
             "model_name": params["model_name"],
             "model_id": data.get("model_id", ""),
-            "backend": "aiperf",
+            "backend": backend_tag,
             "device": params.get("device", ""),
             "input_sequence_length": params["input_sequence_length"],
             "output_sequence_length": params["output_sequence_length"],
