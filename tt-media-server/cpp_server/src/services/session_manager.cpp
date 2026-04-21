@@ -329,6 +329,7 @@ void SessionManager::createSession(
   }
 
   PendingAllocation pendingAllocation{
+      .session = tt::domain::Session(),
       .onCompletion = std::move(onCompletion),
       .onError = std::move(onError),
       .eventLoop = callerEventLoop,
