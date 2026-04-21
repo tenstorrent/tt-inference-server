@@ -23,13 +23,14 @@ services:
       - "9090:9090"
     environment:
       - SERVER_TARGET=${SERVER_TARGET:-tt-inference-server:8000}
+      - SERVER_SERVICE=${SERVER_SERVICE:-python}
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml.tmpl:ro
       - prometheus_data:/prometheus
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
-        sed "s|__SERVER_TARGET__|$$SERVER_TARGET|g"
+        sed "s|__SERVER_TARGET__|$$SERVER_TARGET|g; s|__SERVER_SERVICE__|$$SERVER_SERVICE|g"
         /etc/prometheus/prometheus.yml.tmpl > /tmp/prometheus.yml
         && exec /bin/prometheus
         --config.file=/tmp/prometheus.yml
