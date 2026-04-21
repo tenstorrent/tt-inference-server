@@ -35,7 +35,7 @@ from utils.prompt_configs import EnvironmentConfig
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import ModelSpec
 from workflows.runtime_config import RuntimeConfig
-from workflows.utils import run_command
+from workflows.utils import get_default_workflow_root_log_dir, run_command
 from workflows.workflow_types import InferenceEngine, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
@@ -597,6 +597,23 @@ def emit_normalized_guidellm_result(
     return out_paths
 
 
+def _resolve_safe_output_path(user_path: str) -> Path:
+    """Confine `--output-path` to the workflow logs root (`CACHE_ROOT` in
+    docker, repo `workflow_logs/` otherwise) to satisfy the SAST rule on
+    unsanitized user input in file path resolution. Symlinks and `..` are
+    flattened via `resolve()` before the prefix check, so traversal attempts
+    cannot escape the safelisted base."""
+    base = get_default_workflow_root_log_dir().resolve()
+    candidate = Path(user_path)
+    candidate = (candidate if candidate.is_absolute() else base / candidate).resolve()
+    if candidate != base and base not in candidate.parents:
+        raise ValueError(
+            f"--output-path {user_path!r} resolves outside the allowed base "
+            f"{str(base)!r}; refusing to write GuideLLM results there."
+        )
+    return candidate
+
+
 def main():
     setup_workflow_script_logger(logger)
     logger.info(f"Running {__file__} ...")
@@ -620,7 +637,7 @@ def main():
     if auth_token:
         os.environ["OPENAI_API_KEY"] = auth_token
 
-    output_root = Path(args.output_path)
+    output_root = _resolve_safe_output_path(args.output_path)
     output_root.mkdir(parents=True, exist_ok=True)
 
     workflow_params = parse_workflow_args(runtime_config.workflow_args)
