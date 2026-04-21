@@ -33,15 +33,14 @@ std::string Session::generateUuid() {
   std::lock_guard<std::mutex> lock(genMutex);
   uint64_t a = gen(), b = gen();
 
-  a = (a & ~0xF000ULL) | 0x4000ULL;                        // version 4
+  a = (a & ~0xF000ULL) | 0x4000ULL;                         // version 4
   b = (b & 0x3FFFFFFFFFFFFFFFULL) | 0x8000000000000000ULL;  // variant 10xx
 
   char buf[37];
   snprintf(buf, sizeof(buf), "%08x-%04x-%04x-%04x-%012llx",
            static_cast<uint32_t>(a >> 32),
            static_cast<uint32_t>((a >> 16) & 0xFFFF),
-           static_cast<uint32_t>(a & 0xFFFF),
-           static_cast<uint32_t>(b >> 48),
+           static_cast<uint32_t>(a & 0xFFFF), static_cast<uint32_t>(b >> 48),
            static_cast<unsigned long long>(b & 0x0000FFFFFFFFFFFFULL));
   return buf;
 }

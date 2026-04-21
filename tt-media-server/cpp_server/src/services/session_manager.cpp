@@ -144,8 +144,9 @@ bool SessionManager::assignSlotId(const std::string& sessionId,
 uint32_t SessionManager::getSlotIdBySessionId(
     const std::string& sessionId) const {
   uint32_t result = domain::INVALID_SLOT_ID;
-  sessions.modify(sessionId,
-                  [&result](ManagedSession& ms) { result = ms.session.getSlotId(); });
+  sessions.modify(sessionId, [&result](ManagedSession& ms) {
+    result = ms.session.getSlotId();
+  });
   TT_LOG_DEBUG(
       "[SessionManager] getSlotIdBySessionId sessionId={} -> slotId={}",
       sessionId, result);
@@ -157,17 +158,16 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
   uint32_t result = domain::INVALID_SLOT_ID;
   bool wasInFlight = false;
 
-  sessions.modify(
-      sessionId,
-      [&result, &wasInFlight, cancelFn = std::move(cancelFn)](
-          ManagedSession& ms) mutable {
-        wasInFlight = !ms.session.isIdle();
-        if (wasInFlight) return;
-        ms.session.updateActivityTime();
-        ms.session.markInFlight();
-        ms.cancelFn = std::move(cancelFn);
-        result = ms.session.getSlotId();
-      });
+  sessions.modify(sessionId,
+                  [&result, &wasInFlight,
+                   cancelFn = std::move(cancelFn)](ManagedSession& ms) mutable {
+                    wasInFlight = !ms.session.isIdle();
+                    if (wasInFlight) return;
+                    ms.session.updateActivityTime();
+                    ms.session.markInFlight();
+                    ms.cancelFn = std::move(cancelFn);
+                    result = ms.session.getSlotId();
+                  });
 
   if (wasInFlight) {
     TT_LOG_WARN(
@@ -237,14 +237,16 @@ void SessionManager::evictOldSessions() {
   using Entry = std::pair<std::chrono::system_clock::time_point, std::string>;
   std::vector<Entry> candidates;
 
-  sessions.forEach([&candidates](const std::string& id, const ManagedSession& ms) {
-    if (ms.session.isIdle())
-      candidates.emplace_back(ms.session.getLastActivityTime(), id);
-  });
+  sessions.forEach(
+      [&candidates](const std::string& id, const ManagedSession& ms) {
+        if (ms.session.isIdle())
+          candidates.emplace_back(ms.session.getLastActivityTime(), id);
+      });
 
   size_t n = std::min(evictionCount, candidates.size());
-  std::nth_element(candidates.begin(), candidates.begin() + n, candidates.end(),
-                   [](const Entry& a, const Entry& b) { return a.first < b.first; });
+  std::nth_element(
+      candidates.begin(), candidates.begin() + n, candidates.end(),
+      [](const Entry& a, const Entry& b) { return a.first < b.first; });
   candidates.resize(n);
 
   TT_LOG_DEBUG("[SessionManager] evictOldSessions: {} candidates for eviction",
@@ -253,8 +255,9 @@ void SessionManager::evictOldSessions() {
   for (const auto& [_, sessionId] : candidates) {
     // A concurrent acquireInFlight call may mark the session in-flight
     // between the forEach above and here; takeIf skips it atomically.
-    auto ms = sessions.takeIf(
-        sessionId, [](const ManagedSession& ms) { return ms.session.isIdle(); });
+    auto ms = sessions.takeIf(sessionId, [](const ManagedSession& ms) {
+      return ms.session.isIdle();
+    });
     if (!ms.has_value()) {
       TT_LOG_DEBUG(
           "[SessionManager] evictOldSessions: session {} already removed or "
@@ -329,7 +332,8 @@ void SessionManager::createSession(
       .onCompletion = std::move(onCompletion),
       .onError = std::move(onError),
       .eventLoop = callerEventLoop,
-      .attemptsRemaining = static_cast<int>(tt::config::sessionAllocationMaxRetries()),
+      .attemptsRemaining =
+          static_cast<int>(tt::config::sessionAllocationMaxRetries()),
   };
 
   sendAsyncAllocationRequest(pendingAllocation);
@@ -452,8 +456,9 @@ void SessionManager::handleMemoryResult(
 
 void SessionManager::retryFailedDeallocs() {
   for (auto& d : deferredDeallocQueue.drain()) {
-    TT_LOG_DEBUG("[SessionManager] retryFailedDeallocs: sessionId={}, slotId={}",
-                 d.sessionId, d.slotId);
+    TT_LOG_DEBUG(
+        "[SessionManager] retryFailedDeallocs: sessionId={}, slotId={}",
+        d.sessionId, d.slotId);
     sendDeallocRequest(d.sessionId, d.slotId);
   }
 }

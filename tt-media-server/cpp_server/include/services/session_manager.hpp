@@ -71,7 +71,8 @@ class SessionManager {
   void releaseInFlight(const std::string& sessionId);
 
  private:
-  // cancelFn is null when idle, set atomically with in-flight state by acquireInFlight.
+  // cancelFn is null when idle, set atomically with in-flight state by
+  // acquireInFlight.
   struct ManagedSession {
     domain::Session session;
     std::function<void()> cancelFn;

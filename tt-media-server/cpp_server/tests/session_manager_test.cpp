@@ -238,7 +238,8 @@ TEST(SessionManagerClose, CloseInFlight_FiresCancelFn_AtomicWithAcquire) {
   ASSERT_FALSE(sessionId.empty());
 
   std::atomic<bool> cancelCalled{false};
-  manager.acquireInFlight(sessionId, [&cancelCalled]() { cancelCalled = true; });
+  manager.acquireInFlight(sessionId,
+                          [&cancelCalled]() { cancelCalled = true; });
 
   manager.closeSession(sessionId);
 
@@ -287,7 +288,8 @@ TEST(SessionManagerClose, CancelFn_ClearedOnNormalCompletion) {
   ASSERT_FALSE(sessionId.empty());
 
   std::atomic<bool> cancelCalled{false};
-  manager.acquireInFlight(sessionId, [&cancelCalled]() { cancelCalled = true; });
+  manager.acquireInFlight(sessionId,
+                          [&cancelCalled]() { cancelCalled = true; });
 
   manager.releaseInFlight(sessionId);  // normal completion clears cancel fn
   manager.closeSession(sessionId);     // should not fire cancel
