@@ -18,31 +18,10 @@ mock_settings.default_throttle_level = "5"
 mock_settings.enable_telemetry = False
 mock_settings.is_galaxy = False
 mock_settings.device_mesh_shape = (1, 1)
-mock_settings.warmup_timeout_seconds = 1800
 
 mock_settings_module = Mock()
 mock_settings_module.settings = mock_settings
 sys.modules["config.settings"] = mock_settings_module
-
-
-def _consume_coro(coro):
-    """Close any coroutine passed to a mocked ``run_until_complete`` to avoid
-    ``RuntimeWarning: coroutine '...' was never awaited`` from ``asyncio.wait_for``.
-    """
-    if asyncio.iscoroutine(coro):
-        coro.close()
-    return None
-
-
-def _consume_coro_raise(exc):
-    """Return a side_effect that closes the coroutine then raises ``exc``."""
-
-    def _inner(coro):
-        if asyncio.iscoroutine(coro):
-            coro.close()
-        raise exc
-
-    return _inner
 
 
 # Mock telemetry
@@ -309,7 +288,7 @@ class TestInitializeDeviceWorker:
         mock_get_device_runner.return_value = mock_device_runner
 
         mock_loop = Mock()
-        mock_loop.run_until_complete = Mock(side_effect=_consume_coro)
+        mock_loop.run_until_complete = Mock()
 
         with patch(
             "device_workers.worker_utils.get_device_runner", mock_get_device_runner
@@ -332,7 +311,7 @@ class TestInitializeDeviceWorker:
         mock_get_device_runner.return_value = mock_device_runner
 
         mock_loop = Mock()
-        mock_loop.run_until_complete = Mock(side_effect=_consume_coro)
+        mock_loop.run_until_complete = Mock()
 
         with patch(
             "device_workers.worker_utils.get_device_runner", mock_get_device_runner
@@ -353,7 +332,7 @@ class TestInitializeDeviceWorker:
         mock_get_device_runner.return_value = mock_device_runner
 
         mock_loop = Mock()
-        mock_loop.run_until_complete = Mock(side_effect=_consume_coro)
+        mock_loop.run_until_complete = Mock()
 
         with patch(
             "device_workers.worker_utils.get_device_runner", mock_get_device_runner
@@ -375,7 +354,7 @@ class TestInitializeDeviceWorker:
         mock_get_device_runner.return_value = mock_device_runner
 
         mock_loop = Mock()
-        mock_loop.run_until_complete = Mock(side_effect=_consume_coro)
+        mock_loop.run_until_complete = Mock()
 
         with patch(
             "device_workers.worker_utils.get_device_runner", mock_get_device_runner
@@ -395,9 +374,7 @@ class TestInitializeDeviceWorker:
         mock_get_device_runner.return_value = mock_device_runner
 
         mock_loop = Mock()
-        mock_loop.run_until_complete = Mock(
-            side_effect=_consume_coro_raise(KeyboardInterrupt())
-        )
+        mock_loop.run_until_complete = Mock(side_effect=KeyboardInterrupt())
         mock_loop.close = Mock()
 
         with patch(

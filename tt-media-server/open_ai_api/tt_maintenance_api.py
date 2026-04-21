@@ -10,42 +10,6 @@ from resolver.service_resolver import service_resolver
 
 router = APIRouter()
 
-# Error kinds that mean a worker is not just failing but actively stuck. Any
-# hit here flips overall_state to "hung" regardless of is_ready, because a
-# worker can satisfy check_is_model_ready() and then hang on the next request.
-_HANG_ERROR_KINDS = {"warmup_timeout", "request_timeout", "device_hang"}
-
-
-def _overall_state(status: dict[str, Any]) -> str:
-    """Collapse per-worker fields into a single summary string.
-
-    Priority: hung > failed > starting > degraded > healthy. "hung" means we
-    have a greppable timeout / tt-metal hang signature within the current
-    worker generation; "failed" means a non-hang startup error.
-    """
-    workers: dict = status.get("worker_info") or {}
-    if not workers:
-        return "starting"
-
-    any_hung = any(
-        w.get("last_error_kind") in _HANG_ERROR_KINDS for w in workers.values()
-    )
-    if any_hung:
-        return "hung"
-
-    any_startup_error = any(
-        w.get("last_error_kind") == "startup_error" for w in workers.values()
-    )
-    ready_flags = [bool(w.get("is_ready")) for w in workers.values()]
-
-    if any_startup_error and not any(ready_flags):
-        return "failed"
-    if all(ready_flags):
-        return "healthy"
-    if any(ready_flags):
-        return "degraded"
-    return "starting"
-
 
 @router.get("/tt-liveness")
 def liveness(service: BaseService = Depends(service_resolver)) -> dict[str, Any]:
@@ -62,29 +26,6 @@ def liveness(service: BaseService = Depends(service_resolver)) -> dict[str, Any]
         return {"status": "alive", **service.check_is_model_ready()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Liveness check failed: {e}")
-
-
-@router.get("/tt-status")
-def tt_status(service: BaseService = Depends(service_resolver)) -> dict[str, Any]:
-    """
-    Detailed health + hang-detection status for operators.
-
-    Extends the data from /tt-liveness with per-worker last-error triage and a
-    collapsed `overall_state` field ("healthy" | "degraded" | "starting" |
-    "hung" | "failed"). "hung" fires when any worker has recorded a warmup
-    timeout, request timeout, or native tt-metal hang signature; on that
-    signal the operator can trigger a reset without having to scrape logs.
-
-    Unlike /health and /tt-liveness, this endpoint never raises on a bad
-    model state — it reports it. This is intentional so orchestrators can
-    poll it even while the service is unhealthy.
-    """
-    try:
-        status = service.check_is_model_ready()
-    except Exception:
-        return {"overall_state": "failed", "error": "status check failed"}
-
-    return {"overall_state": _overall_state(status), **status}
 
 
 @router.get("/health")

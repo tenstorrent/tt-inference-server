@@ -4,7 +4,6 @@
 
 import asyncio
 import os
-import re
 import time
 from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
@@ -20,37 +19,6 @@ from telemetry.multiprocess_setup import mark_worker_dead
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 from utils.simple_queue_factory import get_queue, get_task_queue
-
-# Error kinds recorded on worker_info[...]["last_error_kind"]. Matches the
-# greppable signatures emitted by worker_utils.initialize_device_worker
-# (WARMUP_TIMEOUT), tt_model_runners.video_runner (RUNNER_STARTUP_HANG),
-# and tt_model_runners.sp_runner (REQUEST_TIMEOUT). The "device_hang"
-# bucket catches native tt-metal strings when they bubble up.
-_ERROR_KIND_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    (
-        "warmup_timeout",
-        re.compile(r"WARMUP_TIMEOUT|RUNNER_STARTUP_HANG", re.IGNORECASE),
-    ),
-    ("request_timeout", re.compile(r"REQUEST_TIMEOUT", re.IGNORECASE)),
-    (
-        "device_hang",
-        re.compile(
-            r"TT_THROW.*Timed out|potential hang detected|fetch queue wait",
-            re.IGNORECASE,
-        ),
-    ),
-]
-
-
-def _classify_error(message: str, result_key) -> str:
-    """Bucket an error_queue message for /tt-status consumers."""
-    for kind, pattern in _ERROR_KIND_PATTERNS:
-        if pattern.search(message):
-            return kind
-    # Init-time failures flow through device_worker with result_key = -1.
-    if result_key == -1:
-        return "startup_error"
-    return "error"
 
 
 class Scheduler:
@@ -218,10 +186,6 @@ class Scheduler:
             "is_ready": False,
             "error_count": 0,
             "queue_index": worker_index,  # ✅ Track which queue this worker uses
-            # Last-error triage for /tt-status; populated by error_listener.
-            "last_error_at": None,
-            "last_error_kind": None,
-            "last_error_message": None,
         }
 
         self.logger.info(f"Started worker {worker_id} with PID {p.pid}")
@@ -325,37 +289,24 @@ class Scheduler:
                     self.listener_running = False
                     break
 
-                info = self.worker_info.get(worker_id)
-                if info is not None:
-                    info["error_count"] = info.get("error_count", 0) + 1
-                    # Record last-error triage for /tt-status. Classification
-                    # inspects the message for greppable hang signatures so a
-                    # stuck ethernet core or warmup timeout shows up as its own
-                    # bucket, not a generic "error".
-                    info["last_error_at"] = time.time()
-                    info["last_error_kind"] = _classify_error(str(error), result_key)
-                    info["last_error_message"] = str(error)[:512]
+                self.worker_info[worker_id]["error_count"] += 1
 
-                    self.logger.warning(
-                        f"Worker {worker_id} error count is : {info['error_count']} "
-                        f"(kind={info['last_error_kind']})"
-                    )
+                self.logger.warning(
+                    f"Worker {worker_id} error count is : {self.worker_info[worker_id]['error_count']}"
+                )
 
                 self.logger.error(f"Error in worker {result_key}: {error}")
 
-                # result_key is -1 for init failures and a task_id str otherwise.
-                task_id = None
-                if isinstance(result_key, str):
-                    task_id = (
-                        result_key.split("_chunk_")[0]
-                        if "_chunk_" in result_key
-                        else result_key
-                    )
+                task_id = (
+                    result_key.split("_chunk_")[0]
+                    if "_chunk_" in result_key
+                    else result_key
+                )
 
-                if task_id is not None:
-                    queue = self.result_queues.get(task_id)
-                    if queue:
-                        await queue.put(Exception(error))
+                queue = self.result_queues.get(task_id)
+
+                if queue:
+                    await queue.put(Exception(error))
 
             except Exception as e:
                 self.logger.error(f"Error in error_listener: {e}")
@@ -611,8 +562,5 @@ class Scheduler:
                 "restart_count": info["restart_count"],
                 "error_count": info["error_count"],
                 "ready_time": info["ready_time"] if "ready_time" in info else None,
-                "last_error_at": info.get("last_error_at"),
-                "last_error_kind": info.get("last_error_kind"),
-                "last_error_message": info.get("last_error_message"),
             }
         return serializable_worker_info

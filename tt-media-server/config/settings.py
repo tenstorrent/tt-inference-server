@@ -76,14 +76,6 @@ class Settings(BaseSettings):
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
     weights_distribution_timeout_seconds: int = 1200
-    # Max seconds for an in-process device runner's async warmup() (worker_utils).
-    # Used as a defence-in-depth ceiling; the actual device bring-up timeout for
-    # the external video runner lives in runner_startup_timeout_seconds below.
-    warmup_timeout_seconds: int = 1800
-    # Ceiling for the full startup sequence in tt_model_runners.video_runner:
-    # set_device + MPI attach + load_weights + warmup. On trip the runner logs
-    # RUNNER_STARTUP_HANG and hard-exits so tt-run surfaces a non-zero status.
-    runner_startup_timeout_seconds: int = 1800
     # SHM response deadline in SPRunner (server-side proxy to video_runner).
     # Was hardcoded to 300s; exposed here so it can be tuned per deployment.
     video_request_timeout_seconds: float = 300.0

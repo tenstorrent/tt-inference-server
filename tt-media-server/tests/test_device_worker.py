@@ -23,22 +23,12 @@ mock_settings.is_galaxy = False
 mock_settings.device_mesh_shape = (1, 1)
 mock_settings.request_processing_timeout_seconds = 100
 mock_settings.max_batch_delay_time_ms = 0.01
-mock_settings.warmup_timeout_seconds = 1800
 
 mock_settings_module = Mock()
 mock_settings_module.settings = mock_settings
 mock_settings_module.Settings = Mock(return_value=mock_settings)
 mock_settings_module.get_settings = Mock(return_value=mock_settings)
 sys.modules["config.settings"] = mock_settings_module
-
-
-def _consume_coro(coro):
-    """Close any coroutine passed to a mocked ``run_until_complete`` to avoid
-    ``RuntimeWarning: coroutine '...' was never awaited`` from ``asyncio.wait_for``.
-    """
-    if asyncio.iscoroutine(coro):
-        coro.close()
-    return None
 
 
 sys.modules["telemetry.telemetry_client"] = Mock()
@@ -159,7 +149,7 @@ class TestDeviceWorker:
         task_queue.get_many.side_effect = create_get_many_side_effect([])
 
         mock_loop = Mock()
-        mock_loop.run_until_complete = Mock(side_effect=_consume_coro)
+        mock_loop.run_until_complete = Mock(return_value=None)
         mock_loop.close = Mock()
 
         with patch(
@@ -223,7 +213,7 @@ class TestDeviceWorker:
         fresh_device_runner.run.return_value = [Mock(), Mock()]
 
         mock_loop = Mock()
-        mock_loop.run_until_complete = Mock(side_effect=_consume_coro)
+        mock_loop.run_until_complete = Mock(return_value=None)
         mock_loop.close = Mock()
 
         with patch(
@@ -276,7 +266,7 @@ class TestDeviceWorker:
         fresh_device_runner.run.side_effect = Exception("Inference failed")
 
         mock_loop = Mock()
-        mock_loop.run_until_complete = Mock(side_effect=_consume_coro)
+        mock_loop.run_until_complete = Mock(return_value=None)
         mock_loop.close = Mock()
 
         with patch(
@@ -318,7 +308,7 @@ class TestDeviceWorker:
         fresh_device_runner.run.return_value = []
 
         mock_loop = Mock()
-        mock_loop.run_until_complete = Mock(side_effect=_consume_coro)
+        mock_loop.run_until_complete = Mock(return_value=None)
         mock_loop.close = Mock()
 
         with patch(
@@ -423,7 +413,7 @@ class TestDeviceWorker:
         fresh_device_runner.run.return_value = [Mock()]
 
         mock_loop = Mock()
-        mock_loop.run_until_complete = Mock(side_effect=_consume_coro)
+        mock_loop.run_until_complete = Mock(return_value=None)
         mock_loop.close = Mock()
 
         with patch(
@@ -465,7 +455,7 @@ class TestDeviceWorkerIntegration:
         fresh_device_runner.run.return_value = [Mock()]
 
         mock_loop = Mock()
-        mock_loop.run_until_complete = Mock(side_effect=_consume_coro)
+        mock_loop.run_until_complete = Mock(return_value=None)
         mock_loop.close = Mock()
 
         with patch(
@@ -517,7 +507,7 @@ class TestDeviceWorkerIntegration:
         fresh_device_runner.run.side_effect = slow_inference
 
         mock_loop = Mock()
-        mock_loop.run_until_complete = Mock(side_effect=_consume_coro)
+        mock_loop.run_until_complete = Mock(return_value=None)
         mock_loop.close = Mock()
 
         with patch(

@@ -44,14 +44,9 @@ import asyncio
 import os
 import signal
 import sys
-import threading
 import traceback
 from dataclasses import fields as dc_fields
 from typing import Optional
-
-RUNNER_STARTUP_TIMEOUT_S = float(
-    os.environ.get("RUNNER_STARTUP_TIMEOUT_SECONDS", "1800")
-)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -221,28 +216,6 @@ def _run_inference_loop(
                 _write_error_to_shm(output_shm, req.task_id, str(e))
 
 
-def _startup_watchdog(
-    deadline_s: float, done_event: threading.Event, rank: int
-) -> None:
-    """Hard-exit if the startup sequence does not finish within deadline_s.
-
-    Why a thread + os._exit instead of signal.alarm / asyncio.wait_for:
-    tt-metal device bring-up runs deep in C++ and does not periodically
-    check Python interrupts, so neither SIGALRM nor a cancelled asyncio
-    task can unstick a wedged ethernet-core wait. A daemon watchdog is
-    the only reliable way to escape a C++-level hang.
-    """
-    if done_event.wait(timeout=deadline_s):
-        return
-    # Greppable signature the media-server scheduler classifies as
-    # warmup_timeout; also visible in tt-run log aggregation.
-    _log.error(
-        f"Rank {rank}: RUNNER_STARTUP_HANG: startup did not complete within "
-        f"{deadline_s}s (set_device + load_weights + warmup). Hard-exiting."
-    )
-    os._exit(2)
-
-
 def run_all_ranks() -> None:
     rank = _rank()
 
@@ -255,35 +228,19 @@ def run_all_ranks() -> None:
 
     runner = _create_dit_runner(model_runner, rank)
 
-    startup_done = threading.Event()
-    threading.Thread(
-        target=_startup_watchdog,
-        args=(RUNNER_STARTUP_TIMEOUT_S, startup_done, rank),
-        daemon=True,
-        name="startup-watchdog",
-    ).start()
-    _log.info(f"Rank {rank}: startup watchdog armed ({RUNNER_STARTUP_TIMEOUT_S}s)")
+    _log.info(f"Rank {rank}: Setting up device...")
+    runner.set_device()
 
-    try:
-        _log.info(f"Rank {rank}: Setting up device...")
-        runner.set_device()
+    comm = _attach_mpi_comm()
+    _log.info(
+        f"Rank {comm.Get_rank()}/{comm.Get_size()}: MPI attached, loading weights..."
+    )
 
-        comm = _attach_mpi_comm()
-        _log.info(
-            f"Rank {comm.Get_rank()}/{comm.Get_size()}: MPI attached, loading weights..."
-        )
+    runner.load_weights()
 
-        runner.load_weights()
-
-        _log.info(f"Rank {rank}: Running warmup...")
-        asyncio.run(runner.warmup())
-        _log.info(f"Rank {rank}: Model ready for inference")
-    finally:
-        # Disarm the watchdog whether startup succeeded or raised; on
-        # successful completion this prevents a spurious hard-exit, on
-        # exception it lets the normal error path (close_device, etc.)
-        # run instead of the watchdog racing to os._exit first.
-        startup_done.set()
+    _log.info(f"Rank {rank}: Running warmup...")
+    asyncio.run(runner.warmup())
+    _log.info(f"Rank {rank}: Model ready for inference")
 
     input_shm: Optional[VideoShm] = None
     output_shm: Optional[VideoShm] = None
