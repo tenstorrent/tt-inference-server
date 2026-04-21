@@ -59,10 +59,9 @@ class SessionManager {
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
   uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
 
-  // Mark the session in-flight and register the cancel function atomically.
-  // The cancel function is invoked immediately if closeSession is called while
-  // the session is in-flight. Pass a null function for non-cancellable requests.
-  // Returns the slot ID assigned to the session (INVALID_SLOT_ID if not set).
+  // Marks the session in-flight and registers the cancel function atomically.
+  // The cancel function is invoked if closeSession is called while in-flight.
+  // Returns the assigned slot ID (INVALID_SLOT_ID if not yet allocated).
   uint32_t acquireInFlight(const std::string& sessionId,
                            std::function<void()> cancelFn);
 
@@ -72,10 +71,7 @@ class SessionManager {
   void releaseInFlight(const std::string& sessionId);
 
  private:
-  // Bundles a session with the function needed to cancel its active request.
-  // cancelFn is set when the session is in-flight and null when idle. Keeping
-  // both in the same map entry ensures they are always read and written under
-  // the same lock — no risk of the two getting out of sync.
+  // cancelFn is null when idle, set atomically with in-flight state by acquireInFlight.
   struct ManagedSession {
     domain::Session session;
     std::function<void()> cancelFn;

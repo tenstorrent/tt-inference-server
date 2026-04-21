@@ -95,9 +95,6 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
   TT_LOG_DEBUG("[SessionManager] closeSession called for sessionId={}",
                sessionId);
 
-  // Single atomic take: the session and its cancel function are read and
-  // removed together under one lock, so there is no window where a concurrent
-  // acquireInFlight could orphan a cancel callback in a separate map.
   auto ms = sessions.take(sessionId);
   if (!ms.has_value()) {
     TT_LOG_WARN("[SessionManager] Session not found: {}", sessionId);
@@ -149,22 +146,20 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
   uint32_t result = domain::INVALID_SLOT_ID;
   bool wasInFlight = false;
 
-  // Mark in-flight and store the cancel function in a single lock acquisition
-  // so closeSession can never observe the session as in-flight without a cancel.
-  sessions.modify(sessionId,
-                  [&result, &wasInFlight, &cancelFn](ManagedSession& ms) {
-                    wasInFlight = !ms.session.isIdle();
-                    if (wasInFlight) {
-                      return;
-                    }
-                    ms.session.updateActivityTime();
-                    if (!ms.session.markInFlight()) {
-                      TT_LOG_WARN("[Session] markInFlight: unexpected state {}",
-                                  static_cast<int>(ms.session.getState()));
-                    }
-                    ms.cancelFn = std::move(cancelFn);
-                    result = ms.session.getSlotId();
-                  });
+  sessions.modify(
+      sessionId,
+      [&result, &wasInFlight, cancelFn = std::move(cancelFn)](
+          ManagedSession& ms) mutable {
+        wasInFlight = !ms.session.isIdle();
+        if (wasInFlight) return;
+        ms.session.updateActivityTime();
+        if (!ms.session.markInFlight()) {
+          TT_LOG_WARN("[Session] markInFlight: unexpected state {}",
+                      static_cast<int>(ms.session.getState()));
+        }
+        ms.cancelFn = std::move(cancelFn);
+        result = ms.session.getSlotId();
+      });
 
   if (wasInFlight) {
     TT_LOG_WARN(
@@ -189,10 +184,6 @@ std::optional<domain::Session> SessionManager::getSession(
 size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
 
 void SessionManager::releaseInFlight(const std::string& sessionId) {
-  // Session may already be gone if closeSession was called concurrently; that
-  // is expected — closeSession removes the session and sends cancel+dealloc
-  // immediately. Clear the cancel function and in-flight state together under
-  // one lock so no stale callback can be observed.
   bool found = sessions.modify(sessionId, [](ManagedSession& ms) {
     ms.cancelFn = nullptr;
     if (!ms.session.clearInFlight()) {
@@ -210,7 +201,6 @@ void SessionManager::releaseInFlight(const std::string& sessionId) {
   }
   TT_LOG_DEBUG("[SessionManager] Released in-flight for session {}", sessionId);
 }
-
 
 void SessionManager::evictOldSessions() {
   bool expected = false;
@@ -302,10 +292,7 @@ void SessionManager::sendDeallocRequest(const std::string& sessionId,
       "taskId={}",
       sessionId, slotId, task.taskId);
 
-  if (memoryRequestQueue->tryPush(task)) {
-    TT_LOG_DEBUG("[SessionManager] Sent dealloc request for session {} slot {}",
-                 sessionId, slotId);
-  } else {
+  if (!memoryRequestQueue->tryPush(task)) {
     TT_LOG_WARN(
         "[SessionManager] Dealloc queue full, deferring session {} slot {}",
         sessionId, slotId);
@@ -325,7 +312,7 @@ void SessionManager::createSession(
 
   if (slotId.has_value()) {
     domain::Session session(slotId.value());
-    sessions.insert(session.getSessionId(), ManagedSession{session, nullptr});
+    sessions.insert(session.getSessionId(), ManagedSession{session, {}});
     TT_LOG_INFO("[SessionManager] Created session with pre-assigned slot: {}",
                 slotId.value());
     updateSessionCountMetric();
@@ -387,11 +374,6 @@ void SessionManager::sendAsyncAllocationRequest(
           IPC_QUEUE_FULL_RETRY_DELAY.count());
       pendingAllocationsRetryQueue.push(std::move(pa));
     }
-  } else {
-    TT_LOG_DEBUG(
-        "[SessionManager] sendAsyncAllocationRequest: pushed taskId={} to "
-        "IPC queue",
-        task.taskId);
   }
 }
 
@@ -438,10 +420,8 @@ void SessionManager::handleMemoryResult(
                  !result.slotIds.empty();
   if (success) {
     pendingAllocation.session.setSlotId(result.slotIds.front());
-    // Insert as IDLE; the controller will call acquireInFlight to transition
-    // the session and register its cancel function atomically.
     sessions.insert(pendingAllocation.session.getSessionId(),
-                    ManagedSession{pendingAllocation.session, nullptr});
+                    ManagedSession{pendingAllocation.session, {}});
     TT_LOG_DEBUG(
         "[SessionManager] handleMemoryResult: SUCCESS sessionId={}, "
         "assigned slotId={}",
@@ -474,17 +454,10 @@ void SessionManager::handleMemoryResult(
 }
 
 void SessionManager::retryFailedDeallocs() {
-  auto deferredDeallocs = deferredDeallocQueue.drain();
-  if (!deferredDeallocs.empty()) {
-    TT_LOG_DEBUG("[SessionManager] retryFailedDeallocs: {} deferred deallocs",
-                 deferredDeallocs.size());
-  }
-  for (auto& deferredDealloc : deferredDeallocs) {
-    TT_LOG_DEBUG(
-        "[SessionManager] retryFailedDeallocs: retrying sessionId={}, "
-        "slotId={}",
-        deferredDealloc.sessionId, deferredDealloc.slotId);
-    sendDeallocRequest(deferredDealloc.sessionId, deferredDealloc.slotId);
+  for (auto& d : deferredDeallocQueue.drain()) {
+    TT_LOG_DEBUG("[SessionManager] retryFailedDeallocs: sessionId={}, slotId={}",
+                 d.sessionId, d.slotId);
+    sendDeallocRequest(d.sessionId, d.slotId);
   }
 }
 
