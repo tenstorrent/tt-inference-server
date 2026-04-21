@@ -16,6 +16,7 @@ from config.constants import (
 from utils.build_catalog import (
     _build_clusters_catalog,
     _build_models_catalog,
+    _weights_path_matches,
     build_training_catalog,
 )
 from utils.dataset_loaders.dataset_resolver import AVAILABLE_DATASET_LOADERS
@@ -74,6 +75,49 @@ class TestBuildModelsCatalog:
                 (KeyError, ValueError),
             ):
                 _build_models_catalog(ModelRunners.TRAINING_GEMMA_LORA.value)
+
+
+class TestWeightsPathMatches:
+    """Tests for _weights_path_matches."""
+
+    def test_exact_repo_id_match(self):
+        assert _weights_path_matches("Qwen/Qwen3-8B", "Qwen/Qwen3-8B") is True
+
+    def test_resolved_cache_path_match(self):
+        cache_path = "/home/user/huggingface/models--Qwen--Qwen3-8B/snapshots/abc123"
+        assert _weights_path_matches(cache_path, "Qwen/Qwen3-8B") is True
+
+    def test_no_match(self):
+        assert _weights_path_matches("Qwen/Qwen3-8B", "meta-llama/Llama-3.1-8B") is False
+
+    def test_resolved_cache_path_no_match(self):
+        cache_path = "/home/user/huggingface/models--Qwen--Qwen3-8B/snapshots/abc123"
+        assert _weights_path_matches(cache_path, "meta-llama/Llama-3.1-8B") is False
+
+    def test_empty_weights_path(self):
+        assert _weights_path_matches("", "Qwen/Qwen3-8B") is False
+
+
+class TestBuildModelsCatalogWithResolvedPath:
+    """Tests for _build_models_catalog with HF-resolved local paths."""
+
+    def test_filter_with_resolved_cache_path(self):
+        cache_path = "/home/user/huggingface/models--Qwen--Qwen3-8B/snapshots/abc123"
+        models = _build_models_catalog(
+            ModelRunners.TRAINING_LORA.value,
+            model_weights_path=cache_path,
+        )
+        assert len(models) == 1
+        assert models[0]["id"] == ModelNames.QWEN_3_8B.value
+
+    def test_filter_with_resolved_llama_cache_path(self):
+        cache_path = "/home/user/huggingface/models--meta-llama--Llama-3.1-8B/snapshots/abc123"
+        models = _build_models_catalog(
+            ModelRunners.TRAINING_LORA.value,
+            model_weights_path=cache_path,
+        )
+        assert len(models) == 1
+        assert models[0]["id"] == ModelNames.LLAMA_3_1_8B.value
 
 
 class TestBuildClustersCatalog:
