@@ -10,7 +10,7 @@
 
 namespace tt::runners {
 
-using llm_engine::SamplingParams;
+using SamplingParams = tt::domain::SamplingParams;
 
 struct GuidedDecoderManager::Impl {
   xgrammar::TokenizerInfo tokenizerInfo;

@@ -24,10 +24,12 @@
 #include "config/runner_config.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
+#include "domain/sampling_params.hpp"
 #include "runners/llm_runner/scheduler.hpp"
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/sequence.hpp"
 
+using Sequence = tt::domain::Sequence;
+using SamplingParams = tt::domain::SamplingParams;
 namespace ipc = boost::interprocess;
 
 static const char* queueName = "tt_ipc_scheduler_smoke_test";

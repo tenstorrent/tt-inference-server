@@ -255,8 +255,8 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/llm_runner/model_runner.cpp
     src/runners/llm_runner/mock_model_runner.cpp
     src/runners/llm_runner/scheduler.cpp
-    src/runners/llm_runner/sequence.cpp
-    src/runners/llm_runner/sampling_params.cpp
+    src/domain/sequence.cpp
+    src/domain/sampling_params.cpp
     src/utils/logger.cpp
     src/config/settings.cpp
     src/utils/tokenizers/tokenizer.cpp

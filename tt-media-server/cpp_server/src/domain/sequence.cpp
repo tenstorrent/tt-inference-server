@@ -1,13 +1,13 @@
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/sequence.hpp"
 
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
 
 #include "config/runner_config.hpp"
-#include "llm_runner/sampling_params.hpp"
+#include "domain/sampling_params.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::domain {
 
 using Config = tt::config::LLMConfig;
 

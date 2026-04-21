@@ -27,18 +27,18 @@ using tt::services::ContentType;
 using tt::services::TokenParseResult;
 
 LLMService::LLMService()
-    : tokenizer_(&tt::utils::tokenizers::activeTokenizer()) {
+    : tokenizer(&tt::utils::tokenizers::activeTokenizer()) {
   size_t numWorkers = tt::config::numWorkers();
-  max_queue_size_ = tt::config::maxQueueSize();
+  this->maxQueueSize = tt::config::maxQueueSize();
 
-  const auto stopIds = tokenizer_->stopTokenIds();
-  stop_token_set_ = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
+  const auto stopIds = tokenizer->stopTokenIds();
+  stopTokenSet = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
 
-  worker_manager_ = std::make_unique<tt::worker::WorkerManager>(numWorkers);
-  reasoning_parser_ = std::make_unique<ReasoningParser>();
+  workerManager = std::make_unique<tt::worker::WorkerManager>(numWorkers);
+  reasoningParser = std::make_unique<ReasoningParser>();
 
   TT_LOG_INFO("[LLMService] Initialized (workers={})", numWorkers);
-  queue_manager_ =
+  queueManager =
       std::make_unique<tt::ipc::QueueManager>(static_cast<int>(numWorkers));
 }
 
@@ -46,14 +46,14 @@ LLMService::~LLMService() { stop(); }
 
 void LLMService::start() {
   ZoneScopedN("LLMService::start");
-  if (running_.exchange(true)) {
+  if (running.exchange(true)) {
     return;
   }
 
   TT_LOG_INFO("[LLMService] Starting (workers={})",
-              worker_manager_->numWorkers());
+              workerManager->numWorkers());
 
-  worker_manager_->start();
+  workerManager->start();
   tracy_config::tracyStartupSchedulerParent();
   startConsumers();
 
@@ -61,12 +61,12 @@ void LLMService::start() {
   TT_LOG_INFO("[LLMService] Service started");
 }
 
-size_t LLMService::currentQueueSize() const { return pending_tasks_.load(); }
+size_t LLMService::currentQueueSize() const { return pendingTasks.load(); }
 
-bool LLMService::isModelReady() const { return worker_manager_->isReady(); }
+bool LLMService::isModelReady() const { return workerManager->isReady(); }
 
 std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
-  return worker_manager_->getWorkerInfo();
+  return workerManager->getWorkerInfo();
 }
 
 void LLMService::preProcess(domain::LLMRequest& request) const {
@@ -80,7 +80,7 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
     if (cfg.add_bos_token && !cfg.bos_token.empty() && !hasBos) {
       text = cfg.bos_token + text;
     }
-    request.prompt = tokenizer_->encode(text);
+    request.prompt = tokenizer->encode(text);
   }
   const auto& tokens = std::get<std::vector<int>>(request.prompt);
   if (tokens.size() > tt::config::LLMConfig::MAX_INPUT_TOKENS) {
@@ -93,37 +93,37 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
 }
 
 void LLMService::startConsumers() {
-  size_t n = worker_manager_->numWorkers();
-  consumer_threads_.reserve(n);
+  size_t n = workerManager->numWorkers();
+  consumerThreads.reserve(n);
   for (size_t i = 0; i < n; ++i) {
-    consumer_threads_.emplace_back(&LLMService::consumerLoopForWorker, this, i);
+    consumerThreads.emplace_back(&LLMService::consumerLoopForWorker, this, i);
   }
   TT_LOG_INFO("[LLMService] Started {} consumer threads", n);
 }
 
 void LLMService::stop() {
   ZoneScopedN("LLMService::stop");
-  if (!running_.exchange(false)) {
+  if (!running.exchange(false)) {
     return;
   }
 
   TT_LOG_INFO("[LLMService] Stopping...");
 
-  for (auto& q : queue_manager_->result_queues) {
+  for (auto& q : queueManager->resultQueues) {
     q->shutdown();
   }
 
-  for (auto& thread : consumer_threads_) {
+  for (auto& thread : consumerThreads) {
     if (thread.joinable()) {
       thread.join();
     }
   }
-  consumer_threads_.clear();
+  consumerThreads.clear();
 
-  worker_manager_->stop();
+  workerManager->stop();
 
   TT_LOG_INFO("[LLMService] Stopped");
-  queue_manager_->clear();
+  queueManager->clear();
 }
 
 namespace {
@@ -181,14 +181,14 @@ domain::LLMStreamChunk buildStreamChunk(
 std::optional<LLMService::StreamCallbackEntry> LLMService::resolveCallback(
     uint32_t taskId, bool isFinal) {
   if (isFinal) {
-    auto val = stream_callbacks_.take(taskId);
+    auto val = streamCallbacks.take(taskId);
     if (!val.has_value()) return std::nullopt;
-    pending_tasks_.fetch_sub(1);
+    pendingTasks.fetch_sub(1);
     tt::metrics::ServerMetrics::instance().setQueueDepth(
-        static_cast<double>(pending_tasks_.load()));
+        static_cast<double>(pendingTasks.load()));
     return std::move(val.value());
   }
-  return stream_callbacks_.get(taskId);
+  return streamCallbacks.get(taskId);
 }
 
 void LLMService::consumerLoopForWorker(size_t workerIdx) {
@@ -198,7 +198,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
   TT_LOG_INFO("[Consumer-{}] Started", workerIdx);
 
-  auto* worker = worker_manager_->worker(workerIdx);
+  auto* worker = workerManager->worker(workerIdx);
   if (!worker->cfg.result_queue) {
     TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", workerIdx);
     return;
@@ -209,7 +209,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       std::unique_ptr<tt::utils::tokenizers::Tokenizer::StreamDecoder>>
       streamDecoders;
 
-  while (running_) {
+  while (running) {
     bool anyActivity = false;
 
     ipc::SharedToken token;
@@ -226,13 +226,13 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       }
 
       std::string delta =
-          decodeToken(streamDecoders, tokenizer_, taskId, token.token_id,
+          decodeToken(streamDecoders, tokenizer, taskId, token.token_id,
                       isFinal, entry->skip_special_tokens);
       tt::metrics::ServerMetrics::instance().onToken(taskId);
 
       TokenParseResult parseResult{ContentType::ANSWER, delta, true};
-      if (reasoning_parser_) {
-        parseResult = reasoning_parser_->processToken(
+      if (reasoningParser) {
+        parseResult = reasoningParser->processToken(
             taskId, static_cast<int64_t>(token.token_id), delta);
       }
 
@@ -240,7 +240,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         continue;
       }
 
-      auto response = buildStreamChunk(token, parseResult, stop_token_set_);
+      auto response = buildStreamChunk(token, parseResult, stopTokenSet);
       entry->callback(response, isFinal);
 
       if (isFinal) {
@@ -252,10 +252,10 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         }
         tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId,
                                                                   finishReason);
-        if (reasoning_parser_) {
-          reasoning_parser_->finalizeTask(taskId);
+        if (reasoningParser) {
+          reasoningParser->finalizeTask(taskId);
         }
-        TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
+        TRACY_PLOT("pending_tasks", static_cast<double>(pendingTasks.load()));
       }
     }
 
@@ -345,16 +345,16 @@ void LLMService::processStreamingRequest(
   }
   uint32_t taskId = request.task_id;
 
-  pending_tasks_.fetch_add(1);
-  TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
+  pendingTasks.fetch_add(1);
+  TRACY_PLOT("pending_tasks", static_cast<double>(pendingTasks.load()));
   tt::metrics::ServerMetrics::instance().setQueueDepth(
-      static_cast<double>(pending_tasks_.load()));
+      static_cast<double>(pendingTasks.load()));
 
   StreamCallbackEntry entry{std::move(callback), request.skip_special_tokens};
-  stream_callbacks_.insert(taskId, std::move(entry));
+  streamCallbacks.insert(taskId, std::move(entry));
 
-  if (reasoning_parser_) {
-    reasoning_parser_->initializeTask(taskId);
+  if (reasoningParser) {
+    reasoningParser->initializeTask(taskId);
   }
 
   auto prompt = std::get<std::vector<int>>(request.prompt);
@@ -363,7 +363,7 @@ void LLMService::processStreamingRequest(
   tt::metrics::ServerMetrics::instance().onRequestSubmitted(
       taskId, static_cast<int>(prompt.size()));
 
-  auto sequence = std::make_unique<tt::runners::llm_engine::Sequence>(
+  auto sequence = std::make_unique<tt::domain::Sequence>(
       taskId,
       static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
       std::move(tokenIds));
@@ -374,16 +374,16 @@ void LLMService::processStreamingRequest(
   sequence->setContinuation(request.continuation);
   sequence->setDisaggregated(request.disaggregated);
   sequence->setSamplingParams(
-      std::make_unique<tt::runners::llm_engine::SamplingParams>(
+      std::make_unique<tt::domain::SamplingParams>(
           tt::utils::mapper::mapSamplingParams(request)));
-  queue_manager_->task_queue->push(*std::move(sequence));
+  queueManager->taskQueue->push(*std::move(sequence));
 }
 
 void LLMService::postProcess(domain::LLMResponse& response) const {
   // Parse and strip reasoning blocks from all choices
-  if (reasoning_parser_) {
+  if (reasoningParser) {
     for (auto& choice : response.choices) {
-      auto result = reasoning_parser_->parseComplete(choice.text);
+      auto result = reasoningParser->parseComplete(choice.text);
 
       // Replace text with answer only (reasoning stripped)
       choice.text = std::move(result.answer);
@@ -392,12 +392,12 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
 }
 
 void LLMService::abortRequest(uint32_t taskId) {
-  // Atomically remove the stream callback and decrement pending_tasks_.
-  auto entry = stream_callbacks_.take(taskId);
+  // Atomically remove the stream callback and decrement pendingTasks.
+  auto entry = streamCallbacks.take(taskId);
   if (entry.has_value()) {
-    pending_tasks_.fetch_sub(1);
+    pendingTasks.fetch_sub(1);
     tt::metrics::ServerMetrics::instance().setQueueDepth(
-        static_cast<double>(pending_tasks_.load()));
+        static_cast<double>(pendingTasks.load()));
   }
 
   tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId, "abort");
@@ -415,14 +415,14 @@ void LLMService::abortRequest(uint32_t taskId) {
   }
 
   // Clean up any reasoning-parser state so task_states_ does not leak.
-  if (reasoning_parser_) {
-    reasoning_parser_->finalizeTask(taskId);
+  if (reasoningParser) {
+    reasoningParser->finalizeTask(taskId);
   }
 
   // Broadcast the cancel signal to every per-worker cancel queue.
   // Each worker's scheduler::abortRequest is idempotent for unknown task IDs.
-  if (queue_manager_) {
-    for (auto& cq : queue_manager_->cancel_queues) {
+  if (queueManager) {
+    for (auto& cq : queueManager->cancelQueues) {
       cq->push(taskId);
     }
   }

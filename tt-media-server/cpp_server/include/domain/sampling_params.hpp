@@ -8,7 +8,7 @@
 
 #include "config/types.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::domain {
 
 using tt::config::ResponseFormatType;
 

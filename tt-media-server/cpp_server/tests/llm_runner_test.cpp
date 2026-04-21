@@ -13,14 +13,14 @@
 #include "ipc/boost_ipc_result_queue.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/sequence.hpp"
 namespace tt::runners::llm_engine {
 
 using Config = tt::config::LLMConfig;
 
 namespace {
 
-std::shared_ptr<ITaskQueue> makeQueue() {
+std::shared_ptr<tt::ipc::ITaskQueue> makeQueue() {
   return std::make_shared<InMemoryTaskQueue>();
 }
 
@@ -57,7 +57,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   std::vector<uint32_t> taskIds;
   int idCounter = 0;
   for (const auto& req : requests) {
-    Sequence& seq = engine.scheduler().addRequest(
+    tt::domain::Sequence& seq = engine.getScheduler().addRequest(
         tt::utils::TaskIDGenerator::generate(), req.prompt,
         {.max_tokens = req.max_tokens});
     taskIds.push_back(seq.taskId);

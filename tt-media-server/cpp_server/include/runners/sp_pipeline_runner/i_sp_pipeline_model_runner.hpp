@@ -10,15 +10,15 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/sequence.hpp"
 #include "utils/concurrent_queue.hpp"
 
 namespace tt::runners::sp_pipeline {
 
 using DecodeCallback =
-    std::function<void(const tt::runners::llm_engine::TokenResult&)>;
+    std::function<void(const tt::domain::TokenResult&)>;
 using DecodeQueue =
-    tt::utils::LockFreeSPSCQueue<tt::runners::llm_engine::TokenResult>;
+    tt::utils::LockFreeSPSCQueue<tt::domain::TokenResult>;
 
 enum class RequestPhase { PREFILL, DECODE };
 

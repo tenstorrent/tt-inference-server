@@ -8,8 +8,8 @@
 
 #include "config/runner_config.hpp"
 #include "ipc/result_queue.hpp"
-#include "runners/llm_runner/sequence.hpp"
-#include "runners/llm_runner/task_queue.hpp"
+#include "domain/sequence.hpp"
+#include "ipc/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 #include "runners/sp_prefill_runner/i_blaze_prefill_model_runner.hpp"
 
@@ -19,7 +19,7 @@ class BlazePrefillRunner : public IRunner {
  public:
   BlazePrefillRunner(const tt::config::LLMConfig& config,
                      ipc::IResultQueue* resultQueue,
-                     tt::runners::llm_engine::ITaskQueue* taskQueue);
+                     tt::ipc::ITaskQueue* taskQueue);
   ~BlazePrefillRunner() override;
 
   void run() override;
@@ -30,7 +30,7 @@ class BlazePrefillRunner : public IRunner {
  private:
   tt::config::LLMConfig config;
   ipc::IResultQueue* resultQueue;
-  tt::runners::llm_engine::ITaskQueue* taskQueue;
+  tt::ipc::ITaskQueue* taskQueue;
   std::unique_ptr<blaze_prefill::IBlazePrefillModelRunner> modelRunner;
   std::atomic<bool> stopped{false};
 };

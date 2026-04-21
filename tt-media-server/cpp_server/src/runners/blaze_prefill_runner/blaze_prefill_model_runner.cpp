@@ -19,7 +19,7 @@ BlazePrefillModelRunner::BlazePrefillModelRunner()
 
 BlazePrefillModelRunner::~BlazePrefillModelRunner() { exit(); }
 
-std::optional<tt::runners::llm_engine::TokenResult>
+std::optional<tt::domain::TokenResult>
 BlazePrefillModelRunner::forward(uint32_t taskId,
                                  const std::vector<int64_t>& tokenIds) {
   const auto timeoutMs = tt::config::prefillTimeoutMs();
@@ -65,7 +65,7 @@ BlazePrefillModelRunner::forward(uint32_t taskId,
       }
 
       // Return error token
-      return tt::runners::llm_engine::TokenResult(taskId, 0, std::nullopt,
+      return tt::domain::TokenResult(taskId, 0, std::nullopt,
                                                   true);
     }
 
@@ -77,7 +77,7 @@ BlazePrefillModelRunner::forward(uint32_t taskId,
           taskId, tokenId, readBuf.tokenIds.size());
 
       auto result =
-          tt::runners::llm_engine::TokenResult(readBuf.taskId, tokenId);
+          tt::domain::TokenResult(readBuf.taskId, tokenId);
 
       // Check if it's an error token and handle consecutive errors
       if (result.isError) {

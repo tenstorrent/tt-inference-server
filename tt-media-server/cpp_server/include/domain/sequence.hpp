@@ -9,9 +9,9 @@
 #include <vector>
 
 #include "domain/slot_types.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
+#include "domain/sampling_params.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::domain {
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED, ABORTED };
 

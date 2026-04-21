@@ -1,6 +1,6 @@
-#include "runners/llm_runner/sampling_params.hpp"
+#include "domain/sampling_params.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::domain {
 
 namespace {
 

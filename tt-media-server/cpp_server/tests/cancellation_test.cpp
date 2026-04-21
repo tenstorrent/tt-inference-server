@@ -15,7 +15,7 @@
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/sequence.hpp"
 
 namespace tt::runners::llm_engine {
 
@@ -23,7 +23,7 @@ using Config = tt::config::LLMConfig;
 
 namespace {
 
-std::shared_ptr<ITaskQueue> makeQueue() {
+std::shared_ptr<tt::ipc::ITaskQueue> makeQueue() {
   return std::make_shared<InMemoryTaskQueue>();
 }
 
@@ -70,7 +70,7 @@ class InMemoryCancelQueue : public tt::ipc::ICancelQueue {
 class SchedulerAbortTest : public ::testing::Test {
  protected:
   Config config = makeConfig(/*numBlocks=*/32, /*blockSize=*/8);
-  std::shared_ptr<ITaskQueue> queue = makeQueue();
+  std::shared_ptr<tt::ipc::ITaskQueue> queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), /*maxInFlightCount=*/4};
 };
 
@@ -97,10 +97,10 @@ TEST_F(SchedulerAbortTest, AbortWaitingSequence) {
 TEST_F(SchedulerAbortTest, AbortDecodingSequence_FreesBlocks) {
   // Use small block count to verify blocks are freed
   Config smallConfig = makeConfig(/*numBlocks=*/4, /*blockSize=*/8);
-  std::shared_ptr<ITaskQueue> q = makeQueue();
+  std::shared_ptr<tt::ipc::ITaskQueue> q = makeQueue();
   PrefillFirstScheduler s{smallConfig, q.get(), 4};
 
-  size_t freeBlocksBefore = s.blockManager().numFreeBlocks();
+  size_t freeBlocksBefore = s.getBlockManager().numFreeBlocks();
 
   uint32_t id = nextId();
   s.addRequest(id, prompt(4), {.max_tokens = 100});
@@ -110,13 +110,13 @@ TEST_F(SchedulerAbortTest, AbortDecodingSequence_FreesBlocks) {
   s.postprocess(seqs, {100});
 
   // Blocks are allocated
-  EXPECT_LT(s.blockManager().numFreeBlocks(), freeBlocksBefore);
+  EXPECT_LT(s.getBlockManager().numFreeBlocks(), freeBlocksBefore);
 
   // Abort frees blocks
   s.abortRequest(id);
 
   // All blocks should be free again
-  EXPECT_EQ(s.blockManager().numFreeBlocks(), freeBlocksBefore);
+  EXPECT_EQ(s.getBlockManager().numFreeBlocks(), freeBlocksBefore);
 }
 
 TEST_F(SchedulerAbortTest, AbortIsIdempotent) {
@@ -141,7 +141,7 @@ TEST_F(SchedulerAbortTest, AbortFinishedSequence_IsNoOp) {
   uint32_t id = nextId();
   // Use stop_token_ids={100} so token 100 triggers finish
   Config cfgWithStop = makeConfig(32, 8, 256, 0, {100});
-  std::shared_ptr<ITaskQueue> q = makeQueue();
+  std::shared_ptr<tt::ipc::ITaskQueue> q = makeQueue();
   PrefillFirstScheduler s{cfgWithStop, q.get(), 4};
 
   s.addRequest(id, prompt(4), {.max_tokens = 10});
@@ -180,7 +180,7 @@ TEST_F(SchedulerAbortTest, AbortEnablesNewRequests) {
   // Use exactly 1 block with block_size=8. A prompt of 8 tokens needs 1 block.
   // With only 1 block total, only one request can be scheduled at a time.
   Config tightConfig = makeConfig(/*numBlocks=*/1, /*blockSize=*/8);
-  std::shared_ptr<ITaskQueue> q = makeQueue();
+  std::shared_ptr<tt::ipc::ITaskQueue> q = makeQueue();
   PrefillFirstScheduler s{tightConfig, q.get(), 4};
 
   uint32_t id1 = nextId();
@@ -191,11 +191,11 @@ TEST_F(SchedulerAbortTest, AbortEnablesNewRequests) {
   s.postprocess(seqs1, {100});
 
   // Record free blocks — should be 0 since id1 is decoding
-  EXPECT_EQ(s.blockManager().numFreeBlocks(), 0);
+  EXPECT_EQ(s.getBlockManager().numFreeBlocks(), 0);
 
   // Abort id1 — frees its block
   s.abortRequest(id1);
-  EXPECT_EQ(s.blockManager().numFreeBlocks(), 1);
+  EXPECT_EQ(s.getBlockManager().numFreeBlocks(), 1);
 
   // Now a new request can be scheduled
   uint32_t id2 = nextId();
@@ -227,8 +227,8 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
   uint32_t cancelId = nextId();
   uint32_t keepId = nextId();
 
-  runner.scheduler().addRequest(cancelId, prompt(4), {.max_tokens = 100});
-  runner.scheduler().addRequest(keepId, prompt(4), {.max_tokens = 5});
+  runner.getScheduler().addRequest(cancelId, prompt(4), {.max_tokens = 100});
+  runner.getScheduler().addRequest(keepId, prompt(4), {.max_tokens = 5});
 
   std::unordered_map<uint32_t, int> tokenCounts;
   std::atomic<bool> keepFinished{false};
@@ -285,8 +285,8 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   uint32_t cancelId = nextId();
   uint32_t keepId = nextId();
 
-  runner.scheduler().addRequest(cancelId, prompt(4), {.max_tokens = 10});
-  runner.scheduler().addRequest(keepId, prompt(4), {.max_tokens = 5});
+  runner.getScheduler().addRequest(cancelId, prompt(4), {.max_tokens = 10});
+  runner.getScheduler().addRequest(keepId, prompt(4), {.max_tokens = 5});
 
   cancelQueue.push(cancelId);
 

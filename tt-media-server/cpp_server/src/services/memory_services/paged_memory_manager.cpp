@@ -8,9 +8,11 @@
 
 #include "config/settings.hpp"
 #include "runners/llm_runner/block_manager.hpp"
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/sequence.hpp"
 
 namespace tt::services {
+  
+using Sequence = tt::domain::Sequence;
 
 using tt::domain::ManageMemoryResult;
 using tt::domain::ManageMemoryStatus;
@@ -35,7 +37,7 @@ PagedMemoryManager::PagedMemoryManager(
 ManageMemoryStatus PagedMemoryManager::allocateKv(
     const ManageMemoryTask& task, std::vector<int>& outSlotIds) {
   std::vector<int64_t> placeholderTokens(1, 0);  // Hardcoded to use one block
-  tt::runners::llm_engine::Sequence seq(task.taskId, blockManager->blockSize(),
+  Sequence seq(task.taskId, blockManager->getBlockSize(),
                                         std::move(placeholderTokens));
 
   if (!blockManager->allocate(seq)) {
@@ -48,7 +50,7 @@ ManageMemoryStatus PagedMemoryManager::allocateKv(
 
 void PagedMemoryManager::deallocateKv(uint32_t taskId,
                                       std::vector<int> slotIds) {
-  tt::runners::llm_engine::Sequence seq(taskId, blockManager->blockSize(), {});
+  Sequence seq(taskId, blockManager->getBlockSize(), {});
   seq.getMutableBlockTable() = std::move(slotIds);
   blockManager->deallocate(seq);
 }
