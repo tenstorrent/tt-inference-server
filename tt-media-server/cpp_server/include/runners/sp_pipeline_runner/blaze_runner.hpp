@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -16,6 +17,7 @@
 #include "runners/llm_runner/sequence.hpp"
 #include "runners/llm_runner/task_queue.hpp"
 #include "runners/runner_interface.hpp"
+#include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "services/memory_services/async_memory_manager.hpp"
 
 namespace tt::runners {
@@ -47,16 +49,17 @@ class BlazeRunner : public IRunner {
   void handleRequest(
       std::unique_ptr<tt::runners::llm_engine::Sequence> request);
   void evictSlot(uint32_t slotId);
+  void checkOutputHang();
 
   tt::config::LLMConfig config;
   std::unordered_set<int64_t> stopTokenIds;
   ipc::IResultQueue* resultQueue;
   tt::runners::llm_engine::ITaskQueue* taskQueue;
   std::unique_ptr<pm::PipelineManager> pipelineManager;
-  std::unordered_map<uint32_t,
-                     std::unique_ptr<tt::runners::llm_engine::Sequence>>
-      running;
+  std::unordered_map<uint32_t, blaze_utils::SlotContext> slotContexts;
   std::atomic<bool> stopped{false};
   std::unique_ptr<tt::services::AsyncMemoryManager> memoryManager;
+  std::chrono::steady_clock::time_point lastOutputTime;
+  std::chrono::milliseconds outputHangTimeout;
 };
 }  // namespace tt::runners

@@ -57,12 +57,14 @@ LLMController::LLMController() {
 void LLMController::resolveSession(
     std::shared_ptr<domain::LLMRequest> req, trantor::EventLoop* loop,
     std::function<void(SessionInfo)> onResolved,
-    std::function<void(const SessionError&)> onError) const {
+    std::function<void(const SessionError&)> onError,
+    std::function<void()> cancelFn) const {
   SessionInfo info;
 
   if (req->sessionId.has_value() && sessionManager) {
     try {
-      auto slotId = sessionManager->acquireSessionSlot(req->sessionId.value());
+      auto slotId = sessionManager->acquireInFlight(req->sessionId.value(),
+                                                    std::move(cancelFn));
       if (slotId != domain::INVALID_SLOT_ID) {
         req->slotId = slotId;
         req->continuation = true;
@@ -83,9 +85,11 @@ void LLMController::resolveSession(
 
   if (!req->sessionId.has_value() && sessionManager) {
     sessionManager->createSession(
-        [req, onResolved](const domain::Session& session) {
+        [req, onResolved, cancelFn = std::move(cancelFn),
+         mgr = sessionManager](const domain::Session& session) mutable {
           req->sessionId = session.getSessionId();
-          req->slotId = session.getSlotId();
+          req->slotId =
+              mgr->acquireInFlight(session.getSessionId(), std::move(cancelFn));
           SessionInfo info;
           onResolved(info);
         },
@@ -188,14 +192,14 @@ void LLMController::chatCompletions(
             resp->setBody(chatResponse.toJsonString());
 
             if (sessionId.has_value() && sessionManager) {
-              sessionManager->setSessionInFlight(sessionId.value(), false);
+              sessionManager->releaseInFlight(sessionId.value());
             }
 
             (*cb)(resp);
           } catch (const services::QueueFullException& e) {
             auto sessionId = request->sessionId;
             if (sessionId.has_value() && sessionManager) {
-              sessionManager->setSessionInFlight(sessionId.value(), false);
+              sessionManager->releaseInFlight(sessionId.value());
             }
             (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                                 "rate_limit_exceeded"));
@@ -227,6 +231,10 @@ void LLMController::handleStreaming(
   auto cb =
       std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
           std::move(callback));
+
+  auto cancelFn = [svc = service, taskId = reqPtr->task_id]() {
+    svc->abortRequest(taskId);
+  };
 
   resolveSession(
       reqPtr, loop,
@@ -307,7 +315,8 @@ void LLMController::handleStreaming(
                   err.message,
               "service_unavailable"));
         }
-      });
+      },
+      std::move(cancelFn));
 }
 
 bool LLMController::shouldDoPrefillOnDecode(const domain::LLMRequest& request,
@@ -373,12 +382,6 @@ void LLMController::closeSession(
       callback(drogon::HttpResponse::newHttpJsonResponse(response));
       break;
     }
-    case CloseSessionResult::IN_FLIGHT:
-      callback(errorResponse(drogon::k409Conflict,
-                             "Session has an active request in flight; retry "
-                             "after the request completes",
-                             "session_in_flight"));
-      break;
     case CloseSessionResult::NOT_FOUND:
       callback(errorResponse(drogon::k404NotFound, "Session not found",
                              "not_found"));

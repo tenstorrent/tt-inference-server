@@ -799,7 +799,9 @@ class TestSpecTestsBehavior:
 
         with patch.object(spec_tests_run, "_configure_logging"), patch.object(
             spec_tests_run, "parse_args", return_value=args
-        ), patch.object(spec_tests_run, "_apply_filters", return_value=[]):
+        ), patch.object(
+            spec_tests_run.TestFrameworkRunner, "apply_filters", return_value=[]
+        ):
             result = spec_tests_run.main()
 
         assert result == 1
@@ -851,7 +853,9 @@ class TestSpecTestsBehavior:
         with patch.object(spec_tests_run, "_configure_logging"), patch.object(
             spec_tests_run, "parse_args", return_value=args
         ), patch.object(
-            spec_tests_run, "_apply_filters", return_value=[fake_suite]
+            spec_tests_run.TestFrameworkRunner,
+            "apply_filters",
+            return_value=[fake_suite],
         ), patch.object(
             spec_tests_run.importlib, "import_module", return_value=fake_module
         ), patch.object(spec_tests_run, "ServerRunner") as mock_runner:

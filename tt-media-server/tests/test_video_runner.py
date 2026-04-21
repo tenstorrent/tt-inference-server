@@ -337,12 +337,15 @@ class TestRunAllRanks:
         mock_runner.set_device.assert_called_once()
         mock_runner.load_weights.assert_called_once()
         mock_runner.warmup.assert_called_once()
-        mock_input_shm.open.assert_called_once_with(create=True)
-        mock_output_shm.open.assert_called_once_with(create=True)
+        # Under the create-or-attach ownership model, open() takes no args and
+        # the runner never unlinks — segments are owned by the operator via
+        # `python -m ipc.video_shm_bootstrap down`.
+        mock_input_shm.open.assert_called_once_with()
+        mock_output_shm.open.assert_called_once_with()
         mock_input_shm.close.assert_called_once()
-        mock_input_shm.unlink.assert_called_once()
+        mock_input_shm.unlink.assert_not_called()
         mock_output_shm.close.assert_called_once()
-        mock_output_shm.unlink.assert_called_once()
+        mock_output_shm.unlink.assert_not_called()
         mock_runner.close_device.assert_called_once()
 
     def test_rank0_cleanup_on_keyboard_interrupt(self):
@@ -375,10 +378,12 @@ class TestRunAllRanks:
         ):
             run_all_ranks()
 
+        # Under the create-or-attach ownership model, the runner only closes
+        # its own fd on shutdown; unlinking is operator-driven.
         mock_input_shm.close.assert_called_once()
-        mock_input_shm.unlink.assert_called_once()
+        mock_input_shm.unlink.assert_not_called()
         mock_output_shm.close.assert_called_once()
-        mock_output_shm.unlink.assert_called_once()
+        mock_output_shm.unlink.assert_not_called()
         mock_runner.close_device.assert_called_once()
 
     def test_nonrank0_skips_shm(self):

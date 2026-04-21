@@ -373,6 +373,7 @@ void LLMService::processStreamingRequest(
     sequence->setKVCacheSlot(request.slotId.value());
   }
   sequence->setContinuation(request.continuation);
+  sequence->setDisaggregated(request.disaggregated);
   sequence->setSamplingParams(
       std::make_unique<tt::runners::llm_engine::SamplingParams>(
           tt::utils::mapper::mapSamplingParams(request)));

@@ -27,7 +27,9 @@ from ipc.video_shm import (
     VideoStatus,
     cleanup_orphaned_video_files,
 )
+from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
+from utils.decorators import log_execution_time
 
 DEFAULT_VIDEO_HEIGHT = 480
 DEFAULT_VIDEO_WIDTH = 832
@@ -59,8 +61,18 @@ class SPRunner(BaseDeviceRunner):
         self._output_shm = VideoShm(
             output_name, mode="output", is_shutdown=self._is_shutdown
         )
-        self._input_shm.open(create=False)
-        self._output_shm.open(create=False)
+        self._input_shm.open()
+        self._output_shm.open()
+        # Self-heal any gap left by a previous server instance that crashed
+        # mid-write (on input) or mid-read (on output). Scoped to this
+        # process's own role, so safe to run with a live runner peer.
+        in_repair = self._input_shm.recover(side="writer")
+        out_repair = self._output_shm.recover(side="reader")
+        if any(in_repair.values()) or any(out_repair.values()):
+            self.logger.warning(
+                f"SPRunner {self.device_id}: crash-recovery repaired prior "
+                f"inconsistency: input={in_repair} output={out_repair}"
+            )
         self.logger.info(
             f"SPRunner {self.device_id}: SHM opened (in={input_name}, out={output_name})"
         )
@@ -89,6 +101,11 @@ class SPRunner(BaseDeviceRunner):
         self.logger.info(f"SPRunner {self.device_id}: no warmup needed (SHM bridge)")
         return True
 
+    @log_execution_time(
+        "SP-Runner inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
     def run(self, requests):
         request = requests[0]
         task_id = request._task_id
