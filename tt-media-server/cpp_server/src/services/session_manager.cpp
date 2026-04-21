@@ -34,6 +34,19 @@ int computeFailureCount(int attemptsRemaining) {
   return static_cast<int>(tt::config::sessionAllocationMaxRetries()) -
          attemptsRemaining;
 }
+
+domain::ManageMemoryTask makeAllocTask() {
+  return domain::ManageMemoryTask(tt::utils::TaskIDGenerator::generate(),
+                                  domain::MemoryManagementAction::ALLOCATE);
+}
+
+domain::ManageMemoryTask makeDeallocTask(uint32_t slotId) {
+  domain::ManageMemoryTask task(tt::utils::TaskIDGenerator::generate(),
+                                domain::MemoryManagementAction::DEALLOCATE);
+  task.memoryLayout = domain::KvMemoryLayout::Paged;
+  task.slotIds = {slotId};
+  return task;
+}
 }  // namespace
 
 SessionManager::SessionManager() {
@@ -151,10 +164,7 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
         wasInFlight = !ms.session.isIdle();
         if (wasInFlight) return;
         ms.session.updateActivityTime();
-        if (!ms.session.markInFlight()) {
-          TT_LOG_WARN("[Session] markInFlight: unexpected state {}",
-                      static_cast<int>(ms.session.getState()));
-        }
+        ms.session.markInFlight();
         ms.cancelFn = std::move(cancelFn);
         result = ms.session.getSlotId();
       });
@@ -273,11 +283,7 @@ void SessionManager::sendDeallocRequest(const std::string& sessionId,
     return;
   }
 
-  domain::ManageMemoryTask task;
-  task.taskId = utils::TaskIDGenerator::generate();
-  task.action = domain::MemoryManagementAction::DEALLOCATE;
-  task.memoryLayout = domain::KvMemoryLayout::Paged;
-  task.slotIds = {slotId};
+  auto task = makeDeallocTask(slotId);
   TT_LOG_DEBUG(
       "[SessionManager] sendDeallocRequest: sessionId={}, slotId={}, "
       "taskId={}",
@@ -319,9 +325,7 @@ void SessionManager::createSession(
     return;
   }
 
-  domain::Session session = domain::Session(domain::INVALID_SLOT_ID);
   PendingAllocation pendingAllocation{
-      .session = std::move(session),
       .onCompletion = std::move(onCompletion),
       .onError = std::move(onError),
       .eventLoop = callerEventLoop,
@@ -333,9 +337,7 @@ void SessionManager::createSession(
 
 void SessionManager::sendAsyncAllocationRequest(
     PendingAllocation& pendingAllocation) {
-  auto task =
-      domain::ManageMemoryTask(tt::utils::TaskIDGenerator::generate(),
-                               domain::MemoryManagementAction::ALLOCATE);
+  auto task = makeAllocTask();
   TT_LOG_DEBUG(
       "[SessionManager] sendAsyncAllocationRequest: taskId={}, "
       "sessionId={}, attemptsRemaining={}",
