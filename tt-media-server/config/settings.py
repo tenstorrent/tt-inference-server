@@ -281,25 +281,22 @@ class Settings(BaseSettings):
     def _set_config_overrides(self, model_to_run: str, device: str):
         model_name_enum = ModelNames(model_to_run)
 
-        # If MODEL_RUNNER was explicitly set, use it directly instead of
-        # scanning all runners (the same model can appear in multiple runners).
-        explicit_runner = os.getenv("MODEL_RUNNER")
-        model_runner_enum = None
-        if explicit_runner:
-            try:
-                candidate = ModelRunners(explicit_runner)
-                if model_name_enum in MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(
-                    candidate, set()
-                ):
-                    model_runner_enum = candidate
-            except ValueError:
-                pass
-
-        if model_runner_enum is None:
-            for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
-                if model_name_enum in model_names:
-                    model_runner_enum = runner
-                    break
+        explicit_model_runner = os.getenv("MODEL_RUNNER")
+        model_runner_enum = ModelRunners(explicit_model_runner) if explicit_model_runner else None
+        if not model_runner_enum:
+            matching_runners = [
+                runner
+                for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items()
+                if model_name_enum in model_names
+            ]
+            if len(matching_runners) > 1:
+                raise ValueError(
+                    f"Model '{model_to_run}' found in multiple runners "
+                    f"{[r.value for r in matching_runners]}. "
+                    f"Set MODEL_RUNNER to disambiguate."
+                )
+            if matching_runners:
+                model_runner_enum = matching_runners[0]
 
         if model_runner_enum:
             device_type_enum = DeviceTypes(device)
@@ -313,12 +310,12 @@ class Settings(BaseSettings):
         else:
             raise ValueError(f"No model runner found for model {model_to_run}.")
 
+        supported_model = getattr(SupportedModels, model_name_enum.name, None)
+        if supported_model:
+            self.model_weights_path = supported_model.value
+
         if matching_config:
             self.model_runner = model_runner_enum.value
-
-            supported_model = getattr(SupportedModels, model_name_enum.name, None)
-            if supported_model:
-                self.model_weights_path = supported_model.value
 
             # Apply all configuration values (env vars take precedence)
             for key, value in matching_config.items():
