@@ -19,8 +19,11 @@ from typing import Callable
 PREFILL_MAX_TOKEN_IDS = 131072  # matches C++ sp_pipeline::PREFILL_MAX_TOKEN_IDS (128k)
 DECODE_MAX_TOKEN_IDS = 1
 
-# Matches sp_pipeline::SharedMemoryState (shared_memory.hpp): uint64_t cursor only.
-_STATE_SHM_SIZE = 8
+# Matches C++ ipc::SlotRingBufferState (slot_ring_buffer.hpp):
+#   uint64_t writerIndex (offset 0) + uint64_t readerIndex (offset 8)
+_STATE_SHM_SIZE = 16
+_WRITER_INDEX_OFF = 0
+_READER_INDEX_OFF = 8
 
 
 @dataclass(frozen=True)
@@ -49,8 +52,8 @@ class SharedMemory:
     _FAST_MODE_OFF = 16
     _TOKEN_IDS_OFF = 24  # With alignas(8), this starts at offset 24
 
-    _FREE = 0
-    _TAKEN = 1
+    _EMPTY = 0
+    _FILLED = 1
 
     def __init__(
         self,
@@ -66,7 +69,8 @@ class SharedMemory:
         self._shm: _shm.SharedMemory | None = None
         self._shm_state: _shm.SharedMemory | None = None
         self._buf: memoryview | None = None
-        self._pos = 0
+        self._writer_index = 0
+        self._reader_index = 0
         self._is_shutdown = is_shutdown
 
     @property
@@ -79,18 +83,9 @@ class SharedMemory:
                 name=self._name, create=True, size=self._total_size
             )
         except FileExistsError:
-            temp_shm = _shm.SharedMemory(name=self._name, create=False)
-            temp_shm.unlink()  # delete the existing shared memory block
-            self._shm = _shm.SharedMemory(
-                name=self._name, create=True, size=self._total_size
-            )
+            self._shm = _shm.SharedMemory(name=self._name, create=False)
         os.chmod(f"/dev/shm/{self._name}", 0o666)
         self._buf = self._shm.buf
-
-        # Initialize all slots to FREE state
-        for slot_idx in range(self.SLOTS):
-            slot_off = slot_idx * self._message_size + self._STATE_OFF
-            struct.pack_into("<i", self._buf, slot_off, self._FREE)
 
         # C++ may create "{name}_state" for the persisted cursor. Open it here too so
         # multiprocessing.resource_tracker registers it and unlinks on process exit
@@ -104,11 +99,17 @@ class SharedMemory:
             )
         os.chmod(f"/dev/shm/{state_name}", 0o666)
 
-        # Load cursor from state (matches C++ SlotRingBuffer::open())
-        # Should be 0 after fresh creation
-        self._pos = struct.unpack_from("<Q", self._shm_state.buf, 0)[0]
+        # Load writer/reader indices from state (matches C++ SlotRingBuffer::open()).
+        # Both are 0 after fresh creation (kernel zero-fill + ftruncate).
+        self._writer_index = struct.unpack_from(
+            "<Q", self._shm_state.buf, _WRITER_INDEX_OFF
+        )[0]
+        self._reader_index = struct.unpack_from(
+            "<Q", self._shm_state.buf, _READER_INDEX_OFF
+        )[0]
         print(
-            f"SharedMemory({self._name}): Loaded cursor position={self._pos}",
+            f"SharedMemory({self._name}): Loaded indices "
+            f"writer={self._writer_index} reader={self._reader_index}",
             file=__import__("sys").stderr,
         )
 
@@ -121,36 +122,49 @@ class SharedMemory:
             self._shm = None
             self._buf = None
 
-    def _update_state(self) -> None:
-        """Update the persisted cursor state (matches C++ SlotRingBuffer::updateState())"""
+    def _advance_reader(self) -> None:
+        """Advance reader index and persist only the reader field in state
+        (matches C++ SlotRingBuffer::advanceReaderIndex())."""
+        self._reader_index = (self._reader_index + 1) % self.SLOTS
         if self._shm_state:
-            struct.pack_into("<Q", self._shm_state.buf, 0, self._pos)
+            struct.pack_into(
+                "<Q", self._shm_state.buf, _READER_INDEX_OFF, self._reader_index
+            )
+
+    def _advance_writer(self) -> None:
+        """Advance writer index and persist only the writer field in state
+        (matches C++ SlotRingBuffer::advanceWriterIndex())."""
+        self._writer_index = (self._writer_index + 1) % self.SLOTS
+        if self._shm_state:
+            struct.pack_into(
+                "<Q", self._shm_state.buf, _WRITER_INDEX_OFF, self._writer_index
+            )
 
     def read(self) -> PrefillMessage | None:
-        """Blocking read. Spins until a TAKEN slot appears or shutdown is signalled.
-        Advances cursor after reading to match C++ SlotRingBuffer behavior."""
+        """Blocking read. Spins until a FILLED slot appears or shutdown is signalled.
+        Advances reader_index after reading to match C++ SlotRingBuffer behavior."""
         buf = self._buf
-        msg_off = self._pos * self._message_size
+        msg_off = self._reader_index * self._message_size
         state_off = msg_off + self._STATE_OFF
 
         print(
-            f"SharedMemory({self._name}): read() checking slot {self._pos}",
+            f"SharedMemory({self._name}): read() checking slot {self._reader_index}",
             file=__import__("sys").stderr,
         )
 
         iterations = 0
         while not self._is_shutdown():
             slot_state = struct.unpack_from("<i", buf, state_off)[0]
-            if slot_state == self._TAKEN:
+            if slot_state == self._FILLED:
                 print(
-                    f"SharedMemory({self._name}): Found TAKEN slot {self._pos}",
+                    f"SharedMemory({self._name}): Found FILLED slot {self._reader_index}",
                     file=__import__("sys").stderr,
                 )
                 break
             iterations += 1
             if iterations % 100000000 == 0:
                 print(
-                    f"SharedMemory({self._name}): Still waiting on slot {self._pos}, state={slot_state}, iterations={iterations}",
+                    f"SharedMemory({self._name}): Still waiting on slot {self._reader_index}, state={slot_state}, iterations={iterations}",
                     file=__import__("sys").stderr,
                 )
         else:
@@ -166,12 +180,11 @@ class SharedMemory:
         token_ids_off = msg_off + self._TOKEN_IDS_OFF
         token_ids = list(struct.unpack_from(f"<{num_token_ids}q", buf, token_ids_off))
 
-        struct.pack_into("<i", buf, state_off, self._FREE)
-        self._pos = (self._pos + 1) % self.SLOTS
-        self._update_state()
+        struct.pack_into("<i", buf, state_off, self._EMPTY)
+        self._advance_reader()
 
         print(
-            f"SharedMemory({self._name}): read() completed, advanced to slot {self._pos}",
+            f"SharedMemory({self._name}): read() completed, advanced to slot {self._reader_index}",
             file=__import__("sys").stderr,
         )
 
@@ -181,19 +194,19 @@ class SharedMemory:
 
     def write_token(self, task_id: int, token_id: int) -> None:
         """Write a single generated token (decode phase).
-        Advances cursor after writing to match C++ SlotRingBuffer behavior."""
+        Advances writer_index after writing to match C++ SlotRingBuffer behavior."""
         buf = self._buf
-        msg_off = self._pos * self._message_size
+        msg_off = self._writer_index * self._message_size
         state_off = msg_off + self._STATE_OFF
 
         print(
-            f"SharedMemory({self._name}): write_token() to slot {self._pos}",
+            f"SharedMemory({self._name}): write_token() to slot {self._writer_index}",
             file=__import__("sys").stderr,
         )
 
-        # Wait for FREE slot
+        # Wait for EMPTY slot
         while not self._is_shutdown():
-            if struct.unpack_from("<i", buf, state_off)[0] == self._FREE:
+            if struct.unpack_from("<i", buf, state_off)[0] == self._EMPTY:
                 break
         else:
             return
@@ -205,12 +218,11 @@ class SharedMemory:
 
         struct.pack_into("<q", buf, msg_off + self._TOKEN_IDS_OFF, int(token_id))
 
-        struct.pack_into("<i", buf, state_off, self._TAKEN)
-        self._pos = (self._pos + 1) % self.SLOTS
-        self._update_state()
+        struct.pack_into("<i", buf, state_off, self._FILLED)
+        self._advance_writer()
 
         print(
-            f"SharedMemory({self._name}): write_token() completed, advanced to slot {self._pos}",
+            f"SharedMemory({self._name}): write_token() completed, advanced to slot {self._writer_index}",
             file=__import__("sys").stderr,
         )
 
