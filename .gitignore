@@ -77,3 +77,4 @@ server_tests/datasets/*
 model_spec.json
 # deprecated
 default_model_spec.json
+tt-inference-server-v2/run_inf_server_v2.py
