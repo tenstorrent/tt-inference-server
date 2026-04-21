@@ -194,7 +194,9 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
         if task == "cnn":
             return _process_cnn_or_image(data, benchmarks_data, params, filename, "cnn")
         if task == "image":
-            return _process_cnn_or_image(data, benchmarks_data, params, filename, "image")
+            return _process_cnn_or_image(
+                data, benchmarks_data, params, filename, "image"
+            )
 
     task = params.get("task_type")
     if task in ("text_to_speech", "tts"):
@@ -373,14 +375,20 @@ def _process_default(data, params, filename):
     if mean_tpot_ms:
         mean_tpot = max(mean_tpot_ms, 1e-6)
         mean_tps = 1000.0 / mean_tpot
-        std_tps = (mean_tps - (1000.0 / (mean_tpot + data["std_tpot_ms"]))) if data.get("std_tpot_ms") else None
+        std_tps = (
+            (mean_tps - (1000.0 / (mean_tpot + data["std_tpot_ms"])))
+            if data.get("std_tpot_ms")
+            else None
+        )
     else:
         mean_tps = None
         std_tps = None
 
     actual_max_con = min(params["max_con"], params["num_requests"])
     tps_decode = mean_tps * actual_max_con if mean_tps else None
-    tps_prefill = (params["input_sequence_length"] * actual_max_con) / (data.get("mean_ttft_ms") / 1000)
+    tps_prefill = (params["input_sequence_length"] * actual_max_con) / (
+        data.get("mean_ttft_ms") / 1000
+    )
 
     metrics = {
         "timestamp": params["timestamp"],

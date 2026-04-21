@@ -11,7 +11,7 @@ so that rendering is decoupled from data computation.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from report_module.markdown.table_builder import get_markdown_table
 from report_module.types import NOT_MEASURED_STR
@@ -33,9 +33,12 @@ def build_check_columns(target_checks: Optional[Dict]) -> List[Tuple[str, str]]:
                 for w in f"{k}_{metric}".split("_")
             )
             + (
-                "" if metric.endswith("_check") or metric.endswith("_ratio")
-                else " (ms)" if metric.startswith("ttft")
-                else " (TPS)" if metric.startswith("tput")
+                ""
+                if metric.endswith("_check") or metric.endswith("_ratio")
+                else " (ms)"
+                if metric.startswith("ttft")
+                else " (TPS)"
+                if metric.startswith("tput")
                 else ""
             ),
         )
@@ -128,7 +131,12 @@ _STRESS_PERCENTILE_METRIC_GROUPS: Tuple[Tuple[str, str], ...] = (
 )
 
 _STRESS_PERCENTILE_SUFFIXES: Tuple[str, ...] = (
-    "mean", "p5", "p25", "p50", "p95", "p99",
+    "mean",
+    "p5",
+    "p25",
+    "p50",
+    "p95",
+    "p99",
 )
 
 _STRESS_THROUGHPUT_COLUMNS: Tuple[ColumnSpec, ...] = (
@@ -156,7 +164,9 @@ def _build_stress_detailed_columns() -> Tuple[ColumnSpec, ...]:
     return tuple(columns)
 
 
-_STRESS_DETAILED_METRIC_COLUMNS: Tuple[ColumnSpec, ...] = _build_stress_detailed_columns()
+_STRESS_DETAILED_METRIC_COLUMNS: Tuple[ColumnSpec, ...] = (
+    _build_stress_detailed_columns()
+)
 
 
 def _format_numeric_cell(value: Any, decimals: int) -> str:
@@ -199,42 +209,137 @@ def stress_tests_release_markdown(
 
 _TIERED_TARGETS_CNN_IMAGE_VIDEO = [
     ("tier", "Tier", lambda _row, tier, _key: tier.capitalize()),
-    ("ttft_target", "TTFT Target (s)", lambda _row, _tier, tc: _fmt_float(tc.get("ttft"))),
-    ("ttft_measured", "TTFT Measured (s)", lambda row, _tier, _tc: _fmt_float(row.get("ttft"))),
-    ("ttft_ratio", "TTFT Ratio", lambda _row, _tier, tc: _fmt_float(tc.get("ttft_ratio"))),
-    ("ttft_check", "TTFT Check", lambda _row, _tier, tc: _fmt_check(tc.get("ttft_check"))),
-    ("tput_check", "Tput User Check", lambda _row, _tier, tc: _fmt_check(tc.get("tput_check"))),
+    (
+        "ttft_target",
+        "TTFT Target (s)",
+        lambda _row, _tier, tc: _fmt_float(tc.get("ttft")),
+    ),
+    (
+        "ttft_measured",
+        "TTFT Measured (s)",
+        lambda row, _tier, _tc: _fmt_float(row.get("ttft")),
+    ),
+    (
+        "ttft_ratio",
+        "TTFT Ratio",
+        lambda _row, _tier, tc: _fmt_float(tc.get("ttft_ratio")),
+    ),
+    (
+        "ttft_check",
+        "TTFT Check",
+        lambda _row, _tier, tc: _fmt_check(tc.get("ttft_check")),
+    ),
+    (
+        "tput_check",
+        "Tput User Check",
+        lambda _row, _tier, tc: _fmt_check(tc.get("tput_check")),
+    ),
 ]
 
 _TIERED_TARGETS_AUDIO = [
     ("tier", "Tier", lambda _row, tier, _tc: tier.capitalize()),
-    ("ttft_target", "TTFT Target (ms)", lambda _row, _tier, tc: _fmt_float(tc.get("ttft"))),
-    ("ttft_measured", "TTFT Measured (ms)", lambda row, _tier, _tc: _fmt_float(row.get("mean_ttft_ms") or (row.get("ttft", 0) * 1000 if isinstance(row.get("ttft"), (int, float)) else None))),
-    ("ttft_ratio", "TTFT Ratio", lambda _row, _tier, tc: _fmt_float(tc.get("ttft_ratio"))),
-    ("ttft_check", "TTFT Check", lambda _row, _tier, tc: _fmt_check(tc.get("ttft_check"))),
+    (
+        "ttft_target",
+        "TTFT Target (ms)",
+        lambda _row, _tier, tc: _fmt_float(tc.get("ttft")),
+    ),
+    (
+        "ttft_measured",
+        "TTFT Measured (ms)",
+        lambda row, _tier, _tc: _fmt_float(
+            row.get("mean_ttft_ms")
+            or (
+                row.get("ttft", 0) * 1000
+                if isinstance(row.get("ttft"), (int, float))
+                else None
+            )
+        ),
+    ),
+    (
+        "ttft_ratio",
+        "TTFT Ratio",
+        lambda _row, _tier, tc: _fmt_float(tc.get("ttft_ratio")),
+    ),
+    (
+        "ttft_check",
+        "TTFT Check",
+        lambda _row, _tier, tc: _fmt_check(tc.get("ttft_check")),
+    ),
 ]
 
 _TIERED_TARGETS_TTS = _TIERED_TARGETS_AUDIO + [
     ("rtr_target", "RTR Target", lambda _row, _tier, tc: _fmt_float(tc.get("rtr"))),
-    ("rtr_measured", "RTR Measured", lambda row, _tier, _tc: _fmt_float(row.get("rtr"))),
+    (
+        "rtr_measured",
+        "RTR Measured",
+        lambda row, _tier, _tc: _fmt_float(row.get("rtr")),
+    ),
     ("rtr_ratio", "RTR Ratio", lambda _row, _tier, tc: _fmt_float(tc.get("rtr_ratio"))),
     ("rtr_check", "RTR Check", lambda _row, _tier, tc: _fmt_check(tc.get("rtr_check"))),
 ]
 
 _TIERED_TARGETS_EMBEDDING = [
     ("tier", "Tier", lambda _row, tier, _tc: tier.capitalize()),
-    ("tput_user_target", "Tput User Target (TPS)", lambda _row, _tier, tc: _fmt_float(tc.get("tput_user"))),
-    ("tput_user_measured", "Tput User Measured (TPS)", lambda row, _tier, _tc: _fmt_float(row.get("tput_user"))),
-    ("tput_user_ratio", "Tput User Ratio", lambda _row, _tier, tc: _fmt_float(tc.get("tput_user_ratio"))),
-    ("tput_user_check", "Tput User Check", lambda _row, _tier, tc: _fmt_check(tc.get("tput_user_check"))),
-    ("tput_prefill_target", "Tput Prefill Target (TPS)", lambda _row, _tier, tc: _fmt_float(tc.get("tput_prefill"))),
-    ("tput_prefill_measured", "Tput Prefill Measured (TPS)", lambda row, _tier, _tc: _fmt_float(row.get("tput_prefill"))),
-    ("tput_prefill_ratio", "Tput Prefill Ratio", lambda _row, _tier, tc: _fmt_float(tc.get("tput_prefill_ratio"))),
-    ("tput_prefill_check", "Tput Prefill Check", lambda _row, _tier, tc: _fmt_check(tc.get("tput_prefill_check"))),
-    ("e2el_target", "E2EL Target (ms)", lambda _row, _tier, tc: _fmt_float(tc.get("e2el_ms"))),
-    ("e2el_measured", "E2EL Measured (ms)", lambda row, _tier, _tc: _fmt_float(row.get("e2el_ms"))),
-    ("e2el_ratio", "E2EL Ratio", lambda _row, _tier, tc: _fmt_float(tc.get("e2el_ms_ratio"))),
-    ("e2el_check", "E2EL Check", lambda _row, _tier, tc: _fmt_check(tc.get("e2el_ms_check"))),
+    (
+        "tput_user_target",
+        "Tput User Target (TPS)",
+        lambda _row, _tier, tc: _fmt_float(tc.get("tput_user")),
+    ),
+    (
+        "tput_user_measured",
+        "Tput User Measured (TPS)",
+        lambda row, _tier, _tc: _fmt_float(row.get("tput_user")),
+    ),
+    (
+        "tput_user_ratio",
+        "Tput User Ratio",
+        lambda _row, _tier, tc: _fmt_float(tc.get("tput_user_ratio")),
+    ),
+    (
+        "tput_user_check",
+        "Tput User Check",
+        lambda _row, _tier, tc: _fmt_check(tc.get("tput_user_check")),
+    ),
+    (
+        "tput_prefill_target",
+        "Tput Prefill Target (TPS)",
+        lambda _row, _tier, tc: _fmt_float(tc.get("tput_prefill")),
+    ),
+    (
+        "tput_prefill_measured",
+        "Tput Prefill Measured (TPS)",
+        lambda row, _tier, _tc: _fmt_float(row.get("tput_prefill")),
+    ),
+    (
+        "tput_prefill_ratio",
+        "Tput Prefill Ratio",
+        lambda _row, _tier, tc: _fmt_float(tc.get("tput_prefill_ratio")),
+    ),
+    (
+        "tput_prefill_check",
+        "Tput Prefill Check",
+        lambda _row, _tier, tc: _fmt_check(tc.get("tput_prefill_check")),
+    ),
+    (
+        "e2el_target",
+        "E2EL Target (ms)",
+        lambda _row, _tier, tc: _fmt_float(tc.get("e2el_ms")),
+    ),
+    (
+        "e2el_measured",
+        "E2EL Measured (ms)",
+        lambda row, _tier, _tc: _fmt_float(row.get("e2el_ms")),
+    ),
+    (
+        "e2el_ratio",
+        "E2EL Ratio",
+        lambda _row, _tier, tc: _fmt_float(tc.get("e2el_ms_ratio")),
+    ),
+    (
+        "e2el_check",
+        "E2EL Check",
+        lambda _row, _tier, tc: _fmt_check(tc.get("e2el_ms_check")),
+    ),
 ]
 
 _TIERED_TARGETS_COLUMN_SETS = {
@@ -273,9 +378,7 @@ def _tier_is_missing(target_checks_tier: Dict[str, Any]) -> bool:
     return all(target_checks_tier.get(k) == ReportCheckTypes.NA for k in check_fields)
 
 
-def tiered_targets_markdown(
-    summary_row: Dict[str, Any], model_type_name: str
-) -> str:
+def tiered_targets_markdown(summary_row: Dict[str, Any], model_type_name: str) -> str:
     """Render per-tier target-check rows as a single markdown table.
 
     Tiers whose checks are all ``N/A`` are skipped.  Returns an empty
@@ -330,8 +433,7 @@ def generate_evals_release_markdown(report_rows: List[Dict[str, Any]]) -> str:
     headers = [h for h in formatted_rows[0].keys() if h not in remove_keys]
 
     column_widths = {
-        h: max(len(h), max(len(row[h]) for row in formatted_rows))
-        for h in headers
+        h: max(len(h), max(len(row[h]) for row in formatted_rows)) for h in headers
     }
 
     header_row = "| " + " | ".join(f"{h:<{column_widths[h]}}" for h in headers) + " |"
@@ -369,3 +471,206 @@ def generate_evals_summary_table(results: Dict, meta_data: Dict) -> str:
     for task_name, metric_name, metric_value in rows:
         md += f"| {task_name.ljust(col_widths[0])} | {metric_name.ljust(col_widths[1])} | {metric_value.rjust(col_widths[2])} |\n"
     return md
+
+
+# ── Simple-eval release + summary rendering ──────────────────────────────
+#
+# Simple-eval JSONs are already flat (one dict per task) and carry all the
+# fields needed for display.  Rendering is a purely declarative mapping:
+# ``_SIMPLE_EVAL_COLUMN_SETS[task_type] -> list of (key, header, getter)``.
+# Adding a new task_type is two edits in this file: a new column list plus
+# a new dispatch-dict entry.
+
+SimpleEvalColumn = Tuple[str, str, Callable[[Dict[str, Any]], str]]
+
+
+def _fmt_published_score(row: Dict[str, Any]) -> str:
+    value = row.get("published_score")
+    rendered = _fmt_float(value)
+    ref = row.get("published_score_ref")
+    return f"[{rendered}]({ref})" if ref else rendered
+
+
+def _fmt_check_field(row: Dict[str, Any], key: str) -> str:
+    value = row.get(key)
+    if value is None:
+        return "N/A"
+    if isinstance(value, ReportCheckTypes):
+        return ReportCheckTypes.to_display_string(value)
+    if isinstance(value, int):
+        try:
+            return ReportCheckTypes.to_display_string(ReportCheckTypes(value))
+        except ValueError:
+            return "N/A"
+    return "N/A"
+
+
+def _fmt_accuracy_check(row: Dict[str, Any]) -> str:
+    return _fmt_check_field(row, "accuracy_check")
+
+
+def _fmt_performance_check(row: Dict[str, Any]) -> str:
+    return _fmt_check_field(row, "performance_check")
+
+
+def _fmt_summary_score(row: Dict[str, Any]) -> str:
+    # Embedding rows expose ``main_score`` instead of ``score``.
+    value = row.get("score")
+    if value is None:
+        value = row.get("main_score")
+    return _fmt_float(value)
+
+
+_SIMPLE_EVAL_IMAGE_COLUMNS: List[SimpleEvalColumn] = [
+    ("task_name", "Task", lambda r: str(r.get("task_name", "N/A"))),
+    ("score", "Score", lambda r: _fmt_float(r.get("score"))),
+    ("fid_score", "FID", lambda r: _fmt_float(r.get("fid_score"))),
+    ("average_clip", "CLIP (avg)", lambda r: _fmt_float(r.get("average_clip"))),
+    (
+        "deviation_clip_score",
+        "CLIP (stdev)",
+        lambda r: _fmt_float(r.get("deviation_clip_score")),
+    ),
+    ("tput_user", "Tput User (TPS)", lambda r: _fmt_float(r.get("tput_user"))),
+    ("published_score", "Published Score", _fmt_published_score),
+    ("accuracy_check", "Accuracy Check", _fmt_accuracy_check),
+]
+
+_SIMPLE_EVAL_VIDEO_COLUMNS: List[SimpleEvalColumn] = [
+    ("task_name", "Task", lambda r: str(r.get("task_name", "N/A"))),
+    ("average_clip", "CLIP (avg)", lambda r: _fmt_float(r.get("average_clip"))),
+    ("min_clip", "CLIP (min)", lambda r: _fmt_float(r.get("min_clip"))),
+    ("max_clip", "CLIP (max)", lambda r: _fmt_float(r.get("max_clip"))),
+    (
+        "clip_standard_deviation",
+        "CLIP (stdev)",
+        lambda r: _fmt_float(r.get("clip_standard_deviation")),
+    ),
+    ("fvd", "FVD", lambda r: _fmt_float(r.get("fvd"))),
+    ("fvmd", "FVMD", lambda r: _fmt_float(r.get("fvmd"))),
+    ("num_prompts", "Prompts", lambda r: str(r.get("num_prompts", "N/A"))),
+    (
+        "num_inference_steps",
+        "Steps",
+        lambda r: str(r.get("num_inference_steps", "N/A")),
+    ),
+    ("published_score", "Published Score", _fmt_published_score),
+    ("accuracy_check", "Accuracy Check", _fmt_accuracy_check),
+]
+
+_SIMPLE_EVAL_CNN_COLUMNS: List[SimpleEvalColumn] = [
+    ("task_name", "Task", lambda r: str(r.get("task_name", "N/A"))),
+    ("score", "Score", lambda r: _fmt_float(r.get("score"))),
+    ("published_score", "Published Score", _fmt_published_score),
+    ("accuracy_check", "Accuracy Check", _fmt_accuracy_check),
+]
+
+_SIMPLE_EVAL_EMBEDDING_COLUMNS: List[SimpleEvalColumn] = [
+    ("task_name", "Task", lambda r: str(r.get("task_name", "N/A"))),
+    ("main_score", "Main Score", lambda r: _fmt_float(r.get("main_score"))),
+    ("pearson", "Pearson", lambda r: _fmt_float(r.get("pearson"))),
+    ("spearman", "Spearman", lambda r: _fmt_float(r.get("spearman"))),
+    (
+        "cosine_pearson",
+        "Cosine Pearson",
+        lambda r: _fmt_float(r.get("cosine_pearson")),
+    ),
+    (
+        "cosine_spearman",
+        "Cosine Spearman",
+        lambda r: _fmt_float(r.get("cosine_spearman")),
+    ),
+    (
+        "manhattan_pearson",
+        "Manhattan Pearson",
+        lambda r: _fmt_float(r.get("manhattan_pearson")),
+    ),
+    (
+        "manhattan_spearman",
+        "Manhattan Spearman",
+        lambda r: _fmt_float(r.get("manhattan_spearman")),
+    ),
+    (
+        "euclidean_pearson",
+        "Euclidean Pearson",
+        lambda r: _fmt_float(r.get("euclidean_pearson")),
+    ),
+    (
+        "euclidean_spearman",
+        "Euclidean Spearman",
+        lambda r: _fmt_float(r.get("euclidean_spearman")),
+    ),
+]
+
+_SIMPLE_EVAL_TTS_COLUMNS: List[SimpleEvalColumn] = [
+    ("task_name", "Task", lambda r: str(r.get("task_name", "N/A"))),
+    ("score", "Score", lambda r: _fmt_float(r.get("score"))),
+    ("rtr", "RTR", lambda r: _fmt_float(r.get("rtr"))),
+    ("p90_ttft", "P90 TTFT (ms)", lambda r: _fmt_float(r.get("p90_ttft"))),
+    ("p95_ttft", "P95 TTFT (ms)", lambda r: _fmt_float(r.get("p95_ttft"))),
+    ("published_score", "Published Score", _fmt_published_score),
+    ("performance_check", "Performance Check", _fmt_performance_check),
+    ("accuracy_check", "Accuracy Check", _fmt_accuracy_check),
+]
+
+# Dispatch is keyed on the literal ``task_type`` value found in each eval JSON.
+# TTS emits ``"text_to_speech"`` (not ``"tts"``); if that ever changes the
+# key must be updated in lock-step with the producer.
+_SIMPLE_EVAL_COLUMN_SETS: Dict[str, List[SimpleEvalColumn]] = {
+    "image": _SIMPLE_EVAL_IMAGE_COLUMNS,
+    "video": _SIMPLE_EVAL_VIDEO_COLUMNS,
+    "cnn": _SIMPLE_EVAL_CNN_COLUMNS,
+    "embedding": _SIMPLE_EVAL_EMBEDDING_COLUMNS,
+    "text_to_speech": _SIMPLE_EVAL_TTS_COLUMNS,
+}
+
+_SIMPLE_EVAL_SUMMARY_COLUMNS: List[SimpleEvalColumn] = [
+    ("task_type", "Task Type", lambda r: str(r.get("task_type", "N/A"))),
+    ("task_name", "Task", lambda r: str(r.get("task_name", "N/A"))),
+    ("score", "Score", _fmt_summary_score),
+    ("published_score", "Published Score", _fmt_published_score),
+    ("accuracy_check", "Accuracy Check", _fmt_accuracy_check),
+]
+
+
+def _section_heading(task_type: str) -> str:
+    return task_type.replace("_", " ").title()
+
+
+def generate_simple_evals_release_markdown(rows: List[Dict[str, Any]]) -> str:
+    """Render one markdown sub-section per ``task_type`` in *rows*.
+
+    Rows whose ``task_type`` has no registered column set are skipped; this
+    keeps a single unsupported row from breaking the whole report.
+    """
+    if not rows:
+        return ""
+
+    rows_by_task_type: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        rows_by_task_type.setdefault(row.get("task_type", "unknown"), []).append(row)
+
+    sections: List[str] = []
+    for task_type, typed_rows in rows_by_task_type.items():
+        columns = _SIMPLE_EVAL_COLUMN_SETS.get(task_type)
+        if columns is None:
+            continue
+        display = [
+            {header: getter(row) for _, header, getter in columns} for row in typed_rows
+        ]
+        sections.append(
+            f"#### {_section_heading(task_type)} Accuracy Results\n\n"
+            + get_markdown_table(display, include_notes=False)
+        )
+    return "\n\n".join(sections)
+
+
+def generate_simple_evals_summary_table(rows: List[Dict[str, Any]]) -> str:
+    """Compact per-row summary table spanning all task_types."""
+    if not rows:
+        return "No evaluation results to display."
+    display = [
+        {header: getter(row) for _, header, getter in _SIMPLE_EVAL_SUMMARY_COLUMNS}
+        for row in rows
+    ]
+    return get_markdown_table(display, include_notes=False)

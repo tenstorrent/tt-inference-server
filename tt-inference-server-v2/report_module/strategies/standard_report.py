@@ -63,7 +63,6 @@ _MODEL_TYPE_TO_TASK_LABEL = {
 
 
 class _WhisperSpecWrapper:
-
     __slots__ = ("model_spec",)
 
     def __init__(self, model_spec: ModelSpec) -> None:
@@ -71,7 +70,6 @@ class _WhisperSpecWrapper:
 
 
 class StandardReportStrategy(ReportStrategy):
-
     SUB_SECTIONS = (
         SUB_SECTION_BENCHMARKS,
         SUB_SECTION_BENCHMARK_SUMMARY,
@@ -104,7 +102,10 @@ class StandardReportStrategy(ReportStrategy):
     def _section_requested(context: ReportContext, section: str) -> bool:
         if not context.selected_sections:
             return True
-        return section in context.selected_sections or "standard" in context.selected_sections
+        return (
+            section in context.selected_sections
+            or "standard" in context.selected_sections
+        )
 
     @staticmethod
     def _extract_evals_tput_user(
@@ -150,9 +151,7 @@ class StandardReportStrategy(ReportStrategy):
         )
 
         if self._is_text_vlm_model(context.model_spec):
-            targets_md, summary_data = self._build_target_markdown(
-                context, all_results
-            )
+            targets_md, summary_data = self._build_target_markdown(context, all_results)
         else:
             targets_md, summary_data = self._build_tiered_summary_markdown(
                 context, rows_by_tool, evals_tput_user
@@ -212,7 +211,7 @@ class StandardReportStrategy(ReportStrategy):
         rows_by_tool: Dict[str, List[Dict[str, Any]]],
         model_spec: ModelSpec,
     ) -> None:
-       
+
         if "whisper" not in model_spec.hf_model_repo.lower():
             return
         wrapper = _WhisperSpecWrapper(model_spec)
@@ -237,7 +236,9 @@ class StandardReportStrategy(ReportStrategy):
         if not perf_refs:
             return "", []
 
-        vllm_rows = [r for r in all_results if r.get("backend") in ("vllm", "openai-chat")]
+        vllm_rows = [
+            r for r in all_results if r.get("backend") in ("vllm", "openai-chat")
+        ]
         text_rows = [r for r in vllm_rows if r.get("task_type", "text") == "text"]
         vlm_rows = [r for r in vllm_rows if r.get("task_type", "text") == "vlm"]
 
@@ -245,12 +246,16 @@ class StandardReportStrategy(ReportStrategy):
         vlm_refs = [p for p in perf_refs if getattr(p, "task_type", "text") == "vlm"]
 
         text_targets = (
-            compute_text_target_checks(text_rows, text_refs, model_spec, context.device_str)
+            compute_text_target_checks(
+                text_rows, text_refs, model_spec, context.device_str
+            )
             if text_refs and text_rows
             else []
         )
         vlm_targets = (
-            compute_vlm_target_checks(vlm_rows, vlm_refs, model_spec, context.device_str)
+            compute_vlm_target_checks(
+                vlm_rows, vlm_refs, model_spec, context.device_str
+            )
             if vlm_refs and vlm_rows
             else []
         )
@@ -271,7 +276,11 @@ class StandardReportStrategy(ReportStrategy):
         raw_refs = dms.perf_reference if dms.perf_reference else []
         return [
             cap_benchmark_params(
-                p, dms.max_context, dms.max_tokens_all_users, dms.max_concurrency, model_spec.model_name
+                p,
+                dms.max_context,
+                dms.max_tokens_all_users,
+                dms.max_concurrency,
+                model_spec.model_name,
             )
             for p in raw_refs
         ]
@@ -315,7 +324,9 @@ class StandardReportStrategy(ReportStrategy):
             model_name=context.model_name,
             device_str=context.device_str,
         )
-        summary_data = [{"tool": tool, **summary} for tool, summary in rendered_summaries]
+        summary_data = [
+            {"tool": tool, **summary} for tool, summary in rendered_summaries
+        ]
         return md, summary_data
 
     # ── Accuracy evaluations ─────────────────────────────────────────────
@@ -329,7 +340,9 @@ class StandardReportStrategy(ReportStrategy):
         files = glob(file_path_pattern)
 
         if "image" in model_spec.supported_modalities:
-            files = _extend_with_image_eval_files(files, context.workflow_log_dir, eval_run_id, model_spec)
+            files = _extend_with_image_eval_files(
+                files, context.workflow_log_dir, eval_run_id, model_spec
+            )
 
         files = list(dict.fromkeys(files))
         logger.info(f"Evals: processing {len(files)} files")
@@ -381,8 +394,8 @@ class StandardReportStrategy(ReportStrategy):
     def _generate_simple_eval(
         self, context: ReportContext, raw_evals_data: List[Dict[str, Any]]
     ) -> Dict[str, ReportResult]:
-        release_md, summary_md = MarkdownVisualizer.build_evals_markdown(
-            [], context.model_name, context.device_str
+        release_md, summary_md = MarkdownVisualizer.build_simple_evals_markdown(
+            raw_evals_data, context.model_name, context.device_str
         )
 
         return {
@@ -428,7 +441,9 @@ def _is_simple_eval_model(model_spec: ModelSpec) -> bool:
 
 def _eval_file_pattern(model_spec: ModelSpec, eval_run_id: str) -> str:
     glob_name = _EVAL_GLOB_PATTERN.get(model_spec.model_type, _DEFAULT_EVAL_GLOB)
-    return f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/{glob_name}"
+    return (
+        f"eval_{eval_run_id}/{model_spec.hf_model_repo.replace('/', '__')}/{glob_name}"
+    )
 
 
 def _extend_with_image_eval_files(
@@ -456,7 +471,8 @@ def _extract_eval_json_data(json_path: Path) -> Tuple[List[Dict], Dict[str, Any]
     first_key = list(results.keys())[0]
     first_results = results[first_key]
     extracted_metrics = {
-        k: v for k, v in first_results.items()
+        k: v
+        for k, v in first_results.items()
         if "alias" not in k and "_stderr" not in k
     }
     extracted = [{first_key: extracted_metrics}]
@@ -543,7 +559,9 @@ def _evals_release_report_data(
 
     for task in eval_config.tasks:
         if not task.score:
-            logger.info(f"Skipping report for task:= {task.task_name}, no eval score defined.")
+            logger.info(
+                f"Skipping report for task:= {task.task_name}, no eval score defined."
+            )
             continue
 
         target_keys = _resolve_eval_target_keys(task.task_name, results)
@@ -557,7 +575,9 @@ def _evals_release_report_data(
             logger.info(f"eval processing task_name: {t_key}")
             score = _compute_eval_score(task, t_key, results)
             report_rows.append(
-                _build_scored_eval_row(model_spec.model_name, device_str, task, t_key, score, meta_data)
+                _build_scored_eval_row(
+                    model_spec.model_name, device_str, task, t_key, score, meta_data
+                )
             )
 
     return report_rows
@@ -579,11 +599,14 @@ def _compute_eval_score(task, t_key: str, results: Dict) -> float:
 
     if not any(k in actual_data for k in configured_keys):
         valid = [
-            k for k, v in actual_data.items()
+            k
+            for k, v in actual_data.items()
             if isinstance(v, (int, float)) and "stderr" not in k and "alias" not in k
         ]
         if valid:
-            logger.info(f"  Metric mismatch for {t_key}. Auto-detected replacement: {valid[0]}")
+            logger.info(
+                f"  Metric mismatch for {t_key}. Auto-detected replacement: {valid[0]}"
+            )
             kwargs["result_keys"] = [valid[0]]
 
     try:
@@ -651,4 +674,3 @@ def _build_na_eval_row(
         "published_score_ref": ts.published_score_ref,
         "metadata": meta_data.get(task.task_name),
     }
-

@@ -11,6 +11,7 @@ import requests
 
 from utils.media_clients.test_status import CnnGenerationTestStatus
 from workflows.utils import get_num_calls
+from workflows.workflow_types import ReportCheckTypes
 
 from .base_strategy_interface import BaseMediaStrategy
 
@@ -66,7 +67,9 @@ class CnnClientStrategy(BaseMediaStrategy):
 
         if runner_in_use == CNN_MOBILENETV2_RUNNER and eval_result:
             logger.info("Adding eval results from eval spec test to benchmark data")
-            benchmark_data["accuracy_check"] = eval_result.get("accuracy_status", 0)
+            benchmark_data["accuracy_check"] = eval_result.get(
+                "accuracy_status", ReportCheckTypes.NA
+            )
             benchmark_data["correct"] = eval_result["correct"]
             benchmark_data["total"] = eval_result["total"]
             benchmark_data["mismatches_count"] = eval_result["mismatches_count"]
@@ -265,7 +268,9 @@ class CnnClientStrategy(BaseMediaStrategy):
 
         # Get device mode results for benchmark comparison
         device_result = model_results.get("device", {})
-        device_result["accuracy_status"] = model_results.get("accuracy_status", 0)
+        device_result["accuracy_status"] = model_results.get(
+            "accuracy_status", ReportCheckTypes.NA
+        )
         logger.info(f"VisionEvalsTest device eval_results: {device_result}")
 
         return device_result

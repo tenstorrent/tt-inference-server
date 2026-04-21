@@ -8,7 +8,7 @@ Single home for the ``server_tests`` release key. Owns:
 
 * the JSON schema and canonical on-disk location for per-run ``test_report_*.json``
   artefacts produced by ``server_tests/tests_runner.py`` at TESTS time
-  
+
 * the REPORTS-phase :class:`TestReportStrategy` that scans those JSONs,
   renders each into a sibling ``.md`` via
   :class:`~report_module.markdown.visualizer.MarkdownVisualizer`, persists

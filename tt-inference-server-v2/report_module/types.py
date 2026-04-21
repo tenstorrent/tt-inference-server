@@ -129,7 +129,9 @@ def build_context(request: ReportRequest) -> ReportContext:
         "run_command": run_cmd,
     }
 
-    logger.info(f"Built report context: report_id={report_id}, model={model}, device={device_str}")
+    logger.info(
+        f"Built report context: report_id={report_id}, model={model}, device={device_str}"
+    )
 
     return ReportContext(
         report_id=report_id,

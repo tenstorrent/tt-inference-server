@@ -497,7 +497,6 @@ def generate_report(files, output_dir, report_id, metadata={}):
     if "device" in metadata:
         assert metadata["device"] == device, "Device mismatch in metadata"
 
-
     # Separate text and image stress tests
     text_results = [r for r in results if r.get("task_type") == "text"]
     image_results = [r for r in results if r.get("task_type") == "image"]

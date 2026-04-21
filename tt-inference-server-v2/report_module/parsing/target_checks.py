@@ -66,7 +66,7 @@ def compute_vlm_target_checks(
     model_spec: ModelSpec,
     device_str: str,
 ) -> List[Dict[str, Any]]:
-    
+
     res_dict = {
         (
             r.get("isl", r.get("input_sequence_length", 0)),
@@ -149,9 +149,7 @@ def _compute_perf_target_check(
     return ratio, ReportCheckTypes.from_result(passed)
 
 
-def _build_target_checks_for_ref(
-    res: Dict[str, Any], perf_target
-) -> Dict[str, Any]:
+def _build_target_checks_for_ref(res: Dict[str, Any], perf_target) -> Dict[str, Any]:
     target_check: Dict[str, Any] = {}
 
     if perf_target.ttft_ms is not None:
@@ -162,12 +160,16 @@ def _build_target_checks_for_ref(
             perf_target.tolerance,
             higher_is_better=False,
         )
-        target_check.update(ttft=perf_target.ttft_ms, ttft_ratio=ratio, ttft_check=check)
+        target_check.update(
+            ttft=perf_target.ttft_ms, ttft_ratio=ratio, ttft_check=check
+        )
     else:
         target_check["ttft_check"] = ReportCheckTypes.NA
 
     if perf_target.tput_user is not None:
-        assert perf_target.tput_user > 0, f"tput_user is not > 0: {perf_target.tput_user}"
+        assert perf_target.tput_user > 0, (
+            f"tput_user is not > 0: {perf_target.tput_user}"
+        )
         ratio, check = _compute_perf_target_check(
             res["mean_tps"],
             perf_target.tput_user,

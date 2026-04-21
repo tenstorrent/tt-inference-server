@@ -11,7 +11,10 @@ from typing import Any, Dict, List
 
 from report_module.base_strategy import ReportStrategy
 from report_module.markdown.table_builder import get_markdown_table
-from report_module.parsing.common import deduplicate_by_config, extract_percentile_result
+from report_module.parsing.common import (
+    deduplicate_by_config,
+    extract_percentile_result,
+)
 from report_module.types import NOT_MEASURED_STR, ReportContext, ReportResult
 
 logger = logging.getLogger(__name__)
@@ -39,26 +42,30 @@ def _percentile_table_markdown(rows: List[Dict[str, Any]], is_vlm: bool = False)
         ("concurrency", "Concur"),
     ]
     if is_vlm:
-        display_cols.extend([
-            ("image_height", "Image Height"),
-            ("image_width", "Image Width"),
-            ("images_per_prompt", "Images per Prompt"),
-        ])
-    display_cols.extend([
-        ("num_requests", "N"),
-        ("mean_ttft_ms", "TTFT Avg (ms)"),
-        ("median_ttft_ms", "TTFT P50 (ms)"),
-        ("p99_ttft_ms", "TTFT P99 (ms)"),
-        ("mean_tpot_ms", "TPOT Avg (ms)"),
-        ("median_tpot_ms", "TPOT P50 (ms)"),
-        ("p99_tpot_ms", "TPOT P99 (ms)"),
-        ("mean_e2el_ms", "E2EL Avg (ms)"),
-        ("median_e2el_ms", "E2EL P50 (ms)"),
-        ("p99_e2el_ms", "E2EL P99 (ms)"),
-        ("output_token_throughput", "Output Tok/s"),
-        ("total_token_throughput", "Total Tok/s"),
-        ("request_throughput", "Req/s"),
-    ])
+        display_cols.extend(
+            [
+                ("image_height", "Image Height"),
+                ("image_width", "Image Width"),
+                ("images_per_prompt", "Images per Prompt"),
+            ]
+        )
+    display_cols.extend(
+        [
+            ("num_requests", "N"),
+            ("mean_ttft_ms", "TTFT Avg (ms)"),
+            ("median_ttft_ms", "TTFT P50 (ms)"),
+            ("p99_ttft_ms", "TTFT P99 (ms)"),
+            ("mean_tpot_ms", "TPOT Avg (ms)"),
+            ("median_tpot_ms", "TPOT P50 (ms)"),
+            ("p99_tpot_ms", "TPOT P99 (ms)"),
+            ("mean_e2el_ms", "E2EL Avg (ms)"),
+            ("median_e2el_ms", "E2EL P50 (ms)"),
+            ("p99_e2el_ms", "E2EL P99 (ms)"),
+            ("output_token_throughput", "Output Tok/s"),
+            ("total_token_throughput", "Total Tok/s"),
+            ("request_throughput", "Req/s"),
+        ]
+    )
 
     display_dicts: List[Dict[str, str]] = []
     for row in rows:
@@ -95,7 +102,9 @@ class AiPerfStrategy(ReportStrategy):
         benchmarks_dir = f"{context.workflow_log_dir}/benchmarks_output"
         model_id = context.model_spec.model_id
 
-        aiperf_files = deduplicate_by_config(glob(f"{benchmarks_dir}/aiperf_benchmark_{model_id}_*.json"))
+        aiperf_files = deduplicate_by_config(
+            glob(f"{benchmarks_dir}/aiperf_benchmark_{model_id}_*.json")
+        )
         logger.info(f"AIPerf: {len(aiperf_files)} files after dedup")
 
         if not aiperf_files:
@@ -111,7 +120,15 @@ class AiPerfStrategy(ReportStrategy):
             return {self.name: ReportResult.empty(self.name)}
 
         aiperf_text_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"]))
-        aiperf_vlm_results.sort(key=lambda x: (x["isl"], x["osl"], x["concurrency"], x.get("image_height", 0), x.get("image_width", 0)))
+        aiperf_vlm_results.sort(
+            key=lambda x: (
+                x["isl"],
+                x["osl"],
+                x["concurrency"],
+                x.get("image_height", 0),
+                x.get("image_width", 0),
+            )
+        )
 
         release_str = f"### Benchmark Performance Results for {context.model_name} on {context.device_str}\n\n"
 
@@ -123,7 +140,9 @@ class AiPerfStrategy(ReportStrategy):
         if aiperf_vlm_results:
             release_str += "#### AIPerf VLM Benchmarks - Detailed Percentiles\n\n"
             release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-            release_str += _percentile_table_markdown(aiperf_vlm_results, is_vlm=True) + "\n\n"
+            release_str += (
+                _percentile_table_markdown(aiperf_vlm_results, is_vlm=True) + "\n\n"
+            )
 
         release_str += METRIC_DEFINITIONS
 
@@ -137,7 +156,9 @@ class AiPerfStrategy(ReportStrategy):
         return {self.name: result}
 
     @staticmethod
-    def _parse_files(files: List[str], source: str, is_vlm: bool = False) -> List[Dict[str, Any]]:
+    def _parse_files(
+        files: List[str], source: str, is_vlm: bool = False
+    ) -> List[Dict[str, Any]]:
         results: List[Dict[str, Any]] = []
         for f in sorted(files):
             result = extract_percentile_result(f, source, is_vlm=is_vlm)

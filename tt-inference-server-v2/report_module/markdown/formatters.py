@@ -49,6 +49,7 @@ def _build_display_dict(
 
 # -- Concrete formatters per task type ----------------------------------------
 
+
 def create_text_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     display_cols: List[Tuple[str, str]] = [
         ("backend", "Source"),
@@ -88,7 +89,10 @@ def create_vlm_display_dict(result: Dict[str, Any]) -> Dict[str, str]:
     ]
 
     overrides: Dict[str, str] = {}
-    for key, fallback in [("isl", "input_sequence_length"), ("osl", "output_sequence_length")]:
+    for key, fallback in [
+        ("isl", "input_sequence_length"),
+        ("osl", "output_sequence_length"),
+    ]:
         overrides[key] = str(result.get(key, result.get(fallback, NOT_MEASURED_STR)))
 
     return _build_display_dict(result, display_cols, value_overrides=overrides)

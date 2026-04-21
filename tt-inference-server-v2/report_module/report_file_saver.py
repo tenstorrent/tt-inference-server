@@ -68,7 +68,9 @@ class ReportFileSaver:
         header = f"## Tenstorrent Model Release Summary: {context.model_name} on {context.device_str}"
         metadata_json = json.dumps(context.metadata, indent=4, default=str)
         metadata_block = f"### Metadata: {context.model_name} on {context.device_str}\n```json\n{metadata_json}\n```"
-        acceptance_md = release_data.get("acceptance_summary_markdown", "") if release_data else ""
+        acceptance_md = (
+            release_data.get("acceptance_summary_markdown", "") if release_data else ""
+        )
 
         preamble = [header, metadata_block]
         if acceptance_md:

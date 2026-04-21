@@ -69,9 +69,7 @@ def calculate_target_metrics(
     return metrics
 
 
-def _populate_tier_metrics(
-    metrics: Dict[str, Any], config: MetricConfig
-) -> None:
+def _populate_tier_metrics(metrics: Dict[str, Any], config: MetricConfig) -> None:
     for tier, multiplier in TIER_MULTIPLIERS.items():
         tier_target = (
             config.target_metric / multiplier
@@ -129,9 +127,7 @@ def _aggregate_rows_cnn_image_video_audio_tts(
             total_rtr += row.get("rtr", 0) or 0
         summary["num_requests"] = row.get("num_requests", 0)
         summary["num_inference_steps"] = row.get("num_inference_steps", 0)
-        summary["inference_steps_per_second"] = row.get(
-            "inference_steps_per_second", 0
-        )
+        summary["inference_steps_per_second"] = row.get("inference_steps_per_second", 0)
         summary["filename"] = row.get("filename", "")
         summary["mean_ttft_ms"] = row.get("mean_ttft_ms", 0)
         if is_tts:

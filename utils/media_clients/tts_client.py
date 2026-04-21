@@ -25,6 +25,7 @@ if str(project_root) not in sys.path:
 
 from workflows.utils import get_num_calls
 from workflows.utils_report import get_performance_targets
+from workflows.workflow_types import ReportCheckTypes
 
 logger = logging.getLogger(__name__)
 
@@ -435,7 +436,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         self,
         ttft_value: Optional[float] = None,
         rtr_value: Optional[float] = None,
-    ) -> int:
+    ) -> ReportCheckTypes:
         """Calculate performance check based on TTFT and RTR targets.
 
         Uses get_performance_targets from model_performance_reference.json.
@@ -445,13 +446,11 @@ class TtsClientStrategy(BaseMediaStrategy):
             rtr_value: Real-time ratio (audio_duration / generation_time)
 
         Returns:
-            0 - undefined (no targets or values)
-            2 - passed (all metrics within tolerance)
-            3 - failed (any metric outside tolerance)
+            ``ReportCheckTypes`` member. ``IntEnum`` serialises to JSON as its
+            integer value, so downstream consumers still see 1/2/3 (NA/PASS/FAIL).
         """
         logger.info("Calculating performance check based on TTFT, RTR targets")
 
-        # Get performance targets using the shared utility
         device_str = self.model_spec.cli_args.get("device")
         targets = get_performance_targets(
             self.model_spec.model_name,
@@ -463,7 +462,7 @@ class TtsClientStrategy(BaseMediaStrategy):
         # TTFT is the primary metric for TTS performance - required for validation
         if not targets.ttft_ms:
             logger.warning("⚠️ No TTFT target found, skipping performance check")
-            return 0  # UNDEFINED
+            return ReportCheckTypes.NA
 
         tolerance = targets.tolerance if targets.tolerance else 0.05
         logger.info(f"Using tolerance: {tolerance * 100:.2f}%")
@@ -495,23 +494,17 @@ class TtsClientStrategy(BaseMediaStrategy):
 
         if checks_total == 0:
             logger.warning("⚠️ No metrics available for validation")
-            return 0  # UNDEFINED
+            return ReportCheckTypes.NA
 
         if checks_passed == checks_total:
             logger.info(f"✅ All {checks_total} performance checks passed")
-            return 2  # PASS
-        else:
-            logger.warning(
-                f"❌ {checks_total - checks_passed}/{checks_total} performance checks failed"
-            )
-            return 3  # FAIL
+            return ReportCheckTypes.PASS
 
-    def _calculate_accuracy_check(self) -> int:
-        """Calculate accuracy/quality check for TTS eval/benchmark.
+        logger.warning(
+            f"❌ {checks_total - checks_passed}/{checks_total} performance checks failed"
+        )
+        return ReportCheckTypes.FAIL
 
-        Returns:
-            0 - undefined (no quality metric implemented)
-            2 - passed
-            3 - failed
-        """
-        return 0
+    def _calculate_accuracy_check(self) -> ReportCheckTypes:
+        """No quality metric implemented yet for TTS; always reports N/A."""
+        return ReportCheckTypes.NA

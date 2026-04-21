@@ -35,8 +35,7 @@ ALL_STRATEGIES = [
 STRATEGY_NAME_MAP = {cls.name: cls for cls in ALL_STRATEGIES}
 
 SUB_SECTION_TO_STRATEGY = {
-    section: StandardReportStrategy
-    for section in StandardReportStrategy.SUB_SECTIONS
+    section: StandardReportStrategy for section in StandardReportStrategy.SUB_SECTIONS
 }
 
 ALL_VALID_NAMES = set(STRATEGY_NAME_MAP.keys()) | set(SUB_SECTION_TO_STRATEGY.keys())
@@ -97,8 +96,7 @@ def select_strategies(selected: List[str]) -> List:
     unknown = [name for name in selected if name not in ALL_VALID_NAMES]
     if unknown:
         raise ValueError(
-            f"Unknown report names: {unknown}. "
-            f"Available: {sorted(ALL_VALID_NAMES)}"
+            f"Unknown report names: {unknown}. Available: {sorted(ALL_VALID_NAMES)}"
         )
 
     strategy_classes = []
@@ -130,7 +128,9 @@ def run(request: ReportRequest) -> Dict[str, ReportResult]:
     results = generator.generate_and_save_release(context)
 
     succeeded = sum(1 for r in results.values() if r.markdown)
-    logger.info(f"Report complete: {succeeded}/{len(strategies)} strategies produced output")
+    logger.info(
+        f"Report complete: {succeeded}/{len(strategies)} strategies produced output"
+    )
     return results
 
 

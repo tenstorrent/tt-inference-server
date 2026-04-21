@@ -20,7 +20,11 @@ from report_module.performance_targets import (
     check_text_vlm_targets,
     flatten_target_checks,
 )
-from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget, PerformanceTargets
+from workflows.utils_report import (
+    BenchmarkTaskParams,
+    PerformanceTarget,
+    PerformanceTargets,
+)
 from workflows.workflow_types import ReportCheckTypes
 
 
@@ -68,12 +72,14 @@ class TestMetricRatioAndCheck:
 
 class TestCalculateTargetMetrics:
     def test_latency_metric(self):
-        config = [{
-            "avg_metric": 50.0,
-            "target_metric": 100.0,
-            "field_name": "ttft",
-            "is_ascending_metric": False,
-        }]
+        config = [
+            {
+                "avg_metric": 50.0,
+                "target_metric": 100.0,
+                "field_name": "ttft",
+                "is_ascending_metric": False,
+            }
+        ]
         metrics = calculate_target_metrics(config)
 
         assert metrics["functional_ttft"] == 100.0 * FUNCTIONAL_MULTIPLIER
@@ -85,12 +91,14 @@ class TestCalculateTargetMetrics:
         assert metrics["target_ttft_check"] == ReportCheckTypes.PASS
 
     def test_throughput_metric(self):
-        config = [{
-            "avg_metric": 60.0,
-            "target_metric": 100.0,
-            "field_name": "tput_user",
-            "is_ascending_metric": True,
-        }]
+        config = [
+            {
+                "avg_metric": 60.0,
+                "target_metric": 100.0,
+                "field_name": "tput_user",
+                "is_ascending_metric": True,
+            }
+        ]
         metrics = calculate_target_metrics(config)
 
         assert metrics["functional_tput_user"] == 100.0 / FUNCTIONAL_MULTIPLIER
@@ -102,18 +110,30 @@ class TestCalculateTargetMetrics:
         assert metrics["target_tput_user_check"] == ReportCheckTypes.FAIL
 
     def test_none_target_skipped(self):
-        config = [{
-            "avg_metric": 50.0,
-            "target_metric": None,
-            "field_name": "ttft",
-        }]
+        config = [
+            {
+                "avg_metric": 50.0,
+                "target_metric": None,
+                "field_name": "ttft",
+            }
+        ]
         metrics = calculate_target_metrics(config)
         assert metrics == {}
 
     def test_multiple_metrics(self):
         config = [
-            {"avg_metric": 50.0, "target_metric": 100.0, "field_name": "ttft", "is_ascending_metric": False},
-            {"avg_metric": 80.0, "target_metric": 100.0, "field_name": "tput_user", "is_ascending_metric": True},
+            {
+                "avg_metric": 50.0,
+                "target_metric": 100.0,
+                "field_name": "ttft",
+                "is_ascending_metric": False,
+            },
+            {
+                "avg_metric": 80.0,
+                "target_metric": 100.0,
+                "field_name": "tput_user",
+                "is_ascending_metric": True,
+            },
         ]
         metrics = calculate_target_metrics(config)
         assert "functional_ttft" in metrics
@@ -126,7 +146,9 @@ class TestCalculateTargetMetrics:
 class TestBuildTargetChecksTextVlm:
     def test_all_metrics_pass(self):
         row = {"mean_ttft_ms": 90.0, "mean_tps": 110.0, "tps_decode_throughput": 550.0}
-        target = PerformanceTarget(ttft_ms=100.0, tput_user=100.0, tput=500.0, tolerance=0.1)
+        target = PerformanceTarget(
+            ttft_ms=100.0, tput_user=100.0, tput=500.0, tolerance=0.1
+        )
         result = build_target_checks_text_vlm(row, "customer_functional", target)
 
         assert result["ttft_check"] == ReportCheckTypes.PASS
@@ -137,7 +159,9 @@ class TestBuildTargetChecksTextVlm:
 
     def test_ttft_fail(self):
         row = {"mean_ttft_ms": 200.0, "mean_tps": 100.0, "tps_decode_throughput": 500.0}
-        target = PerformanceTarget(ttft_ms=100.0, tput_user=100.0, tput=500.0, tolerance=0.05)
+        target = PerformanceTarget(
+            ttft_ms=100.0, tput_user=100.0, tput=500.0, tolerance=0.05
+        )
         result = build_target_checks_text_vlm(row, "target", target)
         assert result["ttft_check"] == ReportCheckTypes.FAIL
 
@@ -180,9 +204,15 @@ class TestBuildTargetChecksCnnImageVideo:
         targets = PerformanceTargets(tput_user=None, ttft_ms=50.0)
         evals_data = [{"tput_user": 10.0}]
         metrics = {
-            "functional_ttft": 500.0, "functional_ttft_ratio": 0.5, "functional_ttft_check": ReportCheckTypes.PASS,
-            "complete_ttft": 100.0, "complete_ttft_ratio": 0.8, "complete_ttft_check": ReportCheckTypes.PASS,
-            "target_ttft": 50.0, "target_ttft_ratio": 1.2, "target_ttft_check": ReportCheckTypes.FAIL,
+            "functional_ttft": 500.0,
+            "functional_ttft_ratio": 0.5,
+            "functional_ttft_check": ReportCheckTypes.PASS,
+            "complete_ttft": 100.0,
+            "complete_ttft_ratio": 0.8,
+            "complete_ttft_check": ReportCheckTypes.PASS,
+            "target_ttft": 50.0,
+            "target_ttft_ratio": 1.2,
+            "target_ttft_check": ReportCheckTypes.FAIL,
         }
         result = build_target_checks_cnn_image_video(targets, evals_data, metrics)
         assert result["functional"]["tput_check"] == ReportCheckTypes.NA
@@ -194,9 +224,15 @@ class TestBuildTargetChecksCnnImageVideo:
 class TestBuildTargetChecksAudio:
     def test_structure(self):
         metrics = {
-            "functional_ttft": 500.0, "functional_ttft_ratio": 0.5, "functional_ttft_check": ReportCheckTypes.PASS,
-            "complete_ttft": 100.0, "complete_ttft_ratio": 0.8, "complete_ttft_check": ReportCheckTypes.PASS,
-            "target_ttft": 50.0, "target_ttft_ratio": 1.2, "target_ttft_check": ReportCheckTypes.FAIL,
+            "functional_ttft": 500.0,
+            "functional_ttft_ratio": 0.5,
+            "functional_ttft_check": ReportCheckTypes.PASS,
+            "complete_ttft": 100.0,
+            "complete_ttft_ratio": 0.8,
+            "complete_ttft_check": ReportCheckTypes.PASS,
+            "target_ttft": 50.0,
+            "target_ttft_ratio": 1.2,
+            "target_ttft_check": ReportCheckTypes.FAIL,
         }
         result = build_target_checks_audio(metrics)
 
@@ -212,11 +248,17 @@ class TestBuildTargetChecksAudio:
 class TestBuildTargetChecksTts:
     def test_with_rtr(self):
         metrics = {
-            "functional_ttft": 500.0, "functional_ttft_ratio": 0.5, "functional_ttft_check": ReportCheckTypes.PASS,
+            "functional_ttft": 500.0,
+            "functional_ttft_ratio": 0.5,
+            "functional_ttft_check": ReportCheckTypes.PASS,
             "functional_rtr_check": ReportCheckTypes.PASS,
-            "complete_ttft": 100.0, "complete_ttft_ratio": 0.8, "complete_ttft_check": ReportCheckTypes.PASS,
+            "complete_ttft": 100.0,
+            "complete_ttft_ratio": 0.8,
+            "complete_ttft_check": ReportCheckTypes.PASS,
             "complete_rtr_check": ReportCheckTypes.PASS,
-            "target_ttft": 50.0, "target_ttft_ratio": 1.2, "target_ttft_check": ReportCheckTypes.FAIL,
+            "target_ttft": 50.0,
+            "target_ttft_ratio": 1.2,
+            "target_ttft_check": ReportCheckTypes.FAIL,
             "target_rtr_check": ReportCheckTypes.FAIL,
         }
         result = build_target_checks_tts(metrics)
@@ -251,14 +293,22 @@ class TestBuildTargetChecksEmbedding:
 
 class TestFlattenTargetChecks:
     def test_basic_flatten(self):
-        rows = [{
-            "isl": 128,
-            "osl": 64,
-            "target_checks": {
-                "customer_functional": {"ttft_check": ReportCheckTypes.PASS, "ttft": 1000.0},
-                "customer_complete": {"ttft_check": ReportCheckTypes.FAIL, "ttft": 200.0},
-            },
-        }]
+        rows = [
+            {
+                "isl": 128,
+                "osl": 64,
+                "target_checks": {
+                    "customer_functional": {
+                        "ttft_check": ReportCheckTypes.PASS,
+                        "ttft": 1000.0,
+                    },
+                    "customer_complete": {
+                        "ttft_check": ReportCheckTypes.FAIL,
+                        "ttft": 200.0,
+                    },
+                },
+            }
+        ]
         flat = flatten_target_checks(rows)
 
         assert len(flat) == 1
@@ -300,7 +350,11 @@ class TestCheckTextVlmTargets:
             ),
         ]
         results, md = check_text_vlm_targets(
-            vllm_results, perf_refs, "text", "test-model", "n150",
+            vllm_results,
+            perf_refs,
+            "text",
+            "test-model",
+            "n150",
         )
 
         assert len(results) == 1
@@ -331,7 +385,11 @@ class TestCheckTextVlmTargets:
             ),
         ]
         results, md = check_text_vlm_targets(
-            vllm_results, perf_refs, "text", "test-model", "n150",
+            vllm_results,
+            perf_refs,
+            "text",
+            "test-model",
+            "n150",
         )
 
         assert results[0]["ttft"] == "N/A"

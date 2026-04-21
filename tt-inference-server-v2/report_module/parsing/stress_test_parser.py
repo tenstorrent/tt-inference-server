@@ -81,14 +81,20 @@ def process_stress_test_file(filepath: str) -> Dict[str, Any]:
     if mean_tpot_ms:
         mean_tpot = max(mean_tpot_ms, 1e-6)
         mean_tps = 1000.0 / mean_tpot
-        std_tps = (mean_tps - (1000.0 / (mean_tpot + data["std_tpot_ms"]))) if data.get("std_tpot_ms") else None
+        std_tps = (
+            (mean_tps - (1000.0 / (mean_tpot + data["std_tpot_ms"])))
+            if data.get("std_tpot_ms")
+            else None
+        )
     else:
         mean_tps = None
         std_tps = None
 
     actual_max_con = min(params["max_con"], params["num_requests"])
     tps_decode = mean_tps * actual_max_con if mean_tps else None
-    tps_prefill = (params["input_sequence_length"] * actual_max_con) / (data.get("mean_ttft_ms") / 1000)
+    tps_prefill = (params["input_sequence_length"] * actual_max_con) / (
+        data.get("mean_ttft_ms") / 1000
+    )
 
     metrics: Dict[str, Any] = {
         "timestamp": params["timestamp"],

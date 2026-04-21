@@ -71,9 +71,13 @@ class ReportGenerator:
         )
         return results
 
-    def generate_and_save_release(self, context: ReportContext) -> Dict[str, ReportResult]:
+    def generate_and_save_release(
+        self, context: ReportContext
+    ) -> Dict[str, ReportResult]:
         """Run all strategies then assemble the release bundle."""
         results = self.generate(context)
         release_data = self._aggregator.aggregate(results, context)
-        self._file_saver.save_release_bundle(results, context, release_data=release_data)
+        self._file_saver.save_release_bundle(
+            results, context, release_data=release_data
+        )
         return results

@@ -177,7 +177,9 @@ def extract_percentile_result(
 
         if is_vlm:
             if "images" not in params:
-                logger.warning(f"Could not parse image parameters from {filename}, skipping")
+                logger.warning(
+                    f"Could not parse image parameters from {filename}, skipping"
+                )
                 return None
             result.update(
                 images=params["images"],

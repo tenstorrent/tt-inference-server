@@ -30,6 +30,8 @@ from report_module.markdown.report_renderers import (
     benchmark_vlm_release_markdown,
     generate_evals_release_markdown,
     generate_evals_summary_table,
+    generate_simple_evals_release_markdown,
+    generate_simple_evals_summary_table,
 )
 from report_module.markdown.table_builder import get_markdown_table
 from report_module.parsing.target_checks import flatten_target_checks
@@ -86,13 +88,36 @@ class MarkdownVisualizer:
         return release_md, summary_md
 
     @staticmethod
+    def build_simple_evals_markdown(
+        rows: List[Dict[str, Any]],
+        model_name: str,
+        device_str: str,
+    ) -> Tuple[str, str]:
+        """Render release + summary markdown for simple (pre-flattened) evals.
+
+        Simple-eval JSONs already contain one row per task with all the
+        display fields; no scoring/aggregation is required here.
+        """
+        header = f"### Accuracy Evaluations for {model_name} on {device_str}\n\n"
+        if not rows:
+            placeholder = header + _EVALS_PLACEHOLDER_BODY
+            return placeholder, placeholder
+
+        release_body = generate_simple_evals_release_markdown(rows)
+        summary_body = generate_simple_evals_summary_table(rows)
+        release_md = (
+            header + release_body if release_body else header + _EVALS_PLACEHOLDER_BODY
+        )
+        summary_md = header + summary_body
+        return release_md, summary_md
+
+    @staticmethod
     def build_benchmark_sweeps_markdown(
         rows_by_tool: Dict[str, List[Dict[str, Any]]],
         model_name: str,
         device_str: str,
     ) -> str:
-        """Render the benchmark-sweep section for each tool and task type.
-        """
+        """Render the benchmark-sweep section for each tool and task type."""
         sections_by_bucket: Dict[str, List[str]] = {
             bucket: [] for bucket in _SWEEP_BUCKET_ORDER
         }
@@ -118,8 +143,7 @@ class MarkdownVisualizer:
             return ""
 
         header = (
-            f"### Performance Benchmark Sweeps "
-            f"for {model_name} on {device_str}\n\n"
+            f"### Performance Benchmark Sweeps for {model_name} on {device_str}\n\n"
         )
         return header + "\n\n".join(ordered_sections)
 
@@ -132,7 +156,7 @@ class MarkdownVisualizer:
         model_name: str,
         device_str: str,
     ) -> str:
-        
+
         sections: List[str] = []
 
         if text_target_rows:
@@ -169,9 +193,7 @@ class MarkdownVisualizer:
                 "No performance targets defined for VLM benchmarks.\n\n"
             )
 
-        header = (
-            f"### Performance Benchmark Targets {model_name} on {device_str}\n\n"
-        )
+        header = f"### Performance Benchmark Targets {model_name} on {device_str}\n\n"
         if not sections:
             return header + _NO_TARGETS_DEFINED
         return header + "\n\n".join(sections)
@@ -183,17 +205,14 @@ class MarkdownVisualizer:
         model_name: str,
         device_str: str,
     ) -> str:
-        header = (
-            f"### Performance Benchmark Targets {model_name} on {device_str}\n\n"
-        )
+        header = f"### Performance Benchmark Targets {model_name} on {device_str}\n\n"
         if not tool_tables:
             return header + _NO_TARGETS_DEFINED
 
         sections = [
             (
                 f"#### {tool_label} {task_label} Performance Benchmark Targets "
-                f"{model_name} on {device_str}\n\n"
-                + table
+                f"{model_name} on {device_str}\n\n" + table
             )
             for tool_label, table in tool_tables
         ]
@@ -264,10 +283,15 @@ class MarkdownVisualizer:
                 "Metric": "Total Duration",
                 "Value": f"{summary.get('total_duration', 0.0):.2f}s",
             },
-            {"Metric": "Total Attempts", "Value": str(summary.get("total_attempts", 0))},
+            {
+                "Metric": "Total Attempts",
+                "Value": str(summary.get("total_attempts", 0)),
+            },
             {
                 "Metric": "Generated",
-                "Value": MarkdownVisualizer._fmt_generated(summary.get("generated_at", "")),
+                "Value": MarkdownVisualizer._fmt_generated(
+                    summary.get("generated_at", "")
+                ),
             },
         ]
 

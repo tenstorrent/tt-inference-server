@@ -34,8 +34,8 @@ class ReportStrategy(ABC):
 
         Simple strategies return a single-entry dict keyed by self.name.
         Composite strategies (e.g. standard, server_tests) return multiple
-        entries whose keys map directly to the release JSON schema. 
-        """ 
+        entries whose keys map directly to the release JSON schema.
+        """
 
     @abstractmethod
     def is_applicable(self, context: ReportContext) -> bool:

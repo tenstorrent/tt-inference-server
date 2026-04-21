@@ -10,6 +10,7 @@ import pytest
 
 from utils.media_clients.audio_client import AudioClientStrategy
 from utils.media_clients.test_status import AudioTestStatus
+from workflows.workflow_types import ReportCheckTypes
 
 
 class MockAsyncResponse:
@@ -1063,7 +1064,7 @@ class TestAudioClientStrategyCalculateAccuracyCheck(unittest.TestCase):
             ttft_value=100, tsu_value=10.0, rtr_value=2.0
         )
 
-        assert result == 0  # UNDEFINED
+        assert result == ReportCheckTypes.NA
 
     @patch("utils.media_clients.audio_client.get_performance_targets")
     def test_accuracy_check_tsu_fail(self, mock_targets):
