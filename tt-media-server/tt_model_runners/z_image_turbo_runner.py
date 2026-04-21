@@ -29,7 +29,7 @@ CAP_TOKENS = 128
 IMG_LATENT_H = 64
 IMG_LATENT_W = 64
 LATENT_CHANNELS = 16
-DEFAULT_STEPS = 9
+DEFAULT_STEPS = 9  # Runs N-1 DiT steps (8)
 
 DRAM_RM = ttnn.MemoryConfig(
     ttnn.TensorMemoryLayout.INTERLEAVED, ttnn.BufferType.DRAM, None
