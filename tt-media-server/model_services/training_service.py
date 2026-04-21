@@ -6,7 +6,7 @@ from multiprocessing import Manager
 
 from model_services.base_job_service import BaseJobService
 from config.constants import (
-    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
+    models_for_runner,
     TRAINING_STORE_ADAPTERS_DIR,
     JobTypes,
     ModelRunners,
@@ -21,8 +21,10 @@ class TrainingService(BaseJobService):
         self.settings = get_settings()
         self._manager = Manager()
         runner_enum = ModelRunners(self.settings.model_runner)
-        model_names = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner_enum, set())
-        self._model_name = next(iter(model_names)).value
+        runner_models = models_for_runner(runner_enum)
+        if not runner_models:
+            raise ValueError(f"No model found for runner {runner_enum}.")
+        self._model_name = runner_models[0].value
         super().__init__()
 
     async def create_job(

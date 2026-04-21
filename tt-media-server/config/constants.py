@@ -179,51 +179,52 @@ MODEL_SERVICE_RUNNER_MAP = {
 }
 
 
-MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
-    ModelRunners.TT_SDXL_EDIT: {ModelNames.STABLE_DIFFUSION_XL_INPAINTING},
-    ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: {ModelNames.STABLE_DIFFUSION_XL_IMG2IMG},
-    ModelRunners.TT_SDXL_TRACE: {ModelNames.STABLE_DIFFUSION_XL_BASE},
-    ModelRunners.TT_SD3_5: {ModelNames.STABLE_DIFFUSION_3_5_LARGE},
-    ModelRunners.TT_FLUX_1_DEV: {ModelNames.FLUX_1_DEV},
-    ModelRunners.TT_FLUX_1_SCHNELL: {ModelNames.FLUX_1_SCHNELL},
-    ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
-    ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
-    ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
-    ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
-    ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
-    ModelRunners.SP_RUNNER: {ModelNames.WAN_2_2, ModelNames.MOCHI_1},
-    ModelRunners.TT_WHISPER: {
-        ModelNames.OPENAI_WHISPER_LARGE_V3,
-        ModelNames.DISTIL_WHISPER_LARGE_V3,
-    },
-    ModelRunners.TT_XLA_RESNET: {ModelNames.MICROSOFT_RESNET_50},
-    ModelRunners.TT_XLA_VOVNET: {ModelNames.VOVNET},
-    ModelRunners.TT_XLA_MOBILENETV2: {ModelNames.MOBILENETV2},
-    ModelRunners.TT_XLA_EFFICIENTNET: {ModelNames.EFFICIENTNET},
-    ModelRunners.TT_XLA_SEGFORMER: {ModelNames.SEGFORMER},
-    ModelRunners.TT_XLA_UNET: {ModelNames.UNET},
-    ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
-    ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
-    ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
-    ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
-    ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
-    ModelRunners.BGEM3: {ModelNames.BGE_M3},
-    ModelRunners.VLLMForge: {
-        ModelNames.LLAMA_3_2_3B,
-        ModelNames.LLAMA_3_2_3B_INSTRUCT,
-        ModelNames.LLAMA_3_1_8B_INSTRUCT,
-        ModelNames.QWEN_3_4B,
-        ModelNames.QWEN_3_8B,
-    },
-    ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
-    ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
-    ModelRunners.TRAINING_LLAMA_LORA: {ModelNames.LLAMA_3_1_8B},
-    ModelRunners.LORA_SINGLE_CHIP: {ModelNames.GEMMA_1_1_2B_IT},
-    ModelRunners.TT_XLA_SDXL: {
-        ModelNames.STABLE_DIFFUSION_XL_BASE,
-        ModelNames.STABLE_DIFFUSION_XL_512,
-    },
+# Canonical runner per model. Set MODEL_RUNNER env var to override (e.g. for training runners).
+MODEL_NAME_TO_RUNNER_MAP: dict = {
+    ModelNames.STABLE_DIFFUSION_XL_INPAINTING: ModelRunners.TT_SDXL_EDIT,
+    ModelNames.STABLE_DIFFUSION_XL_IMG2IMG: ModelRunners.TT_SDXL_IMAGE_TO_IMAGE,
+    ModelNames.STABLE_DIFFUSION_XL_BASE: ModelRunners.TT_SDXL_TRACE,
+    ModelNames.STABLE_DIFFUSION_XL_512: ModelRunners.TT_XLA_SDXL,
+    ModelNames.STABLE_DIFFUSION_3_5_LARGE: ModelRunners.TT_SD3_5,
+    ModelNames.FLUX_1_DEV: ModelRunners.TT_FLUX_1_DEV,
+    ModelNames.FLUX_1_SCHNELL: ModelRunners.TT_FLUX_1_SCHNELL,
+    ModelNames.MOTIF_IMAGE_6B_PREVIEW: ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW,
+    ModelNames.QWEN_IMAGE: ModelRunners.TT_QWEN_IMAGE,
+    ModelNames.QWEN_IMAGE_2512: ModelRunners.TT_QWEN_IMAGE_2512,
+    ModelNames.MOCHI_1: ModelRunners.TT_MOCHI_1,
+    ModelNames.WAN_2_2: ModelRunners.TT_WAN_2_2,
+    ModelNames.OPENAI_WHISPER_LARGE_V3: ModelRunners.TT_WHISPER,
+    ModelNames.DISTIL_WHISPER_LARGE_V3: ModelRunners.TT_WHISPER,
+    ModelNames.MICROSOFT_RESNET_50: ModelRunners.TT_XLA_RESNET,
+    ModelNames.VOVNET: ModelRunners.TT_XLA_VOVNET,
+    ModelNames.MOBILENETV2: ModelRunners.TT_XLA_MOBILENETV2,
+    ModelNames.EFFICIENTNET: ModelRunners.TT_XLA_EFFICIENTNET,
+    ModelNames.SEGFORMER: ModelRunners.TT_XLA_SEGFORMER,
+    ModelNames.UNET: ModelRunners.TT_XLA_UNET,
+    ModelNames.VIT: ModelRunners.TT_XLA_VIT,
+    ModelNames.QWEN_3_EMBEDDING_4B: ModelRunners.VLLMForge_QWEN_EMBEDDING,
+    ModelNames.QWEN_3_EMBEDDING_8B: ModelRunners.QWEN_EMBEDDING_8B,
+    ModelNames.LLAMA_3_1_70B: ModelRunners.VLLMForge_LLAMA_70B,
+    ModelNames.BGE_LARGE_EN_V1_5: ModelRunners.BGELargeEN_V1_5,
+    ModelNames.BGE_M3: ModelRunners.BGEM3,
+    ModelNames.LLAMA_3_2_3B: ModelRunners.VLLMForge,
+    ModelNames.LLAMA_3_2_3B_INSTRUCT: ModelRunners.VLLMForge,
+    ModelNames.LLAMA_3_1_8B_INSTRUCT: ModelRunners.VLLMForge,
+    ModelNames.QWEN_3_4B: ModelRunners.VLLMForge,
+    ModelNames.QWEN_3_8B: ModelRunners.VLLMForge,
+    ModelNames.SPEECHT5_TTS: ModelRunners.TT_SPEECHT5_TTS,
+    ModelNames.GEMMA_1_1_2B_IT: ModelRunners.TRAINING_GEMMA_LORA,
+    ModelNames.LLAMA_3_1_8B: ModelRunners.TRAINING_LLAMA_LORA,
 }
+
+
+_RUNNER_TO_MODELS_MAP: dict = {}
+for _name, _runner in MODEL_NAME_TO_RUNNER_MAP.items():
+    _RUNNER_TO_MODELS_MAP.setdefault(_runner, []).append(_name)
+
+
+def models_for_runner(runner: ModelRunners) -> list:
+    return _RUNNER_TO_MODELS_MAP.get(runner, [])
 
 
 # DEVICE environment variable

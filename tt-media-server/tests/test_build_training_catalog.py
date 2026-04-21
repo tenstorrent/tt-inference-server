@@ -53,8 +53,10 @@ class TestBuildModelsCatalog:
 
     def test_raises_when_model_missing_from_enums(self):
         fake_model = enum.Enum("FakeModel", {"FAKE_MODEL": "fake-model"}).FAKE_MODEL
-        fake_map = {ModelRunners.TRAINING_GEMMA_LORA: {fake_model}}
-        with patch("utils.build_catalog.MODEL_RUNNER_TO_MODEL_NAMES_MAP", fake_map):
+        with patch(
+            "utils.build_catalog.models_for_runner",
+            return_value=[ModelNames.GEMMA_1_1_2B_IT, fake_model],
+        ):
             with pytest.raises(
                 ValueError, match="SupportedModels and ModelDisplayNames"
             ):

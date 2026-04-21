@@ -8,8 +8,9 @@ from typing import Optional
 
 from config.constants import (
     MODEL_NAME_OVERRIDES,
-    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
+    MODEL_NAME_TO_RUNNER_MAP,
     MODEL_SERVICE_RUNNER_MAP,
+    models_for_runner,
     SDXL_VALID_IMAGE_RESOLUTIONS,
     AudioTasks,
     DeviceTypes,
@@ -151,19 +152,17 @@ class Settings(BaseSettings):
 
         # set model weights path using model name
         if self.model_weights_path is None or self.model_weights_path == "":
-            # Convert string to enum first
             model_runner_enum = ModelRunners(self.model_runner)
-
-            # Use dictionary key access
-            model_names_set = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(model_runner_enum)
-
-            if model_names_set:
-                # Get first model name from the set
-                model_name = list(model_names_set)[0]
-                if model_name:
-                    supported_model = getattr(SupportedModels, model_name.name, None)
-                    if supported_model:
-                        self.model_weights_path = supported_model.value
+            runner_models = models_for_runner(model_runner_enum)
+            if len(runner_models) > 1:
+                logger.warning(
+                    f"MODEL_RUNNER={self.model_runner!r} supports multiple models "
+                    f"{[m.value for m in runner_models]}. Set MODEL env var to select explicitly."
+                )
+            elif runner_models:
+                supported_model = getattr(SupportedModels, runner_models[0].name, None)
+                if supported_model:
+                    self.model_weights_path = supported_model.value
 
         # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()
@@ -281,46 +280,50 @@ class Settings(BaseSettings):
     def _set_config_overrides(self, model_to_run: str, device: str):
         model_name_enum = ModelNames(model_to_run)
 
-        # Find the appropriate model runner for this model name
-        model_runner_enum = None
-        for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
-            if model_name_enum in model_names:
-                model_runner_enum = runner
-                break
-
-        if model_runner_enum:
-            device_type_enum = DeviceTypes(device)
-            config_key = (model_runner_enum, device_type_enum)
-            matching_config = ModelConfigs.get(config_key)
-            logger.info(
-                f"Config lookup: runner={model_runner_enum}, device_type={device_type_enum}, "
-                f"key_exists={config_key in ModelConfigs}, "
-                f"matching_config={matching_config}"
-            )
-        else:
+        canonical_runner = MODEL_NAME_TO_RUNNER_MAP.get(model_name_enum)
+        if not canonical_runner:
             raise ValueError(f"No model runner found for model {model_to_run}.")
 
-        if matching_config:
-            self.model_runner = model_runner_enum.value
+        # MODEL_RUNNER env var overrides the canonical runner for both config lookup
+        # and runner assignment (e.g. to select a training runner over an inference runner)
+        model_runner_str = os.environ.get("MODEL_RUNNER")
+        model_runner_enum = (
+            ModelRunners(model_runner_str) if model_runner_str else canonical_runner
+        )
 
-            supported_model = getattr(SupportedModels, model_name_enum.name, None)
-            if supported_model:
-                self.model_weights_path = supported_model.value
+        device_type_enum = DeviceTypes(device)
+        config_key = (model_runner_enum, device_type_enum)
+        matching_config = ModelConfigs.get(config_key)
+        logger.info(
+            f"Config lookup: runner={model_runner_enum}, device_type={device_type_enum}, "
+            f"key_exists={config_key in ModelConfigs}, "
+            f"matching_config={matching_config}"
+        )
 
-            # Apply all configuration values (env vars take precedence)
-            for key, value in matching_config.items():
-                if hasattr(self, key):
-                    if key.upper() in os.environ:
-                        continue
-                    if key == "vllm" and isinstance(value, dict):
-                        value = VLLMSettings(**value)
-                    setattr(self, key, value)
+        if not matching_config:
+            return
 
-            # Apply per-model overrides (e.g. chat_template_kwargs for Qwen3)
-            model_overrides = MODEL_NAME_OVERRIDES.get(model_name_enum, {})
-            for key, value in model_overrides.items():
-                if hasattr(self, key):
-                    setattr(self, key, value)
+        self.model_runner = model_runner_enum.value
+
+        supported_model = getattr(SupportedModels, model_name_enum.name, None)
+        if supported_model:
+            self.model_weights_path = supported_model.value
+
+        # Apply all configuration values (env vars take precedence)
+        for key, value in matching_config.items():
+            if hasattr(self, key):
+                if key.upper() in os.environ:
+                    continue
+                if key == "vllm" and isinstance(value, dict):
+                    value = VLLMSettings(**value)
+                setattr(self, key, value)
+
+        # Apply per-model overrides (e.g. chat_template_kwargs for Qwen3)
+        model_overrides = MODEL_NAME_OVERRIDES.get(model_name_enum, {})
+        for key, value in model_overrides.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
         if any(
             self.model_runner == r.value
             for r in MODEL_SERVICE_RUNNER_MAP[ModelServices.LLM]

@@ -4,7 +4,7 @@
 import math
 
 from config.constants import (
-    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
+    models_for_runner,
     DeviceTypes,
     ModelDisplayNames,
     ModelRunners,
@@ -31,7 +31,7 @@ def _build_models_catalog(model_runner: str):
     except ValueError:
         return []
     models = []
-    for model_name in MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner_enum, set()):
+    for model_name in models_for_runner(runner_enum):
         try:
             model_config = SupportedModels[model_name.name].value
             display_name = ModelDisplayNames[model_name.name].value
