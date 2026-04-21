@@ -255,7 +255,7 @@ void BlazeRunner::handleRequest(
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
 
-  bool isNew = !request->isContinuation();
+  bool isNew = !request->isContinuation() && !request->isDisaggregated();
 
   TT_LOG_DEBUG(
       "[BlazeRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
