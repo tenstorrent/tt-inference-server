@@ -55,7 +55,6 @@ def generate_guidellm_report(
     benchmarks_output_dir: Optional[Path] = None,
 ) -> ReportTuple:
     """Generate the GuideLLM section of a benchmark report.
-
     Returns the same `(release_str, release_data, disp_md_path, data_file_path)`
     contract as the existing `aiperf_benchmark_generate_report` and
     `genai_perf_benchmark_generate_report` helpers in
@@ -173,9 +172,7 @@ def generate_guidellm_report(
 # --------------------------------------------------------------------------- #
 
 
-def _discover_normalized_files(
-    benchmarks_output_dir: Path, model_id: str
-) -> List[str]:
+def _discover_normalized_files(benchmarks_output_dir: Path, model_id: str) -> List[str]:
     pattern = f"guidellm_benchmark_{model_id}_*.json"
     return glob(f"{benchmarks_output_dir}/{pattern}")
 
@@ -520,17 +517,23 @@ def _table_text_metrics(
     median/mean per-second statistics."""
     out: List[Dict[str, str]] = []
     for i, b in enumerate(benches):
-        text_block = ((b.get("metrics") or {}).get("text") or {})
+        text_block = (b.get("metrics") or {}).get("text") or {}
         row = {"Sweep": str(i), "Strategy": _strategy_label(b)}
         for unit in ("tokens", "words", "characters"):
             unit_block = text_block.get(unit) or {}
             per_req = unit_block.get(side)
             per_sec = unit_block.get(f"{side}_per_second")
             unit_short = {"tokens": "Tok", "words": "Wrd", "characters": "Chr"}[unit]
-            row[f"{unit_short}/Req Mdn"] = f"{_stat(per_req, 'successful', 'median'):.1f}"
+            row[f"{unit_short}/Req Mdn"] = (
+                f"{_stat(per_req, 'successful', 'median'):.1f}"
+            )
             row[f"{unit_short}/Req p95"] = f"{_stat(per_req, 'successful', 'p95'):.1f}"
-            row[f"{unit_short}/Sec Mdn"] = f"{_stat(per_sec, 'successful', 'median'):.1f}"
-            row[f"{unit_short}/Sec Mean"] = f"{_stat(per_sec, 'successful', 'mean'):.1f}"
+            row[f"{unit_short}/Sec Mdn"] = (
+                f"{_stat(per_sec, 'successful', 'median'):.1f}"
+            )
+            row[f"{unit_short}/Sec Mean"] = (
+                f"{_stat(per_sec, 'successful', 'mean'):.1f}"
+            )
         out.append(row)
     return out
 
