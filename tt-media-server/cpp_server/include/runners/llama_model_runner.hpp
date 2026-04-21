@@ -20,7 +20,8 @@ class LlamaModelRunner : public IModelRunner {
   LlamaModelRunner(const tt::config::LLMConfig& config,
                    DecodeCallback callback);
   ~LlamaModelRunner() override;
-  void run(const std::vector<tt::domain::Sequence*>& seqs, bool isPrefill) override;
+  void run(const std::vector<tt::domain::Sequence*>& seqs,
+           bool isPrefill) override;
   void exit() override;
 
   bool isReady() const { return initialized; }

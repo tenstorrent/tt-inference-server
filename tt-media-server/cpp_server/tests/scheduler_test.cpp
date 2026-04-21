@@ -7,12 +7,12 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
+#include "domain/sampling_params.hpp"
+#include "domain/sequence.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
 #include "runners/llm_runner/max_occupancy_scheduler.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "domain/sampling_params.hpp"
 #include "runners/llm_runner/scheduler.hpp"
-#include "domain/sequence.hpp"
 
 namespace tt::runners::llm_engine {
 

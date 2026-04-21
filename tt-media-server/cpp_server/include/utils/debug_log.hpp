@@ -1,4 +1,5 @@
-// Debug-mode instrumentation helper (session 680f96). Temporary; remove after profiling.
+// Debug-mode instrumentation helper (session 680f96). Temporary; remove after
+// profiling.
 #pragma once
 
 #include <atomic>
@@ -45,9 +46,9 @@ inline void dbg_log(const char* location, const char* message,
 
 }  // namespace tt::debug
 
-#define DBG_LOG(location, message, json_body)                            \
-  do {                                                                   \
-    std::ostringstream _dbg_oss;                                         \
-    _dbg_oss << json_body;                                               \
-    ::tt::debug::dbg_log((location), (message), _dbg_oss.str());         \
+#define DBG_LOG(location, message, json_body)                    \
+  do {                                                           \
+    std::ostringstream _dbg_oss;                                 \
+    _dbg_oss << json_body;                                       \
+    ::tt::debug::dbg_log((location), (message), _dbg_oss.str()); \
   } while (0)

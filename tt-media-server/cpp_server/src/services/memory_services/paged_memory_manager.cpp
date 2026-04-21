@@ -7,11 +7,11 @@
 #include <utility>
 
 #include "config/settings.hpp"
-#include "runners/llm_runner/block_manager.hpp"
 #include "domain/sequence.hpp"
+#include "runners/llm_runner/block_manager.hpp"
 
 namespace tt::services {
-  
+
 using Sequence = tt::domain::Sequence;
 
 using tt::domain::ManageMemoryResult;
@@ -38,7 +38,7 @@ ManageMemoryStatus PagedMemoryManager::allocateKv(
     const ManageMemoryTask& task, std::vector<int>& outSlotIds) {
   std::vector<int64_t> placeholderTokens(1, 0);  // Hardcoded to use one block
   Sequence seq(task.taskId, blockManager->getBlockSize(),
-                                        std::move(placeholderTokens));
+               std::move(placeholderTokens));
 
   if (!blockManager->allocate(seq)) {
     return ManageMemoryStatus::WAITING;

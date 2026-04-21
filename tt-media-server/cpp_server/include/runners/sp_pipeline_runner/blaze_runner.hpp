@@ -12,10 +12,10 @@
 
 #include "config/runner_config.hpp"
 #include "domain/manage_memory.hpp"
-#include "ipc/result_queue.hpp"
-#include "pipeline_manager/pipeline_manager.hpp"
 #include "domain/sequence.hpp"
+#include "ipc/result_queue.hpp"
 #include "ipc/task_queue.hpp"
+#include "pipeline_manager/pipeline_manager.hpp"
 #include "runners/runner_interface.hpp"
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "services/memory_services/async_memory_manager.hpp"
@@ -27,8 +27,7 @@ namespace pm = tt_blaze::pipeline_manager;
 class BlazeRunner : public IRunner {
  public:
   BlazeRunner(const tt::config::LLMConfig& config,
-              ipc::IResultQueue* resultQueue,
-              tt::ipc::ITaskQueue* taskQueue);
+              ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue);
   ~BlazeRunner() override;
 
   void run() override;
@@ -46,8 +45,7 @@ class BlazeRunner : public IRunner {
   inline void handleResponse(const pm::PMResponse& response);
   void handleOutput(const pm::OutputMessage& output);
   std::unique_ptr<tt::domain::Sequence> getRequest();
-  void handleRequest(
-      std::unique_ptr<tt::domain::Sequence> request);
+  void handleRequest(std::unique_ptr<tt::domain::Sequence> request);
   void evictSlot(uint32_t slotId);
   void checkOutputHang();
 

@@ -108,4 +108,4 @@ Sequence Sequence::deserialize(std::istream& is) {
   return seq;
 }
 
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::domain

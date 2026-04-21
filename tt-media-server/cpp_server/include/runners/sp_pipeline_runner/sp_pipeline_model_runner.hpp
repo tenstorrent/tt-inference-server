@@ -15,8 +15,7 @@
 
 namespace tt::runners::sp_pipeline {
 
-using DecodeCallback =
-    std::function<void(const tt::domain::TokenResult&)>;
+using DecodeCallback = std::function<void(const tt::domain::TokenResult&)>;
 
 class SpPipelineModelRunner : public ISpPipelineModelRunner {
  public:

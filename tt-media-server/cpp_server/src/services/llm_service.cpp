@@ -373,9 +373,8 @@ void LLMService::processStreamingRequest(
   }
   sequence->setContinuation(request.continuation);
   sequence->setDisaggregated(request.disaggregated);
-  sequence->setSamplingParams(
-      std::make_unique<tt::domain::SamplingParams>(
-          tt::utils::mapper::mapSamplingParams(request)));
+  sequence->setSamplingParams(std::make_unique<tt::domain::SamplingParams>(
+      tt::utils::mapper::mapSamplingParams(request)));
   queueManager->taskQueue->push(*std::move(sequence));
 }
 

@@ -7,9 +7,9 @@
 #include "config/runner_config.hpp"
 #include "ipc/cancel_queue.hpp"
 #include "ipc/result_queue.hpp"
+#include "ipc/task_queue.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 #include "runners/llm_runner/scheduler.hpp"
-#include "ipc/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 
 namespace tt::services {
@@ -24,7 +24,8 @@ using namespace tt::runners::llm_engine;
 class LLMRunner : public IRunner {
  public:
   LLMRunner(const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
-            ipc::ITaskQueue* taskQueue, ipc::ICancelQueue* cancelQueue = nullptr);
+            ipc::ITaskQueue* taskQueue,
+            ipc::ICancelQueue* cancelQueue = nullptr);
   ~LLMRunner() override;
 
   Scheduler& getScheduler() { return *scheduler; }

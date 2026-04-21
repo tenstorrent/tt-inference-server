@@ -10,7 +10,7 @@
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
 
 namespace tt::runners::llm_engine {
-  
+
 using Sequence = tt::domain::Sequence;
 using SamplingParams = tt::domain::SamplingParams;
 using SequenceStatus = tt::domain::SequenceStatus;
@@ -37,8 +37,7 @@ Scheduler::Scheduler(const Config& config, tt::ipc::ITaskQueue* taskQueue,
     : blockSize(config.kvcache_block_size),
       maxInFlightCount(maxInFlightCount),
       maxNumBatchedTokens(config.max_num_batched_tokens),
-      stopTokenIds(config.stop_token_ids.begin(),
-                      config.stop_token_ids.end()),
+      stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       blockManager(config.num_kvcache_blocks, config.kvcache_block_size),
       prefillQueue(taskQueue) {}
 
@@ -48,9 +47,9 @@ bool Scheduler::isFinished() const {
 
 Sequence& Scheduler::addRequest(uint32_t taskId, std::vector<int64_t> prompt,
                                 const SamplingParams& params) {
-  auto seq = std::make_unique<Sequence>(std::move(taskId),
-                                        static_cast<int>(blockSize),
-                                        std::move(prompt), params);
+  auto seq =
+      std::make_unique<Sequence>(std::move(taskId), static_cast<int>(blockSize),
+                                 std::move(prompt), params);
   auto id = seq->taskId;
   add(*seq);
   sequences[id] = std::move(seq);
@@ -146,8 +145,7 @@ std::pair<std::vector<Sequence*>, bool> Scheduler::schedule() {
   // Trim stale pending_aborts_ entries.  When the prefill queue is empty,
   // remaining entries can never match a dequeued sequence — they are leftovers
   // from broadcast aborts to workers that don't own those tasks.
-  if (prefillQueue->empty() &&
-      pendingAborts.size() > maxInFlightCount) {
+  if (prefillQueue->empty() && pendingAborts.size() > maxInFlightCount) {
     pendingAborts.clear();
   }
 
@@ -211,8 +209,7 @@ void Scheduler::abortRequest(uint32_t taskId) {
   blockManager.deallocate(*seq);
 
   // Remove from decode_queue (O(n) but abort should be rare)
-  std::erase_if(decodeQueue,
-                [&](Sequence* s) { return s->taskId == taskId; });
+  std::erase_if(decodeQueue, [&](Sequence* s) { return s->taskId == taskId; });
   sequences.erase(taskId);
 }
 }  // namespace tt::runners::llm_engine

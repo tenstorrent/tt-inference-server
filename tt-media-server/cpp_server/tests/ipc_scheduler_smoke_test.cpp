@@ -22,11 +22,11 @@
 #include <iostream>
 
 #include "config/runner_config.hpp"
+#include "domain/sampling_params.hpp"
+#include "domain/sequence.hpp"
 #include "ipc/boost_ipc_task_queue.hpp"
 #include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "domain/sampling_params.hpp"
 #include "runners/llm_runner/scheduler.hpp"
-#include "domain/sequence.hpp"
 
 using Sequence = tt::domain::Sequence;
 using SamplingParams = tt::domain::SamplingParams;

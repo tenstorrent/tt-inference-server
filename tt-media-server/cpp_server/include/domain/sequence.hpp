@@ -8,8 +8,8 @@
 #include <optional>
 #include <vector>
 
-#include "domain/slot_types.hpp"
 #include "domain/sampling_params.hpp"
+#include "domain/slot_types.hpp"
 
 namespace tt::domain {
 
@@ -107,4 +107,4 @@ class Sequence {
   bool disaggregated = false;  // True if this is a disaggregated request
 };
 
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::domain

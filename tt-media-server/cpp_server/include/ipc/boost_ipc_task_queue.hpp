@@ -22,8 +22,7 @@ class BoostIpcTaskQueue : public tt::ipc::ITaskQueue {
       tt::config::LLMConfig::MAX_INPUT_TOKENS * sizeof(int64_t) +
       MAX_SEQUENCE_NON_TOKEN_BYTES;
 
-  using Queue =
-      BoostIpcMemoryQueue<tt::domain::Sequence, MAX_MSG_SIZE>;
+  using Queue = BoostIpcMemoryQueue<tt::domain::Sequence, MAX_MSG_SIZE>;
 
   /** Create a new queue (main process). */
   BoostIpcTaskQueue(const std::string& name, int capacity)
@@ -33,9 +32,7 @@ class BoostIpcTaskQueue : public tt::ipc::ITaskQueue {
   explicit BoostIpcTaskQueue(const std::string& name)
       : queue_(Queue::openExisting(name)) {}
 
-  void push(const tt::domain::Sequence& seq) override {
-    queue_->push(seq);
-  }
+  void push(const tt::domain::Sequence& seq) override { queue_->push(seq); }
 
   std::unique_ptr<tt::domain::Sequence> tryPop() override {
     tt::domain::Sequence seq(0, 1, {});

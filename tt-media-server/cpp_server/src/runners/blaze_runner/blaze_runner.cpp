@@ -12,8 +12,8 @@
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
-#include "ipc/token_push.hpp"
 #include "domain/sequence.hpp"
+#include "ipc/token_push.hpp"
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "services/memory_services/blaze_memory_manager.hpp"
 #include "utils/logger.hpp"
@@ -251,8 +251,7 @@ inline void BlazeRunner::evictSlot(uint32_t slotId) {
   TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={} (no slot context)", slotId);
 }
 
-void BlazeRunner::handleRequest(
-    std::unique_ptr<tt::domain::Sequence> request) {
+void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
   if (slotContexts.empty()) {
     lastOutputTime = std::chrono::steady_clock::now();
   }

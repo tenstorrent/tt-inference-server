@@ -10,10 +10,10 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
-#include "runners/llm_runner/block_manager.hpp"
 #include "domain/sampling_params.hpp"
 #include "domain/sequence.hpp"
 #include "ipc/task_queue.hpp"
+#include "runners/llm_runner/block_manager.hpp"
 
 namespace tt::runners::llm_engine {
 
@@ -25,8 +25,8 @@ namespace tt::runners::llm_engine {
  */
 class Scheduler {
  public:
-  explicit Scheduler(const tt::config::LLMConfig& config, ipc::ITaskQueue* taskQueue,
-                     size_t maxInFlightCount);
+  explicit Scheduler(const tt::config::LLMConfig& config,
+                     ipc::ITaskQueue* taskQueue, size_t maxInFlightCount);
   virtual ~Scheduler() = default;
 
   /** @return true if there are no prefill_queue, decode_queue, or in-flight
@@ -34,8 +34,9 @@ class Scheduler {
   bool isFinished() const;
 
   /** Creates a sequence, takes ownership, and enqueues it for prefill. */
-  tt::domain::Sequence& addRequest(uint32_t taskId, std::vector<int64_t> prompt,
-                       const tt::domain::SamplingParams& params = tt::domain::SamplingParams());
+  tt::domain::Sequence& addRequest(
+      uint32_t taskId, std::vector<int64_t> prompt,
+      const tt::domain::SamplingParams& params = tt::domain::SamplingParams());
 
   /** Enqueues an externally-owned sequence for prefill (prefill_queue). */
   void add(tt::domain::Sequence& seq);

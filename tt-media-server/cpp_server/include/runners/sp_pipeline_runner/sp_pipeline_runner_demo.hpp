@@ -12,9 +12,9 @@
 #include <unordered_set>
 
 #include "config/runner_config.hpp"
+#include "domain/sequence.hpp"
 #include "ipc/boost_ipc_queue.hpp"
 #include "ipc/result_queue.hpp"
-#include "domain/sequence.hpp"
 #include "ipc/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
@@ -49,8 +49,7 @@ class SpPipelineRunnerDemo : public IRunner {
   tt::ipc::ITaskQueue* taskQueue;
   std::unique_ptr<sp_pipeline::ISpPipelineModelRunner> modelRunner;
   sp_pipeline::DecodeQueue decodeQueue;
-  std::unordered_map<uint32_t,
-                     std::unique_ptr<tt::domain::Sequence>>
+  std::unordered_map<uint32_t, std::unique_ptr<tt::domain::Sequence>>
       activeSequences;
   std::atomic<bool> stopped{false};
   size_t maxInFlightCount;

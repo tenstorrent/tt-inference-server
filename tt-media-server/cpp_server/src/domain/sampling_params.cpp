@@ -130,4 +130,4 @@ std::unique_ptr<SamplingParams> SamplingParams::deserialize(std::istream& is) {
   return params;
 }
 
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::domain

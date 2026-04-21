@@ -14,7 +14,8 @@ using DecodeCallback = std::function<void(const tt::domain::TokenResult&)>;
 class IModelRunner {
  public:
   virtual ~IModelRunner() = default;
-  virtual void run(const std::vector<tt::domain::Sequence*>& seqs, bool isPrefill) = 0;
+  virtual void run(const std::vector<tt::domain::Sequence*>& seqs,
+                   bool isPrefill) = 0;
   virtual void exit() = 0;
 };
 

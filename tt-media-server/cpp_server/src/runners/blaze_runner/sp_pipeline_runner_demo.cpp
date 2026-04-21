@@ -19,9 +19,9 @@
 
 namespace tt::runners {
 
-SpPipelineRunnerDemo::SpPipelineRunnerDemo(
-    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
-    tt::ipc::ITaskQueue* taskQueue)
+SpPipelineRunnerDemo::SpPipelineRunnerDemo(const config::LLMConfig& config,
+                                           ipc::IResultQueue* resultQueue,
+                                           tt::ipc::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),

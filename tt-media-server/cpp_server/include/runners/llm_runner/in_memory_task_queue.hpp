@@ -3,12 +3,12 @@
 
 #pragma once
 
+#include <deque>
 #include <memory>
 #include <sstream>
-#include <deque>
 
-#include "ipc/task_queue.hpp"
 #include "domain/sequence.hpp"
+#include "ipc/task_queue.hpp"
 
 namespace tt::runners::llm_engine {
 
@@ -23,7 +23,8 @@ class InMemoryTaskQueue : public tt::ipc::ITaskQueue {
     std::ostringstream os;
     seq.serialize(os);
     std::istringstream is(os.str());
-    queue.push_back(std::make_unique<tt::domain::Sequence>(tt::domain::Sequence::deserialize(is)));
+    queue.push_back(std::make_unique<tt::domain::Sequence>(
+        tt::domain::Sequence::deserialize(is)));
   }
 
   std::unique_ptr<tt::domain::Sequence> tryPop() override {

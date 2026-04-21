@@ -370,9 +370,9 @@ struct ResponsesResponse : BaseResponse {
 
   static ResponsesResponse fromRequest(
       uint32_t taskId, const ResponsesRequest& request,
-      const tt::domain::SamplingParams& samplingParams,
-      std::string modelName, int64_t createdTime, Json::Value output,
-      std::string status, std::optional<ResponseUsage> usage = std::nullopt,
+      const tt::domain::SamplingParams& samplingParams, std::string modelName,
+      int64_t createdTime, Json::Value output, std::string status,
+      std::optional<ResponseUsage> usage = std::nullopt,
       Json::Value inputMessages = {}, Json::Value outputMessages = {},
       Json::Value kvTransfer = {}) {
     ResponsesResponse r(taskId);

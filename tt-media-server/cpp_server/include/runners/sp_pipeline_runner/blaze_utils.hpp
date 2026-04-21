@@ -39,8 +39,8 @@ inline void fillSequenceFields(pm::ISRequest& req,
   req.gen = makeGenerationParams(seq);
 }
 
-inline pm::ISRequest makeSubmitRequest(
-    uint32_t slotId, const tt::domain::Sequence& seq) {
+inline pm::ISRequest makeSubmitRequest(uint32_t slotId,
+                                       const tt::domain::Sequence& seq) {
   pm::ISRequest req{};
   req.type = pm::RequestType::SUBMIT;
   req.slot_id = slotId;
@@ -48,8 +48,8 @@ inline pm::ISRequest makeSubmitRequest(
   return req;
 }
 
-inline pm::ISRequest makeContinueRequest(
-    uint32_t slotId, const tt::domain::Sequence& seq) {
+inline pm::ISRequest makeContinueRequest(uint32_t slotId,
+                                         const tt::domain::Sequence& seq) {
   pm::ISRequest req{};
   req.type = pm::RequestType::CONTINUE;
   req.slot_id = slotId;

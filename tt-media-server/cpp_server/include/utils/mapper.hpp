@@ -5,6 +5,5 @@
 
 namespace tt::utils::mapper {
 
-tt::domain::SamplingParams mapSamplingParams(
-    const domain::LLMRequest&);
+tt::domain::SamplingParams mapSamplingParams(const domain::LLMRequest&);
 }
