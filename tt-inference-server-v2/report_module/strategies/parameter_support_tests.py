@@ -10,10 +10,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from report_module.base_strategy import ReportStrategy
+from report_module.markdown.visualizer import MarkdownVisualizer
 from report_module.types import ReportContext, ReportResult
-from server_tests.utils.vllm_parameter_json_to_md import (
-    main as generate_vllm_parameter_report,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +25,6 @@ class ParameterSupportTestsStrategy(ReportStrategy):
     Scans the latest ``tests_output/test_<model_id>__*`` run directory for
     ``parameter_report_*.json`` files, produced by ``server_tests`` parameter
     coverage checks, and emits:
-
-    - ``markdown``: release section ``### Test Results for <model> on <device>``
-      followed by the rendered vLLM parameter coverage markdown.
-    - ``data``    : list containing the merged parameter report dict (keys
-      ``endpoint_url``, ``model_name``, ``model_impl``, ``results``).  Single
-      reports pass through unchanged; multiple reports are merged in order.
-    - A ``summary_<report_id>.md`` file saved under
-      ``<output>/parameter_support_tests/`` by the shared
-      :class:`ReportFileSaver`.
     """
 
     name = "parameter_support_tests"
@@ -48,15 +37,21 @@ class ParameterSupportTestsStrategy(ReportStrategy):
         if not report_files:
             return {self.name: ReportResult.empty(self.name)}
 
-        logger.info(f"Parameter support tests: processing {len(report_files)} report(s)")
+        logger.info(
+            f"Parameter support tests: processing {len(report_files)} report(s)"
+        )
 
-        markdown_body = generate_vllm_parameter_report([str(f) for f in report_files])
+        loaded = self._load_reports(report_files)
+        if not loaded:
+            return {self.name: ReportResult.empty(self.name)}
+
+        markdown_body = MarkdownVisualizer.build_parameter_support_markdown(loaded)
         release_markdown = (
             f"### Test Results for {context.model_name} "
             f"on {context.device_str}\n\n{markdown_body}"
         )
 
-        merged = self._merge_reports(self._load_reports(report_files))
+        merged = self._merge_reports(loaded)
 
         result = ReportResult(
             name=self.name,

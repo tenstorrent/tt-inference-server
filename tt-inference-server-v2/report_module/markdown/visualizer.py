@@ -38,6 +38,7 @@ _EVALS_PLACEHOLDER_BODY = "MD summary to do"
 _NO_TARGETS_DEFINED = (
     "No performance targets defined for this model and device combination.\n"
 )
+_MAX_TABLE_CELL_CHARS = 250
 
 # Sweep sections are emitted in this fixed visual order regardless of the
 # order tools or task types appear in the input payload. ``vlm`` folds into
@@ -237,6 +238,17 @@ class MarkdownVisualizer:
         return "\n".join(lines) + "\n"
 
     @staticmethod
+    def build_parameter_support_markdown(
+        reports: List[Dict[str, Any]],
+    ) -> str:
+        if not reports:
+            return ""
+        sections = [
+            MarkdownVisualizer._build_single_parameter_report(r) for r in reports
+        ]
+        return "\n---\n\n".join(sections)
+
+    @staticmethod
     def _summary_table_rows(summary: Dict[str, Any]) -> List[Dict[str, str]]:
         return [
             {"Metric": "Total Tests", "Value": str(summary.get("total_tests", 0))},
@@ -327,3 +339,159 @@ class MarkdownVisualizer:
             return datetime.fromisoformat(raw).strftime("%Y-%m-%d %H:%M:%S")
         except ValueError:
             return raw
+
+    @staticmethod
+    def _build_single_parameter_report(report_data: Dict[str, Any]) -> str:
+        task_name = report_data.get("task_name")
+        summary = MarkdownVisualizer._analyze_parameter_report(report_data)
+        metadata_md = MarkdownVisualizer._format_parameter_metadata(
+            report_data, task_name
+        )
+        summary_md = MarkdownVisualizer._format_parameter_summary_table(
+            summary, task_name
+        )
+        details_md = MarkdownVisualizer._format_parameter_detailed_table(
+            summary, task_name
+        )
+        return f"{metadata_md}\n{summary_md}{details_md}"
+
+    @staticmethod
+    def _analyze_parameter_report(
+        report_data: Dict[str, Any],
+    ) -> Dict[str, Dict[str, Any]]:
+        results = report_data.get("results")
+        if not isinstance(results, dict):
+            raise AttributeError(
+                "'results' field missing or invalid in parameter report"
+            )
+
+        summary: Dict[str, Dict[str, Any]] = {}
+        for test_case, tests in results.items():
+            if not tests:
+                summary[test_case] = {
+                    "status": "SKIP",
+                    "summary_text": "No tests run.",
+                    "all_tests": [],
+                }
+                continue
+
+            total = len(tests)
+            passed = [t for t in tests if t["status"] == "passed"]
+            failed = [t for t in tests if t["status"] == "failed"]
+            status = "PASS" if not failed else "FAIL"
+
+            summary[test_case] = {
+                "status": status,
+                "summary_text": f"{len(passed)}/{total} passed",
+                "all_tests": tests,
+            }
+        return summary
+
+    @staticmethod
+    def _format_parameter_metadata(
+        report_data: Dict[str, Any], task_name: Optional[str]
+    ) -> str:
+        title = (
+            f"### LLM API Test Metadata — {task_name}"
+            if task_name
+            else "### LLM API Test Metadata"
+        )
+        timestamp = report_data.get("test_run_timestamp_utc", "N/A")
+        if timestamp != "N/A":
+            try:
+                dt = datetime.fromisoformat(timestamp)
+                timestamp = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+            except ValueError:
+                pass
+
+        lines = [
+            title,
+            "",
+            "| Attribute | Value |",
+            "| --- | --- |",
+            f"| **Endpoint URL** | `{report_data.get('endpoint_url', 'N/A')}` |",
+            f"| **Test Timestamp** | {timestamp} |",
+            "",
+        ]
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_parameter_summary_table(
+        summary: Dict[str, Dict[str, Any]], task_name: Optional[str]
+    ) -> str:
+        title = (
+            f"### Parameter Conformance Summary — {task_name}"
+            if task_name
+            else "### Parameter Conformance Summary"
+        )
+        lines = [
+            title,
+            "",
+            "| Test Case | Status | Summary |",
+            "| --- | :---: | --- |",
+        ]
+        for test_case in sorted(summary.keys()):
+            result = summary[test_case]
+            status = result["status"]
+            status_emoji = (
+                "✅" if status == "PASS" else ("❌" if status == "FAIL" else "⚠️")
+            )
+            lines.append(
+                f"| `{test_case}` | {status_emoji} {status} | {result['summary_text']} |"
+            )
+        lines.append("\n")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_parameter_detailed_table(
+        summary: Dict[str, Dict[str, Any]], task_name: Optional[str]
+    ) -> str:
+        title = (
+            f"### Detailed Test Results — {task_name}"
+            if task_name
+            else "### Detailed Test Results"
+        )
+        lines = [
+            title,
+            "",
+            "| Test Case | Parametrization | Status | Message |",
+            "| --- | --- | :---: | --- |",
+        ]
+
+        has_results = False
+        for test_case in sorted(summary.keys()):
+            result = summary[test_case]
+            if not result["all_tests"]:
+                continue
+            has_results = True
+
+            sorted_tests = sorted(
+                result["all_tests"],
+                key=lambda t: (t["status"] == "passed", t["test_node_name"]),
+            )
+            for test in sorted_tests:
+                status = test["status"].upper()
+                status_emoji = "✅" if status == "PASSED" else "❌"
+                message = (
+                    MarkdownVisualizer._escape_parameter_cell(test["message"])
+                    if status == "FAILED"
+                    else ""
+                )
+                lines.append(
+                    f"| `{test_case}` | `{test['test_node_name']}` | "
+                    f"{status_emoji} {status} | {message} |"
+                )
+
+        if not has_results:
+            lines.append("| No results | | | |")
+        lines.append("\n")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _escape_parameter_cell(message: Any) -> str:
+        if not isinstance(message, str):
+            message = str(message)
+        message = message.replace("|", r"\|")
+        if len(message) > _MAX_TABLE_CELL_CHARS:
+            message = message[:_MAX_TABLE_CELL_CHARS] + "..."
+        return message.replace("\n", " ").replace("\r", "")
