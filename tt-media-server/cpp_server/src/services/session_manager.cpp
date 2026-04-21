@@ -114,8 +114,6 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
     return CloseSessionResult::NOT_FOUND;
   }
 
-  // Immediately abort the in-flight request if an abort callback was
-  // registered.
   auto abortCallback = abortCallbacks_.take(sessionId);
   if (abortCallback.has_value()) {
     (*abortCallback)();

@@ -110,8 +110,6 @@ struct LoopFixture {
   }
 };
 
-// Creates a session with a pre-assigned slot and returns its ID.
-// Uses the event loop to receive the async completion callback.
 std::string createSessionWithSlot(tt::services::SessionManager& manager,
                                   trantor::EventLoop* loop, uint32_t slotId) {
   std::promise<std::string> promise;
@@ -178,8 +176,6 @@ TEST(SessionManagerAbort, AbortCallbackClearedAfterRequestCompletesNormally) {
 
   manager.releaseInFlight(sessionId);  // IN_FLIGHT -> IDLE, clears callback
 
-  // Session is now IDLE; closing it should not invoke the (already cleared)
-  // abort callback.
   manager.closeSession(sessionId);
 
   EXPECT_FALSE(abortCalled.load());
