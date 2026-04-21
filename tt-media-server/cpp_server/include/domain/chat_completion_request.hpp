@@ -5,6 +5,8 @@
 
 #include <json/json.h>
 
+#include <cstddef>
+#include <iterator>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -191,16 +193,20 @@ struct ChatCompletionRequest : BaseRequest {
     if (json.isMember("session_id") && !json["session_id"].isNull())
       req.sessionId = getString(json["session_id"], "session_id");
 
-    if (json.isMember("tools") && json["tools"].isArray()) {
+
+
+    if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
+      req.tool_choice = tool_calls::ToolChoice::fromJson(json["tool_choice"]);
+    }
+
+    if (json.isMember("tools") && json["tools"].isArray() &&
+        (!req.tool_choice.has_value() ||
+         req.tool_choice->type != "none")) {
       std::vector<tool_calls::Tool> toolList;
       for (const auto& tool : json["tools"]) {
         toolList.push_back(tool_calls::Tool::fromJson(tool));
       }
       req.tools = toolList;
-    }
-
-    if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
-      req.tool_choice = tool_calls::ToolChoice::fromJson(json["tool_choice"]);
     }
     if (json.isMember("parallel_tool_calls") &&
         !json["parallel_tool_calls"].isNull())
@@ -208,14 +214,15 @@ struct ChatCompletionRequest : BaseRequest {
           getBool(json["parallel_tool_calls"], "parallel_tool_calls");
 
     if (req.tool_choice.has_value()) {
-      if (!req.tools.has_value() || req.tools->empty()) {
+      const auto& toolChoice = req.tool_choice.value();
+
+     if ((!req.tools.has_value() || req.tools->empty()) && toolChoice.type != "none") {
         throw std::invalid_argument(
             "tool_choice is provided but no tools are specified");
       }
-      const auto& toolChoice = req.tool_choice.value();
-      if (toolChoice.type != "auto") {
+      if (toolChoice.type != "auto" && toolChoice.type != "none") {
         throw std::invalid_argument(
-            "tool_choice must be 'auto', other tool_choice values are not yet "
+            "tool_choice must be 'auto' or 'none', other tool_choice values are not yet "
             "supported");
       }
     }
