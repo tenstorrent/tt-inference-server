@@ -112,7 +112,7 @@ std::string LlamaTokenizer::applyChatTemplate(
 
     } else if (m.role == "tool" || m.role == "ipython") {
       // Tool output message
-      out << llamaHeaderStart << "ipython" << llamaHeaderEnd << "\n\n";
+      out << llamaHeaderStart << m.role << llamaHeaderEnd << "\n\n";
       out << m.content << llamaEot;
 
     } else {

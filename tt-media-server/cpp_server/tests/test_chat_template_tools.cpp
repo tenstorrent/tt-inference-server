@@ -163,7 +163,7 @@ struct LlamaTemplateConfig : public TokenizerTemplateConfig {
   const char* toolCallsEnd() const override { return ""; }
   const char* toolOutputsBegin() const override { return ""; }
   const char* toolOutputBegin() const override {
-    return "<|start_header_id|>ipython<|end_header_id|>\n\n";
+    return "<|start_header_id|>tool<|end_header_id|>\n\n";
   }
   const char* toolOutputEnd() const override { return ""; }
   const char* toolOutputsEnd() const override { return ""; }
@@ -229,7 +229,7 @@ struct LlamaTemplateConfig : public TokenizerTemplateConfig {
 
   std::string buildToolOutput(const ChatMessage& message) const override {
     std::ostringstream out;
-    out << "<|start_header_id|>ipython<|end_header_id|>\n\n";
+    out << "<|start_header_id|>tool<|end_header_id|>\n\n";
     out << message.content;
     out << endOfSentence();
     return out.str();
