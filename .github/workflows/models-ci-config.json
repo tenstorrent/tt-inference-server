@@ -15,6 +15,22 @@
           "devices": ["P150X4", "P150X8", "P300X2"]
         }
       }
+    },
+    "whisper-large-v3": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "release": {
+          "devices": ["P150", "P300", "P300X2"]
+        }
+      }
+    },
+    "speecht5_tts": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "release": {
+          "devices": ["P150", "P300"]
+        }
+      }
     }
   }
 }
