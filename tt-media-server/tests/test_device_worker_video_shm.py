@@ -219,7 +219,7 @@ class TestSPRunnerResponseHandling:
         runner.set_device()
         req = MockVideoGenerateRequest(task_id="tid")
 
-        with pytest.raises(RuntimeError, match="timed out"):
+        with pytest.raises(TimeoutError, match="REQUEST_TIMEOUT"):
             runner.run([req])
 
 
@@ -273,7 +273,7 @@ class TestSPRunnerLifecycle:
         runner.set_device()
 
         req = MockVideoGenerateRequest(task_id="tid")
-        with pytest.raises(RuntimeError, match="timed out"):
+        with pytest.raises(TimeoutError, match="REQUEST_TIMEOUT"):
             runner.run([req])
 
 

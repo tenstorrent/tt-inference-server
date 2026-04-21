@@ -81,8 +81,8 @@ def tt_status(service: BaseService = Depends(service_resolver)) -> dict[str, Any
     """
     try:
         status = service.check_is_model_ready()
-    except Exception as e:
-        return {"overall_state": "failed", "error": f"status check failed: {e}"}
+    except Exception:
+        return {"overall_state": "failed", "error": "status check failed"}
 
     return {"overall_state": _overall_state(status), **status}
 
