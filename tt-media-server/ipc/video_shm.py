@@ -137,6 +137,51 @@ class VideoShm:
 
     The actual video payload is written to a file (see :func:`video_result_path`)
     and only the path is transmitted through SHM.
+
+    Crash-recovery semantics
+    ------------------------
+    Commit/consume are two-store, non-atomic sequences — "flip slot state"
+    and "bump index" are independent writes. A crash between them leaves
+    the ring in one of two detectable states:
+
+    - **Writer gap**: writer flipped a slot FILLED but did not bump widx.
+    - **Reader gap**: reader flipped a slot EMPTY but did not bump ridx.
+
+    These are repaired by :meth:`recover`. Because each index has a
+    single owner (writer owns widx, reader owns ridx), recovery can be
+    scoped to one role and run safely while the *other* role is live:
+
+    - ``recover(side="writer")`` is safe on a freshly (re)started writer
+      even if the reader is running — the reader never mutates widx.
+    - ``recover(side="reader")`` is the symmetric case.
+    - ``recover(side="both")`` requires both sides quiescent; used by
+      ``python -m ipc.video_shm_bootstrap recover`` for operator-driven
+      cleanup when neither side is known to be healthy.
+
+    The recommended pattern is for each respawned process to call the
+    side-scoped form immediately after :meth:`open` (see :meth:`recover`
+    docstring for the exact snippet). This makes single-sided crashes
+    transparently self-healing on restart.
+
+    Residual hazard — peer laps the crash window
+    --------------------------------------------
+    If the *other* role keeps running after the crash and laps the
+    affected slot before the replacement process attaches, the gap is
+    no longer observable: a reader-gap slot has been refilled by the
+    writer with a newer payload, or a writer-gap slot has been
+    consumed by the reader as if it were a legitimate commit. In the
+    reader-gap variant this can present as out-of-order delivery plus
+    a silently-lost message; in the writer-gap variant as a silently-
+    ignored commit. Closing this window requires either:
+
+    (a) a POSIX robust mutex around the two-store sequence, or
+    (b) per-slot monotonic sequence numbers that let the reader
+        distinguish a newly-written slot from a re-used one.
+
+    Both are tracked as follow-ups; the current design trades that
+    rare pathological timing for a simple lock-free fast path with
+    deterministic recovery in the common "crash-then-restart faster
+    than the peer produces one item" case.
     """
 
     INPUT_SLOTS = 8
@@ -328,6 +373,107 @@ class VideoShm:
     def queue_depth(self) -> int:
         """Number of FILLED slots currently in the ring (writer - reader)."""
         return self._get_writer_index() - self._get_reader_index()
+
+    # ── Crash recovery ──
+    #
+    # Commit/consume are two-store non-atomic sequences:
+    #   Writer : pack_payload → flip state to FILLED → bump writer_index
+    #   Reader : read_payload → flip state to EMPTY  → bump reader_index
+    #
+    # A crash in the gap between "flip state" and "bump index" leaves one of
+    # two detectable states:
+    #
+    #   Writer gap  : slot(widx % _slots) == FILLED AND ring is not full.
+    #                 (Writer committed payload + flipped state but didn't bump.)
+    #   Reader gap  : slot(ridx % _slots) == EMPTY  AND ring is not empty.
+    #                 (Reader consumed + flipped state but didn't bump.)
+    #
+    # Concurrency contract
+    # --------------------
+    # Each index is owned by exactly one role: the writer owns widx, the
+    # reader owns ridx. ``recover(side="writer")`` is safe to call whenever
+    # no live writer exists for this ring (e.g. at the start of a freshly
+    # respawned writer, before it enters write_request); the live reader may
+    # continue unchanged because reader-side code never mutates widx.
+    # ``recover(side="reader")`` is the symmetric case. ``recover(side="both")``
+    # requires both sides quiescent and is the safe default for operator
+    # workflows where nothing is known about which side crashed.
+
+    _RECOVER_SIDES = ("reader", "writer", "both")
+
+    def recover(self, side: str = "both") -> dict[str, int]:
+        """Repair indices after a single-sided crash, scoped to one role.
+
+        Parameters
+        ----------
+        side
+            ``"writer"`` : check/repair only the writer gap. Safe to call
+                from a freshly restarted writer process while the reader
+                remains live.
+            ``"reader"`` : check/repair only the reader gap. Safe to call
+                from a freshly restarted reader process while the writer
+                remains live.
+            ``"both"`` (default) : check both sides. ONLY safe when both
+                sides are stopped; used by the ``bootstrap recover`` CLI.
+
+        Returns a dict describing any changes made, e.g.
+        ``{"writer_bumped": 1, "reader_bumped": 0}``.
+
+        Callers that respawn after a crash should use the side-scoped form
+        at startup for transparent self-healing::
+
+            # in the runner (reads input, writes output):
+            input_shm.open()
+            input_shm.recover(side="reader")
+            output_shm.open()
+            output_shm.recover(side="writer")
+
+            # in the server (writes input, reads output):
+            input_shm.open()
+            input_shm.recover(side="writer")
+            output_shm.open()
+            output_shm.recover(side="reader")
+
+        If the ring is empty (widx == ridx) or full (widx - ridx == _slots),
+        the corresponding slot state is ambiguous (could be the normal
+        steady-state or the abandoned-commit state), so recovery of that
+        side is skipped to avoid false positives.
+
+        Note: this does not close the pathological window where the live
+        peer laps the crashed slot before the respawned side attaches —
+        once the writer has reused the affected slot, the gap is no
+        longer detectable. Full crash-safety under any timing would
+        require per-slot sequence numbers; see class docstring.
+        """
+        if side not in self._RECOVER_SIDES:
+            raise ValueError(f"side must be one of {self._RECOVER_SIDES}, got {side!r}")
+        if self._buf is None or self._state_buf is None:
+            raise RuntimeError("recover() called before open()")
+
+        state_in_slot = self._IN_STATE if self._mode == "input" else self._OUT_STATE
+        result = {"writer_bumped": 0, "reader_bumped": 0}
+
+        widx = self._get_writer_index()
+        ridx = self._get_reader_index()
+
+        # Writer gap: next-to-write slot is unexpectedly FILLED, and ring isn't
+        # already full (a full ring would legitimately have that slot FILLED).
+        if side in ("writer", "both") and widx < ridx + self._slots:
+            w_off = (widx % self._slots) * self._slot_size + state_in_slot
+            if struct.unpack_from("<i", self._buf, w_off)[0] == self._FILLED:
+                self._set_writer_index(widx + 1)
+                widx += 1
+                result["writer_bumped"] = 1
+
+        # Reader gap: next-to-read slot is unexpectedly EMPTY, and ring isn't
+        # empty (an empty ring would legitimately have that slot EMPTY).
+        if side in ("reader", "both") and ridx < widx:
+            r_off = (ridx % self._slots) * self._slot_size + state_in_slot
+            if struct.unpack_from("<i", self._buf, r_off)[0] == self._EMPTY:
+                self._set_reader_index(ridx + 1)
+                result["reader_bumped"] = 1
+
+        return result
 
     # ── Input SHM: request read / write ──
 

@@ -12,24 +12,43 @@ to reset.
 
 Subcommands
 -----------
-``up``      Ensure the input and output ring segments (and their ``<name>_state``
-            siblings) exist. Idempotent — a no-op if they already exist.
-``down``    Unlink all four segments and delete any leftover video result files
-            from ``/dev/shm``. Destructive: only run when both the server and
-            the runner are stopped, or when you explicitly want to drop
-            in-flight ring state.
-``status``  Print segment sizes, writer/reader indices and queue depth for the
-            input and output rings. Read-only.
+``up``       Ensure the input and output ring segments (and their
+             ``<name>_state`` siblings) exist. Idempotent — a no-op if they
+             already exist.
+``down``     Unlink all four segments and delete any leftover video result
+             files from ``/dev/shm``. Destructive: only run when both the
+             server and the runner are stopped, or when you explicitly want
+             to drop in-flight ring state.
+``status``   Print segment sizes, writer/reader indices and queue depth for
+             the input and output rings. Read-only.
+``recover``  Reconcile indices with slot states on BOTH sides after a crash.
+             ONLY safe to run while both the server and the runner are
+             stopped — this is the ``side="both"`` form of
+             :meth:`VideoShm.recover`. Under normal operation each
+             process self-heals its own lane at startup (see
+             "Crash-recovery semantics" in :class:`VideoShm`), so this
+             command is only needed when (a) neither side is known to
+             be healthy, or (b) a pathological timing was hit that the
+             in-process lane-scoped self-heal could not detect.
 
 Environment variables
 ---------------------
 ``TT_VIDEO_SHM_INPUT``   Name of the input  ring segment (default ``tt_video_in``).
 ``TT_VIDEO_SHM_OUTPUT``  Name of the output ring segment (default ``tt_video_out``).
 
-Examples
---------
+Typical operator workflow
+-------------------------
+    # initial boot
     python -m ipc.video_shm_bootstrap up
-    python -m ipc.video_shm_bootstrap status
+    # start server + runner
+
+    # after a hard crash of either side
+    #   1. stop BOTH processes
+    #   2. repair any mid-commit inconsistencies:
+    python -m ipc.video_shm_bootstrap recover
+    #   3. restart both
+
+    # full teardown
     python -m ipc.video_shm_bootstrap down
 """
 
@@ -91,6 +110,46 @@ def down(in_name: str, out_name: str) -> int:
     return 0
 
 
+def recover(in_name: str, out_name: str) -> int:
+    """Scan each ring for a mid-commit inconsistency and repair it.
+
+    SAFETY: only run while both server and runner are stopped. See the
+    docstring of :meth:`ipc.video_shm.VideoShm.recover` for the failure
+    modes this does and does not cover.
+    """
+    any_change = False
+    for shm_name, mode in ((in_name, "input"), (out_name, "output")):
+        if not _exists(shm_name):
+            print(f"[bootstrap] {shm_name:20s}  not created — nothing to recover")
+            continue
+        shm = VideoShm(shm_name, mode=mode)
+        shm.open()
+        try:
+            widx_before = shm._get_writer_index()
+            ridx_before = shm._get_reader_index()
+            result = shm.recover(side="both")
+            widx_after = shm._get_writer_index()
+            ridx_after = shm._get_reader_index()
+        finally:
+            shm.close()
+        bumped_w = result["writer_bumped"]
+        bumped_r = result["reader_bumped"]
+        if bumped_w or bumped_r:
+            any_change = True
+            parts = []
+            if bumped_w:
+                parts.append(f"widx {widx_before}→{widx_after}")
+            if bumped_r:
+                parts.append(f"ridx {ridx_before}→{ridx_after}")
+            print(f"[bootstrap] {shm_name:20s}  repaired: {', '.join(parts)}")
+        else:
+            print(f"[bootstrap] {shm_name:20s}  consistent (no repair needed)")
+
+    if not any_change:
+        print("[bootstrap] all rings already consistent")
+    return 0
+
+
 def status(in_name: str, out_name: str) -> int:
     """Print sizes, indices and queue depth for each ring."""
     print(
@@ -146,8 +205,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "action",
-        choices=("up", "down", "status"),
-        help="up: create segments; down: unlink segments; status: show indices",
+        choices=("up", "down", "status", "recover"),
+        help=(
+            "up: create segments; down: unlink segments; "
+            "status: show indices; recover: repair mid-commit inconsistencies "
+            "(stop both sides first)"
+        ),
     )
     parser.add_argument(
         "--input-name",
@@ -165,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
     in_name = args.input_name or env_in
     out_name = args.output_name or env_out
 
-    dispatch = {"up": up, "down": down, "status": status}
+    dispatch = {"up": up, "down": down, "status": status, "recover": recover}
     return dispatch[args.action](in_name, out_name)
 
 

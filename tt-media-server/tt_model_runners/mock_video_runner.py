@@ -155,6 +155,16 @@ def _run_shm_bridge() -> None:
     # Create-or-attach; symmetric on both sides under the new ownership model.
     input_shm.open()
     output_shm.open()
+    # Self-heal any gap left by a previous runner instance that crashed
+    # mid-read (on input) or mid-write (on output). Scoped to this
+    # process's own role, so safe to run with a live server peer.
+    in_repair = input_shm.recover(side="reader")
+    out_repair = output_shm.recover(side="writer")
+    if any(in_repair.values()) or any(out_repair.values()):
+        logger.warning(
+            f"Mock runner: crash-recovery repaired prior inconsistency: "
+            f"input={in_repair} output={out_repair}"
+        )
 
     pipeline = MockVideoPipeline()
     logger.info("Mock video SHM runner ready, waiting for requests...")
