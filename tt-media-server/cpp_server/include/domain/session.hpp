@@ -55,6 +55,7 @@ class Session {
 
  private:
   std::string session_id_;
+  uint64_t prefix_hash_;
   uint32_t slot_id_;
   SessionState state_{SessionState::IDLE};
   std::chrono::system_clock::time_point last_activity_time_;
