@@ -8,9 +8,9 @@
 
 namespace tt::runners {
 
-BlazePrefillRunner::BlazePrefillRunner(
-    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
-    tt::runners::llm_engine::ITaskQueue* taskQueue)
+BlazePrefillRunner::BlazePrefillRunner(const config::LLMConfig& config,
+                                       ipc::IResultQueue* resultQueue,
+                                       tt::ipc::ITaskQueue* taskQueue)
     : config(config), resultQueue(resultQueue), taskQueue(taskQueue) {
   modelRunner = blaze_prefill::makeModelRunner(config);
 }

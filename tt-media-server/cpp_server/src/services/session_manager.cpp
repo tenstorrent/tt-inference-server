@@ -34,6 +34,19 @@ int computeFailureCount(int attemptsRemaining) {
   return static_cast<int>(tt::config::sessionAllocationMaxRetries()) -
          attemptsRemaining;
 }
+
+domain::ManageMemoryTask makeAllocTask() {
+  return domain::ManageMemoryTask(tt::utils::TaskIDGenerator::generate(),
+                                  domain::MemoryManagementAction::ALLOCATE);
+}
+
+domain::ManageMemoryTask makeDeallocTask(uint32_t slotId) {
+  domain::ManageMemoryTask task(tt::utils::TaskIDGenerator::generate(),
+                                domain::MemoryManagementAction::DEALLOCATE);
+  task.memoryLayout = domain::KvMemoryLayout::Paged;
+  task.slotIds = {slotId};
+  return task;
+}
 }  // namespace
 
 SessionManager::SessionManager() {
@@ -84,7 +97,6 @@ void SessionManager::readerLoop() {
 
 void SessionManager::finalizeSessionClose(const std::string& sessionId,
                                           const domain::Session& session) {
-  abortCallbacks_.take(sessionId);
   if (session.getSlotId() != domain::INVALID_SLOT_ID) {
     sendDeallocRequest(sessionId, session.getSlotId());
   }
@@ -96,99 +108,29 @@ CloseSessionResult SessionManager::closeSession(const std::string& sessionId) {
   TT_LOG_DEBUG("[SessionManager] closeSession called for sessionId={}",
                sessionId);
 
-  // Search for session by UUID across all hash buckets. If it is IDLE, remove
-  // it immediately; if it is IN_FLIGHT, mark it for deferred close and we'll
-  // fire the abort callback below so the request unwinds. The actual
-  // deallocation then happens in releaseInFlight() when the request finishes.
-  bool found = false;
-  bool closedImmediately = false;
-  std::optional<domain::Session> takenSession;
-  size_t foundHash = 0;
-
-  sessions.forEach([&](size_t hash, std::list<domain::Session>& sessionList) {
-    for (auto it = sessionList.begin(); it != sessionList.end(); ++it) {
-      if (it->getSessionId() != sessionId) continue;
-      found = true;
-      foundHash = hash;
-
-      if (it->isIdle()) {
-        takenSession = *it;
-        sessionList.erase(it);
-        closedImmediately = true;
-      } else if (!it->markCloseRequested()) {
-        TT_LOG_WARN("[Session] markCloseRequested: unexpected state {}",
-                    static_cast<int>(it->getState()));
-      }
-      return;  // exit forEach early
-    }
-  });
-
-  if (!found) {
+  auto ms = sessions.take(sessionId);
+  if (!ms.has_value()) {
     TT_LOG_WARN("[SessionManager] Session not found: {}", sessionId);
     return CloseSessionResult::NOT_FOUND;
   }
 
-  if (closedImmediately) {
-    // Clean up empty bucket to avoid leaking entries under stale hashes.
-    sessions.modify(foundHash, [](std::list<domain::Session>&) {});
-    auto bucket = sessions.get(foundHash);
-    if (bucket.has_value() && bucket->empty()) {
-      sessions.erase(foundHash);
-    }
-    finalizeSessionClose(sessionId, *takenSession);
-    return CloseSessionResult::SUCCESS;
-  }
+  // Remove this session from the prefix index so future lookups miss.
+  removeFromPrefixIndex(sessionId, ms->session.getHash());
 
-  auto abortCallback = abortCallbacks_.take(sessionId);
-  if (abortCallback.has_value()) {
-    (*abortCallback)();
-    TT_LOG_INFO("[SessionManager] Aborted in-flight request for session: {}",
+  if (ms->cancelFn) {
+    ms->cancelFn();
+    TT_LOG_INFO("[SessionManager] Cancelled in-flight request for session: {}",
                 sessionId);
-  } else {
-    TT_LOG_WARN(
-        "[SessionManager] closeSession: sessionId={} is in-flight but no abort "
-        "callback registered; will close when request completes",
-        sessionId);
   }
 
-  // The in-flight request may have completed between the forEach above and
-  // here; resolve that race by attempting to finalize if the session is now
-  // CLOSING.
-  std::optional<domain::Session> deferred;
-  sessions.modify(foundHash, [&](std::list<domain::Session>& list) {
-    for (auto it = list.begin(); it != list.end(); ++it) {
-      if (it->getSessionId() == sessionId && it->isClosing()) {
-        deferred = *it;
-        list.erase(it);
-        return;
-      }
-    }
-  });
-  if (deferred.has_value()) {
-    auto bucket = sessions.get(foundHash);
-    if (bucket.has_value() && bucket->empty()) {
-      sessions.erase(foundHash);
-    }
-    finalizeSessionClose(sessionId, *deferred);
-  }
-
+  finalizeSessionClose(sessionId, ms->session);
   return CloseSessionResult::SUCCESS;
 }
 
 bool SessionManager::assignSlotId(const std::string& sessionId,
                                   uint32_t slotId) {
-  bool found = false;
-
-  sessions.forEach([&](size_t, std::list<domain::Session>& sessionList) {
-    for (auto& session : sessionList) {
-      if (session.getSessionId() == sessionId) {
-        session.setSlotId(slotId);
-        found = true;
-        TT_LOG_INFO("[SessionManager] Assigned slot {} to session {}", slotId,
-                    sessionId);
-        return;
-      }
-    }
+  bool found = sessions.modify(sessionId, [slotId](ManagedSession& ms) {
+    ms.session.setSlotId(slotId);
   });
 
   if (!found) {
@@ -202,46 +144,31 @@ bool SessionManager::assignSlotId(const std::string& sessionId,
 uint32_t SessionManager::getSlotIdBySessionId(
     const std::string& sessionId) const {
   uint32_t result = domain::INVALID_SLOT_ID;
-
-  sessions.forEach([&](size_t, std::list<domain::Session>& sessionList) {
-    for (auto& session : sessionList) {
-      if (session.getSessionId() == sessionId) {
-        session.updateActivityTime();
-        result = session.getSlotId();
-        return;
-      }
-    }
+  sessions.modify(sessionId, [&result](ManagedSession& ms) {
+    ms.session.updateActivityTime();
+    result = ms.session.getSlotId();
   });
-
   TT_LOG_DEBUG(
       "[SessionManager] getSlotIdBySessionId sessionId={} -> slotId={}",
       sessionId, result);
   return result;
 }
 
-uint32_t SessionManager::acquireSessionSlot(const std::string& sessionId) {
+uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
+                                         std::function<void()> cancelFn) {
   uint32_t result = domain::INVALID_SLOT_ID;
   bool wasInFlight = false;
-  bool found = false;
 
-  sessions.forEach([&](size_t, std::list<domain::Session>& sessionList) {
-    for (auto& session : sessionList) {
-      if (session.getSessionId() != sessionId) continue;
-      found = true;
-      if (!session.isIdle()) {
-        wasInFlight = true;
-        return;
-      }
-      session.updateActivityTime();
-      if (!session.markInFlight()) {
-        TT_LOG_WARN("[Session] markInFlight: unexpected state {}",
-                    static_cast<int>(session.getState()));
-        return;
-      }
-      result = session.getSlotId();
-      return;
-    }
-  });
+  bool found = sessions.modify(
+      sessionId, [&result, &wasInFlight, cancelFn = std::move(cancelFn)](
+                     ManagedSession& ms) mutable {
+        wasInFlight = !ms.session.isIdle();
+        if (wasInFlight) return;
+        ms.session.updateActivityTime();
+        ms.session.markInFlight();
+        ms.cancelFn = std::move(cancelFn);
+        result = ms.session.getSlotId();
+      });
 
   if (!found) {
     TT_LOG_WARN("[SessionManager] acquireSessionSlot: sessionId={} not found",
@@ -251,99 +178,46 @@ uint32_t SessionManager::acquireSessionSlot(const std::string& sessionId) {
 
   if (wasInFlight) {
     TT_LOG_WARN(
-        "[SessionManager] acquireSessionSlot: sessionId={} already has a "
+        "[SessionManager] acquireInFlight: sessionId={} already has a "
         "request in flight",
         sessionId);
     throw SessionInFlightException();
   }
 
-  TT_LOG_DEBUG("[SessionManager] acquireSessionSlot sessionId={} -> slotId={}",
+  TT_LOG_DEBUG("[SessionManager] acquireInFlight sessionId={} -> slotId={}",
                sessionId, result);
   return result;
 }
 
 std::optional<domain::Session> SessionManager::getSession(
     const std::string& sessionId) const {
-  std::optional<domain::Session> result;
-
-  sessions.forEach([&](size_t, const std::list<domain::Session>& sessionList) {
-    for (const auto& session : sessionList) {
-      if (session.getSessionId() == sessionId) {
-        result = session;
-        return;
-      }
-    }
-  });
-
-  return result;
+  auto ms = sessions.get(sessionId);
+  if (!ms.has_value()) return std::nullopt;
+  return ms->session;
 }
 
 size_t SessionManager::getActiveSessionCount() const {
-  // `sessions` is keyed by prefix hash and each bucket may hold multiple
-  // sessions, so sum across buckets instead of returning the bucket count.
-  size_t count = 0;
-  sessions.forEach([&count](size_t, const std::list<domain::Session>& list) {
-    count += list.size();
-  });
-  return count;
+  return sessions.size();
 }
 
 void SessionManager::releaseInFlight(const std::string& sessionId) {
-  bool found = false;
-  bool becameClosing = false;
-  size_t foundHash = 0;
-
-  sessions.forEach([&](size_t hash, std::list<domain::Session>& sessionList) {
-    for (auto& session : sessionList) {
-      if (session.getSessionId() != sessionId) continue;
-      found = true;
-      foundHash = hash;
-      if (!session.clearInFlight()) {
-        TT_LOG_WARN("[Session] clearInFlight: unexpected state {}",
-                    static_cast<int>(session.getState()));
-        return;
-      }
-      becameClosing = session.isClosing();
-      return;
+  bool found = sessions.modify(sessionId, [](ManagedSession& ms) {
+    ms.cancelFn = nullptr;
+    if (!ms.session.clearInFlight()) {
+      TT_LOG_WARN("[Session] clearInFlight: unexpected state {}",
+                  static_cast<int>(ms.session.getState()));
     }
   });
 
   if (!found) {
-    TT_LOG_WARN("[SessionManager] Session not found for in-flight update: {}",
-                sessionId);
+    TT_LOG_DEBUG(
+        "[SessionManager] releaseInFlight: session {} already removed "
+        "(closed concurrently), ignoring",
+        sessionId);
     return;
   }
 
   TT_LOG_DEBUG("[SessionManager] Released in-flight for session {}", sessionId);
-
-  if (!becameClosing) {
-    abortCallbacks_.take(sessionId);
-    return;
-  }
-
-  // A close was requested while in-flight: remove from bucket and finalize.
-  std::optional<domain::Session> takenSession;
-  sessions.modify(foundHash, [&](std::list<domain::Session>& list) {
-    for (auto it = list.begin(); it != list.end(); ++it) {
-      if (it->getSessionId() == sessionId && it->isClosing()) {
-        takenSession = *it;
-        list.erase(it);
-        return;
-      }
-    }
-  });
-  if (takenSession.has_value()) {
-    auto bucket = sessions.get(foundHash);
-    if (bucket.has_value() && bucket->empty()) {
-      sessions.erase(foundHash);
-    }
-    finalizeSessionClose(sessionId, *takenSession);
-  }
-}
-
-void SessionManager::setSessionAbortCallback(const std::string& sessionId,
-                                             std::function<void()> onAbort) {
-  abortCallbacks_.insert(sessionId, std::move(onAbort));
 }
 
 void SessionManager::evictOldSessions() {
@@ -370,66 +244,42 @@ void SessionManager::evictOldSessions() {
     return;
   }
 
-  // Collect oldest idle sessions across all hash buckets. Each heap entry
-  // references a hash bucket; within the bucket we'll pick the oldest idle
-  // session when we evict below.
-  using Entry = std::pair<std::chrono::system_clock::time_point, size_t>;
-  auto newer = [](const Entry& a, const Entry& b) { return a.first < b.first; };
-  std::vector<Entry> heap;
-  heap.reserve(evictionCount + 1);
+  using Entry = std::pair<std::chrono::system_clock::time_point, std::string>;
+  std::vector<Entry> candidates;
 
   sessions.forEach(
-      [&heap, &newer, evictionCount](
-          size_t hash, const std::list<domain::Session>& sessionList) {
-        for (const auto& session : sessionList) {
-          if (!session.isIdle()) continue;
-
-          auto t = session.getLastActivityTime();
-          if (heap.size() < evictionCount) {
-            heap.emplace_back(t, hash);
-            std::push_heap(heap.begin(), heap.end(), newer);
-          } else if (t < heap.front().first) {
-            std::pop_heap(heap.begin(), heap.end(), newer);
-            heap.back() = {t, hash};
-            std::push_heap(heap.begin(), heap.end(), newer);
-          }
-        }
+      [&candidates](const std::string& id, const ManagedSession& ms) {
+        if (ms.session.isIdle())
+          candidates.emplace_back(ms.session.getLastActivityTime(), id);
       });
 
-  TT_LOG_DEBUG("[SessionManager] evictOldSessions: {} candidates for eviction",
-               heap.size());
-  size_t evicted = 0;
-  for (const auto& [_, hash] : heap) {
-    // A concurrent request may have marked the candidate in-flight between
-    // the forEach above and here; removeIf below skips it atomically.
-    std::optional<domain::Session> takenSession;
-    sessions.modify(hash, [&](std::list<domain::Session>& list) {
-      for (auto it = list.begin(); it != list.end(); ++it) {
-        if (!it->isIdle()) continue;
-        TT_LOG_DEBUG(
-            "[SessionManager] evictOldSessions: evicting sessionId={}, "
-            "slotId={}",
-            it->getSessionId(), it->getSlotId());
-        takenSession = *it;
-        list.erase(it);
-        return;
-      }
-    });
+  size_t n = std::min(evictionCount, candidates.size());
+  std::nth_element(
+      candidates.begin(), candidates.begin() + n, candidates.end(),
+      [](const Entry& a, const Entry& b) { return a.first < b.first; });
+  candidates.resize(n);
 
-    if (!takenSession.has_value()) {
+  TT_LOG_DEBUG("[SessionManager] evictOldSessions: {} candidates for eviction",
+               candidates.size());
+  size_t evicted = 0;
+  for (const auto& [_, sessionId] : candidates) {
+    // A concurrent acquireInFlight call may mark the session in-flight
+    // between the forEach above and here; takeIf skips it atomically.
+    auto ms = sessions.takeIf(sessionId, [](const ManagedSession& ms) {
+      return ms.session.isIdle();
+    });
+    if (!ms.has_value()) {
       TT_LOG_DEBUG(
-          "[SessionManager] evictOldSessions: no idle session left in hash={}, "
+          "[SessionManager] evictOldSessions: sessionId={} no longer idle, "
           "skipping",
-          hash);
+          sessionId);
       continue;
     }
-
-    auto bucket = sessions.get(hash);
-    if (bucket.has_value() && bucket->empty()) {
-      sessions.erase(hash);
-    }
-
-    finalizeSessionClose(takenSession->getSessionId(), *takenSession);
+    TT_LOG_DEBUG(
+        "[SessionManager] evictOldSessions: evicting sessionId={}, slotId={}",
+        sessionId, ms->session.getSlotId());
+    removeFromPrefixIndex(sessionId, ms->session.getHash());
+    finalizeSessionClose(sessionId, ms->session);
     ++evicted;
   }
 
@@ -438,7 +288,6 @@ void SessionManager::evictOldSessions() {
         "[SessionManager] Evicted {} oldest session(s) (active: {}/{}, "
         "threshold: {}%)",
         evicted, activeCount, maxSessions, evictionRate);
-    updateSessionCountMetric();
   }
 }
 
@@ -448,20 +297,13 @@ void SessionManager::sendDeallocRequest(const std::string& sessionId,
     return;
   }
 
-  domain::ManageMemoryTask task;
-  task.taskId = utils::TaskIDGenerator::generate();
-  task.action = domain::MemoryManagementAction::DEALLOCATE;
-  task.memoryLayout = domain::KvMemoryLayout::Paged;
-  task.slotIds = {slotId};
+  auto task = makeDeallocTask(slotId);
   TT_LOG_DEBUG(
       "[SessionManager] sendDeallocRequest: sessionId={}, slotId={}, "
       "taskId={}",
       sessionId, slotId, task.taskId);
 
-  if (memoryRequestQueue->tryPush(task)) {
-    TT_LOG_DEBUG("[SessionManager] Sent dealloc request for session {} slot {}",
-                 sessionId, slotId);
-  } else {
+  if (!memoryRequestQueue->tryPush(task)) {
     TT_LOG_WARN(
         "[SessionManager] Dealloc queue full, deferring session {} slot {}",
         sessionId, slotId);
@@ -484,13 +326,9 @@ void SessionManager::createSession(
   // insert the session synchronously.
   if (slotId.has_value()) {
     domain::Session session(slotId.value(), initialHash);
-    size_t hash = session.getHash();
-    bool exists =
-        sessions.modify(hash, [&](std::list<domain::Session>& sessionList) {
-          sessionList.push_back(session);
-        });
-    if (!exists) {
-      sessions.insert(hash, {session});
+    sessions.insert(session.getSessionId(), ManagedSession{session, {}});
+    if (initialHash != 0) {
+      addToPrefixIndex(session.getSessionId(), initialHash);
     }
     TT_LOG_INFO("[SessionManager] Created session with pre-assigned slot: {}",
                 slotId.value());
@@ -507,20 +345,21 @@ void SessionManager::createSession(
     return;
   }
 
-  domain::Session session =
-      domain::Session(domain::INVALID_SLOT_ID, initialHash);
-  auto pendingAllocation = PendingAllocation(
-      std::move(session), std::move(onCompletion), std::move(onError),
-      callerEventLoop, tt::config::sessionAllocationMaxRetries());
+  PendingAllocation pendingAllocation{
+      .session = domain::Session(domain::INVALID_SLOT_ID, initialHash),
+      .onCompletion = std::move(onCompletion),
+      .onError = std::move(onError),
+      .eventLoop = callerEventLoop,
+      .attemptsRemaining =
+          static_cast<int>(tt::config::sessionAllocationMaxRetries()),
+  };
 
   sendAsyncAllocationRequest(pendingAllocation);
 }
 
 void SessionManager::sendAsyncAllocationRequest(
     PendingAllocation& pendingAllocation) {
-  auto task =
-      domain::ManageMemoryTask(tt::utils::TaskIDGenerator::generate(),
-                               domain::MemoryManagementAction::ALLOCATE);
+  auto task = makeAllocTask();
   TT_LOG_DEBUG(
       "[SessionManager] sendAsyncAllocationRequest: taskId={}, "
       "sessionId={}, attemptsRemaining={}",
@@ -554,11 +393,6 @@ void SessionManager::sendAsyncAllocationRequest(
           IPC_QUEUE_FULL_RETRY_DELAY.count());
       pendingAllocationsRetryQueue.push(std::move(pa));
     }
-  } else {
-    TT_LOG_DEBUG(
-        "[SessionManager] sendAsyncAllocationRequest: pushed taskId={} to "
-        "IPC queue",
-        task.taskId);
   }
 }
 
@@ -605,21 +439,11 @@ void SessionManager::handleMemoryResult(
                  !result.slotIds.empty();
   if (success) {
     pendingAllocation.session.setSlotId(result.slotIds.front());
-    if (!pendingAllocation.session.markInFlight()) {
-      TT_LOG_WARN("[Session] markInFlight: unexpected state {} for session {}",
-                  static_cast<int>(pendingAllocation.session.getState()),
-                  pendingAllocation.session.getSessionId());
-    }
-
-    // Append to existing hash bucket or create a new one.
-    size_t hash = pendingAllocation.session.getHash();
-    bool exists =
-        sessions.modify(hash, [&](std::list<domain::Session>& sessionList) {
-          sessionList.push_back(pendingAllocation.session);
-        });
-
-    if (!exists) {
-      sessions.insert(hash, {pendingAllocation.session});
+    sessions.insert(pendingAllocation.session.getSessionId(),
+                    ManagedSession{pendingAllocation.session, {}});
+    if (pendingAllocation.session.getHash() != 0) {
+      addToPrefixIndex(pendingAllocation.session.getSessionId(),
+                       pendingAllocation.session.getHash());
     }
     TT_LOG_DEBUG(
         "[SessionManager] handleMemoryResult: SUCCESS sessionId={}, hash={}, "
@@ -648,71 +472,84 @@ void SessionManager::handleMemoryResult(
         pendingAllocation.session.getSessionId());
     pendingAllocation.eventLoop->queueInLoop(
         [onError = std::move(pendingAllocation.onError)]() {
-          onError("Failed to allocate slot id: All attemps have failed");
+          onError("Failed to allocate slot id: All attempts have failed");
         });
   }
 }
 
 void SessionManager::retryFailedDeallocs() {
-  auto deferredDeallocs = deferredDeallocQueue.drain();
-  if (!deferredDeallocs.empty()) {
-    TT_LOG_DEBUG("[SessionManager] retryFailedDeallocs: {} deferred deallocs",
-                 deferredDeallocs.size());
-  }
-  for (auto& deferredDealloc : deferredDeallocs) {
+  for (auto& d : deferredDeallocQueue.drain()) {
     TT_LOG_DEBUG(
-        "[SessionManager] retryFailedDeallocs: retrying sessionId={}, "
-        "slotId={}",
-        deferredDealloc.sessionId, deferredDealloc.slotId);
-    sendDeallocRequest(deferredDealloc.sessionId, deferredDealloc.slotId);
+        "[SessionManager] retryFailedDeallocs: sessionId={}, slotId={}",
+        d.sessionId, d.slotId);
+    sendDeallocRequest(d.sessionId, d.slotId);
   }
 }
 
 std::optional<SessionManager::AcquiredSession>
-SessionManager::tryAcquireByPrefixHash(uint64_t prefixHash) {
+SessionManager::tryAcquireByPrefixHash(uint64_t prefixHash,
+                                       std::function<void()> cancelFn) {
   TT_LOG_DEBUG("[SessionManager] tryAcquireByPrefixHash: hash={}", prefixHash);
 
-  std::optional<AcquiredSession> result;
-  bool allBusy = false;
-
-  bool hashExists =
-      sessions.modify(prefixHash, [&](std::list<domain::Session>& sessionList) {
-        TT_LOG_INFO(
-            "[SessionManager] tryAcquireByPrefixHash: found {} session(s) "
-            "under hash={}",
-            sessionList.size(), prefixHash);
-        for (const auto& s : sessionList) {
-          TT_LOG_INFO("[SessionManager]   - sessionId={}, slotId={}, state={}",
-                      s.getSessionId(), s.getSlotId(),
-                      static_cast<int>(s.getState()));
-        }
-
-        for (auto& session : sessionList) {
-          if (!session.isIdle()) continue;
-          if (!session.markInFlight()) {
-            TT_LOG_WARN("[Session] markInFlight: unexpected state {}",
-                        static_cast<int>(session.getState()));
-            continue;
-          }
-          session.updateActivityTime();
-          result = AcquiredSession{session.getSessionId(), session.getSlotId()};
-          TT_LOG_INFO(
-              "[SessionManager] tryAcquireByPrefixHash: acquired "
-              "sessionId={}, slotId={} for hash={}",
-              result->sessionId, result->slotId, prefixHash);
-          return;
-        }
-        allBusy = !sessionList.empty();
+  // Copy candidate sessionIds under the prefixIndex lock, then try to acquire
+  // one while releasing the prefixIndex lock (because acquireInFlight takes
+  // the sessions lock, and we don't want to hold two locks together).
+  std::vector<std::string> candidateIds;
+  bool hashExists = prefixIndex.modify(
+      prefixHash, [&candidateIds](const std::list<std::string>& ids) {
+        candidateIds.assign(ids.begin(), ids.end());
       });
 
-  if (!hashExists) {
+  if (!hashExists || candidateIds.empty()) {
     TT_LOG_DEBUG(
         "[SessionManager] tryAcquireByPrefixHash: hash={} not found (miss)",
         prefixHash);
     return std::nullopt;
   }
 
-  if (!result.has_value() && allBusy) {
+  TT_LOG_INFO(
+      "[SessionManager] tryAcquireByPrefixHash: found {} session(s) under "
+      "hash={}",
+      candidateIds.size(), prefixHash);
+
+  bool anyBusy = false;
+  for (const auto& sessionId : candidateIds) {
+    std::optional<AcquiredSession> acquired;
+    bool wasInFlight = false;
+
+    bool found = sessions.modify(
+        sessionId,
+        [&acquired, &wasInFlight, &sessionId,
+         &cancelFn](ManagedSession& ms) mutable {
+          if (!ms.session.isIdle()) {
+            wasInFlight = true;
+            return;
+          }
+          ms.session.updateActivityTime();
+          ms.session.markInFlight();
+          ms.cancelFn = cancelFn;  // keep lambda reusable across candidates
+          acquired =
+              AcquiredSession{sessionId, ms.session.getSlotId()};
+        });
+
+    if (!found) {
+      // Stale entry in the index; drop it so we don't hit this again.
+      removeFromPrefixIndex(sessionId, prefixHash);
+      continue;
+    }
+
+    if (acquired.has_value()) {
+      TT_LOG_INFO(
+          "[SessionManager] tryAcquireByPrefixHash: acquired sessionId={}, "
+          "slotId={} for hash={}",
+          acquired->sessionId, acquired->slotId, prefixHash);
+      return acquired;
+    }
+
+    if (wasInFlight) anyBusy = true;
+  }
+
+  if (anyBusy) {
     TT_LOG_WARN(
         "[SessionManager] tryAcquireByPrefixHash: all sessions under hash={} "
         "are in-flight",
@@ -720,7 +557,7 @@ SessionManager::tryAcquireByPrefixHash(uint64_t prefixHash) {
     throw SessionInFlightException();
   }
 
-  return result;
+  return std::nullopt;
 }
 
 void SessionManager::registerPrefixHash(const std::string& sessionId,
@@ -728,56 +565,28 @@ void SessionManager::registerPrefixHash(const std::string& sessionId,
   TT_LOG_DEBUG("[SessionManager] registerPrefixHash: sessionId={}, hash={}",
                sessionId, prefixHash);
 
-  // Remove the session from its current bucket.
-  domain::Session targetSession;
-  size_t oldHash = 0;
-  bool sessionFound = false;
-
-  sessions.forEach([&](size_t hash, std::list<domain::Session>& sessionList) {
-    for (auto it = sessionList.begin(); it != sessionList.end(); ++it) {
-      if (it->getSessionId() == sessionId) {
-        targetSession = *it;
-        oldHash = hash;
-        sessionFound = true;
-        sessionList.erase(it);
-        TT_LOG_DEBUG(
-            "[SessionManager] registerPrefixHash: removed sessionId={} from "
-            "old hash={}",
-            sessionId, oldHash);
-        return;
-      }
-    }
-  });
+  // Update session's hash field and pick up the old hash (for index update).
+  uint64_t oldHash = 0;
+  bool sessionFound = sessions.modify(
+      sessionId, [&oldHash, prefixHash](ManagedSession& ms) {
+        oldHash = ms.session.getHash();
+        ms.session.setHash(prefixHash);
+      });
 
   if (!sessionFound) {
-    TT_LOG_WARN(
-        "[SessionManager] registerPrefixHash: sessionId={} not found in any "
-        "hash bucket",
-        sessionId);
+    TT_LOG_WARN("[SessionManager] registerPrefixHash: sessionId={} not found",
+                sessionId);
     return;
   }
 
-  // Drop the old bucket if it's now empty.
-  auto oldList = sessions.get(oldHash);
-  if (oldList.has_value() && oldList->empty()) {
-    sessions.erase(oldHash);
-    TT_LOG_DEBUG(
-        "[SessionManager] registerPrefixHash: erased empty hash bucket {}",
-        oldHash);
+  if (oldHash == prefixHash) {
+    return;
   }
 
-  targetSession.setHash(prefixHash);
-
-  bool exists =
-      sessions.modify(prefixHash, [&](std::list<domain::Session>& sessionList) {
-        sessionList.push_back(targetSession);
-      });
-
-  if (!exists) {
-    std::list<domain::Session> newList;
-    newList.push_back(targetSession);
-    sessions.insert(prefixHash, std::move(newList));
+  if (oldHash != 0) {
+    removeFromPrefixIndex(sessionId, oldHash);
   }
+  addToPrefixIndex(sessionId, prefixHash);
 
   TT_LOG_INFO(
       "[SessionManager] registerPrefixHash: registered sessionId={} under "
@@ -788,6 +597,31 @@ void SessionManager::registerPrefixHash(const std::string& sessionId,
 void SessionManager::updateSessionCountMetric() {
   tt::metrics::ServerMetrics::instance().setActiveSessionsCount(
       static_cast<double>(getActiveSessionCount()));
+}
+
+void SessionManager::addToPrefixIndex(const std::string& sessionId,
+                                      uint64_t prefixHash) {
+  if (prefixHash == 0) return;
+  bool exists = prefixIndex.modify(
+      prefixHash,
+      [&sessionId](std::list<std::string>& ids) { ids.push_back(sessionId); });
+  if (!exists) {
+    prefixIndex.insert(prefixHash, std::list<std::string>{sessionId});
+  }
+}
+
+void SessionManager::removeFromPrefixIndex(const std::string& sessionId,
+                                           uint64_t prefixHash) {
+  if (prefixHash == 0) return;
+  bool becameEmpty = false;
+  prefixIndex.modify(prefixHash,
+                     [&sessionId, &becameEmpty](std::list<std::string>& ids) {
+                       ids.remove(sessionId);
+                       becameEmpty = ids.empty();
+                     });
+  if (becameEmpty) {
+    prefixIndex.erase(prefixHash);
+  }
 }
 
 }  // namespace tt::services

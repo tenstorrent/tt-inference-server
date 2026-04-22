@@ -34,7 +34,7 @@ void HealthController::health(
   if (service_) {
     try {
       auto status = service_->getSystemStatus();
-      for (const auto& w : status.worker_info) {
+      for (const auto& w : status.workerInfo) {
         if (w.is_alive) {
           hasAliveWorkers = true;
         }
@@ -101,17 +101,16 @@ void HealthController::ready(
 
     Json::Value response;
     response["status"] = "alive";
-    response["model_ready"] = status.model_ready;
-    response["queue_size"] = static_cast<Json::UInt64>(status.queue_size);
-    response["max_queue_size"] =
-        static_cast<Json::UInt64>(status.max_queue_size);
+    response["model_ready"] = status.modelReady;
+    response["queue_size"] = static_cast<Json::UInt64>(status.queueSize);
+    response["max_queue_size"] = static_cast<Json::UInt64>(status.maxQueueSize);
 
     if (socket_) {
       response["socket_status"] = socket_->getStatus();
     }
 
     Json::Value workers(Json::arrayValue);
-    for (const auto& w : status.worker_info) {
+    for (const auto& w : status.workerInfo) {
       Json::Value wj;
       wj["worker_id"] = w.worker_id;
       wj["is_ready"] = w.is_ready;

@@ -65,21 +65,22 @@ class SessionManager {
   CloseSessionResult closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
   uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
-  uint32_t acquireSessionSlot(const std::string& sessionId);
+
+  // Marks the session in-flight and registers the cancel function atomically.
+  // The cancel function is invoked if closeSession is called while in-flight.
+  // Returns the assigned slot ID (INVALID_SLOT_ID if not yet allocated).
+  uint32_t acquireInFlight(const std::string& sessionId,
+                           std::function<void()> cancelFn);
+
   std::optional<domain::Session> getSession(const std::string& sessionId) const;
   size_t getActiveSessionCount() const;
 
   void releaseInFlight(const std::string& sessionId);
 
-  // Register a callback to be invoked immediately if closeSession is called
-  // while the session has an in-flight request. The callback should abort the
-  // active request. It is cleared automatically once the session is released.
-  void setSessionAbortCallback(const std::string& sessionId,
-                               std::function<void()> onAbort);
-
   /**
-   * Try to find a session whose registered prefix hash matches, and
-   * atomically mark it in-flight so no concurrent request can steal it.
+   * Try to find a session whose registered prefix hash matches, atomically
+   * mark it in-flight, and register the cancel function — all under the same
+   * lock so no concurrent request can steal it.
    *
    * Returns:
    *   AcquiredSession — session found and successfully locked; contains both
@@ -94,21 +95,28 @@ class SessionManager {
    *                              serving other requests. Controller maps
    *                              this to HTTP 429.
    */
-  std::optional<AcquiredSession> tryAcquireByPrefixHash(uint64_t prefixHash);
+  std::optional<AcquiredSession> tryAcquireByPrefixHash(
+      uint64_t prefixHash, std::function<void()> cancelFn);
 
   /**
    * Route future lookups of `prefixHash` to this session. This registers the
    * session under the given hash so the next turn's lookup can find it.
    *
    * If the session was previously registered under a different hash, it is
-   * removed from that hash's list and added to the new hash's list.
-   *
-   * Concurrency: safe to call while the session is in-flight; readers see
-   * either the old or new hash atomically.
+   * removed from that hash's index entry and added to the new hash's index
+   * entry.
    */
   void registerPrefixHash(const std::string& sessionId, uint64_t prefixHash);
 
+
  private:
+  // cancelFn is null when idle, set atomically with in-flight state by
+  // acquireInFlight.
+  struct ManagedSession {
+    domain::Session session;
+    std::function<void()> cancelFn;
+  };
+
   struct PendingAllocation {
     tt::domain::Session session;
     std::function<void(const tt::domain::Session&)> onCompletion;
@@ -116,19 +124,6 @@ class SessionManager {
     trantor::EventLoop* eventLoop = nullptr;
     int attemptsRemaining = 0;
     std::chrono::steady_clock::time_point retryAt{};
-
-    PendingAllocation() = default;
-
-    PendingAllocation(
-        const tt::domain::Session& session,
-        std::function<void(const tt::domain::Session&)> onCompletion,
-        std::function<void(std::string_view errorMessage)> onError,
-        trantor::EventLoop* eventLoop, int attemptsRemaining)
-        : session(session),
-          onCompletion(onCompletion),
-          onError(onError),
-          eventLoop(eventLoop),
-          attemptsRemaining(attemptsRemaining) {}
   };
 
   struct DeferredDealloc {
@@ -147,8 +142,14 @@ class SessionManager {
   void handleMemoryResult(const domain::ManageMemoryResult& result);
   void updateSessionCountMetric();
 
-  mutable utils::ConcurrentMap<size_t, std::list<domain::Session>> sessions;
-  utils::ConcurrentMap<std::string, std::function<void()>> abortCallbacks_;
+  // Prefix index helpers: maintain prefixIndex alongside the sessions map.
+  void addToPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
+  void removeFromPrefixIndex(const std::string& sessionId, uint64_t prefixHash);
+
+  mutable utils::ConcurrentMap<std::string, ManagedSession> sessions;
+  // Secondary index: prefix hash -> sessionIds registered under that hash.
+  // Used by tryAcquireByPrefixHash / registerPrefixHash for prefix caching.
+  utils::ConcurrentMap<uint64_t, std::list<std::string>> prefixIndex;
 
   std::unique_ptr<ipc::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::MemoryResultQueue> memoryResultQueue;

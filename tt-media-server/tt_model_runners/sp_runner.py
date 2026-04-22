@@ -20,6 +20,7 @@ Environment variables:
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 from ipc.video_shm import (
     VideoRequest,
@@ -36,7 +37,6 @@ DEFAULT_VIDEO_WIDTH = 832
 DEFAULT_VIDEO_NUM_FRAMES = 81
 DEFAULT_VIDEO_GUIDANCE_SCALE = 3.0
 DEFAULT_VIDEO_GUIDANCE_SCALE_2 = 4.0
-RESPONSE_TIMEOUT_S = 300.0
 
 
 class SPRunner(BaseDeviceRunner):
@@ -61,8 +61,18 @@ class SPRunner(BaseDeviceRunner):
         self._output_shm = VideoShm(
             output_name, mode="output", is_shutdown=self._is_shutdown
         )
-        self._input_shm.open(create=False)
-        self._output_shm.open(create=False)
+        self._input_shm.open()
+        self._output_shm.open()
+        # Self-heal any gap left by a previous server instance that crashed
+        # mid-write (on input) or mid-read (on output). Scoped to this
+        # process's own role, so safe to run with a live runner peer.
+        in_repair = self._input_shm.recover(side="writer")
+        out_repair = self._output_shm.recover(side="reader")
+        if any(in_repair.values()) or any(out_repair.values()):
+            self.logger.warning(
+                f"SPRunner {self.device_id}: crash-recovery repaired prior "
+                f"inconsistency: input={in_repair} output={out_repair}"
+            )
         self.logger.info(
             f"SPRunner {self.device_id}: SHM opened (in={input_name}, out={output_name})"
         )
@@ -88,7 +98,24 @@ class SPRunner(BaseDeviceRunner):
         return True
 
     async def warmup(self) -> bool:
-        self.logger.info(f"SPRunner {self.device_id}: no warmup needed (SHM bridge)")
+        """Run a minimal real inference through the SHM bridge.
+
+        Exercising the full device bring-up + kernel-compile path at warmup
+        means any wedged ethernet core or compilation hang surfaces now —
+        as ``REQUEST_TIMEOUT`` raised by ``run()``'s existing SHM deadline —
+        rather than silently on the first production request.
+        """
+        warmup_req = SimpleNamespace(
+            _task_id=f"warmup-{self.device_id}",
+            prompt="warmup",
+            negative_prompt="",
+            num_inference_steps=2,
+            seed=0,
+        )
+        mp4_paths = self.run([warmup_req])
+        for path in mp4_paths:
+            self._try_unlink(path)
+        self.logger.info(f"SPRunner {self.device_id}: warmup complete")
         return True
 
     @log_execution_time(
@@ -120,10 +147,13 @@ class SPRunner(BaseDeviceRunner):
         self._input_shm.write_request(video_req)
         self.logger.info(f"[SP] Request {task_id} sent to SHM input")
 
-        resp = self._output_shm.read_response(timeout_s=RESPONSE_TIMEOUT_S)
+        timeout_s = self.settings.video_request_timeout_seconds
+        resp = self._output_shm.read_response(timeout_s=timeout_s)
         if resp is None:
-            raise RuntimeError(
-                f"Response timed out after {RESPONSE_TIMEOUT_S}s for task {task_id}"
+            # Surface a greppable signature so the scheduler's error_listener
+            # can classify this as REQUEST_TIMEOUT and /tt-status can report it.
+            raise TimeoutError(
+                f"REQUEST_TIMEOUT: response exceeded {timeout_s}s for task {task_id}"
             )
         if resp.status == VideoStatus.ERROR:
             self._try_unlink(resp.file_path)

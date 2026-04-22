@@ -20,6 +20,7 @@ struct ChatCompletionMessage {
   std::string role = "assistant";
   std::string content;
   std::optional<std::string> reasoning;
+  std::optional<Json::Value> tool_calls;
 
   Json::Value toJson() const {
     Json::Value json;
@@ -27,6 +28,9 @@ struct ChatCompletionMessage {
     json["content"] = content;
     if (reasoning.has_value()) {
       json["reasoning"] = reasoning.value();
+    }
+    if (tool_calls.has_value()) {
+      json["tool_calls"] = tool_calls.value();
     }
     return json;
   }
@@ -98,6 +102,7 @@ struct ChatCompletionResponse {
       chatChoice.index = choice.index;
       chatChoice.message.content = choice.text;
       chatChoice.message.reasoning = choice.reasoning;
+      chatChoice.message.tool_calls = choice.tool_calls;
       chatChoice.finish_reason = choice.finish_reason.value_or("stop");
       response.choices.push_back(std::move(chatChoice));
     }

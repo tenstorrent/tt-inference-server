@@ -15,6 +15,8 @@
 #include "domain/json_field.hpp"
 #include "domain/llm_request.hpp"
 #include "domain/response_format.hpp"
+#include "domain/tool_calls/tool.hpp"
+#include "domain/tool_calls/tool_choice.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::domain {
@@ -79,6 +81,11 @@ struct ChatCompletionRequest : BaseRequest {
 
   // Session management
   std::optional<std::string> sessionId;
+
+  // Tool calling support
+  std::optional<std::vector<tool_calls::Tool>> tools;
+  std::optional<tool_calls::ToolChoice> tool_choice;
+  bool parallel_tool_calls = true;
 
   static ChatCompletionRequest fromJson(const Json::Value& json,
                                         uint32_t taskId) {
@@ -184,6 +191,34 @@ struct ChatCompletionRequest : BaseRequest {
     if (json.isMember("session_id") && !json["session_id"].isNull())
       req.sessionId = getString(json["session_id"], "session_id");
 
+    if (json.isMember("tools") && json["tools"].isArray()) {
+      std::vector<tool_calls::Tool> toolList;
+      for (const auto& tool : json["tools"]) {
+        toolList.push_back(tool_calls::Tool::fromJson(tool));
+      }
+      req.tools = toolList;
+    }
+
+    if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
+      req.tool_choice = tool_calls::ToolChoice::fromJson(json["tool_choice"]);
+    }
+    if (json.isMember("parallel_tool_calls") &&
+        !json["parallel_tool_calls"].isNull())
+      req.parallel_tool_calls =
+          getBool(json["parallel_tool_calls"], "parallel_tool_calls");
+
+    if (req.tool_choice.has_value()) {
+      if (!req.tools.has_value() || req.tools->empty()) {
+        throw std::invalid_argument(
+            "tool_choice is provided but no tools are specified");
+      }
+      const auto& toolChoice = req.tool_choice.value();
+      if (toolChoice.type != "auto") {
+        throw std::invalid_argument(
+            "tool_choice must be 'auto', other tool_choice values are not yet "
+            "supported");
+      }
+    }
     return req;
   }
 
@@ -217,8 +252,8 @@ struct ChatCompletionRequest : BaseRequest {
     LLMRequest out(task_id);
     out.model = model;
     out.messages = messages;
-    out.prompt =
-        tt::utils::tokenizers::activeTokenizer().applyChatTemplate(messages);
+    out.prompt = tt::utils::tokenizers::activeTokenizer().applyChatTemplate(
+        messages, true, tools);
 
     out.echo = echo;
     out.max_tokens = max_tokens;
@@ -240,6 +275,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.repetition_penalty = repetition_penalty;
     out.length_penalty = length_penalty;
     out.stop_token_ids = stop_token_ids;
+    out.parallel_tool_calls = parallel_tool_calls;
     out.include_stop_str_in_output = include_stop_str_in_output;
     out.ignore_eos = ignore_eos;
     out.min_tokens = min_tokens;

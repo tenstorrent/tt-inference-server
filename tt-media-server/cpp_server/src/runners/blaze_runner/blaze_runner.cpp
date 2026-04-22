@@ -12,8 +12,8 @@
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
+#include "domain/sequence.hpp"
 #include "ipc/token_push.hpp"
-#include "llm_runner/sequence.hpp"
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "services/memory_services/blaze_memory_manager.hpp"
 #include "utils/logger.hpp"
@@ -24,7 +24,7 @@ namespace utils = blaze_utils;
 
 BlazeRunner::BlazeRunner(const config::LLMConfig& config,
                          ipc::IResultQueue* resultQueue,
-                         tt::runners::llm_engine::ITaskQueue* taskQueue)
+                         tt::ipc::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
@@ -70,14 +70,14 @@ void BlazeRunner::run() {
 }
 
 bool BlazeRunner::warmup() {
-  tt::runners::llm_engine::SamplingParams warmupParams;
+  tt::domain::SamplingParams warmupParams;
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
   std::vector<int64_t> warmupTokens = {1};
   uint32_t warmupTaskId = 0;
 
-  auto warmupSeq = std::make_unique<tt::runners::llm_engine::Sequence>(
+  auto warmupSeq = std::make_unique<tt::domain::Sequence>(
       warmupTaskId, 1, warmupTokens, warmupParams);
 
   TT_LOG_INFO("BlazeRunner: warmup - pushing ALLOCATE request...");
@@ -173,7 +173,7 @@ std::optional<pm::OutputMessage> BlazeRunner::getOutput() {
   return std::nullopt;
 }
 
-std::unique_ptr<tt::runners::llm_engine::Sequence> BlazeRunner::getRequest() {
+std::unique_ptr<tt::domain::Sequence> BlazeRunner::getRequest() {
   auto req = taskQueue->tryPop();
   if (!req) return nullptr;
   return req;
@@ -251,8 +251,7 @@ inline void BlazeRunner::evictSlot(uint32_t slotId) {
   TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={} (no slot context)", slotId);
 }
 
-void BlazeRunner::handleRequest(
-    std::unique_ptr<tt::runners::llm_engine::Sequence> request) {
+void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
   if (slotContexts.empty()) {
     lastOutputTime = std::chrono::steady_clock::now();
   }
@@ -260,7 +259,7 @@ void BlazeRunner::handleRequest(
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
 
-  bool isNew = !request->isContinuation();
+  bool isNew = !request->isContinuation() && !request->isDisaggregated();
 
   TT_LOG_DEBUG(
       "[BlazeRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
