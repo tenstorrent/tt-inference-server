@@ -30,6 +30,7 @@ mock_settings_module.Settings = Mock(return_value=mock_settings)
 mock_settings_module.get_settings = Mock(return_value=mock_settings)
 sys.modules["config.settings"] = mock_settings_module
 
+
 sys.modules["telemetry.telemetry_client"] = Mock()
 sys.modules["telemetry.telemetry_client"].get_telemetry_client = Mock()
 

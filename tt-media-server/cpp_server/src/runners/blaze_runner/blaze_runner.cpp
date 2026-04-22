@@ -4,14 +4,16 @@
 #include "runners/sp_pipeline_runner/blaze_runner.hpp"
 
 #include <cassert>
+#include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <pipeline_manager/pipeline_manager_types.hpp>
 #include <thread>
 
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
+#include "domain/sequence.hpp"
 #include "ipc/token_push.hpp"
-#include "llm_runner/sequence.hpp"
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "services/memory_services/blaze_memory_manager.hpp"
 #include "utils/logger.hpp"
@@ -22,15 +24,17 @@ namespace utils = blaze_utils;
 
 BlazeRunner::BlazeRunner(const config::LLMConfig& config,
                          ipc::IResultQueue* resultQueue,
-                         tt::runners::llm_engine::ITaskQueue* taskQueue)
+                         tt::ipc::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
-      taskQueue(taskQueue) {
+      taskQueue(taskQueue),
+      lastOutputTime(std::chrono::steady_clock::now()),
+      outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   TT_LOG_INFO("BlazeRunner: Constructing PipelineManager with SocketConfig...");
   pm::SocketConfig socketConfig{
-      .h2d_socket_id = tt::config::h2dSocketId(),
-      .d2h_socket_id = tt::config::d2hSocketId(),
+      .h2d_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_h2d",
+      .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
   // pm::MockConfig mock = {};
@@ -66,14 +70,14 @@ void BlazeRunner::run() {
 }
 
 bool BlazeRunner::warmup() {
-  tt::runners::llm_engine::SamplingParams warmupParams;
+  tt::domain::SamplingParams warmupParams;
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
   std::vector<int64_t> warmupTokens = {1};
   uint32_t warmupTaskId = 0;
 
-  auto warmupSeq = std::make_unique<tt::runners::llm_engine::Sequence>(
+  auto warmupSeq = std::make_unique<tt::domain::Sequence>(
       warmupTaskId, 1, warmupTokens, warmupParams);
 
   TT_LOG_INFO("BlazeRunner: warmup - pushing ALLOCATE request...");
@@ -150,6 +154,7 @@ void BlazeRunner::step() {
         request->getNumPromptTokens(), request->getTokenIds().size());
     handleRequest(std::move(request));
   }
+  checkOutputHang();
 }
 
 std::optional<pm::PMResponse> BlazeRunner::getResponse() {
@@ -168,7 +173,7 @@ std::optional<pm::OutputMessage> BlazeRunner::getOutput() {
   return std::nullopt;
 }
 
-std::unique_ptr<tt::runners::llm_engine::Sequence> BlazeRunner::getRequest() {
+std::unique_ptr<tt::domain::Sequence> BlazeRunner::getRequest() {
   auto req = taskQueue->tryPop();
   if (!req) return nullptr;
   return req;
@@ -190,54 +195,78 @@ BlazeRunner::getMemoryRequest() {
 
 void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
-  auto it = running.find(output.slot_id);
-  if (it == running.end()) {
+  lastOutputTime = std::chrono::steady_clock::now();
+  auto it = slotContexts.find(output.slot_id);
+  if (it == slotContexts.end()) {
     TT_LOG_ERROR(
         "[BlazeRunner] handleOutput: output for unknown slot_id={}, "
         "token_id={}, is_complete={}",
         output.slot_id, output.token_id, output.is_complete);
     return;
   }
-  auto& seq = *it->second;
-  seq.appendToken(output.token_id);
-  bool hitStop = !seq.getSamplingParams().ignore_eos &&
-                 stopTokenIds.count(output.token_id) > 0;
+  auto& context = it->second;
+  bool hitStop = !context.ignoreEos && stopTokenIds.count(output.token_id) > 0;
   bool finished = output.is_complete || hitStop;
-  auto taskId = seq.taskId;
+  auto taskId = context.taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
   if (finished) {
+    slotContexts.erase(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
   }
 }
 
-inline void BlazeRunner::evictSlot(uint32_t slotId) {
-  auto it = running.find(slotId);
-  if (it != running.end()) {
-    TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={}, was running taskId={}",
-                 slotId, it->second->taskId);
-  } else {
-    TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={} (not in running map)",
-                 slotId);
+void BlazeRunner::checkOutputHang() {
+  if (slotContexts.empty()) {
+    lastOutputTime = std::chrono::steady_clock::now();
+    return;
   }
-  running.erase(slotId);
+  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - lastOutputTime);
+  if (elapsed <= outputHangTimeout) {
+    return;
+  }
+  TT_LOG_CRITICAL(
+      "[BlazeRunner] Output hang detected: no model output for {} ms with {} "
+      "in-flight generation(s) (threshold={} ms). Self-terminating worker so "
+      "infrastructure can restart the server.",
+      elapsed.count(), slotContexts.size(), outputHangTimeout.count());
+  // Use abort() so the existing fatalSignalHandler prints a visible
+  // "killed by signal SIGABRT" line and the WorkerManager parent logs the
+  // worker crash. Skipping destructors is acceptable here: the model/device
+  // is already wedged and we want the worker gone ASAP.
+  std::abort();
 }
 
-void BlazeRunner::handleRequest(
-    std::unique_ptr<tt::runners::llm_engine::Sequence> request) {
+inline void BlazeRunner::evictSlot(uint32_t slotId) {
+  auto it = slotContexts.find(slotId);
+  if (it != slotContexts.end()) {
+    TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={}, had taskId={}", slotId,
+                 it->second.taskId);
+    slotContexts.erase(it);
+    tt::worker::SingleProcessWorkerMetrics::instance()
+        .decrementActiveRequests();
+    return;
+  }
+  TT_LOG_DEBUG("[BlazeRunner] evictSlot: slotId={} (no slot context)", slotId);
+}
+
+void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
+  if (slotContexts.empty()) {
+    lastOutputTime = std::chrono::steady_clock::now();
+  }
   tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
 
-  bool isNew = !request->isContinuation();
+  bool isNew = !request->isContinuation() && !request->isDisaggregated();
 
   TT_LOG_DEBUG(
       "[BlazeRunner] handleRequest: taskId={}, slotId={}, isNew={}, "
       "isContinuation={}, numPromptTokens={}, totalTokens={}, runningSlots={}",
       request->taskId, slotId, isNew, request->isContinuation(),
       request->getNumPromptTokens(), request->getTokenIds().size(),
-      running.size());
-
+      slotContexts.size());
   if (isNew) {
     if (request->getSamplingParams().hasGuidedDecoding()) {
       TT_LOG_WARN(
@@ -250,13 +279,17 @@ void BlazeRunner::handleRequest(
     TT_LOG_DEBUG("[BlazeRunner] handleRequest: SUBMIT taskId={}, slotId={}",
                  request->taskId, slotId);
     pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
-    running[slotId] = std::move(request);
+    slotContexts.insert_or_assign(
+        slotId, blaze_utils::SlotContext{
+                    request->taskId, request->getSamplingParams().ignore_eos});
     return;
   } else {
     TT_LOG_DEBUG("[BlazeRunner] handleRequest: CONTINUE taskId={}, slotId={}",
                  request->taskId, slotId);
     pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
-    running[slotId] = std::move(request);
+    slotContexts.insert_or_assign(
+        slotId, blaze_utils::SlotContext{
+                    request->taskId, request->getSamplingParams().ignore_eos});
   }
 }
 

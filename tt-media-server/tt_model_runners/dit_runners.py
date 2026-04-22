@@ -287,7 +287,11 @@ class TTMochi1Runner(TTDiTRunner):
             )
             raise
 
-    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
@@ -328,7 +332,11 @@ class TTWan22Runner(TTDiTRunner):
     def load_weights(self):
         return False
 
-    @log_execution_time(f"{dit_runner_log_map[get_settings().model_runner]} inference")
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]

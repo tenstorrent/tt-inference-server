@@ -59,6 +59,15 @@ ServerMetrics::ServerMetrics() {
            .Help("Number of completed requests labelled by finish reason")
            .Register(*registry_);
 
+  http_requests_family_ =
+      &prometheus::BuildCounter()
+           .Name("tt_http_requests_total")
+           .Help(
+               "HTTP requests served by the Drogon app, labelled by method "
+               "and response status code. 2xx/3xx are successes; 4xx/5xx "
+               "are failures.")
+           .Register(*registry_);
+
   // ----- gauges ----------------------------------------------------------
   queue_depth_ =
       &prometheus::BuildGauge()
@@ -84,6 +93,13 @@ ServerMetrics::ServerMetrics() {
            .Help(
                "Number of requests actively generating tokens (excludes "
                "queued and prefilling requests)")
+           .Register(*registry_)
+           .Add({});
+
+  active_sessions_ =
+      &prometheus::BuildGauge()
+           .Name("tt_num_active_sessions")
+           .Help("Number of active sessions currently managed by the server")
            .Register(*registry_)
            .Add({});
 
@@ -163,6 +179,19 @@ void ServerMetrics::onRequestCompleted(uint32_t taskId,
 void ServerMetrics::setQueueDepth(double n) {
   // Called twice per request (not per token) — write directly.
   queue_depth_->Set(n);
+}
+
+void ServerMetrics::setActiveSessionsCount(double n) {
+  // Called when sessions are created/removed — write directly.
+  active_sessions_->Set(n);
+}
+
+void ServerMetrics::onHttpResponse(const std::string& method, int statusCode) {
+  http_requests_family_
+      ->Add({{"model_name", model_name_},
+             {"method", method},
+             {"status_code", std::to_string(statusCode)}})
+      .Increment();
 }
 
 // -----------------------------------------------------------------------------

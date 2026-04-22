@@ -20,6 +20,7 @@
 #include "api/error_response.hpp"
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
+#include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
 #include "services/llm_service.hpp"
 #include "utils/logger.hpp"
@@ -157,7 +158,7 @@ int main(int argc, char* argv[]) {
     tt::worker::WorkerManager* mgr = nullptr;
     auto llm = tt::utils::ServiceContainer::instance().llm();
     if (llm) {
-      mgr = llm->workerManager();
+      mgr = llm->getWorkerManager();
     }
     std::vector<tt::worker::MetricsLayout> layoutByWorker(
         numWorkers, metricsLayoutFromConfig());
@@ -216,6 +217,18 @@ int main(int argc, char* argv[]) {
         }
 
         chainCallback();
+      });
+
+  // Record every HTTP response for Prometheus (method, status). This is
+  // Drogon's only officially-supported per-response hook and runs on the IO
+  // thread that serves the request, so the callback must be cheap.
+  // prometheus::Counter::Increment is lock-free; Family::Add hashes the label
+  // set and takes an internal shared lock, which is fine at HTTP RPS scale.
+  drogon::app().registerPreSendingAdvice(
+      [](const drogon::HttpRequestPtr& req,
+         const drogon::HttpResponsePtr& resp) {
+        tt::metrics::ServerMetrics::instance().onHttpResponse(
+            req->methodString(), static_cast<int>(resp->statusCode()));
       });
 
   // Configure Drogon

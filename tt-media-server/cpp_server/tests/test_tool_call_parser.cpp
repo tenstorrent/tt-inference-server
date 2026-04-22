@@ -194,11 +194,7 @@ void testDeepSeekStripMarkers() {
         "Some text after";
 
     std::string result = parser->stripMarkers(input);
-    assert(result.find("<｜tool▁calls▁begin｜>") == std::string::npos);
-    assert(result.find("<｜tool▁calls▁end｜>") == std::string::npos);
-    assert(result.find("Some text before") != std::string::npos ||
-           result.find("Some text after") != std::string::npos ||
-           result.empty());
+    assert(result == "Some text before\nSome text after");
 
     std::cout << "✓ Test 1 passed: Strip tool call markers\n";
   }
