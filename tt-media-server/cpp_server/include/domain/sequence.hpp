@@ -8,10 +8,10 @@
 #include <optional>
 #include <vector>
 
+#include "domain/sampling_params.hpp"
 #include "domain/slot_types.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::domain {
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED, ABORTED };
 
@@ -107,4 +107,4 @@ class Sequence {
   bool disaggregated = false;  // True if this is a disaggregated request
 };
 
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::domain

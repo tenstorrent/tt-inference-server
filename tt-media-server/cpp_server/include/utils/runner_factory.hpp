@@ -10,7 +10,7 @@
 #include "config/types.hpp"
 #include "ipc/cancel_queue.hpp"
 #include "ipc/result_queue.hpp"
-#include "runners/llm_runner/task_queue.hpp"
+#include "ipc/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 
 namespace tt::utils::runner_factory {
@@ -27,8 +27,7 @@ namespace tt::utils::runner_factory {
  */
 std::unique_ptr<runners::IRunner> createRunner(
     config::ModelService service, const config::RunnerConfig& config,
-    ipc::IResultQueue* resultQueue,
-    tt::runners::llm_engine::ITaskQueue* taskQueue,
+    ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
     ipc::ICancelQueue* cancelQueue = nullptr);
 
 /**

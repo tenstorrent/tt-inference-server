@@ -16,16 +16,18 @@
 namespace tt::runners {
 using namespace tt::runners::llm_engine;
 using Config = tt::config::LLMConfig;
+using Sequence = tt::domain::Sequence;
+using SequenceStatus = tt::domain::SequenceStatus;
 
 LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
-                     ITaskQueue* taskQueue, ipc::ICancelQueue* cancelQueue)
-    : config_(config), result_queue_(resultQueue), cancel_queue_(cancelQueue) {
-  scheduler_ =
-      makeScheduler(config_, taskQueue, tt::config::maxInFlightCount());
+                     tt::ipc::ITaskQueue* taskQueue,
+                     ipc::ICancelQueue* cancelQueue)
+    : config(config), resultQueue(resultQueue), cancelQueue(cancelQueue) {
+  scheduler = makeScheduler(config, taskQueue, tt::config::maxInFlightCount());
 
   if (tt::config::llmMode() != config::LLMMode::PREFILL_ONLY) {
     memoryManager = std::make_unique<services::PagedMemoryManager>(
-        scheduler_->blockManager());
+        scheduler->getBlockManager());
     memoryThread = std::thread([this] { memoryLoop(); });
   }
 
@@ -44,16 +46,16 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
         e.what());
   }
 
-  auto decodeCb = [this](const TokenResult& result) {
+  auto decodeCb = [this](const domain::TokenResult& result) {
     ZoneScopedN("LLMRunner::process_token_result");
-    Sequence* seq = scheduler_->findSequence(result.taskId);
+    Sequence* seq = scheduler->findSequence(result.taskId);
 
     if (!seq || seq->isAborted()) return;
 
     if (result.isError) {
       if (guidedDecoder) guidedDecoder->removeRequest(result.taskId);
-      scheduler_->removeSequence(result.taskId);
-      ipc::pushErrorToken(*result_queue_, result.taskId);
+      scheduler->removeSequence(result.taskId);
+      ipc::pushErrorToken(*this->resultQueue, result.taskId);
       return;
     }
 
@@ -68,8 +70,8 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
             result.tokenId, result.taskId);
         guidedDecoder->removeRequest(result.taskId);
         seq->setStatus(SequenceStatus::FINISHED);
-        ipc::pushToken(*result_queue_, result.taskId, result.tokenId, true);
-        scheduler_->removeSequence(result.taskId);
+        ipc::pushToken(*this->resultQueue, result.taskId, result.tokenId, true);
+        scheduler->removeSequence(result.taskId);
         return;
       }
       grammarFinished = grammarResult.completed;
@@ -77,7 +79,7 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
 
     std::vector<Sequence*> seqs = {seq};
     std::vector<int64_t> tokenIds = {static_cast<int64_t>(result.tokenId)};
-    scheduler_->postprocess(seqs, tokenIds);
+    scheduler->postprocess(seqs, tokenIds);
 
     bool finished = seq->isFinished();
     if (!finished && grammarFinished) {
@@ -85,15 +87,15 @@ LLMRunner::LLMRunner(const Config& config, ipc::IResultQueue* resultQueue,
       seq->setStatus(SequenceStatus::FINISHED);
     }
 
-    ipc::pushToken(*result_queue_, result.taskId, result.tokenId, finished);
+    ipc::pushToken(*this->resultQueue, result.taskId, result.tokenId, finished);
 
     if (finished) {
       if (guidedDecoder) guidedDecoder->removeRequest(result.taskId);
-      scheduler_->removeSequence(result.taskId);
+      scheduler->removeSequence(result.taskId);
     }
   };
 
-  model_runner_ = makeModelRunner(config_, std::move(decodeCb));
+  modelRunner = makeModelRunner(config, std::move(decodeCb));
 }
 
 LLMRunner::~LLMRunner() {
@@ -105,21 +107,21 @@ LLMRunner::~LLMRunner() {
 }
 
 void LLMRunner::exit() {
-  if (model_runner_) {
-    model_runner_->exit();
+  if (modelRunner) {
+    modelRunner->exit();
   }
 }
 
 void LLMRunner::run() {
-  while (!stopped_.load(std::memory_order_relaxed)) {
+  while (!stopped.load(std::memory_order_relaxed)) {
     step();
   }
 }
 
-void LLMRunner::stop() { stopped_.store(true, std::memory_order_relaxed); }
+void LLMRunner::stop() { stopped.store(true, std::memory_order_relaxed); }
 
 void LLMRunner::memoryLoop() {
-  while (!stopped_.load(std::memory_order_relaxed)) {
+  while (!stopped.load(std::memory_order_relaxed)) {
     auto task = memoryManager->getRequest();
     if (task) {
       memoryManager->handleRequest(*task);
@@ -151,20 +153,20 @@ void LLMRunner::applyGuidedDecodingMasks(const std::vector<Sequence*>& seqs,
 }
 
 void LLMRunner::step() {
-  if (cancel_queue_) {
+  if (cancelQueue) {
     std::vector<uint32_t> cancelled;
-    cancel_queue_->tryPopAll(cancelled);
+    cancelQueue->tryPopAll(cancelled);
     for (const auto& taskId : cancelled) {
       if (guidedDecoder) guidedDecoder->removeRequest(taskId);
-      scheduler_->abortRequest(taskId);
+      scheduler->abortRequest(taskId);
     }
   }
 
-  auto [seqs, is_prefill] = scheduler_->schedule();
+  auto [seqs, is_prefill] = scheduler->schedule();
   if (seqs.empty()) return;
   ZoneScopedN("LLMRunner::step");
 
   applyGuidedDecodingMasks(seqs, is_prefill);
-  model_runner_->run(seqs, is_prefill);
+  modelRunner->run(seqs, is_prefill);
 }
 }  // namespace tt::runners
