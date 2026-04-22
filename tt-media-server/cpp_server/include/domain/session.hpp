@@ -72,7 +72,6 @@ class Session {
   Json::Value toJson() const {
     Json::Value json;
     json["session_id"] = session_id_;
-    json["hash"] = static_cast<Json::UInt64>(hash_);
     json["slot_id"] = slot_id_;
     return json;
   }
