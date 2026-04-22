@@ -50,8 +50,8 @@ class JobDatabase:
                     model TEXT NOT NULL,
                     request_parameters TEXT,
                     status TEXT NOT NULL,
-                    created_at INTEGER NOT NULL,
-                    completed_at INTEGER,
+                    created_at REAL NOT NULL,
+                    completed_at REAL,
                     error_message TEXT,
                     result_path TEXT,
                     org_id TEXT
@@ -105,7 +105,7 @@ class JobDatabase:
         model: str,
         request_parameters: dict,
         status: str,
-        created_at: int,
+        created_at: float,
         org_id: Optional[str] = None,
     ) -> None:
         """Insert a new job into the database."""
@@ -129,7 +129,7 @@ class JobDatabase:
         self,
         job_id: str,
         status: str,
-        completed_at: Optional[int] = None,
+        completed_at: Optional[float] = None,
         result_path: Optional[str] = None,
         error_message: Optional[dict[str, str]] = None,
     ) -> None:
