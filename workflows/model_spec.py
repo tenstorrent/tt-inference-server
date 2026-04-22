@@ -1831,7 +1831,7 @@ llm_templates = [
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
         tt_metal_commit="55fd115",
-        vllm_commit="aa4ae1e",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1856,7 +1856,7 @@ llm_templates = [
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
         tt_metal_commit="6900b0c",
-        vllm_commit="aa4ae1e",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
