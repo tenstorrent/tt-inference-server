@@ -217,10 +217,14 @@ class ImageClientStrategy(BaseMediaStrategy):
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
 
-            # Override num_calls for SDXL trace model to 100 prompts
-            if runner_in_use == "tt-sdxl-trace":
+            # Override num_calls for SDXL models to 100 prompts
+            if runner_in_use in [
+                "tt-sdxl-trace",
+                "tt-sdxl-img2img",
+                "tt-sdxl-inpainting",
+            ]:
                 logger.info(
-                    f"Overriding num_calls for SDXL trace model to {SDXL_BENCHMARK_NUM_PROMPTS} prompts"
+                    f"Overriding num_calls for SDXL {runner_in_use} model to {SDXL_BENCHMARK_NUM_PROMPTS} prompts"
                 )
                 num_calls = SDXL_BENCHMARK_NUM_PROMPTS
 
