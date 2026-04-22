@@ -278,6 +278,14 @@ def main():
 
     env_vars = os.environ.copy()
 
+    # Check for known issues that skip the entire benchmarks workflow
+    skip_issue = model_spec.device_model_spec.should_skip_workflow("BENCHMARKS")
+    if skip_issue:
+        logger.warning(
+            f"⚠️ Skipping BENCHMARKS workflow due to known issue: {skip_issue.reason}"
+        )
+        return 0
+
     # Look up the evaluation configuration for the model using BENCHMARK_CONFIGS.
     if model_spec.model_id not in BENCHMARK_CONFIGS:
         message = f"No benchmark tasks defined for model: {model_spec.model_name}"
@@ -394,6 +402,16 @@ def main():
                     )
                 captured_traces.update(sorted_context_lens_set)
             for i, params in enumerate(params_list, 1):
+                bench_task_name = f"isl-{params.isl}_osl-{params.osl}_con-{params.max_concurrency}"
+                skip_issue = model_spec.device_model_spec.should_skip_task(
+                    "BENCHMARKS", bench_task_name
+                )
+                if skip_issue:
+                    logger.warning(
+                        f"⚠️ Skipping benchmark {bench_task_name} due to known issue: {skip_issue.reason}"
+                    )
+                    continue
+
                 try:
                     health_check = prompt_client.get_health()
                 except requests.exceptions.RequestException as error:

@@ -158,6 +158,14 @@ def main():
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
 
+    # Check for known issues that skip the entire tests workflow
+    skip_issue = model_spec.device_model_spec.should_skip_workflow("TESTS")
+    if skip_issue:
+        logger.warning(
+            f"⚠️ Skipping TESTS workflow due to known issue: {skip_issue.reason}"
+        )
+        return 0
+
     # Look up the evaluation configuration for the model using BENCHMARK_CONFIGS.
     if model_spec.model_name not in TEST_CONFIGS:
         message = f"No tests defined for model: {model_spec.model_name}"
@@ -184,6 +192,15 @@ def main():
     )
     return_codes = []
     for task in test_config.tasks:
+        skip_issue = model_spec.device_model_spec.should_skip_task(
+            "TESTS", task.task_name
+        )
+        if skip_issue:
+            logger.warning(
+                f"⚠️ Skipping test task '{task.task_name}' due to known issue: {skip_issue.reason}"
+            )
+            continue
+
         logger.info(
             f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
         )
