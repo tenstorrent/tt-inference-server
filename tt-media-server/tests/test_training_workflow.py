@@ -73,6 +73,7 @@ class TestLlamaTrainingServiceCreateJob:
         settings = MagicMock()
         settings.model_runner = "training-lora"
         settings.device = "p300"
+        settings.model_weights_path = "meta-llama/Llama-3.1-8B"
         settings.download_weights_from_service = False
         return settings
 

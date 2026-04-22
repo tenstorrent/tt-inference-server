@@ -282,7 +282,9 @@ class Settings(BaseSettings):
         model_name_enum = ModelNames(model_to_run)
 
         explicit_model_runner = os.getenv("MODEL_RUNNER")
-        model_runner_enum = ModelRunners(explicit_model_runner) if explicit_model_runner else None
+        model_runner_enum = (
+            ModelRunners(explicit_model_runner) if explicit_model_runner else None
+        )
         if not model_runner_enum:
             matching_runners = [
                 runner

@@ -26,17 +26,22 @@ TRAINING_CATALOG_DATA = {
 }
 
 
-def _weights_path_matches(model_weights_path: str, repo_id: str) -> bool:
+def weights_path_matches(model_weights_path: str, repo_id: str) -> bool:
     """Check if model_weights_path matches the HF repo ID.
 
     model_weights_path may be the repo ID itself ("Qwen/Qwen3-8B") or a
     resolved local snapshot path that embeds it
     ("…/models--Qwen--Qwen3-8B/snapshots/…").
     """
+    if not isinstance(model_weights_path, str) or not model_weights_path:
+        return False
     if model_weights_path == repo_id:
         return True
     cache_fragment = f"models--{repo_id.replace('/', '--')}"
     return cache_fragment in model_weights_path
+
+
+_weights_path_matches = weights_path_matches
 
 
 def _build_models_catalog(model_runner: str, model_weights_path: str = ""):
@@ -48,7 +53,9 @@ def _build_models_catalog(model_runner: str, model_weights_path: str = ""):
     model_names_set = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner_enum, set())
     for model_name in model_names_set:
         model_config = SupportedModels[model_name.name].value
-        if model_weights_path and not _weights_path_matches(model_weights_path, model_config):
+        if model_weights_path and not weights_path_matches(
+            model_weights_path, model_config
+        ):
             continue
         try:
             display_name = ModelDisplayNames[model_name.name].value

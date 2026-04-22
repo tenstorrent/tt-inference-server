@@ -88,7 +88,9 @@ class TestWeightsPathMatches:
         assert _weights_path_matches(cache_path, "Qwen/Qwen3-8B") is True
 
     def test_no_match(self):
-        assert _weights_path_matches("Qwen/Qwen3-8B", "meta-llama/Llama-3.1-8B") is False
+        assert (
+            _weights_path_matches("Qwen/Qwen3-8B", "meta-llama/Llama-3.1-8B") is False
+        )
 
     def test_resolved_cache_path_no_match(self):
         cache_path = "/home/user/huggingface/models--Qwen--Qwen3-8B/snapshots/abc123"
@@ -111,7 +113,9 @@ class TestBuildModelsCatalogWithResolvedPath:
         assert models[0]["id"] == ModelNames.QWEN_3_8B.value
 
     def test_filter_with_resolved_llama_cache_path(self):
-        cache_path = "/home/user/huggingface/models--meta-llama--Llama-3.1-8B/snapshots/abc123"
+        cache_path = (
+            "/home/user/huggingface/models--meta-llama--Llama-3.1-8B/snapshots/abc123"
+        )
         models = _build_models_catalog(
             ModelRunners.TRAINING_LORA.value,
             model_weights_path=cache_path,
