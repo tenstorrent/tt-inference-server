@@ -136,6 +136,9 @@ bool SessionManager::assignSlotId(const std::string& sessionId,
   if (!found) {
     TT_LOG_WARN("[SessionManager] Session not found for slot assignment: {}",
                 sessionId);
+  } else {
+    TT_LOG_INFO("[SessionManager] Assigned slot {} to session {}", slotId,
+                sessionId);
   }
 
   return found;
@@ -312,8 +315,8 @@ void SessionManager::sendDeallocRequest(const std::string& sessionId,
 void SessionManager::createSession(
     std::function<void(const tt::domain::Session&)> onCompletion,
     std::function<void(std::string_view errorMessage)> onError,
-    trantor::EventLoop* callerEventLoop, const std::string& requestPrompt,
-    size_t initialHash, std::optional<uint32_t> slotId) {
+    trantor::EventLoop* callerEventLoop, size_t initialHash,
+    std::optional<uint32_t> slotId) {
   TT_LOG_DEBUG(
       "[SessionManager] createSession called, slotId={}, activeSessions={}",
       slotId.has_value() ? std::to_string(slotId.value()) : "none",
@@ -489,52 +492,55 @@ SessionManager::tryAcquireByPrefixHash(uint64_t prefixHash,
                                        std::function<void()> cancelFn) {
   TT_LOG_DEBUG("[SessionManager] tryAcquireByPrefixHash: hash={}", prefixHash);
 
-  // Copy candidate sessionIds under the prefixIndex lock, then try to acquire
-  // one while releasing the prefixIndex lock (because acquireInFlight takes
-  // the sessions lock, and we don't want to hold two locks together).
+  // Snapshot candidate sessionIds under the prefixIndex lock, then release it
+  // before touching the sessions map (acquireInFlight takes that lock, and we
+  // avoid holding both simultaneously).
   std::vector<std::string> candidateIds;
-  bool hashExists = prefixIndex.modify(
-      prefixHash, [&candidateIds](const std::list<std::string>& ids) {
-        candidateIds.assign(ids.begin(), ids.end());
-      });
+  prefixIndex.modify(prefixHash,
+                     [&candidateIds](const std::list<std::string>& ids) {
+                       candidateIds.assign(ids.begin(), ids.end());
+                     });
 
-  if (!hashExists || candidateIds.empty()) {
-    TT_LOG_DEBUG(
-        "[SessionManager] tryAcquireByPrefixHash: hash={} not found (miss)",
-        prefixHash);
+  if (candidateIds.empty()) {
+    TT_LOG_DEBUG("[SessionManager] tryAcquireByPrefixHash: hash={} miss",
+                 prefixHash);
     return std::nullopt;
   }
 
   TT_LOG_INFO(
-      "[SessionManager] tryAcquireByPrefixHash: found {} session(s) under "
-      "hash={}",
+      "[SessionManager] tryAcquireByPrefixHash: {} candidate(s) under hash={}",
       candidateIds.size(), prefixHash);
 
   bool anyBusy = false;
   for (const auto& sessionId : candidateIds) {
     std::optional<AcquiredSession> acquired;
-    bool wasInFlight = false;
+    bool busy = false;
+    bool stale = false;
 
-    bool found =
-        sessions.modify(sessionId, [&acquired, &wasInFlight, &sessionId,
-                                    &cancelFn](ManagedSession& ms) mutable {
-          if (!ms.session.isIdle()) {
-            wasInFlight = true;
-            return;
-          }
-          ms.session.updateActivityTime();
-          ms.session.markInFlight();
-          ms.cancelFn = cancelFn;  // keep lambda reusable across candidates
-          acquired = AcquiredSession{sessionId, ms.session.getSlotId()};
-        });
+    bool found = sessions.modify(sessionId, [&](ManagedSession& ms) {
+      // The session's stored hash is the source of truth; a mismatch means
+      // this index entry is stale (e.g. torn update from a concurrent
+      // registerPrefixHash). Treat as stale and clean up.
+      if (ms.session.getHash() != prefixHash) {
+        stale = true;
+        return;
+      }
+      if (!ms.session.isIdle()) {
+        busy = true;
+        return;
+      }
+      ms.session.updateActivityTime();
+      ms.session.markInFlight();
+      ms.cancelFn = cancelFn;  // copied so we can retry other candidates
+      acquired = AcquiredSession{sessionId, ms.session.getSlotId()};
+    });
 
-    if (!found) {
-      // Stale entry in the index; drop it so we don't hit this again.
+    if (!found || stale) {
       removeFromPrefixIndex(sessionId, prefixHash);
       continue;
     }
 
-    if (acquired.has_value()) {
+    if (acquired) {
       TT_LOG_INFO(
           "[SessionManager] tryAcquireByPrefixHash: acquired sessionId={}, "
           "slotId={} for hash={}",
@@ -542,7 +548,7 @@ SessionManager::tryAcquireByPrefixHash(uint64_t prefixHash,
       return acquired;
     }
 
-    if (wasInFlight) anyBusy = true;
+    anyBusy |= busy;
   }
 
   if (anyBusy) {

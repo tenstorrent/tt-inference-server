@@ -73,24 +73,19 @@ uint64_t hashConversationPrefix(
   std::string rendered = tokenizer.applyChatTemplate(prefix, false);
 
   // Compute stable 64-bit hash
-  std::hash<std::string> hasher;
-  return hasher(rendered);
+  return std::hash<std::string>()(rendered);
 }
 
 std::string renderLastUserTurn(
     const std::vector<domain::ChatMessage>& messages) {
-  // Find the last user message
-  for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
-    if (it->role == "user") {
-      // Render just this message with addGenerationPrompt=true
-      std::vector<domain::ChatMessage> singleMessage = {*it};
-      const auto& tokenizer = tokenizers::activeTokenizer();
-      return tokenizer.applyChatTemplate(singleMessage, true);
-    }
+  auto it = std::find_if(
+      messages.rbegin(), messages.rend(),
+      [](const domain::ChatMessage& msg) { return msg.role == "user"; });
+  if (it == messages.rend()) {
+    return "";
   }
-
-  // Should not happen if preconditions are met, but return empty as fallback
-  return "";
+  const auto& tokenizer = tokenizers::activeTokenizer();
+  return tokenizer.applyChatTemplate({*it}, true);
 }
 
 PrefixCachingInfo computePrefixCachingInfo(
@@ -101,6 +96,9 @@ PrefixCachingInfo computePrefixCachingInfo(
   // as part of the stable prefix identity.
   auto turns = stripToolMessages(messages);
 
+  // deltaPrompt is the last user turn
+  info.deltaPrompt = renderLastUserTurn(turns);
+
   // registrationHash = always hash of full current conversation
   info.registrationHash = hashConversationPrefix(turns);
 
@@ -109,7 +107,6 @@ PrefixCachingInfo computePrefixCachingInfo(
   if (priorPrefix.has_value()) {
     info.hasPriorTurn = true;
     info.lookupHash = hashConversationPrefix(*priorPrefix);
-    info.deltaPrompt = renderLastUserTurn(messages);
   } else {
     info.hasPriorTurn = false;
   }
