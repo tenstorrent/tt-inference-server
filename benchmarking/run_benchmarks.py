@@ -278,6 +278,20 @@ def main():
 
     env_vars = os.environ.copy()
 
+    # Failsafe: bound the per-request HTTP wait so a stalled inference fails
+    # in minutes instead of the aiohttp default ~6 h. Default 900 s covers an
+    # OSL=1024 single-stream run at the slowest models we currently sweep
+    # (~0.5 s/token); override with TT_BENCHMARK_REQUEST_TIMEOUT_SEC for
+    # longer outputs.
+    if "AIOHTTP_TIMEOUT_TOTAL" not in env_vars:
+        env_vars["AIOHTTP_TIMEOUT_TOTAL"] = os.getenv(
+            "TT_BENCHMARK_REQUEST_TIMEOUT_SEC", "900"
+        )
+        logger.info(
+            "Failsafe: AIOHTTP_TIMEOUT_TOTAL=%s (per-request)",
+            env_vars["AIOHTTP_TIMEOUT_TOTAL"],
+        )
+
     # Look up the evaluation configuration for the model using BENCHMARK_CONFIGS.
     if model_spec.model_id not in BENCHMARK_CONFIGS:
         message = f"No benchmark tasks defined for model: {model_spec.model_name}"
@@ -368,9 +382,22 @@ def main():
     # keep track of captured traces to avoid re-running requests
     captured_traces = set()
 
+    # Failsafe: whole-workflow wallclock guard. Default 7200 s (2 h). Set
+    # TT_BENCHMARK_WALLCLOCK_MAX_SEC=0 to disable. Belt-and-suspenders for
+    # the per-request HTTP timeout above.
+    wallclock_max_sec = float(os.getenv("TT_BENCHMARK_WALLCLOCK_MAX_SEC", "7200"))
+    workflow_t0 = time.monotonic()
+    if wallclock_max_sec > 0:
+        logger.info(
+            "Failsafe: whole-workflow wallclock cap = %.0fs", wallclock_max_sec
+        )
+
     # Run benchmarks
     return_codes = []
+    workflow_aborted = False
     for task in benchmark_config.tasks:
+        if workflow_aborted:
+            break
         venv_config = VENV_CONFIGS[task.workflow_venv_type]
         benchmark_script = venv_config.venv_path / "bin" / "vllm"
         if device in task.param_map:
@@ -394,6 +421,20 @@ def main():
                     )
                 captured_traces.update(sorted_context_lens_set)
             for i, params in enumerate(params_list, 1):
+                if (
+                    wallclock_max_sec > 0
+                    and (time.monotonic() - workflow_t0) > wallclock_max_sec
+                ):
+                    logger.error(
+                        "⏱️ Whole-workflow wallclock guard tripped after %.0fs "
+                        "(cap=%.0fs). Aborting remaining benchmarks.",
+                        time.monotonic() - workflow_t0,
+                        wallclock_max_sec,
+                    )
+                    return_codes.append(1)
+                    workflow_aborted = True
+                    break
+
                 try:
                     health_check = prompt_client.get_health()
                 except requests.exceptions.RequestException as error:
