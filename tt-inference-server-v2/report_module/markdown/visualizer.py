@@ -4,7 +4,7 @@
 
 """Pure markdown rendering for report sub-sections.
 
-Composition layer for ``StandardReportStrategy`` and ``TestReportStrategy``:
+Composition layer for all report strategies:
 takes already-parsed and computed data payloads and assembles the final
 section markdown.  Callers never touch the filesystem from here.
 """
@@ -26,12 +26,14 @@ from report_module.markdown.formatters import (
     create_vlm_display_dict,
 )
 from report_module.markdown.report_renderers import (
+    PERCENTILE_METRIC_DEFINITIONS,
     benchmark_release_markdown,
     benchmark_vlm_release_markdown,
     generate_evals_release_markdown,
     generate_evals_summary_table,
     generate_simple_evals_release_markdown,
     generate_simple_evals_summary_table,
+    percentile_table_markdown,
 )
 from report_module.markdown.table_builder import get_markdown_table
 from report_module.parsing.target_checks import flatten_target_checks
@@ -197,6 +199,44 @@ class MarkdownVisualizer:
         if not sections:
             return header + _NO_TARGETS_DEFINED
         return header + "\n\n".join(sections)
+
+    @staticmethod
+    def build_percentile_benchmark_markdown(
+        tool_label: str,
+        tool_url: str,
+        text_rows: List[Dict[str, Any]],
+        vlm_rows: List[Dict[str, Any]],
+        model_name: str,
+        device_str: str,
+        section_header: str,
+        footer_note: Optional[str] = None,
+    ) -> str:
+        """Render the percentile benchmark section for a single tool."""
+        tool_line = f"**Benchmarking Tool:** [{tool_label}]({tool_url})\n\n"
+        sections: List[str] = [
+            f"### {section_header} for {model_name} on {device_str}\n\n"
+        ]
+
+        row_groups: List[Tuple[str, List[Dict[str, Any]], bool]] = [
+            ("Text", text_rows, False),
+            ("VLM", vlm_rows, True),
+        ]
+        for kind_label, rows, is_vlm in row_groups:
+            if not rows:
+                continue
+            sections.append(
+                f"#### {tool_label} {kind_label} Benchmarks - Detailed Percentiles\n\n"
+            )
+            sections.append(tool_line)
+            sections.append(percentile_table_markdown(rows, is_vlm=is_vlm))
+            sections.append("\n")
+            if footer_note:
+                sections.append(f"{footer_note}\n\n")
+            else:
+                sections.append("\n")
+
+        sections.append(PERCENTILE_METRIC_DEFINITIONS)
+        return "".join(sections)
 
     @staticmethod
     def build_tiered_summary_markdown(

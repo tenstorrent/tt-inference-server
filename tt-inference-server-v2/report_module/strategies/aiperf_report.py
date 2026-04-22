@@ -10,82 +10,14 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from report_module.base_strategy import ReportStrategy
-from report_module.markdown.table_builder import get_markdown_table
+from report_module.markdown.visualizer import MarkdownVisualizer
 from report_module.parsing.common import (
     deduplicate_by_config,
     extract_percentile_result,
 )
-from report_module.types import NOT_MEASURED_STR, ReportContext, ReportResult
+from report_module.types import ReportContext, ReportResult
 
 logger = logging.getLogger(__name__)
-
-METRIC_DEFINITIONS = (
-    "**Metric Definitions:**\n"
-    "> - **ISL**: Input Sequence Length (tokens)\n"
-    "> - **OSL**: Output Sequence Length (tokens)\n"
-    "> - **Concur**: Concurrent requests (batch size)\n"
-    "> - **N**: Total number of requests\n"
-    "> - **TTFT Avg/P50/P99**: Time To First Token - Average, Median (50th percentile), 99th percentile (ms)\n"
-    "> - **TPOT Avg/P50/P99**: Time Per Output Token - Average, Median, 99th percentile (ms)\n"
-    "> - **E2EL Avg/P50/P99**: End-to-End Latency - Average, Median, 99th percentile (ms)\n"
-    "> - **Output Tok/s**: Output token throughput\n"
-    "> - **Total Tok/s**: Total token throughput (input + output tokens)\n"
-    "> - **Req/s**: Request throughput\n"
-)
-
-
-def _percentile_table_markdown(rows: List[Dict[str, Any]], is_vlm: bool = False) -> str:
-    """Build a percentile table (mean/median/p99) from raw result dicts."""
-    display_cols = [
-        ("isl", "ISL"),
-        ("osl", "OSL"),
-        ("concurrency", "Concur"),
-    ]
-    if is_vlm:
-        display_cols.extend(
-            [
-                ("image_height", "Image Height"),
-                ("image_width", "Image Width"),
-                ("images_per_prompt", "Images per Prompt"),
-            ]
-        )
-    display_cols.extend(
-        [
-            ("num_requests", "N"),
-            ("mean_ttft_ms", "TTFT Avg (ms)"),
-            ("median_ttft_ms", "TTFT P50 (ms)"),
-            ("p99_ttft_ms", "TTFT P99 (ms)"),
-            ("mean_tpot_ms", "TPOT Avg (ms)"),
-            ("median_tpot_ms", "TPOT P50 (ms)"),
-            ("p99_tpot_ms", "TPOT P99 (ms)"),
-            ("mean_e2el_ms", "E2EL Avg (ms)"),
-            ("median_e2el_ms", "E2EL P50 (ms)"),
-            ("p99_e2el_ms", "E2EL P99 (ms)"),
-            ("output_token_throughput", "Output Tok/s"),
-            ("total_token_throughput", "Total Tok/s"),
-            ("request_throughput", "Req/s"),
-        ]
-    )
-
-    display_dicts: List[Dict[str, str]] = []
-    for row in rows:
-        row_dict: Dict[str, str] = {}
-        for col_name, header in display_cols:
-            value = row.get(col_name, NOT_MEASURED_STR)
-            if value is None or value == "":
-                row_dict[header] = NOT_MEASURED_STR
-            elif isinstance(value, float):
-                if col_name == "request_throughput":
-                    row_dict[header] = f"{value:.4f}"
-                elif col_name in ("output_token_throughput", "total_token_throughput"):
-                    row_dict[header] = f"{value:.2f}"
-                else:
-                    row_dict[header] = f"{value:.1f}"
-            else:
-                row_dict[header] = str(value)
-        display_dicts.append(row_dict)
-
-    return get_markdown_table(display_dicts)
 
 
 class AiPerfStrategy(ReportStrategy):
@@ -130,21 +62,15 @@ class AiPerfStrategy(ReportStrategy):
             )
         )
 
-        release_str = f"### Benchmark Performance Results for {context.model_name} on {context.device_str}\n\n"
-
-        if aiperf_text_results:
-            release_str += "#### AIPerf Text Benchmarks - Detailed Percentiles\n\n"
-            release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-            release_str += _percentile_table_markdown(aiperf_text_results) + "\n\n"
-
-        if aiperf_vlm_results:
-            release_str += "#### AIPerf VLM Benchmarks - Detailed Percentiles\n\n"
-            release_str += "**Benchmarking Tool:** [AIPerf](https://github.com/ai-dynamo/aiperf)\n\n"
-            release_str += (
-                _percentile_table_markdown(aiperf_vlm_results, is_vlm=True) + "\n\n"
-            )
-
-        release_str += METRIC_DEFINITIONS
+        release_str = MarkdownVisualizer.build_percentile_benchmark_markdown(
+            tool_label="AIPerf",
+            tool_url="https://github.com/ai-dynamo/aiperf",
+            text_rows=aiperf_text_results,
+            vlm_rows=aiperf_vlm_results,
+            model_name=context.model_name,
+            device_str=context.device_str,
+            section_header="Benchmark Performance Results",
+        )
 
         all_results = aiperf_text_results + aiperf_vlm_results
         result = ReportResult(

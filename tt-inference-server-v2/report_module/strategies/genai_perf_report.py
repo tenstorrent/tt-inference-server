@@ -11,13 +11,10 @@ from typing import Any, Dict, List
 
 
 from report_module.base_strategy import ReportStrategy
+from report_module.markdown.visualizer import MarkdownVisualizer
 from report_module.parsing.common import (
     deduplicate_by_config,
     extract_percentile_result,
-)
-from report_module.strategies.aiperf_report import (
-    METRIC_DEFINITIONS,
-    _percentile_table_markdown,
 )
 from report_module.types import ReportContext, ReportResult
 
@@ -67,21 +64,19 @@ class GenAiPerfStrategy(ReportStrategy):
             )
         )
 
-        release_str = f"### GenAI-Perf Benchmark Performance Results for {context.model_name} on {context.device_str}\n\n"
-
-        if text_results:
-            release_str += "#### GenAI-Perf Text Benchmarks - Detailed Percentiles\n\n"
-            release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
-            release_str += _percentile_table_markdown(text_results)
-            release_str += "\n*Note: GenAI-Perf does not natively support total token throughput metrics.*\n\n"
-
-        if vlm_results:
-            release_str += "#### GenAI-Perf VLM Benchmarks - Detailed Percentiles\n\n"
-            release_str += "**Benchmarking Tool:** [GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer)\n\n"
-            release_str += _percentile_table_markdown(vlm_results, is_vlm=True)
-            release_str += "\n*Note: GenAI-Perf does not natively support total token throughput metrics.*\n\n"
-
-        release_str += METRIC_DEFINITIONS
+        release_str = MarkdownVisualizer.build_percentile_benchmark_markdown(
+            tool_label="GenAI-Perf",
+            tool_url="https://github.com/triton-inference-server/perf_analyzer",
+            text_rows=text_results,
+            vlm_rows=vlm_results,
+            model_name=context.model_name,
+            device_str=context.device_str,
+            section_header="GenAI-Perf Benchmark Performance Results",
+            footer_note=(
+                "*Note: GenAI-Perf does not natively support total token "
+                "throughput metrics.*"
+            ),
+        )
 
         all_results = text_results + vlm_results
         result = ReportResult(
