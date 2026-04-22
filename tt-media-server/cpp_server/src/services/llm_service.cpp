@@ -395,8 +395,8 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
   }
 
   auto toolChoiceOpt = toolChoiceMap.take(response.task_id);
-  bool shouldParseTool = !(toolChoiceOpt.has_value() &&
-                           toolChoiceOpt.value() == "none");
+  bool shouldParseTool =
+      !(toolChoiceOpt.has_value() && toolChoiceOpt.value() == "none");
   if (!shouldParseTool) {
     TT_LOG_DEBUG("[LLMService] Skipping tool call parsing (tool_choice=none)");
   }
