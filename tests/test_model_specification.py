@@ -753,9 +753,7 @@ class TestEnforceAcceptanceCriteria:
             "complete": {"ttft_check": 2, "tput_check": 2},
             "target": {"ttft_check": 2, "tput_check": 2},
         }
-        result = enforce_acceptance_criteria(
-            target_checks, ModelStatusTypes.FUNCTIONAL
-        )
+        result = enforce_acceptance_criteria(target_checks, ModelStatusTypes.FUNCTIONAL)
         assert result["enforcement_result"] == "FAIL"
         assert "functional" in result["failed_enforced_tiers"]
 
@@ -766,9 +764,7 @@ class TestEnforceAcceptanceCriteria:
                 "tput_check": ReportCheckTypes.PASS,
             },
         }
-        result = enforce_acceptance_criteria(
-            target_checks, ModelStatusTypes.FUNCTIONAL
-        )
+        result = enforce_acceptance_criteria(target_checks, ModelStatusTypes.FUNCTIONAL)
         assert result["enforcement_result"] == "PASS"
 
     def test_model_status_is_included_in_result(self, passing_target_checks):

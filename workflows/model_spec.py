@@ -388,7 +388,9 @@ class DeviceModelSpec:
                 return issue
         return None
 
-    def should_skip_task(self, workflow_type: str, task_name: str) -> Optional[KnownIssue]:
+    def should_skip_task(
+        self, workflow_type: str, task_name: str
+    ) -> Optional[KnownIssue]:
         """Check if a specific task should be skipped.
 
         Returns the first matching KnownIssue (whole-workflow or task-specific)

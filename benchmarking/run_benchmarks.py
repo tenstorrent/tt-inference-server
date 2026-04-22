@@ -402,7 +402,9 @@ def main():
                     )
                 captured_traces.update(sorted_context_lens_set)
             for i, params in enumerate(params_list, 1):
-                bench_task_name = f"isl-{params.isl}_osl-{params.osl}_con-{params.max_concurrency}"
+                bench_task_name = (
+                    f"isl-{params.isl}_osl-{params.osl}_con-{params.max_concurrency}"
+                )
                 skip_issue = model_spec.device_model_spec.should_skip_task(
                     "BENCHMARKS", bench_task_name
                 )

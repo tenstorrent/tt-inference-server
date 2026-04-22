@@ -50,7 +50,6 @@ from workflows.workflow_config import (
 # from workflows.workflow_venvs import VENV_CONFIGS
 from workflows.workflow_types import (
     DeviceTypes,
-    ModelStatusTypes,
     ModelType,
     ReportCheckTypes,
 )
