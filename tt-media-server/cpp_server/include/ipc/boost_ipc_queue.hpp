@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -199,9 +199,6 @@ class BoostIpcMemoryQueue {
 constexpr size_t MEMORY_REQUEST_MAX_MSG_SIZE = 256;
 constexpr size_t MEMORY_RESULT_MAX_MSG_SIZE = 4096;
 constexpr int MEMORY_QUEUE_CAPACITY = 64;
-
-inline constexpr const char* k_memory_request_queue_name = "tt_mem_requests";
-inline constexpr const char* k_memory_result_queue_name = "tt_mem_results";
 
 using MemoryRequestQueue =
     BoostIpcMemoryQueue<domain::ManageMemoryTask, MEMORY_REQUEST_MAX_MSG_SIZE>;

@@ -1,37 +1,29 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import os
-import traceback
 import time
+import traceback
 from multiprocessing import Event
 from typing import Optional
 
-from transformers import AutoModelForCausalLM
 import torch
-from tqdm import tqdm
 import torch_xla
 import torch_xla.runtime as xr
-from peft import LoraConfig, get_peft_model, PeftModel
-
-
+from config.constants import SupportedModels
 from domain.training_request import TrainingRequest
+from peft import LoraConfig, PeftModel, get_peft_model
+from tqdm import tqdm
+from transformers import AutoModelForCausalLM
 from tt_model_runners.base_device_runner import BaseDeviceRunner
-from utils.decorators import log_execution_time
-from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
-from utils.dataset_loaders.dataset_resolver import get_dataset_loader
-from config.constants import (
-    ModelRunners,
-    TrainingOptimizers,
-    TRAINING_RUNNER_SUPPORTED_DEVICES,
-    SupportedModels,
+from tt_model_runners.forge_training_runners.torch_utils import (
+    OPTIMIZER_MAP,
+    resolve_dtype,
 )
-
-
-OPTIMIZER_MAP = {
-    TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
-}
+from utils.dataset_loaders.dataset_resolver import get_dataset_loader
+from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
+from utils.decorators import log_execution_time
 
 
 class TrainingGemmaLoraRunner(BaseDeviceRunner):
@@ -72,21 +64,15 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         request = training_requests[0]
 
+        if request.device_type != self.settings.device:
+            raise ValueError(
+                f"Request device '{request.device_type}' does not match "
+                f"server device '{self.settings.device}'"
+            )
+
         log_handler = None
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
-
-        supported_device_types = {
-            dt.value
-            for dt in TRAINING_RUNNER_SUPPORTED_DEVICES[
-                ModelRunners.TRAINING_GEMMA_LORA
-            ]
-        }
-        if request.device_type not in supported_device_types:
-            raise ValueError(
-                f"Gemma Lora training requires a single chip device, "
-                f"got '{request.device_type}'. Supported: {sorted(supported_device_types)}"
-            )
 
         if request._start_event:
             request._start_event.set()
@@ -131,13 +117,11 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         self._peft_model = get_peft_model(self.hf_model, lora_config)
 
-        self._peft_model.to(eval(request.dtype))
+        self._peft_model.to(resolve_dtype(request.dtype))
         self._peft_model.to(self.device)
 
-        model_path = request._output_model_path
-
         # use torch compile
-        self.model = torch.compile(
+        self.compiled_model = torch.compile(
             self._peft_model,
             backend="tt",
             options={
@@ -147,7 +131,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         )
 
         self.optimizer = OPTIMIZER_MAP[request.optimizer](
-            self.model.parameters(), lr=request.learning_rate
+            self.compiled_model.parameters(), lr=request.learning_rate
         )
         self.loss_fn = torch.nn.CrossEntropyLoss(ignore_index=request.ignored_index)
 
@@ -160,17 +144,41 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         global_step = 0
         running_loss = 0.0
-        self.model.train()
         try:
             for epoch in range(request.num_epochs):
                 for batch in tqdm(self.train_dataloader):
+                    # Validation at the start of each step cycle
+                    if global_step % request.val_steps_freq == 0:
+                        avg_val_loss = self.run_validation(
+                            cancel_event=request._cancel_event
+                        )
+                        if avg_val_loss is not None:
+                            self.logger.info(
+                                f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}",
+                                extra={"log_type": "eval", "step": global_step},
+                            )
+                            if request._training_metrics is not None:
+                                request._training_metrics.append(
+                                    {
+                                        "global_step": global_step,
+                                        "epoch": epoch,
+                                        "metric_name": "val_loss",
+                                        "value": round(avg_val_loss, 4),
+                                        "learning_rate": self.optimizer.param_groups[0][
+                                            "lr"
+                                        ],
+                                        "timestamp": time.time(),
+                                    }
+                                )
+                        self.compiled_model.train()
+
                     self.optimizer.zero_grad()
 
                     batch = {k: v.to(self.device) for k, v in batch.items()}
 
                     self.logger.debug(f"Device {self.device_id}: Forward pass started")
                     try:
-                        outputs = self.model(
+                        outputs = self.compiled_model(
                             input_ids=batch["input_ids"],
                             attention_mask=batch["attention_mask"],
                         )
@@ -190,7 +198,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                     shift_logits = logits[:, :-1, :].contiguous()
 
                     loss = self.loss_fn(
-                        shift_logits.view(-1, self.model.config.vocab_size),
+                        shift_logits.view(-1, self.compiled_model.config.vocab_size),
                         batch["labels"].view(-1),
                     )
                     running_loss += loss.item()
@@ -211,14 +219,11 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         f"Device {self.device_id}: Optimizer step finished"
                     )
 
-                    do_validation = global_step % request.val_steps_freq == 0
+                    global_step += 1
 
+                    # Training metrics
                     if global_step % request.steps_freq == 0:
-                        avg_loss = (
-                            running_loss / request.steps_freq
-                            if global_step > 0
-                            else running_loss
-                        )
+                        avg_loss = running_loss / request.steps_freq
                         self.logger.info(
                             f"Epoch {epoch + 1} | Step {global_step} | train/loss: {avg_loss:.4f}",
                             extra={"log_type": "info", "step": global_step},
@@ -230,49 +235,61 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                                     "epoch": epoch,
                                     "metric_name": "train_loss",
                                     "value": round(avg_loss, 4),
+                                    "learning_rate": self.optimizer.param_groups[0][
+                                        "lr"
+                                    ],
                                     "timestamp": time.time(),
                                 }
                             )
                         running_loss = 0.0
 
-                        torch.save(self.model.state_dict(), model_path)
-                        self.logger.info(
-                            "Model checkpoint saved.",
-                            extra={"log_type": "checkpoint", "step": global_step},
+                    # Checkpoint saving
+                    if global_step > 0 and global_step % request.save_interval == 0:
+                        checkpoint_path = os.path.join(
+                            request._output_model_path, f"ckpt-step-{global_step}"
                         )
-
-                    if do_validation:
-                        avg_val_loss = self.run_validation(
-                            cancel_event=request._cancel_event
-                        )
-                        if avg_val_loss is not None:
-                            self.logger.info(
-                                f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}",
-                                extra={"log_type": "eval", "step": global_step},
+                        try:
+                            self._peft_model.save_pretrained(
+                                checkpoint_path,
+                                state_dict={
+                                    k: v.cpu()
+                                    for k, v in self._peft_model.state_dict().items()
+                                },
                             )
-                            if request._training_metrics is not None:
-                                request._training_metrics.append(
+                            self.logger.info(
+                                f"Model checkpoint saved to {checkpoint_path}.",
+                                extra={"log_type": "checkpoint", "step": global_step},
+                            )
+                            if request._training_checkpoints is not None:
+                                request._training_checkpoints.append(
                                     {
-                                        "global_step": global_step,
+                                        "id": f"ckpt-step-{global_step}",
+                                        "step": global_step,
                                         "epoch": epoch,
-                                        "metric_name": "val_loss",
-                                        "value": round(avg_val_loss, 4),
-                                        "timestamp": time.time(),
+                                        "metrics": {"train_loss": round(avg_loss, 4)},
+                                        "created_at": time.time(),
                                     }
                                 )
-                        self.model.train()
+                        except Exception as e:
+                            self.logger.error(
+                                f"Failed to save checkpoint at step {global_step}: {e}"
+                            )
 
                     # Check for cancellation at the end of each training step
                     if request._cancel_event and request._cancel_event.is_set():
                         self.logger.info(
                             f"Training gemma lora runner: Cancellation requested at step {global_step}, stopping training. "
-                            f"Model checkpoint saved: {model_path}"
+                            f"Directory containing checkpoints: {request._output_model_path}"
                         )
                         break
 
-                    global_step += 1
+                    if request.max_steps > 0 and global_step >= request.max_steps:
+                        self.logger.info(
+                            f"Reached max_steps={request.max_steps} at step {global_step}, stopping training.",
+                            extra={"log_type": "info", "step": global_step},
+                        )
+                        break
 
-                # Break outer epoch loop if cancelled
                 if request._cancel_event and request._cancel_event.is_set():
                     break
 
@@ -285,7 +302,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             raise
         finally:
             del self.optimizer
-            del self.model
+            del self.compiled_model
             del self.loss_fn
             del self.train_dataset
             del self.eval_dataset
@@ -297,11 +314,11 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
             if log_handler:
                 self.logger.remove_handler(log_handler)
 
-        return [model_path]
+        return [request._output_model_path]
 
     def run_validation(self, cancel_event: Optional[Event]):
         self.logger.info("\n=== Starting Validation ===")
-        self.model.eval()
+        self.compiled_model.eval()
         total_val_loss = 0.0
         num_val_batches = 0
 
@@ -313,7 +330,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 batch = {k: v.to(self.device) for k, v in batch.items()}
 
                 # Forward pass + loss
-                outputs = self.model(
+                outputs = self.compiled_model(
                     input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
                 )
                 logits = outputs.logits
@@ -323,7 +340,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
                 # Labels are already shifted by collate_fn
                 loss = self.loss_fn(
-                    shift_logits.view(-1, self.model.config.vocab_size),
+                    shift_logits.view(-1, self.compiled_model.config.vocab_size),
                     batch["labels"].view(-1),
                 )
                 total_val_loss += loss.item()

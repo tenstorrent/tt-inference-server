@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import math
 import os
 import re
 import time
@@ -14,26 +15,19 @@ import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
+from config.constants import SupportedModels
+from domain.training_request import TrainingRequest
 from peft import LoraConfig, PeftModel, get_peft_model
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM
-
-from domain.training_request import TrainingRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
+from tt_model_runners.forge_training_runners.torch_utils import (
+    OPTIMIZER_MAP,
+    resolve_dtype,
+)
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.decorators import log_execution_time
-from config.constants import (
-    ModelRunners,
-    TrainingMeshShapes,
-    TrainingOptimizers,
-    TRAINING_RUNNER_SUPPORTED_DEVICES,
-    SupportedModels,
-)
-
-OPTIMIZER_MAP = {
-    TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
-}
 
 
 def _transform_labels(labels, ignored_index, vocab_size):
@@ -88,10 +82,15 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
         super().__init__(device_id, num_torch_threads=num_torch_threads)
         self.model_name = SupportedModels.LLAMA_3_1_8B.value
 
-    @log_execution_time("Setting up Llama Lora multichip training")
+    @property
+    def _is_multichip(self) -> bool:
+        return math.prod(self.settings.device_mesh_shape) > 1
+
+    @log_execution_time("Setting up Llama Lora training")
     async def warmup(self) -> bool:
         self.logger.info(
-            f"Device {self.device_id}: Setting up Llama Lora multichip training..."
+            f"Device {self.device_id}: Setting up Llama Lora training "
+            f"(multichip={self._is_multichip}, mesh={self.settings.device_mesh_shape})..."
         )
 
         self.hf_model = AutoModelForCausalLM.from_pretrained(
@@ -106,11 +105,11 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
         os.environ["PJRT_DEVICE"] = "TT"
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
 
-        # SPMD env vars required for multi-chip mesh operations.
-        os.environ["XLA_ALWAYS_ALLREDUCE"] = "1"
-        os.environ["CONVERT_SHLO_TO_SHARDY"] = "1"
-        os.environ["DISABLE_NUMERIC_CC_TOKEN"] = "1"
-        xr.use_spmd()
+        if self._is_multichip:
+            os.environ["XLA_ALWAYS_ALLREDUCE"] = "1"
+            os.environ["CONVERT_SHLO_TO_SHARDY"] = "1"
+            os.environ["DISABLE_NUMERIC_CC_TOKEN"] = "1"
+            xr.use_spmd()
 
         self.device = torch_xla.device()
 
@@ -118,13 +117,9 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             {"fp32_dest_acc_en": True, "math_fidelity": "hifi4"}
         )
 
-        self.logger.info(f"Device {self.device_id}: SPMD environment configured")
+        self.logger.info(f"Device {self.device_id}: XLA environment configured")
         return True
 
-    DEVICE_MESH_SHAPES = {
-        dt.value: TrainingMeshShapes[dt.name].value
-        for dt in TRAINING_RUNNER_SUPPORTED_DEVICES[ModelRunners.TRAINING_LLAMA_LORA]
-    }
     MESH_AXIS_NAMES = ("batch", "model")
     # For now we only want 1, 2 mesh shapes, so we don't need to shard input data.
     INPUT_SHARDING_DIM = None
@@ -142,8 +137,8 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
         [r"\.mlp\.down_proj$", ["model", None]],
     ]
 
-    def _create_mesh(self, device_type: str) -> xs.Mesh:
-        mesh_shape = self.DEVICE_MESH_SHAPES[device_type]
+    def _create_mesh(self) -> xs.Mesh:
+        mesh_shape = self.settings.device_mesh_shape
         num_devices = xr.global_runtime_device_count()
         device_ids = np.array(range(num_devices))
 
@@ -174,11 +169,11 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
         torch_xla.sync(wait=True)
 
-    def _prepare_batch(self, batch, mesh: xs.Mesh):
-        """Move batch to device and apply data-parallel sharding."""
+    def _prepare_batch(self, batch, mesh):
+        """Move batch to device and apply data-parallel sharding if multichip."""
         batch = {k: v.to(self.device) for k, v in batch.items()}
 
-        if self.INPUT_SHARDING_DIM is not None:
+        if mesh is not None and self.INPUT_SHARDING_DIM is not None:
             for _, tensor in batch.items():
                 if tensor.dim() > 0:
                     partition_spec = (self.INPUT_SHARDING_DIM,) + tuple(
@@ -188,7 +183,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
         return batch
 
-    @log_execution_time("Llama Lora multichip training")
+    @log_execution_time("Llama Lora training")
     def run(self, training_requests: list) -> list:
         if len(training_requests) > 1:
             self.logger.warning(
@@ -198,27 +193,21 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
         request: TrainingRequest = training_requests[0]
 
+        if request.device_type != self.settings.device:
+            raise ValueError(
+                f"Request device '{request.device_type}' does not match "
+                f"server device '{self.settings.device}'"
+            )
+
         log_handler = None
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
-
-        supported_device_types = {
-            dt.value
-            for dt in TRAINING_RUNNER_SUPPORTED_DEVICES[
-                ModelRunners.TRAINING_LLAMA_LORA
-            ]
-        }
-        if request.device_type not in supported_device_types:
-            raise ValueError(
-                f"Llama Lora training requires a multichip device, "
-                f"got '{request.device_type}'. Supported: {sorted(supported_device_types)}"
-            )
 
         if request._start_event:
             request._start_event.set()
             self.logger.info(f"Device {self.device_id}: Start event set")
 
-        mesh = self._create_mesh(request.device_type)
+        mesh = self._create_mesh() if self._is_multichip else None
 
         # Load datasets.
         train_dataset = get_dataset_loader(
@@ -264,7 +253,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             f"{sum(p.numel() for p in self._peft_model.parameters() if p.requires_grad)}"
         )
 
-        self._peft_model.to(eval(request.dtype))
+        self._peft_model.to(resolve_dtype(request.dtype))
         self._peft_model.to(self.device)
 
         model = torch.compile(
@@ -277,7 +266,6 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
         )
 
         vocab_size = model.config.vocab_size
-        model_path = request._output_model_path
 
         optimizer = OPTIMIZER_MAP[request.optimizer](
             [p for p in model.parameters() if p.requires_grad],
@@ -285,37 +273,38 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
         )
 
         self.logger.info(
-            f"Device {self.device_id}: Llama Lora multichip training setup completed"
+            f"Device {self.device_id}: Llama Lora training setup completed"
         )
 
-        if self.MODEL_SHARDING_PATTERNS:
+        if self._is_multichip and self.MODEL_SHARDING_PATTERNS:
             self._shard_model(model, mesh, self.MODEL_SHARDING_PATTERNS)
 
         global_step = 0
         running_loss = 0.0
 
         try:
-            avg_val_loss = self._run_validation(
-                model, eval_dataloader, mesh, request, vocab_size
-            )
-            self.logger.info(
-                f"Base Model | val/loss: {avg_val_loss:.4f}",
-                extra={"log_type": "info", "step": 0},
-            )
-            if request._training_metrics is not None:
-                request._training_metrics.append(
-                    {
-                        "global_step": 0,
-                        "epoch": 0,
-                        "metric_name": "val_loss",
-                        "value": round(avg_val_loss, 4),
-                        "timestamp": time.time(),
-                    }
-                )
-            model.train()
-
             for epoch in range(request.num_epochs):
                 for batch in tqdm(train_dataloader, desc="Training"):
+                    if global_step % request.val_steps_freq == 0:
+                        avg_val_loss = self._run_validation(
+                            model, eval_dataloader, mesh, request, vocab_size
+                        )
+                        self.logger.info(
+                            f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}",
+                            extra={"log_type": "info", "step": global_step},
+                        )
+                        if request._training_metrics is not None:
+                            request._training_metrics.append(
+                                {
+                                    "global_step": global_step,
+                                    "epoch": epoch,
+                                    "metric_name": "val_loss",
+                                    "value": round(avg_val_loss, 4),
+                                    "timestamp": time.time(),
+                                }
+                            )
+                        model.train()
+
                     optimizer.zero_grad()
                     torch_xla.sync(wait=True)
 
@@ -342,8 +331,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                     running_loss += loss.item()
                     global_step += 1
 
-                    do_validation = global_step % request.val_steps_freq == 0
-
+                    # Training metrics
                     if global_step % request.steps_freq == 0:
                         avg_loss = (
                             running_loss / request.steps_freq
@@ -361,49 +349,60 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                                     "epoch": epoch,
                                     "metric_name": "train_loss",
                                     "value": round(avg_loss, 4),
+                                    "learning_rate": optimizer.param_groups[0]["lr"],
                                     "timestamp": time.time(),
                                 }
                             )
                         running_loss = 0.0
 
-                        torch.save(model.state_dict(), model_path)
-                        self.logger.info(
-                            "Model checkpoint saved.",
-                            extra={"log_type": "checkpoint", "step": global_step},
+                    # Checkpoint saving
+                    if global_step > 0 and global_step % request.save_interval == 0:
+                        checkpoint_path = os.path.join(
+                            request._output_model_path, f"ckpt-step-{global_step}"
                         )
+                        try:
+                            self._peft_model.save_pretrained(
+                                checkpoint_path,
+                                state_dict={
+                                    k: v.cpu()
+                                    for k, v in self._peft_model.state_dict().items()
+                                },
+                            )
+                            self.logger.info(
+                                f"Model checkpoint saved to {checkpoint_path}.",
+                                extra={"log_type": "checkpoint", "step": global_step},
+                            )
+                            if request._training_checkpoints is not None:
+                                request._training_checkpoints.append(
+                                    {
+                                        "id": f"ckpt-step-{global_step}",
+                                        "step": global_step,
+                                        "epoch": epoch,
+                                        "metrics": {"train_loss": round(avg_loss, 4)},
+                                        "created_at": time.time(),
+                                    }
+                                )
+                        except Exception as e:
+                            self.logger.error(
+                                f"Failed to save checkpoint at step {global_step}: {e}"
+                            )
                         torch_xla.sync(wait=True)
 
                     if request._cancel_event and request._cancel_event.is_set():
                         self.logger.info(
                             f"Training llama lora runner: Cancellation requested at step {global_step}, stopping training. "
-                            f"Model checkpoint saved: {model_path}",
+                            f"Directory containing checkpoints: {request._output_model_path}",
                             extra={"log_type": "info", "step": global_step},
                         )
                         break
 
-                    if do_validation:
-                        avg_val_loss = self._run_validation(
-                            model, eval_dataloader, mesh, request, vocab_size
-                        )
+                    if request.max_steps > 0 and global_step >= request.max_steps:
                         self.logger.info(
-                            f"Epoch {epoch + 1} | Step {global_step} | "
-                            f"val/loss: {avg_val_loss:.4f}",
+                            f"Reached max_steps={request.max_steps} at step {global_step}, stopping training.",
                             extra={"log_type": "info", "step": global_step},
                         )
-                        if request._training_metrics is not None:
-                            request._training_metrics.append(
-                                {
-                                    "global_step": global_step,
-                                    "epoch": epoch,
-                                    "metric_name": "val_loss",
-                                    "value": round(avg_val_loss, 4),
-                                    "timestamp": time.time(),
-                                }
-                            )
-                        model.train()
-                        torch_xla.sync(wait=True)
+                        break
 
-                # Break outer epoch loop if cancelled
                 if request._cancel_event and request._cancel_event.is_set():
                     break
 
@@ -432,13 +431,13 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             if log_handler:
                 self.logger.remove_handler(log_handler)
 
-        return [model_path]
+        return [request._output_model_path]
 
     def _run_validation(
         self,
         model,
         eval_dataloader,
-        mesh: xs.Mesh,
+        mesh,
         request: TrainingRequest,
         vocab_size: int,
     ):

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -17,8 +17,6 @@ namespace tt::api {
  *
  * Endpoints:
  * - POST /v1/embeddings - Create embeddings
- * - GET /health - Health check
- * - GET /tt-liveness - Liveness check
  */
 class EmbeddingController : public drogon::HttpController<EmbeddingController> {
  public:

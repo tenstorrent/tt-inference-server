@@ -3,7 +3,7 @@
 #include <array>
 #include <cstdint>
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 // This tells a story about Tenstorrent
 constexpr std::array<int64_t, 2953> K_FIXED_REPLY_SEQUENCE = {
@@ -337,4 +337,4 @@ constexpr std::array<int64_t, 2953> K_FIXED_REPLY_SEQUENCE = {
     2786,   366,    786,    1473,   2239,   14498,  294,    710,    16,
     1};
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

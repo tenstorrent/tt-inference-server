@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from enum import Enum
 from functools import lru_cache
@@ -180,7 +180,7 @@ class TelemetryClient:
         if event_name == TelemetryEvent.PRE_PROCESSING:
             self._record_pre_processing(duration, preprocessing_enabled=True)
         elif event_name == TelemetryEvent.POST_PROCESSING:
-            self._record_post_processing(duration, preprocessing_enabled=True)
+            self._record_post_processing(duration, post_processing_enabled=True)
         elif event_name == TelemetryEvent.MODEL_INFERENCE:
             self._record_model_inference(device_id, duration, status=status_str)
         elif event_name == TelemetryEvent.DEVICE_WARMUP:
@@ -203,10 +203,10 @@ class TelemetryClient:
             preprocessing_enabled=str(preprocessing_enabled),
         ).observe(duration)
 
-    def _record_post_processing(self, duration: float, preprocessing_enabled: bool):
+    def _record_post_processing(self, duration: float, post_processing_enabled: bool):
         post_processing_duration.labels(
             model_type=self.settings.model_runner,
-            preprocessing_enabled=str(preprocessing_enabled),
+            post_processing_enabled=str(post_processing_enabled),
         ).observe(duration)
 
     def _record_model_inference(

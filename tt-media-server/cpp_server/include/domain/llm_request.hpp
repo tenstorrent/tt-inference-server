@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -13,6 +13,7 @@
 
 #include "domain/base_request.hpp"
 #include "domain/json_field.hpp"
+#include "domain/response_format.hpp"
 
 namespace tt::domain {
 
@@ -112,10 +113,18 @@ struct LLMRequest : BaseRequest {
   std::optional<int> truncate_prompt_tokens;
   int prompt_tokens_count = 0;
   bool fast_mode = false;
+  bool disaggregated = false;  // True if this is a disaggregated request
+
+  bool parallel_tool_calls = true;
+
+  // Structured output constraint
+  std::optional<ResponseFormat> response_format;
 
   // Session management (internal use only, not parsed from JSON)
   std::optional<std::string> sessionId;
   std::optional<uint32_t> slotId;
+  bool continuation =
+      false;  // True if this request continues an existing session
 
   std::string toString() const {
     std::string promptInfo;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "sockets/socket_manager.hpp"
 
@@ -16,23 +16,34 @@ namespace tt::sockets {
 namespace {
 void setSocketKeepAlive(int socketFd) {
   int enable = 1;
-  setsockopt(socketFd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable));
+  if (setsockopt(socketFd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)) <
+      0) {
+    TT_LOG_WARN("[SocketManager] Failed to set SO_KEEPALIVE: {}",
+                strerror(errno));
+  }
 
   int idle = 10;
-  setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
+  if (setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle)) <
+      0) {
+    TT_LOG_WARN("[SocketManager] Failed to set TCP_KEEPIDLE: {}",
+                strerror(errno));
+  }
 
   int interval = 5;
-  setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval));
+  if (setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPINTVL, &interval,
+                 sizeof(interval)) < 0) {
+    TT_LOG_WARN("[SocketManager] Failed to set TCP_KEEPINTVL: {}",
+                strerror(errno));
+  }
 
   int maxProbes = 3;
-  setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPCNT, &maxProbes, sizeof(maxProbes));
+  if (setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPCNT, &maxProbes,
+                 sizeof(maxProbes)) < 0) {
+    TT_LOG_WARN("[SocketManager] Failed to set TCP_KEEPCNT: {}",
+                strerror(errno));
+  }
 }
 }  // namespace
-
-SocketManager& SocketManager::getInstance() {
-  static SocketManager instance;
-  return instance;
-}
 
 SocketManager::~SocketManager() { stop(); }
 
@@ -40,20 +51,19 @@ bool SocketManager::initializeAsServer(uint16_t port) {
   mode_ = Mode::SERVER;
   port_ = port;
 
-  server_socket_ = socket(AF_INET, SOCK_STREAM, 0);
-  if (server_socket_ < 0) {
+  serverSocket.reset(socket(AF_INET, SOCK_STREAM, 0));
+  if (!serverSocket) {
     TT_LOG_ERROR("[SocketManager] Failed to create server socket: {}",
                  strerror(errno));
     return false;
   }
 
-  // Set socket options
   int opt = 1;
-  if (setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) <
-      0) {
+  if (setsockopt(serverSocket.get(), SOL_SOCKET, SO_REUSEADDR, &opt,
+                 sizeof(opt)) < 0) {
     TT_LOG_ERROR("[SocketManager] Failed to set SO_REUSEADDR: {}",
                  strerror(errno));
-    close(server_socket_);
+    serverSocket.reset();
     return false;
   }
 
@@ -62,16 +72,17 @@ bool SocketManager::initializeAsServer(uint16_t port) {
   address.sin_addr.s_addr = INADDR_ANY;
   address.sin_port = htons(port_);
 
-  if (bind(server_socket_, (struct sockaddr*)&address, sizeof(address)) < 0) {
+  if (bind(serverSocket.get(), (struct sockaddr*)&address, sizeof(address)) <
+      0) {
     TT_LOG_ERROR("[SocketManager] Failed to bind to port {}: {}", port_,
                  strerror(errno));
-    close(server_socket_);
+    serverSocket.reset();
     return false;
   }
 
-  if (listen(server_socket_, 1) < 0) {
+  if (listen(serverSocket.get(), 1) < 0) {
     TT_LOG_ERROR("[SocketManager] Failed to listen: {}", strerror(errno));
-    close(server_socket_);
+    serverSocket.reset();
     return false;
   }
 
@@ -113,20 +124,12 @@ void SocketManager::stop() {
   running_ = false;
   connected_ = false;
 
-  if (peer_socket_ >= 0) {
-    close(peer_socket_);
-    peer_socket_ = -1;
-  }
+  // peerSocket is non-owning; just clear the reference.
+  // The owning UniqueFd (serverSocket or clientSocket) handles the close.
+  peerSocket = -1;
 
-  if (client_socket_ >= 0) {
-    close(client_socket_);
-    client_socket_ = -1;
-  }
-
-  if (server_socket_ >= 0) {
-    close(server_socket_);
-    server_socket_ = -1;
-  }
+  clientSocket.reset();
+  serverSocket.reset();
 
   if (server_thread_.joinable()) {
     server_thread_.join();
@@ -146,35 +149,34 @@ void SocketManager::serverLoop() {
     struct sockaddr_in clientAddr;
     socklen_t clientLen = sizeof(clientAddr);
 
-    int newSocket =
-        accept(server_socket_, (struct sockaddr*)&clientAddr, &clientLen);
-    if (newSocket < 0) {
+    tt::utils::ScopedFd accepted(
+        accept(serverSocket.get(), (struct sockaddr*)&clientAddr, &clientLen));
+    if (!accepted) {
       if (running_) {
         TT_LOG_ERROR("[SocketManager] Accept failed: {}", strerror(errno));
       }
       break;
     }
 
-    // Set non-blocking mode and keep-alive
-    int flags = fcntl(newSocket, F_GETFL, 0);
-    fcntl(newSocket, F_SETFL, flags | O_NONBLOCK);
-    setSocketKeepAlive(newSocket);
+    int flags = fcntl(accepted.get(), F_GETFL, 0);
+    if (flags < 0 || fcntl(accepted.get(), F_SETFL, flags | O_NONBLOCK) < 0) {
+      TT_LOG_WARN("[SocketManager] Failed to set non-blocking: {}",
+                  strerror(errno));
+    }
+    setSocketKeepAlive(accepted.get());
 
-    peer_socket_ = newSocket;
+    peerSocket = accepted.get();
     connected_ = true;
 
     TT_LOG_INFO("[SocketManager] Client connected from {}:{}",
                 inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
 
-    // Wait until disconnected
     while (running_ && connected_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    if (peer_socket_ >= 0) {
-      close(peer_socket_);
-      peer_socket_ = -1;
-    }
+    accepted.reset();
+    peerSocket = -1;
     bool wasConnected = connected_.exchange(false);
     if (wasConnected && connection_lost_callback_) {
       connection_lost_callback_();
@@ -186,8 +188,8 @@ void SocketManager::serverLoop() {
 
 void SocketManager::clientLoop() {
   while (running_) {
-    client_socket_ = socket(AF_INET, SOCK_STREAM, 0);
-    if (client_socket_ < 0) {
+    clientSocket.reset(socket(AF_INET, SOCK_STREAM, 0));
+    if (!clientSocket) {
       TT_LOG_ERROR("[SocketManager] Failed to create client socket: {}",
                    strerror(errno));
       std::this_thread::sleep_for(std::chrono::seconds(5));
@@ -200,41 +202,40 @@ void SocketManager::clientLoop() {
 
     if (inet_pton(AF_INET, host_.c_str(), &serverAddr.sin_addr) <= 0) {
       TT_LOG_ERROR("[SocketManager] Invalid address: {}", host_);
-      close(client_socket_);
+      clientSocket.reset();
       std::this_thread::sleep_for(std::chrono::seconds(5));
       continue;
     }
 
     TT_LOG_INFO("[SocketManager] Attempting to connect to {}:{}", host_, port_);
 
-    if (connect(client_socket_, (struct sockaddr*)&serverAddr,
+    if (connect(clientSocket.get(), (struct sockaddr*)&serverAddr,
                 sizeof(serverAddr)) < 0) {
       TT_LOG_ERROR("[SocketManager] Connection failed: {}", strerror(errno));
-      close(client_socket_);
+      clientSocket.reset();
       std::this_thread::sleep_for(std::chrono::seconds(5));
       continue;
     }
 
-    // Set non-blocking mode and keep-alive
-    int flags = fcntl(client_socket_, F_GETFL, 0);
-    fcntl(client_socket_, F_SETFL, flags | O_NONBLOCK);
-    setSocketKeepAlive(client_socket_);
+    int flags = fcntl(clientSocket.get(), F_GETFL, 0);
+    if (flags < 0 ||
+        fcntl(clientSocket.get(), F_SETFL, flags | O_NONBLOCK) < 0) {
+      TT_LOG_WARN("[SocketManager] Failed to set non-blocking: {}",
+                  strerror(errno));
+    }
+    setSocketKeepAlive(clientSocket.get());
 
-    peer_socket_ = client_socket_;
+    peerSocket = clientSocket.get();
     connected_ = true;
 
     TT_LOG_INFO("[SocketManager] Connected to server");
 
-    // Wait until disconnected
     while (running_ && connected_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    if (client_socket_ >= 0) {
-      close(client_socket_);
-      client_socket_ = -1;
-    }
-    peer_socket_ = -1;
+    peerSocket = -1;
+    clientSocket.reset();
     bool wasConnected = connected_.exchange(false);
     if (wasConnected && connection_lost_callback_) {
       connection_lost_callback_();
@@ -270,7 +271,7 @@ void SocketManager::messageLoop() {
 }
 
 bool SocketManager::sendRawData(const std::vector<uint8_t>& data) {
-  if (!connected_ || peer_socket_ < 0) {
+  if (!connected_ || peerSocket < 0) {
     return false;
   }
 
@@ -280,7 +281,7 @@ bool SocketManager::sendRawData(const std::vector<uint8_t>& data) {
   uint32_t size = static_cast<uint32_t>(data.size());
   uint32_t netSize = htonl(size);
 
-  ssize_t sent = send(peer_socket_, &netSize, sizeof(netSize), MSG_NOSIGNAL);
+  ssize_t sent = send(peerSocket, &netSize, sizeof(netSize), MSG_NOSIGNAL);
   if (sent != sizeof(netSize)) {
     connected_ = false;
     return false;
@@ -289,7 +290,7 @@ bool SocketManager::sendRawData(const std::vector<uint8_t>& data) {
   // Send actual data
   size_t totalSent = 0;
   while (totalSent < data.size()) {
-    sent = send(peer_socket_, data.data() + totalSent, data.size() - totalSent,
+    sent = send(peerSocket, data.data() + totalSent, data.size() - totalSent,
                 MSG_NOSIGNAL);
     if (sent <= 0) {
       connected_ = false;
@@ -302,14 +303,13 @@ bool SocketManager::sendRawData(const std::vector<uint8_t>& data) {
 }
 
 std::vector<uint8_t> SocketManager::receiveRawData() {
-  if (!connected_ || peer_socket_ < 0) {
+  if (!connected_ || peerSocket < 0) {
     return {};
   }
 
   // Read data size first
   uint32_t netSize;
-  ssize_t received =
-      recv(peer_socket_, &netSize, sizeof(netSize), MSG_DONTWAIT);
+  ssize_t received = recv(peerSocket, &netSize, sizeof(netSize), MSG_DONTWAIT);
   if (received <= 0) {
     if (received == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
       connected_ = false;
@@ -335,8 +335,8 @@ std::vector<uint8_t> SocketManager::receiveRawData() {
   const int maxRetries = 1000;  // 1 second timeout (1000 * 1ms)
 
   while (totalReceived < size) {
-    received = recv(peer_socket_, data.data() + totalReceived,
-                    size - totalReceived, 0);
+    received =
+        recv(peerSocket, data.data() + totalReceived, size - totalReceived, 0);
     if (received > 0) {
       totalReceived += received;
       retryCount = 0;  // Reset retry count on successful receive

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -42,7 +42,7 @@ class DisaggregationService {
   tt::config::LLMMode mode;
   std::shared_ptr<LLMService> llmService;
   std::shared_ptr<sockets::InterServerService> socketService;
-  ConcurrentMap<uint32_t, StreamCallback> streamCallbacks;
+  utils::ConcurrentMap<uint32_t, StreamCallback> streamCallbacks;
 };
 
 }  // namespace tt::services

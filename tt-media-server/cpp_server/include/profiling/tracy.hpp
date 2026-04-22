@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 //
 // Single project include for Tracy. Use this instead of <tracy/Tracy.hpp>.
 // When TRACY_ENABLE is not defined, zone/plot macros are no-ops and helpers are

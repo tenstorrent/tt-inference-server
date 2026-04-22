@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "sockets/inter_server_service.hpp"
 
@@ -10,10 +10,7 @@
 
 namespace tt::sockets {
 
-InterServerService::InterServerService()
-    : socket_manager_(SocketManager::getInstance()) {
-  setupMessageHandlers();
-}
+InterServerService::InterServerService() { setupMessageHandlers(); }
 
 InterServerService::~InterServerService() { stop(); }
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include <gtest/gtest.h>
 
@@ -8,6 +8,9 @@
 #include <vector>
 
 #include "utils/concurrent_queue.hpp"
+
+using tt::utils::LockFreeSPSCQueue;
+using tt::utils::detail::nextPowerOfTwo;
 
 namespace {
 

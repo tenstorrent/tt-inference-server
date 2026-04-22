@@ -1,53 +1,52 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Shared memory video generation runner with multi-rank support.
+"""MPI-based video generation runner for a unified 4x32 mesh across 4 machines.
 
-Reads VideoRequest from input VideoShm, processes with a DiT runner
-(Mochi, Wan, etc.), and streams generated frames back through output VideoShm.
+All ranks are launched simultaneously by tt-run. Every rank participates in
+collective inference on a single unified mesh — there is no coordinator/worker
+split and no TCP socket coordination.
 
-This is the external runner process that pairs with SPRunner on the server side.
-SPRunner runs inside the standard device_worker and communicates via VideoShm.
+Rank 0 owns the SHM bridge (reads VideoRequest, writes VideoResponse). All ranks
+receive each request via MPI broadcast, run inference together on the shared mesh,
+and rank 0 writes the result back.
 
-Multi-rank mode:
-- Rank 0: Reads from SHM, runs DiT inference, writes frames to output SHM, distributes to ranks 1-3
-- Ranks 1-3: Listen on sockets, receive requests from rank 0, and run DiT inference on their devices
+Launch command (run from tt-media-server directory on the primary host):
+    tt-run \
+      --rank-binding <RANK_BINDING_YAML> \
+      --mpi-args "--host <HOST0>,<HOST1>,<HOST2>,<HOST3> \
+                  --rankfile <RANKFILE> \
+                  --bind-to none --tag-output" \
+      bash -c "source <METAL_ENV_SH> && \
+               source <PYTHON_ENV>/bin/activate && \
+               SP_MESH_4X32=true python -m tt_model_runners.video_runner"
 
-Environment variables required:
-    TT_VIDEO_SHM_INPUT:  Name of input  SHM segment (default ``tt_video_in``)
-    TT_VIDEO_SHM_OUTPUT: Name of output SHM segment (default ``tt_video_out``)
-    TT_VISIBLE_DEVICES:  Device ID(s) to use
-    MODEL_RUNNER:        DiT runner to use (e.g., tt_mochi_1, tt_wan_2_2)
-    OMPI_COMM_WORLD_RANK or RANK: Rank ID (0-3)
+Example:
+    tt-run \
+      --rank-binding /data/sadesoye/tt-metal/tests/tt_metal/distributed/config/32x4_quad_bh_galaxy_rank_bindings.yaml \
+      --mpi-args "--host bh-glx-c03u02,bh-glx-c03u08,bh-glx-c04u02,bh-glx-c04u08 \
+                  --rankfile /data/cglagovich/test_c03_c04_rankfile \
+                  --bind-to none --tag-output" \
+      bash -c "source /data/sadesoye/tt-inference-server/tt-media-server/scripts/sp_env_sample.sh && \
+               source /data/sadesoye/tt-inference-server/tt-media-server/python_env/bin/activate && \
+               SP_MESH_4X32=true python -m tt_model_runners.video_runner"
 
-Usage:
-    # Rank 0 (coordinator with inference):
-    export RANK=0
-    export TT_VIDEO_SHM_INPUT=tt_video_in
-    export TT_VIDEO_SHM_OUTPUT=tt_video_out
-    export TT_VISIBLE_DEVICES=0
-    export MODEL_RUNNER=tt_mochi_1
-    python -m tt_model_runners.video_runner
-
-    # Ranks 1-3 (workers with inference):
-    export RANK=1  # or 2, 3
-    export TT_VISIBLE_DEVICES=1  # or 2, 3
-    export MODEL_RUNNER=tt_mochi_1
-    python -m tt_model_runners.video_runner
+Environment variables:
+    MODEL_RUNNER:        DiT runner to use (e.g., tt-wan2.2)
+    TT_VIDEO_SHM_INPUT:  Input SHM segment name — rank 0 only (default: tt_video_in).
+    TT_VIDEO_SHM_OUTPUT: Output SHM segment name — rank 0 only (default: tt_video_out).
+    SP_MESH_4X32:        Set to "true" to enable (4, 32) mesh shape override
+    OMPI_COMM_WORLD_RANK: Set automatically by MPI
 """
 
 import asyncio
 import os
-import pickle
 import signal
-import socket
-import struct
 import sys
-import time
 import traceback
 from dataclasses import fields as dc_fields
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -58,57 +57,12 @@ from ipc.video_shm import (
     VideoResponse,
     VideoShm,
     VideoStatus,
-    cleanup_orphaned_video_files,
 )
 from utils.logger import TTLogger
 
-if TYPE_CHECKING:
-    from tt_model_runners.dit_runners import TTMochi1Runner, TTWan22Runner
-
-    DitRunner = TTMochi1Runner | TTWan22Runner
-
 _log = TTLogger("video_runner")
 
-# Defaults (overridden by TT_VIDEO_SHM_INPUT / TT_VIDEO_SHM_OUTPUT when set)
-DEFAULT_TT_VIDEO_SHM_INPUT = "tt_video_in"
-DEFAULT_TT_VIDEO_SHM_OUTPUT = "tt_video_out"
-
-# Rank 0 waits for worker ranks to bind listening sockets before connecting.
-WORKER_STARTUP_WAIT_SECONDS = 5
-
-# Inter-rank socket bridge (rank 0 ↔ ranks 1–3) on loopback.
-WORKER_LOOPBACK_HOST = "127.0.0.1"
-RANK_SOCKET_BASE_PORT = 9000
-
-RANK_CONFIG = {
-    rank: {"ip": WORKER_LOOPBACK_HOST, "port": RANK_SOCKET_BASE_PORT + rank}
-    for rank in range(4)
-}
-
-COORDINATOR_RANK = 0
-WORKER_RANKS = (1, 2, 3)
-MAX_RANK = 3
-
-# Rank 0 passes no device id into the DiT runner ctor (coordinator); workers use TT_VISIBLE_DEVICES.
-COORDINATOR_RUNNER_DEVICE_ID = ""
-
-SOCKET_RECV_CHUNK_BYTES = 4096
 LOG_PROMPT_PREVIEW_CHARS = 50
-
-
-def video_request_to_generate_request(req: VideoRequest) -> VideoGenerateRequest:
-    """Map SHM :class:`VideoRequest` to :class:`VideoGenerateRequest` for DiT runners.
-
-    Uses the intersection of field names so we never pass SHM-only fields (e.g.
-    ``height``, ``width``) unless they exist on ``VideoGenerateRequest``. Today
-    that matches the historical explicit mapping: prompt, negative_prompt,
-    ``num_inference_steps``, seed — same as ``SPRunner`` / API usage.
-    """
-    shm_names = {f.name for f in dc_fields(VideoRequest)}
-    gen_names = set(VideoGenerateRequest.model_fields.keys())
-    common = shm_names & gen_names
-    return VideoGenerateRequest(**{name: getattr(req, name) for name in common})
-
 
 _shutdown = False
 
@@ -127,35 +81,30 @@ def _rank() -> int:
     return int(r) if r is not None else 0
 
 
-def _send_via_socket(sock: socket.socket, request: VideoRequest) -> None:
-    """Send VideoRequest via socket using pickle."""
-    data = pickle.dumps(request)
-    sock.sendall(struct.pack("<I", len(data)))
-    sock.sendall(data)
+def _attach_mpi_comm():
+    """Attach mpi4py to the MPI context already initialized by tt-metal.
 
-
-def _recv_via_socket(conn: socket.socket) -> Optional[VideoRequest]:
-    """Receive VideoRequest via socket using pickle."""
+    Must be called AFTER set_device() — tt-metal calls MPI_Init_thread internally
+    during device initialization. Setting rc.initialize=False prevents mpi4py from
+    calling MPI_Init a second time, which would crash with 'MPI initialized twice'.
+    Setting rc.finalize=False lets tt-metal own MPI_Finalize on shutdown.
+    """
     try:
-        length_data = conn.recv(4)
-        if not length_data:
-            return None
-        length = struct.unpack("<I", length_data)[0]
+        import mpi4py
 
-        data = b""
-        while len(data) < length:
-            chunk = conn.recv(min(length - len(data), SOCKET_RECV_CHUNK_BYTES))
-            if not chunk:
-                return None
-            data += chunk
+        mpi4py.rc.initialize = False
+        mpi4py.rc.finalize = False
+        from mpi4py import MPI
 
-        return pickle.loads(data)
-    except Exception as e:
-        _log.warning(f"Error receiving request: {e}")
-        return None
+        return MPI.COMM_WORLD
+    except ImportError as e:
+        raise RuntimeError(
+            "mpi4py is required for multi-rank operation. "
+            "Install with: pip install mpi4py"
+        ) from e
 
 
-def create_dit_runner(model_runner: str, device_id: str):
+def _create_dit_runner(model_runner: str, rank: int):
     """Create the appropriate DiT runner (lazy import to avoid loading ttnn globally)."""
     from tt_model_runners.dit_runners import TTMochi1Runner, TTWan22Runner
 
@@ -163,42 +112,26 @@ def create_dit_runner(model_runner: str, device_id: str):
         ModelRunners.TT_MOCHI_1.value: TTMochi1Runner,
         ModelRunners.TT_WAN_2_2.value: TTWan22Runner,
     }
-
     runner_class = runner_map.get(model_runner)
     if not runner_class:
         raise ValueError(
             f"Unsupported MODEL_RUNNER: {model_runner}. "
             f"Supported: {list(runner_map.keys())}"
         )
+    _log.info(f"Rank {rank}: Creating {runner_class.__name__}")
+    return runner_class("")
 
-    _log.info(f"Creating {runner_class.__name__} for device {device_id}")
-    return runner_class(device_id)
 
+def video_request_to_generate_request(req: VideoRequest) -> VideoGenerateRequest:
+    """Map SHM VideoRequest to VideoGenerateRequest for DiT runners.
 
-def _bootstrap_dit_runner(rank: int, runner_device_id: str) -> "DitRunner":
-    """Create DiT runner from ``MODEL_RUNNER``, set device, load weights, warmup.
-
-    ``runner_device_id`` is the constructor argument: use
-    :data:`COORDINATOR_RUNNER_DEVICE_ID` for rank 0 coordinator; workers pass
-    ``TT_VISIBLE_DEVICES``.
+    Uses the intersection of field names so we never pass SHM-only fields (e.g.
+    height, width) unless they exist on VideoGenerateRequest.
     """
-    model_runner = os.environ.get("MODEL_RUNNER", "")
-    if not model_runner:
-        _log.error(f"Rank {rank}: MODEL_RUNNER environment variable not set")
-        sys.exit(1)
-
-    visible = os.environ.get("TT_VISIBLE_DEVICES", "")
-    _log.info(f"Rank {rank}: model={model_runner}, device={visible}")
-
-    runner = create_dit_runner(model_runner, runner_device_id)
-    _log.info(f"Rank {rank}: Setting up device...")
-    runner.set_device()
-    _log.info(f"Rank {rank}: Loading weights...")
-    runner.load_weights()
-    _log.info(f"Rank {rank}: Running warmup...")
-    asyncio.run(runner.warmup())
-    _log.info(f"Rank {rank}: Model ready for inference")
-    return runner
+    shm_names = {f.name for f in dc_fields(VideoRequest)}
+    gen_names = set(VideoGenerateRequest.model_fields.keys())
+    common = shm_names & gen_names
+    return VideoGenerateRequest(**{name: getattr(req, name) for name in common})
 
 
 def _write_response_to_shm(
@@ -206,7 +139,6 @@ def _write_response_to_shm(
     task_id: str,
     mp4_path: str,
 ) -> None:
-    """Send the final mp4 path through SHM (rank 0 encodes before calling this)."""
     _log.info(f"Rank 0: Writing mp4 path to SHM: {mp4_path}")
     output_shm.write_response(
         VideoResponse(
@@ -216,7 +148,6 @@ def _write_response_to_shm(
             error_message="",
         )
     )
-    _log.info("Rank 0: Response written to SHM successfully")
 
 
 def _write_error_to_shm(output_shm: VideoShm, task_id: str, error: str = "") -> None:
@@ -230,155 +161,122 @@ def _write_error_to_shm(output_shm: VideoShm, task_id: str, error: str = "") -> 
     )
 
 
-def _connect_to_workers() -> dict[int, socket.socket]:
-    """Connect to worker ranks 1-3, returning sockets for those that accepted."""
-    worker_sockets: dict[int, socket.socket] = {}
-    for rank in WORKER_RANKS:
-        config = RANK_CONFIG[rank]
-        _log.info(
-            f"Rank 0: Connecting to rank {rank} at {config['ip']}:{config['port']}"
-        )
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            sock.connect((config["ip"], config["port"]))
-            worker_sockets[rank] = sock
-            _log.info(f"Rank 0: Connected to rank {rank}")
-        except Exception as e:
-            _log.warning(f"Rank 0: Failed to connect to rank {rank}: {e}")
-            sock.close()
+def _broadcast_request(comm, req: Optional[VideoRequest]) -> Optional[VideoRequest]:
+    """Collective: rank 0 provides the request, all ranks receive it.
 
-    if worker_sockets:
-        _log.info(f"Rank 0: Connected to {len(worker_sockets)} workers")
-    else:
-        _log.info("Rank 0: No workers connected, running in standalone mode")
-    return worker_sockets
+    Returns None when rank 0 signals shutdown (read_request returned None).
+    All ranks must call this on every iteration so MPI stays in sync.
+    """
+    return comm.bcast(req, root=0)
 
 
-def run_rank0_coordinator() -> None:
-    """Rank 0: Read from input SHM, run DiT inference, write MP4 path to output SHM."""
-    input_name = os.environ.get("TT_VIDEO_SHM_INPUT", DEFAULT_TT_VIDEO_SHM_INPUT)
-    output_name = os.environ.get("TT_VIDEO_SHM_OUTPUT", DEFAULT_TT_VIDEO_SHM_OUTPUT)
+def _run_inference_loop(
+    comm, runner, input_shm: Optional[VideoShm], output_shm: Optional[VideoShm]
+) -> None:
+    rank = comm.Get_rank()
 
-    runner = _bootstrap_dit_runner(
-        rank=COORDINATOR_RANK, runner_device_id=COORDINATOR_RUNNER_DEVICE_ID
-    )
-    _log.info(f"Rank 0: SHM in={input_name}, out={output_name}")
+    while not _shutdown:
+        raw_req: Optional[VideoRequest] = None
+        if rank == 0:
+            raw_req = input_shm.read_request()
 
-    input_shm = VideoShm(input_name, mode="input", is_shutdown=_is_shutdown)
-    output_shm = VideoShm(output_name, mode="output", is_shutdown=_is_shutdown)
-    input_shm.open(create=True)
-    output_shm.open(create=True)
+        req = _broadcast_request(comm, raw_req)
 
-    _log.info(f"Rank 0: Waiting {WORKER_STARTUP_WAIT_SECONDS}s for workers to start...")
-    time.sleep(WORKER_STARTUP_WAIT_SECONDS)
-    worker_sockets = _connect_to_workers()
+        if req is None:
+            _log.info(f"Rank {rank}: Shutdown signal received, exiting loop")
+            break
 
-    _log.info("Rank 0: SHM bridge started, waiting for requests...")
-
-    try:
-        while not _shutdown:
-            req = input_shm.read_request()
-            if req is None:
-                break
-
+        if rank == 0:
             _log.info(
                 f"Rank 0: task_id={req.task_id}, "
                 f"prompt='{req.prompt[:LOG_PROMPT_PREVIEW_CHARS]}...', "
                 f"steps={req.num_inference_steps}, seed={req.seed}"
             )
 
-            for rank, sock in worker_sockets.items():
-                try:
-                    _send_via_socket(sock, req)
-                except Exception as e:
-                    _log.warning(f"Rank 0: Failed to send to rank {rank}: {e}")
+        try:
+            video_gen_req = video_request_to_generate_request(req)
 
-            try:
-                video_gen_req = video_request_to_generate_request(req)
+            _log.info(f"Rank {rank}: Starting inference for task {req.task_id}")
+            frames = runner.run([video_gen_req])
+            _log.info(f"Rank {rank}: Inference done for task {req.task_id}")
 
-                _log.info(f"Rank 0: Starting inference for task {req.task_id}")
-                frames = runner.run([video_gen_req])
-                _log.info("Rank 0: Inference done")
-
+            if rank == 0:
                 from utils.video_manager import VideoManager
 
                 mp4_path = VideoManager().export_to_mp4(frames)
                 _log.info(f"Rank 0: Encoded mp4 at {mp4_path}")
-
                 _write_response_to_shm(output_shm, req.task_id, mp4_path)
-                _log.info(f"Rank 0: Response written for task {req.task_id}")
 
-            except Exception as e:
-                _log.error(
-                    f"Rank 0: ERROR - Inference/write failed for task {req.task_id}: {e}\n"
-                    f"{traceback.format_exc()}"
-                )
+        except Exception as e:
+            _log.error(
+                f"Rank {rank}: ERROR for task {req.task_id}: {e}\n"
+                f"{traceback.format_exc()}"
+            )
+            if rank == 0:
                 _write_error_to_shm(output_shm, req.task_id, str(e))
 
-    except KeyboardInterrupt:
-        _log.info("Rank 0: Interrupted by user")
-    finally:
-        for rank, sock in worker_sockets.items():
-            sock.close()
-        input_shm.close()
-        output_shm.close()
-        runner.close_device()
-        removed = cleanup_orphaned_video_files()
-        if removed:
-            _log.info(f"Rank 0: Cleaned up {removed} orphaned video file(s)")
 
-    _log.info("Rank 0: Shutdown complete")
+def run_all_ranks() -> None:
+    rank = _rank()
 
+    model_runner = os.environ.get("MODEL_RUNNER", "")
+    if not model_runner:
+        _log.error(f"Rank {rank}: MODEL_RUNNER environment variable not set")
+        sys.exit(1)
 
-def run_worker_rank(rank: int) -> None:
-    """Ranks 1-3: Listen on socket, receive requests from rank 0, and run DiT inference."""
-    config = RANK_CONFIG[rank]
-    device_id = os.environ.get("TT_VISIBLE_DEVICES", "")
+    _log.info(f"Rank {rank}: model={model_runner}")
 
-    runner = _bootstrap_dit_runner(rank=rank, runner_device_id=device_id)
+    runner = _create_dit_runner(model_runner, rank)
 
-    _log.info(f"Rank {rank}: Starting worker on {config['ip']}:{config['port']}")
-    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_sock.bind((config["ip"], config["port"]))
-    server_sock.listen(1)
+    _log.info(f"Rank {rank}: Setting up device...")
+    runner.set_device()
 
-    _log.info(f"Rank {rank}: Listening for connections...")
+    comm = _attach_mpi_comm()
+    _log.info(
+        f"Rank {comm.Get_rank()}/{comm.Get_size()}: MPI attached, loading weights..."
+    )
 
-    conn: socket.socket | None = None
-    try:
-        conn, addr = server_sock.accept()
-        _log.info(f"Rank {rank}: Accepted connection from {addr}")
+    runner.load_weights()
 
-        while not _shutdown:
-            req = _recv_via_socket(conn)
-            if req is None:
-                break
+    _log.info(f"Rank {rank}: Running warmup...")
+    asyncio.run(runner.warmup())
+    _log.info(f"Rank {rank}: Model ready for inference")
 
-            _log.info(
-                f"Rank {rank}: task_id={req.task_id}, "
-                f"prompt='{req.prompt[:LOG_PROMPT_PREVIEW_CHARS]}...', "
-                f"steps={req.num_inference_steps}, seed={req.seed}"
+    input_shm: Optional[VideoShm] = None
+    output_shm: Optional[VideoShm] = None
+
+    if rank == 0:
+        input_name = os.environ.get("TT_VIDEO_SHM_INPUT", "tt_video_in")
+        output_name = os.environ.get("TT_VIDEO_SHM_OUTPUT", "tt_video_out")
+        input_shm = VideoShm(input_name, mode="input", is_shutdown=_is_shutdown)
+        output_shm = VideoShm(output_name, mode="output", is_shutdown=_is_shutdown)
+        # Create-or-attach; whichever side comes up first owns creation. Ring
+        # position survives runner restarts via the <name>_state segment.
+        input_shm.open()
+        output_shm.open()
+        # Self-heal any gap left by a previous runner instance that crashed
+        # mid-read (on input) or mid-write (on output). Scoped to this
+        # process's own role, so safe to run with a live server peer.
+        in_repair = input_shm.recover(side="reader")
+        out_repair = output_shm.recover(side="writer")
+        if any(in_repair.values()) or any(out_repair.values()):
+            _log.warning(
+                f"Rank 0: crash-recovery repaired prior inconsistency: "
+                f"input={in_repair} output={out_repair}"
             )
+        _log.info("Rank 0: SHM bridge ready, waiting for requests...")
 
-            try:
-                video_gen_req = video_request_to_generate_request(req)
-
-                _log.info(f"Rank {rank}: Starting inference for task {req.task_id}")
-                _frames = runner.run([video_gen_req])
-                _log.info(f"Rank {rank}: Inference done for task {req.task_id}")
-            except Exception as e:
-                _log.error(f"Rank {rank}: Inference failed for task {req.task_id}: {e}")
-
+    try:
+        _run_inference_loop(comm, runner, input_shm, output_shm)
     except KeyboardInterrupt:
         _log.info(f"Rank {rank}: Interrupted by user")
-    except Exception as e:
-        _log.error(f"Rank {rank}: Error: {e}")
     finally:
-        if conn is not None:
-            conn.close()
+        if rank == 0:
+            if input_shm:
+                input_shm.close()
+            if output_shm:
+                output_shm.close()
         runner.close_device()
-        server_sock.close()
 
     _log.info(f"Rank {rank}: Shutdown complete")
 
@@ -388,15 +286,8 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_sigterm)
 
     rank = _rank()
-    _log.info(f"Starting video runner with rank={rank}")
-
-    if rank == COORDINATOR_RANK:
-        run_rank0_coordinator()
-    elif rank in WORKER_RANKS:
-        run_worker_rank(rank)
-    else:
-        _log.error(f"Invalid rank: {rank}. Must be 0-{MAX_RANK}")
-        sys.exit(1)
+    _log.info(f"Rank {rank}: Starting video runner (MPI 4x32 mode)")
+    run_all_ranks()
 
 
 if __name__ == "__main__":

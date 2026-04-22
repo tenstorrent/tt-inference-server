@@ -1,16 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from config.constants import (
-    DeviceTypes,
-    JobTypes,
-    ModelRunners,
-    TRAINING_RUNNER_SUPPORTED_DEVICES,
-    TrainingMeshShapes,
-)
+from config.constants import JobTypes
 
 
 def _training_service_patches(mock_settings):
@@ -67,7 +62,7 @@ class TestGemmaTrainingServiceCreateJob:
             service = TrainingService()
             await service.create_job(JobTypes.TRAINING, mock_request)
 
-            assert mock_request._output_model_path == "models_save/unique_task_123.pt"
+            assert mock_request._output_model_path == "model_store/unique_task_123"
 
 
 class TestLlamaTrainingServiceCreateJob:
@@ -97,7 +92,7 @@ class TestLlamaTrainingServiceCreateJob:
             service = TrainingService()
             await service.create_job(JobTypes.TRAINING, mock_request)
 
-            assert mock_request._output_model_path == "models_save/llama_task_456.pt"
+            assert mock_request._output_model_path == "model_store/llama_task_456"
 
     @pytest.mark.asyncio
     async def test_create_job_sets_device_type_from_settings(
@@ -142,35 +137,7 @@ class TestLlamaTrainingServiceCreateJob:
             assert kwargs["cancel_event"] is not None
             assert kwargs["job_metrics"] is not None
             assert kwargs["job_logs"] is not None
-            assert kwargs["result_path"] == "models_save/llama_task_456.pt"
-
-
-class TestLlamaRunnerSupportedDevices:
-    """Tests for Llama LoRA runner device type configuration and validation."""
-
-    def test_llama_runner_has_supported_devices(self):
-        supported = TRAINING_RUNNER_SUPPORTED_DEVICES[ModelRunners.TRAINING_LLAMA_LORA]
-        assert len(supported) > 0
-
-    def test_llama_runner_supported_device_has_mesh_shape(self):
-        for dt in TRAINING_RUNNER_SUPPORTED_DEVICES[ModelRunners.TRAINING_LLAMA_LORA]:
-            assert dt.name in TrainingMeshShapes.__members__, (
-                f"Device {dt.name} is supported for Llama training but has no "
-                f"TrainingMeshShapes entry"
-            )
-
-    def test_llama_mesh_shapes_are_multichip(self):
-        for dt in TRAINING_RUNNER_SUPPORTED_DEVICES[ModelRunners.TRAINING_LLAMA_LORA]:
-            mesh = TrainingMeshShapes[dt.name].value
-            num_devices = mesh[0] * mesh[1]
-            assert num_devices >= 2, (
-                f"Llama requires multichip, but {dt.name} mesh {mesh} "
-                f"only has {num_devices} device(s)"
-            )
-
-    def test_p150_not_supported_for_llama(self):
-        supported = TRAINING_RUNNER_SUPPORTED_DEVICES[ModelRunners.TRAINING_LLAMA_LORA]
-        assert DeviceTypes.P150 not in supported
+            assert kwargs["result_path"] == "model_store/llama_task_456"
 
 
 class TestGemmaTrainingServiceGetJobMetrics:
@@ -199,3 +166,8 @@ class TestGemmaTrainingServiceGetJobMetrics:
             {"global_step": 3, "metric_name": "loss", "value": 0.3}
         ]
         assert result_after_10 == []
+
+    def test_raises_value_error_when_job_not_found(self, service):
+        service._job_manager.get_job_metrics.return_value = None
+        with pytest.raises(ValueError, match="Job nonexistent not found"):
+            service.get_job_metrics("nonexistent")

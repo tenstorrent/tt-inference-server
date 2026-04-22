@@ -1,0 +1,228 @@
+{
+    "_description": "Test suites for AUDIO model category (Whisper, Distil-Whisper)",
+    "_category": "AUDIO",
+    "test_matrices": [
+        {
+            "_comment": "t3k: both models share the same test templates, timing differs per model",
+            "models": [
+                "distil_whisper",
+                "whisper"
+            ],
+            "devices": [
+                "t3k"
+            ],
+            "test_cases": [
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test audio 30s load",
+                    "model_targets": {
+                        "distil_whisper": {
+                            "audio_transcription_time": 4
+                        },
+                        "whisper": {
+                            "audio_transcription_time": 5
+                        }
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test audio 60s load",
+                    "targets": {
+                        "dataset": "60s"
+                    },
+                    "model_targets": {
+                        "distil_whisper": {
+                            "audio_transcription_time": 5
+                        },
+                        "whisper": {
+                            "audio_transcription_time": 10
+                        }
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test single audio 60s transcription and expect chunking",
+                    "targets": {
+                        "num_of_devices": 1,
+                        "dataset": "60s"
+                    },
+                    "model_targets": {
+                        "distil_whisper": {
+                            "audio_transcription_time": 2
+                        },
+                        "whisper": {
+                            "audio_transcription_time": 6
+                        }
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionParamTest",
+                    "enabled": true,
+                    "description": "Test audio transcription params"
+                }
+            ]
+        },
+        {
+            "_comment": "galaxy: both models share the same test templates, timing differs per model",
+            "models": [
+                "distil_whisper",
+                "whisper"
+            ],
+            "devices": [
+                "galaxy"
+            ],
+            "test_cases": [
+                {
+                    "template": "AudioTranscriptionLoadDp2Chunk5Test",
+                    "enabled": true,
+                    "description": "DP2 burst with 60s audio, chunk_duration_seconds=5",
+                    "targets": {
+                        "num_concurrent": 64,
+                        "dataset": "60s"
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadDp2Chunk30Test",
+                    "enabled": true,
+                    "description": "DP2 burst with 60s audio, chunk_duration_seconds=30",
+                    "targets": {
+                        "num_concurrent": 64,
+                        "dataset": "60s"
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test audio 30s load",
+                    "model_targets": {
+                        "distil_whisper": {
+                            "audio_transcription_time": 2
+                        },
+                        "whisper": {
+                            "audio_transcription_time": 4
+                        }
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test audio 60s load",
+                    "targets": {
+                        "dataset": "60s"
+                    },
+                    "model_targets": {
+                        "distil_whisper": {
+                            "audio_transcription_time": 2
+                        },
+                        "whisper": {
+                            "audio_transcription_time": 7
+                        }
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test single audio 60s transcription and expect chunking",
+                    "targets": {
+                        "num_of_devices": 1,
+                        "dataset": "60s"
+                    },
+                    "model_targets": {
+                        "distil_whisper": {
+                            "audio_transcription_time": 2
+                        },
+                        "whisper": {
+                            "audio_transcription_time": 4
+                        }
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionParamTest",
+                    "enabled": true,
+                    "description": "Test audio transcription params"
+                }
+            ]
+        }
+    ],
+    "test_suites": [
+        {
+            "_comment": "n150 distil-whisper: unique test list (includes StabilityTest)",
+            "id": "distil-whisper-n150",
+            "weights": [
+                "distil-large-v3"
+            ],
+            "device": "n150",
+            "model_marker": "distil_whisper",
+            "test_cases": [
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test audio 30s load",
+                    "targets": {
+                        "audio_transcription_time": 0.7
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test audio 60s load",
+                    "targets": {
+                        "audio_transcription_time": 4,
+                        "dataset": "60s"
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionParamTest",
+                    "enabled": true,
+                    "description": "Test audio transcription params"
+                },
+                {
+                    "template": "DeviceStabilityTest",
+                    "enabled": true,
+                    "description": "Device stability test"
+                }
+            ]
+        },
+        {
+            "_comment": "n150 whisper: unique test list (no ParamTest, has single-device test)",
+            "id": "whisper-n150",
+            "weights": [
+                "whisper-large-v3"
+            ],
+            "device": "n150",
+            "model_marker": "whisper",
+            "test_cases": [
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test audio 30s load",
+                    "targets": {
+                        "audio_transcription_time": 6
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test audio 60s load",
+                    "targets": {
+                        "audio_transcription_time": 12,
+                        "dataset": "60s"
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test single audio 60s transcription and expect chunking",
+                    "targets": {
+                        "audio_transcription_time": 12,
+                        "num_of_devices": 1,
+                        "dataset": "60s"
+                    }
+                }
+            ]
+        }
+    ]
+}

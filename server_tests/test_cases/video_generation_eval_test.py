@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import json
 import logging
@@ -209,6 +209,7 @@ class VideoGenerationEvalsTest(BaseTest):
                 "num_inference_steps": num_inference_steps,
             }
 
+            generation_start = time.time()
             try:
                 # Submit video generation job
                 response = requests.post(
@@ -233,6 +234,7 @@ class VideoGenerationEvalsTest(BaseTest):
                     headers=headers,
                 )
 
+                generation_duration = time.time() - generation_start
                 if video_path:
                     videos_info.append(
                         {
@@ -244,6 +246,9 @@ class VideoGenerationEvalsTest(BaseTest):
                     logger.info(f"✅ Video generated successfully: {video_path}")
                 else:
                     logger.error(f"❌ Video generation failed for job: {job_id}")
+                logger.info(
+                    f"Video {idx + 1} generation took {generation_duration:.1f}s"
+                )
 
             except Exception as e:
                 logger.error(f"Error generating video for prompt '{prompt[:50]}': {e}")

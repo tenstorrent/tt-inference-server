@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -8,7 +8,7 @@
 #include "config/runner_config.hpp"
 #include "runners/llm_runner/model_runner.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 /**
  * IModelRunner that runs Llama-3.1-8B-Instruct via embedded Python interpreter
@@ -20,23 +20,24 @@ class LlamaModelRunner : public IModelRunner {
   LlamaModelRunner(const tt::config::LLMConfig& config,
                    DecodeCallback callback);
   ~LlamaModelRunner() override;
-  void run(const std::vector<Sequence*>& seqs, bool isPrefill) override;
+  void run(const std::vector<tt::domain::Sequence*>& seqs,
+           bool isPrefill) override;
   void exit() override;
 
-  bool isReady() const { return initialized_; }
+  bool isReady() const { return initialized; }
 
  private:
   bool initialize();
-  void failSequences(const std::vector<Sequence*>& seqs);
+  void failSequences(const std::vector<tt::domain::Sequence*>& seqs);
 
-  tt::config::LLMConfig config_;
-  DecodeCallback decode_callback_;
-  std::atomic<bool> stop_{false};
-  bool initialized_ = false;
-  bool lastStepWasPrefill_ = true;
+  tt::config::LLMConfig config;
+  DecodeCallback decodeCallback;
+  std::atomic<bool> stop{false};
+  bool initialized = false;
+  bool lastStepWasPrefill = true;
 };
 
 std::unique_ptr<IModelRunner> makeLlamaModelRunner(
     const tt::config::LLMConfig& config, DecodeCallback callback);
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

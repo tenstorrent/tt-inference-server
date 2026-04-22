@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import logging
 import os
@@ -104,6 +104,7 @@ class TTLogger:
 
         self.logger = logging.getLogger(name)
         self.logger.setLevel(level)
+        self.logger.propagate = False
 
         # Avoid adding duplicate handlers if the logger is reused.
         if not self.logger.handlers:
@@ -141,9 +142,7 @@ class TTLogger:
 
     def add_list_handler(self, log_list) -> ListHandler:
         handler = ListHandler(log_list)
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-        )
+        handler.setFormatter(logging.Formatter("%(message)s"))
         self.logger.addHandler(handler)
         return handler
 

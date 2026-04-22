@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from config.constants import _DEFAULT_SAMPLING_PARAMS
 from domain.completion_request import CompletionRequest
@@ -8,15 +8,23 @@ from vllm import SamplingParams
 from vllm.sampling_params import RequestOutputKind
 
 
-def build_sampling_params(request: CompletionRequest) -> SamplingParams:
+def build_sampling_params(
+    request: CompletionRequest, defaults: dict = None
+) -> SamplingParams:
     """
     Build SamplingParams from request, applying defaults for unspecified values.
 
     Extracts sampling parameters from the request object, applies default values
     when parameters are not specified, validates parameter combinations,
     and constructs SamplingParams with the appropriate values.
+
+    Args:
+        defaults: Optional dict to override _DEFAULT_SAMPLING_PARAMS.
     """
-    defaults = _DEFAULT_SAMPLING_PARAMS
+    if defaults is None:
+        defaults = _DEFAULT_SAMPLING_PARAMS
+    else:
+        defaults = {**_DEFAULT_SAMPLING_PARAMS, **defaults}
 
     # Extract and resolve parameters from request, falling back to defaults
     temperature = (
@@ -90,7 +98,5 @@ def build_sampling_params(request: CompletionRequest) -> SamplingParams:
         skip_special_tokens=request.skip_special_tokens,
         spaces_between_special_tokens=request.spaces_between_special_tokens,
         truncate_prompt_tokens=request.truncate_prompt_tokens,
-        guided_decoding=defaults["guided_decoding"],
-        extra_args=defaults["extra_args"],
         output_kind=RequestOutputKind.DELTA,
     )

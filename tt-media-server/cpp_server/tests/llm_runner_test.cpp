@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "utils/id_generator.hpp"
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #include <gtest/gtest.h>
 
@@ -10,17 +10,17 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
-#include "ipc/token_ring_buffer.hpp"
+#include "domain/sequence.hpp"
+#include "ipc/boost_ipc_result_queue.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
-#include "runners/llm_runner/sequence.hpp"
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 using Config = tt::config::LLMConfig;
 
 namespace {
 
-std::shared_ptr<ITaskQueue> makeQueue() {
+std::shared_ptr<tt::ipc::ITaskQueue> makeQueue() {
   return std::make_shared<InMemoryTaskQueue>();
 }
 
@@ -49,14 +49,15 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   int totalRequests = static_cast<int>(requests.size());
   auto taskQueue = makeQueue();
 
-  tt::ipc::TokenRingBuffer<65536> resultQueue("/test_llm_runner_tokens", true);
+  tt::ipc::BoostIpcResultQueue resultQueue("test_llm_runner_tokens",
+                                           tt::ipc::RESULT_QUEUE_CAPACITY);
 
   tt::runners::LLMRunner engine{config, &resultQueue, taskQueue.get()};
 
   std::vector<uint32_t> taskIds;
   int idCounter = 0;
   for (const auto& req : requests) {
-    Sequence& seq = engine.scheduler().addRequest(
+    tt::domain::Sequence& seq = engine.getScheduler().addRequest(
         tt::utils::TaskIDGenerator::generate(), req.prompt,
         {.max_tokens = req.max_tokens});
     taskIds.push_back(seq.taskId);
@@ -68,7 +69,7 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   std::thread consumer([&]() {
     tt::ipc::SharedToken token;
     while (finishedCount.load() < totalRequests) {
-      if (resultQueue.pop(token)) {
+      if (resultQueue.tryPop(token)) {
         uint32_t tid = token.task_id;
         receivedTokens[tid].push_back(static_cast<int64_t>(token.token_id));
         if (token.isFinal()) {
@@ -103,7 +104,8 @@ TEST(LLMRunnerTest, AllTokensPublishedInOrder) {
   EXPECT_EQ(receivedTokens[taskIds[2]], expectedSeq2);
 
   resultQueue.shutdown();
+  resultQueue.remove();
 }
 
 }  // namespace
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

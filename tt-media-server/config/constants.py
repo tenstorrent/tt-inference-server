@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from enum import Enum
 
@@ -24,12 +24,17 @@ class SupportedModels(Enum):
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
+    BGE_M3 = "BAAI/bge-m3"
     LLAMA_3_2_3B = "meta-llama/Llama-3.2-3B"
     LLAMA_3_1_8B = "meta-llama/Llama-3.1-8B"
+    LLAMA_3_2_3B_INSTRUCT = "meta-llama/Llama-3.2-3B-Instruct"
+    LLAMA_3_1_8B_INSTRUCT = "meta-llama/Llama-3.1-8B-Instruct"
     LLAMA_3_1_70B = "meta-llama/Llama-3.1-70B"
     QWEN_3_4B = "Qwen/Qwen3-4B"
+    QWEN_3_8B = "Qwen/Qwen3-8B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
+    Z_IMAGE_TURBO = "Tongyi-MAI/Z-Image-Turbo"
 
 
 # MODEL environment variable
@@ -60,12 +65,17 @@ class ModelNames(Enum):
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
+    BGE_M3 = "bge-m3"
     LLAMA_3_2_3B = "Llama-3.2-3B"
     LLAMA_3_1_8B = "Llama-3.1-8B"
+    LLAMA_3_2_3B_INSTRUCT = "Llama-3.2-3B-Instruct"
+    LLAMA_3_1_8B_INSTRUCT = "Llama-3.1-8B-Instruct"
     LLAMA_3_1_70B = "Llama-3.1-70B"
     QWEN_3_4B = "Qwen3-4B"
+    QWEN_3_8B = "Qwen3-8B"
     SPEECHT5_TTS = "speecht5_tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
+    Z_IMAGE_TURBO = "Z-Image-Turbo"
 
 
 class ModelRunners(Enum):
@@ -81,12 +91,13 @@ class ModelRunners(Enum):
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WHISPER = "tt-whisper"
-    VLLM = "vllm"
+    VLLMForge = "vllm_forge"
     TT_YOLOV4 = "tt-yolov4"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
     BGELargeEN_V1_5 = "bge_large_en_v1_5"
+    BGEM3 = "bge-m3"
     TT_XLA_RESNET = "tt-xla-resnet"
     TT_XLA_VOVNET = "tt-xla-vovnet"
     TT_XLA_MOBILENETV2 = "tt-xla-mobilenetv2"
@@ -96,12 +107,14 @@ class ModelRunners(Enum):
     TT_XLA_VIT = "tt-xla-vit"
     TRAINING_LLAMA_LORA = "training-llama-lora"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
+    LORA_SINGLE_CHIP = "lora-single-chip"
     MOCK = "mock"
     SP_RUNNER = "sp_runner"
     LLM_TEST = "llm_test"
     LLAMA_RUNNER = "llama_runner"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
     TT_XLA_SDXL = "tt-xla-sdxl"
+    TT_Z_IMAGE_TURBO = "tt-z-image-turbo"
 
 
 class ModelServices(Enum):
@@ -127,17 +140,20 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_QWEN_IMAGE,
         ModelRunners.TT_QWEN_IMAGE_2512,
         ModelRunners.TT_XLA_SDXL,
+        ModelRunners.TT_Z_IMAGE_TURBO,
     },
     ModelServices.LLM: {
-        ModelRunners.VLLM,
+        ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_LLAMA_70B,
         ModelRunners.LLM_TEST,
         ModelRunners.LLAMA_RUNNER,
+        ModelRunners.LORA_SINGLE_CHIP,
     },
     ModelServices.EMBEDDING: {
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
         ModelRunners.QWEN_EMBEDDING_8B,
         ModelRunners.BGELargeEN_V1_5,
+        ModelRunners.BGEM3,
     },
     ModelServices.CNN: {
         ModelRunners.TT_XLA_RESNET,
@@ -195,14 +211,23 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
-    ModelRunners.VLLM: {ModelNames.LLAMA_3_2_3B, ModelNames.QWEN_3_4B},
+    ModelRunners.BGEM3: {ModelNames.BGE_M3},
+    ModelRunners.VLLMForge: {
+        ModelNames.LLAMA_3_2_3B,
+        ModelNames.LLAMA_3_2_3B_INSTRUCT,
+        ModelNames.LLAMA_3_1_8B_INSTRUCT,
+        ModelNames.QWEN_3_4B,
+        ModelNames.QWEN_3_8B,
+    },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TRAINING_LLAMA_LORA: {ModelNames.LLAMA_3_1_8B},
+    ModelRunners.LORA_SINGLE_CHIP: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TT_XLA_SDXL: {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
         ModelNames.STABLE_DIFFUSION_XL_512,
     },
+    ModelRunners.TT_Z_IMAGE_TURBO: {ModelNames.Z_IMAGE_TURBO},
 }
 
 
@@ -218,17 +243,6 @@ class DeviceTypes(Enum):
     P150X8 = "p150x8"  # BH LoudBox - 8x P150 (2,4 mesh)
     P300X2 = "p300x2"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
     BLACKHOLE_GALAXY = "bh-galaxy"
-
-
-class TrainingMeshShapes(Enum):
-    P150 = (1, 1)
-    P300 = (1, 2)
-
-
-TRAINING_RUNNER_SUPPORTED_DEVICES = {
-    ModelRunners.TRAINING_GEMMA_LORA: {DeviceTypes.P150},
-    ModelRunners.TRAINING_LLAMA_LORA: {DeviceTypes.P300},
-}
 
 
 class QueueType(Enum):
@@ -293,8 +307,8 @@ class JobTypes(Enum):
 
 
 class DatasetLoaders(Enum):
-    SST2 = "sst2"
-    ALPACA = "alpaca"
+    SST2 = "SST2"
+    ALPACA = "Alpaca"
 
 
 class TrainingTrainers(Enum):
@@ -309,6 +323,10 @@ class ModelDisplayNames(Enum):
 
 class TrainingOptimizers(Enum):
     ADAMW = "adamw"
+
+
+# Base directory for storing fine-tuned adapter outputs.
+TRAINING_STORE_ADAPTERS_DIR = "model_store/"
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
@@ -600,6 +618,7 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
@@ -958,28 +977,110 @@ ModelConfigs = {
         "default_throttle_level": 0,
         "use_queue_per_worker": True,
     },
-    (ModelRunners.VLLM, DeviceTypes.N150): {
+    (ModelRunners.BGEM3, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 32,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192 * 32,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.BGEM3, DeviceTypes.N300): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 32,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192 * 32,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.BGEM3, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192 * 32,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
+        "max_batch_size": 32,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.BGEM3, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 8192,
+            "max_num_batched_tokens": 8192 * 32,
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
+        "max_batch_size": 32,
+        "default_throttle_level": 0,
+        "use_queue_per_worker": True,
+    },
+    (ModelRunners.VLLMForge, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.VLLM, DeviceTypes.N300): {
+    (ModelRunners.VLLMForge, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.VLLM, DeviceTypes.T3K): {
+    (ModelRunners.VLLMForge, DeviceTypes.T3K): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
-    (ModelRunners.VLLM, DeviceTypes.GALAXY): {
+    (ModelRunners.VLLMForge, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_XLA_SDXL, DeviceTypes.P150X4): {
@@ -992,6 +1093,12 @@ ModelConfigs = {
         "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_Z_IMAGE_TURBO, DeviceTypes.P150X4): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
     },
 }
@@ -1015,6 +1122,13 @@ for runner in [
         "device_mesh_shape": (1, 1),
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
     }
+
+
+# Per-model overrides applied after device config (keyed by ModelNames enum value)
+MODEL_NAME_OVERRIDES = {
+    ModelNames.QWEN_3_4B: {"chat_template_kwargs": {"enable_thinking": False}},
+    ModelNames.QWEN_3_8B: {"chat_template_kwargs": {"enable_thinking": False}},
+}
 
 
 # Default sampling parameters for vLLM inference

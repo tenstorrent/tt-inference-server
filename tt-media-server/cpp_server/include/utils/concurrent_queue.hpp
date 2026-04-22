@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #pragma once
 
 #include <atomic>
@@ -10,6 +10,8 @@
 
 #include "profiling/tracy.hpp"
 
+namespace tt::utils {
+
 template <typename T>
 class ConcurrentQueue {
  public:
@@ -19,6 +21,11 @@ class ConcurrentQueue {
   void push(const T& value) {
     std::lock_guard lock(mutex);
     pending.push_back(value);
+  }
+
+  void push(T&& value) {
+    std::lock_guard lock(mutex);
+    pending.push_back(std::move(value));
   }
 
   std::vector<T> drain() {
@@ -41,59 +48,60 @@ class ConcurrentQueue {
   TRACY_LOCKABLE(std::mutex, mutex);
 };
 
-#ifdef __cpp_lib_hardware_interference_size
-static constexpr size_t CACHE_LINE_SIZE =
-    std::hardware_destructive_interference_size;
-#else
-static constexpr size_t CACHE_LINE_SIZE = 64;
-#endif
-namespace {
+namespace detail {
+
+// Fixed size avoids -Winterference-size
+// (std::hardware_destructive_interference_size is not stable across
+// compiler/tuning); 64 matches typical x86/ARM cache lines.
+inline constexpr size_t CACHE_LINE_SIZE = 64;
+
 inline size_t nextPowerOfTwo(size_t n) { return std::bit_ceil(n); }
-constexpr std::memory_order RELAXED = std::memory_order_relaxed;
-constexpr std::memory_order ACQUIRE = std::memory_order_acquire;
-constexpr std::memory_order RELEASE = std::memory_order_release;
-}  // namespace
+inline constexpr std::memory_order RELAXED = std::memory_order_relaxed;
+inline constexpr std::memory_order ACQUIRE = std::memory_order_acquire;
+inline constexpr std::memory_order RELEASE = std::memory_order_release;
+
+}  // namespace detail
 
 template <typename T>
 class LockFreeSPSCQueue {
  public:
   LockFreeSPSCQueue(size_t capacity)
-      : capacity(nextPowerOfTwo(capacity + 1)),
-        buffer(nextPowerOfTwo(capacity + 1)) {
+      : capacity(detail::nextPowerOfTwo(capacity + 1)),
+        buffer(detail::nextPowerOfTwo(capacity + 1)) {
     mask = this->capacity - 1;
   }
   ~LockFreeSPSCQueue() = default;
 
   bool push(const T& value) {
-    const size_t HEAD = head.load(RELAXED);
+    const size_t HEAD = head.load(detail::RELAXED);
     const size_t NEXT_HEAD = (HEAD + 1) & mask;
 
-    if (NEXT_HEAD == tail.load(ACQUIRE)) {
+    if (NEXT_HEAD == tail.load(detail::ACQUIRE)) {
       return false;
     }
 
     buffer[HEAD] = value;
 
-    head.store(NEXT_HEAD, RELEASE);
+    head.store(NEXT_HEAD, detail::RELEASE);
     return true;
   }
 
   bool pop(T& value) {
-    const size_t TAIL = tail.load(RELAXED);
+    const size_t TAIL = tail.load(detail::RELAXED);
 
-    if (TAIL == head.load(ACQUIRE)) {
+    if (TAIL == head.load(detail::ACQUIRE)) {
       return false;
     }
 
     value = std::move(buffer[TAIL]);
 
-    tail.store((TAIL + 1) & mask, RELEASE);
+    tail.store((TAIL + 1) & mask, detail::RELEASE);
     return true;
   }
 
   size_t pushMany(const std::vector<T>& items) {
-    const size_t HEAD = head.load(RELAXED);
-    const size_t TAIL = tail.load(ACQUIRE);
+    const size_t HEAD = head.load(detail::RELAXED);
+    const size_t TAIL = tail.load(detail::ACQUIRE);
 
     size_t available = (TAIL - HEAD - 1) & mask;
     size_t toPush = std::min(items.size(), available);
@@ -104,13 +112,13 @@ class LockFreeSPSCQueue {
       buffer[(HEAD + i) & mask] = items[i];
     }
 
-    head.store((HEAD + toPush) & mask, RELEASE);
+    head.store((HEAD + toPush) & mask, detail::RELEASE);
     return toPush;
   }
 
   size_t popMany(std::vector<T>& outItems, size_t maxItems) {
-    const size_t TAIL = tail.load(RELAXED);
-    const size_t HEAD = head.load(ACQUIRE);
+    const size_t TAIL = tail.load(detail::RELAXED);
+    const size_t HEAD = head.load(detail::ACQUIRE);
 
     size_t occupied = (HEAD - TAIL) & mask;
     size_t toPop = std::min(maxItems, occupied);
@@ -121,7 +129,7 @@ class LockFreeSPSCQueue {
       outItems.push_back(std::move(buffer[(TAIL + i) & mask]));
     }
 
-    tail.store((TAIL + toPop) & mask, RELEASE);
+    tail.store((TAIL + toPop) & mask, detail::RELEASE);
     return toPop;
   }
 
@@ -134,6 +142,8 @@ class LockFreeSPSCQueue {
   size_t capacity;
   size_t mask;
   std::vector<T> buffer;
-  alignas(CACHE_LINE_SIZE) std::atomic<size_t> head{0};
-  alignas(CACHE_LINE_SIZE) std::atomic<size_t> tail{0};
+  alignas(detail::CACHE_LINE_SIZE) std::atomic<size_t> head{0};
+  alignas(detail::CACHE_LINE_SIZE) std::atomic<size_t> tail{0};
 };
+
+}  // namespace tt::utils

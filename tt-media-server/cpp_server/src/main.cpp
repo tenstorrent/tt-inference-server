@@ -1,29 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #include <drogon/drogon.h>
 #include <netinet/tcp.h>
 #include <sys/stat.h>
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "api/error_response.hpp"
+#include "config/defaults.hpp"
 #include "config/settings.hpp"
-#include "filters/security_filter.hpp"
+#include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
+#include "services/llm_service.hpp"
 #include "utils/logger.hpp"
+#include "utils/service_container.hpp"
 #include "utils/service_factory.hpp"
+#include "worker/single_process_worker_metrics.hpp"
+#include "worker/sp_pipeline_worker_metrics_renderer.hpp"
 #include "worker/worker_manager.hpp"
+#include "worker/worker_metrics_aggregator.hpp"
+#include "worker/worker_metrics_shm.hpp"
 
 // Include OpenAPI controller (defined in openapi.cpp)
 // The controller auto-registers itself with Drogon
 namespace {
+
 volatile std::sig_atomic_t gShutdownRequested = 0;
 
 void signalHandler(int signal) {
@@ -31,12 +43,30 @@ void signalHandler(int signal) {
   gShutdownRequested = 1;
   drogon::app().quit();
 }
+
+/** Map the runtime ModelService to the metrics layout this binary's runner
+ *  publishes into shared memory. */
+tt::worker::MetricsLayout metricsLayoutFromConfig() {
+  switch (tt::config::modelService()) {
+    case tt::config::ModelService::LLM:
+      return tt::worker::MetricsLayout::SP_PIPELINE_RUNNER;
+    case tt::config::ModelService::EMBEDDING:
+      return tt::worker::MetricsLayout::EMBEDDING;
+  }
+  return tt::worker::MetricsLayout::UNKNOWN;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
   if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
     int workerId = std::atoi(argv[2]);
     tracy_config::tracyStartupWorker(workerId);
+    tt::utils::ZeroOverheadLogger::initialize();
+
+    tt::worker::SingleProcessWorkerMetrics::instance().initialize(
+        workerId, metricsLayoutFromConfig());
+
     tt::worker::WorkerConfig cfg =
         tt::worker::makeWorkerConfigForProcess(workerId);
     tt::worker::SingleProcessWorker worker(cfg);
@@ -47,7 +77,8 @@ int main(int argc, char* argv[]) {
 
     std::thread shutdownMonitor([&worker] {
       while (!workerShutdown.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(tt::config::defaults::SHUTDOWN_POLL_MS));
       }
       worker.stop();
     });
@@ -58,11 +89,11 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 
-  // Parse command line arguments
-  std::string host = "0.0.0.0";
-  uint16_t port = 8000;
+  namespace defs = tt::config::defaults;
+
+  std::string host = defs::SERVER_HOST;
+  uint16_t port = defs::SERVER_PORT;
   int threads = std::thread::hardware_concurrency();
-  tt::utils::service_factory::initializeServices();
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -106,54 +137,99 @@ int main(int argc, char* argv[]) {
   TT_LOG_INFO("  Model Service: {}", serviceName);
   TT_LOG_INFO("=================================================");
 
-  // Ensure log directory exists (Drogon requires it)
-  mkdir("./logs", 0755);
+  if (mkdir("./logs", 0755) != 0 && errno != EEXIST) {
+    TT_LOG_WARN("[Main] Failed to create log directory: {}", strerror(errno));
+  }
 
-  // Initialize the security token (lazy init happens on first check)
-  SecurityFilter::initToken();
+  // Create the worker-metrics shared-memory segment BEFORE workers are spawned
+  // (initializeServices() starts the WorkerManager which fork+execv's
+  // workers). The unique_ptr below owns the lifecycle: its destructor
+  // munmaps and shm_unlinks on scope exit, so there is no explicit teardown.
+  const std::string shmName = tt::config::workerMetricsShmName();
+  const size_t numWorkers = tt::config::numWorkers();
+  auto shm = tt::worker::WorkerMetricsShm::create(shmName, numWorkers);
 
-  // Register pre-handling advice for bearer token authentication
-  drogon::app().registerPreHandlingAdvice([](const drogon::HttpRequestPtr& req,
-                                             drogon::AdviceCallback&& callback,
-                                             drogon::AdviceChainCallback&&
-                                                 chainCallback) {
-    const std::string& path = req->path();
+  tt::utils::service_factory::initializeServices();
 
-    // Skip authentication for health, tt-liveness, docs, and openapi endpoints
-    if (path == "/health" || path == "/tt-liveness" || path == "/docs" ||
-        path == "/swagger" || path == "/openapi.json" || path == "/metrics") {
-      chainCallback();
-      return;
+  // Wire the aggregator now that the WorkerManager exists. Workers may still
+  // be attaching to the segment; renderers tolerate empty/UNKNOWN slots.
+  if (shm != nullptr) {
+    auto& agg = tt::worker::WorkerMetricsAggregator::instance();
+    tt::worker::WorkerManager* mgr = nullptr;
+    auto llm = tt::utils::ServiceContainer::instance().llm();
+    if (llm) {
+      mgr = llm->getWorkerManager();
     }
+    std::vector<tt::worker::MetricsLayout> layoutByWorker(
+        numWorkers, metricsLayoutFromConfig());
+    agg.initialize(shm.get(), mgr, std::move(layoutByWorker));
+    agg.registerRenderer(
+        tt::worker::MetricsLayout::SP_PIPELINE_RUNNER,
+        std::make_unique<tt::worker::SpPipelineWorkerMetricsRenderer>());
+    agg.prebuildAll();
+  }
 
-    // Check for Bearer token on protected endpoints
-    const std::string& authHeader = req->getHeader("Authorization");
-    constexpr std::string_view bearerPrefix = "Bearer ";
+  const char* envToken = std::getenv("OPENAI_API_KEY");
+  std::string apiKey =
+      (envToken && envToken[0] != '\0') ? envToken : "your-secret-key";
+  if (apiKey == "your-secret-key") {
+    TT_LOG_WARN("[SecurityFilter] OPENAI_API_KEY not set, using default key");
+  }
 
-    if (authHeader.size() <= bearerPrefix.size() ||
-        authHeader.compare(0, bearerPrefix.size(), bearerPrefix) != 0) {
-      auto resp = tt::api::errorResponse(
-          drogon::k401Unauthorized,
-          "Missing or invalid Authorization header. Expected: Bearer <token>",
-          "authentication_error");
-      resp->addHeader("WWW-Authenticate", "Bearer");
-      callback(resp);
-      return;
-    }
+  drogon::app().registerPreHandlingAdvice(
+      [apiKey](const drogon::HttpRequestPtr& req,
+               drogon::AdviceCallback&& callback,
+               drogon::AdviceChainCallback&& chainCallback) {
+        const std::string& path = req->path();
 
-    std::string_view providedToken(authHeader.data() + bearerPrefix.size(),
-                                   authHeader.size() - bearerPrefix.size());
+        if (path == "/health" || path == "/tt-liveness" || path == "/docs" ||
+            path == "/swagger" || path == "/openapi.json" ||
+            path == "/metrics") {
+          chainCallback();
+          return;
+        }
 
-    if (providedToken != SecurityFilter::getExpectedToken()) {
-      auto resp = tt::api::errorResponse(
-          drogon::k401Unauthorized, "Invalid API key", "authentication_error");
-      resp->addHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
-      callback(resp);
-      return;
-    }
+        const std::string& authHeader = req->getHeader("Authorization");
+        constexpr std::string_view bearerPrefix = "Bearer ";
 
-    chainCallback();
-  });
+        if (authHeader.size() <= bearerPrefix.size() ||
+            authHeader.compare(0, bearerPrefix.size(), bearerPrefix) != 0) {
+          auto resp = tt::api::errorResponse(
+              drogon::k401Unauthorized,
+              "Missing or invalid Authorization header. Expected: Bearer "
+              "<token>",
+              "authentication_error");
+          resp->addHeader("WWW-Authenticate", "Bearer");
+          callback(resp);
+          return;
+        }
+
+        std::string_view providedToken(authHeader.data() + bearerPrefix.size(),
+                                       authHeader.size() - bearerPrefix.size());
+
+        if (providedToken != apiKey) {
+          auto resp =
+              tt::api::errorResponse(drogon::k401Unauthorized,
+                                     "Invalid API key", "authentication_error");
+          resp->addHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
+          callback(resp);
+          return;
+        }
+
+        chainCallback();
+      });
+
+  // Record every HTTP response for Prometheus (method, status). This is
+  // Drogon's only officially-supported per-response hook and runs on the IO
+  // thread that serves the request, so the callback must be cheap.
+  // prometheus::Counter::Increment is lock-free; Family::Add hashes the label
+  // set and takes an internal shared lock, which is fine at HTTP RPS scale.
+  drogon::app().registerPreSendingAdvice(
+      [](const drogon::HttpRequestPtr& req,
+         const drogon::HttpResponsePtr& resp) {
+        tt::metrics::ServerMetrics::instance().onHttpResponse(
+            req->methodString(), static_cast<int>(resp->statusCode()));
+      });
 
   // Configure Drogon
   drogon::app()
@@ -163,14 +239,16 @@ int main(int argc, char* argv[]) {
       .setThreadNum(threads)
       .setAfterAcceptSockOptCallback([](int fd) {
         int one = 1;
-        setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+        if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) < 0) {
+          TT_LOG_WARN("[Main] Failed to set TCP_NODELAY: {}", strerror(errno));
+        }
       })
-      .setMaxConnectionNum(100000)
-      .setMaxConnectionNumPerIP(0)  // No limit per IP
-      .setIdleConnectionTimeout(300)
-      .setKeepaliveRequestsNumber(0)            // No limit
-      .setClientMaxBodySize(100 * 1024 * 1024)  // 100MB max body
-      .setClientMaxMemoryBodySize(100 * 1024 * 1024)
+      .setMaxConnectionNum(defs::MAX_CONNECTIONS)
+      .setMaxConnectionNumPerIP(0)
+      .setIdleConnectionTimeout(defs::IDLE_CONNECTION_TIMEOUT_S)
+      .setKeepaliveRequestsNumber(0)
+      .setClientMaxBodySize(defs::CLIENT_MAX_BODY_BYTES)
+      .setClientMaxMemoryBodySize(defs::CLIENT_MAX_BODY_BYTES)
       .setStaticFilesCacheTime(0);
 
   TT_LOG_INFO("[Main] Starting Drogon server at http://{}:{}", host, port);
@@ -194,6 +272,7 @@ int main(int argc, char* argv[]) {
   // Run the server
   drogon::app().run();
 
+  // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.
   TT_LOG_INFO("[Main] Server shutdown complete");
   return 0;
 }

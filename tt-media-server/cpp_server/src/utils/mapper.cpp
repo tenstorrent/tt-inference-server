@@ -2,9 +2,9 @@
 
 namespace tt::utils::mapper {
 
-llm_engine::SamplingParams mapSamplingParams(
+tt::domain::SamplingParams mapSamplingParams(
     const tt::domain::LLMRequest& request) {
-  llm_engine::SamplingParams params;
+  tt::domain::SamplingParams params;
   params.temperature = request.temperature.value_or(1.0f);
   params.max_tokens = request.max_tokens;
   params.ignore_eos = request.ignore_eos;
@@ -26,6 +26,12 @@ llm_engine::SamplingParams mapSamplingParams(
   params.prompt_logprobs = request.prompt_logprobs;
   params.truncate_prompt_tokens = request.truncate_prompt_tokens;
   params.fast_mode = request.fast_mode;
+
+  if (request.response_format.has_value()) {
+    params.response_format_type = request.response_format->type;
+    params.json_schema_str = request.response_format->json_schema_str;
+  }
+
   return params;
 }
 

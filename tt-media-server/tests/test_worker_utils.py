@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import os
@@ -22,6 +22,7 @@ mock_settings.device_mesh_shape = (1, 1)
 mock_settings_module = Mock()
 mock_settings_module.settings = mock_settings
 sys.modules["config.settings"] = mock_settings_module
+
 
 # Mock telemetry
 sys.modules["telemetry.telemetry_client"] = Mock()

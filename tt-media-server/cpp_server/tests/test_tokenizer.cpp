@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include <gtest/gtest.h>
 
@@ -10,9 +10,9 @@
 
 #include "config/settings.hpp"
 #include "domain/chat_message.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
-using namespace tt::utils;
+using namespace tt::utils::tokenizers;
 using namespace tt::domain;
 
 // ---------------------------------------------------------------------------

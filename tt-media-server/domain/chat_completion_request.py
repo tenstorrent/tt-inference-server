@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 from typing import Union
 
@@ -34,3 +34,5 @@ class ChatCompletionRequest(BaseModel):
     n: int = 1
     seed: int | None = None
     user: str | None = None
+
+    adapter: str | None = None

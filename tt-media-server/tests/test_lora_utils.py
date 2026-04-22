@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from utils.lora_utils import (
     _find_safetensors_filename,
     _get_triggers_from_model_card,

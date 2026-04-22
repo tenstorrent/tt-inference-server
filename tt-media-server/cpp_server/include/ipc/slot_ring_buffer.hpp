@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -24,10 +24,11 @@ constexpr int PREFILL_MAX_TOKEN_IDS =
     131072;  // matches Config::MAX_INPUT_TOKENS (128k)
 constexpr int DECODE_MAX_TOKEN_IDS = 1;
 
-enum SlotState { FREE, TAKEN };
+enum SlotState { EMPTY, FILLED };
 
 struct SlotRingBufferState {
-  uint64_t cursor;
+  uint64_t writerIndex;
+  uint64_t readerIndex;
 };
 
 template <int MaxTokenIds>
@@ -78,10 +79,14 @@ class SlotRingBuffer {
   SlotRingBuffer& operator=(const SlotRingBuffer&) = delete;
 
   void open() {
-    int fd = shm_open(name.c_str(), O_RDWR, 0);
+    int fd = shm_open(name.c_str(), O_CREAT | O_RDWR, 0666);
     if (fd < 0) {
       throw std::runtime_error(
           "SlotRingBuffer: unable to open shared memory: " + name);
+    }
+    if (ftruncate(fd, Msg::K_TOTAL_SIZE) < 0) {
+      ::close(fd);
+      throw std::runtime_error("SlotRingBuffer: ftruncate failed");
     }
 
     memPointer = mmap(nullptr, Msg::K_TOTAL_SIZE, PROT_READ | PROT_WRITE,
@@ -94,7 +99,8 @@ class SlotRingBuffer {
 
     messages = std::span<Msg>(static_cast<Msg*>(memPointer), SHM_SLOTS);
     openState();
-    this->current = state->cursor;
+    this->writerIndex = state->writerIndex;
+    this->readerIndex = state->readerIndex;
   }
 
   void openState() {
@@ -130,53 +136,58 @@ class SlotRingBuffer {
                                std::to_string(MaxTokenIds));
     }
 
-    auto& msg = acquireMsg();
+    auto& slot = acquireWriterSlot();
 
-    while (!msg.stateMatches(FREE)) {
+    while (!slot.stateMatches(EMPTY)) {
       std::this_thread::yield();
     }
 
-    msg.taskId = taskId;
-    msg.maxTokens = maxTokens;
-    msg.fastMode = fastMode ? 1u : 0u;
-    msg.numTokenIds = tokenIds.size();
-    std::memcpy(msg.tokenIds, tokenIds.data(),
+    slot.taskId = taskId;
+    slot.maxTokens = maxTokens;
+    slot.fastMode = fastMode ? 1u : 0u;
+    slot.numTokenIds = tokenIds.size();
+    std::memcpy(slot.tokenIds, tokenIds.data(),
                 tokenIds.size() * sizeof(int64_t));
 
-    msg.switchState(TAKEN);
-    advanceCurrent();
+    slot.switchState(FILLED);
+    advanceWriterIndex();
   }
 
   bool tryRead(ReadResult& out) {
-    auto& msg = acquireMsg();
+    auto& slot = acquireReaderSlot();
 
-    if (!msg.stateMatches(TAKEN)) {
+    if (!slot.stateMatches(FILLED)) {
       return false;
     }
 
-    out.taskId = msg.taskId;
-    out.maxTokens = msg.maxTokens;
-    out.fastMode = msg.fastMode != 0u;
-    out.tokenIds.assign(msg.tokenIds, msg.tokenIds + msg.numTokenIds);
+    out.taskId = slot.taskId;
+    out.maxTokens = slot.maxTokens;
+    out.fastMode = slot.fastMode != 0u;
+    out.tokenIds.assign(slot.tokenIds, slot.tokenIds + slot.numTokenIds);
 
-    msg.switchState(FREE);
-    advanceCurrent();
+    slot.switchState(EMPTY);
+    advanceReaderIndex();
     return true;
   }
   std::string name;
 
  private:
-  Msg& acquireMsg() { return messages[current]; }
+  Msg& acquireReaderSlot() { return messages[readerIndex]; }
+  Msg& acquireWriterSlot() { return messages[writerIndex]; }
 
-  void advanceCurrent() {
-    current = (current + 1) % SHM_SLOTS;
-    updateState();
+  void advanceReaderIndex() {
+    readerIndex = (readerIndex + 1) % SHM_SLOTS;
+    state->readerIndex = readerIndex;
   }
 
-  void updateState() { state->cursor = current; }
+  void advanceWriterIndex() {
+    writerIndex = (writerIndex + 1) % SHM_SLOTS;
+    state->writerIndex = writerIndex;
+  }
 
   void* memPointer = nullptr;
-  uint64_t current = 0;
+  uint64_t writerIndex = 0;
+  uint64_t readerIndex = 0;
   std::span<Msg> messages;
   SlotRingBufferState* state = nullptr;
 };

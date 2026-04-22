@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -10,12 +10,12 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
+#include "domain/sampling_params.hpp"
+#include "domain/sequence.hpp"
+#include "ipc/task_queue.hpp"
 #include "runners/llm_runner/block_manager.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
-#include "runners/llm_runner/sequence.hpp"
-#include "runners/llm_runner/task_queue.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 /**
  * Schedules prefill and decode batches. Each step returns either a prefill-only
@@ -25,8 +25,8 @@ namespace llm_engine {
  */
 class Scheduler {
  public:
-  explicit Scheduler(const tt::config::LLMConfig& config, ITaskQueue* taskQueue,
-                     size_t maxInFlightCount);
+  explicit Scheduler(const tt::config::LLMConfig& config,
+                     ipc::ITaskQueue* taskQueue, size_t maxInFlightCount);
   virtual ~Scheduler() = default;
 
   /** @return true if there are no prefill_queue, decode_queue, or in-flight
@@ -34,14 +34,15 @@ class Scheduler {
   bool isFinished() const;
 
   /** Creates a sequence, takes ownership, and enqueues it for prefill. */
-  Sequence& addRequest(uint32_t taskId, std::vector<int64_t> prompt,
-                       const SamplingParams& params = SamplingParams());
+  tt::domain::Sequence& addRequest(
+      uint32_t taskId, std::vector<int64_t> prompt,
+      const tt::domain::SamplingParams& params = tt::domain::SamplingParams());
 
   /** Enqueues an externally-owned sequence for prefill (prefill_queue). */
-  void add(Sequence& seq);
+  void add(tt::domain::Sequence& seq);
 
   /** Looks up a sequence by task_id. Returns nullptr if not found. */
-  Sequence* findSequence(uint32_t taskId);
+  tt::domain::Sequence* findSequence(uint32_t taskId);
 
   /**
    * Produces the next batch to run.
@@ -49,13 +50,13 @@ class Scheduler {
    *         prefill-only or decode-only; should_prefill_first() determines
    *         which is attempted first.
    */
-  std::pair<std::vector<Sequence*>, bool> schedule();
+  std::pair<std::vector<tt::domain::Sequence*>, bool> schedule();
 
   /**
    * Moves a sequence from decode_queue back to prefill_queue and frees its KV
    * cache blocks.
    */
-  void preempt(Sequence& seq);
+  void preempt(tt::domain::Sequence& seq);
 
   /**
    * Appends the generated token to each sequence and marks finished /
@@ -64,7 +65,7 @@ class Scheduler {
    * @param seqs  The batch that was just run (same order as token_ids).
    * @param token_ids  One token per sequence from the model.
    */
-  void postprocess(std::vector<Sequence*>& seqs,
+  void postprocess(std::vector<tt::domain::Sequence*>& seqs,
                    const std::vector<int64_t>& tokenIds);
   void removeSequence(uint32_t taskId);
 
@@ -76,10 +77,10 @@ class Scheduler {
   void abortRequest(uint32_t taskId);
 
   bool isStopToken(int64_t tokenId) const {
-    return stop_token_ids_.count(tokenId) > 0;
+    return stopTokenIds.count(tokenId) > 0;
   }
 
-  BlockManager& blockManager() { return block_manager_; }
+  BlockManager& getBlockManager() { return this->blockManager; }
 
  protected:
   /**
@@ -101,27 +102,27 @@ class Scheduler {
   }
 
  private:
-  size_t block_size_;
-  bool trySchedulePrefill(std::vector<Sequence*>& scheduledSeqs,
+  size_t blockSize;
+  bool trySchedulePrefill(std::vector<tt::domain::Sequence*>& scheduledSeqs,
                           size_t& numSeqs, size_t& numBatchedTokens,
                           size_t seqLimit);
-  void tryScheduleDecode(std::vector<Sequence*>& scheduledSeqs,
+  void tryScheduleDecode(std::vector<tt::domain::Sequence*>& scheduledSeqs,
                          size_t& numSeqs);
 
-  size_t max_in_flight_count_;
-  size_t max_num_batched_tokens_;
-  std::unordered_set<int64_t> stop_token_ids_;
-  BlockManager block_manager_;
-  ITaskQueue* prefill_queue_;
-  std::unordered_map<uint32_t, std::unique_ptr<Sequence>> sequences_;
-  std::deque<Sequence*> decode_queue_;
+  size_t maxInFlightCount;
+  size_t maxNumBatchedTokens;
+  std::unordered_set<int64_t> stopTokenIds;
+  BlockManager blockManager;
+  ipc::ITaskQueue* prefillQueue;
+  std::unordered_map<uint32_t, std::unique_ptr<tt::domain::Sequence>> sequences;
+  std::deque<tt::domain::Sequence*> decodeQueue;
   // IDs aborted before their copy was dequeued from the prefill queue.
   // Checked in trySchedulePrefill to skip stale copies.
-  std::unordered_set<uint32_t> pending_aborts_;
+  std::unordered_set<uint32_t> pendingAborts;
 };
 
 std::unique_ptr<Scheduler> makeScheduler(const tt::config::LLMConfig& config,
-                                         ITaskQueue* taskQueue,
+                                         ipc::ITaskQueue* taskQueue,
                                          size_t maxInFlightCount);
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

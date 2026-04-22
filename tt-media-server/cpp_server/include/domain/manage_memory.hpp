@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
 #include <cstdint>
 #include <istream>
-#include <limits>
 #include <ostream>
 #include <vector>
 
-namespace tt::domain {
+#include "domain/slot_types.hpp"
 
-constexpr uint32_t INVALID_SLOT_ID = std::numeric_limits<uint32_t>::max();
+namespace tt::domain {
 
 enum class MemoryManagementAction : std::uint8_t {
   ALLOCATE = 0,
@@ -27,7 +26,6 @@ enum class KvMemoryLayout : std::uint8_t {
 struct ManageMemoryTask {
   uint32_t taskId;
   MemoryManagementAction action{MemoryManagementAction::ALLOCATE};
-  std::uint32_t inputSeqLen{0};
   KvMemoryLayout memoryLayout{KvMemoryLayout::Paged};
   std::vector<std::uint32_t> slotIds;
 
@@ -35,7 +33,6 @@ struct ManageMemoryTask {
     os.write(reinterpret_cast<const char*>(&taskId), sizeof(taskId));
     auto a = static_cast<std::uint8_t>(action);
     os.write(reinterpret_cast<const char*>(&a), sizeof(a));
-    os.write(reinterpret_cast<const char*>(&inputSeqLen), sizeof(inputSeqLen));
     auto ml = static_cast<std::uint8_t>(memoryLayout);
     os.write(reinterpret_cast<const char*>(&ml), sizeof(ml));
     std::uint32_t n = static_cast<std::uint32_t>(slotIds.size());
@@ -51,8 +48,6 @@ struct ManageMemoryTask {
     std::uint8_t a = 0;
     is.read(reinterpret_cast<char*>(&a), sizeof(a));
     task.action = static_cast<MemoryManagementAction>(a);
-    is.read(reinterpret_cast<char*>(&task.inputSeqLen),
-            sizeof(task.inputSeqLen));
     std::uint8_t ml = 0;
     is.read(reinterpret_cast<char*>(&ml), sizeof(ml));
     task.memoryLayout = static_cast<KvMemoryLayout>(ml);

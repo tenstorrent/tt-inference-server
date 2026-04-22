@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -13,9 +13,9 @@
 #include "ipc/slot_ring_buffer.hpp"
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 
-namespace sp_pipeline {
+namespace tt::runners::sp_pipeline {
 
-using DecodeCallback = std::function<void(const llm_engine::TokenResult&)>;
+using DecodeCallback = std::function<void(const tt::domain::TokenResult&)>;
 
 class SpPipelineModelRunner : public ISpPipelineModelRunner {
  public:
@@ -53,4 +53,4 @@ class SpPipelineModelRunner : public ISpPipelineModelRunner {
   std::thread readerThread;
 };
 
-}  // namespace sp_pipeline
+}  // namespace tt::runners::sp_pipeline

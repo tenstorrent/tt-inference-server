@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 import asyncio
 import os
 import traceback
@@ -18,7 +18,13 @@ CHUNK_TYPE = "streaming_chunk"
 FINAL_TYPE = "final_result"
 
 
-class VLLMRunner(BaseDeviceRunner):
+class VLLMForgeRunner(BaseDeviceRunner):
+    # Sampling defaults for Forge LLM inference (overrides global greedy defaults)
+    SAMPLING_DEFAULTS = {
+        "temperature": 0.6,
+        "repetition_penalty": 1.1,
+    }
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
 
@@ -38,14 +44,23 @@ class VLLMRunner(BaseDeviceRunner):
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
             additional_config={
-                "enable_const_eval": False,
+                "enable_const_eval": True,
                 "min_context_len": self.settings.vllm.min_context_length,
+                "experimental_weight_dtype": "bfp_bf8",
+                "cpu_sampling": True,
+                "optimization_level": 1,
             },
+        )
+        self.logger.info(
+            f"Device {self.device_id}: additional_config={engine_args.additional_config}"
         )
         self.llm_engine = AsyncLLMEngine.from_engine_args(engine_args)
 
         self.logger.info(f"Device {self.device_id}: Starting model warmup")
-        warmup_sampling_params = SamplingParams(temperature=0.0, max_tokens=10)
+        warmup_sampling_params = SamplingParams(
+            **self.SAMPLING_DEFAULTS,
+            max_tokens=10,
+        )
         warmup_generator = self.llm_engine.generate(
             prompt, warmup_sampling_params, "warmup_task_id"
         )
@@ -94,7 +109,7 @@ class VLLMRunner(BaseDeviceRunner):
 
         chunks = []
         strip_eos = TextUtils.strip_eos
-        sampling_params = build_sampling_params(request)
+        sampling_params = build_sampling_params(request, self.SAMPLING_DEFAULTS)
 
         async for request_output in self.llm_engine.generate(
             self._build_vllm_input(request), sampling_params, request._task_id
@@ -132,7 +147,7 @@ class VLLMRunner(BaseDeviceRunner):
     ) -> CompletionOutput:
         self.logger.info(f"Device {self.device_id}: Starting non-streaming generation")
 
-        sampling_params = build_sampling_params(request)
+        sampling_params = build_sampling_params(request, self.SAMPLING_DEFAULTS)
 
         generated_text = []
         async for request_output in self.llm_engine.generate(

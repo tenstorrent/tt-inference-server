@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
 import getpass
@@ -22,19 +22,18 @@ from workflows.model_spec import (
     export_model_specs_json,
     get_runtime_model_spec,
 )
-from workflows.run_docker_server import (
-    format_docker_command,
-    generate_docker_run_command,
-    run_docker_server,
-)
-from workflows.run_local_server import run_local_server
 from workflows.multihost_orchestrator import (
     MultiHostOrchestrator,
     get_expected_num_hosts,
     is_multihost_deployment,
     setup_multihost_config,
 )
-from workflows.validate_setup import run_multihost_validation_subprocess
+from workflows.run_docker_server import (
+    format_docker_command,
+    generate_docker_run_command,
+    run_docker_server,
+)
+from workflows.run_local_server import run_local_server
 from workflows.run_workflows import run_workflows
 from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import setup_host
@@ -46,7 +45,7 @@ from workflows.utils import (
     load_dotenv,
     write_dotenv,
 )
-from workflows.validate_setup import validate_setup
+from workflows.validate_setup import run_multihost_validation_subprocess, validate_setup
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
@@ -308,6 +307,66 @@ def parse_arguments():
         "Default release images use UID 1000. "
         "Override only when using a custom image built with a different UID.",
     )
+    parser.add_argument(
+        "--server-tests",
+        type=str,
+        default=os.getenv("SERVER_TESTS", "false"),
+        help="Run server tests using server_tests/run.py (true/false). Default is false.",
+    )
+
+    # SPEC_TESTS workflow arguments (server tests filtering)
+    spec_tests_group = parser.add_argument_group(
+        "SPEC_TESTS workflow",
+        "Arguments for --workflow spec_tests (server tests with marker-based filtering)",
+    )
+    spec_tests_group.add_argument(
+        "--markers",
+        type=str,
+        nargs="+",
+        help="Filter tests by markers (e.g., load smoke fast)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--match-all-markers",
+        action="store_true",
+        help="Require ALL markers to match (default: ANY marker matches)",
+    )
+    spec_tests_group.add_argument(
+        "--exclude-markers",
+        type=str,
+        nargs="+",
+        help="Exclude tests with these markers (e.g., slow heavy)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--model-category",
+        type=str,
+        nargs="+",
+        help="Filter by model category (IMAGE, AUDIO, CNN)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--suite-category",
+        type=str,
+        help="Load suites for a specific category (e.g., image, audio)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--test-name",
+        type=str,
+        help="Filter by specific test class name (e.g., ImageGenerationLoadTest)",
+        default=None,
+    )
+    spec_tests_group.add_argument(
+        "--skip-prerequisites",
+        action="store_true",
+        help="Skip prerequisite tests (DeviceLivenessTest)",
+    )
+    spec_tests_group.add_argument(
+        "--list-tests",
+        action="store_true",
+        help="List matching tests without running them (dry-run)",
+    )
 
     args = parser.parse_args()
 
@@ -361,6 +420,18 @@ def handle_secrets(runtime_config):
         required_env_vars.append("JWT_SECRET")
     if huggingface_required:
         required_env_vars += ["HF_TOKEN"]
+
+    if (
+        workflow_type == WorkflowType.SERVER
+        and runtime_config.engine in ("media", "forge")
+        and not runtime_config.no_auth
+        and not runtime_config.interactive
+        and not os.getenv("API_KEY")
+    ):
+        logger.warning(
+            "API_KEY is not set. Using a default key for media/forge server auth. "
+            "Set API_KEY in .env or as an environment variable."
+        )
 
     # load secrets from env file or prompt user to enter them once
     if not load_dotenv():
@@ -434,8 +505,9 @@ def format_cli_args_summary(runtime_config):
         f"  host_weights_dir:           {runtime_config.host_weights_dir}",
         f"  image_user:                 {runtime_config.image_user}",
         "",
-        "=" * 60,
     ]
+
+    lines.append("=" * 60)
 
     return "\n".join(lines)
 

@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
 import tempfile
 
 from config.constants import JobTypes
+from config.settings import settings
 from domain.video_generate_request import VideoGenerateRequest
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
 from fastapi.responses import FileResponse, JSONResponse
@@ -29,7 +30,8 @@ async def submit_generate_video_request(
     Create a new video generation job based on the provided request.
 
     Returns:
-        JSONResponse: Video job object with job ID and initial metadata.
+        JSONResponse: Video job object with job ID and initial metadata (async mode)
+        FileResponse: Video file directly (sync mode when use_async_video=False)
 
     Raises:
         HTTPException: If video generation job submission fails.
@@ -38,9 +40,61 @@ async def submit_generate_video_request(
         service.scheduler.check_is_model_ready()
     except Exception:
         raise HTTPException(status_code=405, detail="Model is not ready")
+
     try:
+        # Synchronous mode: process and return video directly
+        if not settings.use_async_video:
+            video_file_path = await service.process_request(request)
+
+            # Verify the video file exists and is valid
+            if not video_file_path or not isinstance(video_file_path, str):
+                raise HTTPException(
+                    status_code=500,
+                    detail="Video generation failed: invalid file path returned",
+                )
+
+            if not os.path.exists(video_file_path):
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Video generation failed: file not found at {video_file_path}",
+                )
+
+            # Verify it's a valid file with size > 0
+            file_size = os.path.getsize(video_file_path)
+            if file_size == 0:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Video generation failed: empty file generated",
+                )
+
+            # Create a faststart temp file before serving for better streaming
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+                faststart_path = tmp.name
+
+            try:
+                VideoManager.ensure_faststart(video_file_path, faststart_path)
+                serve_path = faststart_path
+            except Exception as e:
+                # If faststart fails, serve the original file
+                service.logger.warning(
+                    f"Failed to create faststart video, serving original: {e}"
+                )
+                serve_path = video_file_path
+
+            return FileResponse(
+                serve_path,
+                media_type="video/mp4",
+                filename=f"video_{request._task_id}.mp4",
+                headers={
+                    "Content-Disposition": f"attachment; filename=video_{request._task_id}.mp4"
+                },
+            )
+
+        # Async mode: create job and return job metadata
         job_data = await service.create_job(JobTypes.VIDEO, request)
         return JSONResponse(content=job_data, status_code=202)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

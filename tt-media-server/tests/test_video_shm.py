@@ -1,18 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import os
 import pickle
 import struct
+import sys
 import threading
 import time
 import uuid
+from unittest.mock import Mock, patch
 
 import pytest
-
-import sys
-from unittest.mock import Mock, patch
 
 sys.modules["ttnn"] = Mock()
 
@@ -39,7 +38,6 @@ from ipc.video_shm import (
     video_result_path,
 )
 
-
 # ── Helpers ──
 
 
@@ -48,15 +46,18 @@ def _unique_name(prefix: str = "test_vshm") -> str:
 
 
 def _force_cleanup_shm(name: str) -> None:
-    """Best-effort removal of a SHM region from /dev/shm/."""
-    try:
-        from multiprocessing import shared_memory
+    """Best-effort removal of a SHM region (and its ``<name>_state`` sibling)
+    from ``/dev/shm/``. Every ``VideoShm`` now owns two segments under the
+    create-or-attach model, so both must be unlinked between tests."""
+    from multiprocessing import shared_memory
 
-        s = shared_memory.SharedMemory(name=name, create=False)
-        s.close()
-        s.unlink()
-    except FileNotFoundError:
-        pass
+    for target in (name, f"{name}{VideoShm._STATE_SUFFIX}"):
+        try:
+            s = shared_memory.SharedMemory(name=target, create=False)
+            s.close()
+            s.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _make_request(**overrides) -> VideoRequest:
@@ -219,16 +220,23 @@ class TestVideoShmLifecycle:
         with pytest.raises(FileNotFoundError):
             shared_memory.SharedMemory(name=name, create=False)
 
-    def test_open_create_replaces_existing(self):
-        """open(create=True) unlinks stale SHM and recreates without fd leak."""
-        name = _unique_name("recreate")
+    def test_open_is_idempotent_when_segment_exists(self):
+        """Under the create-or-attach model, a second open() on an existing
+        segment must succeed (attach), not raise. The `create` kwarg is
+        accepted for backward-compat but ignored — behaviour is always
+        create-if-missing-else-attach."""
+        name = _unique_name("reopen")
         shm1 = VideoShm(name, mode="input")
-        shm1.open(create=True)
+        shm1.open()
 
         shm2 = VideoShm(name, mode="input")
-        shm2.open(create=True)
+        shm2.open()  # attaches; must not unlink or recreate
         assert shm2._shm is not None
         assert shm2._buf is not None
+
+        # Cross-handle visibility: a write through shm1 is seen by shm2.
+        struct.pack_into("<i", shm1._buf, 0, 0xBEEF)
+        assert struct.unpack_from("<i", shm2._buf, 0)[0] == 0xBEEF
 
         shm1.close()
         shm2.close()
@@ -434,22 +442,22 @@ class TestResponseRoundtrip:
 
 
 class TestSlotStateTransitions:
-    def test_slot_starts_free(self, input_shm):
+    def test_slot_starts_empty(self, input_shm):
         state = struct.unpack_from("<i", input_shm._buf, 0)[0]
-        assert state == VideoShm._FREE
+        assert state == VideoShm._EMPTY
 
-    def test_write_sets_taken(self, input_pair):
+    def test_write_sets_filled(self, input_pair):
         writer, _ = input_pair
         writer.write_request(_make_request())
         state = struct.unpack_from("<i", writer._buf, 0)[0]
-        assert state == VideoShm._TAKEN
+        assert state == VideoShm._FILLED
 
-    def test_read_sets_free(self, input_pair):
+    def test_read_sets_empty(self, input_pair):
         writer, reader = input_pair
         writer.write_request(_make_request())
         reader.read_request()
         state = struct.unpack_from("<i", reader._buf, 0)[0]
-        assert state == VideoShm._FREE
+        assert state == VideoShm._EMPTY
 
 
 # ── Ring buffer wrapping ──
@@ -459,23 +467,260 @@ class TestRingBufferWrapping:
     def test_position_wraps_after_slots(self, input_pair):
         writer, reader = input_pair
         req = _make_request()
-        for _ in range(VideoShm.INPUT_SLOTS + 2):
+        total = VideoShm.INPUT_SLOTS + 2
+        for _ in range(total):
             writer.write_request(req)
             got = reader.read_request()
             assert got is not None
             assert got.task_id == req.task_id
-        assert writer._pos == 2
-        assert reader._pos == 2
+        # Indices live in the <name>_state SHM segment and are monotonic u64
+        # counters (not mod-slots) — the slot index is derived as (idx % _slots).
+        assert writer._get_writer_index() == total
+        assert reader._get_reader_index() == total
+        assert writer._get_writer_index() % VideoShm.INPUT_SLOTS == 2
+        assert reader._get_reader_index() % VideoShm.INPUT_SLOTS == 2
 
     def test_responses_wrap(self, output_pair):
         writer, reader = output_pair
-        for i in range(VideoShm.OUTPUT_SLOTS + 1):
+        total = VideoShm.OUTPUT_SLOTS + 1
+        for i in range(total):
             resp = _make_response(file_path=f"/dev/shm/tt_video_wrap_{i}.pkl")
             writer.write_response(resp)
             got = reader.read_response()
             assert got.file_path == f"/dev/shm/tt_video_wrap_{i}.pkl"
-        assert writer._pos == 1
-        assert reader._pos == 1
+        assert writer._get_writer_index() == total
+        assert reader._get_reader_index() == total
+        assert writer._get_writer_index() % VideoShm.OUTPUT_SLOTS == 1
+        assert reader._get_reader_index() % VideoShm.OUTPUT_SLOTS == 1
+
+
+# ── Crash recovery ──
+#
+# The non-atomic gap between "flip slot state" and "bump index" can leave the
+# ring in a detectable-but-inconsistent state after a crash. ``recover()`` is
+# designed to be run when the OTHER side of the ring is quiescent — these
+# tests simulate that exact scenario by manually poking the ring into the
+# post-crash state and verifying recover() makes it consistent again.
+
+
+class TestCrashRecovery:
+    def _set_state(self, shm, slot_idx, state_value, state_off_in_slot):
+        """Directly set the state word of a slot (simulating a partial commit)."""
+        off = slot_idx * shm._slot_size + state_off_in_slot
+        struct.pack_into("<i", shm._buf, off, state_value)
+
+    def test_recover_noop_on_clean_ring(self, input_shm):
+        result = input_shm.recover()
+        assert result == {"writer_bumped": 0, "reader_bumped": 0}
+        assert input_shm._get_writer_index() == 0
+        assert input_shm._get_reader_index() == 0
+
+    def test_recover_fixes_writer_gap(self, input_shm):
+        """Writer flipped slot to FILLED then crashed before bumping widx."""
+        # Simulate: widx=2, ridx=2, slot 2 has been packed+flipped-FILLED but
+        # writer_index wasn't bumped.
+        input_shm._set_writer_index(2)
+        input_shm._set_reader_index(2)
+        self._set_state(input_shm, 2, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover()
+
+        assert result == {"writer_bumped": 1, "reader_bumped": 0}
+        assert input_shm._get_writer_index() == 3
+        assert input_shm._get_reader_index() == 2
+
+    def test_recover_fixes_reader_gap(self, input_shm):
+        """Reader flipped slot to EMPTY then crashed before bumping ridx."""
+        # Simulate: widx=5, ridx=2, slot 2 has been consumed+flipped-EMPTY but
+        # reader_index wasn't bumped. Slots 3 and 4 are still legitimately
+        # FILLED (writer got ahead).
+        input_shm._set_writer_index(5)
+        input_shm._set_reader_index(2)
+        self._set_state(input_shm, 2, VideoShm._EMPTY, VideoShm._IN_STATE)
+        self._set_state(input_shm, 3, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 4, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover()
+
+        assert result == {"writer_bumped": 0, "reader_bumped": 1}
+        assert input_shm._get_writer_index() == 5
+        assert input_shm._get_reader_index() == 3
+
+    def test_recover_fixes_both_sides(self, input_shm):
+        """Both writer and reader crashed in their respective gaps."""
+        # widx=4, ridx=1. Writer gap: slot 4 FILLED (unbumped).
+        # Reader gap: slot 1 EMPTY (unbumped). Slots 2, 3 legitimately FILLED.
+        input_shm._set_writer_index(4)
+        input_shm._set_reader_index(1)
+        self._set_state(input_shm, 1, VideoShm._EMPTY, VideoShm._IN_STATE)
+        self._set_state(input_shm, 2, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 3, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 4, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover()
+
+        assert result == {"writer_bumped": 1, "reader_bumped": 1}
+        assert input_shm._get_writer_index() == 5
+        assert input_shm._get_reader_index() == 2
+
+    def test_recover_skips_full_ring(self, input_shm):
+        """A full ring legitimately has slot(widx%N) == FILLED — must not
+        misinterpret as a writer gap."""
+        n = VideoShm.INPUT_SLOTS
+        input_shm._set_writer_index(n)
+        input_shm._set_reader_index(0)
+        for i in range(n):
+            self._set_state(input_shm, i, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover()
+
+        assert result == {"writer_bumped": 0, "reader_bumped": 0}
+        assert input_shm._get_writer_index() == n
+        assert input_shm._get_reader_index() == 0
+
+    def test_recover_skips_empty_ring(self, input_shm):
+        """An empty ring legitimately has slot(ridx%N) == EMPTY — must not
+        misinterpret as a reader gap."""
+        input_shm._set_writer_index(3)
+        input_shm._set_reader_index(3)
+
+        result = input_shm.recover()
+
+        assert result == {"writer_bumped": 0, "reader_bumped": 0}
+        assert input_shm._get_writer_index() == 3
+        assert input_shm._get_reader_index() == 3
+
+    def test_recover_on_output_ring_uses_correct_state_offset(self, output_shm):
+        """Output slots have their state word at _OUT_STATE, not _IN_STATE —
+        verify recover uses the mode-appropriate offset."""
+        output_shm._set_writer_index(1)
+        output_shm._set_reader_index(1)
+        self._set_state(output_shm, 1, VideoShm._FILLED, VideoShm._OUT_STATE)
+
+        result = output_shm.recover()
+
+        assert result == {"writer_bumped": 1, "reader_bumped": 0}
+        assert output_shm._get_writer_index() == 2
+
+    def test_recover_unblocks_reader_after_simulated_crash(self, input_pair):
+        """End-to-end: after a reader-gap recovery, the next read_request
+        correctly picks up the slot following the consumed-but-unbumped one,
+        instead of spin-waiting on a stale EMPTY slot (the deadlock case)."""
+        writer, reader = input_pair
+
+        # Writer produces 3 requests (widx=3, ridx=0, slots 0..2 FILLED).
+        for i in range(3):
+            writer.write_request(
+                _make_request(task_id=f"t{i}abcdef-0000-0000-0000-000000000000")
+            )
+
+        # Reader consumes slot 0 normally (ridx=1, slot 0 EMPTY).
+        r0 = reader.read_request()
+        assert r0.task_id.startswith("t0")
+
+        # Simulate reader crash mid-consume of slot 1:
+        #   slot 1 flipped to EMPTY, but ridx wasn't bumped (still 1).
+        # We effectively "consumed" slot 1's payload without advancing.
+        self._set_state(reader, 1, VideoShm._EMPTY, VideoShm._IN_STATE)
+
+        # Without recovery: reader would spin waiting for slot 1 to become
+        # FILLED, but the writer has moved on to slot 3. That's the deadlock
+        # case from the design doc.
+        result = reader.recover()
+        assert result["reader_bumped"] == 1
+
+        # Next read must deliver slot 2 (ridx advanced past the gap), not
+        # spin forever.
+        r2 = reader.read_request(timeout_s=0.5)
+        assert r2 is not None
+        assert r2.task_id.startswith("t2")
+
+    # ── Side-scoped recovery (transparent self-heal on respawn) ──
+
+    def test_recover_side_invalid_raises(self, input_shm):
+        with pytest.raises(ValueError, match="side must be one of"):
+            input_shm.recover(side="bogus")
+
+    def test_recover_side_reader_ignores_writer_gap(self, input_shm):
+        """``side='reader'`` must not touch widx even if a writer gap is
+        present — simulates a freshly-respawned reader running recovery
+        with the writer still alive."""
+        input_shm._set_writer_index(4)
+        input_shm._set_reader_index(1)
+        self._set_state(input_shm, 1, VideoShm._EMPTY, VideoShm._IN_STATE)
+        self._set_state(input_shm, 2, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 3, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 4, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover(side="reader")
+
+        assert result == {"writer_bumped": 0, "reader_bumped": 1}
+        assert input_shm._get_writer_index() == 4
+        assert input_shm._get_reader_index() == 2
+
+    def test_recover_side_writer_ignores_reader_gap(self, input_shm):
+        """``side='writer'`` must not touch ridx even if a reader gap is
+        present — simulates a freshly-respawned writer running recovery
+        with the reader still alive."""
+        input_shm._set_writer_index(4)
+        input_shm._set_reader_index(1)
+        self._set_state(input_shm, 1, VideoShm._EMPTY, VideoShm._IN_STATE)
+        self._set_state(input_shm, 2, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 3, VideoShm._FILLED, VideoShm._IN_STATE)
+        self._set_state(input_shm, 4, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover(side="writer")
+
+        assert result == {"writer_bumped": 1, "reader_bumped": 0}
+        assert input_shm._get_writer_index() == 5
+        assert input_shm._get_reader_index() == 1
+
+    def test_recover_side_reader_is_noop_when_no_reader_gap(self, input_shm):
+        """Reader respawn with a clean reader lane and a writer gap
+        present: recovery must do nothing (writer gap is not our lane)."""
+        input_shm._set_writer_index(2)
+        input_shm._set_reader_index(2)
+        self._set_state(input_shm, 2, VideoShm._FILLED, VideoShm._IN_STATE)
+
+        result = input_shm.recover(side="reader")
+
+        assert result == {"writer_bumped": 0, "reader_bumped": 0}
+        assert input_shm._get_writer_index() == 2
+        assert input_shm._get_reader_index() == 2
+
+    def test_respawn_reader_self_heals_after_simulated_crash(self, input_pair):
+        """End-to-end: a reader that crashes mid-consume leaves a gap; a
+        brand-new reader process that attaches and calls
+        ``recover(side='reader')`` on startup unblocks itself without any
+        operator action and reads the correct next item — even though the
+        writer is still live."""
+        writer, crashed_reader = input_pair
+        shm_name = writer.name
+
+        for i in range(3):
+            writer.write_request(
+                _make_request(task_id=f"t{i}abcdef-0000-0000-0000-000000000000")
+            )
+
+        assert crashed_reader.read_request().task_id.startswith("t0")
+
+        # Simulate: reader flipped slot 1 to EMPTY, then crashed (no ridx bump).
+        self._set_state(crashed_reader, 1, VideoShm._EMPTY, VideoShm._IN_STATE)
+        crashed_reader.close()
+
+        # A fresh reader process attaches. Writer is still live on shm_name.
+        respawned = VideoShm(shm_name, mode="input")
+        respawned.open()
+        try:
+            # Simulate runner startup: self-heal our own lane. No operator CLI.
+            repair = respawned.recover(side="reader")
+            assert repair == {"writer_bumped": 0, "reader_bumped": 1}
+
+            got = respawned.read_request(timeout_s=0.5)
+            assert got is not None
+            assert got.task_id.startswith("t2")
+        finally:
+            respawned.close()
 
 
 # ── Shutdown signaling ──
@@ -533,7 +778,7 @@ class TestShutdownSignaling:
 
         for i in range(VideoShm.INPUT_SLOTS):
             off = i * shm._slot_size
-            struct.pack_into("<i", shm._buf, off, VideoShm._TAKEN)
+            struct.pack_into("<i", shm._buf, off, VideoShm._FILLED)
 
         def trigger_shutdown():
             nonlocal shutdown
@@ -557,7 +802,7 @@ class TestShutdownSignaling:
 
         for i in range(VideoShm.OUTPUT_SLOTS):
             off = i * shm._slot_size
-            struct.pack_into("<i", shm._buf, off, VideoShm._TAKEN)
+            struct.pack_into("<i", shm._buf, off, VideoShm._FILLED)
 
         def trigger_shutdown():
             nonlocal shutdown
