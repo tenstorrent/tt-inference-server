@@ -219,13 +219,11 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         f"Device {self.device_id}: Optimizer step finished"
                     )
 
+                    global_step += 1
+
                     # Training metrics
                     if global_step % request.steps_freq == 0:
-                        avg_loss = (
-                            running_loss / request.steps_freq
-                            if global_step > 0
-                            else running_loss
-                        )
+                        avg_loss = running_loss / request.steps_freq
                         self.logger.info(
                             f"Epoch {epoch + 1} | Step {global_step} | train/loss: {avg_loss:.4f}",
                             extra={"log_type": "info", "step": global_step},
@@ -284,8 +282,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                             f"Directory containing checkpoints: {request._output_model_path}"
                         )
                         break
-
-                    global_step += 1
 
                     if request.max_steps > 0 and global_step >= request.max_steps:
                         self.logger.info(

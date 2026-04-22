@@ -16,8 +16,7 @@ namespace tt::utils::runner_factory {
 
 std::unique_ptr<runners::IRunner> createRunner(
     config::ModelService service, const config::RunnerConfig& config,
-    ipc::IResultQueue* resultQueue,
-    tt::runners::llm_engine::ITaskQueue* taskQueue,
+    ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
     ipc::ICancelQueue* cancelQueue) {
   switch (service) {
     case config::ModelService::EMBEDDING: {

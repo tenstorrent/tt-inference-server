@@ -255,8 +255,8 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/llm_runner/model_runner.cpp
     src/runners/llm_runner/mock_model_runner.cpp
     src/runners/llm_runner/scheduler.cpp
-    src/runners/llm_runner/sequence.cpp
-    src/runners/llm_runner/sampling_params.cpp
+    src/domain/sequence.cpp
+    src/domain/sampling_params.cpp
     src/utils/logger.cpp
     src/config/settings.cpp
     src/utils/tokenizers/tokenizer.cpp
@@ -274,7 +274,8 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/blaze_prefill_runner/blaze_prefill_runner.cpp
     src/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.cpp
     src/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
-    src/services/guided_decoder_manager.cpp
+    src/runners/guided_decoder_manager.cpp
+    src/services/deepseek_tool_call_parser.cpp
 )
 
 # Add pipeline_manager-dependent sources only when ENABLE_BLAZE is ON
@@ -417,6 +418,28 @@ target_include_directories(structured_output_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# Tool call parser test
+add_executable(test_tool_call_parser tests/test_tool_call_parser.cpp)
+target_link_libraries(test_tool_call_parser PRIVATE
+    llm_runner_lib
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+target_include_directories(test_tool_call_parser PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
+# Chat template with tools test
+add_executable(test_chat_template_tools tests/test_chat_template_tools.cpp)
+target_link_libraries(test_chat_template_tools PRIVATE
+    llm_runner_lib
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+target_include_directories(test_chat_template_tools PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
 add_executable(worker_metrics_shm_test
     tests/worker_metrics_shm_test.cpp
     src/worker/worker_metrics_shm.cpp
@@ -467,6 +490,10 @@ gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
+
+# Register tool call tests
+add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
+add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
 
 # IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
 add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
@@ -540,6 +567,7 @@ set(SOURCES
     src/api/openapi.cpp
     src/services/llm_service.cpp
     src/services/reasoning_parser.cpp
+    src/services/deepseek_tool_call_parser.cpp
     src/services/session_manager.cpp
     src/domain/session.cpp
     src/worker/single_process_worker.cpp

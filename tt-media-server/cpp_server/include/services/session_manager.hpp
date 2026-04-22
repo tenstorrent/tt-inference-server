@@ -58,19 +58,26 @@ class SessionManager {
   CloseSessionResult closeSession(const std::string& sessionId);
   bool assignSlotId(const std::string& sessionId, uint32_t slotId);
   uint32_t getSlotIdBySessionId(const std::string& sessionId) const;
-  uint32_t acquireSessionSlot(const std::string& sessionId);
+
+  // Marks the session in-flight and registers the cancel function atomically.
+  // The cancel function is invoked if closeSession is called while in-flight.
+  // Returns the assigned slot ID (INVALID_SLOT_ID if not yet allocated).
+  uint32_t acquireInFlight(const std::string& sessionId,
+                           std::function<void()> cancelFn);
+
   std::optional<domain::Session> getSession(const std::string& sessionId) const;
   size_t getActiveSessionCount() const;
 
   void releaseInFlight(const std::string& sessionId);
 
-  // Register a callback to be invoked immediately if closeSession is called
-  // while the session has an in-flight request. The callback should abort the
-  // active request. It is cleared automatically once the session is released.
-  void setSessionAbortCallback(const std::string& sessionId,
-                               std::function<void()> onAbort);
-
  private:
+  // cancelFn is null when idle, set atomically with in-flight state by
+  // acquireInFlight.
+  struct ManagedSession {
+    domain::Session session;
+    std::function<void()> cancelFn;
+  };
+
   struct PendingAllocation {
     tt::domain::Session session;
     std::function<void(const tt::domain::Session&)> onCompletion;
@@ -78,19 +85,6 @@ class SessionManager {
     trantor::EventLoop* eventLoop = nullptr;
     int attemptsRemaining = 0;
     std::chrono::steady_clock::time_point retryAt{};
-
-    PendingAllocation() = default;
-
-    PendingAllocation(
-        const tt::domain::Session& session,
-        std::function<void(const tt::domain::Session&)> onCompletion,
-        std::function<void(std::string_view errorMessage)> onError,
-        trantor::EventLoop* eventLoop, int attemptsRemaining)
-        : session(session),
-          onCompletion(onCompletion),
-          onError(onError),
-          eventLoop(eventLoop),
-          attemptsRemaining(attemptsRemaining) {}
   };
 
   struct DeferredDealloc {
@@ -109,8 +103,7 @@ class SessionManager {
   void handleMemoryResult(const domain::ManageMemoryResult& result);
   void updateSessionCountMetric();
 
-  mutable utils::ConcurrentMap<std::string, domain::Session> sessions;
-  utils::ConcurrentMap<std::string, std::function<void()>> abortCallbacks_;
+  mutable utils::ConcurrentMap<std::string, ManagedSession> sessions;
 
   std::unique_ptr<ipc::MemoryRequestQueue> memoryRequestQueue;
   std::unique_ptr<ipc::MemoryResultQueue> memoryResultQueue;

@@ -158,7 +158,7 @@ int main(int argc, char* argv[]) {
     tt::worker::WorkerManager* mgr = nullptr;
     auto llm = tt::utils::ServiceContainer::instance().llm();
     if (llm) {
-      mgr = llm->workerManager();
+      mgr = llm->getWorkerManager();
     }
     std::vector<tt::worker::MetricsLayout> layoutByWorker(
         numWorkers, metricsLayoutFromConfig());

@@ -200,13 +200,13 @@ struct EmbeddingService::Impl {
 
   size_t max_batch_size_ = 1;
   std::chrono::milliseconds batch_timeout_{5};
-  size_t max_queue_size_ = tt::config::defaults::MAX_QUEUE_SIZE;
+  size_t maxQueueSize = tt::config::defaults::MAX_QUEUE_SIZE;
 
   Impl() {
     num_workers_ = tt::config::numWorkers();
     max_batch_size_ = tt::config::maxInFlightCount();
     batch_timeout_ = std::chrono::milliseconds(tt::config::batchTimeoutMs());
-    max_queue_size_ = tt::config::maxQueueSize();
+    maxQueueSize = tt::config::maxQueueSize();
     TT_LOG_INFO(
         "[EmbeddingService] Initialized with {} workers, batch_size={}, "
         "batch_timeout={}ms",
@@ -460,7 +460,7 @@ struct EmbeddingService::Impl {
 };
 
 EmbeddingService::EmbeddingService() : impl_(std::make_unique<Impl>()) {
-  max_queue_size_ = impl_->max_queue_size_;
+  maxQueueSize = impl_->maxQueueSize;
 }
 
 EmbeddingService::~EmbeddingService() = default;
