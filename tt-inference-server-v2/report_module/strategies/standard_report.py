@@ -14,7 +14,7 @@ from benchmarking.benchmark_config import cap_benchmark_params
 from evals.eval_config import EVAL_CONFIGS
 from report_module.base_strategy import ReportStrategy
 from report_module.markdown.report_renderers import tiered_targets_markdown
-from report_module.markdown.visualizer import MarkdownVisualizer
+from report_module.markdown import visualizer
 from report_module.parsing.benchmark_parser import process_benchmark_files
 from report_module.parsing.benchmark_summary import build_summary_row
 from report_module.parsing.common import deduplicate_by_config
@@ -144,7 +144,7 @@ class StandardReportStrategy(ReportStrategy):
         for rows in rows_by_tool.values():
             all_results.extend(rows)
 
-        sweep_md = MarkdownVisualizer.build_benchmark_sweeps_markdown(
+        sweep_md = visualizer.build_benchmark_sweeps_markdown(
             rows_by_tool=rows_by_tool,
             model_name=context.model_name,
             device_str=context.device_str,
@@ -260,7 +260,7 @@ class StandardReportStrategy(ReportStrategy):
             else []
         )
 
-        md = MarkdownVisualizer.build_benchmark_targets_markdown(
+        md = visualizer.build_benchmark_targets_markdown(
             text_target_rows=text_targets,
             vlm_target_rows=vlm_targets,
             text_rows_without_refs=bool(text_rows and not text_refs),
@@ -318,7 +318,7 @@ class StandardReportStrategy(ReportStrategy):
             tool_tables.append((tool_label, table))
             rendered_summaries.append((tool_label, summary))
 
-        md = MarkdownVisualizer.build_tiered_summary_markdown(
+        md = visualizer.build_tiered_summary_markdown(
             tool_tables=tool_tables,
             task_label=task_label,
             model_name=context.model_name,
@@ -373,7 +373,7 @@ class StandardReportStrategy(ReportStrategy):
         report_rows = _evals_release_report_data(
             results, meta_data, model_spec, context.device_str
         )
-        release_md, summary_md = MarkdownVisualizer.build_evals_markdown(
+        release_md, summary_md = visualizer.build_evals_markdown(
             report_rows,
             context.model_name,
             context.device_str,
@@ -394,7 +394,7 @@ class StandardReportStrategy(ReportStrategy):
     def _generate_simple_eval(
         self, context: ReportContext, raw_evals_data: List[Dict[str, Any]]
     ) -> Dict[str, ReportResult]:
-        release_md, summary_md = MarkdownVisualizer.build_simple_evals_markdown(
+        release_md, summary_md = visualizer.build_simple_evals_markdown(
             raw_evals_data, context.model_name, context.device_str
         )
 

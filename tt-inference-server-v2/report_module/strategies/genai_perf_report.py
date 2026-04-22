@@ -11,7 +11,7 @@ from typing import Any, Dict, List
 
 
 from report_module.base_strategy import ReportStrategy
-from report_module.markdown.visualizer import MarkdownVisualizer
+from report_module.markdown import visualizer
 from report_module.parsing.common import (
     deduplicate_by_config,
     extract_percentile_result,
@@ -64,7 +64,7 @@ class GenAiPerfStrategy(ReportStrategy):
             )
         )
 
-        release_str = MarkdownVisualizer.build_percentile_benchmark_markdown(
+        release_str = visualizer.build_percentile_benchmark_markdown(
             tool_label="GenAI-Perf",
             tool_url="https://github.com/triton-inference-server/perf_analyzer",
             text_rows=text_results,

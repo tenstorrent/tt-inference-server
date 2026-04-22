@@ -11,7 +11,7 @@ Single home for the ``server_tests`` release key. Owns:
 
 * the REPORTS-phase :class:`TestReportStrategy` that scans those JSONs,
   renders each into a sibling ``.md`` via
-  :class:`~report_module.markdown.visualizer.MarkdownVisualizer`, persists
+  :mod:`report_module.markdown.visualizer`, persists
   them through :class:`~report_module.report_file_saver.ReportFileSaver`,
   and assembles the combined ``server_tests`` section of the release report.
 """
@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from report_module.base_strategy import ReportStrategy
-from report_module.markdown.visualizer import MarkdownVisualizer
+from report_module.markdown import visualizer
 from report_module.report_file_saver import ReportFileSaver
 from report_module.types import ReportContext, ReportResult
 
@@ -141,10 +141,16 @@ class TestReportStrategy(ReportStrategy):
 
     def generate(self, context: ReportContext) -> Dict[str, ReportResult]:
         reports_dir = resolve_test_reports_dir()
-        json_files = sorted(reports_dir.glob(_JSON_GLOB))
-        logger.info(f"Rendering {len(json_files)} server test JSON(s)")
+        all_json_files = sorted(reports_dir.glob(_JSON_GLOB))
+        # Filenames embed a ``%Y%m%d_%H%M%S`` timestamp so lexicographic sort
+        # equals chronological sort; keep only the most recent run.
+        latest_files = all_json_files[-1:]
+        logger.info(
+            f"Rendering latest of {len(all_json_files)} server test JSON(s): "
+            f"{latest_files[0].name if latest_files else 'none'}"
+        )
 
-        sections, data = self._render_all(json_files)
+        sections, data = self._render_all(latest_files)
         if not sections:
             return {self.name: ReportResult.empty(self.name)}
 
@@ -170,7 +176,7 @@ class TestReportStrategy(ReportStrategy):
             parsed = _load_json(json_path)
             if parsed is None:
                 continue
-            md_body = MarkdownVisualizer.build_test_report_markdown(parsed)
+            md_body = visualizer.build_test_report_markdown(parsed)
             md_path = json_path.with_suffix(".md")
             self._file_saver.write_markdown(md_body, md_path)
             sections.append(f"#### {json_path.stem}\n\n{md_body}")

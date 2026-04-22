@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from report_module.base_strategy import ReportStrategy
-from report_module.markdown.visualizer import MarkdownVisualizer
+from report_module.markdown import visualizer
 from report_module.types import ReportContext, ReportResult
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ class ParameterSupportTestsStrategy(ReportStrategy):
         if not loaded:
             return {self.name: ReportResult.empty(self.name)}
 
-        markdown_body = MarkdownVisualizer.build_parameter_support_markdown(loaded)
+        markdown_body = visualizer.build_parameter_support_markdown(loaded)
         release_markdown = (
             f"### Test Results for {context.model_name} "
             f"on {context.device_str}\n\n{markdown_body}"
