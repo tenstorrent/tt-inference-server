@@ -20,7 +20,6 @@ Environment variables:
 from __future__ import annotations
 
 import os
-from types import SimpleNamespace
 
 from ipc.video_shm import (
     VideoRequest,
@@ -98,24 +97,7 @@ class SPRunner(BaseDeviceRunner):
         return True
 
     async def warmup(self) -> bool:
-        """Run a minimal real inference through the SHM bridge.
-
-        Exercising the full device bring-up + kernel-compile path at warmup
-        means any wedged ethernet core or compilation hang surfaces now —
-        as ``REQUEST_TIMEOUT`` raised by ``run()``'s existing SHM deadline —
-        rather than silently on the first production request.
-        """
-        warmup_req = SimpleNamespace(
-            _task_id=f"warmup-{self.device_id}",
-            prompt="warmup",
-            negative_prompt="",
-            num_inference_steps=2,
-            seed=0,
-        )
-        mp4_paths = self.run([warmup_req])
-        for path in mp4_paths:
-            self._try_unlink(path)
-        self.logger.info(f"SPRunner {self.device_id}: warmup complete")
+        self.logger.info("Skipping warmup since SHM runner has a warm start")
         return True
 
     @log_execution_time(
