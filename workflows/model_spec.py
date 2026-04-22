@@ -1115,6 +1115,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=40960,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 51000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1247,6 +1250,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 54000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
@@ -2471,8 +2477,8 @@ vlm_templates = [
             "Qwen/Qwen2.5-VL-7B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="c18569e",
-        vllm_commit="b2894d3",
+        tt_metal_commit="58ac618",
+        vllm_commit="5b7f989",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         device_model_specs=[
