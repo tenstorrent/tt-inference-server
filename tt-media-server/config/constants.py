@@ -34,6 +34,7 @@ class SupportedModels(Enum):
     QWEN_3_8B = "Qwen/Qwen3-8B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
+    GPT_OSS_120B = "openai/gpt-oss-120b"
 
 
 # MODEL environment variable
@@ -74,6 +75,7 @@ class ModelNames(Enum):
     QWEN_3_8B = "Qwen3-8B"
     SPEECHT5_TTS = "speecht5_tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
+    GPT_OSS_120B = "gpt-oss-120b"
 
 
 class ModelRunners(Enum):
@@ -112,6 +114,7 @@ class ModelRunners(Enum):
     LLAMA_RUNNER = "llama_runner"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
     TT_XLA_SDXL = "tt-xla-sdxl"
+    VLLMForge_GPT_OSS_120B = "vllm_forge_gpt_oss_120b"
 
 
 class ModelServices(Enum):
@@ -141,6 +144,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.LLM: {
         ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_LLAMA_70B,
+        ModelRunners.VLLMForge_GPT_OSS_120B,
         ModelRunners.LLM_TEST,
         ModelRunners.LLAMA_RUNNER,
         ModelRunners.LORA_SINGLE_CHIP,
@@ -219,6 +223,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
     ModelRunners.TRAINING_LLAMA_LORA: {ModelNames.LLAMA_3_1_8B},
     ModelRunners.LORA_SINGLE_CHIP: {ModelNames.GEMMA_1_1_2B_IT},
+    ModelRunners.VLLMForge_GPT_OSS_120B: {ModelNames.GPT_OSS_120B},
     ModelRunners.TT_XLA_SDXL: {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
         ModelNames.STABLE_DIFFUSION_XL_512,
@@ -1077,6 +1082,21 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
+    },
+    (ModelRunners.VLLMForge_GPT_OSS_120B, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "vllm": {
+            "model": SupportedModels.GPT_OSS_120B.value,
+            "max_model_length": 1024,
+            "max_num_batched_tokens": 1024,
+            "min_context_length": 32,
+            "max_num_seqs": 1,
+        },
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+        "request_processing_timeout_seconds": 5400,
     },
     (ModelRunners.TT_XLA_SDXL, DeviceTypes.P150X4): {
         "device_mesh_shape": (1, 1),

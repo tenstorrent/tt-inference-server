@@ -3648,6 +3648,34 @@ cnn_templates = [
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
     ),
+    ModelSpecTemplate(
+        weights=["openai/gpt-oss-120b"],
+        tt_metal_commit="2496be4",
+        impl=forge_vllm_plugin_impl,
+        min_disk_gb=260,
+        min_ram_gb=300,
+        model_type=ModelType.LLM,
+        inference_engine=InferenceEngine.FORGE.value,
+        uses_tensor_model_cache=False,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.GALAXY,
+                max_concurrency=1,
+                max_context=1024,
+                default_impl=False,
+                env_vars={
+                    "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                    "VLLM__MAX_MODEL_LENGTH": "1024",
+                    "VLLM__MIN_CONTEXT_LENGTH": "32",
+                    "MESH_DEVICE": "(4, 8)",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+        },
+    ),
 ]
 
 # make spec_templates from the templates in the correct order

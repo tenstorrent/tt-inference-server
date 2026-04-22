@@ -73,6 +73,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.vllm_forge_llama_70b",
         fromlist=["VLLMForgeLlama70BRunner"],
     ).VLLMForgeLlama70BRunner(wid),
+    ModelRunners.VLLMForge_GPT_OSS_120B: lambda wid: __import__(
+        "tt_model_runners.vllm_forge_gpt_oss_120b",
+        fromlist=["VLLMForgeGPTOSS120BRunner"],
+    ).VLLMForgeGPTOSS120BRunner(wid),
     ModelRunners.TT_XLA_RESNET: lambda wid: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeResnetRunner"]
     ).ForgeResnetRunner(wid),

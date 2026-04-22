@@ -475,6 +475,16 @@
         }
       }
     },
+    "gpt-oss-120b-forge": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "GALAXY"
+          ]
+        }
+      }
+    },
     "gpt-oss-20b": {
       "inference_engine": "vLLM",
       "ci": {
