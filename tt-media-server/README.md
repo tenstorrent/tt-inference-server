@@ -782,14 +782,25 @@ When both `MODEL` and `DEVICE` are set, the server will look up the correspondin
 
 The TT Media Server provides comprehensive Prometheus metrics for monitoring performance and operational health. Telemetry can be enabled/disabled via the `ENABLE_TELEMETRY` environment variable.
 
+### Observability stack
+
+Metrics emission lives with each server; collection and visualization
+live in a shared, top-level [`monitoring/`](./monitoring) directory:
+
+- [`telemetry/`](./telemetry) — Python instrumentation that exposes `/metrics`.
+- [`cpp_server/`](./cpp_server) — C++ instrumentation that exposes `/metrics`.
+- [`monitoring/`](./monitoring) — Prometheus + Grafana + process-exporter
+  Docker Compose stack that scrapes whichever server is running. Picks
+  the dashboard via `SERVER_SERVICE` (`cpp` | `python`).
+
+Quick start: see [`monitoring/README.md`](./monitoring/README.md).
+
 ### Available Metrics
 
 #### Request Processing Metrics
 
 | Metric Name | Type | Description | Labels |
 |-------------|------|-------------|---------|
-| `tt_media_server_requests_total` | Counter | Total number of top-level requests | `model_type` |
-| `tt_media_server_request_duration_seconds` | Histogram | End-to-end request duration | `model_type` |
 | `tt_media_server_requests_base_counter` | Counter | Total base service requests | `model_type` |
 | `tt_media_server_requests_base_duration_seconds` | Histogram | Base service request duration | `model_type` |
 | `tt_media_server_requests_base_total` | Counter | Total base service method calls | `model_type` |
@@ -810,7 +821,6 @@ The TT Media Server provides comprehensive Prometheus metrics for monitoring per
 | `tt_media_server_model_inference_total` | Counter | Total model inference operations | `model_type`, `device_id`, `status` |
 | `tt_media_server_device_warmup_duration_seconds` | Histogram | Device warmup time | `model_type`, `device_id` |
 | `tt_media_server_device_warmup_total` | Counter | Total device warmup operations | `model_type`, `device_id`, `status` |
-| `tt_media_server_model_load_total` | Counter | Total model load operations | `model_type`, `device_id`, `status` |
 
 ### Labels Description
 
