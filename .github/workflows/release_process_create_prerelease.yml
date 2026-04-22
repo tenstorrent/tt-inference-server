@@ -1,0 +1,541 @@
+name: Create Prerelease (entrypoint for the release process)
+
+run-name: ${{ format('Create pre-release from Models CI run {0}', inputs.release-model-ci-run-id) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      release-model-ci-run-id:
+        description: "Run ID of the release.yml workflow run (from tt-shield repo)"
+        required: true
+        type: string
+      release-increment:
+        description: "Version increment type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  actions: read
+  contents: write
+  packages: write
+  pull-requests: write
+
+env:
+  GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+  FEATURE_BRANCH: vmaksimovic/move_release_process_to_inference
+
+jobs:
+  check-prerequisites:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check release increment input
+        run: |
+          INCREMENT="${{ inputs.release-increment }}"
+
+          if [[ "$INCREMENT" != "patch" && "$INCREMENT" != "minor" && "$INCREMENT" != "major" ]]; then
+            echo "❌ Error: Invalid release increment: $INCREMENT"
+            echo "Valid options are: patch, minor, major"
+            exit 1
+          fi
+
+          echo "✓ Release increment validated: $INCREMENT"
+
+      - name: Check if workflow run exists and is of correct type
+        run: |
+          set +e
+
+          RUN_ID="${{ inputs.release-model-ci-run-id }}"
+
+          RUN_INFO=$(gh api repos/tenstorrent/tt-shield/actions/runs/$RUN_ID 2>&1)
+          EXIT_CODE=$?
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "❌ Error: Workflow run $RUN_ID not found or not accessible."
+            echo "$RUN_INFO"
+            exit 1
+          fi
+
+          WORKFLOW_PATH=$(echo "$RUN_INFO" | jq -r '.path // empty')
+          if [ -z "$WORKFLOW_PATH" ] || [ "$WORKFLOW_PATH" = "null" ]; then
+            echo "❌ Error: Could not determine workflow path from run $RUN_ID"
+            exit 1
+          fi
+
+          if [[ "$WORKFLOW_PATH" != *"release.yml"* ]]; then
+            echo "❌ Error: Workflow run $RUN_ID is not of type 'on-release-candidates.yml'"
+            echo "Found: $WORKFLOW_PATH"
+            exit 1
+          fi
+
+          echo "✓ Workflow run $RUN_ID verified as 'on-release-candidates.yml'"
+
+  get-tt-inference-commit:
+    needs: check-prerequisites
+    runs-on: ubuntu-latest
+    outputs:
+      tt-inference-commit: ${{ steps.extract-metadata.outputs.tt-inference-server-commit }}
+      tt-inference-branch: ${{ steps.verify-head.outputs.branch-name }}
+    steps:
+      - name: Download artifacts
+        id: download
+
+        run: |
+          set -e
+
+          RUN_ID="${{ inputs.release-model-ci-run-id }}"
+          REPO="tenstorrent/tt-shield"
+          OUTPUT_DIR="${{ github.workspace }}/artifacts"
+
+          mkdir -p "$OUTPUT_DIR"
+
+          echo "📥 Searching for tt-inference-server build metadata artifact from run $RUN_ID..."
+
+          # Find the build metadata artifact (name starts with "tt-inference-server-build-")
+          ARTIFACT=$(gh api repos/$REPO/actions/runs/$RUN_ID/artifacts --paginate --jq '.artifacts[] | select(.name | startswith("tt-inference-server-build-"))' | jq -s '.[0]')
+
+          ARTIFACT_ID=$(echo "$ARTIFACT" | jq -r '.id // empty')
+          ARTIFACT_NAME=$(echo "$ARTIFACT" | jq -r '.name // empty')
+
+          if [ -z "$ARTIFACT_ID" ] || [ "$ARTIFACT_ID" = "null" ]; then
+            echo "❌ Error: No artifact matching 'tt-inference-server-build-*' found in run $RUN_ID"
+            exit 1
+          fi
+
+          echo "✓ Found artifact: $ARTIFACT_NAME (ID: $ARTIFACT_ID)"
+
+          ARTIFACT_DIR="$OUTPUT_DIR/$ARTIFACT_NAME"
+          mkdir -p "$ARTIFACT_DIR"
+          ARTIFACT_ZIP="$ARTIFACT_DIR/$ARTIFACT_NAME.zip"
+
+          gh api repos/$REPO/actions/artifacts/$ARTIFACT_ID/zip > "$ARTIFACT_ZIP"
+          unzip -q -o "$ARTIFACT_ZIP" -d "$ARTIFACT_DIR"
+          rm -f "$ARTIFACT_ZIP"
+          echo "✓ Extracted: $ARTIFACT_NAME"
+
+          echo "artifacts_dir=$OUTPUT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Extract build metadata
+        id: extract-metadata
+        run: |
+          ARTIFACTS_DIR="${{ steps.download.outputs.artifacts_dir }}"
+
+          # Find tt-inference-server build metadata
+          echo "Searching for build metadata in: $ARTIFACTS_DIR"
+          echo "Directory contents:"
+          find "$ARTIFACTS_DIR" -type f | head -n 50
+
+          TT_JSON=$(find "$ARTIFACTS_DIR" -path "*tt-inference-server-build-*/*.json" -type f | head -n 1)
+
+          if [ -z "$TT_JSON" ]; then
+            echo "❌ Error: No tt-inference-server build metadata JSON found in artifacts"
+            exit 1
+          fi
+
+          echo "✓ Found metadata file: $TT_JSON"
+
+          if [ -n "$TT_JSON" ]; then
+            TT_METAL_COMMIT=$(jq -r '.["tt-metal-commit"] // empty' "$TT_JSON")
+            TT_INFERENCE_COMMIT=$(jq -r '.["tt-inference-server-commit"] // empty' "$TT_JSON")
+
+            # Resolve to full SHA
+            if [ -n "$TT_INFERENCE_COMMIT" ]; then
+              FULL_SHA=$(gh api repos/tenstorrent/tt-inference-server/commits/$TT_INFERENCE_COMMIT --jq '.sha' 2>/dev/null || echo "$TT_INFERENCE_COMMIT")
+              TT_INFERENCE_COMMIT="$FULL_SHA"
+            fi
+
+            echo "tt-metal-commit=$TT_METAL_COMMIT" >> "$GITHUB_OUTPUT"
+            echo "tt-inference-server-commit=$TT_INFERENCE_COMMIT" >> "$GITHUB_OUTPUT"
+
+            echo "✓ Extracted metadata:"
+            echo "  tt-metal-commit: $TT_METAL_COMMIT"
+            echo "  tt-inference-server-commit: $TT_INFERENCE_COMMIT"
+          fi
+
+      - name: Verify commit is HEAD of a branch
+        id: verify-head
+        run: |
+          COMMIT="${{ steps.extract-metadata.outputs.tt-inference-server-commit }}"
+
+          BRANCHES=$(gh api repos/tenstorrent/tt-inference-server/commits/$COMMIT/branches-where-head --jq '[.[].name]')
+
+          COUNT=$(echo "$BRANCHES" | jq 'length')
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "❌ Error: Commit $COMMIT is not the HEAD of any branch in tt-inference-server"
+            exit 1
+          fi
+
+          if [ "$COUNT" -gt 1 ]; then
+            echo "❌ Error: Commit $COMMIT is the HEAD of multiple branches: $(echo "$BRANCHES" | jq -r 'join(", ")')"
+            echo "Expected exactly 1 branch"
+            exit 1
+          fi
+
+          BRANCH_NAME=$(echo "$BRANCHES" | jq -r '.[0]')
+
+          echo "✓ Commit $COMMIT is HEAD of $COUNT branch(es): $(echo "$BRANCHES" | jq -r 'join(", ")')"
+          echo "branch-name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+  create-prerelease:
+    needs: get-tt-inference-commit
+    runs-on: ubuntu-latest
+    outputs:
+      branch_name: ${{ steps.read-version.outputs.branch_name }}
+      version: ${{ steps.read-version.outputs.version }}
+    steps:
+      - name: Checkout tt-inference branch
+        uses: actions/checkout@v4
+        with:
+          repository: tenstorrent/tt-inference-server
+          ref: ${{ needs.get-tt-inference-commit.outputs.tt-inference-branch }}
+          token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.email "vmaksimovic@tenstorrent.com"
+          git config user.name "Veljko Maksimovic"
+
+      - name: Log release model-device pairings
+        run: |
+          echo "📋 Models and devices included in this release:"
+          jq -r '
+            .models | to_entries[]
+            | select(.value.ci.release)
+            | .key as $model
+            | .value.ci.release.devices[]
+            | "  \($model) — \(.)"
+          ' .github/workflows/models-ci-config.json
+
+      # - name: Save base model_spec.py and overlay feature branch
+      #   run: |
+      #     # Save the base model_spec.py BEFORE overlaying — this has the
+      #     # correct commit values for SKIP_TEMPLATES models
+      #     cp workflows/model_spec.py /tmp/base_model_spec.py
+
+      #     git fetch origin ${{ env.FEATURE_BRANCH }}
+      #     git checkout FETCH_HEAD -- scripts/ workflows/
+
+      #     git add -A
+      #     git commit -m "tmp: overlay scripts and workflows from feature branch"
+      #     echo "✓ Created temporary overlay commit"
+
+      # - name: Run models CI reader
+      #   env:
+      #     GH_PAT: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+      #   run: |
+      #     python3 scripts/release/models_ci_reader.py --run-id ${{ inputs.release-model-ci-run-id }}
+
+      # - name: Find the aggregated file which was created in the previous step
+      #   id: check-file
+      #   run: |
+      #     # Find the generated file matching the pattern
+      #     GENERATED_FILE=$(find release_logs -name "models_ci_last_good_*_to_*.json" -type f | head -n 1)
+
+      #     if [ -z "$GENERATED_FILE" ]; then
+      #       echo "❌ Error: No file found matching pattern 'release_logs/models_ci_last_good_*_to_*.json'"
+      #       exit 1
+      #     fi
+
+      #     echo "✓ Found generated file: $GENERATED_FILE"
+      #     echo "last_good_ci_json_path=$GENERATED_FILE" >> "$GITHUB_OUTPUT"
+
+      #     echo ""
+      #     echo "=== Contents of $GENERATED_FILE ==="
+      #     cat "$GENERATED_FILE"
+      #     echo "=== End of file contents ==="
+
+      # - name: Install crane
+      #   run: |
+      #     CRANE_VERSION="v0.20.7"
+      #     curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" -o crane.tar.gz
+      #     tar -xzf crane.tar.gz crane
+      #     sudo mv crane /usr/local/bin/crane
+      #     chmod +x /usr/local/bin/crane
+      #     rm crane.tar.gz
+      #     crane version
+
+      # - name: Log in to GitHub Container Registry
+      #   uses: docker/login-action@v3
+      #   with:
+      #     registry: ghcr.io
+      #     username: vmaksimovicTT
+      #     password: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+
+      # - name: Update model spec & create release artifacts
+      #   run: |
+      #    python3 scripts/release/update_model_spec.py "${{ steps.check-file.outputs.last_good_ci_json_path }}" --ignore-perf-status
+      #    python3 scripts/release/make_release_image_artifacts.py "${{ steps.check-file.outputs.last_good_ci_json_path }}" --increment ${{ inputs.release-increment }} --dev
+      #    python3 scripts/release/update_model_spec.py --output-only
+
+      # - name: Drop overlay commit, keep release outputs
+      #   run: |
+      #     # Save the corrected model_spec.py before dropping overlay
+      #     cp workflows/model_spec.py /tmp/model_spec_final.py
+
+      #     git add -A
+      #     git commit -m "tmp: release script outputs"
+
+      #     # Soft-reset back 2 commits to original base
+      #     git reset --soft HEAD~2
+
+      #     # Revert only scripts/ and workflows/ to base (keep docs/ and README.md
+      #     # since they were regenerated from the corrected model_spec.py)
+      #     git checkout HEAD -- scripts/ 2>/dev/null || true
+      #     git diff --cached --name-only --diff-filter=A HEAD -- scripts/ | xargs -r rm -f
+      #     git checkout HEAD -- workflows/ 2>/dev/null || true
+      #     git diff --cached --name-only --diff-filter=A HEAD -- workflows/ | xargs -r rm -f
+
+      #     # Restore the corrected model_spec.py (overlay reverted it to base)
+      #     cp /tmp/model_spec_final.py workflows/model_spec.py
+
+      #     echo "✓ Overlay removed, release outputs preserved"
+      #     echo "Changed files vs base:"
+      #     git diff --name-only HEAD
+
+      # - name: Read VERSION file
+      #   id: read-version
+      #   run: |
+      #     # Check if VERSION file has been changed (and if it exists at all)
+      #     if ! git diff --name-only | grep -q "^VERSION$" && ! git diff --cached --name-only | grep -q "^VERSION$"; then
+      #       echo "❌ Error: VERSION file has NOT been changed"
+      #       exit 1
+      #     fi
+
+      #     VERSION=$(cat VERSION | tr -d '[:space:]')
+
+      #     # Validate version format (x.y.z)
+      #     if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      #       echo "❌ Error: Invalid version format: $VERSION"
+      #       echo "Expected format: x.y.z (where x, y, z are positive whole numbers)"
+      #       exit 1
+      #     fi
+
+      #     BRANCH_NAME="rc-v${VERSION}"
+
+      #     echo "✅ VERSION file has been changed"
+      #     echo "✓ Read version: $VERSION"
+      #     echo "✓ Branch name: $BRANCH_NAME"
+      #     echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      #     echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+      # - name: Create pre-release branch, commit and push
+      #   run: |
+      #     BRANCH_NAME="${{ steps.read-version.outputs.branch_name }}"
+      #     git checkout -b "$BRANCH_NAME"
+      #     git add -A
+      #     git commit -m "Release candidate v${{ steps.read-version.outputs.version }}: Update model spec and version"
+      #     echo "✓ Committed all changes"
+      #     git push -u origin "$BRANCH_NAME"
+
+      # - name: Create PR
+      #   env:
+      #     GH_TOKEN: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+      #   run: |
+      #     PR_TITLE="Release Candidate v${{ steps.read-version.outputs.version }}"
+
+      #     # Build PR body from markdown files
+      #     PR_BODY_FILE=$(mktemp)
+      #     # Add metadata as HTML comment for tracking
+      #     echo "<!--" > "$PR_BODY_FILE"
+      #     echo "metadata:run_id=${{ inputs.release-model-ci-run-id }}" >> "$PR_BODY_FILE"
+      #     echo "metadata:version=v${{ steps.read-version.outputs.version }}" >> "$PR_BODY_FILE"
+      #     echo "-->" >> "$PR_BODY_FILE"
+      #     echo "# Summary of Changes" >> "$PR_BODY_FILE"
+      #     echo "" >> "$PR_BODY_FILE"
+
+      #     # Add model spec updates if file exists
+      #     if [ -f "release_logs/release_models_diff.md" ]; then
+      #       cat "release_logs/release_models_diff.md" >> "$PR_BODY_FILE"
+      #       echo "" >> "$PR_BODY_FILE"
+      #     fi
+
+      #     # Add release artifacts summary if file exists
+      #     if [ -f "release_logs/dev_artifacts_summary.md" ]; then
+      #       cat "release_logs/dev_artifacts_summary.md" >> "$PR_BODY_FILE"
+      #     fi
+
+      #     echo "Creating draft PR: $PR_TITLE"
+      #     gh pr create \
+      #       --title "$PR_TITLE" \
+      #       --body-file "$PR_BODY_FILE" \
+      #       --base dev \
+      #       --head "${{ steps.read-version.outputs.branch_name  }}" \
+      #       --draft
+
+      #     rm -f "$PR_BODY_FILE"
+      #     echo "✓ Created draft PR for ${{ steps.read-version.outputs.branch_name  }}"
+
+      # - name: Cleanup on failure
+      #   if: failure()
+      #   run: |
+      #     echo "Cleaning up branch: ${{ steps.read-version.outputs.branch_name }}"
+      #     git push origin --delete "${{ steps.read-version.outputs.branch_name }}" || echo "⚠️  Failed to delete branch (may not exist or already deleted)"
+      #     echo "✓ Cleanup completed"
+
+  # get-tt-metal-commits-for-additional-image-builds:
+  #   needs: [get-tt-inference-commit, create-prerelease]
+  #   runs-on: ubuntu-latest
+  #   outputs:
+  #     commits: ${{ steps.get-commits.outputs.commits }}
+  #   steps:
+  #     - name: Checkout tt-inference branch
+  #       uses: actions/checkout@v4
+  #       with:
+  #         repository: tenstorrent/tt-inference-server
+  #         ref: ${{ needs.create-prerelease.outputs.branch_name }}
+  #         token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+  #         fetch-depth: 0
+
+  #     - name: Overlay updated scripts from feature branch
+  #       run: |
+  #         git fetch origin ${{ env.FEATURE_BRANCH }}
+  #         git checkout FETCH_HEAD -- scripts/ workflows/
+
+  #     - name: Set up Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.8'
+
+  #     - name: Get tt-metal commits
+  #       id: get-commits
+  #       run: |
+  #         python -c "
+  #         import sys, json
+  #         from pathlib import Path
+  #         sys.path.insert(0, str(Path('scripts/build_docker_images.py').resolve().parent.parent))
+  #         from scripts.build_docker_images import list_image_combinations
+  #         from workflows.model_spec import MODEL_SPECS
+
+  #         combinations = list_image_combinations(MODEL_SPECS)
+  #         commits = sorted(set(tt_metal for tt_metal, _ in combinations))
+  #         print(json.dumps(commits))
+  #         " > commits.json
+
+  #         echo "commits=$(cat commits.json)" >> $GITHUB_OUTPUT
+  #         echo "Found commits: $(cat commits.json)"
+
+  # build-and-push-additional-images:
+  #   needs: [get-tt-inference-commit, get-tt-metal-commits-for-additional-image-builds, create-prerelease]
+  #   runs-on: tt-ubuntu-2204-large-stable
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       tt_metal_commit: ${{ fromJson(needs.get-tt-metal-commits-for-additional-image-builds.outputs.commits) }}
+  #   steps:
+  #     - name: Checkout tt-inference branch
+  #       uses: actions/checkout@v4
+  #       with:
+  #         repository: tenstorrent/tt-inference-server
+  #         ref: ${{ needs.create-prerelease.outputs.branch_name }}
+  #         token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+  #         fetch-depth: 0
+
+  #     - name: Overlay updated scripts from feature branch
+  #       run: |
+  #         git fetch origin ${{ env.FEATURE_BRANCH }}
+  #         git checkout FETCH_HEAD -- scripts/ workflows/
+
+  #     - name: Docker login
+  #       uses: docker/login-action@v3
+  #       with:
+  #         registry: https://ghcr.io
+  #         username: vmaksimovicTT
+  #         password: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+
+  #     - name: Build for ${{ matrix.tt_metal_commit }}
+  #       run: |
+  #         echo "Building images for tt-metal commit: ${{ matrix.tt_metal_commit }}"
+  #         mkdir -p workflow_logs/docker_build_logs
+  #         python3 scripts/build_docker_images.py --build-metal-commit "${{ matrix.tt_metal_commit }}" --stdout-only --push
+
+  # get-tt-metal-commits-for-media-image-builds:
+  #   needs: [get-tt-inference-commit, create-prerelease]
+  #   runs-on: ubuntu-latest
+  #   outputs:
+  #     commits: ${{ steps.get-commits.outputs.commits }}
+  #   steps:
+  #     - name: Checkout tt-inference branch
+  #       uses: actions/checkout@v4
+  #       with:
+  #         repository: tenstorrent/tt-inference-server
+  #         ref: ${{ needs.create-prerelease.outputs.branch_name }}
+  #         token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+  #         fetch-depth: 0
+
+  #     - name: Overlay updated scripts from feature branch
+  #       run: |
+  #         git fetch origin ${{ env.FEATURE_BRANCH }}
+  #         git checkout FETCH_HEAD -- scripts/ workflows/
+
+  #     - name: Set up Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.8'
+
+  #     - name: Get tt-metal commits for media models
+  #       id: get-commits
+  #       run: |
+  #         python -c "
+  #         import sys, json
+  #         from pathlib import Path
+  #         sys.path.insert(0, str(Path('scripts/build_docker_images.py').resolve().parent.parent))
+  #         from workflows.model_spec import MODEL_SPECS
+
+  #         # Get unique tt-metal commits for media models (vllm_commit is None, no hardcoded docker_image)
+  #         commits = sorted(set(
+  #             config.tt_metal_commit
+  #             for config in MODEL_SPECS.values()
+  #             if config.vllm_commit is None and not config.skip_build and config.docker_image is None
+  #         ))
+  #         print(json.dumps(commits))
+  #         " > commits.json
+
+  #         echo "commits=$(cat commits.json)" >> $GITHUB_OUTPUT
+  #         echo "Found media model commits: $(cat commits.json)"
+
+  # build-and-push-media-images:
+  #   needs: [get-tt-inference-commit, get-tt-metal-commits-for-media-image-builds, create-prerelease]
+  #   runs-on: tt-ubuntu-2204-large-stable
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       tt_metal_commit: ${{ fromJson(needs.get-tt-metal-commits-for-media-image-builds.outputs.commits) }}
+  #   steps:
+  #     - name: Checkout tt-inference branch
+  #       uses: actions/checkout@v4
+  #       with:
+  #         repository: tenstorrent/tt-inference-server
+  #         ref: ${{ needs.create-prerelease.outputs.branch_name }}
+  #         token: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+  #         fetch-depth: 0
+
+  #     - name: Overlay updated scripts from feature branch
+  #       run: |
+  #         git fetch origin ${{ env.FEATURE_BRANCH }}
+  #         git checkout FETCH_HEAD -- scripts/ workflows/
+
+  #     - name: Docker login
+  #       uses: docker/login-action@v3
+  #       with:
+  #         registry: https://ghcr.io
+  #         username: vmaksimovicTT
+  #         password: ${{ secrets.TMP_VMAKSIMOVICTT_PAT }}
+
+  #     - name: Build media image for ${{ matrix.tt_metal_commit }}
+  #       run: |
+  #         IMAGE_VERSION=$(cat VERSION | tr -d '[:space:]')
+  #         IMAGE_TAG="ghcr.io/tenstorrent/tt-media-inference-server:${IMAGE_VERSION}-${{ matrix.tt_metal_commit }}"
+  #         echo "Building media image: $IMAGE_TAG"
+
+  #         docker build --no-cache \
+  #           -t "$IMAGE_TAG" \
+  #           --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${{ matrix.tt_metal_commit }}" \
+  #           -f tt-media-server/Dockerfile .
+
+  #         docker push "$IMAGE_TAG"
+  #         echo "✓ Pushed: $IMAGE_TAG"
