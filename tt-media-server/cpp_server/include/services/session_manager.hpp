@@ -108,7 +108,6 @@ class SessionManager {
    */
   void registerPrefixHash(const std::string& sessionId, uint64_t prefixHash);
 
-
  private:
   // cancelFn is null when idle, set atomically with in-flight state by
   // acquireInFlight.

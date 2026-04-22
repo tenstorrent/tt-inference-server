@@ -160,8 +160,8 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
   bool wasInFlight = false;
 
   bool found = sessions.modify(
-      sessionId, [&result, &wasInFlight, cancelFn = std::move(cancelFn)](
-                     ManagedSession& ms) mutable {
+      sessionId, [&result, &wasInFlight,
+                  cancelFn = std::move(cancelFn)](ManagedSession& ms) mutable {
         wasInFlight = !ms.session.isIdle();
         if (wasInFlight) return;
         ms.session.updateActivityTime();
@@ -196,9 +196,7 @@ std::optional<domain::Session> SessionManager::getSession(
   return ms->session;
 }
 
-size_t SessionManager::getActiveSessionCount() const {
-  return sessions.size();
-}
+size_t SessionManager::getActiveSessionCount() const { return sessions.size(); }
 
 void SessionManager::releaseInFlight(const std::string& sessionId) {
   bool found = sessions.modify(sessionId, [](ManagedSession& ms) {
@@ -517,10 +515,9 @@ SessionManager::tryAcquireByPrefixHash(uint64_t prefixHash,
     std::optional<AcquiredSession> acquired;
     bool wasInFlight = false;
 
-    bool found = sessions.modify(
-        sessionId,
-        [&acquired, &wasInFlight, &sessionId,
-         &cancelFn](ManagedSession& ms) mutable {
+    bool found =
+        sessions.modify(sessionId, [&acquired, &wasInFlight, &sessionId,
+                                    &cancelFn](ManagedSession& ms) mutable {
           if (!ms.session.isIdle()) {
             wasInFlight = true;
             return;
@@ -528,8 +525,7 @@ SessionManager::tryAcquireByPrefixHash(uint64_t prefixHash,
           ms.session.updateActivityTime();
           ms.session.markInFlight();
           ms.cancelFn = cancelFn;  // keep lambda reusable across candidates
-          acquired =
-              AcquiredSession{sessionId, ms.session.getSlotId()};
+          acquired = AcquiredSession{sessionId, ms.session.getSlotId()};
         });
 
     if (!found) {
@@ -567,8 +563,8 @@ void SessionManager::registerPrefixHash(const std::string& sessionId,
 
   // Update session's hash field and pick up the old hash (for index update).
   uint64_t oldHash = 0;
-  bool sessionFound = sessions.modify(
-      sessionId, [&oldHash, prefixHash](ManagedSession& ms) {
+  bool sessionFound =
+      sessions.modify(sessionId, [&oldHash, prefixHash](ManagedSession& ms) {
         oldHash = ms.session.getHash();
         ms.session.setHash(prefixHash);
       });
