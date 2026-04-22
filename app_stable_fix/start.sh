@@ -188,8 +188,10 @@ if $ALL_READY; then
     echo "  ✅ ALL SERVICES READY! (${ELAPSED}s)"
     echo "=========================================="
     echo ""
-    echo "  Face Auth: http://localhost:8080/"
-    echo "  Chat UI:   http://localhost:8080/chat"
+    echo ""
+    echo "  Enter TT-HOME: http://localhost:8080/"
+    echo ""
+    echo "  💡 Tip: Use Google Chrome for the best experience!"
 else
     echo "=========================================="
     echo "  ⚠️  SOME SERVICES FAILED (after ${ELAPSED}s)"

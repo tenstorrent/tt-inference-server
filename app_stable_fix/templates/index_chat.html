@@ -35,11 +35,12 @@
                 radial-gradient(ellipse 50% 40% at 50% 100%, rgba(139, 92, 246, 0.10) 0%, transparent 50%),
                 radial-gradient(circle at 50% 50%, rgba(20, 20, 30, 1) 0%, rgba(10, 10, 15, 1) 100%);
             background-attachment: fixed;
-            min-height: 100vh;
+            height: 100vh;
             color: var(--text-primary);
             display: flex;
             flex-direction: column;
             position: relative;
+            overflow: hidden;
         }
 
         body::before {
@@ -197,13 +198,16 @@
             width: 100%;
             margin: 0 auto;
             padding: 24px;
+            min-height: 0;
+            overflow: hidden;
         }
 
-        /* Chat Messages */
+        /* Chat Messages — scrollable area between header and controls */
         .chat-container {
             flex: 1;
             overflow-y: auto;
             padding-bottom: 20px;
+            min-height: 0;
         }
 
         .message {
@@ -657,14 +661,14 @@
         .mode-btn {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 10px 18px;
+            gap: 10px;
+            padding: 14px 24px;
             background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
             color: var(--text-secondary);
-            font-size: 0.85rem;
-            font-weight: 500;
+            font-size: 1rem;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
             white-space: nowrap;
@@ -677,14 +681,15 @@
         }
 
         .mode-btn.active {
-            background: rgba(139, 92, 246, 0.15);
+            background: rgba(139, 92, 246, 0.2);
             border-color: var(--accent-purple);
-            color: var(--accent-purple);
-            font-weight: 600;
+            color: #c4b5fd;
+            font-weight: 700;
+            box-shadow: 0 0 12px rgba(139, 92, 246, 0.25);
         }
 
         .mode-btn .mode-icon {
-            font-size: 1.1rem;
+            font-size: 1.3rem;
         }
 
         .mode-indicator {
@@ -796,6 +801,59 @@
 
         @media (max-width: 500px) {
             .podcast-grid > .podcast-card { flex: 1 1 100%; }
+        }
+
+        /* Large screens / TVs (viewport width > 1400px) */
+        @media (min-width: 1400px) {
+            .header { padding: 20px 36px; }
+            .header-center svg { width: 32px; height: 32px; }
+            .header-center-title { font-size: 1.5rem; }
+            .model-badge { font-size: 0.95rem; padding: 6px 14px; }
+            .model-badge .dot { width: 10px; height: 10px; }
+            .home-link { font-size: 1.1rem; }
+            .powered-by { font-size: 0.95rem; }
+
+            .welcome-banner { padding: 24px 36px; font-size: 1.2rem; border-radius: 16px; }
+
+            .mode-btn { padding: 14px 28px; font-size: 1.1rem; border-radius: 14px; gap: 10px; }
+            .mode-btn .mode-icon { font-size: 1.3rem; }
+
+            .record-btn { width: 88px; height: 88px; font-size: 2.2rem; }
+            .toggle-option { font-size: 1.05rem; gap: 8px; }
+            .toggle-switch { width: 44px; height: 24px; }
+            .toggle-switch::after { width: 18px; height: 18px; }
+            .toggle-switch.active::after { transform: translateX(20px); }
+            .status-text { font-size: 1.1rem; }
+
+            .message-content { font-size: 1.1rem; line-height: 1.7; }
+            .message-sender { font-size: 0.9rem; }
+            .message-time { font-size: 0.85rem; }
+            .play-btn, .stop-speech-btn { font-size: 1.2rem; width: 40px; height: 40px; }
+            .timing-badge { font-size: 0.85rem; }
+
+            .podcast-card { padding: 28px; }
+            .podcast-card h3 { font-size: 1.2rem; }
+            .podcast-card p { font-size: 1rem; }
+            .podcast-card input, .podcast-card textarea { font-size: 1.05rem; padding: 14px; }
+            .podcast-card button { font-size: 1.05rem; padding: 12px 20px; }
+        }
+
+        /* Extra-large screens (> 1800px, like TVs at 150% zoom) */
+        @media (min-width: 1800px) {
+            .header { padding: 24px 48px; }
+            .header-center-title { font-size: 1.8rem; }
+            .header-center svg { width: 40px; height: 40px; }
+            .model-badge { font-size: 1.1rem; padding: 8px 18px; }
+
+            .mode-btn { padding: 18px 36px; font-size: 1.25rem; border-radius: 16px; }
+            .mode-btn .mode-icon { font-size: 1.5rem; }
+
+            .record-btn { width: 100px; height: 100px; font-size: 2.6rem; }
+            .status-text { font-size: 1.25rem; }
+            .toggle-option { font-size: 1.2rem; }
+
+            .welcome-banner { padding: 32px 48px; font-size: 1.4rem; }
+            .message-content { font-size: 1.25rem; line-height: 1.8; }
         }
 
         .podcast-card {
@@ -917,14 +975,17 @@
         .podcast-voice-hint {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
             margin-top: 12px;
-            padding: 10px 14px;
-            background: rgba(139, 92, 246, 0.06);
-            border: 1px solid rgba(139, 92, 246, 0.15);
-            border-radius: 8px;
-            font-size: 0.82rem;
-            color: var(--text-secondary);
+            margin-bottom: 8px;
+            padding: 14px 18px;
+            background: rgba(234, 179, 8, 0.1);
+            border: 1px solid rgba(234, 179, 8, 0.3);
+            border-radius: 10px;
+            font-size: 0.95rem;
+            color: #fbbf24;
+            font-weight: 500;
+            letter-spacing: 0.2px;
         }
 
         .podcast-voice-hint-icon {
@@ -1029,10 +1090,13 @@
 
         <!-- Document Upload Area (visible in Docs mode) -->
         <div class="doc-upload-area" id="docUploadArea">
+            <div class="podcast-voice-hint">
+                📄 Upload a document, paste text, or enter a web URL — then ask me anything about it!
+            </div>
             <div class="doc-grid">
                 <div class="podcast-card">
                     <div class="podcast-card-icon">📄</div>
-                    <div class="podcast-card-title">Upload Document</div>
+                    <div class="podcast-card-title">Upload a File</div>
                     <div class="podcast-card-desc">PDF, TXT, MD, or code files</div>
                     <div class="podcast-card-action">
                         <button class="podcast-card-action-btn" onclick="document.getElementById('docFileInput').click()">Choose File</button>
@@ -1045,10 +1109,10 @@
 
                 <div class="podcast-card">
                     <div class="podcast-card-icon">📋</div>
-                    <div class="podcast-card-title">Paste Text</div>
-                    <div class="podcast-card-desc">Paste any content directly</div>
+                    <div class="podcast-card-title">Paste Content</div>
+                    <div class="podcast-card-desc">Paste an article or text to analyze</div>
                     <div class="podcast-card-action">
-                        <button class="podcast-card-action-btn" onclick="toggleDocExpand('docTextExpand', this)">Paste text...</button>
+                        <button class="podcast-card-action-btn" onclick="toggleDocExpand('docTextExpand', this)">Paste content...</button>
                         <div class="podcast-card-expand" id="docTextExpand">
                             <textarea id="docTextInput" placeholder="Paste your text here..."></textarea>
                             <button class="podcast-generate-btn" onclick="uploadDocText()">Load Document</button>
@@ -1061,8 +1125,8 @@
 
                 <div class="podcast-card">
                     <div class="podcast-card-icon">🌐</div>
-                    <div class="podcast-card-title">Web URL</div>
-                    <div class="podcast-card-desc">Fetch an article or webpage</div>
+                    <div class="podcast-card-title">From Web URL</div>
+                    <div class="podcast-card-desc">Fetch a webpage to analyze</div>
                     <div class="podcast-card-action">
                         <button class="podcast-card-action-btn" onclick="toggleDocExpand('docUrlExpand', this)">Enter URL...</button>
                         <div class="podcast-card-expand" id="docUrlExpand">
@@ -1079,13 +1143,31 @@
             </div>
         </div>
 
+        <!-- Talk Hint (visible in Talk mode) -->
+        <div class="podcast-panel" id="talkHintPanel">
+            <div class="podcast-voice-hint">
+                💬 Just speak — ask me anything and I'll respond!
+            </div>
+        </div>
+
+        <!-- Story Hint (visible in Story mode) -->
+        <div class="podcast-panel" id="storyHintPanel">
+            <div class="podcast-voice-hint">
+                📖 Just speak any topic or sentence — I'll generate a story on it!
+            </div>
+        </div>
+
         <!-- Podcast Input Panel (visible in Podcast mode) -->
         <div class="podcast-panel" id="podcastPanel">
+            <div class="podcast-voice-hint">
+                🎙️ Speak any topic using the mic — or provide source material below to generate a podcast from it!
+            </div>
+
             <div class="podcast-grid">
                 <div class="podcast-card">
-                    <div class="podcast-card-icon">📄</div>
-                    <div class="podcast-card-title">Upload Document</div>
-                    <div class="podcast-card-desc">PDF, TXT, MD, or code files</div>
+                    <div class="podcast-card-icon">🎧</div>
+                    <div class="podcast-card-title">Podcast from a Document</div>
+                    <div class="podcast-card-desc">Upload a file to turn into a podcast</div>
                     <div class="podcast-card-action">
                         <button class="podcast-card-action-btn" onclick="document.getElementById('podcastFileInput').click()">Choose File</button>
                         <input type="file" id="podcastFileInput" accept=".pdf,.txt,.md,.csv,.json,.py,.js,.html" style="display:none" onchange="uploadPodcastFile(this)">
@@ -1097,13 +1179,13 @@
                 <div class="card-or"><span>OR</span></div>
 
                 <div class="podcast-card">
-                    <div class="podcast-card-icon">📋</div>
-                    <div class="podcast-card-title">Paste Text</div>
-                    <div class="podcast-card-desc">Paste any content directly</div>
+                    <div class="podcast-card-icon">🎙️</div>
+                    <div class="podcast-card-title">Podcast from Content</div>
+                    <div class="podcast-card-desc">Paste an article or text to turn into a podcast</div>
                     <div class="podcast-card-action">
-                        <button class="podcast-card-action-btn" id="podcastTextToggle" onclick="togglePodcastExpand('textExpand', this)">Paste text...</button>
+                        <button class="podcast-card-action-btn" id="podcastTextToggle" onclick="togglePodcastExpand('textExpand', this)">Paste content...</button>
                         <div class="podcast-card-expand" id="textExpand">
-                            <textarea id="podcastTextInput" placeholder="Paste your text here..."></textarea>
+                            <textarea id="podcastTextInput" placeholder="Paste an article, essay, or any content here (not a topic)..."></textarea>
                             <button class="podcast-generate-btn" onclick="uploadPodcastText()">Generate Podcast</button>
                         </div>
                         <div class="podcast-status" id="podcastTextStatus"></div>
@@ -1114,8 +1196,8 @@
 
                 <div class="podcast-card">
                     <div class="podcast-card-icon">🌐</div>
-                    <div class="podcast-card-title">Web URL</div>
-                    <div class="podcast-card-desc">Fetch an article or webpage</div>
+                    <div class="podcast-card-title">Podcast from Web URL</div>
+                    <div class="podcast-card-desc">Fetch a webpage to turn into a podcast</div>
                     <div class="podcast-card-action">
                         <button class="podcast-card-action-btn" id="podcastUrlToggle" onclick="togglePodcastExpand('urlExpand', this)">Enter URL...</button>
                         <div class="podcast-card-expand" id="urlExpand">
@@ -1125,11 +1207,6 @@
                         <div class="podcast-status" id="podcastUrlStatus"></div>
                     </div>
                 </div>
-            </div>
-
-            <div class="podcast-voice-hint">
-                <span class="podcast-voice-hint-icon">🎙️</span>
-                Or just speak a topic using the mic below — it will generate a podcast on your topic!
             </div>
 
             <button class="podcast-stop-btn" id="podcastStopBtn" onclick="stopPodcast()">⏹ Stop Podcast</button>
@@ -1520,17 +1597,22 @@
         function updateDocUploadVisibility() {
             const area = document.getElementById('docUploadArea');
             const podcastPanel = document.getElementById('podcastPanel');
-            if (currentMode === 'docs') {
+            const storyHint = document.getElementById('storyHintPanel');
+            const talkHint = document.getElementById('talkHintPanel');
+            area.classList.remove('show');
+            podcastPanel.classList.remove('show');
+            storyHint.classList.remove('show');
+            talkHint.classList.remove('show');
+            if (currentMode === 'talk') {
+                talkHint.classList.add('show');
+            } else if (currentMode === 'docs') {
                 area.classList.add('show');
-                podcastPanel.classList.remove('show');
             } else if (currentMode === 'podcast') {
-                area.classList.remove('show');
                 podcastPanel.classList.add('show');
                 const genBtn = document.getElementById('podcastFileGenBtn');
                 if (genBtn) genBtn.style.display = 'none';
-            } else {
-                area.classList.remove('show');
-                podcastPanel.classList.remove('show');
+            } else if (currentMode === 'story') {
+                storyHint.classList.add('show');
             }
         }
 
