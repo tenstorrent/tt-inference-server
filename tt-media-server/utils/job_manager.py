@@ -36,8 +36,8 @@ class Job:
     request_parameters: dict = field(default_factory=dict)
     org_id: Optional[str] = None
     status: JobStatus = JobStatus.QUEUED
-    created_at: int = None
-    completed_at: Optional[int] = None
+    created_at: float = None
+    completed_at: Optional[float] = None
     result_path: Optional[str] = None
     error: Optional[dict] = None
     _task: Callable = None
@@ -49,13 +49,13 @@ class Job:
 
     def __post_init__(self):
         if self.created_at is None:
-            self.created_at = int(time.time())
+            self.created_at = time.time()
 
     def mark_in_progress(self):
         self.status = JobStatus.IN_PROGRESS
 
     def mark_completed(self, result_path: str):
-        self.completed_at = int(time.time())
+        self.completed_at = time.time()
         self.status = JobStatus.COMPLETED
         self.result_path = result_path
 
@@ -64,10 +64,10 @@ class Job:
 
     def mark_cancelled(self):
         self.status = JobStatus.CANCELLED
-        self.completed_at = int(time.time())
+        self.completed_at = time.time()
 
     def mark_failed(self, error_code: str, error_message: str):
-        self.completed_at = int(time.time())
+        self.completed_at = time.time()
         self.status = JobStatus.FAILED
         self.error = {"code": error_code, "message": error_message}
 
