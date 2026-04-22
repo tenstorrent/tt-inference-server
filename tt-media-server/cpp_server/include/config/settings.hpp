@@ -126,11 +126,13 @@ std::string kafkaGroupId();
  * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
 unsigned sessionAllocationMaxRetries();
 
-/** H2D socket ID from H2D_SOCKET_ID. Default: defaults::H2D_SOCKET_ID. */
-std::string h2dSocketId();
+/** Prefill timeout in milliseconds from PREFILL_TIMEOUT_MS. Default:
+ * defaults::PREFILL_TIMEOUT_MS. */
+unsigned prefillTimeoutMs();
 
-/** D2H socket ID from D2H_SOCKET_ID. Default: defaults::D2H_SOCKET_ID. */
-std::string d2hSocketId();
+/** Blaze socket descriptor prefix from BLAZE_SOCKET_DESCRIPTOR_PREFIX. Default:
+ * defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX. */
+std::string blazeSocketDescriptorPrefix();
 
 /** Pipeline manager connect timeout (ms) from PM_CONNECT_TIMEOUT_MS. Default:
  * defaults::PM_CONNECT_TIMEOUT_MS. */
@@ -139,6 +141,15 @@ unsigned pmConnectTimeoutMs();
 /** Pipeline manager max users from PM_MAX_USERS. Default:
  * defaults::PM_MAX_USERS. */
 size_t pmMaxUsers();
+
+/** Warmup timeout (ms) while waiting for the first token during runner warmup.
+ * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
+unsigned warmupTimeoutMs();
+
+/** Max time (ms) without any model output while at least one request is in
+ * flight before the runner self-terminates the worker process. From
+ * OUTPUT_HANG_TIMEOUT_MS. Default: defaults::OUTPUT_HANG_TIMEOUT_MS. */
+unsigned outputHangTimeoutMs();
 
 /** Task queue name from TT_TASK_QUEUE. Default: defaults::TT_TASK_QUEUE. */
 std::string ttTaskQueueName();
@@ -162,6 +173,11 @@ std::string ttWarmupSignalsQueueName();
 /** Memory result queue name from TT_MEMORY_RESULT_QUEUE. Default:
  * defaults::TT_MEMORY_RESULT_QUEUE. */
 std::string ttMemoryResultQueueName();
+
+/** POSIX shared-memory segment name backing the worker metrics transport.
+ * From TT_WORKER_METRICS_SHM. Default: defaults::TT_WORKER_METRICS_SHM.
+ * Inherited across fork+execv so main and worker resolve to the same name. */
+std::string workerMetricsShmName();
 
 /** Use DeepSeek markdown format from USE_DEEPSEEK_MD_FORMAT. Default:
  * defaults::USE_DEEPSEEK_MD_FORMAT. */

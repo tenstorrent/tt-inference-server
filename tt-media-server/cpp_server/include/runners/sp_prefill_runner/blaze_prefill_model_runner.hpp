@@ -22,7 +22,7 @@ class BlazePrefillModelRunner : public IBlazePrefillModelRunner {
   BlazePrefillModelRunner(const BlazePrefillModelRunner&) = delete;
   BlazePrefillModelRunner& operator=(const BlazePrefillModelRunner&) = delete;
 
-  std::optional<tt::runners::llm_engine::TokenResult> forward(
+  std::optional<tt::domain::TokenResult> forward(
       uint32_t taskId, const std::vector<int64_t>& tokenIds) override;
   void exit() override;
 
@@ -44,6 +44,9 @@ class BlazePrefillModelRunner : public IBlazePrefillModelRunner {
   tt::ipc::PrefillSlotBuffer deviceInput;
   tt::ipc::DecodeSlotBuffer deviceOutput;
   std::atomic<bool> stop{false};
+  std::atomic<size_t> consecutiveErrors{0};
+
+  static constexpr size_t MAX_CONSECUTIVE_ERRORS = 5;
 };
 
 }  // namespace blaze_prefill

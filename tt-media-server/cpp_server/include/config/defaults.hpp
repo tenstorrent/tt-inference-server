@@ -36,19 +36,28 @@ constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
 constexpr const char* KAFKA_GROUP_ID = "migration-workers";
 
-constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 10;
+constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
+constexpr unsigned PREFILL_TIMEOUT_MS = 10000;
 
-constexpr const char* H2D_SOCKET_ID = "deepseek_h2d";
-constexpr const char* D2H_SOCKET_ID = "deepseek_d2h";
+constexpr const char* BLAZE_SOCKET_DESCRIPTOR_PREFIX = "deepseek";
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";
 constexpr const char* TT_CANCEL_QUEUE = "tt_cancels";
 constexpr const char* TT_WARMUP_SIGNALS_QUEUE = "tt_warmup_signals";
 constexpr const char* TT_MEMORY_REQUEST_QUEUE = "tt_mem_requests";
 constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
+constexpr const char* TT_WORKER_METRICS_SHM = "/tt_worker_metrics";
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
 constexpr size_t PM_MAX_USERS = 64;
 constexpr bool USE_DEEPSEEK_MD_FORMAT = false;
+constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
+/**
+ * Max time (ms) the runner may go without producing a model output while at
+ * least one request is in flight before it self-terminates the worker
+ * process. Self-terminating lets the infrastructure monitoring stack notice
+ * the crash and restart the server instead of hanging silently.
+ */
+constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 10000;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 

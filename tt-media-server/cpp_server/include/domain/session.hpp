@@ -7,74 +7,45 @@
 
 #include <chrono>
 #include <cstdint>
-#include <optional>
-#include <random>
-#include <sstream>
 #include <string>
 
 #include "domain/manage_memory.hpp"
 
 namespace tt::domain {
 
-/**
- * Session represents a user session with an optional slot assignment.
- */
+// Lifecycle state of a Session.  IDLE <--(clearInFlight)--> IN_FLIGHT.
+enum class SessionState {
+  IDLE,       // no active request
+  IN_FLIGHT,  // request actively being processed
+};
+
 class Session {
  public:
-  /**
-   * Create a new session with a generated UUID.
-   * @param slotId Optional slot ID (max uint32_t means unassigned)
-   */
   explicit Session(uint32_t slotId = INVALID_SLOT_ID);
 
-  /**
-   * Get the session ID (UUID).
-   */
-  std::string getSessionId() const { return session_id_; }
-
-  /**
-   * Get the assigned slot ID.
-   * @return Slot ID, or max uint32_t if unassigned
-   */
+  const std::string& getSessionId() const { return session_id_; }
   uint32_t getSlotId() const { return slot_id_; }
-
-  /**
-   * Assign a slot ID to this session.
-   */
   void setSlotId(uint32_t slotId) { slot_id_ = slotId; }
-
-  /**
-   * Check if a slot is assigned.
-   */
   bool hasSlot() const { return slot_id_ != INVALID_SLOT_ID; }
 
-  /**
-   * Check if the session is in-flight (has an active request).
-   */
-  bool isInFlight() const { return in_flight_; }
+  bool isIdle() const { return state_ == SessionState::IDLE; }
+  bool isInFlight() const { return state_ == SessionState::IN_FLIGHT; }
 
-  /**
-   * Set the in-flight status of the session.
-   */
-  void setInFlight(bool inFlight) { in_flight_ = inFlight; }
+  SessionState getState() const { return state_; }
 
-  /**
-   * Get the last activity time.
-   */
+  // Transition methods return false (without changing state) if the
+  // precondition is not met.
+  bool markInFlight();   // IDLE      -> IN_FLIGHT
+  bool clearInFlight();  // IN_FLIGHT -> IDLE
+
   std::chrono::system_clock::time_point getLastActivityTime() const {
     return last_activity_time_;
   }
 
-  /**
-   * Update the last activity time to now.
-   */
   void updateActivityTime() {
     last_activity_time_ = std::chrono::system_clock::now();
   }
 
-  /**
-   * Convert to JSON representation.
-   */
   Json::Value toJson() const {
     Json::Value json;
     json["session_id"] = session_id_;
@@ -85,12 +56,9 @@ class Session {
  private:
   std::string session_id_;
   uint32_t slot_id_;
-  bool in_flight_{false};
+  SessionState state_{SessionState::IDLE};
   std::chrono::system_clock::time_point last_activity_time_;
 
-  /**
-   * Generate a UUID v4 string.
-   */
   static std::string generateUuid();
 };
 

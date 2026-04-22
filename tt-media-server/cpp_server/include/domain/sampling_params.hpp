@@ -8,7 +8,7 @@
 
 #include "config/types.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::domain {
 
 using tt::config::ResponseFormatType;
 
@@ -55,4 +55,4 @@ struct SamplingParams {
   static std::unique_ptr<SamplingParams> deserialize(std::istream& is);
 };
 
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::domain

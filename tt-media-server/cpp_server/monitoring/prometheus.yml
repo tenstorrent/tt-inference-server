@@ -14,3 +14,15 @@ scrape_configs:
     metrics_path: /metrics
     scheme: http
     scrape_timeout: 4s
+
+  # Host process metrics (CPU / memory / threads / fds per binary).
+  # Exposed by the process-exporter service on the monitoring network.
+  - job_name: "tt_processes"
+    static_configs:
+      - targets:
+          - "process-exporter:9256"
+        labels:
+          instance: "tt_media_server_host"
+    metrics_path: /metrics
+    scheme: http
+    scrape_timeout: 4s

@@ -154,15 +154,10 @@ std::string visibleDevicesForWorker(size_t workerIndex) {
   return "";
 }
 
-std::string h2dSocketId() {
+std::string blazeSocketDescriptorPrefix() {
   static const std::string cached =
-      envString("H2D_SOCKET_ID", defaults::H2D_SOCKET_ID);
-  return cached;
-}
-
-std::string d2hSocketId() {
-  static const std::string cached =
-      envString("D2H_SOCKET_ID", defaults::D2H_SOCKET_ID);
+      envString("BLAZE_SOCKET_DESCRIPTOR_PREFIX",
+                defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX);
   return cached;
 }
 
@@ -173,6 +168,16 @@ unsigned pmConnectTimeoutMs() {
 
 size_t pmMaxUsers() {
   return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
+}
+
+unsigned warmupTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("WARMUP_TIMEOUT_MS", defaults::WARMUP_TIMEOUT_MS));
+}
+
+unsigned outputHangTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
 }
 
 bool useDeepseekMdFormat() {
@@ -204,6 +209,10 @@ std::string ttMemoryRequestQueueName() {
 
 std::string ttMemoryResultQueueName() {
   return envString("TT_MEMORY_RESULT_QUEUE", defaults::TT_MEMORY_RESULT_QUEUE);
+}
+
+std::string workerMetricsShmName() {
+  return envString("TT_WORKER_METRICS_SHM", defaults::TT_WORKER_METRICS_SHM);
 }
 
 LLMConfig llmEngineConfig() {
@@ -333,6 +342,11 @@ unsigned sessionAllocationMaxRetries() {
   return static_cast<unsigned>(
       envUlong("SESSION_ALLOCATION_MAX_RETRIES",
                defaults::SESSION_ALLOCATION_MAX_RETRIES));
+}
+
+unsigned prefillTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
 }
 
 }  // namespace tt::config

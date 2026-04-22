@@ -113,6 +113,9 @@ struct LLMRequest : BaseRequest {
   std::optional<int> truncate_prompt_tokens;
   int prompt_tokens_count = 0;
   bool fast_mode = false;
+  bool disaggregated = false;  // True if this is a disaggregated request
+
+  bool parallel_tool_calls = true;
 
   // Structured output constraint
   std::optional<ResponseFormat> response_format;

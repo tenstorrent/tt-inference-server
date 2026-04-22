@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <thread>
@@ -14,25 +15,28 @@
 #include "profiling/tracy.hpp"
 #include "services/memory_services/contiguous_memory_manager.hpp"
 #include "utils/logger.hpp"
+#include "worker/single_process_worker_metrics.hpp"
 
 namespace tt::runners {
 
-SpPipelineRunnerDemo::SpPipelineRunnerDemo(
-    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
-    tt::runners::llm_engine::ITaskQueue* taskQueue)
+SpPipelineRunnerDemo::SpPipelineRunnerDemo(const config::LLMConfig& config,
+                                           ipc::IResultQueue* resultQueue,
+                                           tt::ipc::ITaskQueue* taskQueue)
     : config(config),
       stopTokenIds(config.stop_token_ids.begin(), config.stop_token_ids.end()),
       resultQueue(resultQueue),
       taskQueue(taskQueue),
       decodeQueue(config.max_in_flight_count),
-      maxInFlightCount(config.max_in_flight_count * 30) {
+      maxInFlightCount(config.max_in_flight_count * 30),
+      lastOutputTime(std::chrono::steady_clock::now()),
+      outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY ||
       tt::config::llmMode() == config::LLMMode::REGULAR) {
-    memoryManager = std::make_unique<services::ContiguousMemoryManager>();
+    memoryManager = std::make_unique<services::ContiguousMemoryManager>(64);
     memoryThread = std::thread([this] { memoryLoop(); });
   }
 
-  auto decodeCb = [this](const tt::runners::llm_engine::TokenResult& result) {
+  auto decodeCb = [this](const tt::domain::TokenResult& result) {
     while (!decodeQueue.push(result)) {
       std::this_thread::yield();
     }
@@ -59,14 +63,14 @@ void SpPipelineRunnerDemo::run() {
 
 bool SpPipelineRunnerDemo::warmup() {
   // Create a warmup sequence with a single token
-  tt::runners::llm_engine::SamplingParams warmupParams;
+  tt::domain::SamplingParams warmupParams;
   warmupParams.max_tokens = 1;
   warmupParams.ignore_eos = true;
 
   std::vector<int64_t> warmupTokens = {1};  // Single token
   uint32_t warmupTaskId = 0;                // Use 0 for warmup task
 
-  auto warmupSeq = std::make_unique<tt::runners::llm_engine::Sequence>(
+  auto warmupSeq = std::make_unique<tt::domain::Sequence>(
       warmupTaskId,
       1,  // block_size (doesn't matter for warmup)
       warmupTokens, warmupParams);
@@ -80,7 +84,7 @@ bool SpPipelineRunnerDemo::warmup() {
   bool receivedToken = false;
 
   while (attempts < maxAttempts && !receivedToken) {
-    std::vector<tt::runners::llm_engine::TokenResult> results;
+    std::vector<tt::domain::TokenResult> results;
     decodeQueue.popMany(results, maxInFlightCount);
     for (const auto& dr : results) {
       if (dr.taskId == warmupTaskId) {
@@ -124,7 +128,9 @@ void SpPipelineRunnerDemo::memoryLoop() {
 }
 
 void SpPipelineRunnerDemo::step() {
+  tt::worker::SingleProcessWorkerMetrics::instance().updateStepHeartbeat();
   drainDecodeResults();
+  checkOutputHang();
 
   if (inFlightCount >= maxInFlightCount) {
     return;
@@ -142,6 +148,12 @@ void SpPipelineRunnerDemo::step() {
           static_cast<int>(config::LLMConfig::MAX_INPUT_TOKENS);
     }
 
+    if (inFlightCount == 0) {
+      lastOutputTime = std::chrono::steady_clock::now();
+    }
+
+    tt::worker::SingleProcessWorkerMetrics::instance()
+        .incrementActiveRequests();
     modelRunner->write(
         taskId, seq->getTokenIds(), seq->getSamplingParams().max_tokens.value(),
         sp_pipeline::RequestPhase::PREFILL, seq->getSamplingParams().fast_mode);
@@ -151,21 +163,44 @@ void SpPipelineRunnerDemo::step() {
   }
 }
 
+void SpPipelineRunnerDemo::checkOutputHang() {
+  if (inFlightCount == 0) {
+    lastOutputTime = std::chrono::steady_clock::now();
+    return;
+  }
+  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - lastOutputTime);
+  if (elapsed <= outputHangTimeout) {
+    return;
+  }
+  TT_LOG_CRITICAL(
+      "[SpPipelineRunnerDemo] Output hang detected: no model output for {} ms "
+      "with {} active request(s) (threshold={} ms). Self-terminating worker "
+      "so infrastructure can restart the server.",
+      elapsed.count(), inFlightCount, outputHangTimeout.count());
+  // See BlazeRunner::checkOutputHang for rationale on using abort() here.
+  std::abort();
+}
+
 void SpPipelineRunnerDemo::drainDecodeResults() {
-  std::vector<tt::runners::llm_engine::TokenResult> results;
+  std::vector<tt::domain::TokenResult> results;
   decodeQueue.popMany(results, maxInFlightCount);
   for (const auto& dr : results) {
+    tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
+    lastOutputTime = std::chrono::steady_clock::now();
     auto it = activeSequences.find(dr.taskId);
-    if (it == activeSequences.end()) {  // safeguard for too many decode results
+    if (it == activeSequences.end()) {
       TT_LOG_WARN(
           "[SpPipelineRunnerDemo] task_id not found in active_sequences_: {}",
           dr.taskId);
       continue;
     }
-    tt::runners::llm_engine::Sequence* seq = it->second.get();
+    tt::domain::Sequence* seq = it->second.get();
 
     if (dr.isError) {
       ipc::pushErrorToken(*resultQueue, dr.taskId);
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .decrementActiveRequests();
       activeSequences.erase(it);
       --inFlightCount;
       continue;
@@ -184,6 +219,8 @@ void SpPipelineRunnerDemo::drainDecodeResults() {
     ipc::pushToken(*resultQueue, dr.taskId, dr.tokenId, finished);
 
     if (finished) {
+      tt::worker::SingleProcessWorkerMetrics::instance()
+          .decrementActiveRequests();
       activeSequences.erase(it);
       --inFlightCount;
     }

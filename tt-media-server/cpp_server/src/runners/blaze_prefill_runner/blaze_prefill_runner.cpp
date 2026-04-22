@@ -8,9 +8,9 @@
 
 namespace tt::runners {
 
-BlazePrefillRunner::BlazePrefillRunner(
-    const config::LLMConfig& config, ipc::IResultQueue* resultQueue,
-    tt::runners::llm_engine::ITaskQueue* taskQueue)
+BlazePrefillRunner::BlazePrefillRunner(const config::LLMConfig& config,
+                                       ipc::IResultQueue* resultQueue,
+                                       tt::ipc::ITaskQueue* taskQueue)
     : config(config), resultQueue(resultQueue), taskQueue(taskQueue) {
   modelRunner = blaze_prefill::makeModelRunner(config);
 }
@@ -27,7 +27,6 @@ void BlazePrefillRunner::run() {
     // Get next sequence from task queue
     auto sequence = taskQueue->tryPop();
     if (!sequence) {
-      TT_LOG_DEBUG("[BlazePrefillRunner] No sequence from task queue");
       std::this_thread::yield();
       continue;
     }

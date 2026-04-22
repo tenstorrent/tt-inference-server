@@ -8,10 +8,10 @@
 #include <optional>
 #include <vector>
 
+#include "domain/sampling_params.hpp"
 #include "domain/slot_types.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::domain {
 
 enum class SequenceStatus { WAITING, RUNNING, IN_FLIGHT, FINISHED, ABORTED };
 
@@ -90,6 +90,9 @@ class Sequence {
   bool isContinuation() const { return continuation; }
   void setContinuation(bool c) { continuation = c; }
 
+  bool isDisaggregated() const { return disaggregated; }
+  void setDisaggregated(bool d) { disaggregated = d; }
+
  private:
   SequenceStatus status = SequenceStatus::WAITING;
   std::vector<int64_t> tokenIds;
@@ -100,7 +103,8 @@ class Sequence {
   std::unique_ptr<SamplingParams> samplingParams;
   int blockSize;
   uint32_t kvCacheSlot = tt::domain::INVALID_SLOT_ID;
-  bool continuation = false;  // True if this continues an existing session
+  bool continuation = false;   // True if this continues an existing session
+  bool disaggregated = false;  // True if this is a disaggregated request
 };
 
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::domain
