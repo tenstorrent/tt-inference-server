@@ -61,12 +61,10 @@ import signal
 import sys
 from pathlib import Path
 
-import mpi4py
-mpi4py.rc.initialize = False
+import ttnn  # must be imported before mpi4py to avoid MPI library conflicts
+
 from mpi4py import MPI
 from transformers import AutoConfig
-
-import ttnn
 from models.demos.deepseek_v3_d_p.tt.moe.init_helpers import create_fabric_router_config
 from models.demos.deepseek_v3_d_p.reference.deepseek_v3_config import DeepSeekV3Config
 from models.demos.deepseek_v3_d_p.tt.moe.tt_prefill_transformer import TtPrefillTransformer
@@ -255,11 +253,6 @@ def main() -> None:
     #        comm = MPI.COMM_WORLD.Split(color=subcontext_id, key=rank)
     #   4. Dispatch fabric config based on sub-context instead of hardcoding.
     # See models/demos/deepseek_v3_b1/docs/example_dual_rankbindings_one_psd.md in tt-metal.
-
-    # ttnn.init_distributed_context() calls MPI_Init_thread -- must happen
-    # before any mpi4py comm operations (mpi4py auto-init is disabled above).
-    ttnn.init_distributed_context()
-
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     world_size = comm.Get_size()
@@ -267,6 +260,7 @@ def main() -> None:
     print(f"Rank {rank}/{world_size}: Starting prefill runner (mesh={GLOBAL_MESH_SHAPE})", file=sys.stderr)
 
     # -- Open mesh device (all ranks) --
+    ttnn.init_distributed_context()
     mesh_device = _open_mesh_device()
 
     # -- Load HF config (all ranks need same config) --
