@@ -5,7 +5,7 @@
       "ci": {
         "nightly": {
           "devices": [
-            "DUAL_GALAXY"
+            "QUAD_GALAXY"
           ]
         }
       }
