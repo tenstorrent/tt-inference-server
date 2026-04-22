@@ -61,6 +61,7 @@ MODES = {
             "- Include moments of surprise, humor, or emphasis\n"
             "- Vary sentence length. Mix long explanations with short reactions.\n\n"
             "STRICT FORMAT RULES (you MUST follow these exactly):\n"
+            "- Start your response IMMEDIATELY with [HOST]: -- NO introduction, NO preamble, NO 'Here is a conversation...'\n"
             "- Every line MUST start with exactly [HOST]: or [GUEST]:\n"
             "- Do NOT use character names like [Rachel]: or [Alex]: -- ONLY [HOST]: and [GUEST]:\n"
             "- No bold, markdown, asterisks, or stage directions\n"

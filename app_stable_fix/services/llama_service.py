@@ -299,10 +299,8 @@ class LlamaService:
             generated_tokens = list(tokens)
             sentence_buffer = ''
             full_response = ''
-            chunks_yielded = 0
 
             sentence_end_pattern = re.compile(r'[.!?]\s*$')
-            phrase_break_pattern = re.compile(r'[,;:\u2014]\s*$')
 
             for _ in range(max_tokens):
                 next_token_id = torch.argmax(logits[0, -1, :]).item()
@@ -319,18 +317,9 @@ class LlamaService:
                 sentence_buffer += new_text
                 full_response += new_text
 
-                stripped = sentence_buffer.strip()
-                should_flush = False
-
-                if sentence_end_pattern.search(sentence_buffer) and len(stripped) > 10:
-                    should_flush = True
-                elif chunks_yielded < 2 and phrase_break_pattern.search(sentence_buffer) and len(stripped) > 25:
-                    should_flush = True
-
-                if should_flush:
-                    yield {'type': 'sentence', 'text': stripped}
+                if sentence_end_pattern.search(sentence_buffer) and len(sentence_buffer.strip()) > 10:
+                    yield {'type': 'sentence', 'text': sentence_buffer.strip()}
                     sentence_buffer = ''
-                    chunks_yielded += 1
                     await asyncio.sleep(0)
 
                 result = self.generator.decode_forward(

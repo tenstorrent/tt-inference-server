@@ -641,6 +641,7 @@
         }
 
         .model-badge .dot.ready { background: var(--accent-green); }
+        .model-badge .dot.not-ready { background: var(--accent-red); }
         .model-badge .dot.loading { background: var(--accent-yellow); animation: pulse 1s infinite; }
 
         /* Mode Bar */
@@ -985,10 +986,10 @@
 
         <div class="header-right">
             <div class="model-status">
-                <div class="model-badge"><span class="dot ready" id="faceStatus"></span>Face</div>
-                <div class="model-badge"><span class="dot ready" id="whisperStatus"></span>Whisper</div>
-                <div class="model-badge"><span class="dot ready" id="llamaStatus"></span>Llama</div>
-                <div class="model-badge"><span class="dot ready" id="ttsStatus"></span>TTS</div>
+                <div class="model-badge"><span class="dot loading" id="faceStatus"></span>Face</div>
+                <div class="model-badge"><span class="dot loading" id="whisperStatus"></span>Whisper</div>
+                <div class="model-badge"><span class="dot loading" id="llamaStatus"></span>Llama</div>
+                <div class="model-badge"><span class="dot loading" id="ttsStatus"></span>TTS</div>
             </div>
 
             <a class="powered-by" href="https://tenstorrent.com" target="_blank" title="Tenstorrent">
@@ -1264,16 +1265,15 @@
                 wakeVad = await vad.MicVAD.new({
                     positiveSpeechThreshold: 0.8,
                     negativeSpeechThreshold: 0.35,
-                    minSpeechFrames: 2,
-                    preSpeechPadFrames: 2,
-                    redemptionFrames: 1,
+                    minSpeechFrames: 3,
+                    preSpeechPadFrames: 3,
+                    redemptionFrames: 8,
                     onnxWASMBasePath: "/static/vad/",
                     baseAssetPath: "/static/vad/",
                     modelURL: "/static/vad/silero_vad_v5.onnx",
                     workletURL: "/static/vad/vad.worklet.bundle.min.js",
                     onSpeechEnd: (audio) => {
                         if (!wakeWordEnabled || isRecording || isProcessing) return;
-                        startRecording();
                         controlStatus.textContent = 'Checking wake word...';
                         checkWakeWord(audio);
                     },
@@ -1318,26 +1318,15 @@
                 if (matched) {
                     console.log('[WakeWord] ACTIVATED! Heard:', text);
                     wakeVad.pause();
+                    startRecording();
                     controlStatus.textContent = 'Hey TT! Listening — auto-sends on silence';
                 } else {
-                    console.log('[WakeWord] Not a wake word, cancelling recording');
-                    if (isRecording) {
-                        isRecording = false;
-                        if (myvad) { myvad.pause(); }
-                        recordBtn.classList.remove('recording');
-                        setStatus('idle', 'Ready');
-                        controlStatus.textContent = getModeHint(currentMode);
-                    }
+                    console.log('[WakeWord] Not a wake word, ignoring');
+                    controlStatus.textContent = getModeHint(currentMode);
                 }
             } catch (err) {
                 console.error('[WakeWord] Check failed:', err);
-                if (isRecording) {
-                    isRecording = false;
-                    if (myvad) { myvad.pause(); }
-                    recordBtn.classList.remove('recording');
-                    setStatus('idle', 'Ready');
-                    controlStatus.textContent = getModeHint(currentMode);
-                }
+                controlStatus.textContent = getModeHint(currentMode);
             }
         }
 
@@ -1873,10 +1862,31 @@
             try {
                 const response = await fetch('/health');
                 if (response.ok) {
-                    setStatus('idle', 'Ready');
+                    const data = await response.json();
+                    const services = {
+                        face_auth: document.getElementById('faceStatus'),
+                        whisper: document.getElementById('whisperStatus'),
+                        llama: document.getElementById('llamaStatus'),
+                        tts: document.getElementById('ttsStatus'),
+                    };
+                    let allReady = true;
+                    for (const [key, dot] of Object.entries(services)) {
+                        if (dot) {
+                            const ok = data[key] === true;
+                            dot.className = ok ? 'dot ready' : 'dot not-ready';
+                            if (!ok) allReady = false;
+                        }
+                    }
+                    if (allReady) {
+                        setStatus('idle', 'Ready');
+                    } else {
+                        setStatus('thinking', 'Some services warming up...');
+                        setTimeout(checkHealth, 5000);
+                    }
                 }
             } catch (e) {
                 setStatus('error', 'Connecting...');
+                setTimeout(checkHealth, 3000);
             }
         }
 
@@ -2041,6 +2051,7 @@
             let msgDiv = null;
             let fullResponse = '';
             const audioQueue = [];
+            const allAudioBytes = [];
             let isPlayingQueue = false;
             let streamDone = false;
             _activeAudioQueue = audioQueue;
@@ -2057,7 +2068,10 @@
                         const binary = atob(b64);
                         const bytes = new Uint8Array(binary.length);
                         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-                        await playAudioBuffer(bytes.buffer);
+                        allAudioBytes.push(bytes);
+                        if (autoPlayEnabled) {
+                            await playAudioBuffer(bytes.buffer.slice(0));
+                        }
                     } catch (e) {
                         console.error('[StreamAudio] playback error:', e);
                     }
@@ -2149,6 +2163,25 @@
                 while ((audioQueue.length > 0 || isPlayingQueue) && (Date.now() - drainStart < 30000)) {
                     await playAudioQueue();
                     await new Promise(r => setTimeout(r, 100));
+                }
+
+                // Attach combined audio to the play button for manual replay
+                if (allAudioBytes.length > 0 && msgDiv && !_audioStopped) {
+                    const totalLen = allAudioBytes.reduce((s, a) => s + a.length, 0);
+                    const combined = new Uint8Array(totalLen);
+                    let offset = 0;
+                    for (const chunk of allAudioBytes) {
+                        combined.set(chunk, offset);
+                        offset += chunk.length;
+                    }
+                    const blob = new Blob([combined], { type: 'audio/wav' });
+                    const blobUrl = URL.createObjectURL(blob);
+                    const audioEl = msgDiv.querySelector('audio');
+                    if (audioEl) {
+                        audioEl.src = blobUrl;
+                        const playBtn = msgDiv.querySelector('.play-btn');
+                        if (playBtn) playBtn.disabled = false;
+                    }
                 }
 
             } catch (error) {

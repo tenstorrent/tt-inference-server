@@ -118,16 +118,85 @@ python main.py > /tmp/main_app.log 2>&1
 
 echo ""
 echo "=========================================="
-echo "  All services starting!"
+echo "  All services starting! Waiting for warmup..."
 echo "=========================================="
 echo ""
-echo "Wait ~60-90 seconds for models to load, then:"
-echo "  - Face Auth: http://localhost:8080/"
-echo "  - Chat UI:   http://localhost:8080/chat"
+
+# Health check loop — check server logs directly for ready indicators
+MAX_WAIT=180
+ELAPSED=0
+INTERVAL=10
+ALL_READY=false
+
+FACE_UP=false
+WHISPER_UP=false
+TTS_UP=false
+LLAMA_UP=false
+
+while [ $ELAPSED -lt $MAX_WAIT ]; do
+    sleep $INTERVAL
+    ELAPSED=$((ELAPSED + INTERVAL))
+
+    if ! $FACE_UP; then
+        docker exec $CONTAINER grep -q "Listening on" /tmp/face_auth_server.log 2>/dev/null && FACE_UP=true
+    fi
+    if ! $FACE_UP; then
+        docker exec $CONTAINER test -S /tmp/face_auth_server.sock 2>/dev/null && FACE_UP=true
+    fi
+    if ! $WHISPER_UP; then
+        docker exec $CONTAINER grep -q "Listening on" /tmp/whisper_server.log 2>/dev/null && WHISPER_UP=true
+    fi
+    if ! $WHISPER_UP; then
+        docker exec $CONTAINER test -S /tmp/whisper_server.sock 2>/dev/null && WHISPER_UP=true
+    fi
+    if ! $TTS_UP; then
+        docker exec $CONTAINER grep -q "READY - Listening" /tmp/tts_server.log 2>/dev/null && TTS_UP=true
+    fi
+    if ! $TTS_UP; then
+        docker exec $CONTAINER test -S /tmp/tts_server.sock 2>/dev/null && TTS_UP=true
+    fi
+    if ! $LLAMA_UP; then
+        docker exec $CONTAINER grep -q "All services ready" /tmp/main_app.log 2>/dev/null && LLAMA_UP=true
+    fi
+
+    FACE_S=$($FACE_UP && echo "✅" || echo "⏳")
+    WHISPER_S=$($WHISPER_UP && echo "✅" || echo "⏳")
+    TTS_S=$($TTS_UP && echo "✅" || echo "⏳")
+    LLAMA_S=$($LLAMA_UP && echo "✅" || echo "⏳")
+
+    # Check for crashes (fatal errors only)
+    FACE_ERR=""
+    TTS_ERR=""
+    if ! $FACE_UP; then
+        docker exec $CONTAINER grep -qE "failed to initialize|TT_FATAL|Segmentation fault" /tmp/face_auth_server.log 2>/dev/null && FACE_ERR=" ❌"
+    fi
+    if ! $TTS_UP; then
+        docker exec $CONTAINER grep -qE "failed to initialize|TT_FATAL|Segmentation fault" /tmp/tts_server.log 2>/dev/null && TTS_ERR=" ❌"
+    fi
+
+    echo "  [${ELAPSED}s] Face:${FACE_S}${FACE_ERR}  Whisper:${WHISPER_S}  TTS:${TTS_S}${TTS_ERR}  Llama:${LLAMA_S}"
+
+    if $FACE_UP && $WHISPER_UP && $TTS_UP && $LLAMA_UP; then
+        ALL_READY=true
+        break
+    fi
+done
+
 echo ""
-echo "Check logs:"
-echo "  docker exec $CONTAINER tail -30 /tmp/main_app.log"
-echo "  docker exec $CONTAINER tail -30 /tmp/face_auth_server.log"
-echo "  docker exec $CONTAINER tail -30 /tmp/whisper_server.log"
-echo "  docker exec $CONTAINER tail -30 /tmp/tts_server.log"
+if $ALL_READY; then
+    echo "=========================================="
+    echo "  ✅ ALL SERVICES READY! (${ELAPSED}s)"
+    echo "=========================================="
+    echo ""
+    echo "  Face Auth: http://localhost:8080/"
+    echo "  Chat UI:   http://localhost:8080/chat"
+else
+    echo "=========================================="
+    echo "  ⚠️  SOME SERVICES FAILED (after ${ELAPSED}s)"
+    echo "=========================================="
+    $FACE_UP    || echo "  ❌ Face Auth — docker exec $CONTAINER tail -30 /tmp/face_auth_server.log"
+    $WHISPER_UP || echo "  ❌ Whisper   — docker exec $CONTAINER tail -30 /tmp/whisper_server.log"
+    $TTS_UP     || echo "  ❌ TTS       — docker exec $CONTAINER tail -30 /tmp/tts_server.log"
+    $LLAMA_UP   || echo "  ❌ Llama     — docker exec $CONTAINER tail -30 /tmp/main_app.log"
+fi
 echo ""

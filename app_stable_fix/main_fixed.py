@@ -102,7 +102,18 @@ async def shutdown_event():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint — re-pings any service not yet marked ready."""
+    services = [
+        ("face_auth", face_auth_service),
+        ("whisper", whisper_service),
+        ("tts", tts_service),
+    ]
+    for name, svc in services:
+        if not svc.is_warmed_up:
+            try:
+                await svc.warmup()
+            except Exception:
+                pass
     return {
         "status": "healthy",
         "face_auth": face_auth_service.is_warmed_up,
@@ -390,6 +401,8 @@ async def chat_stream(request: Request):
 
             async def tts_worker():
                 """Background worker: pull sentences from queue, generate TTS, push audio events."""
+                current_speaker = PODCAST_SPEAKERS.get("host") if mode == "podcast" else None
+                first_podcast_tag_seen = False
                 while True:
                     item = await tts_queue.get()
                     if item is None:
@@ -400,9 +413,18 @@ async def chat_stream(request: Request):
                         if mode == "podcast":
                             tag_match = re.match(r'^\s*(?:\*\*)?[\[\(]?(HOST|GUEST)[\]\)]?(?:\*\*)?:\s*', s_text, re.IGNORECASE)
                             if tag_match:
+                                first_podcast_tag_seen = True
                                 role = tag_match.group(1).lower()
-                                speaker_id = PODCAST_SPEAKERS.get(role)
+                                current_speaker = PODCAST_SPEAKERS.get(role)
+                                speaker_id = current_speaker
                                 s_text = s_text[tag_match.end():]
+                            elif not first_podcast_tag_seen:
+                                logger.info(f"Skipping podcast preamble: {s_text[:60]}...")
+                                await output_queue.put(f"data: {json_lib.dumps({'type': 'audio', 'audio_b64': '', 'sentence_num': s_num})}\n\n")
+                                continue
+                            else:
+                                speaker_id = current_speaker
+                                logger.debug(f"Podcast continuation (same speaker): {s_text[:60]}...")
                         tts_result = await asyncio.wait_for(
                             tts_service.synthesize(s_text, speaker_id=speaker_id),
                             timeout=30.0
@@ -460,11 +482,18 @@ async def chat_stream(request: Request):
 
             # Signal TTS worker to stop, then drain remaining audio events
             await tts_queue.put(None)
-            while True:
-                evt = await asyncio.wait_for(output_queue.get(), timeout=60.0)
-                if evt is None:
-                    break
-                yield evt
+            try:
+                while True:
+                    evt = await asyncio.wait_for(output_queue.get(), timeout=60.0)
+                    if evt is None:
+                        break
+                    yield evt
+            except (asyncio.CancelledError, GeneratorExit):
+                tts_task.cancel()
+                logger.info("Stream aborted, cancelled TTS worker")
+            except Exception as e:
+                tts_task.cancel()
+                logger.warning(f"Drain error: {e}, cancelled TTS worker")
 
         return StreamingResponse(
             generate_stream(),

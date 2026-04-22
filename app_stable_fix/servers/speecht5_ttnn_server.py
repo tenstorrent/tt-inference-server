@@ -146,7 +146,7 @@ class SpeechT5TTNNServer:
         # Reset KV caches again after full warmup
         self.generator._reset_kv_caches()
         
-        print("  Warmup complete!")
+        print("  Warmup complete!", flush=True)
 
     def _warmup(self, text: str):
         """Run warmup inference to compile kernels."""
@@ -384,9 +384,9 @@ class SpeechT5TTNNServer:
         server.listen(1)
         os.chmod(socket_path, 0o777)
 
-        print(f"\n{'='*60}")
-        print("READY - Listening on", socket_path)
-        print("=" * 60 + "\n")
+        print(f"\n{'='*60}", flush=True)
+        print("READY - Listening on", socket_path, flush=True)
+        print("=" * 60 + "\n", flush=True)
 
         # Request tracking for debugging
         request_count = 0

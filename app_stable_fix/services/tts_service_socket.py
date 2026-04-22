@@ -33,14 +33,24 @@ class TTSService:
         logger.info(f"TTS service initialized (socket: {self.socket_path})")
     
     def _send_request(self, request: dict) -> dict:
-        """Send request to TTS server."""
-        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        client.settimeout(120)  # 120 second timeout for long texts
-        client.connect(self.socket_path)
-        client.sendall(json.dumps(request).encode('utf-8'))
-        response = client.recv(65536).decode('utf-8')
-        client.close()
-        return json.loads(response)
+        """Send request to TTS server with retry on busy socket."""
+        import time as _time
+        last_err = None
+        for attempt in range(3):
+            try:
+                client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                client.settimeout(120)
+                client.connect(self.socket_path)
+                client.sendall(json.dumps(request).encode('utf-8'))
+                response = client.recv(65536).decode('utf-8')
+                client.close()
+                return json.loads(response)
+            except OSError as e:
+                last_err = e
+                client.close()
+                if attempt < 2:
+                    _time.sleep(0.5 * (attempt + 1))
+        raise last_err
     
     async def warmup(self):
         """Check if TTS server is ready."""
