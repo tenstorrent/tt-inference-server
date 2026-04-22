@@ -70,13 +70,19 @@ TEST_F(ChatCompletionRequestToolTest, ToolChoiceNone) {
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  // When tool_choice is "none", tools should be cleared
-  EXPECT_FALSE(request.tools.has_value() || request.tools->empty())
-      << "Tools should be empty when tool_choice is 'none'";
+  // When tool_choice is "none", tools should still be parsed
+  ASSERT_TRUE(request.tools.has_value());
+  EXPECT_FALSE(request.tools->empty())
+      << "Tools should be kept when tool_choice is 'none'";
 
-  // tool_choice should still be parsed
+  // tool_choice should be parsed
   ASSERT_TRUE(request.tool_choice.has_value());
   EXPECT_EQ(request.tool_choice->type, "none");
+
+  // Verify tool_choice_type is copied to LLMRequest
+  auto llmRequest = request.toLLMRequest();
+  ASSERT_TRUE(llmRequest.tool_choice_type.has_value());
+  EXPECT_EQ(llmRequest.tool_choice_type.value(), "none");
 }
 
 TEST_F(ChatCompletionRequestToolTest, ToolChoiceAuto) {

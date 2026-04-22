@@ -354,6 +354,10 @@ void LLMService::processStreamingRequest(
   StreamCallbackEntry entry{std::move(callback), request.skip_special_tokens};
   stream_callbacks_.insert(taskId, std::move(entry));
 
+  if (request.tool_choice_type.has_value()) {
+    tool_choice_map_.insert(taskId, request.tool_choice_type.value());
+  }
+
   if (reasoning_parser_) {
     reasoning_parser_->initializeTask(taskId);
   }
@@ -391,20 +395,37 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
     }
   }
 
-  // Parse tool calls from the response
+  // Check if tool_choice was set to "none" for this request
+  auto toolChoiceOpt = tool_choice_map_.get(response.task_id);
+  bool shouldParseTool = true;
+  if (toolChoiceOpt.has_value() && toolChoiceOpt.value() == "none") {
+    shouldParseTool = false;
+    
+    TT_LOG_DEBUG("[LLMService] Skipping tool call parsing (tool_choice=none)");
+
+  }
+
+  tool_choice_map_.take(response.task_id);
+
+  // Parse tool calls from the response only if tool_choice is not "none"
   if (tool_call_parser_) {
     for (auto& choice : response.choices) {
-      TT_LOG_DEBUG(
-          "[LLMService] Parsing text for tool calls (length={}): {}",
-          choice.text.length(),
-          choice.text.substr(0, std::min<size_t>(200, choice.text.length())));
+      if (shouldParseTool) {
+        TT_LOG_DEBUG(
+            "[LLMService] Parsing text for tool calls (length={}): {}",
+            choice.text.length(),
+            choice.text.substr(0, std::min<size_t>(200, choice.text.length())));
 
-      auto toolCalls = tool_call_parser_->parseComplete(choice.text);
-      if (toolCalls.has_value() && !toolCalls->empty()) {
-        TT_LOG_DEBUG("[LLMService] Found {} tool calls", toolCalls->size());
-        choice.tool_calls = std::move(toolCalls);
+        auto toolCalls = tool_call_parser_->parseComplete(choice.text);
+        if (toolCalls.has_value() && !toolCalls->empty()) {
+          TT_LOG_DEBUG("[LLMService] Found {} tool calls", toolCalls->size());
+          choice.tool_calls = std::move(toolCalls);
+          choice.text = tool_call_parser_->stripMarkers(choice.text);
+          choice.finish_reason = "tool_calls";
+        }
+      } else {
+        // When tool_choice is "none", strip markers but don't parse tool calls
         choice.text = tool_call_parser_->stripMarkers(choice.text);
-        choice.finish_reason = "tool_calls";
       }
     }
   }
