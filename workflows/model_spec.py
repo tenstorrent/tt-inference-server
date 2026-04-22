@@ -990,12 +990,19 @@ llm_templates = [
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
         version="0.12.0",
-        tt_metal_commit="805f43d",
-        vllm_commit="a45c614",
+        tt_metal_commit="555f240",
+        vllm_commit="22be241",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
+                max_concurrency=1,
+                max_context=16 * 1024,
+                default_impl=True,
+                tensor_cache_timeout=5400.0,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
                 max_concurrency=1,
                 max_context=16 * 1024,
                 default_impl=True,
