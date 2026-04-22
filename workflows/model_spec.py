@@ -1416,7 +1416,7 @@ llm_templates = [
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 1}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
             ),
         ],
@@ -2316,7 +2316,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2330,7 +2330,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2360,7 +2360,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2379,7 +2379,7 @@ vlm_templates = [
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2398,7 +2398,7 @@ vlm_templates = [
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
                     "data_parallel_size": 4,
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2428,7 +2428,7 @@ vlm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
             ),
         ],
@@ -2488,7 +2488,7 @@ vlm_templates = [
                 max_context=32 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
                 override_tt_config={
                     "trace_region_size": 10000000,
@@ -2522,7 +2522,7 @@ vlm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
             ),
         ],
@@ -2553,7 +2553,7 @@ vlm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
                 override_tt_config={
                     "trace_region_size": 28467200,
