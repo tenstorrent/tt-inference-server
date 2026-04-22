@@ -965,6 +965,136 @@ jobs:
           printf '%s\n' "$BENCH_ERRORS"
           exit 1
 
+  cpp-server-single-user-multi-turn:
+    needs: [detect-changes, cpp-build]
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ Server Single-User Multi-Turn Smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Download C++ build
+        uses: actions/download-artifact@v4
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Make binaries executable
+        run: chmod +x cpp_server/build/tt_media_server_cpp
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install guidellm
+        run: pip install --upgrade pip && pip install guidellm
+
+      - name: Start C++ server (mock backend, fresh)
+        run: |
+          cd cpp_server/build
+          LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 \
+            > ../../cpp_server_single_user_multi_turn.log 2>&1 &
+          echo $! > ../../cpp_server.pid
+          cd ../..
+          for i in $(seq 1 30); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "Server ready."
+              break
+            fi
+            sleep 1
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Server did not become ready within 30 seconds"
+            exit 1
+          fi
+
+      - name: Verify clean session state before run
+        run: |
+          INITIAL=$(curl -sf "http://127.0.0.1:8000/metrics" \
+            | awk '/^tt_num_active_sessions[ \t]/ {print $2}')
+          echo "Initial tt_num_active_sessions=${INITIAL}"
+          if [ "${INITIAL}" != "0" ]; then
+            echo "ERROR: server not in a clean state (expected 0, got ${INITIAL})"
+            exit 1
+          fi
+
+      - name: Run single_user_multi_turn benchmark (29 turns)
+        run: |
+          cd cpp_server/benchmarks
+          bash single_user_multi_turn.sh \
+            --output-dir "${GITHUB_WORKSPACE}/tt-media-server/single_user_multi_turn_results" \
+            2>&1 | tee ../../single_user_multi_turn_output.txt
+
+      - name: Verify tt_num_active_sessions equals 29
+        run: |
+          METRICS=$(curl -sf "http://127.0.0.1:8000/metrics")
+          echo "${METRICS}" | grep -E '^tt_num_active_sessions[ \t]' || true
+          ACTIVE=$(echo "${METRICS}" | awk '/^tt_num_active_sessions[ \t]/ {print $2}')
+          EXPECTED=29
+          {
+            echo "## C++ Server Single-User Multi-Turn Smoke"
+            echo ""
+            echo "| Metric | Value | Expected |"
+            echo "|--------|-------|----------|"
+            echo "| **tt_num_active_sessions** | ${ACTIVE:-<missing>} | ${EXPECTED} |"
+          } >> $GITHUB_STEP_SUMMARY
+          if [ "${ACTIVE}" != "${EXPECTED}" ]; then
+            echo "ERROR: expected tt_num_active_sessions=${EXPECTED}, got '${ACTIVE}'"
+            exit 1
+          fi
+          echo "OK: tt_num_active_sessions=${ACTIVE}"
+
+      - name: Stop C++ server
+        if: always()
+        run: |
+          [ -f cpp_server.pid ] && kill $(cat cpp_server.pid) 2>/dev/null || true
+          sleep 1
+
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== C++ Server Logs ==="
+          if [ -f cpp_server_single_user_multi_turn.log ]; then
+            cat cpp_server_single_user_multi_turn.log
+          else
+            echo "No log file found"
+          fi
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-single-user-multi-turn-logs
+          path: |
+            tt-media-server/cpp_server_single_user_multi_turn.log
+            tt-media-server/single_user_multi_turn_output.txt
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-server-single-user-multi-turn-results
+          path: tt-media-server/single_user_multi_turn_results/
+          retention-days: 1
+          if-no-files-found: warn
+
   forge-runner-changes:
     name: Detect Forge Runner Changes
     runs-on: ubuntu-latest
@@ -1243,6 +1373,7 @@ jobs:
       - cpp-build
       - cpp-server-benchmarks
       - cpp-server-prefill-decode-split
+      - cpp-server-single-user-multi-turn
     if: always()
     steps:
       - name: Check results
@@ -1257,6 +1388,7 @@ jobs:
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
             [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
             [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
+            [cpp-server-single-user-multi-turn]="${{ needs.cpp-server-single-user-multi-turn.result }}"
           )
           for job in "${!JOBS[@]}"; do
             result="${JOBS[$job]}"
