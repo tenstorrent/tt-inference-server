@@ -3,6 +3,7 @@
 
 #include "utils/conversation_hasher.hpp"
 
+#include <algorithm>
 #include <functional>
 
 #include "utils/tokenizers/tokenizer.hpp"
