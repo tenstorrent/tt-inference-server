@@ -33,10 +33,11 @@ Environment variables:
     TT_DS_PREFILL_TTNN_CACHE:    Path to TTNN weight cache dir
     TT_DS_PREFILL_HOST_REF_CACHE: Path to host reference cache (for PCC checks)
 
-    PREFILL_SP:         SP factor, default 32 (use 8 for single Galaxy)
-    PREFILL_TP:         TP factor, default 4
-    PREFILL_NUM_LAYERS: Number of transformer layers, default 61
-    PREFILL_MAX_SEQ_LEN: Max sequence length, default 102400
+    PREFILL_SP:             SP factor, default 32 (use 8 for single Galaxy)
+    PREFILL_TP:             TP factor, default 4
+    PREFILL_NUM_LAYERS:     Number of transformer layers, default 61
+    PREFILL_MAX_SEQ_LEN:    Max sequence length, default 102400
+    PREFILL_RANDOM_WEIGHTS: Set to "1" to use random weights (no cache needed)
 
 Usage:
     # Single Galaxy (no tt-run needed):
@@ -54,6 +55,7 @@ Usage:
            python prefill_runner.py
 """
 
+import gc
 import os
 import signal
 import sys
@@ -71,6 +73,10 @@ from models.demos.deepseek_v3_d_p.tt.moe.tt_prefill_transformer import TtPrefill
 from models.demos.deepseek_v3_d_p.tt.tt_deepseek_prefill_pipeline import (
     TtDeepSeekPrefillPipeline,
     TtPrefillPipelineConfig,
+)
+from models.demos.deepseek_v3_d_p.utils.transformer_helpers import (
+    create_hf_model,
+    extract_tt_state_dict,
 )
 
 from shared_memory import PREFILL_MAX_TOKEN_IDS, SharedMemory
@@ -268,24 +274,32 @@ def main() -> None:
 
     # -- Build pipeline config --
     weight_cache_path = os.environ.get("TT_DS_PREFILL_TTNN_CACHE")
+    use_random_weights = os.environ.get("PREFILL_RANDOM_WEIGHTS", "0") == "1"
+
     pipeline_config = TtPrefillPipelineConfig(
         num_layers=NUM_LAYERS,
         max_seq_len=MAX_SEQ_LEN,
         mesh_shape=GLOBAL_MESH_SHAPE,
         is_balanced=True,
-        weight_cache_path=Path(weight_cache_path) if weight_cache_path else None,
+        weight_cache_path=Path(weight_cache_path) if weight_cache_path and not use_random_weights else None,
     )
 
-    # -- Build pipeline (all ranks) --
-    # Pass empty state_dict if cache is complete; otherwise weights loaded from disk.
-    if weight_cache_path and TtPrefillTransformer.check_cache_complete(
+    # -- Build state_dict (all ranks) --
+    if use_random_weights:
+        print(f"Rank {rank}: Creating random weights (PREFILL_RANDOM_WEIGHTS=1)...", file=sys.stderr)
+        hf_model = create_hf_model(hf_config, NUM_LAYERS)
+        state_dict = extract_tt_state_dict(hf_model)
+        del hf_model
+        gc.collect()
+        print(f"Rank {rank}: Random weights ready", file=sys.stderr)
+    elif weight_cache_path and TtPrefillTransformer.check_cache_complete(
         Path(weight_cache_path), NUM_LAYERS
     ):
         print(f"Rank {rank}: TTNN weight cache complete, loading from cache", file=sys.stderr)
         state_dict = {}
     else:
-        print(f"Rank {rank}: Cache incomplete or not set, TODO: load from HF weights", file=sys.stderr)
-        state_dict = {}  # TODO: load from DEEPSEEK_V3_HF_MODEL
+        print(f"Rank {rank}: No cache/weights configured, using empty state_dict", file=sys.stderr)
+        state_dict = {}
 
     pipeline = TtDeepSeekPrefillPipeline(
         mesh_device=mesh_device,
