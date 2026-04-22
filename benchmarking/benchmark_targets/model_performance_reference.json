@@ -5366,6 +5366,20 @@
                 }
             }
         ],
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12500,
+                        "tput_user": 0.08
+                    }
+                }
+            }
+        ],
         "p300x2": [
             {
                 "max_concurrency": 1,
@@ -5480,6 +5494,20 @@
                 }
             }
         ],
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
         "p300x2": [
             {
                 "max_concurrency": 1,
@@ -5553,6 +5581,20 @@
         "galaxy": [
             {
                 "max_concurrency": 32,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "max_concurrency": 1,
                 "num_inference_steps": 20,
                 "num_eval_runs": 100,
                 "task_type": "image",

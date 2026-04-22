@@ -2767,6 +2767,12 @@ image_templates = [
                 default_impl=True,
             ),
             DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
                 device=DeviceTypes.P300X2,
                 max_concurrency=1,
                 max_context=64 * 1024,
@@ -2842,6 +2848,12 @@ image_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
