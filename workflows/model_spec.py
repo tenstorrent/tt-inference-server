@@ -3420,8 +3420,7 @@ cnn_templates = [
         ],
     ),
     ModelSpecTemplate(
-        weights=["meta-llama/Llama-3.2-3B"],
-        tt_metal_commit="2496be4",
+        weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],        tt_metal_commit="2496be4",
         impl=forge_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=8,
