@@ -1115,6 +1115,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=40960,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 51000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -1247,6 +1250,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 54000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
@@ -1410,7 +1416,7 @@ llm_templates = [
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 1}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
             ),
         ],
@@ -2310,7 +2316,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2324,7 +2330,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2354,7 +2360,7 @@ vlm_templates = [
                 default_impl=True,
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2373,7 +2379,7 @@ vlm_templates = [
                 },
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2392,7 +2398,7 @@ vlm_templates = [
                 vllm_args={
                     "limit-mm-per-prompt": json.dumps({"image": 10}),
                     "data_parallel_size": 4,
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
                 override_tt_config={
                     "l1_small_size": 4096,
@@ -2422,7 +2428,7 @@ vlm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 vllm_args={
-                    "disable_mm_preprocessor_cache": True,
+                    "mm_processor_cache_gb": 0,
                 },
             ),
         ],
@@ -2471,22 +2477,19 @@ vlm_templates = [
             "Qwen/Qwen2.5-VL-7B-Instruct",
         ],
         impl=tt_transformers_impl,
-        tt_metal_commit="c18569e",
-        vllm_commit="b2894d3",
+        tt_metal_commit="58ac618",
+        vllm_commit="5b7f989",
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         device_model_specs=[
-            DeviceModelSpec(
-                device=DeviceTypes.N150,
-                max_concurrency=32,
-                max_context=32 * 1024,
-                default_impl=True,
-            ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=32 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "mm_processor_cache_gb": 0,
+                },
                 override_tt_config={
                     "trace_region_size": 10000000,
                 },
@@ -2518,6 +2521,9 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "mm_processor_cache_gb": 0,
+                },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
@@ -2546,6 +2552,9 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "mm_processor_cache_gb": 0,
+                },
                 override_tt_config={
                     "trace_region_size": 28467200,
                 },
