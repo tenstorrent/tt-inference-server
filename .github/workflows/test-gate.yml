@@ -1002,10 +1002,10 @@ jobs:
       - name: Install guidellm
         run: pip install --upgrade pip && pip install guidellm
 
-      - name: Start C++ server (mock backend, fresh)
+      - name: Start C++ server (default backend, fresh)
         run: |
           cd cpp_server/build
-          LLM_DEVICE_BACKEND=mock ./tt_media_server_cpp -p 8000 \
+          ./tt_media_server_cpp -p 8000 \
             > ../../cpp_server_single_user_multi_turn.log 2>&1 &
           echo $! > ../../cpp_server.pid
           cd ../..
