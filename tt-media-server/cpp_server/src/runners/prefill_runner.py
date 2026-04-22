@@ -5,7 +5,7 @@
 """Prefill runner with multi-rank support for disaggregated prefill/decode.
 
 Thin wrapper around TtDeepSeekPrefillPipeline (tt-metal) that:
-  - Opens the global 32x4 mesh device via TTNN's distributed context
+  - Opens the mesh device via TTNN's distributed context
   - Builds the TtDeepSeekPrefillPipeline (model + KV cache + optional migration layer)
   - Bridges the C++ inference server via shared memory (SHM) on rank 0
   - Broadcasts requests to worker ranks via MPI
@@ -13,10 +13,10 @@ Thin wrapper around TtDeepSeekPrefillPipeline (tt-metal) that:
 
 Rank 0 (coordinator):
   - Reads prefill requests from SHM
-  - Broadcasts token_ids + metadata to workers via MPI
+  - Broadcasts token_ids + metadata to workers via MPI (skipped for single rank)
   - Calls pipeline.prefill() and writes the first token back to SHM
 
-Ranks 1-3 (workers):
+Ranks 1+ (workers):
   - Receive request via MPI broadcast
   - Call pipeline.prefill() collectively (TTNN handles cross-host CCL)
 
@@ -24,12 +24,31 @@ KV cache migration happens inside MLA (inside pipeline.prefill()) after each
 layer's fill_cache_for_user_(). The pipeline wires the migration callback
 automatically when migration_layer is provided.
 
-Environment variables required:
-    TT_IPC_SHM_C2P: Name of input  SHM segment (rank 0 only)
-    TT_IPC_SHM_P2C: Name of output SHM segment (rank 0 only)
-    OMPI_COMM_WORLD_RANK or RANK: Rank ID (0-3)
+Environment variables:
+    TT_IPC_SHM_C2P:              Input SHM segment name (rank 0 only)
+    TT_IPC_SHM_P2C:              Output SHM segment name (rank 0 only)
+    OMPI_COMM_WORLD_RANK or RANK: Rank ID
+
+    DEEPSEEK_V3_HF_MODEL:        Path to HuggingFace model dir (for loading config)
+    TT_DS_PREFILL_TTNN_CACHE:    Path to TTNN weight cache dir
+    TT_DS_PREFILL_HOST_REF_CACHE: Path to host reference cache (for PCC checks)
+
+    PREFILL_SP:         SP factor, default 32 (use 8 for single Galaxy)
+    PREFILL_TP:         TP factor, default 4
+    PREFILL_NUM_LAYERS: Number of transformer layers, default 61
+    PREFILL_MAX_SEQ_LEN: Max sequence length, default 102400
 
 Usage:
+    # Single Galaxy (no tt-run needed):
+    export PREFILL_SP=8
+    export DEEPSEEK_V3_HF_MODEL=/mnt/MLPerf/.../DeepSeek-R1-0528
+    export TT_DS_PREFILL_TTNN_CACHE=/mnt/MLPerf/.../DeepSeek-R1-0528-Cache-prefill
+    export TT_DS_PREFILL_HOST_REF_CACHE=/mnt/MLPerf/.../DeepSeek-R1-0528-Reference-prefill
+    export TT_IPC_SHM_C2P=tt_ipc_c2p_12345
+    export TT_IPC_SHM_P2C=tt_ipc_p2c_12345
+    python prefill_runner.py
+
+    # 4-Galaxy ring:
     tt-run --rank-binding 32x4_rank_bindings.yaml \
            --mpi-args "--host $HOSTS --rankfile <rankfile> --bind-to none --tag-output" \
            python prefill_runner.py
@@ -38,10 +57,15 @@ Usage:
 import os
 import signal
 import sys
+from pathlib import Path
 
 from mpi4py import MPI
+from transformers import AutoConfig
 
 import ttnn
+from models.demos.deepseek_v3_d_p.tt.moe.init_helpers import create_fabric_router_config
+from models.demos.deepseek_v3_d_p.reference.deepseek_v3_config import DeepSeekV3Config
+from models.demos.deepseek_v3_d_p.tt.moe.tt_prefill_transformer import TtPrefillTransformer
 from models.demos.deepseek_v3_d_p.tt.tt_deepseek_prefill_pipeline import (
     TtDeepSeekPrefillPipeline,
     TtPrefillPipelineConfig,
@@ -51,12 +75,14 @@ from shared_memory import PREFILL_MAX_TOKEN_IDS, SharedMemory
 
 _shutdown = False
 
-# -- Config constants --
-# TODO: load real HF config + state_dict from disk. For now these are placeholders
-# that match DeepSeek V3 671B with a 32x4 global mesh.
-GLOBAL_MESH_SHAPE = (32, 4)
-NUM_LAYERS = 61
-MAX_SEQ_LEN = 102400
+# -- Config constants (overridable via env vars) --
+# Single Galaxy:  PREFILL_SP=8  PREFILL_TP=4  (1 rank, local 8x4 mesh)
+# 4-Galaxy ring:  PREFILL_SP=32 PREFILL_TP=4  (4 ranks, global 32x4 mesh)
+_sp = int(os.environ.get("PREFILL_SP", 32))
+_tp = int(os.environ.get("PREFILL_TP", 4))
+GLOBAL_MESH_SHAPE = (_sp, _tp)
+NUM_LAYERS = int(os.environ.get("PREFILL_NUM_LAYERS", 61))
+MAX_SEQ_LEN = int(os.environ.get("PREFILL_MAX_SEQ_LEN", 102400))
 
 
 def _handle_sigterm(signum, frame):
@@ -66,6 +92,46 @@ def _handle_sigterm(signum, frame):
 
 def _is_shutdown() -> bool:
     return _shutdown
+
+
+def _load_hf_config():
+    """Load HuggingFace config from DEEPSEEK_V3_HF_MODEL env var."""
+    model_path = os.environ.get("DEEPSEEK_V3_HF_MODEL")
+    if not model_path:
+        print("Warning: DEEPSEEK_V3_HF_MODEL not set, hf_config will be None", file=sys.stderr)
+        return None
+    print(f"Loading HF config from {model_path}", file=sys.stderr)
+    return AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+
+
+def _open_mesh_device():
+    """Open mesh device with appropriate fabric config for the mesh size."""
+    sp = GLOBAL_MESH_SHAPE[0]
+    if sp <= 8:
+        # Single Galaxy: FABRIC_1D
+        fabric_config = ttnn.FabricConfig.FABRIC_1D
+    else:
+        # Multi-Galaxy ring: FABRIC_2D
+        fabric_config = ttnn.FabricConfig.FABRIC_2D
+
+    fabric_router_config = create_fabric_router_config(
+        max_payload_size=DeepSeekV3Config.EMB_SIZE
+    )
+
+    ttnn.set_fabric_config(
+        fabric_config,
+        ttnn.FabricReliabilityMode.STRICT_INIT,
+        None,
+        ttnn.FabricTensixConfig.DISABLED,
+        ttnn.FabricUDMMode.DISABLED,
+        ttnn.FabricManagerMode.DEFAULT,
+        fabric_router_config,
+    )
+
+    return ttnn.open_mesh_device(
+        mesh_shape=ttnn.MeshShape(*GLOBAL_MESH_SHAPE),
+        worker_l1_size=1431568,
+    )
 
 
 # ================================================================
@@ -83,6 +149,7 @@ def run_rank0_coordinator(pipeline: TtDeepSeekPrefillPipeline, comm) -> None:
         sys.exit(1)
 
     print(f"Rank 0: Opening shared memory C2P={c2p_name}, P2C={p2c_name}", file=sys.stderr)
+    world_size = comm.Get_size()
 
     try:
         with SharedMemory(
@@ -95,8 +162,8 @@ def run_rank0_coordinator(pipeline: TtDeepSeekPrefillPipeline, comm) -> None:
             while not _shutdown:
                 msg = c2p.read()
                 if msg is None:
-                    # Shutdown — broadcast None to workers so they exit too
-                    comm.bcast(None, root=0)
+                    if world_size > 1:
+                        comm.bcast(None, root=0)
                     break
 
                 task_id = msg.task_id  # uint32_t per PR #3033
@@ -107,14 +174,15 @@ def run_rank0_coordinator(pipeline: TtDeepSeekPrefillPipeline, comm) -> None:
                     file=sys.stderr,
                 )
 
-                # Broadcast request to all ranks
                 request = {
                     "token_ids": msg.token_ids,
                     "slot_id": 0,  # TODO: extract from inference server protocol
                 }
-                comm.bcast(request, root=0)
 
-                # All ranks run prefill collectively
+                # Only broadcast if there are worker ranks
+                if world_size > 1:
+                    comm.bcast(request, root=0)
+
                 first_token = pipeline.prefill(
                     token_ids=request["token_ids"],
                     slot_id=request["slot_id"],
@@ -130,19 +198,19 @@ def run_rank0_coordinator(pipeline: TtDeepSeekPrefillPipeline, comm) -> None:
 
 
 # ================================================================
-# Ranks 1-3: workers
+# Ranks 1+: workers
 # ================================================================
 
 
 def run_worker_rank(rank: int, pipeline: TtDeepSeekPrefillPipeline, comm) -> None:
-    """Ranks 1-3: Receive request via MPI broadcast, participate in collective prefill."""
+    """Ranks 1+: Receive request via MPI broadcast, participate in collective prefill."""
     print(f"Rank {rank}: Waiting for MPI broadcasts from rank 0...", file=sys.stderr)
 
     try:
         while not _shutdown:
             request = comm.bcast(None, root=0)
             if request is None:
-                break  # shutdown
+                break
 
             print(
                 f"Rank {rank}: Processing prefill seq_len={len(request['token_ids'])} "
@@ -183,26 +251,35 @@ def main() -> None:
     rank = comm.Get_rank()
     world_size = comm.Get_size()
 
-    print(f"Rank {rank}/{world_size}: Starting prefill runner", file=sys.stderr)
+    print(f"Rank {rank}/{world_size}: Starting prefill runner (mesh={GLOBAL_MESH_SHAPE})", file=sys.stderr)
 
-    # -- Open the global 32x4 mesh (all ranks) --
+    # -- Open mesh device (all ranks) --
     ttnn.init_distributed_context()
-    # TODO: fabric config, router config from real config (see sub-context TODO above)
-    mesh_device = ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(*GLOBAL_MESH_SHAPE))
+    mesh_device = _open_mesh_device()
 
-    # -- Build the pipeline (all ranks) --
-    # TODO: load real HF config, state_dict
-    # hf_config = load_hf_config(...)
-    # state_dict = load_state_dict(...)
-    hf_config = None
-    state_dict = {}
+    # -- Load HF config (all ranks need same config) --
+    hf_config = _load_hf_config()
 
+    # -- Build pipeline config --
+    weight_cache_path = os.environ.get("TT_DS_PREFILL_TTNN_CACHE")
     pipeline_config = TtPrefillPipelineConfig(
         num_layers=NUM_LAYERS,
         max_seq_len=MAX_SEQ_LEN,
         mesh_shape=GLOBAL_MESH_SHAPE,
         is_balanced=True,
+        weight_cache_path=Path(weight_cache_path) if weight_cache_path else None,
     )
+
+    # -- Build pipeline (all ranks) --
+    # Pass empty state_dict if cache is complete; otherwise weights loaded from disk.
+    if weight_cache_path and TtPrefillTransformer.check_cache_complete(
+        Path(weight_cache_path), NUM_LAYERS
+    ):
+        print(f"Rank {rank}: TTNN weight cache complete, loading from cache", file=sys.stderr)
+        state_dict = {}
+    else:
+        print(f"Rank {rank}: Cache incomplete or not set, TODO: load from HF weights", file=sys.stderr)
+        state_dict = {}  # TODO: load from DEEPSEEK_V3_HF_MODEL
 
     pipeline = TtDeepSeekPrefillPipeline(
         mesh_device=mesh_device,
@@ -212,24 +289,8 @@ def main() -> None:
     )
     pipeline.compile()
 
-    # -- Wire migration (rank 0 only) --
-    # Rank 0 is the migration master; worker ranks participate in collective
-    # prefill but leave migration_layer=None (callback skipped automatically).
-    #
-    # TODO: implement once decode runner exists and _migration bindings available:
-    #
-    #   from _migration import make_mpi_endpoint_device, EndpointGrouping, SubordinateInfo
-    #   from models.demos.deepseek_v3_d_p.utils.kv_cache_utils import create_kv_chunk_address_table
-    #
-    #   DECODE_ENDPOINT_ID = int(os.environ.get("TT_MIGRATION_DECODE_ENDPOINT_ID", "2"))
-    #   PREFILL_ENDPOINT_ID = int(os.environ.get("TT_MIGRATION_PREFILL_ENDPOINT_ID", "1"))
-    #
-    #   if rank == 0:
-    #       endpoint = make_mpi_endpoint_device(rank=rank, endpoint_id=PREFILL_ENDPOINT_ID, ...)
-    #       table = create_kv_chunk_address_table(cfg, mesh_device, ..., pipeline.kvpe_cache, ...)
-    #       endpoint.initialize_my_kv_chunk_mapping_table(table)
-    #       # TODO: connect_to_remote_endpoint(decode_grouping) once decode runner is up
-    #       pipeline.setup_migration(endpoint, remote_endpoint_id=DECODE_ENDPOINT_ID)
+    # -- Migration setup (rank 0 only, when decode runner is available) --
+    # TODO: see migration stub in earlier commit for structure.
 
     comm.Barrier()  # all ranks ready
     print(f"Rank {rank}: Setup complete, entering request loop", file=sys.stderr)
@@ -237,14 +298,12 @@ def main() -> None:
     # -- Run --
     if rank == 0:
         run_rank0_coordinator(pipeline, comm)
-    elif rank in [1, 2, 3]:
+    elif rank >= 1:
         run_worker_rank(rank, pipeline, comm)
-    else:
-        print(f"Invalid rank: {rank}. Must be 0-3", file=sys.stderr)
-        sys.exit(1)
 
     # -- Cleanup --
-    del pipeline  # releases KV cache + model refs via __del__
+    del pipeline
+    ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
     ttnn.close_mesh_device(mesh_device)
     print(f"Rank {rank}: Shutdown complete", file=sys.stderr)
 
