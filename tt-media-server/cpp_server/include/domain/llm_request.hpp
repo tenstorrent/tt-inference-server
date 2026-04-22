@@ -117,6 +117,11 @@ struct LLMRequest : BaseRequest {
 
   bool parallel_tool_calls = true;
 
+  // Tool calling support - stores the tool_choice type ("auto", "none", "function")
+  std::optional<std::string> tool_choice_type;
+  // When tool_choice type is "function", stores the function name
+  std::optional<std::string> tool_choice_function_name;
+
   // Structured output constraint
   std::optional<ResponseFormat> response_format;
 

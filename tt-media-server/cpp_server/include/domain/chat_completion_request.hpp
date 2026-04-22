@@ -201,6 +201,15 @@ struct ChatCompletionRequest : BaseRequest {
 
     if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
       req.tool_choice = tool_calls::ToolChoice::fromJson(json["tool_choice"]);
+
+      // Debug: log parsed tool_choice
+      if (req.tool_choice.has_value()) {
+        const auto& tc = req.tool_choice.value();
+        // Logging can help debug parsing issues
+        // std::cerr << "Parsed tool_choice: type=" << tc.type
+        //           << ", function=" << (tc.function.has_value() ? tc.function.value() : "none")
+        //           << std::endl;
+      }
     }
     if (json.isMember("parallel_tool_calls") &&
         !json["parallel_tool_calls"].isNull())
@@ -208,15 +217,46 @@ struct ChatCompletionRequest : BaseRequest {
           getBool(json["parallel_tool_calls"], "parallel_tool_calls");
 
     if (req.tool_choice.has_value()) {
-      if (!req.tools.has_value() || req.tools->empty()) {
+      const auto& toolChoice = req.tool_choice.value();
+
+      // Validate tools are provided unless tool_choice is "none"
+      if ((!req.tools.has_value() || req.tools->empty()) &&
+          toolChoice.type != "none") {
         throw std::invalid_argument(
             "tool_choice is provided but no tools are specified");
       }
-      const auto& toolChoice = req.tool_choice.value();
-      if (toolChoice.type != "auto") {
+
+      // Validate tool_choice type
+      if (toolChoice.type != "auto" && toolChoice.type != "none" &&
+          toolChoice.type != "function") {
         throw std::invalid_argument(
-            "tool_choice must be 'auto', other tool_choice values are not yet "
-            "supported");
+            "tool_choice.type must be 'auto', 'none', or 'function'");
+      }
+
+      // Validate function name when type is "function"
+      if (toolChoice.type == "function") {
+        if (!toolChoice.function.has_value() ||
+            toolChoice.function.value().empty()) {
+          throw std::invalid_argument(
+              "tool_choice.function.name is required when type is 'function'. "
+              "Expected format: {\"type\": \"function\", \"function\": "
+              "{\"name\": \"function_name\"}}");
+        }
+        // Verify the function exists in tools
+        bool found = false;
+        if (req.tools.has_value()) {
+          for (const auto& tool : req.tools.value()) {
+            if (tool.functionDefinition.name == toolChoice.function.value()) {
+              found = true;
+              break;
+            }
+          }
+        }
+        if (!found) {
+          throw std::invalid_argument(
+              "tool_choice.function.name '" + toolChoice.function.value() +
+              "' not found in tools");
+        }
       }
     }
     return req;
@@ -286,6 +326,39 @@ struct ChatCompletionRequest : BaseRequest {
     out.fast_mode = fast_mode;
     out.response_format = response_format;
     out.sessionId = sessionId;
+
+    // Handle tool_choice
+    if (tool_choice.has_value()) {
+      out.tool_choice_type = tool_choice->type;
+
+      // When tool_choice is "function", create structured output for that function
+      if (tool_choice->type == "function" && tool_choice->function.has_value() &&
+          tools.has_value()) {
+        out.tool_choice_function_name = tool_choice->function.value();
+
+        // Find the matching function
+        for (const auto& tool : tools.value()) {
+          if (tool.functionDefinition.name == tool_choice->function.value()) {
+            // Create a JSON schema response format from the function parameters
+            ResponseFormat format;
+            format.type = tt::config::ResponseFormatType::JSON_SCHEMA;
+            format.json_schema_name = tool.functionDefinition.name;
+            format.strict = true;  // Enforce strict schema adherence
+
+            // Convert parameters to JSON schema string
+            Json::StreamWriterBuilder writer;
+            writer["indentation"] = "";
+            format.json_schema_str =
+                Json::writeString(writer, tool.functionDefinition.parameters);
+
+            // Override response_format to force structured output
+            out.response_format = format;
+            break;
+          }
+        }
+      }
+    }
+
     return out;
   }
 };

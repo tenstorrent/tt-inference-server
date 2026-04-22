@@ -21,7 +21,9 @@ struct ToolChoice {
         choice.type = json["type"].asString();
       }
       if (json.isMember("function") && json["function"].isObject() &&
-          json["function"].isMember("name")) {
+          json["function"].isMember("name") &&
+          !json["function"]["name"].isNull() &&
+          !json["function"]["name"].asString().empty()) {
         choice.function = json["function"]["name"].asString();
       }
     }

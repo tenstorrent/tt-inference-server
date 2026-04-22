@@ -77,6 +77,11 @@ class LLMService
     bool skip_special_tokens = true;
   };
 
+  struct ToolChoiceInfo {
+    std::string type;                    // "auto", "none", or "function"
+    std::optional<std::string> function_name;  // Set when type is "function"
+  };
+
   void startConsumers();
   void consumerLoopForWorker(size_t workerIdx);
 
@@ -86,6 +91,7 @@ class LLMService
   std::vector<std::thread> consumerThreads;
 
   utils::ConcurrentMap<uint32_t, StreamCallbackEntry> streamCallbacks;
+  mutable utils::ConcurrentMap<uint32_t, ToolChoiceInfo> toolChoiceMap;
 
   std::atomic<size_t> pendingTasks{0};
   std::atomic<bool> running{false};
