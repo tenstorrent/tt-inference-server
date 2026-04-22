@@ -994,13 +994,17 @@ jobs:
       - name: Make binaries executable
         run: chmod +x cpp_server/build/tt_media_server_cpp
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.10"
+          enable-cache: true
 
       - name: Install guidellm
-        run: pip install --upgrade pip && pip install guidellm
+        run: |
+          uv venv
+          uv pip install guidellm
+          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
       - name: Start C++ server (default backend, fresh)
         run: |
