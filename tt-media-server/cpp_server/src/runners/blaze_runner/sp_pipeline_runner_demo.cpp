@@ -32,7 +32,7 @@ SpPipelineRunnerDemo::SpPipelineRunnerDemo(const config::LLMConfig& config,
       outputHangTimeout(tt::config::outputHangTimeoutMs()) {
   if (tt::config::llmMode() == config::LLMMode::DECODE_ONLY ||
       tt::config::llmMode() == config::LLMMode::REGULAR) {
-    memoryManager = std::make_unique<services::ContiguousMemoryManager>();
+    memoryManager = std::make_unique<services::ContiguousMemoryManager>(64);
     memoryThread = std::thread([this] { memoryLoop(); });
   }
 
