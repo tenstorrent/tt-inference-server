@@ -1263,9 +1263,9 @@
             }
             try {
                 wakeVad = await vad.MicVAD.new({
-                    positiveSpeechThreshold: 0.8,
-                    negativeSpeechThreshold: 0.35,
-                    minSpeechFrames: 3,
+                    positiveSpeechThreshold: 0.9,
+                    negativeSpeechThreshold: 0.4,
+                    minSpeechFrames: 4,
                     preSpeechPadFrames: 3,
                     redemptionFrames: 8,
                     onnxWASMBasePath: "/static/vad/",
@@ -1309,11 +1309,10 @@
                 console.log('[WakeWord] Heard:', text);
 
                 const clean = text.replace(/[,.'!?]/g, ' ').replace(/\s+/g, ' ').trim();
-                const ttWords = /\b(tt|t t|titi|tidy|didy|diddy|ditty|didi|diti|teddy|titty|deity|duty|midi|tti|dd|td|dt|tv|80|2t|hd|h d|t)\b/;
-                const heyWords = /\b(hey|hay|he|a|sh|h)\b/;
+                const ttWords = /\b(tt|t t|titi|teetee|tee tee|tidy|didy|diddy|ditty|didi|diti|teddy|titty|deity|duty|midi|tti|dd|td|dt|tv|80|2t|hd|h d)\b/;
                 const hattiti = /hattiti|hatiti|ha ?t[it]|h\.? ?d/;
-                const matched = hattiti.test(clean) || (heyWords.test(clean) && ttWords.test(clean));
-                console.log(`[WakeWord] clean="${clean}" heyMatch=${heyWords.test(clean)} ttMatch=${ttWords.test(clean)} hattiti=${hattiti.test(clean)} matched=${matched}`);
+                const matched = ttWords.test(clean) || hattiti.test(clean);
+                console.log(`[WakeWord] clean="${clean}" ttMatch=${ttWords.test(clean)} hattiti=${hattiti.test(clean)} matched=${matched}`);
 
                 if (matched) {
                     console.log('[WakeWord] ACTIVATED! Heard:', text);
@@ -2165,16 +2164,52 @@
                     await new Promise(r => setTimeout(r, 100));
                 }
 
-                // Attach combined audio to the play button for manual replay
-                if (allAudioBytes.length > 0 && msgDiv && !_audioStopped) {
-                    const totalLen = allAudioBytes.reduce((s, a) => s + a.length, 0);
-                    const combined = new Uint8Array(totalLen);
-                    let offset = 0;
-                    for (const chunk of allAudioBytes) {
-                        combined.set(chunk, offset);
-                        offset += chunk.length;
+
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.error('Processing error:', error);
+                    if (!msgDiv) addMessage('assistant', 'Sorry, there was an error: ' + error.message);
+                }
+            } finally {
+                // Combine WAV chunks into a single WAV for replay
+                if (allAudioBytes.length > 0 && msgDiv) {
+                    const pcmParts = [];
+                    let sampleRate = 16000, numChannels = 1, bitsPerSample = 16;
+                    for (let i = 0; i < allAudioBytes.length; i++) {
+                        const wav = allAudioBytes[i];
+                        if (wav.length < 44) continue;
+                        if (i === 0) {
+                            const dv = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
+                            numChannels = dv.getUint16(22, true);
+                            sampleRate = dv.getUint32(24, true);
+                            bitsPerSample = dv.getUint16(34, true);
+                        }
+                        pcmParts.push(wav.slice(44));
                     }
-                    const blob = new Blob([combined], { type: 'audio/wav' });
+                    const pcmLen = pcmParts.reduce((s, a) => s + a.length, 0);
+                    const wavBuf = new ArrayBuffer(44 + pcmLen);
+                    const view = new DataView(wavBuf);
+                    const writeStr = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+                    writeStr(0, 'RIFF');
+                    view.setUint32(4, 36 + pcmLen, true);
+                    writeStr(8, 'WAVE');
+                    writeStr(12, 'fmt ');
+                    view.setUint32(16, 16, true);
+                    view.setUint16(20, 1, true);
+                    view.setUint16(22, numChannels, true);
+                    view.setUint32(24, sampleRate, true);
+                    view.setUint32(28, sampleRate * numChannels * bitsPerSample / 8, true);
+                    view.setUint16(32, numChannels * bitsPerSample / 8, true);
+                    view.setUint16(34, bitsPerSample, true);
+                    writeStr(36, 'data');
+                    view.setUint32(40, pcmLen, true);
+                    const outArr = new Uint8Array(wavBuf);
+                    let off = 44;
+                    for (const pcm of pcmParts) {
+                        outArr.set(pcm, off);
+                        off += pcm.length;
+                    }
+                    const blob = new Blob([wavBuf], { type: 'audio/wav' });
                     const blobUrl = URL.createObjectURL(blob);
                     const audioEl = msgDiv.querySelector('audio');
                     if (audioEl) {
@@ -2183,13 +2218,6 @@
                         if (playBtn) playBtn.disabled = false;
                     }
                 }
-
-            } catch (error) {
-                if (error.name !== 'AbortError') {
-                    console.error('Processing error:', error);
-                    if (!msgDiv) addMessage('assistant', 'Sorry, there was an error: ' + error.message);
-                }
-            } finally {
                 if (activeTimer) { clearInterval(activeTimer); activeTimer = null; }
                 isProcessing = false;
                 _activeStreamAbort = null;

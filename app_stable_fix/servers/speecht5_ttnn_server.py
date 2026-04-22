@@ -381,7 +381,7 @@ class SpeechT5TTNNServer:
 
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(socket_path)
-        server.listen(1)
+        server.listen(5)
         os.chmod(socket_path, 0o777)
 
         print(f"\n{'='*60}", flush=True)

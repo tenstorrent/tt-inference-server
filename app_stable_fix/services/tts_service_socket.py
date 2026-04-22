@@ -36,7 +36,7 @@ class TTSService:
         """Send request to TTS server with retry on busy socket."""
         import time as _time
         last_err = None
-        for attempt in range(3):
+        for attempt in range(5):
             try:
                 client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 client.settimeout(120)
@@ -48,8 +48,9 @@ class TTSService:
             except OSError as e:
                 last_err = e
                 client.close()
-                if attempt < 2:
-                    _time.sleep(0.5 * (attempt + 1))
+                if attempt < 4:
+                    _time.sleep(1.0 * (attempt + 1))
+                    logger.warning(f"TTS socket busy, retry {attempt + 1}/5 in {attempt + 1}s...")
         raise last_err
     
     async def warmup(self):
