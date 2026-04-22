@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 
 from enum import Enum, IntEnum, auto
+from typing import List
 
 
 class WorkflowType(IntEnum):
@@ -256,6 +257,24 @@ class ModelStatusTypes(IntEnum):
             ModelStatusTypes.COMPLETE: "🟢 Complete",
             ModelStatusTypes.TOP_PERF: "🚀 Top Performance",
         }[self]
+
+    @property
+    def required_target_tiers(self) -> List[str]:
+        """Tiers that MUST pass for a model at this status level.
+
+        Tiers not in this list are still computed and reported but
+        treated as informational -- failures are accepted and do not
+        block a release. This enables programmatic masking: e.g. an
+        EXPERIMENTAL model (forge, new bring-up) can fail every
+        performance benchmark and still be released.
+        """
+        tier_map = {
+            ModelStatusTypes.EXPERIMENTAL: [],
+            ModelStatusTypes.FUNCTIONAL: ["functional"],
+            ModelStatusTypes.COMPLETE: ["functional", "complete"],
+            ModelStatusTypes.TOP_PERF: ["functional", "complete", "target"],
+        }
+        return tier_map[self]
 
 
 class EvalLimitMode(IntEnum):

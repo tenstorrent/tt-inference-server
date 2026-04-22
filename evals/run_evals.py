@@ -351,6 +351,14 @@ def main():
     # copy env vars to pass to subprocesses
     env_vars = os.environ.copy()
 
+    # Check for known issues that skip the entire evals workflow
+    skip_issue = model_spec.device_model_spec.should_skip_workflow("EVALS")
+    if skip_issue:
+        logger.warning(
+            f"⚠️ Skipping EVALS workflow due to known issue: {skip_issue.reason}"
+        )
+        return 0
+
     # Look up the evaluation configuration for the model using EVAL_CONFIGS.
     if model_spec.model_name not in EVAL_CONFIGS:
         raise ValueError(
@@ -404,6 +412,15 @@ def main():
 
         return_codes = []
         for task in eval_config.tasks:
+            skip_issue = model_spec.device_model_spec.should_skip_task(
+                "EVALS", task.task_name
+            )
+            if skip_issue:
+                logger.warning(
+                    f"⚠️ Skipping eval task '{task.task_name}' due to known issue: {skip_issue.reason}"
+                )
+                continue
+
             logger.info(
                 f"Starting workflow: {workflow_config.name} task_name: {task.task_name}"
             )
@@ -445,6 +462,15 @@ def main():
         logger.info("Running vLLM evals client ...")
         return_codes = []
         for task in eval_config.tasks:
+            skip_issue = model_spec.device_model_spec.should_skip_task(
+                "EVALS", task.task_name
+            )
+            if skip_issue:
+                logger.warning(
+                    f"⚠️ Skipping eval task '{task.task_name}' due to known issue: {skip_issue.reason}"
+                )
+                continue
+
             health_check = prompt_client.get_health()
             if health_check.status_code != 200:
                 logger.error("⛔️ vLLM server is not healthy. Aborting evaluations.")
