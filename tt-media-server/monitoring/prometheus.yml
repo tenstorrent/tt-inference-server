@@ -12,7 +12,7 @@ scrape_configs:
     # TARGET and SERVICE are substituted at container startup by docker-compose
     # (sed). Set SERVER_TARGET=<container-name>:<port> and SERVER_SERVICE=<name>
     # (e.g. "python" or "cpp") when running docker compose. SERVER_SERVICE
-    # defaults to "cpp" for backwards compatibility with the original setup.
+    # defaults to "python" for backwards compatibility with the original setup.
     static_configs:
       - targets:
           - "__SERVER_TARGET__"
