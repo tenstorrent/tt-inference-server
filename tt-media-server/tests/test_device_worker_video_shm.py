@@ -249,6 +249,7 @@ class TestSPRunnerLifecycle:
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_warmup_runs_real_inference(self, MockVideoShm):
+        """Test that warmup is now a no-op (warm start)"""
         import asyncio
 
         mock_input = MagicMock()
@@ -261,30 +262,18 @@ class TestSPRunnerLifecycle:
 
         MockVideoShm.side_effect = mock_video_shm_factory
 
-        file_path = _touch_mp4_file()
-        mock_output.read_response.return_value = VideoResponse(
-            "warmup-dev0", VideoStatus.SUCCESS, file_path, ""
-        )
-
         runner = SPRunner("dev0")
         runner.set_device()
 
         result = asyncio.get_event_loop().run_until_complete(runner.warmup())
         assert result is True
 
-        # Warmup must go through the SHM bridge (not be a no-op) so any
-        # device-bring-up hang manifests via read_response's timeout path.
-        mock_input.write_request.assert_called_once()
-        written_req = mock_input.write_request.call_args[0][0]
-        assert isinstance(written_req, VideoRequest)
-        assert written_req.num_inference_steps == 2
-
-        # The warmup artefact is consumed by the runner itself (no downstream
-        # job), so it must be cleaned up.
-        assert not os.path.exists(file_path)
+        # Warmup is now a no-op (warm start), so it should NOT write any request
+        mock_input.write_request.assert_not_called()
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_warmup_timeout_surfaces_as_request_timeout(self, MockVideoShm):
+        """Test that warmup no longer performs inference, so no timeout occurs"""
         import asyncio
 
         mock_input = MagicMock()
@@ -301,8 +290,10 @@ class TestSPRunnerLifecycle:
         runner = SPRunner("dev0")
         runner.set_device()
 
-        with pytest.raises(TimeoutError, match="REQUEST_TIMEOUT"):
-            asyncio.get_event_loop().run_until_complete(runner.warmup())
+        # Warmup is now a no-op and should succeed without raising TimeoutError
+        result = asyncio.get_event_loop().run_until_complete(runner.warmup())
+        assert result is True
+        mock_input.write_request.assert_not_called()
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_timeout_during_read_response(self, MockVideoShm):
