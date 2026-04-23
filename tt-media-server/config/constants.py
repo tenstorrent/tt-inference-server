@@ -868,7 +868,7 @@ ModelConfigs = {
     (ModelRunners.VLLMForge_GEMMA4_31B, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 4),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "vllm": {
             "model": SupportedModels.GEMMA_4_31B_IT.value,
