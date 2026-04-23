@@ -14,6 +14,7 @@
 #include "domain/manage_memory.hpp"
 #include "domain/sequence.hpp"
 #include "ipc/token_push.hpp"
+#include "pipeline_manager/pipeline_simulator.hpp"
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "services/memory_services/blaze_memory_manager.hpp"
 #include "utils/logger.hpp"
@@ -37,11 +38,15 @@ BlazeRunner::BlazeRunner(const config::LLMConfig& config,
       .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
-  // pm::MockConfig mock = {};
+  pm::PipelineSimulatorConfig simulatorConfig = {
+    .num_stages = 64,
+    .stage_duration_us = 110,
+    .decode_token_id = 12345
+  };
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
-      std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
+      std::make_unique<pm::PipelineManager>(simulatorConfig, managerParams);
   TT_LOG_INFO("BlazeRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
   TT_LOG_INFO(
@@ -188,12 +193,6 @@ inline void BlazeRunner::handleMemoryRequest(
 }
 
 inline void BlazeRunner::handleResponse(const pm::PMResponse& response) {
-  if (response.error_code != 0) {
-    TT_LOG_DEBUG(
-        "[BlazeRunner] handleResponse: error_code={}, request_id={}, "
-        "slot_id={}",
-        response.error_code, response.request_id, response.slot_id);
-  }
   memoryManager->handleResponse(response.request_id, response.slot_id);
 }
 
