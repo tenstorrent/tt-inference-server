@@ -45,6 +45,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Path to the weight cache directory (required for --weights real)",
     )
     parser.add_argument(
+        "--model-path",
+        type=Path,
+        default=Path("/mnt/models/deepseek-ai/DeepSeek-R1-0528-dequantized"),
+        help="Path to the model directory",
+    )
+    parser.add_argument(
         "--weights",
         type=str,
         choices=("synthetic", "real"),
@@ -180,6 +186,7 @@ def main() -> None:
             weights_mode=args.weights,
             cache_path=args.cache_path if args.weights == "real" else None,
             mesh_device=mesh_device,
+            model_path=args.model_path,
         )
 
         if rank == 0:
