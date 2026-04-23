@@ -24,3 +24,12 @@ process_names:
   - name: "tt_media_server_cpp_main"
     comm:
       - tt_media_server
+
+  # Python tt-media-server (TRANSIENT — sunsets in ~4 months together with the
+  # Python server itself, see README "Sunset of the Python server" section).
+  # Matches the canonical uvicorn launch from run_uvicorn.sh as well as
+  # direct `python tt-media-server/main.py` invocations and any forked
+  # multiprocessing workers that inherit the parent's cmdline.
+  - name: "tt_media_server_python"
+    cmdline:
+      - "uvicorn.*main:app|python.*tt-media-server"
