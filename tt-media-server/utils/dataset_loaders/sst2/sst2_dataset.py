@@ -81,7 +81,7 @@ class SSTDataset(BaseDataset):
 
         tokenized_dataset = raw_dataset.map(self._tokenize_function, load_from_cache_file=False)
         self.full_dataset = tokenized_dataset.filter(
-            lambda example: example["len"] <= self.max_length
+            lambda example: example["len"] <= self.max_length, load_from_cache_file=False
         )
         self.dataset = self.full_dataset.remove_columns(
             [
