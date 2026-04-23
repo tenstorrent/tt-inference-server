@@ -502,7 +502,10 @@ jobs:
       - name: Install Python test dependencies
         run: |
           uv venv
-          uv pip install vllm
+          # Pin the entire resolution to a known-good cutoff to neutralise
+          # client-side dep drift (e.g. transformers 5.5.4 -> 5.6.1) while we
+          # investigate the bench regression that started ~2026-04-22.
+          uv pip install --exclude-newer 2026-04-22T14:00:00Z vllm
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
       # ── Mock backend benchmarks ──────────────────────────────────────
@@ -826,7 +829,10 @@ jobs:
       - name: Install Python test dependencies
         run: |
           uv venv
-          uv pip install vllm
+          # Pin the entire resolution to a known-good cutoff to neutralise
+          # client-side dep drift (e.g. transformers 5.5.4 -> 5.6.1) while we
+          # investigate the bench regression that started ~2026-04-22.
+          uv pip install --exclude-newer 2026-04-22T14:00:00Z vllm
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
       - name: Run vLLM bench serve against split servers

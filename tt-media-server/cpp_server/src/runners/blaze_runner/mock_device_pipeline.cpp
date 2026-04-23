@@ -57,7 +57,7 @@ void MockDevicePipeline::exit() {
   inputNotFull.notify_all();
   outputNotEmpty.notify_all();
   if (pipelineThread.joinable()) pipelineThread.join();
-  TT_LOG_DEBUG("[mock_device_pipeline] exit");
+  TT_LOG_DEBUG("[mock_device_pipeline] exit (bench-pin-test)");
 }
 
 // ---------------------------------------------------------------------------
