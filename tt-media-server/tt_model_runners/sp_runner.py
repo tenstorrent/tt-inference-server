@@ -118,24 +118,7 @@ class SPRunner(BaseDeviceRunner):
         return True
 
     async def warmup(self) -> bool:
-        """No-op: warmup is owned by the external runner.
-
-        ``SPRunner`` is only a SHM proxy — it does not hold the model. The
-        real device bring-up, kernel compile and test inference happen inside
-        ``video_runner.py`` (``runner.warmup()`` on every MPI rank) before it
-        opens the SHM and starts reading requests. Running a second inference
-        here would be redundant and also forces ``num_inference_steps`` below
-        the ``VideoGenerateRequest`` validator floor (``ge=12``).
-
-        Operational note: start the MPI ``video_runner`` before the FastAPI
-        server. If a user request arrives before ``video_runner`` has entered
-        its read loop, it will sit in the input ring and be served as soon as
-        the runner comes up (bounded by ``video_request_timeout_seconds``).
-        """
-        self.logger.info(
-            f"SPRunner {self.device_id}: warmup skipped "
-            f"(external video_runner owns model warmup)"
-        )
+        self.logger.info("Skipping warmup since SHM runner has a warm start")
         return True
 
     @log_execution_time(
