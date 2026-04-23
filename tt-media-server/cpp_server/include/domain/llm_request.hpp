@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "domain/base_request.hpp"
+#include "domain/chat_message.hpp"
 #include "domain/json_field.hpp"
 #include "domain/response_format.hpp"
 
@@ -71,6 +72,12 @@ struct LLMRequest : BaseRequest {
 
   // Prompt can be a string or a list of token ids
   std::variant<std::string, std::vector<int>> prompt;
+
+  // Original chat messages used to derive `prompt`. Kept here so downstream
+  // steps (session resolution, prefix-cache routing) don't need a separate
+  // parameter. May be empty for requests constructed from IPC where only the
+  // rendered prompt is available (e.g. DisaggregationService).
+  std::vector<ChatMessage> messages;
 
   // Response configuration
   bool echo = false;
