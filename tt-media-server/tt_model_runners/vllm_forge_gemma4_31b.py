@@ -44,7 +44,7 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
                 "min_context_len": self.settings.vllm.min_context_length,
                 "enable_tensor_parallel": True,
                 "use_2d_mesh": False,
-                "cpu_sampling": False,
+                "cpu_sampling": True,
                 "optimization_level": 0,
                 "experimental_weight_dtype": "bfp_bf8",
             },
