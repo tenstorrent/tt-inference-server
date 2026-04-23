@@ -115,7 +115,7 @@ bool SpPipelineRunner::warmup() {
     return false;
   }
 
-  TT_LOG_INFO("SpPipelineRunner: Warmup successful");
+  TT_LOG_INFO("SpPipelineRunner: Warmup successful foo");
   pipelineManager->push_request(utils::makeCancelRequest(slotId));
   return true;
 }
