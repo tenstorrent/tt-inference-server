@@ -173,7 +173,6 @@ void LLMController::resolveSession(
             routingInfo.registrationHash);
 
         SessionInfo info;
-        info.validSessionFound = true;
         onResolved(info);
       },
       [onError](std::string_view err) {
