@@ -1123,13 +1123,36 @@ llm_templates = [
                     "chat-template": "vllm-tt-metal/chat_templates/gemma4.jinja",
                 },
                 override_tt_config={
-                    "enable_model_warmup": False,
+                    "enable_model_warmup": True,
+                    "trace_mode": "none",
                     "trace_region_size": 200000000,
                 },
                 env_vars={
                     "TT_SYMBIOTE_DISPATCHER": "CPU",
                     "MESH_DEVICE": "T3K",
                     "DISABLE_METAL_OP_TIMEOUT": "1",
+                    # Cross-request TTNN command-queue deadlock mitigation:
+                    # the model itself brackets prefill with two
+                    # ttnn.synchronize_device calls (see
+                    # tt_symbiote/models/gemma4_text.py). Set explicitly so
+                    # opt-out experiments are visible from the runtime spec.
+                    # Limitation: needed until the upstream TTNN race is fixed;
+                    # remove once gemma4_attention.py:696 is safe under async
+                    # decode.
+                    "TT_SYMBIOTE_GEMMA4_PREFILL_SYNC": "1",
+                    # Adapter-level decode-stride sync caps the in-flight
+                    # command-queue depth WITHIN a request (vLLM async decode
+                    # otherwise queues all decode steps before the final read).
+                    # ~1 ms / 32 decodes vs ~430 ms/step is negligible.
+                    "TT_SYMBIOTE_SYNC_EVERY_N_DECODES": "32",
+                    # Watchdogs surface clear log lines if any single op
+                    # exceeds the baseline (~1 s prefill, ~430 ms decode) by
+                    # ~60x/70x. They cannot preempt a stuck C++ TTNN op.
+                    "TT_SYMBIOTE_PREFILL_WATCHDOG_SEC": "60",
+                    "TT_SYMBIOTE_DECODE_WATCHDOG_SEC": "30",
+                    # DIAG instrumentation stays on so any future regression
+                    # is correlated with progcache / gc_objs / rss_mb.
+                    "TT_SYMBIOTE_DIAG": "1",
                 },
             ),
         ],
