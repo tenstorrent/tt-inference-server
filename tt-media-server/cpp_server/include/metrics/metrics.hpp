@@ -155,6 +155,7 @@ class ServerMetrics {
   // -------------------------------------------------------------------------
   struct RequestContext {
     std::chrono::steady_clock::time_point start_time;
+    std::chrono::steady_clock::time_point first_token_time;
     std::chrono::steady_clock::time_point prev_token_time;
     int prompt_tokens = 0;
     int generation_tokens = 0;
@@ -186,6 +187,7 @@ class ServerMetrics {
   prometheus::Summary* e2e_latency_seconds_{nullptr};
   prometheus::Summary* ttft_seconds_{nullptr};
   prometheus::Summary* inter_token_latency_seconds_{nullptr};
+  prometheus::Summary* tpot_seconds_{nullptr};
 
   // --- token-count histograms ---
   prometheus::Histogram* request_prompt_tokens_{nullptr};
