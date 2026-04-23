@@ -29,13 +29,6 @@
           "devices": [
             "GALAXY"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
-          ]
         }
       }
     },
@@ -100,13 +93,6 @@
         "weekly": {
           "devices": [
             "GALAXY"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
           ]
         }
       }
@@ -242,13 +228,6 @@
           "devices": [
             "GALAXY"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
-          ]
         }
       }
     },
@@ -308,11 +287,6 @@
             "GALAXY",
             "N150"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
         }
       }
     },
@@ -341,13 +315,6 @@
             "P300X2",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY",
-            "P150X8",
-            "P300X2"
-          ]
         }
       }
     },
@@ -358,11 +325,6 @@
           "devices": [
             "GALAXY",
             "N150"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
           ]
         }
       }
@@ -387,12 +349,6 @@
             "P300X2",
             "P150X4",
             "T3K"
-          ]
-        },
-        "release": {
-          "devices": [
-            "P150X8",
-            "P300X2"
           ]
         }
       }
@@ -467,11 +423,6 @@
             "GALAXY",
             "T3K"
           ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
         }
       }
     },
@@ -493,6 +444,12 @@
           "devices": [
             "N150"
           ]
+        },
+        "release": {
+          "devices": [
+            "N150",
+            "N300"
+          ]
         }
       }
     },
@@ -507,11 +464,6 @@
             "P150X8",
             "P300X2",
             "T3K"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
           ]
         }
       }
@@ -533,6 +485,12 @@
           "devices": [
             "N150"
           ]
+        },
+        "release": {
+          "devices": [
+            "N150",
+            "N300"
+          ]
         }
       }
     },
@@ -542,6 +500,12 @@
         "nightly": {
           "devices": [
             "N150"
+          ]
+        },
+        "release": {
+          "devices": [
+            "N150",
+            "N300"
           ]
         }
       }
@@ -597,11 +561,6 @@
               "throttle-perf": "5"
             }
           }
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
-          ]
         }
       }
     },
@@ -622,6 +581,12 @@
           "devices": [
             "N150"
           ]
+        },
+        "release": {
+          "devices": [
+            "N150",
+            "N300"
+          ]
         }
       }
     },
@@ -631,6 +596,12 @@
         "nightly": {
           "devices": [
             "N150"
+          ]
+        },
+        "release": {
+          "devices": [
+            "N150",
+            "N300"
           ]
         }
       }
@@ -643,11 +614,6 @@
             "GALAXY",
             "GALAXY_BH",
             "N150"
-          ]
-        },
-        "release": {
-          "devices": [
-            "GALAXY"
           ]
         }
       }
