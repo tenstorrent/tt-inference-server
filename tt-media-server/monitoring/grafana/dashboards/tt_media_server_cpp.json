@@ -1194,6 +1194,95 @@
       ],
       "title": "HTTP Requests (successful / failed)",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 85 },
+      "id": 120,
+      "title": "Prefix Cache",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Rate at which incoming /v1/chat/completions requests attempted a session-level prefix-cache lookup (requests per second). A lookup is attempted whenever the request has a prior [assistant, user] turn pair and therefore *could* match an existing session's KV cache. Fresh first-turn conversations and legacy-sessionId requests are excluded, so this is the denominator of the hit-rate calculation.\n\nSource counter: tt_prefix_cache_queries_total (monotonic, resets on server restart). Computed here as rate(tt_prefix_cache_queries_total[$__rate_interval]).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "queries/s" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 86 },
+      "id": 121,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["mean", "max"] },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(tt_prefix_cache_queries_total[$__rate_interval])",
+          "legendFormat": "queries/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Prefix Cache Queries",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Rate at which prefix-cache lookups actually succeeded and reused an existing session's KV cache (requests per second). On a hit the server sends only the delta prompt (last user turn) to the model instead of re-prefilling the full conversation, saving a prefill pass.\n\nThis is the numerator of the hit-rate calculation. The instantaneous hit rate over the dashboard window is therefore: rate(tt_prefix_cache_hits_total[$__rate_interval]) / rate(tt_prefix_cache_queries_total[$__rate_interval]).\n\nSource counter: tt_prefix_cache_hits_total (monotonic, resets on server restart). Computed here as rate(tt_prefix_cache_hits_total[$__rate_interval]).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "reqps",
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "hits/s" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 86 },
+      "id": 122,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["mean", "max"] },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(tt_prefix_cache_hits_total[$__rate_interval])",
+          "legendFormat": "hits/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Prefix Cache Hits",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",
