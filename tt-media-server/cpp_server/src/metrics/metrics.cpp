@@ -147,6 +147,17 @@ ServerMetrics::ServerMetrics() {
            .Register(*registry_)
            .Add(modelLabel, K_LATENCY_QUANTILES, std::chrono::seconds{60}, 5);
 
+  tpot_seconds_ =
+      &prometheus::BuildSummary()
+           .Name("tt_time_per_output_token_seconds")
+           .Help(
+               "Per-request time per output token, averaged over the decode "
+               "phase: (last_token_time - first_token_time) / "
+               "(generation_tokens - 1). Excludes prefill/TTFT. Only observed "
+               "for requests that produced at least two generation tokens.")
+           .Register(*registry_)
+           .Add(modelLabel, K_LATENCY_QUANTILES, std::chrono::seconds{60}, 5);
+
   request_prompt_tokens_ =
       &prometheus::BuildHistogram()
            .Name("tt_request_prompt_tokens")
@@ -279,6 +290,7 @@ void ServerMetrics::processEvent(const MetricsEvent& event) {
 
 void ServerMetrics::handleRequestSubmitted(const EventRequestSubmitted& e) {
   contexts_.emplace(e.task_id, RequestContext{.start_time = e.time,
+                                              .first_token_time = {},
                                               .prev_token_time = {},
                                               .prompt_tokens = e.prompt_tokens,
                                               .generation_tokens = 0});
@@ -294,6 +306,7 @@ void ServerMetrics::handleToken(const EventToken& e) {
         std::chrono::duration<double>(e.time - ctx.start_time).count();
     ttft_seconds_->Observe(ttft);
     decoding_requests_->Increment();
+    ctx.first_token_time = e.time;
   } else {
     double itl =
         std::chrono::duration<double>(e.time - ctx.prev_token_time).count();
@@ -311,6 +324,14 @@ void ServerMetrics::handleRequestCompleted(const EventRequestCompleted& e) {
 
   e2e_latency_seconds_->Observe(
       std::chrono::duration<double>(e.time - ctx.start_time).count());
+
+  if (ctx.generation_tokens >= 2) {
+    double tpot = std::chrono::duration<double>(ctx.prev_token_time -
+                                                ctx.first_token_time)
+                      .count() /
+                  static_cast<double>(ctx.generation_tokens - 1);
+    tpot_seconds_->Observe(tpot);
+  }
 
   if (ctx.generation_tokens > 0) decoding_requests_->Decrement();
 
