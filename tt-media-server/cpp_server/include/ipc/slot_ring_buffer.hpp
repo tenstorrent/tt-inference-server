@@ -163,9 +163,8 @@ class SlotRingBuffer {
     }
     if (fd < 0) {
       int savedErrno = errno;
-      throw std::runtime_error(
-          "SlotRingBuffer: unable to open shared memory " + shmName + ": " +
-          std::strerror(savedErrno));
+      throw std::runtime_error("SlotRingBuffer: unable to open shared memory " +
+                               shmName + ": " + std::strerror(savedErrno));
     }
     // fchmod guards against the creating process's umask stripping bits from
     // the mode passed to shm_open, which would lock out other-UID peers.
@@ -179,8 +178,7 @@ class SlotRingBuffer {
       int savedErrno = errno;
       ::close(fd);
       throw std::runtime_error("SlotRingBuffer: ftruncate failed for " +
-                               shmName + ": " +
-                               std::strerror(savedErrno));
+                               shmName + ": " + std::strerror(savedErrno));
     }
     return fd;
   }
