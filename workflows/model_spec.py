@@ -3513,6 +3513,7 @@ cnn_templates = [
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.FORGE.value,
+        status=ModelStatusTypes.FUNCTIONAL,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -3537,6 +3538,7 @@ cnn_templates = [
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.FORGE.value,
+        status=ModelStatusTypes.COMPLETE,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -3561,6 +3563,7 @@ cnn_templates = [
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.FORGE.value,
+        status=ModelStatusTypes.COMPLETE,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -3609,6 +3612,7 @@ cnn_templates = [
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.FORGE.value,
+        status=ModelStatusTypes.FUNCTIONAL,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -3633,6 +3637,7 @@ cnn_templates = [
         docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.FORGE.value,
+        status=ModelStatusTypes.COMPLETE,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
