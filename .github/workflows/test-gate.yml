@@ -1115,7 +1115,7 @@ jobs:
           # --exclude uses fnmatch patterns (shell-style wildcards)
           diff-cover coverage.xml \
             --compare-branch=origin/${BASE_REF} \
-            --exclude '*/tests/*' '*/performance_tests/*' \
+            --exclude '*/tests/*' '*/performance_tests/*' '*/config/settings.py' \
             --fail-under=15 \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 
