@@ -220,8 +220,8 @@ class ImageClientStrategy(BaseMediaStrategy):
             # Override num_calls for SDXL models to 100 prompts
             if runner_in_use in [
                 "tt-sdxl-trace",
-                "tt-sdxl-img2img",
-                "tt-sdxl-inpainting",
+                "tt-sdxl-image-to-image",
+                "tt-sdxl-edit",
             ]:
                 logger.info(
                     f"Overriding num_calls for SDXL {runner_in_use} model to {SDXL_BENCHMARK_NUM_PROMPTS} prompts"
