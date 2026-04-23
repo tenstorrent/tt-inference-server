@@ -247,7 +247,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Session-level prefix-cache counters (monotonic since server start; reset on restart).\n\n• Queries: lifetime count of /v1/chat/completions requests that attempted a prefix-cache lookup — i.e. carried a prior [assistant, user] turn pair and therefore *could* match an existing session's KV cache. Fresh first-turn conversations and legacy-sessionId requests are excluded.\n• Hits: subset of queries that actually matched an existing session and reused its KV cache, sending only the delta prompt to the model.\n\nLifetime hit rate = tt_prefix_cache_hits_total / tt_prefix_cache_queries_total. For an instantaneous rate, wrap both in rate(...[5m]).",
+      "description": "Queries: returning-user requests (multiple 'user' messages) checked against the prefix cache. Hits: subset that reused an existing KV cache.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
