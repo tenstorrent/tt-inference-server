@@ -2421,9 +2421,9 @@ vlm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
-                vllm_args={
-                    "disable_mm_preprocessor_cache": True,
-                },
+                # vllm_args={
+                #     "disable_mm_preprocessor_cache": True,
+                # },
             ),
         ],
         status=ModelStatusTypes.EXPERIMENTAL,
