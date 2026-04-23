@@ -291,9 +291,15 @@ class Settings(BaseSettings):
 
         explicit_runner = os.getenv("MODEL_RUNNER")
         model_runner_enum = ModelRunners(explicit_runner) if explicit_runner else None
-        logger.info(
-            f"Explicit MODEL_RUNNER={explicit_runner!r} for MODEL={model_to_run!r}"
-        )
+        if model_runner_enum is None:
+            logger.warning(
+                f"MODEL_RUNNER not set for MODEL={model_to_run!r}; "
+                f"falling back to default runner."
+            )
+        else:
+            logger.info(
+                f"Explicit MODEL_RUNNER={explicit_runner!r} for MODEL={model_to_run!r}"
+            )
 
         for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
             if model_name_enum in model_names:
