@@ -61,6 +61,7 @@ scripts/examples/example_data
 !benchmarking/benchmark_targets/*.json
 !release_model_spec.json
 !tt-media-server/static/demos/images.json
+!tt-media-server/monitoring/grafana/**/*.json
 .github/workflows/*.json
 
 venv*/**
