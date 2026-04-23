@@ -25,6 +25,10 @@
       "description": "OpenAI-compatible chat completion endpoints"
     },
     {
+      "name": "Responses",
+      "description": "OpenAI-compatible responses endpoints"
+    },
+    {
       "name": "Embeddings",
       "description": "OpenAI-compatible text embedding endpoints"
     },
@@ -73,6 +77,57 @@
                   "type": "string",
                   "description": "SSE stream; object \"chat.completion.chunk\", choices[].delta"
                 }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (e.g. missing or empty messages)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Model not ready",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/responses/input_tokens": {
+      "post": {
+        "tags": ["Responses"],
+        "summary": "Count input tokens",
+        "description": "Returns the tokenizer input token count. Does not run inference.",
+        "operationId": "countResponseInputTokens",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ResponsesInputTokensRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token count for the given input",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResponsesInputTokensResponse" }
               }
             }
           },
@@ -398,6 +453,78 @@
   },
   "components": {
     "schemas": {
+      "ResponsesInputTokensRequest": {
+        "type": "object",
+        "required": ["input"],
+        "description": "Responses API request body used only for tokenization; same shape as /v1/responses create (subset enforced by server).",
+        "properties": {
+          "input": {
+            "description": "User input as a string or structured message list",
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "array",
+                "items": { "type": "object", "additionalProperties": true }
+              }
+            ]
+          },
+          "model": {
+            "type": "string",
+            "description": "Model identifier"
+          },
+          "instructions": {
+            "type": "string",
+            "description": "System or developer instructions"
+          },
+          "conversation": {
+            "description": "Conversation id or object (OpenAI)",
+            "oneOf": [
+              { "type": "string" },
+              { "type": "object", "additionalProperties": true }
+            ]
+          },
+          "tools": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": true },
+            "description": "Tool definitions included in the prompt template"
+          },
+          "tool_choice": {
+            "description": "Tool choice configuration",
+            "oneOf": [
+              { "type": "string" },
+              { "type": "object", "additionalProperties": true }
+            ]
+          },
+          "temperature": { "type": "number" },
+          "top_p": { "type": "number" },
+          "max_output_tokens": { "type": "integer" },
+          "stream": { "type": "boolean" },
+          "previous_response_id": { "type": "string" },
+          "truncation": { "type": "string" },
+          "user": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "ResponsesInputTokensResponse": {
+        "type": "object",
+        "required": ["object", "input_tokens", "request"],
+        "properties": {
+          "object": {
+            "type": "string",
+            "enum": ["response.input_tokens"],
+            "description": "Discriminator for this resource"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "description": "Number of input tokens after chat template and tokenizer"
+          },
+          "request": {
+            "type": "object",
+            "description": "Echo of parsed request parameters used for counting (internal task_id omitted)",
+            "additionalProperties": true
+          }
+        }
+      },
       "ChatCompletionRequest": {
         "type": "object",
         "required": ["messages"],

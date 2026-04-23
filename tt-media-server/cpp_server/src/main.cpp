@@ -262,6 +262,9 @@ int main(int argc, char* argv[]) {
     TT_LOG_INFO("[Main] Endpoints:");
     TT_LOG_INFO(
         "  POST /v1/chat/completions  - OpenAI-compatible chat completions");
+    TT_LOG_INFO(
+        "  POST /v1/responses/input_tokens  - OpenAI-compatible responses api "
+        "to get input token counts of the request");
     TT_LOG_INFO("  GET  /health               - Health check");
     TT_LOG_INFO("  GET  /tt-liveness          - Liveness check");
     TT_LOG_INFO("  GET  /docs                 - Swagger UI");
