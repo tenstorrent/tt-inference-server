@@ -2,7 +2,7 @@ name: Test Gate
 on:
   workflow_dispatch:
   pull_request:
-    branches: ["main", "dev"]
+    branches: ["main"]
     types: [opened, synchronize, reopened]
   merge_group:
 
