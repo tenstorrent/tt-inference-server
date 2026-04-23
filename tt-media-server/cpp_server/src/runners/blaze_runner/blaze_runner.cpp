@@ -210,6 +210,14 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   auto taskId = context.taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
   if (finished) {
+    uint32_t a = pipelineManager->get_spec_accepts(output.slot_id) -
+                 context.spec_accepts_at_start;
+    uint32_t r = pipelineManager->get_spec_rejects(output.slot_id) -
+                 context.spec_rejects_at_start;
+    uint32_t total = a + r;
+    double acceptRate = total > 0 ? 100.0 * a / total : 0.0;
+    TT_LOG_INFO("slot {} turn: accepts={}/{} rate={:.1f}%", output.slot_id, a,
+                total, acceptRate);
     slotContexts.erase(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
@@ -280,16 +288,22 @@ void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
                  request->taskId, slotId);
     pipelineManager->push_request(utils::makeSubmitRequest(slotId, *request));
     slotContexts.insert_or_assign(
-        slotId, blaze_utils::SlotContext{
-                    request->taskId, request->getSamplingParams().ignore_eos});
+        slotId,
+        blaze_utils::SlotContext{
+            request->taskId, request->getSamplingParams().ignore_eos,
+            pipelineManager->get_spec_accepts(slotId),
+            pipelineManager->get_spec_rejects(slotId)});
     return;
   } else {
     TT_LOG_DEBUG("[BlazeRunner] handleRequest: CONTINUE taskId={}, slotId={}",
                  request->taskId, slotId);
     pipelineManager->push_request(utils::makeContinueRequest(slotId, *request));
     slotContexts.insert_or_assign(
-        slotId, blaze_utils::SlotContext{
-                    request->taskId, request->getSamplingParams().ignore_eos});
+        slotId,
+        blaze_utils::SlotContext{
+            request->taskId, request->getSamplingParams().ignore_eos,
+            pipelineManager->get_spec_accepts(slotId),
+            pipelineManager->get_spec_rejects(slotId)});
   }
 }
 

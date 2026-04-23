@@ -59,6 +59,8 @@ inline pm::ISRequest makeContinueRequest(uint32_t slotId,
 struct SlotContext {
   uint32_t taskId;
   bool ignoreEos;
+  uint32_t spec_accepts_at_start = 0;
+  uint32_t spec_rejects_at_start = 0;
 };
 
 }  // namespace tt::runners::blaze_utils
