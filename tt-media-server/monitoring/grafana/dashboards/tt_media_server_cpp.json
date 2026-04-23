@@ -29,7 +29,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Tokens per Second per User — derived from the median inter-token latency (1 / ITL_p50). Represents the token streaming speed each user experiences.",
+      "description": "Tokens per Second per User — derived from the median per-request time per output token (1 / TPOT_p50). Represents the token streaming speed each user experiences during the decode phase.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -52,7 +52,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "1 / tt_inter_token_latency_seconds{quantile=\"0.5\"}",
+          "expr": "1 / tt_time_per_output_token_seconds{quantile=\"0.5\"}",
           "legendFormat": "TSU"
         }
       ],
@@ -428,7 +428,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "1 / tt_inter_token_latency_seconds{quantile=\"0.5\"}",
+          "expr": "1 / tt_time_per_output_token_seconds{quantile=\"0.5\"}",
           "legendFormat": "TSU (tok/s/user)"
         },
         {
@@ -514,7 +514,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 32 },
       "id": 20,
       "options": { "tooltip": { "mode": "multi", "sort": "none" } },
       "targets": [
@@ -539,6 +539,45 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Per-request time per output token (TPOT): (last_token_time - first_token_time) / (generation_tokens - 1). Excludes prefill/TTFT. Each request contributes one observation, so quantiles are weighted per-user (not per-token).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 32 },
+      "id": 23,
+      "options": { "tooltip": { "mode": "multi", "sort": "none" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "tt_time_per_output_token_seconds{quantile=\"0.99\"}",
+          "legendFormat": "P99"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "tt_time_per_output_token_seconds{quantile=\"0.9\"}",
+          "legendFormat": "P90"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "tt_time_per_output_token_seconds{quantile=\"0.5\"}",
+          "legendFormat": "P50"
+        }
+      ],
+      "title": "Time Per Output Token (TPOT)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "description": "Token throughput: prompt (input) and generation (output) tokens per second",
       "fieldConfig": {
         "defaults": {
@@ -553,7 +592,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 32 },
       "id": 21,
       "options": { "tooltip": { "mode": "multi", "sort": "none" } },
       "targets": [
@@ -573,7 +612,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 40 },
       "id": 103,
       "title": "Requests",
       "type": "row"
@@ -624,7 +663,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 41 },
       "id": 31,
       "options": { "tooltip": { "mode": "multi", "sort": "none" } },
       "targets": [
