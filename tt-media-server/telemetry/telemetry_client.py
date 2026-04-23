@@ -8,7 +8,7 @@ from queue import Queue
 from threading import Thread
 
 from config.settings import get_settings
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 from utils.logger import TTLogger
 
 
@@ -114,6 +114,17 @@ download_result_counter = Counter(
     "tt_media_server_download_result_total",
     "Total number of download result operations",
     ["model_type", "status"],
+)
+
+# Live concurrency gauge: jobs that have left the HTTP layer and are
+# actively being processed by the model service (post-queue, pre-response).
+# multiprocess_mode='livesum' so the parent's /metrics scrape sums the
+# live values across all uvicorn worker PIDs.
+jobs_in_progress = Gauge(
+    "tt_media_server_jobs_in_progress",
+    "Generation jobs currently being processed by the model service",
+    ["model_type"],
+    multiprocess_mode="livesum",
 )
 
 
