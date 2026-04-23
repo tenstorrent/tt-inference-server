@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     worker_check_sleep_timeout: float = 30.0
     default_throttle_level: str = "5"
 
+    # Model inference settings
+    num_inference_steps: Optional[int] = None
+
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
     weights_distribution_timeout_seconds: int = 1200
@@ -264,6 +267,7 @@ class Settings(BaseSettings):
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,
             ModelRunners.TT_WAN_2_2_I2V.value,
+            ModelRunners.TT_WAN_2_2_I2V_PRODIA.value,
         ]:
             self.default_throttle_level = None
 

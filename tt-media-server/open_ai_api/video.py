@@ -67,22 +67,9 @@ async def submit_generate_video_request(
                     detail="Video generation failed: empty file generated",
                 )
 
-            # Create a faststart temp file before serving for better streaming
-            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
-                faststart_path = tmp.name
-
-            try:
-                VideoManager.ensure_faststart(video_file_path, faststart_path)
-                serve_path = faststart_path
-            except Exception as e:
-                # If faststart fails, serve the original file
-                service.logger.warning(
-                    f"Failed to create faststart video, serving original: {e}"
-                )
-                serve_path = video_file_path
-
+            # File is already encoded with +faststart, serve directly
             return FileResponse(
-                serve_path,
+                video_file_path,
                 media_type="video/mp4",
                 filename=f"video_{request._task_id}.mp4",
                 headers={

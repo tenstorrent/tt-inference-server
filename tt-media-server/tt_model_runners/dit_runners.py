@@ -37,6 +37,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
     ModelRunners.TT_WAN_2_2_I2V.value: "Wan22-I2V",
+    ModelRunners.TT_WAN_2_2_I2V_PRODIA.value: "Wan22-I2V-Prodia",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -143,19 +144,18 @@ class TTDiTRunner(BaseMetalDeviceRunner):
                 ],
             )
         elif self.settings.model_service == ModelServices.VIDEO.value:
-            self.run(
-                [
-                    VideoGenerateRequest.model_construct(
-                        prompt="Sunrise on a beach",
-                        negative_prompt="",
-                        num_inference_steps=2,
-                    )
-                ],
-            )
+            self.run([self._make_warmup_video_request()])
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
         return True
+
+    def _make_warmup_video_request(self):
+        return VideoGenerateRequest.model_construct(
+            prompt="Sunrise on a beach",
+            negative_prompt="",
+            num_inference_steps=2,
+        )
 
     @log_execution_time(
         f"{dit_runner_log_map[get_settings().model_runner]} inference",
@@ -323,13 +323,14 @@ class TTWan22Runner(TTDiTRunner):
     def create_pipeline(self):
         try:
             if self.ttnn_device.shape.mesh_size() >= 32:  # GLX: (4,8) or (4,32)
-                target_height, target_width = 720, 1280
+                height, width = 720, 1280
             else:
-                target_height, target_width = 480, 832
+                height, width = 480, 832
             return WanPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
-                target_height=target_height,
-                target_width=target_width,
+                height=height,
+                width=width,
+                num_frames=81
             )
         except Exception as e:
             log_exception_chain(
@@ -397,21 +398,125 @@ class TTWan22Runner(TTDiTRunner):
         return device_params
 
 
+class TTWan22I2VProdiaRunner(TTDiTRunner):
+    """Runner for the Prodia distilled I2V pipeline (3-step Euler, dual-expert weights)."""
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.image_manager = ImageManager("img")
+
+    def _make_warmup_video_request(self):
+        import base64
+        import io
+
+        from PIL import Image as PILImage
+
+        buf = io.BytesIO()
+        PILImage.new("RGB", (1280, 720)).save(buf, format="JPEG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        return VideoGenerateRequest.model_construct(
+            prompt="warmup",
+            negative_prompt="",
+            num_inference_steps=2,
+            image=b64,
+        )
+
+    def load_weights(self):
+        return False
+
+    def get_pipeline_device_params(self):
+        device_params = {"fabric_config": ttnn.FabricConfig.FABRIC_1D_RING}
+        if is_blackhole():
+            config = ttnn.FabricRouterConfig()
+            config.max_packet_payload_size_bytes = 8192
+            device_params["fabric_router_config"] = config
+            mesh_size = (
+                self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
+            )
+            if mesh_size > 32:  # 4x32 only, not 4x8
+                device_params["trace_region_size"] = 120000000
+        return device_params
+
+    def create_pipeline(self):
+        try:
+            from models.tt_dit.prodia.pipelines.pipeline_i2v import create_i2v_pipeline
+
+            height, width = (720, 1280) if self.ttnn_device.shape.mesh_size() >= 32 else (480, 832)
+            return create_i2v_pipeline(
+                self.ttnn_device,
+                weights_dir=self.settings.model_weights_path,
+                height=height,
+                width=width,
+                num_frames=81,
+            )
+        except Exception as e:
+            log_exception_chain(self.logger, self.device_id, "Prodia I2V pipeline creation failed", e)
+            raise
+
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running inference")
+        request = requests[0]
+        width, height = (1280, 720) if self.pipeline.mesh_device.shape.mesh_size() >= 32 else (832, 480)
+        if request.image_frames:
+            first_frame = min(request.image_frames, key=lambda f: f.frame_pos)
+            image = self.image_manager.base64_to_pil_image(
+                first_frame.image, target_size=(width, height), target_mode="RGB"
+            )
+        elif request.image:
+            image = self.image_manager.base64_to_pil_image(
+                request.image, target_size=(width, height), target_mode="RGB"
+            )
+        else:
+            image = None
+        frames = self.pipeline(
+            prompt=request.prompt,
+            image=image,
+            height=height,
+            width=width,
+            num_frames=81,
+            seed=int(request.seed or 0),
+        )
+        self.logger.debug(f"Device {self.device_id}: Inference completed, exporting MP4")
+        from utils.video_manager import VideoManager
+        return [VideoManager().export_to_mp4(frames)]
+
+
 class TTWan22I2VRunner(TTWan22Runner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.image_manager = ImageManager("img")
 
+    def _make_warmup_video_request(self):
+        import base64
+        import io
+
+        from PIL import Image as PILImage
+
+        buf = io.BytesIO()
+        PILImage.new("RGB", (1280, 720)).save(buf, format="JPEG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        return VideoGenerateRequest.model_construct(
+            prompt="warmup",
+            negative_prompt="",
+            num_inference_steps=2,
+            image=b64,
+        )
+
     def create_pipeline(self):
         try:
             if self.ttnn_device.shape.mesh_size() >= 32:  # GLX: (4,8) or (4,32)
-                target_height, target_width = 720, 1280
+                height, width = 720, 1280
             else:
-                target_height, target_width = 480, 832
+                height, width = 480, 832
             return WanPipelineI2V.create_pipeline(
                 mesh_device=self.ttnn_device,
-                target_height=target_height,
-                target_width=target_width,
+                height=height,
+                width=width,
             )
         except Exception as e:
             log_exception_chain(
@@ -431,12 +536,13 @@ class TTWan22I2VRunner(TTWan22Runner):
         else:
             width, height = 832, 480
         num_frames = 81
+        fixed_steps = getattr(self.settings, "num_inference_steps", None)
         pipeline_args = {
             "prompt": request.prompt,
             "height": height,
             "width": width,
             "num_frames": num_frames,
-            "num_inference_steps": request.num_inference_steps,
+            "num_inference_steps": min(request.num_inference_steps, fixed_steps) if fixed_steps is not None else request.num_inference_steps,
             "guidance_scale": 4.0,
             "guidance_scale_2": 3.0,
             "seed": int(request.seed or 0),
