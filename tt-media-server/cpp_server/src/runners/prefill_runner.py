@@ -36,8 +36,19 @@ Environment variables:
     PREFILL_SP:             SP factor, default 32 (use 8 for single Galaxy)
     PREFILL_TP:             TP factor, default 4
     PREFILL_NUM_LAYERS:     Number of transformer layers, default 61
-    PREFILL_MAX_SEQ_LEN:    Max sequence length, default 102400
+    PREFILL_MAX_SEQ_LEN:    Max sequence length, default 3200 * PREFILL_SP
     PREFILL_RANDOM_WEIGHTS: Set to "1" to use random weights (no cache needed)
+    PREFILL_INPUT_FILE:     Optional JSON file of pre-tokenized token_ids. When set,
+                            SHM is used only as a "run now" trigger and the token_ids
+                            in the SHM message are ignored. Accepts a plain list
+                            [t0, t1, ...] or {"token_ids": [...]}.
+    PREFILL_INPUT_PROMPT_FILE: Optional path to a prompt file (plain text, or JSON
+                            with a "prompt" key — e.g. cached InfiniteBench
+                            subsets). When set and PREFILL_INPUT_FILE is not, the
+                            runner loads the HF tokenizer from DEEPSEEK_V3_HF_MODEL
+                            and tokenizes to PREFILL_ISL tokens.
+    PREFILL_ISL:            Target input-sequence length when tokenizing a prompt
+                            file. Must be divisible by PREFILL_SP. Default: PREFILL_MAX_SEQ_LEN.
 
 Usage:
     # Single Galaxy (no tt-run needed):
@@ -56,6 +67,7 @@ Usage:
 """
 
 import gc
+import json
 import os
 import signal
 import sys
@@ -63,8 +75,11 @@ from pathlib import Path
 
 import ttnn  # must be imported before mpi4py to avoid MPI library conflicts
 
+import mpi4py
+mpi4py.rc.initialize = False
 from mpi4py import MPI
 from transformers import AutoConfig
+from models.common.utility_functions import is_blackhole
 from models.demos.deepseek_v3_d_p.tt.moe.init_helpers import create_fabric_router_config
 from models.demos.deepseek_v3_d_p.reference.deepseek_v3_config import DeepSeekV3Config
 from models.demos.deepseek_v3_d_p.tt.moe.tt_prefill_transformer import TtPrefillTransformer
@@ -75,6 +90,7 @@ from models.demos.deepseek_v3_d_p.tt.tt_deepseek_prefill_pipeline import (
 from models.demos.deepseek_v3_d_p.utils.transformer_helpers import (
     create_hf_model,
     extract_tt_state_dict,
+    tokenize_prompt_to_isl,
 )
 
 from shared_memory import PREFILL_MAX_TOKEN_IDS, SharedMemory
@@ -88,7 +104,7 @@ _sp = int(os.environ.get("PREFILL_SP", 32))
 _tp = int(os.environ.get("PREFILL_TP", 4))
 GLOBAL_MESH_SHAPE = (_sp, _tp)
 NUM_LAYERS = int(os.environ.get("PREFILL_NUM_LAYERS", 61))
-MAX_SEQ_LEN = int(os.environ.get("PREFILL_MAX_SEQ_LEN", 102400))
+MAX_SEQ_LEN = int(os.environ.get("PREFILL_MAX_SEQ_LEN", 3200 * _sp))
 
 
 def _handle_sigterm(signum, frame):
@@ -98,6 +114,71 @@ def _handle_sigterm(signum, frame):
 
 def _is_shutdown() -> bool:
     return _shutdown
+
+
+def _detect_world_size() -> int:
+    for var in ("OMPI_COMM_WORLD_SIZE", "PMI_SIZE", "SLURM_NTASKS"):
+        v = os.environ.get(var)
+        if v and v.isdigit():
+            return int(v)
+    return 1
+
+
+def _detect_rank() -> int:
+    for var in ("OMPI_COMM_WORLD_RANK", "PMI_RANK", "SLURM_PROCID", "RANK"):
+        v = os.environ.get(var)
+        if v and v.isdigit():
+            return int(v)
+    return 0
+
+
+def _load_override_token_ids() -> list[int] | None:
+    # 1) Pre-tokenized IDs take precedence.
+    ids_path = os.environ.get("PREFILL_INPUT_FILE")
+    if ids_path:
+        with open(ids_path) as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            data = data["token_ids"]
+        if not isinstance(data, list) or not all(isinstance(x, int) for x in data):
+            raise ValueError(
+                f"PREFILL_INPUT_FILE {ids_path} must be a JSON list of ints or {{'token_ids': [...]}}"
+            )
+        return data
+
+    # 2) Otherwise, tokenize a prompt file with the HF tokenizer.
+    prompt_path = os.environ.get("PREFILL_INPUT_PROMPT_FILE")
+    if not prompt_path:
+        return None
+
+    model_path = os.environ.get("DEEPSEEK_V3_HF_MODEL")
+    if not model_path:
+        raise ValueError(
+            "PREFILL_INPUT_PROMPT_FILE requires DEEPSEEK_V3_HF_MODEL for tokenizer loading"
+        )
+
+    # Accept plain text or JSON with a "prompt" key (matches InfiniteBench cache format).
+    with open(prompt_path) as f:
+        raw = f.read()
+    try:
+        parsed = json.loads(raw)
+        prompt_text = parsed["prompt"] if isinstance(parsed, dict) and "prompt" in parsed else raw
+    except json.JSONDecodeError:
+        prompt_text = raw
+
+    isl = int(os.environ.get("PREFILL_ISL", MAX_SEQ_LEN))
+    sp = GLOBAL_MESH_SHAPE[0]
+    if isl % sp != 0:
+        raise ValueError(f"PREFILL_ISL ({isl}) must be divisible by PREFILL_SP ({sp})")
+
+    print(
+        f"Rank 0: tokenizing {prompt_path} with HF tokenizer from {model_path} to ISL={isl}",
+        file=sys.stderr,
+    )
+    from transformers import AutoTokenizer
+    tok = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    input_ids, _, _ = tokenize_prompt_to_isl(tok, max_isl=isl, prompt_text=prompt_text)
+    return input_ids[0].tolist()
 
 
 def _load_hf_config():
@@ -145,8 +226,17 @@ def _open_mesh_device():
 # ================================================================
 
 
-def run_rank0_coordinator(pipeline: TtDeepSeekPrefillPipeline, comm) -> None:
-    """Rank 0: Read from SHM, broadcast request, run prefill, return token to SHM."""
+def run_rank0_coordinator(
+    pipeline: TtDeepSeekPrefillPipeline,
+    comm,
+    world_size: int,
+    override_token_ids: list[int] | None,
+) -> None:
+    """Rank 0: Read from SHM (trigger), broadcast request, run prefill, return token to SHM.
+
+    When override_token_ids is provided, SHM is still used as the "run now" trigger
+    (task_id / response path) but the message's token_ids are ignored.
+    """
     c2p_name = os.environ.get("TT_IPC_SHM_C2P")
     p2c_name = os.environ.get("TT_IPC_SHM_P2C")
 
@@ -155,7 +245,12 @@ def run_rank0_coordinator(pipeline: TtDeepSeekPrefillPipeline, comm) -> None:
         sys.exit(1)
 
     print(f"Rank 0: Opening shared memory C2P={c2p_name}, P2C={p2c_name}", file=sys.stderr)
-    world_size = comm.Get_size()
+    if override_token_ids is not None:
+        print(
+            f"Rank 0: PREFILL_INPUT_FILE override active, using {len(override_token_ids)} "
+            f"token_ids from file (SHM payload ignored; SHM is trigger-only)",
+            file=sys.stderr,
+        )
 
     try:
         with SharedMemory(
@@ -173,19 +268,25 @@ def run_rank0_coordinator(pipeline: TtDeepSeekPrefillPipeline, comm) -> None:
                     break
 
                 task_id = msg.task_id  # uint32_t per PR #3033
+
+                # File mode: use the pre-loaded override as-is (caller controls exact ISL).
+                # SHM mode: take what came in over SHM and zero-pad up to MAX_SEQ_LEN —
+                # the shape the pipeline was compiled for.
+                if override_token_ids is not None:
+                    token_ids = override_token_ids
+                    source = "file"
+                else:
+                    token_ids = list(msg.token_ids)
+                    source = "shm"
+                    if len(token_ids) < MAX_SEQ_LEN:
+                        token_ids = token_ids + [0] * (MAX_SEQ_LEN - len(token_ids))
+
                 print(
                     f"Rank 0: Received prefill request task_id={task_id}, "
-                    f"num_tokens={len(msg.token_ids)}, "
-                    f"tokens={msg.token_ids[:5]}{'...' if len(msg.token_ids) > 5 else ''}",
+                    f"num_tokens={len(token_ids)}, source={source}, "
+                    f"tokens={token_ids[:5]}{'...' if len(token_ids) > 5 else ''}",
                     file=sys.stderr,
                 )
-
-                token_ids = msg.token_ids
-                sp_factor = GLOBAL_MESH_SHAPE[0]
-                min_per_chip = 128
-                min_tokens = min_per_chip * sp_factor
-                if len(token_ids) < min_tokens:
-                    token_ids = token_ids + [0] * (min_tokens - len(token_ids))
 
                 request = {
                     "token_ids": token_ids,
@@ -260,14 +361,28 @@ def main() -> None:
     #        comm = MPI.COMM_WORLD.Split(color=subcontext_id, key=rank)
     #   4. Dispatch fabric config based on sub-context instead of hardcoding.
     # See models/demos/deepseek_v3_b1/docs/example_dual_rankbindings_one_psd.md in tt-metal.
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    world_size = comm.Get_size()
+
+    # Detect launch topology from env *before* touching MPI. Single-rank runs
+    # (e.g. one Galaxy, no tt-run/mpirun) skip init_distributed_context entirely
+    # to match the pytest path, which never calls it.
+    world_size = _detect_world_size()
+    rank = _detect_rank()
+
+    comm = None
+    if world_size > 1:
+        # Multi-rank: tt-run/MPI launched. init_distributed_context() calls
+        # MPI_Init_thread -- must happen before any mpi4py operations
+        # (mpi4py auto-init is disabled above).
+        ttnn.init_distributed_context()
+        comm = MPI.COMM_WORLD
+        assert rank == comm.Get_rank(), f"env rank {rank} != MPI rank {comm.Get_rank()}"
+        assert world_size == comm.Get_size(), f"env size {world_size} != MPI size {comm.Get_size()}"
+    else:
+        print("Single-rank mode: skipping MPI init / init_distributed_context", file=sys.stderr)
 
     print(f"Rank {rank}/{world_size}: Starting prefill runner (mesh={GLOBAL_MESH_SHAPE})", file=sys.stderr)
 
     # -- Open mesh device (all ranks) --
-    ttnn.init_distributed_context()
     mesh_device = _open_mesh_device()
 
     # -- Load HF config (all ranks need same config) --
@@ -275,18 +390,31 @@ def main() -> None:
     hf_config.max_seq_len = MAX_SEQ_LEN
 
     # -- Build pipeline config --
-    weight_cache_path = os.environ.get("TT_DS_PREFILL_TTNN_CACHE")
+    env_cache = os.environ.get("TT_DS_PREFILL_TTNN_CACHE")
     use_random_weights = os.environ.get("PREFILL_RANDOM_WEIGHTS", "0") == "1"
+
+    # Mirror the layout produced by tests/conftest.py::weight_cache_path +
+    # tests/test_prefill_transformer.py so the runner reads the same files the
+    # pytest run wrote: $CACHE / deepseek_v3_d_p_{arch}_{N}dev / {sp}x{tp}
+    if env_cache and not use_random_weights:
+        arch = "bh" if is_blackhole() else "wh"
+        num_devices = ttnn.get_num_devices()
+        sp, tp = GLOBAL_MESH_SHAPE
+        effective_cache_path = Path(env_cache) / f"deepseek_v3_d_p_{arch}_{num_devices}dev" / f"{sp}x{tp}"
+        effective_cache_path.mkdir(parents=True, exist_ok=True)
+    else:
+        effective_cache_path = None
 
     pipeline_config = TtPrefillPipelineConfig(
         num_layers=NUM_LAYERS,
         max_seq_len=MAX_SEQ_LEN,
         mesh_shape=GLOBAL_MESH_SHAPE,
         is_balanced=True,
-        weight_cache_path=Path(weight_cache_path) if weight_cache_path and not use_random_weights else None,
+        weight_cache_path=effective_cache_path,
     )
 
     # -- Build state_dict (all ranks) --
+    experts_per_chip = 256 // (GLOBAL_MESH_SHAPE[0] * GLOBAL_MESH_SHAPE[1])
     if use_random_weights:
         print(f"Rank {rank}: Creating random weights (PREFILL_RANDOM_WEIGHTS=1)...", file=sys.stderr)
         hf_model = create_hf_model(hf_config, NUM_LAYERS)
@@ -294,10 +422,10 @@ def main() -> None:
         del hf_model
         gc.collect()
         print(f"Rank {rank}: Random weights ready", file=sys.stderr)
-    elif weight_cache_path and TtPrefillTransformer.check_cache_complete(
-        Path(weight_cache_path), NUM_LAYERS
+    elif effective_cache_path and TtPrefillTransformer.check_cache_complete(
+        effective_cache_path, NUM_LAYERS, experts_per_chip
     ):
-        print(f"Rank {rank}: TTNN weight cache complete, loading from cache", file=sys.stderr)
+        print(f"Rank {rank}: TTNN weight cache complete at {effective_cache_path}, loading from cache", file=sys.stderr)
         state_dict = {}
     else:
         print(f"Rank {rank}: No cache/weights configured, using empty state_dict", file=sys.stderr)
@@ -314,12 +442,15 @@ def main() -> None:
     # -- Migration setup (rank 0 only, when decode runner is available) --
     # TODO: see migration stub in earlier commit for structure.
 
-    comm.Barrier()  # all ranks ready
+    override_token_ids = _load_override_token_ids()
+
+    if world_size > 1:
+        comm.Barrier()  # all ranks ready
     print(f"Rank {rank}: Setup complete, entering request loop", file=sys.stderr)
 
     # -- Run --
     if rank == 0:
-        run_rank0_coordinator(pipeline, comm)
+        run_rank0_coordinator(pipeline, comm, world_size, override_token_ids)
     elif rank >= 1:
         run_worker_rank(rank, pipeline, comm)
 
