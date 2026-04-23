@@ -13,7 +13,6 @@ from utils.decorators import log_execution_time
 from utils.sampling_params_builder import build_sampling_params
 from utils.text_utils import TextUtils
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
-from vllm.sampling_params import RequestOutputKind
 
 CHUNK_TYPE = "streaming_chunk"
 FINAL_TYPE = "final_result"
@@ -104,7 +103,7 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
 
         chunks = []
         strip_eos = TextUtils.strip_eos
-        sampling_params = SamplingParams(temperature=0.0, max_tokens=request.max_tokens or 64, output_kind=RequestOutputKind.DELTA)
+        sampling_params = build_sampling_params(request)
 
         async for request_output in self.llm_engine.generate(
             self._build_vllm_input(request), sampling_params, request._task_id
@@ -146,7 +145,7 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
             f"Device {self.device_id}: Starting Gemma-4 31B non-streaming generation"
         )
 
-        sampling_params = SamplingParams(temperature=0.0, max_tokens=request.max_tokens or 64, output_kind=RequestOutputKind.DELTA)
+        sampling_params = build_sampling_params(request)
 
         generated_text = []
         async for request_output in self.llm_engine.generate(
