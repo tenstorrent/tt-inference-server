@@ -1037,6 +1037,14 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        # cap max_model_len to 128 — vLLM 0.19.x traces at compile_ranges_endpoints
+        # derived from this value; larger values produce shape mismatches with tt-xla
+        "vllm": {
+            "max_model_length": 128,
+            "max_num_batched_tokens": 128,
+            "min_context_length": 32,
+            "max_num_seqs": 1,
+        },
     },
     (ModelRunners.VLLMForge, DeviceTypes.P300): {
         "device_mesh_shape": (1, 1),
