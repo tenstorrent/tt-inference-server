@@ -46,7 +46,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "gridPos": { "h": 3, "w": 6, "x": 0, "y": 1 },
       "id": 2,
       "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
@@ -77,7 +77,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 3, "w": 6, "x": 6, "y": 1 },
+      "gridPos": { "h": 3, "w": 6, "x": 0, "y": 4 },
       "id": 1,
       "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
@@ -169,7 +169,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 3, "w": 6, "x": 6, "y": 4 },
+      "gridPos": { "h": 3, "w": 6, "x": 6, "y": 1 },
       "id": 6,
       "options": { "colorMode": "background_solid", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
@@ -199,7 +199,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 3, "w": 6, "x": 12, "y": 4 },
+      "gridPos": { "h": 3, "w": 6, "x": 6, "y": 4 },
       "id": 7,
       "options": { "colorMode": "background_solid", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
@@ -232,7 +232,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 3, "w": 6, "x": 18, "y": 4 },
+      "gridPos": { "h": 3, "w": 6, "x": 12, "y": 4 },
       "id": 4,
       "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
@@ -243,6 +243,44 @@
         }
       ],
       "title": "Request Queue Utilisation",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Session-level prefix-cache counters (monotonic since server start; reset on restart).\n\n• Queries: lifetime count of /v1/chat/completions requests that attempted a prefix-cache lookup — i.e. carried a prior [assistant, user] turn pair and therefore *could* match an existing session's KV cache. Fresh first-turn conversations and legacy-sessionId requests are excluded.\n• Hits: subset of queries that actually matched an existing session and reused its KV cache, sending only the delta prompt to the model.\n\nLifetime hit rate = tt_prefix_cache_hits_total / tt_prefix_cache_queries_total. For an instantaneous rate, wrap both in rate(...[5m]).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 40 },
+              { "color": "red", "value": 60 }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 3, "w": 6, "x": 18, "y": 4 },
+      "id": 8,
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "tt_prefix_cache_queries_total",
+          "legendFormat": "Queries",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "tt_prefix_cache_hits_total",
+          "legendFormat": "Hits",
+          "refId": "B"
+        }
+      ],
+      "title": "Prefix Cache",
       "type": "stat"
     },
     {
@@ -1194,75 +1232,6 @@
       ],
       "title": "HTTP Requests (successful / failed)",
       "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 85 },
-      "id": 120,
-      "title": "Prefix Cache",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Cumulative number of /v1/chat/completions requests that attempted a session-level prefix-cache lookup since server start. A lookup is attempted whenever the request carries a prior [assistant, user] turn pair and therefore *could* match an existing session's KV cache. Fresh first-turn conversations and legacy-sessionId requests are excluded, so this is the denominator of the hit-rate calculation (hits / queries).\n\nSource counter: tt_prefix_cache_queries_total — monotonic, only resets on server restart.",
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "blue", "value": null }
-            ]
-          },
-          "unit": "short",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 86 },
-      "id": 121,
-      "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "tt_prefix_cache_queries_total",
-          "legendFormat": "Queries",
-          "refId": "A"
-        }
-      ],
-      "title": "Prefix Cache Queries",
-      "type": "stat"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Cumulative number of prefix-cache lookups that successfully reused an existing session's KV cache since server start. On a hit the server sends only the delta prompt (last user turn) to the model instead of re-prefilling the whole conversation, saving a prefill pass.\n\nThis is the numerator of the hit-rate calculation: tt_prefix_cache_hits_total / tt_prefix_cache_queries_total gives the lifetime hit rate; wrap both in rate(...[5m]) for an instantaneous rate.\n\nSource counter: tt_prefix_cache_hits_total — monotonic, only resets on server restart.",
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null }
-            ]
-          },
-          "unit": "short",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 86 },
-      "id": 122,
-      "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "tt_prefix_cache_hits_total",
-          "legendFormat": "Hits",
-          "refId": "A"
-        }
-      ],
-      "title": "Prefix Cache Hits",
-      "type": "stat"
     }
   ],
   "refresh": "5s",
