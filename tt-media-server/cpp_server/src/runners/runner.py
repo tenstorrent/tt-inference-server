@@ -45,6 +45,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Path to the weight cache directory (required for --weights real)",
     )
     parser.add_argument(
+        "--model-path",
+        type=Path,
+        default=Path("/mnt/models/deepseek-ai/DeepSeek-R1-0528-dequantized"),
+        help="Path to the model directory",
+    )
+    parser.add_argument(
         "--weights",
         type=str,
         choices=("synthetic", "real"),
@@ -126,6 +132,10 @@ def _open_mesh_device(
     os.environ["TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS"] = str(
         fabric_router_sync_timeout_ms
     )
+    my_rank = int(ttnn.distributed_context_get_rank())
+    worker_l1_size = 1431568
+    if my_rank == 62:
+        worker_l1_size = 1499000
 
     num_procs = int(ttnn.distributed_context_get_size())
     fabric_router_config = create_fabric_router_config(fabric_max_payload_bytes)
@@ -140,7 +150,7 @@ def _open_mesh_device(
     )
     try:
         return ttnn.open_mesh_device(
-            mesh_shape=ttnn.MeshShape(4, 2), worker_l1_size=1431568
+            mesh_shape=ttnn.MeshShape(4, 2), worker_l1_size=worker_l1_size
         )
     except TypeError:
         return ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(4, 2))
@@ -180,6 +190,7 @@ def main() -> None:
             weights_mode=args.weights,
             cache_path=args.cache_path if args.weights == "real" else None,
             mesh_device=mesh_device,
+            model_path=args.model_path,
         )
 
         if rank == 0:
