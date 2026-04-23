@@ -30,7 +30,9 @@ inline pm::GenerationParams makeGenerationParams(
           .temperature = seq.getSamplingParams().temperature,
           .top_p = seq.getSamplingParams().top_p.value_or(1.0f),
           .top_k =
-              static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1))};
+              static_cast<int32_t>(seq.getSamplingParams().top_k.value_or(-1)),
+          .disaggregated_decode = seq.isDisaggregated()
+            };
 }
 
 inline void fillSequenceFields(pm::ISRequest& req,
