@@ -1812,47 +1812,6 @@ llm_templates = [
                     ),
                 ),
             ),
-        ],
-        status=ModelStatusTypes.FUNCTIONAL,
-        metadata={
-            "meta-llama/Llama-3.3-70B-Instruct": {
-                "tool_call_parser_name": "llama3_json",
-            },
-            "meta-llama/Llama-3.1-70B": {
-                "tool_call_parser_name": "llama3_json",
-            },
-            "meta-llama/Llama-3.1-70B-Instruct": {
-                "tool_call_parser_name": "llama3_json",
-            },
-            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
-                "reasoning_parser_name": "deepseek_r1",
-                "tool_call_parser_name": "deepseek_v3",
-            },
-        },
-    ),
-    ModelSpecTemplate(
-        weights=[
-            "meta-llama/Llama-3.3-70B-Instruct",
-            "meta-llama/Llama-3.1-70B",
-            "meta-llama/Llama-3.1-70B-Instruct",
-            "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-        ],
-        impl=tt_transformers_impl,
-        system_requirements=SystemRequirements(
-            firmware=VersionRequirement(
-                specifier=">=19.2.0",
-                mode=VersionMode.STRICT,
-            ),
-            kmd=VersionRequirement(
-                specifier=">=2.5.0",
-                mode=VersionMode.STRICT,
-            ),
-        ),
-        version="0.10.0",
-        tt_metal_commit="6900b0c",
-        vllm_commit="22be241",
-        inference_engine=InferenceEngine.VLLM.value,
-        device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.P300X2,
                 max_concurrency=32,
@@ -1862,6 +1821,16 @@ llm_templates = [
                 override_tt_config={
                     "trace_region_size": 58000000,
                 },
+                system_requirements=SystemRequirements(
+                    firmware=VersionRequirement(
+                        specifier=">=19.2.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                    kmd=VersionRequirement(
+                        specifier=">=2.5.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                ),
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
