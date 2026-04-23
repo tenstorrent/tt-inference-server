@@ -1039,6 +1039,47 @@ llm_templates = [
         },
     ),
     ModelSpecTemplate(
+        weights=["openai/gpt-oss-120b"],
+        impl=gpt_oss_impl,
+        version="0.12.0",
+        tt_metal_commit="034ac58",
+        vllm_commit="1abfcfc",
+        inference_engine=InferenceEngine.VLLM.value,
+        device_model_specs=[
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                # Conservative starting point: gpt-oss-120b is not yet validated on
+                # Blackhole upstream (tt-metal/models/demos/gpt_oss only tests (1,8)
+                # T3K and (4,8) Galaxy meshes; perf_targets.json has no BH entries).
+                # Default MESH_DEVICE="P300x2" resolves to a (1, 4) logical mesh in
+                # the vLLM TT worker, which gives tp=4/ep=1 (no throughput-experts
+                # path, but per-device padded vocab = 65536 sits at the on-device
+                # sampling boundary so sampling stays on device).
+                max_concurrency=1,
+                max_context=16 * 1024,
+                default_impl=True,
+                tensor_cache_timeout=5400.0,
+                env_vars={
+                    # Pin the physical fabric topology so we don't depend on
+                    # auto-detection (matches every other P300X2 spec in this
+                    # file; the descriptor declares device_topology [2, 2]).
+                    "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
+                },
+            ),
+        ],
+        status=ModelStatusTypes.EXPERIMENTAL,
+        has_builtin_warmup=True,
+        env_vars={
+            "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+        },
+        metadata={
+            "openai/gpt-oss-120b": {
+                "reasoning_parser_name": "openai_gptoss",
+                "tool_call_parser_name": "openai",
+            },
+        },
+    ),
+    ModelSpecTemplate(
         weights=["arcee-ai/AFM-4.5B"],
         impl=tt_transformers_impl,
         version="0.3.0",
