@@ -310,7 +310,7 @@ void SessionManager::createSession(
   if (slotId.has_value()) {
     domain::Session session(slotId.value());
     sessions.insert(session.getSessionId(), session);
-    TT_LOG_INFO("[SessionManager] Created session with pre-assigned slot: {}",
+    TT_LOG_INFO("[SessionManager] Created session with pre-assigned foo slot: {}",
                 slotId.value());
     callerEventLoop->queueInLoop([onCompletion = std::move(onCompletion),
                                   session]() { onCompletion(session); });
