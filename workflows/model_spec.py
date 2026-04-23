@@ -1143,8 +1143,8 @@ llm_templates = [
                 max_concurrency=32 * 4,
                 max_context=40960,
                 default_impl=True,
-                override_tt_config={
-                    "data_parallel": 4,
+                vllm_args={
+                    "data_parallel_size": 4,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1446,9 +1446,11 @@ llm_templates = [
                 max_concurrency=32 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
                 override_tt_config={
                     "trace_region_size": 27381760,
-                    "data_parallel": 4,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1493,7 +1495,7 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 30712832,
+                    "trace_region_size": 50000000,
                 },
             ),
             DeviceModelSpec(
@@ -1502,9 +1504,11 @@ llm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
                 override_tt_config={
-                    "trace_region_size": 30712832,
-                    "data_parallel": 4,
+                    "trace_region_size": 50000000,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
@@ -1517,7 +1521,7 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 30712832,
+                    "trace_region_size": 40000000,
                     "fabric_config": "FABRIC_1D",
                 },
                 env_vars={
@@ -1552,6 +1556,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 53000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N150X4,
@@ -1599,7 +1606,7 @@ llm_templates = [
                     "sample_on_device_mode": "all",
                     "fabric_config": "FABRIC_1D_RING",
                     "worker_l1_size": 1344544,
-                    "trace_region_size": 184915840,
+                    "trace_region_size": 195000000,
                 },
             ),
         ],
@@ -1787,7 +1794,7 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 51453952,
+                    "trace_region_size": 83000000,
                 },
                 system_requirements=SystemRequirements(
                     firmware=VersionRequirement(
@@ -2011,12 +2018,18 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=64 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "max_model_len": "32768",
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.N300,
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "max_model_len": "32768",
+                },
                 override_tt_config={
                     "trace_region_size": 36410368,
                 },
@@ -2060,7 +2073,7 @@ llm_templates = [
                 max_context=64 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 30000000,
+                    "trace_region_size": 50000000,
                 },
             ),
             DeviceModelSpec(
@@ -2092,8 +2105,10 @@ llm_templates = [
                 max_concurrency=32 * 4,
                 max_context=128 * 1024,
                 default_impl=True,
+                vllm_args={
+                    "data_parallel_size": 4,
+                },
                 override_tt_config={
-                    "data_parallel": 4,
                     "sample_on_device_mode": "decode_only",
                     "trace_region_size": 33000000,
                 },
@@ -2173,7 +2188,7 @@ llm_templates = [
                 default_impl=True,
                 override_tt_config={
                     "sample_on_device_mode": "decode_only",
-                    "trace_region_size": 56000000,
+                    "trace_region_size": 76000000,
                 },
             ),
             DeviceModelSpec(
@@ -2268,6 +2283,9 @@ llm_templates = [
                 max_concurrency=32,
                 max_context=128 * 1024,
                 default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 56000000,
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
