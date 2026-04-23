@@ -50,7 +50,7 @@ sleep 2
 # 3. Install dependencies (onnx for SFace, ffmpeg for audio, PyPDF2 for docs)
 echo "[3/7] Installing dependencies..."
 docker exec $CONTAINER bash -c 'apt-get update -qq && apt-get install -y -qq ffmpeg 2>/dev/null || true'
-docker exec $CONTAINER bash -c 'pip install onnx PyPDF2 -q 2>/dev/null || true'
+docker exec $CONTAINER bash -c 'pip install onnx PyPDF2 requests beautifulsoup4 -q 2>/dev/null || true'
 
 # 4. Copy latest code to container
 echo "[4/7] Copying latest code to container..."

@@ -166,6 +166,32 @@ class LlamaService:
             return len(text.split()) * 2
         return len(self.tokenizer.encode(text))
 
+    def _sample_token(self, logits, generated_tokens, temperature=0.7, top_k=50, repetition_penalty=1.15):
+        """Sample next token with temperature, top-k, and repetition penalty."""
+        import torch
+        scores = logits[0, -1, :].clone().float()
+
+        # Repetition penalty on recently generated tokens
+        recent = generated_tokens[-64:] if len(generated_tokens) > 64 else generated_tokens
+        for tok_id in set(recent):
+            if scores[tok_id] > 0:
+                scores[tok_id] /= repetition_penalty
+            else:
+                scores[tok_id] *= repetition_penalty
+
+        # Temperature
+        if temperature > 0:
+            scores = scores / temperature
+
+        # Top-k filtering
+        if top_k > 0:
+            top_vals, top_idx = torch.topk(scores, min(top_k, scores.size(-1)))
+            scores = torch.full_like(scores, float('-inf'))
+            scores.scatter_(0, top_idx, top_vals)
+
+        probs = torch.nn.functional.softmax(scores, dim=-1)
+        return torch.multinomial(probs, num_samples=1).item()
+
     async def generate_response(self, message: str, max_tokens: int = 256, conversation_history: list = None, system_prompt: str = None) -> Dict[str, Any]:
         """Generate response using Llama with optional conversation context and custom system prompt."""
         history_count = len(conversation_history) if conversation_history else 0
@@ -213,7 +239,7 @@ class LlamaService:
             generated_tokens = list(tokens)
             
             for _ in range(max_tokens):
-                next_token_id = torch.argmax(logits[0, -1, :]).item()
+                next_token_id = self._sample_token(logits, generated_tokens)
                 
                 if next_token_id == self.tokenizer.eos_token_id:
                     break
@@ -300,10 +326,10 @@ class LlamaService:
             sentence_buffer = ''
             full_response = ''
 
-            sentence_end_pattern = re.compile(r'[.!?]\s*$')
+            sentence_end_pattern = re.compile(r'(?<!\.)([.!?])\s*$')
 
             for _ in range(max_tokens):
-                next_token_id = torch.argmax(logits[0, -1, :]).item()
+                next_token_id = self._sample_token(logits, generated_tokens)
 
                 if next_token_id == self.tokenizer.eos_token_id:
                     break
@@ -317,7 +343,7 @@ class LlamaService:
                 sentence_buffer += new_text
                 full_response += new_text
 
-                if sentence_end_pattern.search(sentence_buffer) and len(sentence_buffer.strip()) > 10:
+                if sentence_end_pattern.search(sentence_buffer) and len(sentence_buffer.strip()) > 20:
                     yield {'type': 'sentence', 'text': sentence_buffer.strip()}
                     sentence_buffer = ''
                     await asyncio.sleep(0)

@@ -204,9 +204,8 @@ class SpeechT5TTNNServer:
         """Synthesize a single text segment, returning audio tensor."""
         from models.experimental.speecht5_tts.demo_ttnn import generate_speech_ttnn
 
-        # Auto-calculate max_steps based on text length
-        # SpeechT5 needs ~2-3 steps per character for reliable full generation
-        estimated_steps = max(100, min(len(text) * 3, self.max_steps))
+        # Cap at 300 steps (~100 chars) to avoid long hangs; longer text is split beforehand
+        estimated_steps = max(100, min(len(text) * 3, 300))
 
         speech, stats = generate_speech_ttnn(
             text=text,
@@ -296,6 +295,20 @@ class SpeechT5TTNNServer:
         text = re.sub(r"(?<!\w)(\d+\.\d+)(?!\w)", _number, text)
         text = re.sub(r"(?<!\w)(\d{2,})(?!\w)", _number, text)
 
+        # Strip markdown and special characters that confuse TTS
+        text = re.sub(r'\*+', '', text)           # **bold**, *italic*
+        text = re.sub(r'#{1,6}\s*', '', text)     # ### headings
+        text = re.sub(r'`+', '', text)             # `code` or ```blocks```
+        text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)  # [link](url) → link
+        text = re.sub(r'[\[\]]', '', text)         # stray brackets
+        text = re.sub(r'[~_{}|\\<>^]', ' ', text) # other markdown/special chars
+        text = text.replace(':', ',')              # colons → pause
+        text = text.replace(';', ',')              # semicolons → pause
+        text = text.replace('"', '')               # curly quotes
+        text = text.replace('"', '')
+        text = text.replace('—', ', ')             # em dash → pause
+        text = text.replace('–', ', ')             # en dash → pause
+
         # Common symbols
         text = text.replace("&", " and ")
         text = text.replace("+", " plus ")
@@ -325,7 +338,7 @@ class SpeechT5TTNNServer:
         text = self._normalize_text(text)
         
         # For short text, process directly
-        if len(text) * 3 <= self.max_steps:
+        if len(text) <= 100:
             speech, stats = self._synthesize_segment(text)
             audio_np = speech.squeeze().detach().numpy()
             # Explicitly delete speech tensor to free memory

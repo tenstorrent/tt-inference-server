@@ -55,7 +55,7 @@
             background-repeat: no-repeat;
             background-position: center;
             background-size: contain;
-            opacity: 0.07;
+            opacity: 0.15;
             pointer-events: none;
             z-index: 0;
         }
@@ -712,6 +712,9 @@
         .doc-upload-area {
             display: none;
             margin-bottom: 16px;
+            max-height: 40vh;
+            overflow-y: auto;
+            flex-shrink: 0;
         }
 
         .doc-upload-area.show {
@@ -760,6 +763,9 @@
         .podcast-panel {
             display: none;
             margin-bottom: 16px;
+            max-height: 40vh;
+            overflow-y: auto;
+            flex-shrink: 0;
         }
 
         .podcast-panel.show {
@@ -1172,7 +1178,6 @@
                         <button class="podcast-card-action-btn" onclick="document.getElementById('podcastFileInput').click()">Choose File</button>
                         <input type="file" id="podcastFileInput" accept=".pdf,.txt,.md,.csv,.json,.py,.js,.html" style="display:none" onchange="uploadPodcastFile(this)">
                         <div class="podcast-status" id="podcastFileStatus"></div>
-                        <button class="podcast-generate-btn" id="podcastFileGenBtn" style="display:none; margin-top: 6px;" onclick="generatePodcastFromDoc()">Generate Podcast</button>
                     </div>
                 </div>
 
@@ -1186,7 +1191,7 @@
                         <button class="podcast-card-action-btn" id="podcastTextToggle" onclick="togglePodcastExpand('textExpand', this)">Paste content...</button>
                         <div class="podcast-card-expand" id="textExpand">
                             <textarea id="podcastTextInput" placeholder="Paste an article, essay, or any content here (not a topic)..."></textarea>
-                            <button class="podcast-generate-btn" onclick="uploadPodcastText()">Generate Podcast</button>
+                            <button class="podcast-generate-btn" onclick="uploadPodcastText()">Load Content</button>
                         </div>
                         <div class="podcast-status" id="podcastTextStatus"></div>
                     </div>
@@ -1202,12 +1207,14 @@
                         <button class="podcast-card-action-btn" id="podcastUrlToggle" onclick="togglePodcastExpand('urlExpand', this)">Enter URL...</button>
                         <div class="podcast-card-expand" id="urlExpand">
                             <input type="text" id="podcastUrlInput" placeholder="https://example.com/article">
-                            <button class="podcast-generate-btn" onclick="uploadPodcastUrl()">Fetch & Generate</button>
+                            <button class="podcast-generate-btn" onclick="uploadPodcastUrl()">Fetch URL</button>
                         </div>
                         <div class="podcast-status" id="podcastUrlStatus"></div>
                     </div>
                 </div>
             </div>
+
+            <button class="podcast-generate-btn" id="podcastGenBtn" style="display:none; width:100%; margin-top:12px; padding:14px; font-size:1.1rem;" onclick="generatePodcastFromDoc()">🎙️ Generate Podcast</button>
 
             <button class="podcast-stop-btn" id="podcastStopBtn" onclick="stopPodcast()">⏹ Stop Podcast</button>
         </div>
@@ -1386,8 +1393,8 @@
                 console.log('[WakeWord] Heard:', text);
 
                 const clean = text.replace(/[,.'!?]/g, ' ').replace(/\s+/g, ' ').trim();
-                const ttWords = /\b(tt|t t|titi|teetee|tee tee|tidy|didy|diddy|ditty|didi|diti|teddy|titty|deity|duty|midi|tti|dd|td|dt|tv|80|2t|hd|h d)\b/;
-                const hattiti = /hattiti|hatiti|ha ?t[it]|h\.? ?d/;
+                const ttWords = /\b(tt|t t|h t|ht|titi|teetee|tee tee|hey tt|hey t|tidy|didy|diddy|ditty|didi|diti|teddy|titty|deity|duty|midi|tti|dd|td|dt|tv|80|2t|hd|h d|bt|pt|ct|et)\b/;
+                const hattiti = /hattiti|hatiti|ha ?t[it]|h\.? ?[td]|hey ?t/;
                 const matched = ttWords.test(clean) || hattiti.test(clean);
                 console.log(`[WakeWord] clean="${clean}" ttMatch=${ttWords.test(clean)} hattiti=${hattiti.test(clean)} matched=${matched}`);
 
@@ -1566,6 +1573,11 @@
                 text.textContent = msg || 'Document loaded. Ask a question below!';
                 banner.classList.add('show');
             }
+            // Hide the upload cards to free space
+            const docGrid = document.querySelector('#docUploadArea .doc-grid');
+            if (docGrid) docGrid.style.display = 'none';
+            const docHint = document.querySelector('#docUploadArea .podcast-voice-hint');
+            if (docHint) docHint.style.display = 'none';
         }
 
         function stopPodcast() {
@@ -1603,6 +1615,15 @@
             podcastPanel.classList.remove('show');
             storyHint.classList.remove('show');
             talkHint.classList.remove('show');
+            // Restore cards visibility when switching modes
+            const docGrid = document.querySelector('#docUploadArea .doc-grid');
+            const docHint = document.querySelector('#docUploadArea .podcast-voice-hint');
+            if (docGrid) docGrid.style.display = '';
+            if (docHint) docHint.style.display = '';
+            const podGrid = document.querySelector('#podcastPanel .podcast-grid');
+            const podHint = document.querySelector('#podcastPanel .podcast-voice-hint');
+            if (podGrid) podGrid.style.display = '';
+            if (podHint) podHint.style.display = '';
             if (currentMode === 'talk') {
                 talkHint.classList.add('show');
             } else if (currentMode === 'docs') {
@@ -1742,10 +1763,9 @@
                     status.textContent = result.error;
                     status.className = 'podcast-status error';
                 } else {
-                    status.textContent = `Loaded ${result.word_count} words.`;
+                    status.textContent = `✅ Loaded ${result.word_count} words.`;
                     status.className = 'podcast-status success';
                     showPodcastDocButton();
-                    addMessage('assistant', `Document loaded (${result.word_count} words). Click "Generate Podcast" to create a podcast from it.`);
                 }
             } catch (e) {
                 status.textContent = 'Upload failed: ' + e.message;
@@ -1771,10 +1791,9 @@
                     status.textContent = result.error;
                     status.className = 'podcast-status error';
                 } else {
-                    status.textContent = `Fetched ${result.word_count} words.`;
+                    status.textContent = `✅ Fetched ${result.word_count} words.`;
                     status.className = 'podcast-status success';
                     showPodcastDocButton();
-                    addMessage('assistant', `Webpage loaded (${result.word_count} words). Click "Generate Podcast" to create a podcast from it.`);
                 }
             } catch (e) {
                 status.textContent = 'Fetch failed: ' + e.message;
@@ -1800,11 +1819,10 @@
                     status.textContent = result.error;
                     status.className = 'podcast-status error';
                 } else {
-                    status.textContent = `Loaded ${result.word_count} words.`;
+                    status.textContent = `✅ Loaded ${result.word_count} words.`;
                     status.className = 'podcast-status success';
                     document.getElementById('podcastTextInput').value = '';
                     showPodcastDocButton();
-                    addMessage('assistant', `Text loaded (${result.word_count} words). Click "Generate Podcast" to create a podcast from it.`);
                 }
             } catch (e) {
                 status.textContent = 'Failed: ' + e.message;
@@ -1813,7 +1831,7 @@
         }
 
         function showPodcastDocButton() {
-            const btn = document.getElementById('podcastFileGenBtn');
+            const btn = document.getElementById('podcastGenBtn');
             if (btn) btn.style.display = 'block';
         }
 
@@ -1922,6 +1940,7 @@
             setupKeyboardShortcuts();
             await initVAD();
             controlStatus.textContent = getModeHint(currentMode);
+            updateDocUploadVisibility();
             
             // Check if user came from face auth (has user param)
             const urlParams = new URLSearchParams(window.location.search);
