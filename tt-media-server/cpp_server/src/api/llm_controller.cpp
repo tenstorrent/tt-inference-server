@@ -16,6 +16,7 @@
 #include "domain/chat_completion_request.hpp"
 #include "domain/chat_completion_response.hpp"
 #include "domain/models_response.hpp"
+#include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
 #include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
@@ -126,6 +127,7 @@ void LLMController::resolveSession(
 
       if (acquired.has_value()) {
         // HIT: found matching session, send delta only
+        tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
         TT_LOG_DEBUG(
             "[LLMController] Prefix cache HIT: hash={}, sessionId={}, "
             "slotId={}",
@@ -141,6 +143,7 @@ void LLMController::resolveSession(
         return;
       }
 
+      tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(false);
       TT_LOG_DEBUG(
           "[LLMController] Prefix cache MISS: hash={}, allocating new session",
           *routingInfo.lookupHash);
@@ -170,7 +173,6 @@ void LLMController::resolveSession(
             routingInfo.registrationHash);
 
         SessionInfo info;
-        info.validSessionFound = true;
         onResolved(info);
       },
       [onError](std::string_view err) {
