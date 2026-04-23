@@ -328,7 +328,7 @@ class Settings(BaseSettings):
             self.model_runner = model_runner_enum.value
 
             supported_model = getattr(SupportedModels, model_name_enum.name, None)
-            if supported_model:
+            if supported_model and not self.model_weights_path:
                 self.model_weights_path = supported_model.value
 
             # Apply all configuration values (env vars take precedence)
