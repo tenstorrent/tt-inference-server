@@ -68,6 +68,28 @@ ServerMetrics::ServerMetrics() {
                "are failures.")
            .Register(*registry_);
 
+  prefix_cache_queries_total_ =
+      &prometheus::BuildCounter()
+           .Name("tt_prefix_cache_queries_total")
+           .Help(
+               "Number of requests that attempted a prefix-cache lookup "
+               "(i.e. had a prior [assistant, user] turn pair). Denominator "
+               "for the prefix cache hit rate: "
+               "rate(tt_prefix_cache_hits_total[5m]) / "
+               "rate(tt_prefix_cache_queries_total[5m]).")
+           .Register(*registry_)
+           .Add(modelLabel);
+
+  prefix_cache_hits_total_ =
+      &prometheus::BuildCounter()
+           .Name("tt_prefix_cache_hits_total")
+           .Help(
+               "Number of prefix-cache lookups that found an existing "
+               "session and reused its KV cache (continuation path, delta "
+               "prompt only).")
+           .Register(*registry_)
+           .Add(modelLabel);
+
   // ----- gauges ----------------------------------------------------------
   queue_depth_ =
       &prometheus::BuildGauge()
@@ -192,6 +214,11 @@ void ServerMetrics::onHttpResponse(const std::string& method, int statusCode) {
              {"method", method},
              {"status_code", std::to_string(statusCode)}})
       .Increment();
+}
+
+void ServerMetrics::onPrefixCacheLookup(bool hit) {
+  prefix_cache_queries_total_->Increment();
+  if (hit) prefix_cache_hits_total_->Increment();
 }
 
 // -----------------------------------------------------------------------------
