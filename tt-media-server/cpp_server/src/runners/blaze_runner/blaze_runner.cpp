@@ -39,10 +39,7 @@ BlazeRunner::BlazeRunner(const config::LLMConfig& config,
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
   pm::PipelineSimulatorConfig simulatorConfig = {
-    .num_stages = 64,
-    .stage_duration_us = 110,
-    .decode_token_id = 12345
-  };
+      .num_stages = 64, .stage_duration_us = 110, .decode_token_id = 12345};
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
