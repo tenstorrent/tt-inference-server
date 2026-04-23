@@ -36,6 +36,7 @@ class SupportedModels(Enum):
     SPEECHT5_TTS = "microsoft/speecht5_tts"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
     GEMMA_2_9B_IT = "google/gemma-2-9b-it"
+    GEMMA_4_31B_IT = "google/gemma-4-31B-it"
     FALCON3_7B_INSTRUCT = "tiiuae/Falcon3-7B-Instruct"
 
 
@@ -79,6 +80,7 @@ class ModelNames(Enum):
     SPEECHT5_TTS = "speecht5_tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
     GEMMA_2_9B_IT = "gemma-2-9b-it"
+    GEMMA_4_31B_IT = "gemma-4-31b-it"
     FALCON3_7B_INSTRUCT = "Falcon3-7B-Instruct"
 
 
@@ -99,6 +101,7 @@ class ModelRunners(Enum):
     TT_YOLOV4 = "tt-yolov4"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
+    VLLMForge_GEMMA4_31B = "vllm_forge_gemma4_31b"
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
     BGELargeEN_V1_5 = "bge_large_en_v1_5"
     TT_XLA_RESNET = "tt-xla-resnet"
@@ -145,6 +148,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.LLM: {
         ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_LLAMA_70B,
+        ModelRunners.VLLMForge_GEMMA4_31B,
         ModelRunners.LLM_TEST,
         ModelRunners.LLAMA_RUNNER,
     },
@@ -207,6 +211,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
+    ModelRunners.VLLMForge_GEMMA4_31B: {ModelNames.GEMMA_4_31B_IT},
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
     ModelRunners.VLLMForge: {
@@ -855,6 +860,22 @@ ModelConfigs = {
             "model": SupportedModels.LLAMA_3_1_70B.value,
             "max_model_length": 1024,
             "max_num_batched_tokens": 1024,
+            "min_context_length": 32,
+            "max_num_seqs": 1,
+        },
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+    },
+    (ModelRunners.VLLMForge_GEMMA4_31B, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+        "vllm": {
+            "model": SupportedModels.GEMMA_4_31B_IT.value,
+            "max_model_length": 512,
+            # Gemma-4 multimodal requires max_num_batched_tokens >= 2560
+            # (video: _VIDEO_MAX_FRAMES=32 * 78 tokens = 2496).
+            "max_num_batched_tokens": 2560,
             "min_context_length": 32,
             "max_num_seqs": 1,
         },
