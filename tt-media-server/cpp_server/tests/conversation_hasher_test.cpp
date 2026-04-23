@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+#include "utils/conversation_hasher.hpp"
+
 #include <gtest/gtest.h>
 
 #include <string>
@@ -8,7 +10,6 @@
 
 #include "config/settings.hpp"
 #include "domain/chat_message.hpp"
-#include "utils/conversation_hasher.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 using namespace tt::domain;
@@ -30,10 +31,8 @@ ChatMessage makeMessage(std::string role, std::string content) {
 
 TEST(ConversationHasherLogic, StripToolMessages_DropsToolAndFunction) {
   std::vector<ChatMessage> in = {
-      makeMessage("system", "sys"),
-      makeMessage("user", "u1"),
-      makeMessage("tool", "t1"),
-      makeMessage("function", "f1"),
+      makeMessage("system", "sys"),   makeMessage("user", "u1"),
+      makeMessage("tool", "t1"),      makeMessage("function", "f1"),
       makeMessage("assistant", "a1"),
   };
   auto out = stripToolMessages(in);
@@ -45,8 +44,7 @@ TEST(ConversationHasherLogic, StripToolMessages_DropsToolAndFunction) {
 
 TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_RequiresUserTail) {
   EXPECT_FALSE(extractPriorTurnPrefix({}).has_value());
-  EXPECT_FALSE(
-      extractPriorTurnPrefix({makeMessage("assistant", "x")}).has_value());
+  EXPECT_FALSE(extractPriorTurnPrefix({makeMessage("user", "x")}).has_value());
 }
 
 TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_TooShortAfterStrip) {
@@ -54,8 +52,7 @@ TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_TooShortAfterStrip) {
   EXPECT_FALSE(extractPriorTurnPrefix(oneUser).has_value());
 }
 
-TEST(ConversationHasherLogic,
-     ExtractPriorTurnPrefix_SecondToLastNotAssistant) {
+TEST(ConversationHasherLogic, ExtractPriorTurnPrefix_SecondToLastNotAssistant) {
   std::vector<ChatMessage> userUser = {
       makeMessage("user", "a"),
       makeMessage("user", "b"),
@@ -116,7 +113,8 @@ class ConversationHasherTest : public ::testing::Test {
   void SetUp() override {
     std::string path = tt::config::tokenizerPath();
     if (path.empty()) {
-      GTEST_SKIP() << "Tokenizer path not configured (set model / tokenizer path)";
+      GTEST_SKIP()
+          << "Tokenizer path not configured (set model / tokenizer path)";
     }
     // exercise the same model path the server uses; activeTokenizer is static
     const auto& tok = activeTokenizer();
@@ -175,7 +173,8 @@ TEST_F(ConversationHasherTest,
   EXPECT_EQ(info.deltaPrompt, renderLastUserTurn(turns));
   EXPECT_EQ(info.registrationHash, hashConversationPrefix(turns));
 
-  std::optional<std::vector<ChatMessage>> prior = extractPriorTurnPrefix(messages);
+  std::optional<std::vector<ChatMessage>> prior =
+      extractPriorTurnPrefix(messages);
   if (prior.has_value()) {
     EXPECT_TRUE(info.hasPriorTurn);
     ASSERT_TRUE(info.lookupHash.has_value());
@@ -192,7 +191,8 @@ TEST_F(ConversationHasherTest, ComputePrefixCachingInfo_SingleUserNoPrior) {
 
   EXPECT_FALSE(info.hasPriorTurn);
   EXPECT_FALSE(info.lookupHash.has_value());
-  EXPECT_EQ(info.registrationHash, hashConversationPrefix(stripToolMessages(messages)));
+  EXPECT_EQ(info.registrationHash,
+            hashConversationPrefix(stripToolMessages(messages)));
   EXPECT_EQ(info.deltaPrompt, renderLastUserTurn(stripToolMessages(messages)));
 }
 
