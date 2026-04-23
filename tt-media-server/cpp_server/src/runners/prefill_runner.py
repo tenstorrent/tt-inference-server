@@ -180,8 +180,15 @@ def run_rank0_coordinator(pipeline: TtDeepSeekPrefillPipeline, comm) -> None:
                     file=sys.stderr,
                 )
 
+                token_ids = msg.token_ids
+                sp_factor = GLOBAL_MESH_SHAPE[0]
+                min_per_chip = 128
+                min_tokens = min_per_chip * sp_factor
+                if len(token_ids) < min_tokens:
+                    token_ids = token_ids + [0] * (min_tokens - len(token_ids))
+
                 request = {
-                    "token_ids": msg.token_ids,
+                    "token_ids": token_ids,
                     "slot_id": 0,  # TODO: extract from inference server protocol
                 }
 
@@ -265,6 +272,7 @@ def main() -> None:
 
     # -- Load HF config (all ranks need same config) --
     hf_config = _load_hf_config()
+    hf_config.max_seq_len = MAX_SEQ_LEN
 
     # -- Build pipeline config --
     weight_cache_path = os.environ.get("TT_DS_PREFILL_TTNN_CACHE")
