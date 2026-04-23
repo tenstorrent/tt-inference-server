@@ -276,9 +276,7 @@ class TrainingLoraRunner(BaseDeviceRunner):
             lr=request.learning_rate,
         )
 
-        self.logger.info(
-            f"Device {self.device_id}: LoRA training setup completed"
-        )
+        self.logger.info(f"Device {self.device_id}: LoRA training setup completed")
 
         if self._is_multichip and self.MODEL_SHARDING_PATTERNS:
             self._shard_model(model, mesh, self.MODEL_SHARDING_PATTERNS)
