@@ -372,9 +372,7 @@ class TestImageClientStrategyRunEval(unittest.TestCase):
             },
         }
 
-        with patch.object(
-            strategy, "get_health", return_value=(True, "tt-flux.1-dev")
-        ):
+        with patch.object(strategy, "get_health", return_value=(True, "tt-flux.1-dev")):
             with patch("asyncio.run", return_value=eval_result):
                 with pytest.raises(RuntimeError, match="ACCURACY_CHECK"):
                     strategy.run_eval()
