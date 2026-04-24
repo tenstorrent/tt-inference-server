@@ -1113,7 +1113,7 @@ llm_templates = [
                     "max_model_len": 32768,
                 },
                 override_tt_config={
-                    "trace_region_size": 61000000,
+                    "trace_region_size": 51000000,
                 },
             ),
             DeviceModelSpec(
@@ -1122,7 +1122,7 @@ llm_templates = [
                 max_context=40960,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 61000000,
+                    "trace_region_size": 51000000,
                 },
             ),
             DeviceModelSpec(
