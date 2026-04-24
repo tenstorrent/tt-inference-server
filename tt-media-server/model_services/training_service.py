@@ -13,7 +13,6 @@ from config.constants import (
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
 from typing import Optional
-from utils.build_catalog import weights_path_matches
 
 
 class TrainingService(BaseJobService):
@@ -24,7 +23,7 @@ class TrainingService(BaseJobService):
         super().__init__()
 
     def _resolve_model_name(self) -> str:
-        """Resolve the short model name for the configured runner and weights path.
+        """Resolve the short model name for the configured runner and model.
 
         Runners with a single supported model return that name directly.
         Runners with multiple supported models require the configured
