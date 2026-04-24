@@ -54,7 +54,7 @@ void BlazePrefillRunner::run() {
       TT_LOG_DEBUG(
           "[BlazePrefillRunner] pushToken task_id={} token_id={} finished={}",
           result->taskId, result->tokenId, true);
-      ipc::pushToken(*resultQueue, result->taskId, result->tokenId, true);
+      ipc::pushToken(*resultQueue, sequence->taskId, result->tokenId, true);
     }
 
     // sequence automatically cleaned up at end of scope
