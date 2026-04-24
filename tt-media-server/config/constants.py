@@ -34,6 +34,8 @@ class SupportedModels(Enum):
     QWEN_3_8B = "Qwen/Qwen3-8B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
+    FALCON3_7B_INSTRUCT = "tiiuae/Falcon3-7B-Instruct"
+    Z_IMAGE_TURBO = "Tongyi-MAI/Z-Image-Turbo"
 
 
 # MODEL environment variable
@@ -74,6 +76,8 @@ class ModelNames(Enum):
     QWEN_3_8B = "Qwen3-8B"
     SPEECHT5_TTS = "speecht5_tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
+    FALCON3_7B_INSTRUCT = "Falcon3-7B-Instruct"
+    Z_IMAGE_TURBO = "Z-Image-Turbo"
 
 
 class ModelRunners(Enum):
@@ -112,6 +116,7 @@ class ModelRunners(Enum):
     LLAMA_RUNNER = "llama_runner"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
     TT_XLA_SDXL = "tt-xla-sdxl"
+    TT_Z_IMAGE_TURBO = "tt-z-image-turbo"
 
 
 class ModelServices(Enum):
@@ -137,6 +142,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_QWEN_IMAGE,
         ModelRunners.TT_QWEN_IMAGE_2512,
         ModelRunners.TT_XLA_SDXL,
+        ModelRunners.TT_Z_IMAGE_TURBO,
     },
     ModelServices.LLM: {
         ModelRunners.VLLMForge,
@@ -214,6 +220,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.LLAMA_3_1_8B_INSTRUCT,
         ModelNames.QWEN_3_4B,
         ModelNames.QWEN_3_8B,
+        ModelNames.FALCON3_7B_INSTRUCT,
     },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
     ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
@@ -223,6 +230,7 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
         ModelNames.STABLE_DIFFUSION_XL_512,
     },
+    ModelRunners.TT_Z_IMAGE_TURBO: {ModelNames.Z_IMAGE_TURBO},
 }
 
 
@@ -372,6 +380,42 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.P150X4): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4x2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.P300): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_EDIT, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
@@ -394,6 +438,42 @@ ModelConfigs = {
         "device_mesh_shape": (2, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.P150X4): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4x2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.P300): {
+        "device_mesh_shape": (2, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_SDXL_IMAGE_TO_IMAGE, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SDXL_TRACE, DeviceTypes.N150): {
@@ -1088,6 +1168,12 @@ ModelConfigs = {
         "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_2X2_GROUP.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_Z_IMAGE_TURBO, DeviceTypes.P150X4): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
     },
 }

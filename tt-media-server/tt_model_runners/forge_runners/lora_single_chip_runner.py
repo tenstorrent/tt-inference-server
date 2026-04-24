@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import os
+import asyncio
 from typing import List
 
 import torch
@@ -16,6 +17,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.adapter_resolver import AdapterInfo, resolve_adapter
 from utils.decorators import log_execution_time
+from utils.dataset_loaders.sst2 import sst2_utils
 
 
 class LoraSingleChipRunner(BaseDeviceRunner):
@@ -47,16 +49,19 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             adapter_info = resolve_adapter(request.adapter)
             self._load_adapter(adapter_info)
         else:
+            self._unload_adapter()
             base_name = request.model or self.settings.model_weights_path
             self._load_base_model(base_name)
 
-        compiled_model = self._get_compiled_model()
+        compiled_model = self._compile_model()
 
         prompt = (
             request.prompt
             if isinstance(request.prompt, str)
             else self._tokenizer.decode(request.prompt)
         )
+        # hardcoded for sst2 dataset for now
+        prompt = sst2_utils.PROMPT_TEMPLATE.substitute(input=prompt)
 
         input_args = self._construct_inputs(
             [prompt], compiled_model.config, self.BATCH_SIZE, self.MAX_CACHE_LENGTH
@@ -81,6 +86,17 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             )
         ]
 
+    async def _run_async(self, requests):
+        return self._stream(requests)
+
+    async def _stream(self, requests):
+        results = await asyncio.to_thread(self.run, requests)
+        final = results[0]
+        yield CompletionOutput(
+            type="streaming_chunk", data=CompletionResult(text=final["data"].text)
+        )
+        yield CompletionOutput(type="final_result", data=CompletionResult(text=""))
+
     def _validate_request(self, request: CompletionRequest):
         if isinstance(request.prompt, str) and not request.prompt.strip():
             raise ValueError("Prompt must not be empty")
@@ -94,17 +110,26 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             self.logger.info(
                 f"Switching adapter: {self._active_adapter.adapter_path} -> {adapter_info.adapter_path}"
             )
-            if isinstance(self._active_model, PeftModel):
-                self._base_model = self._active_model.unload()
-                if hasattr(self._base_model, "peft_config"):
-                    delattr(self._base_model, "peft_config")
+            self._unload_adapter()
         self._load_base_model(adapter_info.base_model_name)
-        self._teardown_compiled()
+        self._discard_compiled_model()
         self._active_model = PeftModel.from_pretrained(
             self._base_model, adapter_info.adapter_path
         )
         self._active_adapter = adapter_info
         self.logger.info(f"Loaded adapter from {adapter_info.adapter_path}")
+
+    def _unload_adapter(self):
+        if self._active_adapter is None:
+            return
+        self.logger.info(f"Unloading adapter: {self._active_adapter.adapter_path}")
+        if isinstance(self._active_model, PeftModel):
+            self._base_model = self._active_model.unload()
+            if hasattr(self._base_model, "peft_config"):
+                delattr(self._base_model, "peft_config")
+        self._active_model = self._base_model
+        self._active_adapter = None
+        self._discard_compiled_model()
 
     def _load_base_model(self, model_name: str):
         if not model_name:
@@ -117,7 +142,7 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             self.logger.info(
                 f"Switching base model: {self._base_model.name_or_path} -> {model_name}"
             )
-        self._teardown_compiled()
+        self._discard_compiled_model()
         self._base_model = AutoModelForCausalLM.from_pretrained(
             model_name, dtype=torch.bfloat16, use_cache=True
         )
@@ -127,13 +152,13 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         self._active_adapter = None
         self.logger.info(f"Loaded base model: {model_name}")
 
-    def _teardown_compiled(self):
+    def _discard_compiled_model(self):
         if self._compiled_model is not None:
             del self._compiled_model
             self._compiled_model = None
             torch._dynamo.reset()
 
-    def _get_compiled_model(self):
+    def _compile_model(self):
         if self._compiled_model is None:
             self._active_model.eval()
             self._active_model.to(self.device)
@@ -245,15 +270,16 @@ class LoraSingleChipRunner(BaseDeviceRunner):
                 output: CausalLMOutputWithPast = compiled_model(**input_args)
                 output_logits: torch.Tensor = output.logits.to("cpu")
                 next_token_id = output_logits[:, -1].argmax(dim=-1)
+
+                # Check for EOS token and early exit without appending it
+                if torch.all(next_token_id == self._tokenizer.eos_token_id):
+                    return output_tokens[0]
+
                 output_text = [
                     self._tokenizer.decode(next_token_id[i]) for i in range(num_users)
                 ]
                 for i, output_tokens_list in enumerate(output_tokens):
                     output_tokens_list.append(output_text[i])
-
-                # Check for EOS token and early exit
-                if torch.all(next_token_id == self._tokenizer.eos_token_id):
-                    return output_tokens[0]
 
                 # Update inputs for next iteration
                 input_args["input_ids"] = next_token_id.unsqueeze(-1).to(device)
