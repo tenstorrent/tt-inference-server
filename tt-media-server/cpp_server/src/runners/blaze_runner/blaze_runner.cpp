@@ -14,6 +14,7 @@
 #include "domain/manage_memory.hpp"
 #include "domain/sequence.hpp"
 #include "ipc/token_push.hpp"
+#include "pipeline_manager/pipeline_simulator.hpp"
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "services/memory_services/blaze_memory_manager.hpp"
 #include "utils/logger.hpp"
@@ -295,11 +296,10 @@ void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
     lastOutputTime = std::chrono::steady_clock::now();
   }
   slotContexts.insert_or_assign(
-      slotId,
-      blaze_utils::SlotContext{
-          request->taskId, request->getSamplingParams().ignore_eos,
-          pipelineManager->get_spec_accepts(slotId),
-          pipelineManager->get_spec_rejects(slotId)});
+      slotId, blaze_utils::SlotContext{
+                  request->taskId, request->getSamplingParams().ignore_eos,
+                  pipelineManager->get_spec_accepts(slotId),
+                  pipelineManager->get_spec_rejects(slotId)});
   tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
 }
 

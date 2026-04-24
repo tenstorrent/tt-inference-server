@@ -2,7 +2,7 @@ name: Test Gate
 on:
   workflow_dispatch:
   pull_request:
-    branches: ["main", "dev"]
+    branches: ["main"]
     types: [opened, synchronize, reopened]
   merge_group:
 
@@ -1265,6 +1265,7 @@ jobs:
             [llm-streaming-performance]="${{ needs.llm-streaming-performance.result }}"
             [test-coverage]="${{ needs.test-coverage.result }}"
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
+            [cpp-build]="${{ needs.cpp-build.result }}"
             [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
             [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
           )
