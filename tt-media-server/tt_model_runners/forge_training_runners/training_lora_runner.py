@@ -79,12 +79,11 @@ def _training_step_inner(batch, model):
 class TrainingLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads=num_torch_threads)
-        if not self.settings.model_weights_path:
+        if not self.settings.model:
             raise ValueError(
-                "model_weights_path must be set via MODEL + DEVICE env vars "
-                "or MODEL_RUNNER_TO_MODEL_NAMES_MAP"
+                "MODEL and MODEL_RUNNER must be set via MODEL env var "
             )
-        self.model_name = self.settings.model_weights_path
+        self.model_name = ModelNames(self.settings.model).value
 
     @property
     def _is_multichip(self) -> bool:
