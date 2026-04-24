@@ -11,7 +11,7 @@ PROMPT_TEMPLATE = Template(
 """)
 )
 
-RESPONSE_TEMPLATE = Template('Deduced sentiment: $label')
+RESPONSE_TEMPLATE = Template("Deduced sentiment: $label")
 
 LBL2VALUE = {0: "Negative", 1: "Positive"}
 VALUE2LBL = {"Negative": 0, "Positive": 1}
