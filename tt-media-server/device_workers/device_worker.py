@@ -2,13 +2,98 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import asyncio
 import threading
 from multiprocessing import Queue
+from typing import Any
 
 from config.constants import SHUTDOWN_SIGNAL
 from config.settings import settings
 from device_workers.worker_utils import initialize_device_worker
 from utils.logger import TTLogger
+
+
+async def _continuous_fan_out(
+    device_runner: Any,
+    initial_requests: list[Any],
+    worker_id: str,
+    result_queue: Any,
+    error_queue: Any,
+    task_queue: Any,
+    max_inflight: int,
+) -> bool:
+    """Keep up to *max_inflight* requests in flight against *device_runner*.
+
+    On every completion, top up from *task_queue* (non-blocking) so runners
+    with internal pipelining (e.g. SPRunner's SHM ring + encoder thread)
+    stay primed across batch boundaries. Returns ``True`` if a
+    ``SHUTDOWN_SIGNAL`` is observed while topping up — the caller should
+    break its outer loop once in-flight work has drained.
+
+    Caller MUST disable any per-batch deadline before invoking: requests
+    can live longer than a nominal batch, so the runner enforces its own
+    per-request timeout.
+    """
+    inflight: dict[asyncio.Task, Any] = {}
+    shutdown_seen = False
+
+    def schedule(req: Any) -> None:
+        task = asyncio.create_task(device_runner._run_async([req]))
+        inflight[task] = req
+
+    for req in initial_requests:
+        schedule(req)
+
+    while inflight:
+        done, _pending = await asyncio.wait(
+            inflight.keys(),
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        for task in done:
+            req = inflight.pop(task)
+            task_id = req._task_id
+            exc = task.exception()
+            if exc is not None:
+                error_queue.put(
+                    (worker_id, task_id, f"Worker {worker_id} execution error: {exc}")
+                )
+                continue
+            result = task.result()
+            if not result:
+                error_queue.put((worker_id, task_id, "No responses generated"))
+                continue
+            result_queue.put((worker_id, task_id, result[0]))
+
+        if shutdown_seen:
+            continue
+
+        slots = max_inflight - len(inflight)
+        if slots <= 0:
+            continue
+
+        # A transient queue read failure must NOT kill the fan-out: the
+        # in-flight set still needs to complete and hand results back to
+        # their awaiters. Swallow, empty the top-up, and retry next round.
+        try:
+            new_reqs = (
+                task_queue.get_many(
+                    max_messages_to_get=slots,
+                    block=False,
+                    timeout=0,
+                )
+                or []
+            )
+        except Exception:
+            new_reqs = []
+
+        for new_req in new_reqs:
+            if new_req == SHUTDOWN_SIGNAL:
+                shutdown_seen = True
+                break
+            schedule(new_req)
+
+    return shutdown_seen
 
 
 def device_worker(
@@ -116,6 +201,35 @@ def device_worker(
                             )
                         )
             else:
+                # Iteration 1 of continuous fan-out: opt-in runners
+                # (``supports_continuous_fan_out = True``) keep their
+                # internal pipeline primed across batch boundaries and
+                # enforce their own per-request deadline (the per-batch
+                # timer is cancelled below). Strict ``is True`` so a
+                # Mock runner in tests doesn't accidentally opt in.
+                if getattr(device_runner, "supports_continuous_fan_out", False) is True:
+                    timeout_timer.cancel()
+                    shutdown_seen = loop.run_until_complete(
+                        _continuous_fan_out(
+                            device_runner=device_runner,
+                            initial_requests=requests,
+                            worker_id=worker_id,
+                            result_queue=result_queue,
+                            error_queue=error_queue,
+                            task_queue=task_queue,
+                            max_inflight=settings.max_batch_size,
+                        )
+                    )
+                    successful = True
+                    if shutdown_seen:
+                        logger.info(
+                            f"Worker {worker_id} shutting down "
+                            f"(SHUTDOWN_SIGNAL observed during continuous batch)"
+                        )
+                        loop.close()
+                        break
+                    continue
+
                 responses = device_runner.run(requests)
 
                 if responses is None or len(responses) == 0:
