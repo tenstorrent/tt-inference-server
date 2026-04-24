@@ -1111,6 +1111,7 @@ llm_templates = [
                 default_impl=True,
                 vllm_args={
                     "max_model_len": 32768,
+                    "max_num_seqs": 16,
                 },
                 override_tt_config={
                     "trace_region_size": 51000000,
@@ -1564,6 +1565,7 @@ llm_templates = [
                 default_impl=True,
                 vllm_args={
                     "max_model_len": 32768,
+                    "max_num_seqs": 16,
                 },
                 override_tt_config={
                     "trace_region_size": 60000000,
