@@ -64,9 +64,9 @@ class SSTDataset(BaseDataset):
     def _prepare_dataset(self):
         raw_dataset = load_dataset(DATASET_BENCHMARK, DATASET_NAME, split=self.split)
 
-        tokenized_dataset = raw_dataset.map(self._tokenize_function)
+        tokenized_dataset = raw_dataset.map(self._tokenize_function, load_from_cache_file=False)
         self.full_dataset = tokenized_dataset.filter(
-            lambda example: example["len"] <= self.max_length
+            lambda example: example["len"] <= self.max_length, load_from_cache_file=False
         )
         self.dataset = self.full_dataset.remove_columns(
             [

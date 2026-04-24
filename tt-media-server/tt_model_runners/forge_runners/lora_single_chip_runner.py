@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import os
+import asyncio
 from typing import List
 
 import torch
@@ -16,6 +17,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.adapter_resolver import AdapterInfo, resolve_adapter
 from utils.decorators import log_execution_time
+from utils.dataset_loaders.sst2 import sst2_utils
 
 
 class LoraSingleChipRunner(BaseDeviceRunner):
@@ -57,6 +59,8 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             if isinstance(request.prompt, str)
             else self._tokenizer.decode(request.prompt)
         )
+        # hardcoded for sst2 dataset for now
+        prompt = sst2_utils.PROMPT_TEMPLATE.substitute(input=prompt)
 
         input_args = self._construct_inputs(
             [prompt], compiled_model.config, self.BATCH_SIZE, self.MAX_CACHE_LENGTH
@@ -80,6 +84,15 @@ class LoraSingleChipRunner(BaseDeviceRunner):
                 data=CompletionResult(text="".join(output_tokens)),
             )
         ]
+
+    async def _run_async(self, requests):
+        return self._stream(requests)
+    
+    async def _stream(self, requests):
+        results = await asyncio.to_thread(self.run, requests)
+        final = results[0]
+        yield CompletionOutput(type="streaming_chunk", data=CompletionResult(text=final["data"].text))
+        yield CompletionOutput(type="final_result", data=CompletionResult(text=""))
 
     def _validate_request(self, request: CompletionRequest):
         if isinstance(request.prompt, str) and not request.prompt.strip():
@@ -245,15 +258,16 @@ class LoraSingleChipRunner(BaseDeviceRunner):
                 output: CausalLMOutputWithPast = compiled_model(**input_args)
                 output_logits: torch.Tensor = output.logits.to("cpu")
                 next_token_id = output_logits[:, -1].argmax(dim=-1)
+
+                # Check for EOS token and early exit without appending it
+                if torch.all(next_token_id == self._tokenizer.eos_token_id):
+                    return output_tokens[0]
+
                 output_text = [
                     self._tokenizer.decode(next_token_id[i]) for i in range(num_users)
                 ]
                 for i, output_tokens_list in enumerate(output_tokens):
                     output_tokens_list.append(output_text[i])
-
-                # Check for EOS token and early exit
-                if torch.all(next_token_id == self._tokenizer.eos_token_id):
-                    return output_tokens[0]
 
                 # Update inputs for next iteration
                 input_args["input_ids"] = next_token_id.unsqueeze(-1).to(device)
