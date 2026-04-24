@@ -99,7 +99,7 @@ class _EncodeJob:
     """
 
     task_id: str
-    frames: Optional[Any] = None  # numpy.ndarray, untyped to avoid eager numpy import
+    frames: Optional[Any] = None
     error: Optional[str] = None
 
 
@@ -217,9 +217,6 @@ def _encoder_loop(
     and error paths. Sentinel ``None`` signals shutdown.
 
     """
-    # Deferred import: keeps `import video_runner` free of the ffmpeg /
-    # imageio-ffmpeg dependency chain (unit tests, non-rank-0 ranks, and any
-    # tooling that just inspects symbols from this module don't need it).
     from utils.video_manager import VideoManager
 
     video_manager = VideoManager()
@@ -255,9 +252,6 @@ def _encoder_loop(
             try:
                 _write_error_to_shm(output_shm, job.task_id, str(encode_err))
             except Exception as write_err:
-                # SHM itself is wedged — log and keep going so subsequent jobs
-                # at least get a chance. The drainer in SPRunner will time them
-                # out and report cleanly to the caller.
                 _log.error(
                     f"Encoder thread: failed to write error response for task "
                     f"{job.task_id}: {write_err}"
