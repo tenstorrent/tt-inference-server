@@ -88,11 +88,13 @@ class LoraSingleChipRunner(BaseDeviceRunner):
 
     async def _run_async(self, requests):
         return self._stream(requests)
-    
+
     async def _stream(self, requests):
         results = await asyncio.to_thread(self.run, requests)
         final = results[0]
-        yield CompletionOutput(type="streaming_chunk", data=CompletionResult(text=final["data"].text))
+        yield CompletionOutput(
+            type="streaming_chunk", data=CompletionResult(text=final["data"].text)
+        )
         yield CompletionOutput(type="final_result", data=CompletionResult(text=""))
 
     def _validate_request(self, request: CompletionRequest):
