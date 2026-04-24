@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -191,6 +192,10 @@ struct ChatCompletionRequest : BaseRequest {
     if (json.isMember("session_id") && !json["session_id"].isNull())
       req.sessionId = getString(json["session_id"], "session_id");
 
+    if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
+      req.tool_choice = tool_calls::ToolChoice::fromJson(json["tool_choice"]);
+    }
+
     if (json.isMember("tools") && json["tools"].isArray()) {
       std::vector<tool_calls::Tool> toolList;
       for (const auto& tool : json["tools"]) {
@@ -198,58 +203,12 @@ struct ChatCompletionRequest : BaseRequest {
       }
       req.tools = toolList;
     }
-
-    if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
-      req.tool_choice = tool_calls::ToolChoice::fromJson(json["tool_choice"]);
-    }
     if (json.isMember("parallel_tool_calls") &&
         !json["parallel_tool_calls"].isNull())
       req.parallel_tool_calls =
           getBool(json["parallel_tool_calls"], "parallel_tool_calls");
 
-    if (req.tool_choice.has_value()) {
-      const auto& toolChoice = req.tool_choice.value();
-
-      // Validate tools are provided unless tool_choice is "none"
-      if ((!req.tools.has_value() || req.tools->empty()) &&
-          toolChoice.type != "none") {
-        throw std::invalid_argument(
-            "tool_choice is provided but no tools are specified");
-      }
-
-      // Validate tool_choice type
-      if (toolChoice.type != "auto" && toolChoice.type != "none" &&
-          toolChoice.type != "function") {
-        throw std::invalid_argument(
-            "tool_choice.type must be 'auto', 'none', or 'function'");
-      }
-
-      // Validate function name when type is "function"
-      if (toolChoice.type == "function") {
-        if (!toolChoice.function.has_value() ||
-            toolChoice.function.value().empty()) {
-          throw std::invalid_argument(
-              "tool_choice.function.name is required when type is 'function'. "
-              "Expected format: {\"type\": \"function\", \"function\": "
-              "{\"name\": \"function_name\"}}");
-        }
-        // Verify the function exists in tools
-        bool found = false;
-        if (req.tools.has_value()) {
-          for (const auto& tool : req.tools.value()) {
-            if (tool.functionDefinition.name == toolChoice.function.value()) {
-              found = true;
-              break;
-            }
-          }
-        }
-        if (!found) {
-          throw std::invalid_argument("tool_choice.function.name '" +
-                                      toolChoice.function.value() +
-                                      "' not found in tools");
-        }
-      }
-    }
+    validateToolFields(req);
     return req;
   }
 
@@ -318,34 +277,27 @@ struct ChatCompletionRequest : BaseRequest {
     out.response_format = response_format;
     out.sessionId = sessionId;
 
-    // Handle tool_choice
     if (tool_choice.has_value()) {
       out.tool_choice_type = tool_choice->type;
 
-      // When tool_choice is "function", create structured output for that
-      // function
+      // When tool_choice is "function", create structured output for the
+      // specific function by generating a JSON schema from its parameters.
       if (tool_choice->type == "function" &&
           tool_choice->function.has_value() && tools.has_value()) {
         out.tool_choice_function_name = tool_choice->function.value();
 
-        // Find the matching function
-        // TODO LJUBICA PROVERI DA L TREBA OVO AKO JE POSLAT RESPONSEFORMAT
-        // DRUGI??
         for (const auto& tool : tools.value()) {
           if (tool.functionDefinition.name == tool_choice->function.value()) {
-            // Create a JSON schema response format from the function parameters
             ResponseFormat format;
             format.type = tt::config::ResponseFormatType::JSON_SCHEMA;
             format.json_schema_name = tool.functionDefinition.name;
-            format.strict = true;  // Enforce strict schema adherence
+            format.strict = true;
 
-            // Convert parameters to JSON schema string
             Json::StreamWriterBuilder writer;
             writer["indentation"] = "";
             format.json_schema_str =
                 Json::writeString(writer, tool.functionDefinition.parameters);
 
-            // Override response_format to force structured output
             out.response_format = format;
             break;
           }
@@ -354,6 +306,49 @@ struct ChatCompletionRequest : BaseRequest {
     }
 
     return out;
+  }
+
+ private:
+  static void validateToolFields(const ChatCompletionRequest& req) {
+    if (!req.tool_choice.has_value()) return;
+
+    const auto& toolChoice = req.tool_choice.value();
+    const auto& type = toolChoice.type;
+    const bool toolsMissing = !req.tools.has_value() || req.tools->empty();
+
+    if (toolsMissing && type != "none") {
+      throw std::invalid_argument(
+          "tool_choice is provided but no tools are specified");
+    }
+
+    if (type != "auto" && type != "none" && type != "function") {
+      throw std::invalid_argument(
+          "tool_choice.type must be 'auto', 'none', or 'function'");
+    }
+
+    if (type == "function") {
+      if (!toolChoice.function.has_value() ||
+          toolChoice.function.value().empty()) {
+        throw std::invalid_argument(
+            "tool_choice.function.name is required when type is 'function'. "
+            "Expected format: {\"type\": \"function\", \"function\": "
+            "{\"name\": \"function_name\"}}");
+      }
+      bool found = false;
+      if (req.tools.has_value()) {
+        for (const auto& tool : req.tools.value()) {
+          if (tool.functionDefinition.name == toolChoice.function.value()) {
+            found = true;
+            break;
+          }
+        }
+      }
+      if (!found) {
+        throw std::invalid_argument("tool_choice.function.name '" +
+                                    toolChoice.function.value() +
+                                    "' not found in tools");
+      }
+    }
   }
 };
 

@@ -354,7 +354,6 @@ void LLMService::processStreamingRequest(
   StreamCallbackEntry entry{std::move(callback), request.skip_special_tokens};
   streamCallbacks.insert(taskId, std::move(entry));
 
-  // Store tool_choice info for use in postProcess
   if (request.tool_choice_type.has_value()) {
     tt::domain::tool_calls::ToolChoice toolChoice;
     toolChoice.type = request.tool_choice_type.value();
@@ -400,67 +399,60 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
     }
   }
 
-  // Check if tool_choice was set for this request
-  auto toolChoiceOpt = toolChoiceMap.get(response.task_id);
+  auto toolChoiceOpt = toolChoiceMap.take(response.task_id);
   tt::domain::tool_calls::ToolChoice toolChoice;
   if (toolChoiceOpt.has_value()) {
-    toolChoice = toolChoiceOpt.value();
+    toolChoice = std::move(toolChoiceOpt.value());
   } else {
-    toolChoice.type = "auto";  // Default
+    toolChoice.type = "auto";
   }
 
-  // Clean up the tool_choice map entry
-  toolChoiceMap.take(response.task_id);
+  if (!toolCallParser) {
+    return;
+  }
 
-  // Parse tool calls from the response based on tool_choice type
-  if (toolCallParser) {
-    for (auto& choice : response.choices) {
-      if (toolChoice.type == "none") {
-        // When tool_choice is "none": strip markers but don't parse tool calls
-        // finish_reason remains "stop" or "length" (never changed to
-        // "tool_calls")
-        choice.text = toolCallParser->stripMarkers(choice.text);
-        continue;
-      }
+  for (auto& choice : response.choices) {
+    if (toolChoice.type == "none") {
+      // Strip tool-call markers but keep finish_reason (never "tool_calls").
+      choice.text = toolCallParser->stripMarkers(choice.text);
+      continue;
+    }
 
-      if (toolChoice.type == "function") {
-        // When tool_choice is "function", the response is structured JSON
-        // from the function's parameter schema. Wrap it in a tool_call.
-        // The choice.text contains the JSON arguments directly.
-        Json::Value toolCallJson;
-        toolCallJson["id"] = "call_0";
-        toolCallJson["type"] = "function";
-        toolCallJson["function"]["name"] =
-            toolChoice.function.value_or("unknown");
-        toolCallJson["function"]["arguments"] = choice.text;
+    if (toolChoice.type == "function") {
+      // Response is guided-decoded JSON matching the selected function's
+      // parameter schema. Wrap it in a tool_call directly.
+      Json::Value toolCallJson;
+      toolCallJson["id"] = "call_0";
+      toolCallJson["type"] = "function";
+      toolCallJson["function"]["name"] =
+          toolChoice.function.value_or("unknown");
+      toolCallJson["function"]["arguments"] = choice.text;
 
-        Json::Value toolCallsArray(Json::arrayValue);
-        toolCallsArray.append(toolCallJson);
+      Json::Value toolCallsArray(Json::arrayValue);
+      toolCallsArray.append(toolCallJson);
 
-        choice.tool_calls = toolCallsArray;
-        choice.text = "";  // Clear text since it's now in tool_calls
-        choice.finish_reason = "tool_calls";
+      choice.tool_calls = toolCallsArray;
+      choice.text = "";
+      choice.finish_reason = "tool_calls";
 
-        TT_LOG_DEBUG(
-            "[LLMService] Created tool_call from structured output "
-            "(tool_choice=function, function={})",
-            toolChoice.function.value_or("unknown"));
-        continue;
-      }
-
-      // Default case: tool_choice is "auto" or not set
       TT_LOG_DEBUG(
-          "[LLMService] Parsing text for tool calls (length={}): {}",
-          choice.text.length(),
-          choice.text.substr(0, std::min<size_t>(200, choice.text.length())));
+          "[LLMService] Created tool_call from structured output "
+          "(tool_choice=function, function={})",
+          toolChoice.function.value_or("unknown"));
+      continue;
+    }
 
-      auto toolCalls = toolCallParser->parseComplete(choice.text);
-      if (toolCalls.has_value() && !toolCalls->empty()) {
-        TT_LOG_DEBUG("[LLMService] Found {} tool calls", toolCalls->size());
-        choice.tool_calls = std::move(toolCalls);
-        choice.text = toolCallParser->stripMarkers(choice.text);
-        choice.finish_reason = "tool_calls";
-      }
+    TT_LOG_DEBUG(
+        "[LLMService] Parsing text for tool calls (length={}): {}",
+        choice.text.length(),
+        choice.text.substr(0, std::min<size_t>(200, choice.text.length())));
+
+    auto toolCalls = toolCallParser->parseComplete(choice.text);
+    if (toolCalls.has_value() && !toolCalls->empty()) {
+      TT_LOG_DEBUG("[LLMService] Found {} tool calls", toolCalls->size());
+      choice.tool_calls = std::move(toolCalls);
+      choice.text = toolCallParser->stripMarkers(choice.text);
+      choice.finish_reason = "tool_calls";
     }
   }
 }
