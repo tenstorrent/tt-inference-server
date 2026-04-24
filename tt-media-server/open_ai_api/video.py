@@ -2,13 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import base64
 import os
 import tempfile
+from typing import Annotated, Optional
 
 from config.constants import JobTypes
 from config.settings import settings
 from domain.video_generate_request import VideoGenerateRequest
-from fastapi import APIRouter, Depends, HTTPException, Request, Security
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, Security, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
@@ -20,9 +22,36 @@ from utils.video_manager import VideoManager
 router = APIRouter()
 
 
+_VIDEO_EXAMPLES = {
+    "image_url": {
+        "summary": "Image-to-video via URL",
+        "value": {
+            "prompt": "A serene mountain landscape with flowing water",
+            "image": "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80",
+            "num_inference_steps": 12,
+            "seed": 42,
+        },
+    },
+    "image_frames": {
+        "summary": "Image-to-video via image_frames",
+        "value": {
+            "prompt": "A serene mountain landscape with flowing water",
+            "image_frames": [
+                {
+                    "image": "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80",
+                    "frame_pos": 0,
+                }
+            ],
+            "num_inference_steps": 12,
+            "seed": 42,
+        },
+    },
+}
+
+
 @router.post("/generations")
 async def submit_generate_video_request(
-    request: VideoGenerateRequest,
+    request: Annotated[VideoGenerateRequest, Body(openapi_examples=_VIDEO_EXAMPLES)],
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
 ):
@@ -78,6 +107,57 @@ async def submit_generate_video_request(
             )
 
         # Async mode: create job and return job metadata
+        job_data = await service.create_job(JobTypes.VIDEO, request)
+        return JSONResponse(content=job_data, status_code=202)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/generations/upload")
+async def submit_generate_video_upload(
+    prompt: str = Form(...),
+    image: UploadFile = File(...),
+    num_inference_steps: Optional[int] = Form(12),
+    seed: Optional[int] = Form(None),
+    service: BaseJobService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """
+    Generate a video from an uploaded image file.
+    Accepts multipart/form-data with an image file upload.
+    """
+    try:
+        service.scheduler.check_is_model_ready()
+    except Exception:
+        raise HTTPException(status_code=405, detail="Model is not ready")
+
+    image_bytes = await image.read()
+    image_b64 = base64.b64encode(image_bytes).decode()
+
+    request = VideoGenerateRequest(
+        prompt=prompt,
+        image=image_b64,
+        num_inference_steps=num_inference_steps,
+        seed=seed,
+    )
+
+    try:
+        if not settings.use_async_video:
+            video_file_path = await service.process_request(request)
+            if not video_file_path or not isinstance(video_file_path, str):
+                raise HTTPException(status_code=500, detail="Video generation failed: invalid file path returned")
+            if not os.path.exists(video_file_path):
+                raise HTTPException(status_code=500, detail=f"Video generation failed: file not found at {video_file_path}")
+            if os.path.getsize(video_file_path) == 0:
+                raise HTTPException(status_code=500, detail="Video generation failed: empty file generated")
+            return FileResponse(
+                video_file_path,
+                media_type="video/mp4",
+                filename=f"video_{request._task_id}.mp4",
+                headers={"Content-Disposition": f"attachment; filename=video_{request._task_id}.mp4"},
+            )
         job_data = await service.create_job(JobTypes.VIDEO, request)
         return JSONResponse(content=job_data, status_code=202)
     except HTTPException:
