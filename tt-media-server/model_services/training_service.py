@@ -6,11 +6,9 @@ from multiprocessing import Manager
 
 from model_services.base_job_service import BaseJobService
 from config.constants import (
-    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     TRAINING_STORE_ADAPTERS_DIR,
     JobTypes,
-    ModelRunners,
-    SupportedModels,
+    ModelNames,
 )
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
@@ -32,25 +30,9 @@ class TrainingService(BaseJobService):
         Runners with multiple supported models require the configured
         ``model_weights_path`` to match one of the supported model configs.
         """
-        runner_enum = ModelRunners(self.settings.model_runner)
-        model_names = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner_enum, set())
-        if not model_names:
-            raise ValueError(
-                f"No models configured for runner '{self.settings.model_runner}'"
-            )
-        if len(model_names) == 1:
-            return next(iter(model_names)).value
-
-        weights_path = self.settings.model_weights_path
-        for model_name in model_names:
-            if weights_path_matches(
-                weights_path, SupportedModels[model_name.name].value
-            ):
-                return model_name.value
-        raise ValueError(
-            f"No model in runner '{self.settings.model_runner}' matches "
-            f"model_weights_path '{weights_path}'"
-        )
+        model_enum = ModelNames(self.settings.model)
+        self._model_name = model_enum.value
+        super().__init__()
 
     async def create_job(
         self,

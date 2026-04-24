@@ -5,7 +5,7 @@ import io
 import os
 import zipfile
 
-from config.constants import JobTypes
+from config.constants import JobTypes, ModelNames
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
@@ -34,7 +34,7 @@ async def get_catalog(api_key: str = Security(get_api_key)):
         settings.device,
         settings.device_mesh_shape,
         num_workers,
-        model_weights_path=settings.model_weights_path,
+        model=settings.model,
     )
     return JSONResponse(content=catalog)
 

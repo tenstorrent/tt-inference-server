@@ -4,9 +4,8 @@
 import math
 
 from config.constants import (
-    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     DeviceTypes,
-    ModelDisplayNames,
+    ModelNames,
     ModelRunners,
     SupportedModels,
     TrainingOptimizers,
@@ -26,53 +25,22 @@ TRAINING_CATALOG_DATA = {
 }
 
 
-def weights_path_matches(model_weights_path: str, repo_id: str) -> bool:
-    """Check if model_weights_path matches the HF repo ID.
-
-    model_weights_path may be the repo ID itself ("Qwen/Qwen3-8B") or a
-    resolved local snapshot path that embeds it
-    ("…/models--Qwen--Qwen3-8B/snapshots/…").
-    """
-    if not isinstance(model_weights_path, str) or not model_weights_path:
-        return False
-    if model_weights_path == repo_id:
-        return True
-    cache_fragment = f"models--{repo_id.replace('/', '--')}"
-    return cache_fragment in model_weights_path
-
-
-_weights_path_matches = weights_path_matches
-
-
-def _build_models_catalog(model_runner: str, model_weights_path: str = ""):
+def _build_models_catalog(model_runner: ModelRunners, model: str):
     try:
-        runner_enum = ModelRunners(model_runner)
+        model_name_enum = ModelNames(model).value
     except ValueError:
         return []
-    models = []
-    model_names_set = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner_enum, set())
-    for model_name in model_names_set:
-        model_config = SupportedModels[model_name.name].value
-        if model_weights_path and not weights_path_matches(
-            model_weights_path, model_config
-        ):
-            continue
-        try:
-            display_name = ModelDisplayNames[model_name.name].value
-        except KeyError:
-            raise ValueError(
-                f"Model '{model_name.name}' for runner '{model_runner}' "
-                f"must have an entry in ModelDisplayNames"
-            )
-        models.append(
+    supported_model = getattr(SupportedModels, model_name_enum.name, None)
+    if supported_model:
+        return [
             {
-                "id": model_name.value,
-                "display_name": display_name,
+                "id": model_name_enum.value,
+                "display_name": model,
                 "supported": True,
-                "model_config": model_config,
+                "model_config": supported_model.value,
             }
-        )
-    return models
+        ]
+    return []
 
 
 def _build_clusters_catalog(device: str, device_mesh_shape: tuple, num_workers: int):
@@ -105,9 +73,9 @@ def build_training_catalog(
     device: str,
     device_mesh_shape: tuple,
     num_workers: int,
-    model_weights_path: str = "",
+    model: str = "",
 ):
-    models = _build_models_catalog(model_runner, model_weights_path)
+    models = _build_models_catalog(model_runner, model)
     clusters = _build_clusters_catalog(device, device_mesh_shape, num_workers)
 
     datasets = [

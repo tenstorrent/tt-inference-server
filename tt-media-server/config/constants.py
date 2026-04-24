@@ -229,8 +229,6 @@ MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     },
     ModelRunners.TT_Z_IMAGE_TURBO: {ModelNames.Z_IMAGE_TURBO},
     ModelRunners.LORA_SINGLE_CHIP: {ModelNames.GEMMA_1_1_2B_IT},
-    ModelRunners.TRAINING_GEMMA_LORA: {ModelNames.GEMMA_1_1_2B_IT},
-    ModelRunners.TRAINING_LORA: {ModelNames.LLAMA_3_1_8B, ModelNames.QWEN_3_8B},
 }
 
 
