@@ -107,7 +107,7 @@ std::string LlamaTokenizer::applyChatTemplate(
       // Serialize arguments as JSON
       Json::StreamWriterBuilder builder;
       builder["indentation"] = "";
-      out << Json::writeString(builder, toolCall.functionCall.arguments);
+      out << toolCall.functionCall.arguments;
       out << "}" << llamaEot;
 
     } else if (m.role == "tool" || m.role == "ipython") {
