@@ -28,7 +28,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Max Batch Size | 1 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers) |
 | tt-metal Commit | `079a2c2` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.13.0-079a2c2` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2` |
 
 ---
 
@@ -51,4 +51,4 @@ python3 run.py --model vit --device n300 --workflow server --docker-server
 | Max Batch Size | 1 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers) |
 | tt-metal Commit | `079a2c2` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.13.0-079a2c2` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server-forge:0.13.0-079a2c2` |
