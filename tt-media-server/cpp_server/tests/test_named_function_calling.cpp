@@ -101,9 +101,7 @@ TEST_F(NamedFunctionCallingTest, ToolChoiceFunctionValidation) {
   json["tool_choice"] = invalidToolChoice;
 
   EXPECT_THROW(
-      {
-        auto request = ChatCompletionRequest::fromJson(json, 2);
-      },
+      { auto request = ChatCompletionRequest::fromJson(json, 2); },
       std::invalid_argument);
 }
 
@@ -118,9 +116,7 @@ TEST_F(NamedFunctionCallingTest, ToolChoiceFunctionRequiresFunctionName) {
   json["tool_choice"] = toolChoice;
 
   EXPECT_THROW(
-      {
-        auto request = ChatCompletionRequest::fromJson(json, 1);
-      },
+      { auto request = ChatCompletionRequest::fromJson(json, 1); },
       std::invalid_argument);
 }
 
@@ -153,7 +149,8 @@ TEST_F(NamedFunctionCallingTest, ToolChoiceFunctionCreatesStructuredOutput) {
 
   // Verify schema name matches function name
   ASSERT_TRUE(llmRequest.response_format->json_schema_name.has_value());
-  EXPECT_EQ(llmRequest.response_format->json_schema_name.value(), "get_weather");
+  EXPECT_EQ(llmRequest.response_format->json_schema_name.value(),
+            "get_weather");
 
   // Verify schema string contains the parameters
   ASSERT_TRUE(llmRequest.response_format->json_schema_str.has_value());

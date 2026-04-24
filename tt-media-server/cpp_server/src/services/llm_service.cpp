@@ -417,7 +417,8 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
     for (auto& choice : response.choices) {
       if (toolChoice.type == "none") {
         // When tool_choice is "none": strip markers but don't parse tool calls
-        // finish_reason remains "stop" or "length" (never changed to "tool_calls")
+        // finish_reason remains "stop" or "length" (never changed to
+        // "tool_calls")
         choice.text = toolCallParser->stripMarkers(choice.text);
         continue;
       }

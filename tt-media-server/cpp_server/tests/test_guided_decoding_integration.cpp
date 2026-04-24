@@ -51,8 +51,7 @@ class GuidedDecodingIntegrationTest : public ::testing::Test {
   }
 };
 
-TEST_F(GuidedDecodingIntegrationTest,
-       FunctionToolChoiceCreatesGuidedDecoding) {
+TEST_F(GuidedDecodingIntegrationTest, FunctionToolChoiceCreatesGuidedDecoding) {
   // Create request with tool_choice = function
   Json::Value toolChoice;
   toolChoice["type"] = "function";
@@ -138,7 +137,8 @@ TEST_F(GuidedDecodingIntegrationTest,
       << "Auto mode should use TEXT format";
 }
 
-TEST_F(GuidedDecodingIntegrationTest, NoneToolChoiceDoesNotEnableGuidedDecoding) {
+TEST_F(GuidedDecodingIntegrationTest,
+       NoneToolChoiceDoesNotEnableGuidedDecoding) {
   // Create request with tool_choice = none
   Json::Value toolChoice = "none";
 

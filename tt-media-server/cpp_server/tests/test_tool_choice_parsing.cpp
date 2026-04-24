@@ -40,8 +40,7 @@ class ToolChoiceParsingTest : public ::testing::Test {
   void printJson(const std::string& label, const Json::Value& json) {
     Json::StreamWriterBuilder writer;
     writer["indentation"] = "  ";
-    std::cout << label << ":\n"
-              << Json::writeString(writer, json) << std::endl;
+    std::cout << label << ":\n" << Json::writeString(writer, json) << std::endl;
   }
 };
 
@@ -78,9 +77,7 @@ TEST_F(ToolChoiceParsingTest, MissingFunctionObject) {
   printJson("Invalid: missing function object", toolChoice);
 
   EXPECT_THROW(
-      {
-        auto request = ChatCompletionRequest::fromJson(json, 1);
-      },
+      { auto request = ChatCompletionRequest::fromJson(json, 1); },
       std::invalid_argument);
 }
 
@@ -96,9 +93,7 @@ TEST_F(ToolChoiceParsingTest, MissingFunctionName) {
   printJson("Invalid: empty function object", toolChoice);
 
   EXPECT_THROW(
-      {
-        auto request = ChatCompletionRequest::fromJson(json, 1);
-      },
+      { auto request = ChatCompletionRequest::fromJson(json, 1); },
       std::invalid_argument);
 }
 
@@ -114,9 +109,7 @@ TEST_F(ToolChoiceParsingTest, NullFunctionName) {
   printJson("Invalid: null function name", toolChoice);
 
   EXPECT_THROW(
-      {
-        auto request = ChatCompletionRequest::fromJson(json, 1);
-      },
+      { auto request = ChatCompletionRequest::fromJson(json, 1); },
       std::invalid_argument);
 }
 
@@ -132,9 +125,7 @@ TEST_F(ToolChoiceParsingTest, EmptyFunctionName) {
   printJson("Invalid: empty function name", toolChoice);
 
   EXPECT_THROW(
-      {
-        auto request = ChatCompletionRequest::fromJson(json, 1);
-      },
+      { auto request = ChatCompletionRequest::fromJson(json, 1); },
       std::invalid_argument);
 }
 

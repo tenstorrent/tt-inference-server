@@ -244,9 +244,9 @@ struct ChatCompletionRequest : BaseRequest {
           }
         }
         if (!found) {
-          throw std::invalid_argument(
-              "tool_choice.function.name '" + toolChoice.function.value() +
-              "' not found in tools");
+          throw std::invalid_argument("tool_choice.function.name '" +
+                                      toolChoice.function.value() +
+                                      "' not found in tools");
         }
       }
     }
@@ -322,13 +322,15 @@ struct ChatCompletionRequest : BaseRequest {
     if (tool_choice.has_value()) {
       out.tool_choice_type = tool_choice->type;
 
-      // When tool_choice is "function", create structured output for that function
-      if (tool_choice->type == "function" && tool_choice->function.has_value() &&
-          tools.has_value()) {
+      // When tool_choice is "function", create structured output for that
+      // function
+      if (tool_choice->type == "function" &&
+          tool_choice->function.has_value() && tools.has_value()) {
         out.tool_choice_function_name = tool_choice->function.value();
 
         // Find the matching function
-        //TODO LJUBICA PROVERI DA L TREBA OVO AKO JE POSLAT RESPONSEFORMAT DRUGI??
+        // TODO LJUBICA PROVERI DA L TREBA OVO AKO JE POSLAT RESPONSEFORMAT
+        // DRUGI??
         for (const auto& tool : tools.value()) {
           if (tool.functionDefinition.name == tool_choice->function.value()) {
             // Create a JSON schema response format from the function parameters

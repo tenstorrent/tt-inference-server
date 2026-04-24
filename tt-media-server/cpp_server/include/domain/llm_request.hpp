@@ -117,7 +117,6 @@ struct LLMRequest : BaseRequest {
 
   bool parallel_tool_calls = true;
 
-
   std::optional<std::string> tool_choice_type;
   std::optional<std::string> tool_choice_function_name;
 
