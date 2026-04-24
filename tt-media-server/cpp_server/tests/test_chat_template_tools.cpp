@@ -296,9 +296,9 @@ void testChatTemplateWithSingleTool(const TokenizerTemplateConfig* config) {
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
-                  << ")\n";
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII "
+                  << int(actual[i]) << ")\n";
         break;
       }
     }
@@ -347,9 +347,9 @@ void testChatTemplateWithMultipleTools(const TokenizerTemplateConfig* config) {
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
-                  << ")\n";
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII "
+                  << int(actual[i]) << ")\n";
         break;
       }
     }
@@ -404,9 +404,9 @@ void testChatTemplateWithConversationHistory(
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
-                  << ")\n";
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII "
+                  << int(actual[i]) << ")\n";
 
         // Show context around the difference
         size_t contextStart = (i > 50) ? i - 50 : 0;
@@ -539,9 +539,9 @@ void testChatTemplateWithToolOutputs(const TokenizerTemplateConfig* config) {
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
-                  << ")\n";
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII "
+                  << int(actual[i]) << ")\n";
         break;
       }
     }
@@ -601,9 +601,9 @@ void testChatTemplateWithMultipleToolOutputs(
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
-                  << ")\n";
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII "
+                  << int(actual[i]) << ")\n";
         break;
       }
     }
