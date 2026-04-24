@@ -900,9 +900,8 @@ jobs:
           cd ..
           for i in $(seq 1 30); do
             LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true' \
-               && echo "$LIVENESS" | grep -q '"socket_status":"server:connected"'; then
-              echo "✅ Prefill server ready on port 8001 (socket_status=server:connected)"
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Prefill server ready on port 8001"
               break
             fi
             sleep 1
@@ -911,10 +910,6 @@ jobs:
           echo "Prefill liveness response: $LIVENESS"
           if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
             echo "ERROR: Prefill server did not become ready within 30 seconds"
-            exit 1
-          fi
-          if ! echo "$LIVENESS" | grep -q '"socket_status":"server:connected"'; then
-            echo "ERROR: Prefill server socket_status is not 'server:connected'"
             exit 1
           fi
 
@@ -929,9 +924,8 @@ jobs:
           cd ..
           for i in $(seq 1 30); do
             LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
-            if echo "$LIVENESS" | grep -q '"model_ready":true' \
-               && echo "$LIVENESS" | grep -q '"socket_status":"client:connected"'; then
-              echo "✅ Decode server ready on port 8000 (socket_status=client:connected)"
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ Decode server ready on port 8000"
               break
             fi
             sleep 1
@@ -942,8 +936,43 @@ jobs:
             echo "ERROR: Decode server did not become ready within 30 seconds"
             exit 1
           fi
-          if ! echo "$LIVENESS" | grep -q '"socket_status":"client:connected"'; then
+
+      - name: Verify prefill/decode socket connection
+        run: |
+          for i in $(seq 1 30); do
+            PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+            DECODE_LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+            if echo "$PREFILL_LIVENESS" | grep -q '"model_ready":true' \
+               && echo "$PREFILL_LIVENESS" | grep -q '"socket_status":"server:connected"' \
+               && echo "$DECODE_LIVENESS" | grep -q '"model_ready":true' \
+               && echo "$DECODE_LIVENESS" | grep -q '"socket_status":"client:connected"'; then
+              echo "✅ Prefill (server:connected) and Decode (client:connected) both ready"
+              break
+            fi
+            sleep 1
+          done
+          PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+          DECODE_LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
+          echo "Prefill liveness: $PREFILL_LIVENESS"
+          echo "Decode liveness:  $DECODE_LIVENESS"
+          FAIL=0
+          if ! echo "$PREFILL_LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Prefill server model_ready is not true"
+            FAIL=1
+          fi
+          if ! echo "$PREFILL_LIVENESS" | grep -q '"socket_status":"server:connected"'; then
+            echo "ERROR: Prefill server socket_status is not 'server:connected'"
+            FAIL=1
+          fi
+          if ! echo "$DECODE_LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: Decode server model_ready is not true"
+            FAIL=1
+          fi
+          if ! echo "$DECODE_LIVENESS" | grep -q '"socket_status":"client:connected"'; then
             echo "ERROR: Decode server socket_status is not 'client:connected'"
+            FAIL=1
+          fi
+          if [ "$FAIL" -ne 0 ]; then
             exit 1
           fi
           sleep 2
