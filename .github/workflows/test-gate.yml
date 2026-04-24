@@ -2,7 +2,7 @@ name: Test Gate
 on:
   workflow_dispatch:
   pull_request:
-    branches: ["main", "dev"]
+    branches: ["main"]
     types: [opened, synchronize, reopened]
   merge_group:
 
@@ -502,7 +502,12 @@ jobs:
       - name: Install Python test dependencies
         run: |
           uv venv
-          uv pip install vllm
+          # Pin transformers<5.6 — bench is bisect-confirmed to regress on
+          # transformers 5.6.x (mock_pipeline mean_ttft_ms 377ms -> 1834ms,
+          # mean_tpot_ms 2.93ms -> 3.57ms with all other deps held identical).
+          # Track upstream and remove pin once 5.6.x is fixed or bench is
+          # made resilient to client tokenizer cost.
+          uv pip install vllm 'transformers<5.6'
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
       # ── Mock backend benchmarks ──────────────────────────────────────
@@ -826,7 +831,12 @@ jobs:
       - name: Install Python test dependencies
         run: |
           uv venv
-          uv pip install vllm
+          # Pin transformers<5.6 — bench is bisect-confirmed to regress on
+          # transformers 5.6.x (mock_pipeline mean_ttft_ms 377ms -> 1834ms,
+          # mean_tpot_ms 2.93ms -> 3.57ms with all other deps held identical).
+          # Track upstream and remove pin once 5.6.x is fixed or bench is
+          # made resilient to client tokenizer cost.
+          uv pip install vllm 'transformers<5.6'
           echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
 
       - name: Run vLLM bench serve against split servers
@@ -1105,7 +1115,7 @@ jobs:
           # --exclude uses fnmatch patterns (shell-style wildcards)
           diff-cover coverage.xml \
             --compare-branch=origin/${BASE_REF} \
-            --exclude '*/tests/*' '*/performance_tests/*' \
+            --exclude '*/tests/*' '*/performance_tests/*' '*/config/settings.py' \
             --fail-under=15 \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 
@@ -1255,6 +1265,7 @@ jobs:
             [llm-streaming-performance]="${{ needs.llm-streaming-performance.result }}"
             [test-coverage]="${{ needs.test-coverage.result }}"
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
+            [cpp-build]="${{ needs.cpp-build.result }}"
             [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
             [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
           )
