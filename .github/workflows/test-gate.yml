@@ -974,6 +974,13 @@ jobs:
           fi
           sleep 2
 
+      - name: Sanity curl request to decode server
+        run: |
+          curl http://localhost:8000/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer your-secret-key" \
+            -d '{"messages": [{"role": "user", "content": "Hello"}], "stream": true, "max_tokens": 10}'
+
       - name: Run vLLM bench serve against mock_prefill_runner split
         env:
           OPENAI_API_KEY: 'your-secret-key'
