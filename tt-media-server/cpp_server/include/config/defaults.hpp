@@ -28,7 +28,7 @@ constexpr const char* LLM_DEVICE_BACKEND =
 constexpr const bool ENABLE_ACCUMULATED_STREAMING = false;
 constexpr size_t MAX_ACCUMULATED_TOKENS = 5;
 constexpr size_t MAX_IN_FLIGHT_COUNT = 32;
-constexpr size_t MAX_SESSIONS_COUNT = 64;
+constexpr size_t MAX_SESSIONS_COUNT = 128;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
 constexpr size_t SESSION_EVICTION_COUNT = 10;
 constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 100;
@@ -48,8 +48,8 @@ constexpr const char* TT_MEMORY_REQUEST_QUEUE = "tt_mem_requests";
 constexpr const char* TT_MEMORY_RESULT_QUEUE = "tt_mem_results";
 constexpr const char* TT_WORKER_METRICS_SHM = "/tt_worker_metrics";
 constexpr unsigned PM_CONNECT_TIMEOUT_MS = 30000;
-constexpr size_t PM_MAX_USERS = 64;
-constexpr bool USE_DEEPSEEK_MD_FORMAT = false;
+constexpr size_t PM_MAX_USERS = 128;
+constexpr bool USE_DEEPSEEK_MD_FORMAT = true;
 constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
 /**
  * Max time (ms) the runner may go without producing a model output while at
