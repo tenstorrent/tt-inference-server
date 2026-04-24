@@ -53,6 +53,7 @@ class BlazeRunner : public IRunner {
   std::unordered_set<int64_t> stopTokenIds;
   ipc::IResultQueue* resultQueue;
   tt::ipc::ITaskQueue* taskQueue;
+  std::unique_ptr<tt::domain::Sequence> requestToRetry;
   std::unique_ptr<pm::PipelineManager> pipelineManager;
   std::unordered_map<uint32_t, blaze_utils::SlotContext> slotContexts;
   std::atomic<bool> stopped{false};
