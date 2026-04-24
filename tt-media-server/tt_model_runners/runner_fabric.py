@@ -119,6 +119,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.forge_runners.sdxl_forge_runner",
         fromlist=["SDXLForgeRunner"],
     ).SDXLForgeRunner(wid),
+    ModelRunners.TT_Z_IMAGE_TURBO: lambda wid: __import__(
+        "tt_model_runners.z_image_turbo_runner",
+        fromlist=["ZImageTurboRunner"],
+    ).ZImageTurboRunner(wid),
 }
 
 

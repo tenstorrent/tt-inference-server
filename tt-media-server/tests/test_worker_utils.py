@@ -23,6 +23,7 @@ mock_settings_module = Mock()
 mock_settings_module.settings = mock_settings
 sys.modules["config.settings"] = mock_settings_module
 
+
 # Mock telemetry
 sys.modules["telemetry.telemetry_client"] = Mock()
 sys.modules["telemetry.telemetry_client"].get_telemetry_client = Mock()

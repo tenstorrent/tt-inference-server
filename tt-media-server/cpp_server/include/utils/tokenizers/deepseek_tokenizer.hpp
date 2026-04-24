@@ -16,7 +16,9 @@ class DeepseekTokenizer final : public Tokenizer {
 
   std::string applyChatTemplate(
       const std::vector<tt::domain::ChatMessage>& messages,
-      bool addGenerationPrompt) const;
+      bool addGenerationPrompt,
+      const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools =
+          std::nullopt) const;
 };
 
 }  // namespace tt::utils::tokenizers

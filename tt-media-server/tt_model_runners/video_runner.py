@@ -250,8 +250,20 @@ def run_all_ranks() -> None:
         output_name = os.environ.get("TT_VIDEO_SHM_OUTPUT", "tt_video_out")
         input_shm = VideoShm(input_name, mode="input", is_shutdown=_is_shutdown)
         output_shm = VideoShm(output_name, mode="output", is_shutdown=_is_shutdown)
-        input_shm.open(create=True)
-        output_shm.open(create=True)
+        # Create-or-attach; whichever side comes up first owns creation. Ring
+        # position survives runner restarts via the <name>_state segment.
+        input_shm.open()
+        output_shm.open()
+        # Self-heal any gap left by a previous runner instance that crashed
+        # mid-read (on input) or mid-write (on output). Scoped to this
+        # process's own role, so safe to run with a live server peer.
+        in_repair = input_shm.recover(side="reader")
+        out_repair = output_shm.recover(side="writer")
+        if any(in_repair.values()) or any(out_repair.values()):
+            _log.warning(
+                f"Rank 0: crash-recovery repaired prior inconsistency: "
+                f"input={in_repair} output={out_repair}"
+            )
         _log.info("Rank 0: SHM bridge ready, waiting for requests...")
 
     try:
@@ -262,10 +274,8 @@ def run_all_ranks() -> None:
         if rank == 0:
             if input_shm:
                 input_shm.close()
-                input_shm.unlink()
             if output_shm:
                 output_shm.close()
-                output_shm.unlink()
         runner.close_device()
 
     _log.info(f"Rank {rank}: Shutdown complete")

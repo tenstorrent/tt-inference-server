@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
     weights_distribution_timeout_seconds: int = 1200
+    # SHM response deadline in SPRunner (server-side proxy to video_runner).
+    # Was hardcoded to 300s; exposed here so it can be tuned per deployment.
+    video_request_timeout_seconds: float = 300.0
 
     # Job management settings
     max_jobs: int = 10000
@@ -102,6 +105,11 @@ class Settings(BaseSettings):
     # Telemetry settings
     enable_telemetry: bool = True
     prometheus_endpoint: str = "/metrics"
+
+    # Video generation settings
+    use_async_video: bool = (
+        True  # If False, video is generated synchronously and returned directly
+    )
 
     model_config = SettingsConfigDict(env_file=".env")
 
@@ -281,24 +289,23 @@ class Settings(BaseSettings):
     def _set_config_overrides(self, model_to_run: str, device: str):
         model_name_enum = ModelNames(model_to_run)
 
-        explicit_model_runner = os.getenv("MODEL_RUNNER")
-        model_runner_enum = (
-            ModelRunners(explicit_model_runner) if explicit_model_runner else None
-        )
-        if not model_runner_enum:
-            matching_runners = [
-                runner
-                for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items()
-                if model_name_enum in model_names
-            ]
-            if len(matching_runners) > 1:
-                raise ValueError(
-                    f"Model '{model_to_run}' found in multiple runners "
-                    f"{[r.value for r in matching_runners]}. "
-                    f"Set MODEL_RUNNER to disambiguate."
-                )
-            if matching_runners:
-                model_runner_enum = matching_runners[0]
+        explicit_runner = os.getenv("MODEL_RUNNER")
+        model_runner_enum = ModelRunners(explicit_runner) if explicit_runner else None
+        if model_runner_enum is None:
+            logger.warning(
+                f"MODEL_RUNNER not set for MODEL={model_to_run!r}; "
+                f"falling back to default runner."
+            )
+        else:
+            logger.info(
+                f"Explicit MODEL_RUNNER={explicit_runner!r} for MODEL={model_to_run!r}"
+            )
+
+        for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
+            if model_name_enum in model_names:
+                if not model_runner_enum:
+                    model_runner_enum = runner
+                    break
 
         if model_runner_enum:
             device_type_enum = DeviceTypes(device)
@@ -312,12 +319,12 @@ class Settings(BaseSettings):
         else:
             raise ValueError(f"No model runner found for model {model_to_run}.")
 
-        supported_model = getattr(SupportedModels, model_name_enum.name, None)
-        if supported_model:
-            self.model_weights_path = supported_model.value
-
         if matching_config:
             self.model_runner = model_runner_enum.value
+
+            supported_model = getattr(SupportedModels, model_name_enum.name, None)
+            if supported_model:
+                self.model_weights_path = supported_model.value
 
             # Apply all configuration values (env vars take precedence)
             for key, value in matching_config.items():
