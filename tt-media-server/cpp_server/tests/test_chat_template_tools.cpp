@@ -297,8 +297,8 @@ void testChatTemplateWithSingleTool(const TokenizerTemplateConfig* config) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
                   << int(expected.str()[i]) << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII "
-                  << int(actual[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
+                  << ")\n";
         break;
       }
     }
@@ -348,8 +348,8 @@ void testChatTemplateWithMultipleTools(const TokenizerTemplateConfig* config) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
                   << int(expected.str()[i]) << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII "
-                  << int(actual[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
+                  << ")\n";
         break;
       }
     }
@@ -405,8 +405,8 @@ void testChatTemplateWithConversationHistory(
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
                   << int(expected.str()[i]) << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII "
-                  << int(actual[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
+                  << ")\n";
 
         // Show context around the difference
         size_t contextStart = (i > 50) ? i - 50 : 0;
@@ -540,8 +540,8 @@ void testChatTemplateWithToolOutputs(const TokenizerTemplateConfig* config) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
                   << int(expected.str()[i]) << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII "
-                  << int(actual[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
+                  << ")\n";
         break;
       }
     }
@@ -602,8 +602,8 @@ void testChatTemplateWithMultipleToolOutputs(
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
                   << int(expected.str()[i]) << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII "
-                  << int(actual[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
+                  << ")\n";
         break;
       }
     }
