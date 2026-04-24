@@ -575,6 +575,7 @@ def generate_model_page_group_page(
                         target_template.version,
                         target_template.tt_metal_commit,
                         target_template.vllm_commit,
+                        inference_engine=target_template.inference_engine,
                         multihost=is_multihost,
                     )
                 )
@@ -618,9 +619,10 @@ def generate_model_page_group_page(
             docker_image = target_template.docker_image
         else:
             docker_image = generate_default_docker_link(
-                VERSION,
+                target_template.version,
                 target_template.tt_metal_commit,
                 target_template.vllm_commit,
+                inference_engine=target_template.inference_engine,
                 multihost=device.is_multihost(),
             )
 
