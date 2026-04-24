@@ -13,6 +13,7 @@
 
 #include "domain/llm_request.hpp"
 #include "domain/llm_response.hpp"
+#include "domain/tool_calls/tool_choice.hpp"
 #include "ipc/queue_manager.hpp"
 #include "services/base_service.hpp"
 #include "services/reasoning_parser.hpp"
@@ -77,11 +78,6 @@ class LLMService
     bool skip_special_tokens = true;
   };
 
-  struct ToolChoiceInfo {
-    std::string type;                    // "auto", "none", or "function"
-    std::optional<std::string> function_name;  // Set when type is "function"
-  };
-
   void startConsumers();
   void consumerLoopForWorker(size_t workerIdx);
 
@@ -91,7 +87,8 @@ class LLMService
   std::vector<std::thread> consumerThreads;
 
   utils::ConcurrentMap<uint32_t, StreamCallbackEntry> streamCallbacks;
-  mutable utils::ConcurrentMap<uint32_t, ToolChoiceInfo> toolChoiceMap;
+  mutable utils::ConcurrentMap<uint32_t, tt::domain::tool_calls::ToolChoice>
+      toolChoiceMap;
 
   std::atomic<size_t> pendingTasks{0};
   std::atomic<bool> running{false};

@@ -356,12 +356,12 @@ void LLMService::processStreamingRequest(
 
   // Store tool_choice info for use in postProcess
   if (request.tool_choice_type.has_value()) {
-    ToolChoiceInfo info;
-    info.type = request.tool_choice_type.value();
+    tt::domain::tool_calls::ToolChoice toolChoice;
+    toolChoice.type = request.tool_choice_type.value();
     if (request.tool_choice_function_name.has_value()) {
-      info.function_name = request.tool_choice_function_name.value();
+      toolChoice.function = request.tool_choice_function_name.value();
     }
-    toolChoiceMap.insert(taskId, std::move(info));
+    toolChoiceMap.insert(taskId, std::move(toolChoice));
   }
 
   if (reasoningParser) {
@@ -402,11 +402,11 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
 
   // Check if tool_choice was set for this request
   auto toolChoiceOpt = toolChoiceMap.get(response.task_id);
-  ToolChoiceInfo toolChoiceInfo;
+  tt::domain::tool_calls::ToolChoice toolChoice;
   if (toolChoiceOpt.has_value()) {
-    toolChoiceInfo = toolChoiceOpt.value();
+    toolChoice = toolChoiceOpt.value();
   } else {
-    toolChoiceInfo.type = "auto";  // Default
+    toolChoice.type = "auto";  // Default
   }
 
   // Clean up the tool_choice map entry
@@ -415,14 +415,14 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
   // Parse tool calls from the response based on tool_choice type
   if (toolCallParser) {
     for (auto& choice : response.choices) {
-      if (toolChoiceInfo.type == "none") {
+      if (toolChoice.type == "none") {
         // When tool_choice is "none": strip markers but don't parse tool calls
         // finish_reason remains "stop" or "length" (never changed to "tool_calls")
         choice.text = toolCallParser->stripMarkers(choice.text);
         continue;
       }
 
-      if (toolChoiceInfo.type == "function") {
+      if (toolChoice.type == "function") {
         // When tool_choice is "function", the response is structured JSON
         // from the function's parameter schema. Wrap it in a tool_call.
         // The choice.text contains the JSON arguments directly.
@@ -430,7 +430,7 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
         toolCallJson["id"] = "call_0";
         toolCallJson["type"] = "function";
         toolCallJson["function"]["name"] =
-            toolChoiceInfo.function_name.value_or("unknown");
+            toolChoice.function.value_or("unknown");
         toolCallJson["function"]["arguments"] = choice.text;
 
         Json::Value toolCallsArray(Json::arrayValue);
@@ -443,7 +443,7 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
         TT_LOG_DEBUG(
             "[LLMService] Created tool_call from structured output "
             "(tool_choice=function, function={})",
-            toolChoiceInfo.function_name.value_or("unknown"));
+            toolChoice.function.value_or("unknown"));
         continue;
       }
 

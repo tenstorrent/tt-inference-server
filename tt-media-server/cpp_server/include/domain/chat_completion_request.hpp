@@ -201,15 +201,6 @@ struct ChatCompletionRequest : BaseRequest {
 
     if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
       req.tool_choice = tool_calls::ToolChoice::fromJson(json["tool_choice"]);
-
-      // Debug: log parsed tool_choice
-      if (req.tool_choice.has_value()) {
-        const auto& tc = req.tool_choice.value();
-        // Logging can help debug parsing issues
-        // std::cerr << "Parsed tool_choice: type=" << tc.type
-        //           << ", function=" << (tc.function.has_value() ? tc.function.value() : "none")
-        //           << std::endl;
-      }
     }
     if (json.isMember("parallel_tool_calls") &&
         !json["parallel_tool_calls"].isNull())
@@ -337,6 +328,7 @@ struct ChatCompletionRequest : BaseRequest {
         out.tool_choice_function_name = tool_choice->function.value();
 
         // Find the matching function
+        //TODO LJUBICA PROVERI DA L TREBA OVO AKO JE POSLAT RESPONSEFORMAT DRUGI??
         for (const auto& tool : tools.value()) {
           if (tool.functionDefinition.name == tool_choice->function.value()) {
             // Create a JSON schema response format from the function parameters
