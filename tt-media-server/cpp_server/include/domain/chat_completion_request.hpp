@@ -5,10 +5,9 @@
 
 #include <json/json.h>
 
-#include <cstddef>
-#include <iterator>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -209,21 +208,7 @@ struct ChatCompletionRequest : BaseRequest {
       req.parallel_tool_calls =
           getBool(json["parallel_tool_calls"], "parallel_tool_calls");
 
-    if (req.tool_choice.has_value()) {
-      const auto& toolChoice = req.tool_choice.value();
-
-      if ((!req.tools.has_value() || req.tools->empty()) &&
-          toolChoice.type != "none") {
-        throw std::invalid_argument(
-            "tool_choice is provided but no tools are specified");
-      }
-      if (toolChoice.type != "auto" && toolChoice.type != "none") {
-        throw std::invalid_argument(
-            "tool_choice must be 'auto' or 'none', other tool_choice values "
-            "are not yet "
-            "supported");
-      }
-    }
+    validateToolFields(req);
     return req;
   }
 
@@ -295,6 +280,27 @@ struct ChatCompletionRequest : BaseRequest {
     out.response_format = response_format;
     out.sessionId = sessionId;
     return out;
+  }
+
+ private:
+
+  static void validateToolFields(const ChatCompletionRequest& req) {
+    if (!req.tool_choice.has_value()) return;
+
+    const auto& type = req.tool_choice->type;
+    const bool toolsMissing = !req.tools.has_value() || req.tools->empty();
+
+    if (toolsMissing && type != "none") {
+      throw std::invalid_argument(
+          "tool_choice is provided but no tools are specified");
+    }
+
+    const bool supported = type == "auto" || type == "none";
+    if (!supported) {
+      throw std::invalid_argument(
+          "tool_choice '" + type +
+          "' is not yet supported; only 'auto' and 'none' are accepted");
+    }
   }
 };
 

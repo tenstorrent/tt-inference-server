@@ -4,13 +4,11 @@
 #include <gtest/gtest.h>
 #include <json/json.h>
 
+#include <stdexcept>
+
 #include "domain/chat_completion_request.hpp"
-#include "domain/chat_message.hpp"
-#include "domain/tool_calls/tool.hpp"
-#include "domain/tool_calls/tool_choice.hpp"
 
 using namespace tt::domain;
-using namespace tt::domain::tool_calls;
 
 class ChatCompletionRequestToolTest : public ::testing::Test {
  protected:
@@ -75,7 +73,6 @@ TEST_F(ChatCompletionRequestToolTest, ToolChoiceNone) {
   EXPECT_FALSE(request.tools->empty())
       << "Tools should be kept when tool_choice is 'none'";
 
-  // tool_choice should be parsed
   ASSERT_TRUE(request.tool_choice.has_value());
   EXPECT_EQ(request.tool_choice->type, "none");
 
@@ -92,7 +89,6 @@ TEST_F(ChatCompletionRequestToolTest, ToolChoiceAuto) {
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  // With tool_choice "auto", tools should remain
   ASSERT_TRUE(request.tools.has_value());
   EXPECT_FALSE(request.tools->empty());
 
@@ -103,12 +99,10 @@ TEST_F(ChatCompletionRequestToolTest, ToolChoiceAuto) {
 TEST_F(ChatCompletionRequestToolTest, ToolChoiceNoneWithoutTools) {
   Json::Value json = createBasicRequestJson();
   json["tool_choice"] = "none";
-  // No tools provided
 
-  // Should not throw - tool_choice "none" without tools is valid
   EXPECT_NO_THROW({
     auto request = ChatCompletionRequest::fromJson(json, 1);
-    EXPECT_TRUE(request.tool_choice.has_value());
+    ASSERT_TRUE(request.tool_choice.has_value());
     EXPECT_EQ(request.tool_choice->type, "none");
   });
 }
@@ -120,8 +114,34 @@ TEST_F(ChatCompletionRequestToolTest, ToolChoiceNoneWithEmptyToolsArray) {
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  EXPECT_TRUE(request.tool_choice.has_value());
+  ASSERT_TRUE(request.tool_choice.has_value());
   EXPECT_EQ(request.tool_choice->type, "none");
+}
+
+TEST_F(ChatCompletionRequestToolTest, ToolChoiceAutoWithoutToolsRejected) {
+  Json::Value json = createBasicRequestJson();
+  json["tool_choice"] = "auto";
+
+  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1),
+               std::invalid_argument);
+}
+
+TEST_F(ChatCompletionRequestToolTest, ToolChoiceRequiredRejectedAsUnsupported) {
+  Json::Value json = createBasicRequestJson();
+  json["tools"].append(createToolJson("get_weather", "Get weather"));
+  json["tool_choice"] = "required";
+
+  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1),
+               std::invalid_argument);
+}
+
+TEST_F(ChatCompletionRequestToolTest, ToolChoiceUnknownStringRejected) {
+  Json::Value json = createBasicRequestJson();
+  json["tools"].append(createToolJson("get_weather", "Get weather"));
+  json["tool_choice"] = "bogus";
+
+  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1),
+               std::invalid_argument);
 }
 
 // Main function for running tests
