@@ -28,10 +28,9 @@ class TrainingService(BaseJobService):
 
         Runners with a single supported model return that name directly.
         Runners with multiple supported models require the configured
-        ``model_weights_path`` to match one of the supported model configs.
+        `model` to match one of the supported model configs.
         """
-        model_enum = ModelNames(self.settings.model)
-        self._model_name = model_enum.value
+        self._model_name = ModelNames(self.settings.model).value
         super().__init__()
 
     async def create_job(
