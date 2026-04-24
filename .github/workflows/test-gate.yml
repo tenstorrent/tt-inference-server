@@ -940,10 +940,10 @@ jobs:
             PREFILL_LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
             DECODE_LIVENESS=$(curl -sf "http://127.0.0.1:8000/tt-liveness" 2>/dev/null || true)
             if echo "$PREFILL_LIVENESS" | grep -q '"model_ready":true' \
-               && echo "$PREFILL_LIVENESS" | grep -q '"socket_status":"server:connected"' \
+               && echo "$PREFILL_LIVENESS" | grep -q '"socket_status":"client:connected"' \
                && echo "$DECODE_LIVENESS" | grep -q '"model_ready":true' \
-               && echo "$DECODE_LIVENESS" | grep -q '"socket_status":"client:connected"'; then
-              echo "✅ Prefill (server:connected) and Decode (client:connected) both ready"
+               && echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected"'; then
+              echo "✅ Prefill (client:connected) and Decode (server:connected) both ready"
               break
             fi
             sleep 1
@@ -957,16 +957,16 @@ jobs:
             echo "ERROR: Prefill server model_ready is not true"
             FAIL=1
           fi
-          if ! echo "$PREFILL_LIVENESS" | grep -q '"socket_status":"server:connected"'; then
-            echo "ERROR: Prefill server socket_status is not 'server:connected'"
+          if ! echo "$PREFILL_LIVENESS" | grep -q '"socket_status":"client:connected"'; then
+            echo "ERROR: Prefill server socket_status is not 'client:connected'"
             FAIL=1
           fi
           if ! echo "$DECODE_LIVENESS" | grep -q '"model_ready":true'; then
             echo "ERROR: Decode server model_ready is not true"
             FAIL=1
           fi
-          if ! echo "$DECODE_LIVENESS" | grep -q '"socket_status":"client:connected"'; then
-            echo "ERROR: Decode server socket_status is not 'client:connected'"
+          if ! echo "$DECODE_LIVENESS" | grep -q '"socket_status":"server:connected"'; then
+            echo "ERROR: Decode server socket_status is not 'server:connected'"
             FAIL=1
           fi
           if [ "$FAIL" -ne 0 ]; then
