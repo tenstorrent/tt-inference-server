@@ -19,7 +19,6 @@ namespace tt::api {
 namespace {
 tt::utils::ThreadPool& getCallbackPool() {
   static tt::utils::ThreadPool pool(
-    
       tt::config::defaults::CALLBACK_POOL_THREADS);
   return pool;
 }
