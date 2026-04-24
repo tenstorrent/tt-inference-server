@@ -24,11 +24,11 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [vit](https://huggingface.co/vit) |
-| Model Status | 🛠️ Experimental |
+| Model Status | 🟢 Complete |
 | Max Batch Size | 1 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers) |
-| tt-metal Commit | `2496be4` |
-| Docker Image | `ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers) |
+| tt-metal Commit | `079a2c2` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.13.0-079a2c2` |
 
 ---
 
@@ -47,8 +47,8 @@ python3 run.py --model vit --device n300 --workflow server --docker-server
 | Parameter | Value |
 |-----------|-------|
 | Weights | [vit](https://huggingface.co/vit) |
-| Model Status | 🛠️ Experimental |
+| Model Status | 🟢 Complete |
 | Max Batch Size | 1 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/2496be4/models/tt_transformers) |
-| tt-metal Commit | `2496be4` |
-| Docker Image | `ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/079a2c2/models/tt_transformers) |
+| tt-metal Commit | `079a2c2` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.13.0-079a2c2` |
