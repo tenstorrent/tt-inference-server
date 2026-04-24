@@ -426,8 +426,6 @@ jobs:
           ./build.sh --clang-tidy
 
   cpp-build:
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Build & Unit Tests
     runs-on: ubuntu-latest
     permissions:
@@ -751,8 +749,7 @@ jobs:
           exit 1
 
   cpp-server-prefill-decode-split:
-    needs: [detect-changes, cpp-build]
-    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    needs: [cpp-build]
     name: C++ Server Prefill/Decode Split Test
     runs-on: ubuntu-latest
     permissions:
