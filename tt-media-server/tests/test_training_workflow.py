@@ -5,7 +5,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from config.constants import JobTypes
+from config.constants import JobTypes, ModelNames
 
 
 def _training_service_patches(mock_settings):
@@ -41,6 +41,7 @@ class TestGemmaTrainingServiceCreateJob:
     def mock_settings(self):
         settings = MagicMock()
         settings.model_runner = "training-gemma-lora"
+        settings.model = ModelNames.GEMMA_1_1_2B_IT.value
         settings.device = "p150"
         settings.download_weights_from_service = False
         return settings
@@ -54,7 +55,6 @@ class TestGemmaTrainingServiceCreateJob:
 
     @pytest.mark.asyncio
     async def test_create_job_sets_output_model_path(self, mock_settings, mock_request):
-        """Test TrainingService.create_job sets correct model path for Gemma"""
         stack, _ = _training_service_patches(mock_settings)
         with stack:
             from model_services.training_service import TrainingService
@@ -72,8 +72,8 @@ class TestLlamaTrainingServiceCreateJob:
     def mock_settings(self):
         settings = MagicMock()
         settings.model_runner = "training-lora"
+        settings.model = ModelNames.LLAMA_3_1_8B.value
         settings.device = "p300"
-        settings.model_weights_path = "meta-llama/Llama-3.1-8B"
         settings.download_weights_from_service = False
         return settings
 
@@ -109,7 +109,7 @@ class TestLlamaTrainingServiceCreateJob:
             assert mock_request.device_type == "p300"
 
     @pytest.mark.asyncio
-    async def test_create_job_resolves_llama_model_name(
+    async def test_create_job_forwards_configured_model_name(
         self, mock_settings, mock_request
     ):
         stack, mock_jm = _training_service_patches(mock_settings)
@@ -120,7 +120,7 @@ class TestLlamaTrainingServiceCreateJob:
             await service.create_job(JobTypes.TRAINING, mock_request)
 
             _, kwargs = mock_jm.return_value.create_job.call_args
-            assert kwargs["model"] == "Llama-3.1-8B"
+            assert kwargs["model"] == ModelNames.LLAMA_3_1_8B.value
 
     @pytest.mark.asyncio
     async def test_create_job_passes_events_and_metrics(
