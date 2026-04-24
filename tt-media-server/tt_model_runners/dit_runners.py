@@ -481,9 +481,8 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
             num_frames=81,
             seed=int(request.seed or 0),
         )
-        self.logger.debug(f"Device {self.device_id}: Inference completed, exporting MP4")
-        from utils.video_manager import VideoManager
-        return [VideoManager().export_to_mp4(frames)]
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        return frames
 
 
 class TTWan22I2VRunner(TTWan22Runner):
