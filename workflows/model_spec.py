@@ -1501,7 +1501,7 @@ llm_templates = [
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
                 override_tt_config={
-                    "trace_region_size": 70000000,
+                    "trace_region_size": 66000000,
                 },
             ),
             DeviceModelSpec(
@@ -1514,7 +1514,7 @@ llm_templates = [
                     "data_parallel_size": 4,
                 },
                 override_tt_config={
-                    "trace_region_size": 70000000,
+                    "trace_region_size": 66000000,
                 },
                 env_vars={
                     "TT_MM_THROTTLE_PERF": 5,
