@@ -283,7 +283,6 @@ struct ChatCompletionRequest : BaseRequest {
   }
 
  private:
-
   static void validateToolFields(const ChatCompletionRequest& req) {
     if (!req.tool_choice.has_value()) return;
 

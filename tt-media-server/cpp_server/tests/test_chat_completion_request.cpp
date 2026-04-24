@@ -122,8 +122,7 @@ TEST_F(ChatCompletionRequestToolTest, ToolChoiceAutoWithoutToolsRejected) {
   Json::Value json = createBasicRequestJson();
   json["tool_choice"] = "auto";
 
-  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1),
-               std::invalid_argument);
+  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1), std::invalid_argument);
 }
 
 TEST_F(ChatCompletionRequestToolTest, ToolChoiceRequiredRejectedAsUnsupported) {
@@ -131,8 +130,7 @@ TEST_F(ChatCompletionRequestToolTest, ToolChoiceRequiredRejectedAsUnsupported) {
   json["tools"].append(createToolJson("get_weather", "Get weather"));
   json["tool_choice"] = "required";
 
-  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1),
-               std::invalid_argument);
+  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1), std::invalid_argument);
 }
 
 TEST_F(ChatCompletionRequestToolTest, ToolChoiceUnknownStringRejected) {
@@ -140,8 +138,7 @@ TEST_F(ChatCompletionRequestToolTest, ToolChoiceUnknownStringRejected) {
   json["tools"].append(createToolJson("get_weather", "Get weather"));
   json["tool_choice"] = "bogus";
 
-  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1),
-               std::invalid_argument);
+  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1), std::invalid_argument);
 }
 
 // Main function for running tests
