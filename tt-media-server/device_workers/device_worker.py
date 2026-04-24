@@ -72,9 +72,6 @@ async def _continuous_fan_out(
         if slots <= 0:
             continue
 
-        # A transient queue read failure must NOT kill the fan-out: the
-        # in-flight set still needs to complete and hand results back to
-        # their awaiters. Swallow, empty the top-up, and retry next round.
         try:
             new_reqs = (
                 task_queue.get_many(
