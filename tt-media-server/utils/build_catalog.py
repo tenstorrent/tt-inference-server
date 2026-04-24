@@ -25,22 +25,21 @@ TRAINING_CATALOG_DATA = {
 }
 
 
-def _build_models_catalog(model_runner: ModelRunners, model: str):
+def _build_models_catalog(model: str):
     try:
-        model_name_enum = ModelNames(model).value
+        model_name = ModelNames(model).name
+        model_id = SupportedModels[model_name].value
+        model_display_name = ModelDisplayNames[model_name].value
     except ValueError:
         return []
-    supported_model = getattr(SupportedModels, model_name_enum.name, None)
-    if supported_model:
-        return [
-            {
-                "id": model_name_enum.value,
-                "display_name": model,
-                "supported": True,
-                "model_config": supported_model.value,
-            }
-        ]
-    return []
+    return [
+        {
+            "id": model_id,
+            "display_name": model_display_name,
+            "supported": True,
+            "model_config": moodel_id,
+        }
+    ]
 
 
 def _build_clusters_catalog(device: str, device_mesh_shape: tuple, num_workers: int):
@@ -69,13 +68,12 @@ def _build_clusters_catalog(device: str, device_mesh_shape: tuple, num_workers: 
 
 
 def build_training_catalog(
-    model_runner: str,
     device: str,
     device_mesh_shape: tuple,
     num_workers: int,
     model: str = "",
 ):
-    models = _build_models_catalog(model_runner, model)
+    models = _build_models_catalog(model)
     clusters = _build_clusters_catalog(device, device_mesh_shape, num_workers)
 
     datasets = [

@@ -84,7 +84,7 @@ class TrainingLoraRunner(BaseDeviceRunner):
             raise ValueError(
                 "MODEL and MODEL_RUNNER must be set via MODEL env var "
             )
-        self.model_name = SupportedModels[self.settings.model].value
+        self.model_name = SupportedModels[ModelNames(self.settings.model).name].value
 
     @property
     def _is_multichip(self) -> bool:

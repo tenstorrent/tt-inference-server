@@ -8,7 +8,7 @@ from typing import Optional
 
 from config.constants import (
     MODEL_NAME_OVERRIDES,
-    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
+    INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     MODEL_SERVICE_RUNNER_MAP,
     SDXL_VALID_IMAGE_RESOLUTIONS,
     AudioTasks,
@@ -163,7 +163,7 @@ class Settings(BaseSettings):
             model_runner_enum = ModelRunners(self.model_runner)
 
             # Use dictionary key access
-            model_names_set = MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(model_runner_enum)
+            model_names_set = INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(model_runner_enum)
 
             if model_names_set:
                 # Get first model name from the set
@@ -301,7 +301,7 @@ class Settings(BaseSettings):
                 f"Explicit MODEL_RUNNER={explicit_runner!r} for MODEL={model_to_run!r}"
             )
 
-        for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
+        for runner, model_names in INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
             if model_name_enum in model_names:
                 if not model_runner_enum:
                     model_runner_enum = runner
