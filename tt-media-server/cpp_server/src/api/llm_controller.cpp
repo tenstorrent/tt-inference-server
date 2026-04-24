@@ -156,7 +156,7 @@ void LLMController::resolveSession(
   }
 
   // Layer 3: Allocate a new session. Async — onCompletion runs on loop.
-  sessionManager->createSession(
+sessionManager->createSession(
       [req, routingInfo, onResolved, cancelFn = std::move(cancelFn),
        mgr = sessionManager](const domain::Session& session) mutable {
         req->sessionId = session.getSessionId();
@@ -171,6 +171,8 @@ void LLMController::resolveSession(
             session.getSessionId(),
             req->slotId.has_value() ? std::to_string(*req->slotId) : "none",
             routingInfo.registrationHash);
+        assert(req->slotId != tt::domain::INVALID_SLOT_ID);
+        assert(req->slotId < tt::config::pmMaxUsers());
 
         SessionInfo info;
         onResolved(info);

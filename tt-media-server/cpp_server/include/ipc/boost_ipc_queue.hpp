@@ -199,7 +199,7 @@ class BoostIpcMemoryQueue {
 
 constexpr size_t MEMORY_REQUEST_MAX_MSG_SIZE = 256;
 constexpr size_t MEMORY_RESULT_MAX_MSG_SIZE = 4096;
-constexpr int MEMORY_QUEUE_CAPACITY = 64;
+constexpr int MEMORY_QUEUE_CAPACITY = 1024;
 
 using MemoryRequestQueue =
     BoostIpcMemoryQueue<domain::ManageMemoryTask, MEMORY_REQUEST_MAX_MSG_SIZE>;

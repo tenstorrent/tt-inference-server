@@ -14,7 +14,6 @@
 #include "domain/manage_memory.hpp"
 #include "domain/sequence.hpp"
 #include "ipc/token_push.hpp"
-#include "pipeline_manager/pipeline_simulator.hpp"
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "services/memory_services/blaze_memory_manager.hpp"
 #include "utils/logger.hpp"
@@ -265,6 +264,7 @@ inline void BlazeRunner::evictSlot(uint32_t slotId) {
 void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
+  assert(slotId < tt::config::pmMaxUsers());
 
   bool isNew = !request->isContinuation() && !request->isDisaggregated();
   if (isNew && request->getSamplingParams().hasGuidedDecoding()) {

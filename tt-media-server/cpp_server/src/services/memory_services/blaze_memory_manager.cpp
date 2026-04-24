@@ -2,6 +2,7 @@
 
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "utils/logger.hpp"
+#include "config/settings.hpp"
 
 namespace tt::services {
 namespace utils = tt::runners::blaze_utils;
@@ -26,6 +27,7 @@ void BlazeMemoryManager::handleRequest(
     }
     case domain::MemoryManagementAction::DEALLOCATE: {
       for (auto slotId : request.slotIds) {
+        assert(slotId < tt::config::pmMaxUsers());
         TT_LOG_DEBUG(
             "[BlazeMemoryManager] DEALLOCATE: taskId={}, cancelling "
             "slotId={}, then evicting",
