@@ -73,14 +73,19 @@ import signal
 import sys
 from pathlib import Path
 
-import ttnn  # must be imported before mpi4py to avoid MPI library conflicts
+import ttnn
 
-import mpi4py
-mpi4py.rc.initialize = False
-from mpi4py import MPI
+# NOTE: multi-host / MPI paths disabled for the LB single-host bring-up.
+# Re-enable (and `from mpi4py import MPI` with `mpi4py.rc.initialize = False`
+# set before the import) when extending to multi-galaxy. Keep the mpi4py
+# library's OpenMPI in sync with _ttnn.so's bundled OpenMPI 5.0.7-ulfm or
+# the two will clash on MPI_Init_thread. Grep "MULTI_HOST" below for the
+# code blocks that need restoring.
+
 from transformers import AutoConfig
 from models.common.utility_functions import is_blackhole
 from models.demos.deepseek_v3_d_p.tt.moe.init_helpers import create_fabric_router_config
+from models.demos.deepseek_v3_d_p.tt.moe.tt_moe_gate_prefill import GateComputeMode
 from models.demos.deepseek_v3_d_p.reference.deepseek_v3_config import DeepSeekV3Config
 from models.demos.deepseek_v3_d_p.tt.moe.tt_prefill_transformer import TtPrefillTransformer
 from models.demos.deepseek_v3_d_p.tt.tt_deepseek_prefill_pipeline import (
@@ -100,11 +105,17 @@ _shutdown = False
 # -- Config constants (overridable via env vars) --
 # Single Galaxy:  PREFILL_SP=8  PREFILL_TP=4  (1 rank, local 8x4 mesh)
 # 4-Galaxy ring:  PREFILL_SP=32 PREFILL_TP=4  (4 ranks, global 32x4 mesh)
+# LB (2x4 BH):    PREFILL_SP=2  PREFILL_TP=4  PREFILL_NUM_LAYERS=12
+#                 PREFILL_MAX_SEQ_LEN=1024 PREFILL_IS_BALANCED=0
+#                 PREFILL_CAPACITY_FACTOR=32 PREFILL_GATE_FALLBACK_MODE=DEVICE
 _sp = int(os.environ.get("PREFILL_SP", 32))
 _tp = int(os.environ.get("PREFILL_TP", 4))
 GLOBAL_MESH_SHAPE = (_sp, _tp)
 NUM_LAYERS = int(os.environ.get("PREFILL_NUM_LAYERS", 61))
 MAX_SEQ_LEN = int(os.environ.get("PREFILL_MAX_SEQ_LEN", 3200 * _sp))
+IS_BALANCED = os.environ.get("PREFILL_IS_BALANCED", "1") == "1"
+CAPACITY_FACTOR = int(os.environ.get("PREFILL_CAPACITY_FACTOR", 2))
+_gate_mode_name = os.environ.get("PREFILL_GATE_FALLBACK_MODE", "HOST_ALL")
 
 
 def _handle_sigterm(signum, frame):
@@ -297,9 +308,17 @@ def run_rank0_coordinator(
                 if world_size > 1:
                     comm.bcast(request, root=0)
 
+                import time as _time
+                _t0 = _time.perf_counter()
                 first_token = pipeline.prefill(
                     token_ids=request["token_ids"],
                     slot_id=request["slot_id"],
+                )
+                _dt_ms = (_time.perf_counter() - _t0) * 1000.0
+                print(
+                    f"[prefill timing] task_id={task_id} num_tokens={len(request['token_ids'])} "
+                    f"pipeline.prefill() = {_dt_ms:.2f} ms",
+                    file=sys.stderr,
                 )
 
                 p2c.write_token(task_id, first_token)
@@ -352,38 +371,22 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_sigterm)
     signal.signal(signal.SIGINT, _handle_sigterm)
 
-    # TODO: multi-subcontext support (prefill + decode in one MPI job).
-    # When tt-metal PR #42000 (sub-context API) lands and the dual-rank-bindings
-    # launcher feature is implemented, we'll need to:
-    #   1. Detect our sub-context:  subcontext_id = int(os.environ["TT_RUN_SUBCONTEXT_ID"])
-    #   2. If we're not the prefill sub-context, early-exit (decode has its own runner).
-    #   3. Split MPI_COMM_WORLD by subcontext_id so bcast()/scatter() stay within prefill:
-    #        comm = MPI.COMM_WORLD.Split(color=subcontext_id, key=rank)
-    #   4. Dispatch fabric config based on sub-context instead of hardcoding.
-    # See models/demos/deepseek_v3_b1/docs/example_dual_rankbindings_one_psd.md in tt-metal.
-
-    # Detect launch topology from env *before* touching MPI. Single-rank runs
-    # (e.g. one Galaxy, no tt-run/mpirun) skip init_distributed_context entirely
-    # to match the pytest path, which never calls it.
-    world_size = _detect_world_size()
-    rank = _detect_rank()
-
+    # MULTI_HOST: LB single-host bring-up — world_size/rank detection, MPI init,
+    # tt-run/mpirun handshake, and sub-context wiring all stripped. Restore from
+    # git history (or TtDeepSeekPrefillPipeline docs) when going multi-galaxy.
+    rank = 0
+    world_size = 1
     comm = None
-    if world_size > 1:
-        # Multi-rank: tt-run/MPI launched. init_distributed_context() calls
-        # MPI_Init_thread -- must happen before any mpi4py operations
-        # (mpi4py auto-init is disabled above).
-        ttnn.init_distributed_context()
-        comm = MPI.COMM_WORLD
-        assert rank == comm.Get_rank(), f"env rank {rank} != MPI rank {comm.Get_rank()}"
-        assert world_size == comm.Get_size(), f"env size {world_size} != MPI size {comm.Get_size()}"
-    else:
-        print("Single-rank mode: skipping MPI init / init_distributed_context", file=sys.stderr)
 
-    print(f"Rank {rank}/{world_size}: Starting prefill runner (mesh={GLOBAL_MESH_SHAPE})", file=sys.stderr)
+    print(f"Starting prefill runner (mesh={GLOBAL_MESH_SHAPE}, single-host LB mode)", file=sys.stderr)
 
     # -- Open mesh device (all ranks) --
     mesh_device = _open_mesh_device()
+
+    # NOTE: ttnn.enable_asynchronous_slow_dispatch(mesh_device) only applies when
+    # slow dispatch is enabled at build time. Our build uses fast dispatch
+    # (default), which is already asynchronous via on-chip dispatch kernels.
+    # Kept as a comment in case we switch to a slow-dispatch build.
 
     # -- Load HF config (all ranks need same config) --
     hf_config = _load_hf_config()
@@ -409,7 +412,9 @@ def main() -> None:
         num_layers=NUM_LAYERS,
         max_seq_len=MAX_SEQ_LEN,
         mesh_shape=GLOBAL_MESH_SHAPE,
-        is_balanced=True,
+        is_balanced=IS_BALANCED,
+        capacity_factor=CAPACITY_FACTOR,
+        gate_fallback_mode=GateComputeMode[_gate_mode_name],
         weight_cache_path=effective_cache_path,
     )
 
@@ -439,26 +444,35 @@ def main() -> None:
     )
     pipeline.compile()
 
+    # -- Warmup: run one dummy prefill before opening SHM so the C++ server's
+    # warmup probe (PREFILL_TIMEOUT_MS ~= 15s) lands on a hot pipeline. The
+    # first forward otherwise pays ~4 min of cold-JIT for the MoE kernels.
+    import time as _time
+    print(f"Warming up prefill pipeline ({MAX_SEQ_LEN} tokens, cold JIT ~few min)...", file=sys.stderr)
+    _t0 = _time.perf_counter()
+    _ = pipeline.prefill(token_ids=[0] * MAX_SEQ_LEN, slot_id=0)
+    _warmup_ms = (_time.perf_counter() - _t0) * 1000.0
+    print(
+        f"[prefill timing] task_id=WARMUP num_tokens={MAX_SEQ_LEN} "
+        f"pipeline.prefill() = {_warmup_ms:.2f} ms",
+        file=sys.stderr,
+    )
+
     # -- Migration setup (rank 0 only, when decode runner is available) --
     # TODO: see migration stub in earlier commit for structure.
 
     override_token_ids = _load_override_token_ids()
 
-    if world_size > 1:
-        comm.Barrier()  # all ranks ready
-    print(f"Rank {rank}: Setup complete, entering request loop", file=sys.stderr)
+    print("Setup complete, entering request loop", file=sys.stderr)
 
     # -- Run --
-    if rank == 0:
-        run_rank0_coordinator(pipeline, comm, world_size, override_token_ids)
-    elif rank >= 1:
-        run_worker_rank(rank, pipeline, comm)
+    run_rank0_coordinator(pipeline, comm, world_size, override_token_ids)
 
     # -- Cleanup --
     del pipeline
     ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
     ttnn.close_mesh_device(mesh_device)
-    print(f"Rank {rank}: Shutdown complete", file=sys.stderr)
+    print("Shutdown complete", file=sys.stderr)
 
 
 if __name__ == "__main__":
