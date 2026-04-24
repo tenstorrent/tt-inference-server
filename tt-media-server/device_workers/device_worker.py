@@ -176,7 +176,7 @@ def device_worker(
                             f"Worker {worker_id} processing streaming request for task {request._task_id}"
                         )
 
-                        async def handle_streaming():
+                        async def handle_streaming(request):
                             result_generator = await device_runner._run_async([request])
 
                             chunk_key = request._task_id
@@ -187,7 +187,7 @@ def device_worker(
                                 f"Worker {worker_id} finished streaming chunks for task {request._task_id}"
                             )
 
-                        loop.run_until_complete(handle_streaming())
+                        loop.run_until_complete(handle_streaming(request))
                     else:
                         response = device_runner.run([request])
                         result_queue.put(
