@@ -5,7 +5,7 @@ import io
 import os
 import zipfile
 
-from config.constants import JobTypes, ModelNames
+from config.constants import JobTypes
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
