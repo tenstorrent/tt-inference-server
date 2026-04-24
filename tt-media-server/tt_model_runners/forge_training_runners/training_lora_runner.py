@@ -15,6 +15,7 @@ import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
+from config.constants import SupportedModels
 from domain.training_request import TrainingRequest
 from peft import LoraConfig, PeftModel, get_peft_model
 from tqdm import tqdm
@@ -83,7 +84,7 @@ class TrainingLoraRunner(BaseDeviceRunner):
             raise ValueError(
                 "MODEL and MODEL_RUNNER must be set via MODEL env var "
             )
-        self.model_name = ModelNames(self.settings.model).value
+        self.model_name = SupportedModels[self.settings.model].value
 
     @property
     def _is_multichip(self) -> bool:
