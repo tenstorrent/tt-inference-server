@@ -45,8 +45,6 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         request = requests[0]
         self._validate_request(request)
 
-        # hardcoding for now
-        request.adapter = "05ff4940-db7f-4280-b912-e850603ee805/ckpt-step-200"
         if request.adapter:
             adapter_info = resolve_adapter(request.adapter)
             self._load_adapter(adapter_info)
