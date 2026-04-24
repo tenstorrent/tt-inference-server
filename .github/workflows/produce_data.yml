@@ -16,7 +16,7 @@ on:
         default: 1
   workflow_run:
     workflows:
-      - "Nightly C++ Server Benchmarks"
+      - 'Nightly C\+\+ Server Benchmarks'
     types:
       - completed
 
