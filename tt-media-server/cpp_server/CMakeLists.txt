@@ -72,6 +72,17 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# xxHash for stable, cross-platform hashing (conversation prefix caching)
+FetchContent_Declare(
+    xxhash
+    GIT_REPOSITORY https://github.com/Cyan4973/xxHash.git
+    GIT_TAG        v0.8.2
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(xxhash)
+add_library(xxhash_lib INTERFACE)
+target_include_directories(xxhash_lib INTERFACE ${xxhash_SOURCE_DIR})
+
 # xgrammar for structured output / guided decoding (JSON schema constrained generation)
 FetchContent_Declare(xgrammar
     GIT_REPOSITORY https://github.com/mlc-ai/xgrammar.git
@@ -258,6 +269,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/domain/sequence.cpp
     src/domain/sampling_params.cpp
     src/utils/logger.cpp
+    src/utils/conversation_hasher.cpp
     src/config/settings.cpp
     src/utils/tokenizers/tokenizer.cpp
     src/utils/tokenizers/deepseek_tokenizer.cpp
@@ -302,8 +314,8 @@ target_include_directories(llm_runner_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
-# Link tokenizers_cpp, JsonCpp, and xgrammar (guided decoding for structured outputs)
-target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar)
+# Link tokenizers_cpp, JsonCpp, xgrammar (guided decoding), and xxhash (stable hashing)
+target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar xxhash_lib)
 
 # Link PipelineManager when ENABLE_BLAZE is ON: prefer Full (SocketPipeline + TT::Metalium),
 # fall back to Core (mock pipeline only).
@@ -397,6 +409,9 @@ target_include_directories(lockfree_queue_test PRIVATE
 add_executable(test_tokenizer tests/test_tokenizer.cpp)
 target_link_libraries(test_tokenizer PRIVATE llm_runner_lib GTest::gtest_main)
 
+add_executable(conversation_hasher_test tests/conversation_hasher_test.cpp)
+target_link_libraries(conversation_hasher_test PRIVATE llm_runner_lib GTest::gtest_main)
+
 add_executable(cancel_queue_test tests/cancel_queue_test.cpp)
 target_link_libraries(cancel_queue_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(cancel_queue_test PRIVATE
@@ -483,6 +498,7 @@ gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
+gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(cancellation_test)
 gtest_discover_tests(structured_output_test)
