@@ -4,8 +4,8 @@
 
 from config.constants import (
     DeviceTypes,
+    ModelDisplayNames,
     ModelNames,
-    ModelRunners,
     SupportedModels,
 )
 from utils.build_catalog import (
@@ -20,39 +20,28 @@ class TestBuildModelsCatalog:
     """Tests for _build_models_catalog."""
 
     def test_invalid_model_returns_empty(self):
-        assert (
-            _build_models_catalog(
-                ModelRunners.TRAINING_GEMMA_LORA.value, "nonexistent-model"
-            )
-            == []
-        )
+        assert _build_models_catalog("nonexistent-model") == []
 
     def test_empty_model_returns_empty(self):
-        assert _build_models_catalog(ModelRunners.TRAINING_GEMMA_LORA.value, "") == []
+        assert _build_models_catalog("") == []
 
     def test_returns_single_model_entry(self):
-        models = _build_models_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value, ModelNames.GEMMA_1_1_2B_IT.value
-        )
+        models = _build_models_catalog(ModelNames.GEMMA_1_1_2B_IT.value)
         assert len(models) == 1
         model = models[0]
         assert set(model.keys()) == {"id", "display_name", "supported", "model_config"}
         assert model["id"] == ModelNames.GEMMA_1_1_2B_IT.value
-        assert model["display_name"] == ModelNames.GEMMA_1_1_2B_IT.value
+        assert model["display_name"] == ModelDisplayNames.GEMMA_1_1_2B_IT.value
         assert model["model_config"] == SupportedModels.GEMMA_1_1_2B_IT.value
         assert model["supported"] is True
 
     def test_lora_runner_returns_configured_model(self):
-        models = _build_models_catalog(
-            ModelRunners.TRAINING_LORA.value, ModelNames.LLAMA_3_1_8B.value
-        )
+        models = _build_models_catalog(ModelNames.LLAMA_3_1_8B.value)
         assert len(models) == 1
         assert models[0]["id"] == ModelNames.LLAMA_3_1_8B.value
         assert models[0]["model_config"] == SupportedModels.LLAMA_3_1_8B.value
 
-        models = _build_models_catalog(
-            ModelRunners.TRAINING_LORA.value, ModelNames.QWEN_3_8B.value
-        )
+        models = _build_models_catalog(ModelNames.QWEN_3_8B.value)
         assert len(models) == 1
         assert models[0]["id"] == ModelNames.QWEN_3_8B.value
         assert models[0]["model_config"] == SupportedModels.QWEN_3_8B.value
@@ -104,7 +93,6 @@ class TestBuildTrainingCatalog:
 
     def test_returns_all_expected_keys(self):
         catalog = build_training_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value,
             DeviceTypes.P150.value,
             (1, 1),
             1,
@@ -122,7 +110,6 @@ class TestBuildTrainingCatalog:
 
     def test_datasets_from_available_loaders(self):
         catalog = build_training_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value,
             DeviceTypes.P150.value,
             (1, 1),
             1,
@@ -134,7 +121,6 @@ class TestBuildTrainingCatalog:
 
     def test_trainers_include_lora_and_sft(self):
         catalog = build_training_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value,
             DeviceTypes.P150.value,
             (1, 1),
             1,
@@ -148,7 +134,6 @@ class TestBuildTrainingCatalog:
 
     def test_only_supported_trainers_in_supported_dict(self):
         catalog = build_training_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value,
             DeviceTypes.P150.value,
             (1, 1),
             1,
@@ -159,7 +144,6 @@ class TestBuildTrainingCatalog:
 
     def test_supported_optimizers(self):
         catalog = build_training_catalog(
-            ModelRunners.TRAINING_GEMMA_LORA.value,
             DeviceTypes.P150.value,
             (1, 1),
             1,
@@ -170,9 +154,7 @@ class TestBuildTrainingCatalog:
         assert "adamw" in catalog["supported"]["optimizers"]
 
     def test_invalid_inputs_produce_empty_models_and_clusters(self):
-        catalog = build_training_catalog(
-            "nonexistent-runner", "nonexistent-device", (1, 1), 1
-        )
+        catalog = build_training_catalog("nonexistent-device", (1, 1), 1)
         assert catalog["models"] == []
         assert catalog["clusters"] == []
         assert len(catalog["datasets"]) > 0
@@ -181,7 +163,6 @@ class TestBuildTrainingCatalog:
 
     def test_lora_catalog_reflects_active_model(self):
         catalog = build_training_catalog(
-            ModelRunners.TRAINING_LORA.value,
             DeviceTypes.P300.value,
             (1, 2),
             1,

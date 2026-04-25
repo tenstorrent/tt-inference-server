@@ -41,7 +41,7 @@ class TestGemmaTrainingServiceCreateJob:
     def mock_settings(self):
         settings = MagicMock()
         settings.model_runner = "training-gemma-lora"
-        settings.model = ModelNames.GEMMA_1_1_2B_IT.value
+        settings.training_model = ModelNames.GEMMA_1_1_2B_IT.value
         settings.device = "p150"
         settings.download_weights_from_service = False
         return settings
@@ -72,7 +72,7 @@ class TestLlamaTrainingServiceCreateJob:
     def mock_settings(self):
         settings = MagicMock()
         settings.model_runner = "training-lora"
-        settings.model = ModelNames.LLAMA_3_1_8B.value
+        settings.training_model = ModelNames.LLAMA_3_1_8B.value
         settings.device = "p300"
         settings.download_weights_from_service = False
         return settings

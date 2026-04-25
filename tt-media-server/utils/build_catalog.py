@@ -5,8 +5,8 @@ import math
 
 from config.constants import (
     DeviceTypes,
+    ModelDisplayNames,
     ModelNames,
-    ModelRunners,
     SupportedModels,
     TrainingOptimizers,
     TrainingTrainers,
@@ -27,17 +27,20 @@ TRAINING_CATALOG_DATA = {
 
 def _build_models_catalog(model: str):
     try:
-        model_name = ModelNames(model).name
-        model_id = SupportedModels[model_name].value
-        model_display_name = ModelDisplayNames[model_name].value
+        model_enum = ModelNames(model)
     except ValueError:
+        return []
+    try:
+        model_config = SupportedModels[model_enum.name].value
+        display_name = ModelDisplayNames[model_enum.name].value
+    except KeyError:
         return []
     return [
         {
-            "id": model_id,
-            "display_name": model_display_name,
+            "id": model_enum.value,
+            "display_name": display_name,
             "supported": True,
-            "model_config": moodel_id,
+            "model_config": model_config,
         }
     ]
 
