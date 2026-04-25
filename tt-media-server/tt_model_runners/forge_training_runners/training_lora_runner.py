@@ -394,7 +394,7 @@ class TrainingLoraRunner(BaseDeviceRunner):
                                     {
                                         "id": f"ckpt-step-{global_step}",
                                         "step": global_step,
-                                        "epoch": epoch,
+                                        "epoch": epoch + 1,
                                         "metrics": checkpoint_metrics,
                                         "created_at": time.time(),
                                     }
