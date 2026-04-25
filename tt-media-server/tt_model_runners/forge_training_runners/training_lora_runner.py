@@ -15,7 +15,7 @@ import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
-from config.constants import SupportedModels
+from config.constants import ModelNames, SupportedModels
 from domain.training_request import TrainingRequest
 from peft import LoraConfig, PeftModel, get_peft_model
 from tqdm import tqdm
