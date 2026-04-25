@@ -123,16 +123,25 @@ def _create_dit_runner(model_runner: str, rank: int):
     return runner_class("")
 
 
-def video_request_to_generate_request(req: VideoRequest) -> VideoGenerateRequest:
-    """Map SHM VideoRequest to VideoGenerateRequest for DiT runners.
-
-    Uses the intersection of field names so we never pass SHM-only fields (e.g.
-    height, width) unless they exist on VideoGenerateRequest.
-    """
+def video_request_to_generate_request(
+    req: VideoRequest, image_data: Optional[str] = None
+) -> VideoGenerateRequest:
+    """Map SHM VideoRequest to VideoGenerateRequest for DiT runners."""
     shm_names = {f.name for f in dc_fields(VideoRequest)}
     gen_names = set(VideoGenerateRequest.model_fields.keys())
     common = shm_names & gen_names
-    return VideoGenerateRequest(**{name: getattr(req, name) for name in common})
+    kwargs = {name: getattr(req, name) for name in common}
+
+    if image_data:
+        kwargs["image"] = image_data
+    elif req.image_path:
+        try:
+            with open(req.image_path, "r") as _f:
+                kwargs["image"] = _f.read()
+        except OSError as e:
+            _log.warning(f"Could not read image from {req.image_path}: {e}")
+
+    return VideoGenerateRequest(**kwargs)
 
 
 def _write_response_to_shm(
@@ -162,13 +171,13 @@ def _write_error_to_shm(output_shm: VideoShm, task_id: str, error: str = "") -> 
     )
 
 
-def _broadcast_request(comm, req: Optional[VideoRequest]) -> Optional[VideoRequest]:
-    """Collective: rank 0 provides the request, all ranks receive it.
+def _broadcast_request(comm, req: Optional[VideoRequest], image_data: Optional[str] = None):
+    """Collective: rank 0 provides the request + image data, all ranks receive both.
 
-    Returns None when rank 0 signals shutdown (read_request returned None).
+    Returns (None, None) when rank 0 signals shutdown (read_request returned None).
     All ranks must call this on every iteration so MPI stays in sync.
     """
-    return comm.bcast(req, root=0)
+    return comm.bcast((req, image_data), root=0)
 
 
 def _run_inference_loop(
@@ -178,10 +187,17 @@ def _run_inference_loop(
 
     while not _shutdown:
         raw_req: Optional[VideoRequest] = None
+        image_data = None
         if rank == 0:
             raw_req = input_shm.read_request()
+            if raw_req and raw_req.image_path:
+                try:
+                    with open(raw_req.image_path, "r") as _f:
+                        image_data = _f.read()
+                except OSError as e:
+                    _log.warning(f"Could not read image from {raw_req.image_path}: {e}")
 
-        req = _broadcast_request(comm, raw_req)
+        req, image_data = _broadcast_request(comm, raw_req, image_data)
 
         if req is None:
             _log.info(f"Rank {rank}: Shutdown signal received, exiting loop")
@@ -195,7 +211,7 @@ def _run_inference_loop(
             )
 
         try:
-            video_gen_req = video_request_to_generate_request(req)
+            video_gen_req = video_request_to_generate_request(req, image_data=image_data)
 
             _log.info(f"Rank {rank}: Starting inference for task {req.task_id}")
             frames = runner.run([video_gen_req])

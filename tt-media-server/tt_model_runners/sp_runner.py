@@ -130,6 +130,18 @@ class SPRunner(BaseDeviceRunner):
         request = requests[0]
         task_id = request._task_id
 
+        image_path = ""
+        raw_image = getattr(request, "image", None)
+        if not raw_image:
+            image_frames = getattr(request, "image_frames", None)
+            if image_frames:
+                first = min(image_frames, key=lambda f: f.frame_pos)
+                raw_image = first.image
+        if raw_image:
+            image_path = f"/dev/shm/tt_img_{task_id}"
+            with open(image_path, "w") as _f:
+                _f.write(raw_image)
+
         video_req = VideoRequest(
             task_id=task_id,
             prompt=request.prompt,
@@ -145,13 +157,18 @@ class SPRunner(BaseDeviceRunner):
             guidance_scale_2=getattr(
                 request, "guidance_scale_2", DEFAULT_VIDEO_GUIDANCE_SCALE_2
             ),
+            image_path=image_path,
         )
 
         self._input_shm.write_request(video_req)
         self.logger.info(f"[SP] Request {task_id} sent to SHM input")
 
         timeout_s = self.settings.video_request_timeout_seconds
-        resp = self._read_response_for(task_id, timeout_s)
+        try:
+            resp = self._read_response_for(task_id, timeout_s)
+        finally:
+            if image_path:
+                self._try_unlink(image_path)
         if resp.status == VideoStatus.ERROR:
             self._try_unlink(resp.file_path)
             raise RuntimeError(f"Runner error for task {task_id}: {resp.error_message}")

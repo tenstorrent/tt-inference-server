@@ -71,6 +71,7 @@ class VideoRequest:
     num_frames: int
     guidance_scale: float
     guidance_scale_2: float
+    image_path: str = ""
 
 
 VIDEO_FILE_DIR = os.environ.get("TT_VIDEO_FILE_DIR", "/dev/shm")
@@ -222,7 +223,10 @@ class VideoShm:
     _IN_NUM_FRAMES = 2628
     _IN_GUIDANCE_SCALE = 2632
     _IN_GUIDANCE_SCALE_2 = 2636
-    INPUT_SLOT_SIZE = 2640
+    _IN_IMAGE_PATH_LEN = 2640
+    _IN_IMAGE_PATH = 2644
+    MAX_IMAGE_PATH_LEN = 256
+    INPUT_SLOT_SIZE = 2900  # 2640 + 4 (len) + 256 (path)
 
     # ── Output slot field offsets ──
     #   state(4) task_id(36) status(4) error_len(4) error(256)
@@ -520,6 +524,13 @@ class VideoShm:
         struct.pack_into(
             "<f", buf, off + self._IN_GUIDANCE_SCALE_2, request.guidance_scale_2
         )
+        self._pack_string(
+            buf,
+            off + self._IN_IMAGE_PATH_LEN,
+            off + self._IN_IMAGE_PATH,
+            request.image_path,
+            self.MAX_IMAGE_PATH_LEN,
+        )
 
         struct.pack_into("<i", buf, state_off, self._FILLED)
         self._set_writer_index(widx + 1)
@@ -562,6 +573,9 @@ class VideoShm:
         guidance_scale_2 = struct.unpack_from(
             "<f", buf, off + self._IN_GUIDANCE_SCALE_2
         )[0]
+        image_path = self._unpack_string(
+            buf, off + self._IN_IMAGE_PATH_LEN, off + self._IN_IMAGE_PATH
+        )
 
         struct.pack_into("<i", buf, state_off, self._EMPTY)
         self._set_reader_index(ridx + 1)
@@ -577,6 +591,7 @@ class VideoShm:
             num_frames=num_frames,
             guidance_scale=guidance_scale,
             guidance_scale_2=guidance_scale_2,
+            image_path=image_path,
         )
 
     # ── Output SHM: response read / write (file-path reference) ──
