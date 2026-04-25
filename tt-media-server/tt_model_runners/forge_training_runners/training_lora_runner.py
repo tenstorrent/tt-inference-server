@@ -81,10 +81,10 @@ class TrainingLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads=num_torch_threads)
         if not self.settings.training_model:
-            raise ValueError(
-                "TRAINING_MODEL and MODEL_RUNNER both must be set"
-            )
-        self.model_name = SupportedModels[ModelNames(self.settings.training_model).name].value
+            raise ValueError("TRAINING_MODEL and MODEL_RUNNER both must be set")
+        self.model_name = SupportedModels[
+            ModelNames(self.settings.training_model).name
+        ].value
 
     @property
     def _is_multichip(self) -> bool:

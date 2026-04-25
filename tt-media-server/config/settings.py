@@ -164,7 +164,9 @@ class Settings(BaseSettings):
             model_runner_enum = ModelRunners(self.model_runner)
 
             # Use dictionary key access
-            model_names_set = INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(model_runner_enum)
+            model_names_set = INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(
+                model_runner_enum
+            )
 
             if model_names_set:
                 # Get first model name from the set
