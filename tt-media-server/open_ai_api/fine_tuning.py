@@ -33,7 +33,7 @@ async def get_catalog(api_key: str = Security(get_api_key)):
         settings.device,
         settings.device_mesh_shape,
         num_workers,
-        settings.model,
+        settings.training_model,
     )
     return JSONResponse(content=catalog)
 

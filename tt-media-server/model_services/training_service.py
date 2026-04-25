@@ -19,17 +19,7 @@ class TrainingService(BaseJobService):
     def __init__(self):
         self.settings = get_settings()
         self._manager = Manager()
-        self._model_name = self._resolve_model_name()
-        super().__init__()
-
-    def _resolve_model_name(self) -> str:
-        """Resolve the short model name for the configured runner and model.
-
-        Runners with a single supported model return that name directly.
-        Runners with multiple supported models require the configured
-        `model` to match one of the supported model configs.
-        """
-        self._model_name = ModelNames(self.settings.model).value
+        self._model_name = ModelNames(self.settings.training_model).value
         super().__init__()
 
     async def create_job(

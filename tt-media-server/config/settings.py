@@ -44,12 +44,12 @@ class Settings(BaseSettings):
     use_greedy_based_allocation: bool = True
 
     # Model settings
-    model: Optional[str] = None
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
     model_weights_path: str = ""
+    training_model: Optional[str] = None
     chat_template_kwargs: dict = {}  # extra kwargs passed to apply_chat_template
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
