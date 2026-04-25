@@ -1,0 +1,36 @@
+# ThreadSanitizer suppressions for tt-media-server cpp_server.
+#
+# Pass to the runtime via:
+#   TSAN_OPTIONS="suppressions=$PWD/tsan_suppressions.txt:halt_on_error=0:..."
+#
+# Maintainer rule: only add entries here for races verified to be entirely
+# outside our code (no frames in tt::*) and not the result of us misusing the
+# library. Re-evaluate every Drogon/trantor upgrade — upstream may have fixed
+# them, and a too-broad pattern can hide real bugs.
+#
+# Suppression syntax (matches a substring against any frame in the report):
+#   race:<symbol or file>          — data race
+#   signal:<symbol or file>        — signal-unsafe call inside a signal
+#   deadlock:<symbol or file>      — lock-order inversion
+#   mutex:<symbol or file>         — invalid mutex op
+# See https://github.com/google/sanitizers/wiki/threadsanitizersuppressions.
+
+# ── trantor::EventLoop ──────────────────────────────────────────────────────
+# Startup race: main thread writes the wakeup eventfd via queueInLoop before
+# the IO thread's EventLoop ctor has fully published the eventfd creation.
+race:trantor::EventLoop::EventLoop
+race:trantor::EventLoop::queueInLoop
+
+# ── trantor logger / date formatting ────────────────────────────────────────
+# trantor logs from inside epoll_wait and allocates std::strings while doing
+# so. TSan flags the heap allocs as "signal-unsafe call inside of a signal"
+# during shutdown when SIGTERM unwinds the loop.
+signal:trantor::EpollPoller::poll
+signal:trantor::Logger::formatTime
+signal:trantor::Date::toFormattedString
+
+# ── trantor::TcpServer shutdown ─────────────────────────────────────────────
+# trantor's stop() races with std::promise<void>::~promise() in TcpServer.cc
+# during graceful shutdown. Library-internal lifecycle, not our code.
+race:trantor::TcpServer::stop
+race:TcpServer.cc
