@@ -1,6 +1,5 @@
 #include "services/memory_services/blaze_memory_manager.hpp"
 
-#include "config/settings.hpp"
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "utils/logger.hpp"
 
@@ -27,7 +26,6 @@ void BlazeMemoryManager::handleRequest(
     }
     case domain::MemoryManagementAction::DEALLOCATE: {
       for (auto slotId : request.slotIds) {
-        assert(slotId < tt::config::pmMaxUsers());
         TT_LOG_DEBUG(
             "[BlazeMemoryManager] DEALLOCATE: taskId={}, cancelling "
             "slotId={}, then evicting",
