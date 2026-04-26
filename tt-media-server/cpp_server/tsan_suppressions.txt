@@ -34,3 +34,53 @@ signal:trantor::Date::toFormattedString
 # during graceful shutdown. Library-internal lifecycle, not our code.
 race:trantor::TcpServer::stop
 race:TcpServer.cc
+
+# ── trantor::EventLoop test-fixture lifecycle ──────────────────────────────
+# session_manager_test's LoopFixture posts loop->quit() from the main thread
+# while the loop-thread lambda is destructing trantor::EventLoop. The
+# eventfd read/write happens-before relationship is opaque to TSan, but the
+# pattern is sound C++ (join() ensures the loop has exited).
+race:trantor::EventLoop::~EventLoop
+race:trantor::EventLoop::quit
+
+# ── trantor::EventLoop dispatch happens-before opacity ─────────────────────
+# Lambdas queued via queueInLoop are invoked on the IO loop thread by
+# doRunInLoopFuncs. TSan does not see happens-before across trantor's
+# internal mutex-protected functor queue, so the lambda's captured state
+# (Session copy, std::function, std::string) appears to race between the
+# enqueue thread and the IO thread. The pattern is correct C++ (trantor
+# locks a mutex around the functor vector); the suppression compensates
+# for the library's TSan annotation gap.
+#
+# Trade-off: a genuine race on data accessed inside an IO loop callback
+# would be hidden if its stack passes through doRunInLoopFuncs. Mitigated
+# by keeping the application-level suppressions targeted (per-method) so
+# new code paths still get fresh TSan coverage.
+race:trantor::EventLoop::doRunInLoopFuncs
+
+# ── KNOWN BUGS (currently suppressed; tracked in GitHub issues) ────────────
+# Each entry below MUST be removed when its issue is fixed, otherwise the
+# regression check silently accepts a still-broken fix. Add new entries
+# only with an issue link; prefer the most specific symbol that uniquely
+# identifies the buggy code path.
+
+# Issue tenstorrent/tt-inference-server#3179 — tokenizers-cpp Tokenizer is
+# not thread-safe. LLMService shares one tokenizer instance across all
+# concurrent requests; all races chain through LLMService::preProcess.
+race:tt::services::LLMService::preProcess
+
+# Issue tenstorrent/tt-inference-server#3180 — SseStreamWriter shared_ptr
+# fields are read across threads non-atomically. Races emanate from the
+# completion-chain (LLMController::resolveSession ↔ handleStreaming) into
+# the SSE writer's send path and Drogon's ResponseStream::send.
+race:tt::api::SseStreamWriter::sendSse
+race:tt::api::SseStreamWriter::handleTokenChunk
+race:tt::api::LLMController::resolveSession
+race:tt::api::LLMController::handleStreaming
+race:drogon::ResponseStream::send
+
+# ── test helper races (not production code) ────────────────────────────────
+# cancellation_test's InMemoryCancelQueue uses std::vector without locking.
+# Pure test infrastructure issue; fix the helper or replace with the
+# production CancelQueue. Track for cleanup separately.
+race:InMemoryCancelQueue

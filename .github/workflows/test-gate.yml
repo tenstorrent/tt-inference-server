@@ -1150,10 +1150,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # Non-blocking initially: surface races without failing PRs while
-    # suppressions stabilize across Drogon/trantor upgrades. Remove this
-    # once clean runs are consistent and add cpp-tsan to ci-gate's needs.
-    continue-on-error: true
+    # Gating: any TSan race report after suppressions fails this job and the
+    # whole pipeline. Known issues are listed in tsan_suppressions.txt with
+    # their tracking issue IDs; remove the corresponding suppression line
+    # when the issue is fixed so the regression check protects the fix.
     defaults:
       run:
         working-directory: tt-media-server
@@ -1570,6 +1570,7 @@ jobs:
       - cpp-build
       - cpp-server-benchmarks
       - cpp-server-prefill-decode-split
+      - cpp-tsan
     if: always()
     steps:
       - name: Check results
@@ -1585,6 +1586,7 @@ jobs:
             [cpp-build]="${{ needs.cpp-build.result }}"
             [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
             [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
+            [cpp-tsan]="${{ needs.cpp-tsan.result }}"
           )
           for job in "${!JOBS[@]}"; do
             result="${JOBS[$job]}"
