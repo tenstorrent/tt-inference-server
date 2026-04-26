@@ -132,7 +132,8 @@ RUN --mount=type=secret,id=github_token \
     && git submodule update --init --recursive --depth 1 || echo "Some submodules failed, continuing..." \
     && ./install.sh  \
     && . ./env.sh \
-    && ./pipeline_manager/setup.sh \
+    && (cd tt-metal && ./build_metal.sh --disable-profiler) \
+    && ./pipeline_manager/setup.sh --pm-full \
     && git config --global --unset url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf
 
 # Build C++ server (requires Rust for tokenizers-cpp)
