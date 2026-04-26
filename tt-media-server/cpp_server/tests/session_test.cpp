@@ -9,7 +9,11 @@ namespace {
 
 // ---------------------------------------------------------------------------
 // Session state machine — all valid and invalid transitions
-// Valid path: IDLE -> PREPARED -> IN_FLIGHT -> IDLE
+// Valid transitions:
+//   IDLE      -> PREPARED   (markPrepared)
+//   IDLE      -> IN_FLIGHT  (markInFlight, fast path skipping PREPARED)
+//   PREPARED  -> IN_FLIGHT  (markInFlight)
+//   IN_FLIGHT -> IDLE       (clearInFlight)
 // ---------------------------------------------------------------------------
 
 TEST(SessionState, InitialStateIsIdle) {
@@ -51,10 +55,12 @@ TEST(SessionState, MarkInFlightFromPrepared) {
   EXPECT_FALSE(s.isIdle());
 }
 
-TEST(SessionState, MarkInFlightFromIdleReturnsFalseAndPreservesState) {
+TEST(SessionState, MarkInFlightFromIdle) {
   tt::domain::Session s;
-  EXPECT_FALSE(s.markInFlight());  // IDLE -> IN_FLIGHT is not allowed
-  EXPECT_TRUE(s.isIdle());
+  EXPECT_TRUE(s.markInFlight());  // IDLE -> IN_FLIGHT is allowed (fast path)
+  EXPECT_TRUE(s.isInFlight());
+  EXPECT_FALSE(s.isIdle());
+  EXPECT_FALSE(s.isPrepared());
 }
 
 TEST(SessionState, MarkInFlightFromInFlightReturnsFalseAndPreservesState) {
