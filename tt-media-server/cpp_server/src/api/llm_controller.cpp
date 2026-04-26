@@ -156,7 +156,7 @@ void LLMController::resolveSession(
   }
 
   // Layer 3: Allocate a new session. Async — onCompletion runs on loop.
-sessionManager->createSession(
+  sessionManager->createSession(
       [req, routingInfo, onResolved, cancelFn = std::move(cancelFn),
        mgr = sessionManager](const domain::Session& session) mutable {
         req->sessionId = session.getSessionId();

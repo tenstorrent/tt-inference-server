@@ -16,7 +16,7 @@ namespace tt::domain {
 // Lifecycle state of a Session.  IDLE <--(clearInFlight)--> IN_FLIGHT.
 enum class SessionState {
   IDLE,       // no active request
-  PREPARED,  // session has been allocated to a slot
+  PREPARED,   // session has been allocated to a slot
   IN_FLIGHT,  // request actively being processed
 };
 
@@ -54,7 +54,7 @@ class Session {
 
   bool isIdle() const { return state_ == SessionState::IDLE; }
   bool isInFlight() const { return state_ == SessionState::IN_FLIGHT; }
-  
+
   bool isPrepared() const { return state_ == SessionState::PREPARED; }
   bool markPrepared();
 

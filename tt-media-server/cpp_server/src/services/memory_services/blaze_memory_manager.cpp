@@ -1,8 +1,8 @@
 #include "services/memory_services/blaze_memory_manager.hpp"
 
+#include "config/settings.hpp"
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "utils/logger.hpp"
-#include "config/settings.hpp"
 
 namespace tt::services {
 namespace utils = tt::runners::blaze_utils;
