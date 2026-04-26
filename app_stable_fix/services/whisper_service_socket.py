@@ -125,9 +125,9 @@ class WhisperService:
         os.unlink(wav_file.name)
         return raw_file.name
     
-    async def transcribe(self, audio_data: bytes) -> Dict[str, Any]:
+    async def transcribe(self, audio_data: bytes, wake_word: bool = False) -> Dict[str, Any]:
         """Transcribe audio to text."""
-        logger.info("🎤 Transcribing audio...")
+        logger.info(f"🎤 Transcribing audio...{' (wake word mode)' if wake_word else ''}")
         
         try:
             # Convert audio to WAV
@@ -138,9 +138,12 @@ class WhisperService:
             )
             
             # Send to Whisper server
+            req = {"audio_path": wav_path}
+            if wake_word:
+                req["wake_word"] = True
             response = await loop.run_in_executor(
                 None,
-                lambda: self._send_request({"audio_path": wav_path})
+                lambda: self._send_request(req)
             )
             
             # Clean up

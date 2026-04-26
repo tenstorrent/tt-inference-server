@@ -29,6 +29,9 @@ class TTSService:
         self.warmup_time = 0
         self.socket_path = TTS_SOCKET
         self.output_dir = "/home/container_app_user/voice-assistant/output"
+        self.restarting = False
+        self._consecutive_failures = 0
+        self._restart_threshold = 2
         
         logger.info(f"TTS service initialized (socket: {self.socket_path})")
     
@@ -81,8 +84,9 @@ class TTSService:
     
     async def synthesize(self, text: str, fast: bool = True, speaker_id: int = None) -> Dict[str, Any]:
         """Synthesize speech from text. Optionally specify speaker_id for multi-voice."""
-        logger.debug(f"TTS text length: {len(text)} chars")
-        
+        if self.restarting:
+            raise RuntimeError("TTS server is restarting, please wait")
+
         logger.info(f"🔊 TTS: {text[:50]}...")
         
         try:
@@ -100,6 +104,7 @@ class TTSService:
             )
             
             if response.get("status") == "ok":
+                self._consecutive_failures = 0
                 logger.info(f"✅ TTS completed in {response.get('time_ms', 0):.1f}ms")
                 return {
                     "audio_path": response.get("audio_path", output_path),
@@ -109,13 +114,58 @@ class TTSService:
                 raise RuntimeError(response.get("error", "Unknown error"))
                 
         except Exception as e:
-            logger.error(f"TTS error: {e}")
-            # Return a beep as fallback
-            return {
-                "audio_path": self._create_beep(),
-                "processing_time": 0.1
-            }
+            self._consecutive_failures += 1
+            logger.error(f"TTS error ({self._consecutive_failures}/{self._restart_threshold}): {e}")
+            if self._consecutive_failures >= self._restart_threshold and not self.restarting:
+                loop = asyncio.get_event_loop()
+                loop.run_in_executor(None, self._restart_server)
+            raise RuntimeError(f"TTS synthesis failed: {e}")
     
+    def _restart_server(self):
+        """Kill and restart the TTS server process when it's stuck."""
+        import subprocess
+        import time
+        self.restarting = True
+        logger.warning("🔄 TTS server appears stuck, restarting...")
+        try:
+            subprocess.run(["pkill", "-f", "speecht5_ttnn_server"], timeout=5)
+        except Exception:
+            pass
+        time.sleep(3)
+        try:
+            os.remove(self.socket_path)
+        except OSError:
+            pass
+        try:
+            subprocess.Popen(
+                ["bash", "-c",
+                 "source /home/container_app_user/tt-metal/python_env/bin/activate && "
+                 'export PYTHONPATH="/usr/local/lib/python3.10/dist-packages:/home/container_app_user/tt-metal:$PYTHONPATH" && '
+                 "export TT_MESH_GRAPH_DESC_PATH=/home/container_app_user/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto && "
+                 "export TT_VISIBLE_DEVICES=2 && "
+                 "cd /home/container_app_user/tt-metal && "
+                 "python /home/container_app_user/voice-assistant/servers/speecht5_ttnn_server.py --speaker-id 7306 "
+                 "> /tmp/tts_server.log 2>&1"],
+                start_new_session=True
+            )
+            logger.info("🔄 TTS server restart initiated, waiting for warmup...")
+            for _ in range(24):
+                time.sleep(5)
+                if os.path.exists(self.socket_path):
+                    try:
+                        self._send_request({"cmd": "ping"})
+                        self._consecutive_failures = 0
+                        self.restarting = False
+                        logger.info("✅ TTS server restarted successfully!")
+                        return True
+                    except Exception:
+                        pass
+            self.restarting = False
+            logger.error("❌ TTS server failed to restart within 2 minutes")
+        except Exception as e:
+            logger.error(f"❌ TTS server restart failed: {e}")
+        return False
+
     def _create_beep(self) -> str:
         """Create a simple beep sound as fallback."""
         try:

@@ -176,6 +176,18 @@ async def speech_to_text(audio: UploadFile = File(...)):
         return {"text": "", "error": str(e)}
 
 
+@app.post("/api/wake-word-check")
+async def wake_word_check(audio: UploadFile = File(...)):
+    """Check audio for wake word using Whisper with prompt biasing."""
+    try:
+        audio_data = await audio.read()
+        result = await whisper_service.transcribe(audio_data, wake_word=True)
+        return result
+    except Exception as e:
+        logger.error(f"Wake word check error: {e}")
+        return {"text": "", "error": str(e)}
+
+
 @app.get("/api/modes")
 async def get_modes():
     """Return available modes for the frontend to render buttons."""
@@ -438,6 +450,13 @@ async def chat_stream(request: Request):
                     except Exception as e:
                         logger.warning(f"TTS failed for sentence {s_num}: {e}")
                         await output_queue.put(f"data: {json_lib.dumps({'type': 'audio', 'audio_b64': '', 'sentence_num': s_num})}\n\n")
+                        if tts_service.restarting:
+                            await output_queue.put(f"data: {json_lib.dumps({'type': 'tts_restarting'})}\n\n")
+                            logger.info("Waiting for TTS server restart...")
+                            while tts_service.restarting:
+                                await asyncio.sleep(2)
+                            await output_queue.put(f"data: {json_lib.dumps({'type': 'tts_ready'})}\n\n")
+                            logger.info("TTS server back, resuming remaining sentences")
                 await output_queue.put(None)
 
             tts_task = asyncio.create_task(tts_worker())

@@ -509,25 +509,6 @@ class SpeechT5TTNNServer:
 
                     request_count += 1
                     
-                    # WORKAROUND: Refresh traces periodically to prevent hang at ~17
-                    # The TTNN trace infrastructure accumulates state that causes hangs
-                    if request_count > 1 and request_count % 10 == 0:
-                        print(f"\n[TTS #{request_count}] Refreshing traces (preventive maintenance)...")
-                        try:
-                            # Release all traces
-                            self.generator.cleanup()
-                            # Sync device to ensure cleanup is complete
-                            self.ttnn.synchronize_device(self.device)
-                            # Reset KV caches
-                            self.generator._reset_kv_caches()
-                            # Recapture traces for all encoder sizes
-                            self.generator.capture_all_traces(self.processor, batch_size=1)
-                            # Reset KV caches again after trace capture
-                            self.generator._reset_kv_caches()
-                            print(f"  Traces refreshed successfully!")
-                        except Exception as e:
-                            print(f"  Warning: Trace refresh failed: {e}")
-                    
                     speaker_label = f" [speaker:{speaker_id}]" if speaker_id else ""
                     print(f"\n[TTS #{request_count}]{speaker_label} '{text[:50]}{'...' if len(text) > 50 else ''}'")
                     t0 = time.time()
@@ -576,6 +557,19 @@ class SpeechT5TTNNServer:
                             "error": str(e),
                             "request_number": request_count
                         }).encode())
+                    
+                    # Full trace refresh every 15 requests
+                    if request_count > 1 and request_count % 15 == 0:
+                        print(f"  [Maintenance] Refreshing traces after TTS #{request_count}...")
+                        try:
+                            self.generator.cleanup()
+                            self.ttnn.synchronize_device(self.device)
+                            self.generator._reset_kv_caches()
+                            self.generator.capture_all_traces(self.processor, batch_size=1)
+                            self.generator._reset_kv_caches()
+                            print(f"  [Maintenance] Traces refreshed successfully!")
+                        except Exception as e:
+                            print(f"  [Maintenance] Warning: Trace refresh failed: {e}")
 
                 except Exception as e:
                     import traceback

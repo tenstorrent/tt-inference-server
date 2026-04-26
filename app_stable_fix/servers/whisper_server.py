@@ -77,6 +77,12 @@ def main():
     )
     print(f"  Pipeline created in {time.time() - t0:.1f}s", flush=True)
 
+    # Extract generator from pipeline closure so we can call it
+    # with a per-request prompt for wake word detection
+    _freevars = pipeline.__code__.co_freevars
+    _generator = pipeline.__closure__[_freevars.index('generator')].cell_contents
+    WAKE_WORD_PROMPT = "Hey TT, hey tee tee."
+
     # === Warmup ===
     print("\n[3/3] Running warmup...", flush=True)
     t0 = time.time()
@@ -193,11 +199,21 @@ def main():
                         audio = audio.mean(axis=1)
                     
                     # Run transcription
-                    result = pipeline([(sr, audio)], stream=False)
+                    is_wake = request.get("wake_word", False)
+                    if is_wake:
+                        result = _generator.generate(
+                            current_batch=[(sr, audio)],
+                            language="en",
+                            task="transcribe",
+                            prompt=WAKE_WORD_PROMPT,
+                        )
+                    else:
+                        result = pipeline([(sr, audio)], stream=False)
                     text = result[0] if result else ""
                     
                     elapsed_ms = (time.time() - t0) * 1000
-                    print(f"  Result: \"{text[:50]}...\" in {elapsed_ms:.1f}ms", flush=True)
+                    label = "[WakeWord]" if is_wake else "[Whisper]"
+                    print(f"  {label} Result: \"{text[:50]}...\" in {elapsed_ms:.1f}ms", flush=True)
 
                     response = {
                         "status": "ok",
