@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import json
@@ -9,14 +9,13 @@ import time
 from pathlib import Path
 
 import aiohttp
+
 from server_tests.base_test import BaseTest
 
 logger = logging.getLogger(__name__)
 
 # Path to test payloads
-TEST_PAYLOADS_PATH = (
-    Path(__file__).parent.parent.parent.parent / "utils" / "test_payloads"
-)
+TEST_PAYLOADS_PATH = Path(__file__).parent.parent.parent / "utils" / "test_payloads"
 
 # Inpainting specific constants
 PROMPT = "a black cat with glowing eyes, sitting on a pillow"

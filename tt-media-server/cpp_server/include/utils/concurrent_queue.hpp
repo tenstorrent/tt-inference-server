@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #pragma once
 
 #include <atomic>
@@ -21,6 +21,11 @@ class ConcurrentQueue {
   void push(const T& value) {
     std::lock_guard lock(mutex);
     pending.push_back(value);
+  }
+
+  void push(T&& value) {
+    std::lock_guard lock(mutex);
+    pending.push_back(std::move(value));
   }
 
   std::vector<T> drain() {
@@ -45,12 +50,10 @@ class ConcurrentQueue {
 
 namespace detail {
 
-#ifdef __cpp_lib_hardware_interference_size
-inline constexpr size_t CACHE_LINE_SIZE =
-    std::hardware_destructive_interference_size;
-#else
+// Fixed size avoids -Winterference-size
+// (std::hardware_destructive_interference_size is not stable across
+// compiler/tuning); 64 matches typical x86/ARM cache lines.
 inline constexpr size_t CACHE_LINE_SIZE = 64;
-#endif
 
 inline size_t nextPowerOfTwo(size_t n) { return std::bit_ceil(n); }
 inline constexpr std::memory_order RELAXED = std::memory_order_relaxed;

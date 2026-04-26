@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "services/disaggregation_service.hpp"
 
@@ -51,6 +51,7 @@ void DisaggregationService::setupSocketHandlers() {
                                  message.remaining_tokens.value() > 0);
           if (continueDecode) {
             auto request = domain::LLMRequest(message.task_id);
+            request.disaggregated = true;
             request.prompt = std::vector<int>(message.token_ids.begin(),
                                               message.token_ids.end());
             request.max_tokens = message.remaining_tokens;

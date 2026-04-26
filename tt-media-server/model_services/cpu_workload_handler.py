@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import time
@@ -9,6 +9,7 @@ from multiprocessing import Process, Queue
 from threading import Lock
 
 from config.settings import settings
+from telemetry.multiprocess_setup import mark_worker_dead
 from utils.logger import TTLogger
 from utils.runner_utils import setup_cpu_threading_limits
 
@@ -192,6 +193,7 @@ class CpuWorkloadHandler:
 
             # Wait for workers to finish
             for i, worker in enumerate(self.workers):
+                worker_pid = worker.pid
                 if worker.is_alive():
                     worker.join(timeout=10.0)
                     if worker.is_alive():
@@ -202,6 +204,7 @@ class CpuWorkloadHandler:
                         worker.join(timeout=2.0)
                         if worker.is_alive():
                             worker.kill()
+                mark_worker_dead(worker_pid)
 
             if hasattr(self, "result_listener_task"):
                 self.result_listener_task.cancel()

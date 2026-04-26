@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "services/memory_services/paged_memory_manager.hpp"
 
@@ -7,10 +7,12 @@
 #include <utility>
 
 #include "config/settings.hpp"
+#include "domain/sequence.hpp"
 #include "runners/llm_runner/block_manager.hpp"
-#include "runners/llm_runner/sequence.hpp"
 
 namespace tt::services {
+
+using Sequence = tt::domain::Sequence;
 
 using tt::domain::ManageMemoryResult;
 using tt::domain::ManageMemoryStatus;
@@ -28,14 +30,15 @@ ManageMemoryResult makeResult(const ManageMemoryTask& task,
 
 }  // namespace
 
-PagedMemoryManager::PagedMemoryManager(llm_engine::BlockManager& bm)
+PagedMemoryManager::PagedMemoryManager(
+    tt::runners::llm_engine::BlockManager& bm)
     : blockManager(&bm) {}
 
 ManageMemoryStatus PagedMemoryManager::allocateKv(
     const ManageMemoryTask& task, std::vector<int>& outSlotIds) {
   std::vector<int64_t> placeholderTokens(1, 0);  // Hardcoded to use one block
-  llm_engine::Sequence seq(task.taskId, blockManager->blockSize(),
-                           std::move(placeholderTokens));
+  Sequence seq(task.taskId, blockManager->getBlockSize(),
+               std::move(placeholderTokens));
 
   if (!blockManager->allocate(seq)) {
     return ManageMemoryStatus::WAITING;
@@ -47,7 +50,7 @@ ManageMemoryStatus PagedMemoryManager::allocateKv(
 
 void PagedMemoryManager::deallocateKv(uint32_t taskId,
                                       std::vector<int> slotIds) {
-  llm_engine::Sequence seq(taskId, blockManager->blockSize(), {});
+  Sequence seq(taskId, blockManager->getBlockSize(), {});
   seq.getMutableBlockTable() = std::move(slotIds);
   blockManager->deallocate(seq);
 }

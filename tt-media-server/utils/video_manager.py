@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ class VideoManager:
         Export frames to MP4 (H.264 via ffmpeg).
 
         Env (optional):
-            TT_VIDEO_EXPORT_CRF: 0–51, lower = better quality. Default 0.
+            TT_VIDEO_EXPORT_CRF: 0–51, lower = better quality. Default 23.
             TT_VIDEO_EXPORT_PRESET: ultrafast … veryslow. Default medium.
         """
         if hasattr(frames, "frames"):
@@ -47,9 +47,9 @@ class VideoManager:
         _VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(_VIDEO_OUTPUT_DIR / f"{uuid.uuid4()}.mp4")
 
-        crf = int(os.environ.get("TT_VIDEO_EXPORT_CRF", "0"))
+        crf = int(os.environ.get("TT_VIDEO_EXPORT_CRF", "23"))
         crf = max(_MIN_CRF, min(_MAX_CRF, crf))
-        preset = os.environ.get("TT_VIDEO_EXPORT_PRESET", "medium").strip()
+        preset = os.environ.get("TT_VIDEO_EXPORT_PRESET", "ultrafast").strip()
 
         try:
             processed = self._process_frames_for_export(frames)

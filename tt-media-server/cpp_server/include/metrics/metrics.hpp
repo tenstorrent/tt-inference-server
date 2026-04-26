@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -52,39 +52,17 @@ class ServerMetrics {
    */
   void onRequestSubmitted(uint32_t task_id, int prompt_tokens);
 
-  /**
-   * Called for the first generated token of a request.
-   * Records time-to-first-token (TTFT).
-   *
-   * Only the first token needs to be reported here; subsequent tokens are
-   * handled via onITLSample() at a reduced rate.
-   */
+  /** Called for every generated token. Captures a timestamp on the caller's
+   *  thread and pushes a lightweight event; the background thread derives
+   *  TTFT, ITL, and token counts from the event stream. */
   void onToken(uint32_t task_id);
-
-  /**
-   * Called for a sampled inter-token latency observation.
-   *
-   * The caller (LLMService) is responsible for:
-   *   - Computing the elapsed time between two consecutive tokens.
-   *   - Calling this method only every kItlSampleStride tokens (defined in
-   *     llm_service.cpp) to amortise the per-event cost.
-   *
-   * itl_seconds must be the actual elapsed time between two CONSECUTIVE tokens
-   * (not between two sampled tokens), computed by the caller before invoking
-   * this method.
-   */
-  void onITLSample(uint32_t task_id, double itl_seconds);
 
   /**
    * Called when a request produces its final token.
    * Records e2e latency, generation token count, and success counter.
    * Cleans up per-request state.
-   *
-   * generation_tokens is passed explicitly by the caller because token events
-   * are sampled (only a fraction reach the metrics queue).
    */
-  void onRequestCompleted(uint32_t task_id, const std::string& finish_reason,
-                          int generation_tokens);
+  void onRequestCompleted(uint32_t task_id, const std::string& finish_reason);
 
   /**
    * Update the in-flight request gauge (call after pending_tasks_ changes).
@@ -92,6 +70,37 @@ class ServerMetrics {
    * Called directly (not via queue) — twice per request, not per token.
    */
   void setQueueDepth(double n);
+
+  /**
+   * Update the active sessions gauge.
+   * Called directly from SessionManager when sessions are created or removed.
+   */
+  void setActiveSessionsCount(double n);
+
+  /**
+   * Record one completed HTTP request/response pair. Called from the Drogon
+   * pre-sending advice hook. `status_code` is the numeric HTTP status
+   * (200, 4xx, 5xx).
+   *
+   * Writes directly to the counter; Prometheus counters are internally
+   * thread-safe, and HTTP response rate is orders of magnitude lower than
+   * token rate, so no queueing is necessary.
+   */
+  void onHttpResponse(const std::string& method, int statusCode);
+
+  /**
+   * Record one prefix-cache lookup attempt. Called once per request that
+   * enters the hash-based prefix cache routing path (i.e. has a prior
+   * [assistant, user] turn pair).
+   *
+   * `hit` is true if an existing session matching the lookup hash was
+   * acquired and its KV cache reused; false if the lookup missed and a new
+   * session had to be allocated.
+   *
+   * Writes directly to the counter; lookup rate is request-level, not
+   * token-level, so queueing would be unnecessary overhead.
+   */
+  void onPrefixCacheLookup(bool hit);
 
   /** Render the full registry in Prometheus text exposition format. */
   std::string renderText() const;
@@ -109,29 +118,18 @@ class ServerMetrics {
     std::chrono::steady_clock::time_point time;
     int prompt_tokens;
   };
-  // Fired once per request (first token only) — drives TTFT.
-  struct EventFirstToken {
+  struct EventToken {
     uint32_t task_id;
     std::chrono::steady_clock::time_point time;
-  };
-  // Fired every kItlSampleStride tokens (see llm_service.cpp).
-  // itl_seconds is the actual elapsed time between two CONSECUTIVE tokens,
-  // pre-computed by the caller so this thread needs no per-task clock state.
-  struct EventITLSample {
-    uint32_t task_id;
-    double itl_seconds;
   };
   struct EventRequestCompleted {
     uint32_t task_id;
     std::chrono::steady_clock::time_point time;
     std::string finish_reason;
-    // Passed explicitly because token events are sampled, so the background
-    // thread cannot count tokens from the queue alone.
-    int generation_tokens;
   };
 
-  using MetricsEvent = std::variant<EventRequestSubmitted, EventFirstToken,
-                                    EventITLSample, EventRequestCompleted>;
+  using MetricsEvent =
+      std::variant<EventRequestSubmitted, EventToken, EventRequestCompleted>;
 
   // -------------------------------------------------------------------------
   // Background thread
@@ -142,8 +140,7 @@ class ServerMetrics {
   void metricsLoop();
   void processEvent(const MetricsEvent& event);
   void handleRequestSubmitted(const EventRequestSubmitted& e);
-  void handleFirstToken(const EventFirstToken& e);
-  void handleITLSample(const EventITLSample& e);
+  void handleToken(const EventToken& e);
   void handleRequestCompleted(const EventRequestCompleted& e);
 
   std::queue<MetricsEvent> event_queue_;
@@ -158,10 +155,10 @@ class ServerMetrics {
   // -------------------------------------------------------------------------
   struct RequestContext {
     std::chrono::steady_clock::time_point start_time;
-    std::optional<std::chrono::steady_clock::time_point> first_token_time;
+    std::chrono::steady_clock::time_point first_token_time;
+    std::chrono::steady_clock::time_point prev_token_time;
     int prompt_tokens = 0;
-    // generation_tokens is no longer tracked here: it arrives with
-    // EventRequestCompleted, supplied by the caller (LLMService).
+    int generation_tokens = 0;
   };
   std::unordered_map<uint32_t, RequestContext> contexts_;
 
@@ -176,15 +173,21 @@ class ServerMetrics {
   prometheus::Counter* prompt_tokens_total_{nullptr};
   prometheus::Counter* generation_tokens_total_{nullptr};
   prometheus::Family<prometheus::Counter>* request_success_family_{nullptr};
+  prometheus::Family<prometheus::Counter>* http_requests_family_{nullptr};
+  prometheus::Counter* prefix_cache_queries_total_{nullptr};
+  prometheus::Counter* prefix_cache_hits_total_{nullptr};
 
   // --- gauges ---
   prometheus::Gauge* queue_depth_{nullptr};
   prometheus::Gauge* max_queue_size_{nullptr};
+  prometheus::Gauge* decoding_requests_{nullptr};
+  prometheus::Gauge* active_sessions_{nullptr};
 
   // --- latency summaries (exact quantiles via CKMS, 60 s sliding window) ---
   prometheus::Summary* e2e_latency_seconds_{nullptr};
   prometheus::Summary* ttft_seconds_{nullptr};
   prometheus::Summary* inter_token_latency_seconds_{nullptr};
+  prometheus::Summary* tpot_seconds_{nullptr};
 
   // --- token-count histograms ---
   prometheus::Histogram* request_prompt_tokens_{nullptr};

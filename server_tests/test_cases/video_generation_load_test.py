@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import asyncio
 import logging
 import time
 
 import aiohttp
+
 from server_tests.base_test import BaseTest
 
 # Set up logging
@@ -29,11 +30,12 @@ headers = {
 class VideoGenerationLoadTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/videos/generations"
-        print(self.targets)
+        logger.info(self.targets)
         devices = self.targets.get("num_of_devices", 1)
         video_generation_target_time = self.targets.get(
-            "video_generation_time", 480
-        )  # 8 minutes default in seconds
+            "video_generation_target_time", 480
+        )
+        self.poll_timeout = self.targets.get("poll_timeout", 700)
         num_inference_steps = self.targets.get("num_inference_steps", 20)
 
         payload["num_inference_steps"] = num_inference_steps
@@ -86,7 +88,7 @@ class VideoGenerationLoadTest(BaseTest):
                 data = await response.json()
                 status = data.get("status")
 
-                print(f"Job {job_id}: status={status}, elapsed={elapsed:.1f}s")
+                logger.info(f"Job {job_id}: status={status}, elapsed={elapsed:.1f}s")
 
                 if status == "completed":
                     return data
@@ -99,7 +101,7 @@ class VideoGenerationLoadTest(BaseTest):
 
     async def test_concurrent_video_generation(self, batch_size):
         async def timed_request(session, index):
-            print(f"Starting request {index}")
+            logger.info(f"Starting request {index}")
             try:
                 start = time.perf_counter()
 
@@ -118,20 +120,20 @@ class VideoGenerationLoadTest(BaseTest):
                     if not job_id:
                         raise Exception(f"No job ID returned: {job_data}")
 
-                    print(
+                    logger.info(
                         f"[{index}] Job submitted: {job_id}, Status: {job_data.get('status')}"
                     )
 
                 # Step 2: Poll until completion
-                await self.poll_video_status(session, job_id, timeout=700)
+                await self.poll_video_status(session, job_id, timeout=self.poll_timeout)
 
                 duration = time.perf_counter() - start
-                print(f"[{index}] Completed in {duration:.2f}s")
+                logger.info(f"[{index}] Completed in {duration:.2f}s")
                 return duration
 
             except Exception as e:
                 duration = time.perf_counter() - start
-                print(f"[{index}] Error after {duration:.2f}s: {e}")
+                logger.info(f"[{index}] Error after {duration:.2f}s: {e}")
                 raise
 
         # Single run (no warmup)
@@ -147,10 +149,12 @@ class VideoGenerationLoadTest(BaseTest):
             total_duration = sum(results)
             avg_duration = total_duration / batch_size
 
-        print(f"\n🚀 Time taken for individual concurrent requests : {results}")
-        print(
+        logger.info(f"\n🚀 Time taken for individual concurrent requests : {results}")
+        logger.info(
             f"\n🚀 Total time for {batch_size} concurrent requests: {requests_duration:.2f}s"
         )
-        print(f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s")
+        logger.info(
+            f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
+        )
 
         return requests_duration, avg_duration

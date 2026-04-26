@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -9,8 +9,8 @@
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
 #include "ipc/cancel_queue.hpp"
-#include "ipc/token_ring_buffer.hpp"
-#include "runners/llm_runner/task_queue.hpp"
+#include "ipc/result_queue.hpp"
+#include "ipc/task_queue.hpp"
 #include "runners/runner_interface.hpp"
 
 namespace tt::utils::runner_factory {
@@ -27,7 +27,7 @@ namespace tt::utils::runner_factory {
  */
 std::unique_ptr<runners::IRunner> createRunner(
     config::ModelService service, const config::RunnerConfig& config,
-    ipc::TokenRingBuffer<65536>* resultQueue, llm_engine::ITaskQueue* taskQueue,
+    ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
     ipc::ICancelQueue* cancelQueue = nullptr);
 
 /**

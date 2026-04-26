@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -28,9 +28,14 @@ class LLMController : public drogon::HttpController<LLMController> {
                 drogon::Delete);
   ADD_METHOD_TO(LLMController::getSlotId, "/v1/sessions/{session_id}/slot",
                 drogon::Get);
+  ADD_METHOD_TO(LLMController::models, "/v1/models", drogon::Get);
   METHOD_LIST_END
 
   LLMController();
+
+  void models(
+      const drogon::HttpRequestPtr& req,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
 
   /**
    * POST /v1/chat/completions
@@ -82,14 +87,27 @@ class LLMController : public drogon::HttpController<LLMController> {
     bool validSessionFound = false;
   };
 
+  enum class SessionErrorType {
+    RATE_LIMIT,      // Returns 429 Too Many Requests
+    ALLOCATION_FAIL  // Returns 503 Service Unavailable
+  };
+
+  struct SessionError {
+    SessionErrorType type;
+    std::string message;
+  };
+
   /**
-   * Validate/create session, assign slot, populate request fields.
-   * Throws std::runtime_error if session creation fails.
+   * Validate/create session, mark it in-flight, and populate request fields.
+   * cancelFn is stored atomically with the in-flight state so that a concurrent
+   * closeSession always has a consistent view. Pass null for non-streaming
+   * requests that cannot be cancelled mid-flight.
    */
   void resolveSession(std::shared_ptr<domain::LLMRequest> req,
                       trantor::EventLoop* loop,
                       std::function<void(SessionInfo)> onResolved,
-                      std::function<void(std::string_view)> onError) const;
+                      std::function<void(const SessionError&)> onError,
+                      std::function<void()> cancelFn = nullptr) const;
 
   /**
    * Determine if disaggregated prefill should be used for this request.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 """DeepSeek V3 B1 inference bridge.
 
@@ -43,6 +43,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         type=Path,
         default=Path("/mnt/models/deepseek-ai/cache-2026-03-22"),
         help="Path to the weight cache directory (required for --weights real)",
+    )
+    parser.add_argument(
+        "--model-path",
+        type=Path,
+        default=Path("/mnt/models/deepseek-ai/DeepSeek-R1-0528-dequantized"),
+        help="Path to the model directory",
     )
     parser.add_argument(
         "--weights",
@@ -184,6 +190,7 @@ def main() -> None:
             weights_mode=args.weights,
             cache_path=args.cache_path if args.weights == "real" else None,
             mesh_device=mesh_device,
+            model_path=args.model_path,
         )
 
         if rank == 0:

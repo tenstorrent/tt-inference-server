@@ -5366,6 +5366,20 @@
                 }
             }
         ],
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12500,
+                        "tput_user": 0.08
+                    }
+                }
+            }
+        ],
         "p300x2": [
             {
                 "max_concurrency": 1,
@@ -5437,6 +5451,88 @@
                     }
                 }
             }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 4,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 32,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
         ]
     },
     "stable-diffusion-xl-1.0-inpainting-0.1": {
@@ -5445,6 +5541,88 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
                 "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 4,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 32,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
                 "task_type": "image",
                 "targets": {
                     "theoretical": {
@@ -6050,7 +6228,7 @@
                     "theoretical": {
                         "tput_user": 5750,
                         "tput_prefill": 46000,
-                        "e2el_ms": 5000
+                        "e2el_ms": 8300
                     }
                 }
             }
@@ -6090,6 +6268,60 @@
                         "tput_user": 5750,
                         "tput_prefill": 46000,
                         "e2el_ms": 5000
+                    }
+                }
+            }
+        ]
+    },
+    "bge-m3": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 5750,
+                        "tput_prefill": 300000,
+                        "e2el_ms": 5000
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 5750,
+                        "tput_prefill": 300000,
+                        "e2el_ms": 5000
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 4,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 5750,
+                        "tput_prefill": 300000,
+                        "e2el_ms": 5000
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 32,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 5750,
+                        "tput_prefill": 46000,
+                        "e2el_ms": 8300
                     }
                 }
             }

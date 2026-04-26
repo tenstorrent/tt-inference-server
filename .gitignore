@@ -55,11 +55,13 @@ scripts/examples/example_data
 !**/CMakeLists.txt
 !requirements*.txt
 !workflows/model_performance_reference.json
-!tests/server_tests/test_config.json
-!tests/server_tests/server_tests_config.json
+!server_tests/test_config.json
+!server_tests/server_tests_config.json
+!server_tests/test_suites/*.json
 !benchmarking/benchmark_targets/*.json
 !release_model_spec.json
 !tt-media-server/static/demos/images.json
+!tt-media-server/monitoring/grafana/**/*.json
 .github/workflows/*.json
 
 venv*/**
@@ -70,9 +72,9 @@ tt-media-server/huggingface
 *.log
 
 # ignore downloaded datsets
-tests/server_tests/datasets/*
+server_tests/datasets/*
 
 # ignore generated files
 model_spec.json
 # deprecated
-default_model_spec.json 
+default_model_spec.json

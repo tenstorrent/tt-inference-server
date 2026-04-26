@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import numpy as np
 from domain.video_generate_request import VideoGenerateRequest
 from model_services.base_job_service import BaseJobService
 from model_services.cpu_workload_handler import CpuWorkloadHandler
+from telemetry.telemetry_client import TelemetryEvent
+from utils.decorators import log_execution_time
 
 
 def create_video_worker_context():
@@ -56,6 +58,7 @@ class VideoService(BaseJobService):
             warmup_task_data=warmup_task_data,
         )
 
+    @log_execution_time("Video postprocessing", TelemetryEvent.POST_PROCESSING, None)
     async def post_process(self, result, input_request: VideoGenerateRequest):
         """Asynchronous postprocessing using queue-based workers"""
         try:

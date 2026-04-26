@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "utils/logger.hpp"
+#include "utils/scoped_fd.hpp"
 
 namespace tt::sockets {
 
@@ -116,9 +117,9 @@ class SocketManager {
   std::string host_;
   uint16_t port_;
 
-  int server_socket_ = -1;
-  int client_socket_ = -1;
-  int peer_socket_ = -1;  // Active connection socket
+  tt::utils::ScopedFd serverSocket;
+  tt::utils::ScopedFd clientSocket;
+  int peerSocket = -1;  // Non-owning view of active connection FD
 
   std::atomic<bool> running_{false};
   std::atomic<bool> connected_{false};

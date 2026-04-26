@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 """
 Generate Model Support documentation from MODEL_SPECS.
@@ -32,7 +32,6 @@ from typing import Dict, List, Optional, Set, Tuple
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from workflows.model_spec import (
-    VERSION,
     ModelSpecTemplate,
     generate_default_docker_link,
     model_weights_to_model_name,
@@ -575,6 +574,7 @@ def generate_model_page_group_page(
                         target_template.version,
                         target_template.tt_metal_commit,
                         target_template.vllm_commit,
+                        inference_engine=target_template.inference_engine,
                         multihost=is_multihost,
                     )
                 )
@@ -618,9 +618,10 @@ def generate_model_page_group_page(
             docker_image = target_template.docker_image
         else:
             docker_image = generate_default_docker_link(
-                VERSION,
+                target_template.version,
                 target_template.tt_metal_commit,
                 target_template.vllm_commit,
+                inference_engine=target_template.inference_engine,
                 multihost=device.is_multihost(),
             )
 

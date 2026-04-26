@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -15,7 +15,7 @@
 
 namespace tt::runners::sp_pipeline {
 
-using DecodeCallback = std::function<void(const llm_engine::TokenResult&)>;
+using DecodeCallback = std::function<void(const tt::domain::TokenResult&)>;
 
 class SpPipelineModelRunner : public ISpPipelineModelRunner {
  public:

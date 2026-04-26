@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -10,13 +10,13 @@
 #include <vector>
 
 #include "config/runner_config.hpp"
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/sequence.hpp"
 #include "utils/concurrent_queue.hpp"
 
 namespace tt::runners::sp_pipeline {
 
-using DecodeCallback = std::function<void(const llm_engine::TokenResult&)>;
-using DecodeQueue = tt::utils::LockFreeSPSCQueue<llm_engine::TokenResult>;
+using DecodeCallback = std::function<void(const tt::domain::TokenResult&)>;
+using DecodeQueue = tt::utils::LockFreeSPSCQueue<tt::domain::TokenResult>;
 
 enum class RequestPhase { PREFILL, DECODE };
 

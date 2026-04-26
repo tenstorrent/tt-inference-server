@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/sequence.hpp"
 
 #include <gtest/gtest.h>
 
 #include <sstream>
 
 #include "config/runner_config.hpp"
-#include "runners/llm_runner/sampling_params.hpp"
+#include "domain/sampling_params.hpp"
 #include "utils/id_generator.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
+using SamplingParams = tt::domain::SamplingParams;
+using Sequence = tt::domain::Sequence;
+using SequenceStatus = tt::domain::SequenceStatus;
 namespace {
 
 TEST(SamplingParamsTest, SerializeDeserialize_DefaultParams) {
@@ -195,4 +198,4 @@ TEST(SequenceTest, SerializeDeserialize_AfterAppendToken) {
 }
 
 }  // namespace
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

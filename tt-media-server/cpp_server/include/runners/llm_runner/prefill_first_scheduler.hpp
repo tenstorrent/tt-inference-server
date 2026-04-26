@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
 #include "runners/llm_runner/scheduler.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 /**
  * Always prefills when the prefill_queue has requests (original behaviour).
@@ -26,4 +26,4 @@ class PrefillFirstScheduler : public Scheduler {
   }
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

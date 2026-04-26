@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -9,6 +12,7 @@ DATASET="random"
 NUM_PROMPTS="${NUM_PROMPTS:-1}"
 RESULTS_DIR="${RESULTS_DIR:-bench_results}"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+REPORT_TYPE="vllm_bench_serve"
 
 mkdir -p "$RESULTS_DIR"
 
@@ -30,8 +34,8 @@ run_bench() {
         --max-concurrency "$concurrency" \
         --save-result \
         --result-filename "$filename"
-    jq --argjson isl "$isl" --argjson osl "$osl" \
-        '. + {input_seq_len: $isl, output_seq_len: $osl}' \
+    jq --argjson isl "$isl" --argjson osl "$osl" --arg report_type "$REPORT_TYPE" \
+        '. + {input_seq_len: $isl, output_seq_len: $osl, report_type: $report_type}' \
         "$filename" > "${filename}.tmp" && mv "${filename}.tmp" "$filename"
     echo "  -> Saved to $filename"
 }

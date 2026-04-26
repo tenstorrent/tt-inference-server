@@ -1,7 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 # test_job_database.py
 
-import pytest
 from sqlite3 import IntegrityError
+
+import pytest
 from utils.job_database import JobDatabase
 
 
@@ -15,6 +19,20 @@ def db_with_job(db):
     """DB with a single pre-inserted training job."""
     db.insert_job("job-1", "training", "model-1", {}, "in_progress", 1000)
     return db
+
+
+class TestInsertJobOrgId:
+    def test_insert_job_with_org_id(self, db):
+        db.insert_job(
+            "job-org", "training", "model-1", {}, "in_progress", 1000, org_id="org-abc"
+        )
+        result = db.get_job_by_id("job-org")
+        assert result["org_id"] == "org-abc"
+
+    def test_insert_job_without_org_id(self, db):
+        db.insert_job("job-no-org", "video", "model-1", {}, "queued", 1000)
+        result = db.get_job_by_id("job-no-org")
+        assert result["org_id"] is None
 
 
 class TestInsertCheckpoint:

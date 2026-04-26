@@ -1,0 +1,35 @@
+{
+    "_description": "Test suites for EMBEDDING model category",
+    "_category": "EMBEDDING",
+    "test_matrices": [
+        {
+            "models": [
+                "bge",
+                "qwen3_emb"
+            ],
+            "devices": [
+                "n150",
+                "t3k",
+                "galaxy"
+            ],
+            "test_cases": [
+                {
+                    "template": "EmbeddingLoadTest",
+                    "enabled": true,
+                    "description": "Embedding load test",
+                    "targets": {
+                        "embedding_time": 1
+                    },
+                    "model_targets": {
+                        "bge+n150": {
+                            "embedding_time": 0.1
+                        },
+                        "qwen3_emb+n150": {
+                            "embedding_time": 0.1
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from config.constants import ModelRunners
 from config.settings import settings
@@ -46,12 +46,15 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_WHISPER: lambda wid: __import__(
         "tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]
     ).TTWhisperRunner(wid),
-    ModelRunners.VLLM: lambda wid: __import__(
-        "tt_model_runners.vllm_runner", fromlist=["VLLMRunner"]
-    ).VLLMRunner(wid),
+    ModelRunners.VLLMForge: lambda wid: __import__(
+        "tt_model_runners.vllm_runner", fromlist=["VLLMForgeRunner"]
+    ).VLLMForgeRunner(wid),
     ModelRunners.BGELargeEN_V1_5: lambda wid: __import__(
         "tt_model_runners.embedding_runner", fromlist=["BGELargeENRunner"]
     ).BGELargeENRunner(wid),
+    ModelRunners.BGEM3: lambda wid: __import__(
+        "tt_model_runners.embedding_runner", fromlist=["BGEM3Runner"]
+    ).BGEM3Runner(wid),
     ModelRunners.LLM_TEST: lambda wid: __import__(
         "tt_model_runners.llm_test_runner", fromlist=["LLMTestRunner"]
     ).LLMTestRunner(wid),
@@ -70,6 +73,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.vllm_forge_llama_70b",
         fromlist=["VLLMForgeLlama70BRunner"],
     ).VLLMForgeLlama70BRunner(wid),
+    ModelRunners.VLLMForge_GEMMA4_31B: lambda wid: __import__(
+        "tt_model_runners.vllm_forge_gemma4_31b",
+        fromlist=["VLLMForgeGemma4_31BRunner"],
+    ).VLLMForgeGemma4_31BRunner(wid),
     ModelRunners.TT_XLA_RESNET: lambda wid: __import__(
         "tt_model_runners.forge_runners.runners", fromlist=["ForgeResnetRunner"]
     ).ForgeResnetRunner(wid),
@@ -95,6 +102,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.forge_training_runners.training_gemma_lora_runner",
         fromlist=["TrainingGemmaLoraRunner"],
     ).TrainingGemmaLoraRunner(wid),
+    ModelRunners.LORA_SINGLE_CHIP: lambda wid: __import__(
+        "tt_model_runners.forge_runners.lora_single_chip_runner",
+        fromlist=["LoraSingleChipRunner"],
+    ).LoraSingleChipRunner(wid),
     ModelRunners.TRAINING_LLAMA_LORA: lambda wid: __import__(
         "tt_model_runners.forge_training_runners.training_llama_lora_runner",
         fromlist=["TrainingLlamaLoraRunner"],
@@ -112,6 +123,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.forge_runners.sdxl_forge_runner",
         fromlist=["SDXLForgeRunner"],
     ).SDXLForgeRunner(wid),
+    ModelRunners.TT_Z_IMAGE_TURBO: lambda wid: __import__(
+        "tt_model_runners.z_image_turbo_runner",
+        fromlist=["ZImageTurboRunner"],
+    ).ZImageTurboRunner(wid),
 }
 
 

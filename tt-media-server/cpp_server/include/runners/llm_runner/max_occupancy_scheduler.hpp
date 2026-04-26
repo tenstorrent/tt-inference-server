@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
 #include "runners/llm_runner/scheduler.hpp"
 
-namespace llm_engine {
+namespace tt::runners::llm_engine {
 
 /**
  * Keeps the device at full occupancy (max_in_flight_count) whenever possible.
@@ -38,4 +38,4 @@ class MaxOccupancyScheduler : public Scheduler {
   }
 };
 
-}  // namespace llm_engine
+}  // namespace tt::runners::llm_engine

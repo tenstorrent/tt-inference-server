@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
+#include <boost/interprocess/creation_tags.hpp>
 #include <boost/interprocess/ipc/message_queue.hpp>
 #include <boost/interprocess/streams/bufferstream.hpp>
 #include <concepts>
@@ -45,7 +46,7 @@ class BoostIpcMemoryQueue {
 
   /** Create a new queue (main process). Removes any stale shm left by a
    *  previous process that crashed without cleanup. Falls back to
-   *  open_or_create + drain if removal is not possible (e.g. race with
+   *  open_only + drain if removal is not possible (e.g. race with
    *  another process, container permission issues). */
   BoostIpcMemoryQueue(const std::string& name, int capacity) : name_(name) {
     bi_ipc::message_queue::remove(name.c_str());
@@ -55,10 +56,10 @@ class BoostIpcMemoryQueue {
     } catch (const bi_ipc::interprocess_exception&) {
       TT_LOG_WARN(
           "[BoostIpcQueue] '{}' still exists after remove, "
-          "falling back to open_or_create + drain",
+          "opening existing queue and draining",
           name);
-      queue_ = std::make_unique<bi_ipc::message_queue>(
-          bi_ipc::open_or_create, name.c_str(), capacity, MAX_MSG_SIZE);
+      queue_ = std::make_unique<bi_ipc::message_queue>(bi_ipc::open_only,
+                                                       name.c_str());
       drain();
     }
   }
@@ -199,9 +200,6 @@ class BoostIpcMemoryQueue {
 constexpr size_t MEMORY_REQUEST_MAX_MSG_SIZE = 256;
 constexpr size_t MEMORY_RESULT_MAX_MSG_SIZE = 4096;
 constexpr int MEMORY_QUEUE_CAPACITY = 64;
-
-inline constexpr const char* k_memory_request_queue_name = "tt_mem_requests";
-inline constexpr const char* k_memory_result_queue_name = "tt_mem_results";
 
 using MemoryRequestQueue =
     BoostIpcMemoryQueue<domain::ManageMemoryTask, MEMORY_REQUEST_MAX_MSG_SIZE>;

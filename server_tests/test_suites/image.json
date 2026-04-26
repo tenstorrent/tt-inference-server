@@ -1,0 +1,448 @@
+{
+    "_description": "Test suites for IMAGE model category",
+    "_category": "IMAGE",
+    "test_matrices": [
+        {
+            "_comment": "SDXL with full LoRA test set; galaxy has slightly different timing",
+            "models": [
+                "sdxl"
+            ],
+            "devices": [
+                "n150",
+                "t3k",
+                "galaxy"
+            ],
+            "test_cases": [
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "20 iterations",
+                    "targets": {
+                        "num_inference_steps": 20,
+                        "image_generation_time": 10
+                    },
+                    "model_targets": {
+                        "sdxl+galaxy": {
+                            "image_generation_time": 11
+                        }
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "30 iterations",
+                    "targets": {
+                        "num_inference_steps": 30,
+                        "image_generation_time": 14
+                    },
+                    "model_targets": {
+                        "sdxl+galaxy": {
+                            "image_generation_time": 15
+                        }
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "50 iterations",
+                    "targets": {
+                        "num_inference_steps": 50,
+                        "image_generation_time": 23
+                    },
+                    "model_targets": {
+                        "sdxl+galaxy": {
+                            "image_generation_time": 25
+                        }
+                    }
+                },
+                {
+                    "template": "ImageGenerationParamTest",
+                    "enabled": true,
+                    "description": "Param validation"
+                },
+                {
+                    "template": "ImageGenerationEvalsTest",
+                    "enabled": true,
+                    "description": "LoRA eval: pixel-art-xl",
+                    "targets": {
+                        "request": {
+                            "model_name": "stable-diffusion-xl-base-1.0-lora",
+                            "num_prompts": 100,
+                            "num_inference_steps": 20,
+                            "lora_path": "nerijs/pixel-art-xl",
+                            "lora_scale": 0.8
+                        }
+                    }
+                },
+                {
+                    "template": "ImageGenerationEvalsTest",
+                    "enabled": true,
+                    "description": "LoRA eval: ColoringBookRedmond-V2",
+                    "targets": {
+                        "request": {
+                            "model_name": "stable-diffusion-xl-base-1.0-lora",
+                            "num_prompts": 100,
+                            "num_inference_steps": 20,
+                            "lora_path": "artificialguybr/ColoringBookRedmond-V2",
+                            "lora_scale": 0.6
+                        }
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoraLoadTest",
+                    "enabled": true,
+                    "description": "Mixed LoRA load test",
+                    "targets": {
+                        "batch_size": 10,
+                        "num_inference_steps": 20,
+                        "target_time": 120,
+                        "lora_configs": [
+                            {
+                                "lora_path": "nerijs/pixel-art-xl",
+                                "lora_scale": 0.8
+                            },
+                            {
+                                "lora_path": "artificialguybr/ColoringBookRedmond-V2",
+                                "lora_scale": 0.6
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "models": [
+                "sdxl_img2img"
+            ],
+            "devices": [
+                "n150",
+                "t3k",
+                "galaxy"
+            ],
+            "test_cases": [
+                {
+                    "template": "Img2ImgGenerationParamTest",
+                    "enabled": true,
+                    "description": "Param validation"
+                }
+            ]
+        },
+        {
+            "models": [
+                "sdxl_inpaint"
+            ],
+            "devices": [
+                "n150",
+                "t3k",
+                "galaxy"
+            ],
+            "test_cases": [
+                {
+                    "template": "InpaintingGenerationParamTest",
+                    "enabled": true,
+                    "description": "Param validation"
+                }
+            ]
+        },
+        {
+            "models": [
+                "sd35"
+            ],
+            "devices": [
+                "t3k",
+                "galaxy"
+            ],
+            "num_of_devices": 1,
+            "test_cases": [
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "20 iterations",
+                    "targets": {
+                        "num_inference_steps": 20
+                    },
+                    "model_targets": {
+                        "sd35+t3k": {
+                            "image_generation_time": 15
+                        },
+                        "sd35+galaxy": {
+                            "image_generation_time": 16
+                        }
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "30 iterations",
+                    "targets": {
+                        "num_inference_steps": 30
+                    },
+                    "model_targets": {
+                        "sd35+t3k": {
+                            "image_generation_time": 20
+                        },
+                        "sd35+galaxy": {
+                            "image_generation_time": 22
+                        }
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "50 iterations",
+                    "targets": {
+                        "num_inference_steps": 50
+                    },
+                    "model_targets": {
+                        "sd35+t3k": {
+                            "image_generation_time": 25
+                        },
+                        "sd35+galaxy": {
+                            "image_generation_time": 28
+                        }
+                    }
+                },
+                {
+                    "template": "ImageGenerationParamTest",
+                    "enabled": true,
+                    "description": "Param validation"
+                }
+            ]
+        },
+        {
+            "_comment": "FLUX.1-dev, FLUX.1-schnell, Motif share same test pattern; motif skips p300 via compatible_devices",
+            "models": [
+                "flux_dev",
+                "flux_schnell",
+                "motif"
+            ],
+            "devices": [
+                "t3k",
+                "galaxy",
+                "p150x4",
+                "p150x8",
+                "p300",
+                "p300x2"
+            ],
+            "num_of_devices": 1,
+            "test_cases": [
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "20 iterations",
+                    "targets": {
+                        "num_inference_steps": 20,
+                        "image_generation_time": 10
+                    },
+                    "model_targets": {
+                        "flux_dev+t3k": {
+                            "image_generation_time": 16
+                        },
+                        "flux_dev+galaxy": {
+                            "image_generation_time": 11
+                        },
+                        "flux_schnell+galaxy": {
+                            "image_generation_time": 11
+                        },
+                        "motif+galaxy": {
+                            "image_generation_time": 11
+                        }
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "30 iterations",
+                    "targets": {
+                        "num_inference_steps": 30,
+                        "image_generation_time": 14
+                    },
+                    "model_targets": {
+                        "flux_dev+t3k": {
+                            "image_generation_time": 23
+                        },
+                        "flux_dev+galaxy": {
+                            "image_generation_time": 15
+                        },
+                        "flux_schnell+galaxy": {
+                            "image_generation_time": 15
+                        },
+                        "motif+galaxy": {
+                            "image_generation_time": 15
+                        }
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "50 iterations",
+                    "targets": {
+                        "num_inference_steps": 50,
+                        "image_generation_time": 23
+                    },
+                    "model_targets": {
+                        "flux_dev+t3k": {
+                            "image_generation_time": 36
+                        },
+                        "flux_dev+galaxy": {
+                            "image_generation_time": 25
+                        },
+                        "flux_schnell+galaxy": {
+                            "image_generation_time": 25
+                        },
+                        "motif+galaxy": {
+                            "image_generation_time": 25
+                        }
+                    }
+                },
+                {
+                    "template": "ImageGenerationParamTest",
+                    "enabled": true,
+                    "description": "Param validation",
+                    "model_targets": {
+                        "flux_dev": {
+                            "model": "FLUX.1-dev"
+                        },
+                        "flux_schnell": {
+                            "model": "FLUX.1-schnell"
+                        },
+                        "motif": {
+                            "model": "Motif-Image-6B-Preview"
+                        }
+                    }
+                }
+            ]
+        }
+    ],
+    "test_suites": [
+        {
+            "id": "sdxl-n300",
+            "weights": [
+                "stable-diffusion-xl-base-1.0"
+            ],
+            "device": "n300",
+            "num_of_devices": 1,
+            "model_marker": "sdxl",
+            "test_cases": [
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "20 iterations",
+                    "targets": {
+                        "num_inference_steps": 20,
+                        "image_generation_time": 10
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "30 iterations",
+                    "targets": {
+                        "num_inference_steps": 30,
+                        "image_generation_time": 14
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "50 iterations",
+                    "targets": {
+                        "num_inference_steps": 50,
+                        "image_generation_time": 23
+                    }
+                },
+                {
+                    "template": "ImageGenerationParamTest",
+                    "enabled": true,
+                    "description": "Param validation"
+                }
+            ]
+        },
+        {
+            "id": "sdxl-p150x8",
+            "weights": [
+                "stable-diffusion-xl-base-1.0"
+            ],
+            "device": "p150x8",
+            "num_of_devices": 4,
+            "model_marker": "sdxl",
+            "test_cases": [
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "20 iterations",
+                    "targets": {
+                        "num_inference_steps": 20,
+                        "image_generation_time": 10
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "30 iterations",
+                    "targets": {
+                        "num_inference_steps": 30,
+                        "image_generation_time": 14
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "50 iterations",
+                    "targets": {
+                        "num_inference_steps": 50,
+                        "image_generation_time": 23
+                    }
+                },
+                {
+                    "template": "ImageGenerationParamTest",
+                    "enabled": true,
+                    "description": "Param validation"
+                }
+            ]
+        },
+        {
+            "id": "sdxl-p300x2",
+            "weights": [
+                "stable-diffusion-xl-base-1.0"
+            ],
+            "device": "p300x2",
+            "num_of_devices": 2,
+            "model_marker": "sdxl",
+            "test_cases": [
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "20 iterations",
+                    "targets": {
+                        "num_inference_steps": 20,
+                        "image_generation_time": 10
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "30 iterations",
+                    "targets": {
+                        "num_inference_steps": 30,
+                        "image_generation_time": 14
+                    }
+                },
+                {
+                    "template": "ImageGenerationLoadTest",
+                    "enabled": true,
+                    "description": "50 iterations",
+                    "targets": {
+                        "num_inference_steps": 50,
+                        "image_generation_time": 23
+                    }
+                },
+                {
+                    "template": "ImageGenerationParamTest",
+                    "enabled": true,
+                    "description": "Param validation"
+                }
+            ]
+        }
+    ]
+}

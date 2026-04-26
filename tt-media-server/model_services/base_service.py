@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 from abc import ABC
@@ -9,7 +9,7 @@ from config.settings import settings
 from domain.base_request import BaseRequest
 from model_services.scheduler import Scheduler
 from resolver.scheduler_resolver import get_scheduler
-from telemetry.telemetry_client import TelemetryEvent
+from telemetry.telemetry_client import TelemetryEvent, jobs_in_progress
 from utils.decorators import log_execution_time
 from utils.hugging_face_utils import HuggingFaceUtils
 from utils.logger import TTLogger
@@ -44,44 +44,45 @@ class BaseService(ABC):
     )
     async def process_request(self, input_request: BaseRequest):
         """Process non-streaming request with optional segmentation"""
-        request = await self.pre_process(input_request)
+        in_flight = jobs_in_progress.labels(model_type=settings.model_runner)
+        in_flight.inc()
+        try:
+            request = await self.pre_process(input_request)
 
-        # Get segments from request if available
-        segments = getattr(request, "_segments", None)
+            segments = getattr(request, "_segments", None)
 
-        # If no segments, process as single request
-        if not segments:
-            result = await self.process(request)
-        else:
-            # Process segments in parallel
-            segment_requests = [
-                self.create_segment_request(request, segment, i)
-                for i, segment in enumerate(segments)
-            ]
+            if not segments:
+                result = await self.process(request)
+            else:
+                segment_requests = [
+                    self.create_segment_request(request, segment, i)
+                    for i, segment in enumerate(segments)
+                ]
+                tasks = [self.process(req) for req in segment_requests]
+                results = await asyncio.gather(*tasks)
+                result = self.combine_results(results)
 
-            # Create tasks maintaining order - asyncio.gather preserves order
-            tasks = [self.process(req) for req in segment_requests]
-
-            # Gather results in order
-            results = await asyncio.gather(*tasks)
-
-            # Combine results
-            result = self.combine_results(results)
-
-        if result is not None:
-            return await self.post_process(result, input_request)
-        else:
-            self.logger.error(f"Post processing failed for task {request._task_id}")
-            raise ValueError("Post processing failed")
+            if result is not None:
+                return await self.post_process(result, input_request)
+            else:
+                self.logger.error(f"Post processing failed for task {request._task_id}")
+                raise ValueError("Post processing failed")
+        finally:
+            in_flight.dec()
 
     @log_execution_time(
         "Streaming request processing", TelemetryEvent.BASE_TOTAL_PROCESSING, None
     )
     async def process_streaming_request(self, input_request: BaseRequest):
         """Process streaming request - returns async generator"""
-        request = await self.pre_process(input_request)
-        async for result in self.process_streaming(request):
-            yield await self.post_process(result)
+        in_flight = jobs_in_progress.labels(model_type=settings.model_runner)
+        in_flight.inc()
+        try:
+            request = await self.pre_process(input_request)
+            async for result in self.process_streaming(request):
+                yield await self.post_process(result)
+        finally:
+            in_flight.dec()
 
     def check_is_model_ready(self) -> dict:
         """Detailed system status for monitoring"""
@@ -190,6 +191,10 @@ class BaseService(ABC):
                     # Wait only when queue is empty
                     chunk = await asyncio.wait_for(queue.get(), timeout=dynamic_timeout)
 
+                # Propagate worker errors to the endpoint layer
+                if isinstance(chunk, Exception):
+                    raise chunk
+
                 # Type-based dispatch (faster than isinstance)
                 chunk_type = chunk.get("type")
 
@@ -211,11 +216,6 @@ class BaseService(ABC):
         except asyncio.TimeoutError:
             self.logger.error(
                 f"Streaming timed out chunks for task {request._task_id} after {dynamic_timeout}s"
-            )
-            raise
-        except Exception as e:
-            self.logger.error(
-                f"Model-level streaming failed for task {request._task_id}: {e}"
             )
             raise
         finally:

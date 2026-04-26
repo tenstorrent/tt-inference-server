@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -82,6 +83,41 @@ enum class ModelRunnerType {
   MOCK_PIPELINE,
   PIPELINE_MANAGER,
   PREFILL
+};
+
+enum class Model {
+  DEEPSEEK_R1_0528,
+  LLAMA_3_1_8B_INSTRUCT,
+};
+
+struct ModelMapping {
+  Model model;
+  std::string_view name;
+};
+
+static constexpr ModelMapping MODEL_MAPPINGS[] = {
+    {Model::DEEPSEEK_R1_0528, "deepseek-ai/DeepSeek-R1-0528"},
+    {Model::LLAMA_3_1_8B_INSTRUCT, "meta-llama/Llama-3.1-8B-Instruct"},
+};
+
+inline std::string toString(Model m) {
+  for (const auto& entry : MODEL_MAPPINGS) {
+    if (entry.model == m) return std::string(entry.name);
+  }
+  throw std::invalid_argument("Cannot match model to string");
+}
+
+inline Model modelFromString(const std::string_view& v) {
+  for (const auto& entry : MODEL_MAPPINGS) {
+    if (entry.name == v) return entry.model;
+  }
+  throw std::invalid_argument("Invalid model: " + std::string(v));
+}
+
+enum class ResponseFormatType : uint8_t {
+  TEXT = 0,
+  JSON_OBJECT = 1,
+  JSON_SCHEMA = 2
 };
 
 enum class SchedulingPolicy {
