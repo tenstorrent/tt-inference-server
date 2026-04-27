@@ -76,11 +76,12 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
 
   if (request.tool_choice.has_value()) {
     const auto& type = request.tool_choice->type;
-    if (type != "auto" && type != "none" && type != "function") {
+    if (type != "auto" && type != "none" && type != "function" &&
+        type != "required") {
       throw std::invalid_argument(
           "tool_choice='" + type +
-          "' is not yet supported by this server; only 'auto', 'none', and "
-          "'function' are currently implemented");
+          "' is not yet supported by this server; only 'auto', 'none', "
+          "'function', and 'required' are currently implemented");
     }
 
     // Validate named function call
@@ -111,6 +112,15 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
       if (!found) {
         throw std::invalid_argument("tool_choice.function.name '" +
                                     functionName + "' not found in tools");
+      }
+    }
+
+    // Validate required tool choice
+    if (type == "required") {
+      if (!request.tools.has_value() || request.tools->empty()) {
+        throw std::invalid_argument(
+            "tools array is required and must not be empty when tool_choice "
+            "type is 'required'");
       }
     }
   }
