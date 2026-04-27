@@ -193,6 +193,14 @@
             display: flex;
             align-items: center;
             gap: 6px;
+            color: var(--accent-red);
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+
+        .clear-chat-btn:hover {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--accent-red);
+            border-color: var(--accent-red);
         }
 
         /* Main Content */
@@ -228,11 +236,11 @@
         }
 
         .message.user {
-            align-self: flex-start;
+            align-self: flex-end;
         }
 
         .message.assistant {
-            align-self: flex-end;
+            align-self: flex-start;
         }
 
         @keyframes fadeIn {
@@ -247,7 +255,7 @@
             margin-bottom: 4px;
         }
 
-        .message.assistant .message-header {
+        .message.user .message-header {
             justify-content: flex-end;
         }
 
@@ -286,13 +294,13 @@
         .message.user .message-content {
             background: rgba(59, 130, 246, 0.1);
             border-color: rgba(59, 130, 246, 0.2);
-            border-radius: 16px 16px 16px 4px;
+            border-radius: 16px 16px 4px 16px;
         }
 
         .message.assistant .message-content {
             background: rgba(139, 92, 246, 0.1);
             border-color: rgba(139, 92, 246, 0.2);
-            border-radius: 16px 16px 4px 16px;
+            border-radius: 16px 16px 16px 4px;
         }
 
         /* Audio Player */
@@ -399,7 +407,6 @@
             border-radius: 12px;
             width: fit-content;
             margin: 8px 0;
-            margin-left: auto;
             font-size: 0.85rem;
         }
 
@@ -515,8 +522,7 @@
         }
 
         .text-input-row input::placeholder {
-            color: var(--accent-purple);
-            opacity: 0.4;
+            color: var(--text-secondary);
         }
 
         .text-send-btn {
@@ -1742,16 +1748,30 @@
             _activeStreamAbort = null;
             _activeAudioQueue = null;
             thinkingIndicator.style.display = 'none';
-            recordBtn.disabled = false;
         }
+
+        let wakeWordSilenceTimer = null;
+        let wakeWordHeardSpeech = false;
 
         function onWakeWordDetected() {
             if (isRecording) return;
             if (isProcessing) bargeIn();
             playSoundCue('wakeword');
             pauseOwwAudio();
+            wakeWordHeardSpeech = false;
             startRecording();
-            controlStatus.textContent = 'Hey TT! Listening — auto-sends on silence';
+            controlStatus.textContent = 'Hey TT! Listening...';
+
+            if (wakeWordSilenceTimer) clearTimeout(wakeWordSilenceTimer);
+            wakeWordSilenceTimer = setTimeout(() => {
+                if (isRecording && !wakeWordHeardSpeech) {
+                    console.log('[OWW] No speech after wake word, cancelling');
+                    playSoundCue('rec-stop');
+                    stopRecording();
+                    controlStatus.textContent = getModeHint(currentMode);
+                    if (wakeWordEnabled) resumeOwwAudio();
+                }
+            }, 4000);
         }
 
         async function startWakeWordListener() {
@@ -1901,6 +1921,8 @@
                     workletURL: "/static/vad/vad.worklet.bundle.min.js",
                     onSpeechStart: () => {
                         if (!isRecording) return;
+                        wakeWordHeardSpeech = true;
+                        if (wakeWordSilenceTimer) { clearTimeout(wakeWordSilenceTimer); wakeWordSilenceTimer = null; }
                         setStatus('recording', 'Hearing you...');
                         controlStatus.textContent = 'Listening... auto-sends when you pause';
                     },
@@ -1912,7 +1934,6 @@
                         if (duration < 500) {
                             controlStatus.textContent = 'Recording too short - hold longer';
                             isProcessing = false;
-                            recordBtn.disabled = false;
                             setStatus('idle', 'Ready');
                             if (wakeWordEnabled) resumeOwwAudio();
                             return;
@@ -2596,7 +2617,13 @@
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
                     e.preventDefault();
-                    stopAllAudio();
+                    if (isRecording) {
+                        stopRecording();
+                    } else if (isProcessing) {
+                        bargeIn();
+                    } else {
+                        stopAllAudio();
+                    }
                     return;
                 }
                 const tag = document.activeElement?.tagName;
@@ -2692,7 +2719,6 @@
                     if (duration < 500) {
                         controlStatus.textContent = 'Recording too short - hold longer';
                         isProcessing = false;
-                        recordBtn.disabled = false;
                         setStatus('idle', 'Ready');
                         return;
                     }
@@ -2718,6 +2744,7 @@
 
         function stopRecording() {
             if (!isRecording) return;
+            if (wakeWordSilenceTimer) { clearTimeout(wakeWordSilenceTimer); wakeWordSilenceTimer = null; }
             playSoundCue('rec-stop');
 
             if (vadReady) {
@@ -2832,6 +2859,7 @@
                                 activeTimer = null;
                                 const thinkDuration = ((Date.now() - thinkStart) / 1000).toFixed(1);
                                 setStatus('speaking', 'Speaking');
+                                controlStatus.textContent = 'Speaking — press mic or Space to interrupt';
                                 thinkingIndicator.style.display = 'none';
                                 addMessage('assistant', assistantText, null, `Generated in ${thinkDuration}s`);
                                 const lastMsg = chatContainer.querySelector('.message.assistant:last-child');
@@ -2957,7 +2985,6 @@
         async function processAudio(audioBlob) {
             isProcessing = true;
             unlockAudio();
-            recordBtn.disabled = true;
             abortController = new AbortController();
             setStatus('thinking', 'Processing');
             controlStatus.textContent = 'Processing...';
@@ -3010,7 +3037,6 @@
             } finally {
                 if (activeTimer) { clearInterval(activeTimer); activeTimer = null; }
                 isProcessing = false;
-                recordBtn.disabled = false;
                 document.getElementById('textInput').disabled = false;
                 document.getElementById('textSendBtn').disabled = false;
                 abortController = null;
