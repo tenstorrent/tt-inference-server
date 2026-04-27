@@ -271,6 +271,13 @@ void LLMController::chatCompletions(
             }
 
             (*cb)(resp);
+          } catch (const std::invalid_argument& e) {
+            auto sessionId = request->sessionId;
+            if (sessionId.has_value() && sessionManager) {
+              sessionManager->releaseInFlight(sessionId.value());
+            }
+            (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
+                                "invalid_request_error"));
           } catch (const services::QueueFullException& e) {
             auto sessionId = request->sessionId;
             if (sessionId.has_value() && sessionManager) {
@@ -372,6 +379,9 @@ void LLMController::handleStreaming(
           }
 
           (*cb)(writer->buildResponse());
+        } catch (const std::invalid_argument& e) {
+          (*cb)(errorResponse(drogon::k400BadRequest, e.what(),
+                              "invalid_request_error"));
         } catch (const services::QueueFullException& e) {
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
                               "rate_limit_exceeded"));
