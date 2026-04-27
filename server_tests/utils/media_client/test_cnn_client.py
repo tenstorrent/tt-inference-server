@@ -84,6 +84,10 @@ class TestCnnClientStrategyRunEval(unittest.TestCase):
             "published_score": 0.9,
             "published_score_ref": "ref",
             "score": 1.5,  # TTFT average: (1.0 + 2.0) / 2
+            # accuracy_check derived from API success rate (PASS=2 per ReportCheckTypes)
+            "accuracy_check": 2,
+            # tput_user = 1 / mean_ttft = 1 / 1.5
+            "tput_user": pytest.approx(1.0 / 1.5),
         }
         for key, value in expected.items():
             assert eval_result[key] == value, f"Mismatch for {key}"
@@ -94,6 +98,33 @@ class TestCnnClientStrategyRunEval(unittest.TestCase):
 
         with pytest.raises(Exception):
             strategy.run_eval()
+
+    @patch("utils.media_clients.cnn_client.get_num_calls", return_value=2)
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("pathlib.Path.mkdir")
+    def test_run_eval_accuracy_check_fail_on_api_failures(
+        self, mock_mkdir, mock_file, mock_num_calls
+    ):
+        """Non-MobileNetV2 path: accuracy_check should be FAIL (3) if any API call failed."""
+        strategy = self._create_strategy()
+        status_list = [
+            CnnGenerationTestStatus(status=True, elapsed=1.0),
+            CnnGenerationTestStatus(status=False, elapsed=2.0),
+        ]
+
+        with patch.object(strategy, "get_health", return_value=(True, "tt-resnet")):
+            with patch.object(
+                strategy,
+                "_run_image_analysis_benchmark",
+                return_value=status_list,
+            ):
+                strategy.run_eval()
+
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        eval_result = json.loads(written_content)[0]
+        # PASS=2, FAIL=3 per ReportCheckTypes
+        assert eval_result["accuracy_check"] == 3
 
     @patch("utils.media_clients.cnn_client.get_num_calls", return_value=1)
     def test_run_eval_propagates_benchmark_exception(self, mock_num_calls):
@@ -174,12 +205,14 @@ class TestCnnClientStrategyRunBenchmark(unittest.TestCase):
         for key, value in expected_metadata.items():
             assert report_data[key] == value
 
-        # Compare benchmarks structure
+        # Compare benchmarks structure: throughput now derived as 1 / mean_ttft
+        # (CNN classifiers have no inference-steps concept)
         expected_benchmarks = {
             "num_requests": 2,
             "num_inference_steps": 50,
             "ttft": 1.5,  # (1.0 + 2.0) / 2
-            "inference_steps_per_second": 37.5,  # (50.0 + 25.0) / 2
+            "tput_user": pytest.approx(1.0 / 1.5),
+            "inference_steps_per_second": pytest.approx(1.0 / 1.5),
         }
         for key, value in expected_benchmarks.items():
             assert report_data["benchmarks"][key] == value
@@ -258,9 +291,10 @@ class TestCnnClientStrategyRunImageAnalysisBenchmark(unittest.TestCase):
 
         result = strategy._run_image_analysis_benchmark(3)
 
+        # num_calls measurements + 1 warmup that is excluded from results
         assert len(result) == 3
         assert all(isinstance(s, CnnGenerationTestStatus) for s in result)
-        assert mock_analyze.call_count == 3
+        assert mock_analyze.call_count == 4
 
     @patch.object(CnnClientStrategy, "_analyze_image", return_value=(True, 0.5))
     def test_run_image_analysis_benchmark_single_call(self, mock_analyze):
@@ -270,6 +304,8 @@ class TestCnnClientStrategyRunImageAnalysisBenchmark(unittest.TestCase):
 
         assert len(result) == 1
         assert result[0].elapsed == 0.5
+        # 1 measurement + 1 warmup
+        assert mock_analyze.call_count == 2
 
 
 class TestCnnClientStrategyGenerateReport(unittest.TestCase):
@@ -323,7 +359,8 @@ class TestCnnClientStrategyGenerateReport(unittest.TestCase):
         expected_benchmarks = {
             "num_requests": 2,
             "ttft": 1.5,
-            "inference_steps_per_second": 37.5,
+            "tput_user": pytest.approx(1.0 / 1.5),
+            "inference_steps_per_second": pytest.approx(1.0 / 1.5),
         }
         for key, value in expected_benchmarks.items():
             assert report_data["benchmarks"][key] == value
@@ -343,6 +380,7 @@ class TestCnnClientStrategyGenerateReport(unittest.TestCase):
         expected_benchmarks = {
             "num_requests": 0,
             "ttft": 0,
+            "tput_user": 0,
             "inference_steps_per_second": 0,
         }
         for key, value in expected_benchmarks.items():
@@ -386,7 +424,7 @@ class TestCnnClientStrategyCalculateTtft(unittest.TestCase):
 )
 @patch.object(CnnClientStrategy, "_analyze_image", return_value=(True, 1.0))
 def test_run_image_analysis_various_num_calls(mock_analyze, num_calls):
-    """Test that benchmark runs correct number of iterations."""
+    """Test that benchmark runs correct number of iterations (plus one warmup)."""
     model_spec = MagicMock()
     model_spec.model_name = "test"
     device = MagicMock()
@@ -395,8 +433,9 @@ def test_run_image_analysis_various_num_calls(mock_analyze, num_calls):
 
     result = strategy._run_image_analysis_benchmark(num_calls)
 
+    # Warmup is excluded from results but counted in calls to _analyze_image
     assert len(result) == num_calls
-    assert mock_analyze.call_count == num_calls
+    assert mock_analyze.call_count == num_calls + 1
 
 
 @pytest.mark.parametrize(
