@@ -135,11 +135,11 @@ TEST_F(NamedFunctionCallingTest, ToolChoiceFunctionCreatesStructuredOutput) {
   auto llmRequest = request.toLLMRequest();
 
   // Verify tool_choice info is copied
-  ASSERT_TRUE(llmRequest.tool_choice_type.has_value());
-  EXPECT_EQ(llmRequest.tool_choice_type.value(), "function");
+  ASSERT_TRUE(llmRequest.tool_choice.has_value());
+  EXPECT_EQ(llmRequest.tool_choice->type, "function");
 
-  ASSERT_TRUE(llmRequest.tool_choice_function_name.has_value());
-  EXPECT_EQ(llmRequest.tool_choice_function_name.value(), "get_weather");
+  ASSERT_TRUE(llmRequest.tool_choice->function.has_value());
+  EXPECT_EQ(llmRequest.tool_choice->function.value(), "get_weather");
 
   // Verify response_format is set to JSON_SCHEMA
   ASSERT_TRUE(llmRequest.response_format.has_value());

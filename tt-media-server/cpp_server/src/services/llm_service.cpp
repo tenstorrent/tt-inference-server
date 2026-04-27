@@ -73,6 +73,16 @@ std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
 void LLMService::preProcess(domain::LLMRequest& request) const {
   BaseService::preProcess(request);
 
+  if (request.tool_choice.has_value()) {
+    const auto& type = request.tool_choice->type;
+    if (type != "auto" && type != "none" && type != "function") {
+      throw std::invalid_argument(
+          "tool_choice='" + type +
+          "' is not yet supported by this server; only 'auto', 'none', and "
+          "'function' are currently implemented");
+    }
+  }
+
   if (std::holds_alternative<std::string>(request.prompt)) {
     auto text = std::get<std::string>(request.prompt);
     static auto cfg = tt::utils::tokenizers::getTokenizerConfig();
@@ -354,13 +364,8 @@ void LLMService::processStreamingRequest(
   StreamCallbackEntry entry{std::move(callback), request.skip_special_tokens};
   streamCallbacks.insert(taskId, std::move(entry));
 
-  if (request.tool_choice_type.has_value()) {
-    tt::domain::tool_calls::ToolChoice toolChoice;
-    toolChoice.type = request.tool_choice_type.value();
-    if (request.tool_choice_function_name.has_value()) {
-      toolChoice.function = request.tool_choice_function_name.value();
-    }
-    toolChoiceMap.insert(taskId, std::move(toolChoice));
+  if (request.tool_choice.has_value()) {
+    toolChoiceMap.insert(taskId, request.tool_choice.value());
   }
 
   if (reasoningParser) {

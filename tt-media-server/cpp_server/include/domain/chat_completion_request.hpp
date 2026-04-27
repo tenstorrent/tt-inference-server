@@ -266,6 +266,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.length_penalty = length_penalty;
     out.stop_token_ids = stop_token_ids;
     out.parallel_tool_calls = parallel_tool_calls;
+    out.tool_choice = tool_choice;
     out.include_stop_str_in_output = include_stop_str_in_output;
     out.ignore_eos = ignore_eos;
     out.min_tokens = min_tokens;
@@ -278,30 +279,24 @@ struct ChatCompletionRequest : BaseRequest {
     out.response_format = response_format;
     out.sessionId = sessionId;
 
-    if (tool_choice.has_value()) {
-      out.tool_choice_type = tool_choice->type;
+    // When tool_choice is "function", create structured output for the
+    // specific function by generating a JSON schema from its parameters.
+    if (tool_choice.has_value() && tool_choice->type == "function" &&
+        tool_choice->function.has_value() && tools.has_value()) {
+      for (const auto& tool : tools.value()) {
+        if (tool.functionDefinition.name == tool_choice->function.value()) {
+          ResponseFormat format;
+          format.type = tt::config::ResponseFormatType::JSON_SCHEMA;
+          format.json_schema_name = tool.functionDefinition.name;
+          format.strict = true;
 
-      // When tool_choice is "function", create structured output for the
-      // specific function by generating a JSON schema from its parameters.
-      if (tool_choice->type == "function" &&
-          tool_choice->function.has_value() && tools.has_value()) {
-        out.tool_choice_function_name = tool_choice->function.value();
+          Json::StreamWriterBuilder writer;
+          writer["indentation"] = "";
+          format.json_schema_str =
+              Json::writeString(writer, tool.functionDefinition.parameters);
 
-        for (const auto& tool : tools.value()) {
-          if (tool.functionDefinition.name == tool_choice->function.value()) {
-            ResponseFormat format;
-            format.type = tt::config::ResponseFormatType::JSON_SCHEMA;
-            format.json_schema_name = tool.functionDefinition.name;
-            format.strict = true;
-
-            Json::StreamWriterBuilder writer;
-            writer["indentation"] = "";
-            format.json_schema_str =
-                Json::writeString(writer, tool.functionDefinition.parameters);
-
-            out.response_format = format;
-            break;
-          }
+          out.response_format = format;
+          break;
         }
       }
     }
@@ -318,13 +313,8 @@ struct ChatCompletionRequest : BaseRequest {
     const bool toolsMissing = !req.tools.has_value() || req.tools->empty();
 
     if (toolsMissing && type != "none") {
-      throw std::invalid_argument(
-          "tool_choice is provided but no tools are specified");
-    }
-
-    if (type != "auto" && type != "none" && type != "function") {
-      throw std::invalid_argument(
-          "tool_choice.type must be 'auto', 'none', or 'function'");
+      throw std::invalid_argument("tool_choice='" + type +
+                                  "' requires non-empty 'tools'");
     }
 
     if (type == "function") {

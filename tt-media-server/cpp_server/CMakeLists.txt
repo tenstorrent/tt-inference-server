@@ -156,6 +156,14 @@ endif()
 # Option for Tracy support
 option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
 
+if(ENABLE_TRACY AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(FATAL_ERROR
+        "Tracy profiling (ENABLE_TRACY=ON) must not be used in Release builds: "
+        "the Tracy client spawns background threads that degrade throughput on "
+        "machines with limited cores. Use a Debug build instead: "
+        "./build.sh --tracy")
+endif()
+
 # Option for Kafka support
 option(KAFKA_ENABLED "Enable Kafka messaging support" OFF)
 
@@ -459,11 +467,11 @@ target_include_directories(test_chat_template_tools PRIVATE
 add_executable(test_chat_completion_request tests/test_chat_completion_request.cpp)
 target_link_libraries(test_chat_completion_request PRIVATE
     llm_runner_lib
-    JsonCpp::JsonCpp
-    GTest::gtest_main
+    ${CMAKE_THREAD_LIBS_INIT}
 )
 target_include_directories(test_chat_completion_request PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
 
 add_executable(worker_metrics_shm_test
@@ -517,9 +525,9 @@ gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
-gtest_discover_tests(test_chat_completion_request)
 
 # Register tool call tests
+add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
 add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
 

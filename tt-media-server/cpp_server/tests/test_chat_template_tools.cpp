@@ -27,10 +27,20 @@ struct TokenizerTemplateConfig {
   virtual const char* toolSep() const = 0;
   virtual const char* toolCallEnd() const = 0;
   virtual const char* toolCallsEnd() const = 0;
+  virtual const char* toolOutputsBegin() const = 0;
+  virtual const char* toolOutputBegin() const = 0;
+  virtual const char* toolOutputEnd() const = 0;
+  virtual const char* toolOutputsEnd() const = 0;
+  virtual const char* endOfSentence() const = 0;
 
-  // Build the tool section for this tokenizer
+  // Build sections
   virtual std::string buildToolSection(
       const std::vector<Tool>& tools) const = 0;
+
+  virtual std::string buildAssistantWithToolCalls(
+      const ChatMessage& message) const = 0;
+
+  virtual std::string buildToolOutput(const ChatMessage& message) const = 0;
 
   // Name for logging
   virtual const char* name() const = 0;
@@ -47,6 +57,17 @@ struct DeepSeekTemplateConfig : public TokenizerTemplateConfig {
   const char* toolSep() const override { return "<｜tool▁sep｜>"; }
   const char* toolCallEnd() const override { return "<｜tool▁call▁end｜>"; }
   const char* toolCallsEnd() const override { return "<｜tool▁calls▁end｜>"; }
+  const char* toolOutputsBegin() const override {
+    return "<｜tool▁outputs▁begin｜>";
+  }
+  const char* toolOutputBegin() const override {
+    return "<｜tool▁output▁begin｜>";
+  }
+  const char* toolOutputEnd() const override { return "<｜tool▁output▁end｜>"; }
+  const char* toolOutputsEnd() const override {
+    return "<｜tool▁outputs▁end｜>";
+  }
+  const char* endOfSentence() const override { return "<｜end▁of▁sentence｜>"; }
   const char* name() const override { return "DeepSeek"; }
 
   std::string buildToolSection(const std::vector<Tool>& tools) const override {
@@ -70,6 +91,33 @@ struct DeepSeekTemplateConfig : public TokenizerTemplateConfig {
 
     return out.str();
   }
+
+  std::string buildAssistantWithToolCalls(
+      const ChatMessage& message) const override {
+    std::ostringstream out;
+
+    // Optional text content before tool calls
+    if (!message.content.empty()) {
+      out << assistantTag() << message.content;
+    }
+
+    // Tool calls section
+    out << toolCallsBegin();
+    for (const auto& toolCall : message.tool_calls.value()) {
+      out << toolCallBegin() << "function" << toolSep()
+          << toolCall.functionCall.name << "\n```json\n"
+          << toolCall.functionCall.arguments << "\n```" << toolCallEnd();
+    }
+    out << toolCallsEnd() << endOfSentence();
+
+    return out.str();
+  }
+
+  std::string buildToolOutput(const ChatMessage& message) const override {
+    std::ostringstream out;
+    out << toolOutputBegin() << message.content << toolOutputEnd();
+    return out.str();
+  }
 };
 
 // Get DeepSeek config instance
@@ -77,6 +125,113 @@ const TokenizerTemplateConfig* getDeepSeekConfig() {
   static DeepSeekTemplateConfig config;
   return &config;
 }
+
+// ============================================================================
+// Common Test Fixtures
+// ============================================================================
+
+// Create a standard weather tool definition
+Tool createWeatherTool() {
+  Tool tool;
+  tool.type = "function";
+  tool.functionDefinition.name = "get_weather";
+  tool.functionDefinition.description = "Get weather info";
+
+  Json::Value params;
+  params["type"] = "object";
+  params["properties"]["location"]["type"] = "string";
+  params["required"].append("location");
+  tool.functionDefinition.parameters = params;
+
+  return tool;
+}
+
+// Create a time tool definition
+Tool createTimeTool() {
+  Tool tool;
+  tool.type = "function";
+  tool.functionDefinition.name = "get_time";
+  tool.functionDefinition.description = "Get time";
+
+  Json::Value params;
+  params["type"] = "object";
+  params["properties"]["timezone"]["type"] = "string";
+  tool.functionDefinition.parameters = params;
+
+  return tool;
+}
+
+// Create a simple user message
+ChatMessage createUserMessage(const std::string& content) {
+  ChatMessage msg;
+  msg.role = "user";
+  msg.content = content;
+  return msg;
+}
+
+// Create a simple assistant message
+ChatMessage createAssistantMessage(const std::string& content) {
+  ChatMessage msg;
+  msg.role = "assistant";
+  msg.content = content;
+  return msg;
+}
+
+// Create an assistant message with a single tool call
+ChatMessage createAssistantWithToolCall(const std::string& content,
+                                        const std::string& toolCallId,
+                                        const std::string& functionName,
+                                        const std::string& arguments) {
+  ChatMessage msg;
+  msg.role = "assistant";
+  msg.content = content;
+
+  ToolCall toolCall;
+  toolCall.id = toolCallId;
+  toolCall.type = "function";
+  toolCall.functionCall.name = functionName;
+  toolCall.functionCall.arguments = arguments;
+  msg.tool_calls = std::vector<ToolCall>{toolCall};
+
+  return msg;
+}
+
+// Create an assistant message with multiple tool calls
+ChatMessage createAssistantWithToolCalls(
+    const std::string& content,
+    const std::vector<std::tuple<std::string, std::string, std::string>>&
+        toolCalls) {
+  ChatMessage msg;
+  msg.role = "assistant";
+  msg.content = content;
+
+  std::vector<ToolCall> calls;
+  for (const auto& [id, name, args] : toolCalls) {
+    ToolCall toolCall;
+    toolCall.id = id;
+    toolCall.type = "function";
+    toolCall.functionCall.name = name;
+    toolCall.functionCall.arguments = args;
+    calls.push_back(toolCall);
+  }
+  msg.tool_calls = calls;
+
+  return msg;
+}
+
+// Create a tool output message
+ChatMessage createToolOutputMessage(const std::string& toolCallId,
+                                    const std::string& content) {
+  ChatMessage msg;
+  msg.role = "tool";
+  msg.tool_call_id = toolCallId;
+  msg.content = content;
+  return msg;
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 void testChatTemplateWithoutTools(const TokenizerTemplateConfig* config) {
   std::cout << "\n=== Testing Chat Template Without Tools ===\n";
@@ -97,7 +252,7 @@ void testChatTemplateWithoutTools(const TokenizerTemplateConfig* config) {
          result.find(config->toolCallsBegin()) == std::string::npos);
 
   // Should contain the user message
-  assert(result.find(content) != std::string::npos);
+  assert(result.find(msg.content) != std::string::npos);
 
   std::cout << "✓ Chat template without tools applied correctly\n";
   std::cout << "✅ Test passed!\n";
@@ -110,25 +265,10 @@ void testChatTemplateWithSingleTool(const TokenizerTemplateConfig* config) {
   auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
 
   // Create message
-  std::vector<ChatMessage> messages;
-  ChatMessage msg;
-  msg.role = "user";
-  msg.content = "Get weather for SF";
-  messages.push_back(msg);
+  std::vector<ChatMessage> messages = {createUserMessage("Get weather for SF")};
 
   // Create tool
-  std::vector<Tool> tools;
-  Tool tool;
-  tool.type = "function";
-  tool.functionDefinition.name = "get_weather";
-  tool.functionDefinition.description = "Get weather info";
-
-  Json::Value params;
-  params["type"] = "object";
-  params["properties"]["location"]["type"] = "string";
-  params["required"].append("location");
-  tool.functionDefinition.parameters = params;
-  tools.push_back(tool);
+  std::vector<Tool> tools = {createWeatherTool()};
 
   // Get actual result
   std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
@@ -156,8 +296,8 @@ void testChatTemplateWithSingleTool(const TokenizerTemplateConfig* config) {
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
                   << ")\n";
         break;
       }
@@ -175,36 +315,11 @@ void testChatTemplateWithMultipleTools(const TokenizerTemplateConfig* config) {
   auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
 
   // Create message
-  std::vector<ChatMessage> messages;
-  ChatMessage msg;
-  msg.role = "user";
-  msg.content = "Check weather and time";
-  messages.push_back(msg);
+  std::vector<ChatMessage> messages = {
+      createUserMessage("Check weather and time")};
 
   // Create tools
-  std::vector<Tool> tools;
-
-  // Tool 1: get_weather
-  Tool weatherTool;
-  weatherTool.type = "function";
-  weatherTool.functionDefinition.name = "get_weather";
-  weatherTool.functionDefinition.description = "Get weather";
-  Json::Value weatherParams;
-  weatherParams["type"] = "object";
-  weatherParams["properties"]["location"]["type"] = "string";
-  weatherTool.functionDefinition.parameters = weatherParams;
-  tools.push_back(weatherTool);
-
-  // Tool 2: get_time
-  Tool timeTool;
-  timeTool.type = "function";
-  timeTool.functionDefinition.name = "get_time";
-  timeTool.functionDefinition.description = "Get time";
-  Json::Value timeParams;
-  timeParams["type"] = "object";
-  timeParams["properties"]["timezone"]["type"] = "string";
-  timeTool.functionDefinition.parameters = timeParams;
-  tools.push_back(timeTool);
+  std::vector<Tool> tools = {createWeatherTool(), createTimeTool()};
 
   // Get actual result
   std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
@@ -232,8 +347,8 @@ void testChatTemplateWithMultipleTools(const TokenizerTemplateConfig* config) {
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
                   << ")\n";
         break;
       }
@@ -250,38 +365,12 @@ void testChatTemplateWithConversationHistory(
 
   auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
 
-  std::vector<ChatMessage> messages;
+  std::vector<ChatMessage> messages = {
+      createUserMessage("Check SF weather"),
+      createAssistantMessage("I'll check for you."),
+      createUserMessage("Also check LA")};
 
-  // First user message
-  ChatMessage userMsg1;
-  userMsg1.role = "user";
-  userMsg1.content = "Check SF weather";
-  messages.push_back(userMsg1);
-
-  // Assistant response
-  ChatMessage assistantMsg;
-  assistantMsg.role = "assistant";
-  assistantMsg.content = "I'll check for you.";
-  messages.push_back(assistantMsg);
-
-  // Follow-up user message
-  ChatMessage userMsg2;
-  userMsg2.role = "user";
-  userMsg2.content = "Also check LA";
-  messages.push_back(userMsg2);
-
-  // Tool
-  std::vector<Tool> tools;
-  Tool weatherTool;
-  weatherTool.type = "function";
-  weatherTool.functionDefinition.name = "get_weather";
-  weatherTool.functionDefinition.description = "Get weather";
-
-  Json::Value params;
-  params["type"] = "object";
-  params["properties"]["location"]["type"] = "string";
-  weatherTool.functionDefinition.parameters = params;
-  tools.push_back(weatherTool);
+  std::vector<Tool> tools = {createWeatherTool()};
 
   // Get actual result
   std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
@@ -315,8 +404,8 @@ void testChatTemplateWithConversationHistory(
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
                   << ")\n";
 
         // Show context around the difference
@@ -404,6 +493,126 @@ void testToolStructureValidation() {
   std::cout << "✅ Test passed!\n";
 }
 
+void testChatTemplateWithToolOutputs(const TokenizerTemplateConfig* config) {
+  std::cout << "\n=== Testing Chat Template With Tool Outputs ("
+            << config->name() << ") ===\n";
+
+  auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
+
+  ChatMessage assistantMsg = createAssistantWithToolCall(
+      "", "call_123", "get_weather", "{\"location\":\"San Francisco\"}");
+  ChatMessage toolMsg = createToolOutputMessage(
+      "call_123", "{\"temperature\":72,\"conditions\":\"sunny\"}");
+
+  std::vector<ChatMessage> messages = {
+      createUserMessage("What's the weather in SF?"), assistantMsg, toolMsg};
+
+  std::vector<Tool> tools = {createWeatherTool()};
+
+  // Get actual result
+  std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
+
+  // Build expected result
+  std::ostringstream expected;
+  expected << config->bos();
+  expected << config->buildToolSection(tools);
+  expected << config->userTag() << "What's the weather in SF?";
+  expected << config->buildAssistantWithToolCalls(assistantMsg);
+  expected << config->toolOutputsBegin();
+  expected << config->buildToolOutput(toolMsg);
+  expected << config->toolOutputsEnd();
+  expected << config->assistantTag();
+
+  // Compare
+  if (actual == expected.str()) {
+    std::cout << "✅ Exact match! Tool output template is perfect.\n";
+  } else {
+    std::cout << "❌ Mismatch detected!\n";
+    std::cout << "\n=== EXPECTED ===\n" << expected.str() << "\n";
+    std::cout << "\n=== ACTUAL ===\n" << actual << "\n";
+    std::cout << "\nExpected length: " << expected.str().length() << "\n";
+    std::cout << "Actual length: " << actual.length() << "\n";
+
+    // Find first difference
+    for (size_t i = 0; i < std::min(expected.str().length(), actual.length());
+         ++i) {
+      if (expected.str()[i] != actual[i]) {
+        std::cout << "First difference at position " << i << ":\n";
+        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
+                  << ")\n";
+        break;
+      }
+    }
+    throw std::runtime_error("Tool output template mismatch");
+  }
+
+  std::cout << "✅ Test passed!\n";
+}
+
+void testChatTemplateWithMultipleToolOutputs(
+    const TokenizerTemplateConfig* config) {
+  std::cout << "\n=== Testing Chat Template With Multiple Tool Outputs ("
+            << config->name() << ") ===\n";
+
+  auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
+
+  ChatMessage assistantMsg = createAssistantWithToolCalls(
+      "", {{"call_1", "get_weather", "{\"location\":\"SF\"}"},
+           {"call_2", "get_weather", "{\"location\":\"LA\"}"}});
+  ChatMessage toolMsg1 = createToolOutputMessage("call_1", "{\"temp\":72}");
+  ChatMessage toolMsg2 = createToolOutputMessage("call_2", "{\"temp\":85}");
+
+  std::vector<ChatMessage> messages = {
+      createUserMessage("Get weather for SF and LA"), assistantMsg, toolMsg1,
+      toolMsg2};
+
+  std::vector<Tool> tools = {createWeatherTool()};
+
+  std::string actual = tokenizer.applyChatTemplate(messages, true, tools);
+
+  // Build expected result
+  std::ostringstream expected;
+  expected << config->bos();
+  expected << config->buildToolSection(tools);
+  expected << config->userTag() << "Get weather for SF and LA";
+  expected << config->buildAssistantWithToolCalls(assistantMsg);
+  expected << config->toolOutputsBegin();
+  expected << config->buildToolOutput(toolMsg1);
+  expected << "\n";  // Newline between multiple tool outputs
+  expected << config->buildToolOutput(toolMsg2);
+  expected << config->toolOutputsEnd();
+  expected << config->assistantTag();
+
+  // Compare
+  if (actual == expected.str()) {
+    std::cout << "✅ Exact match! Multiple tool outputs template is perfect.\n";
+  } else {
+    std::cout << "❌ Mismatch detected!\n";
+    std::cout << "\n=== EXPECTED ===\n" << expected.str() << "\n";
+    std::cout << "\n=== ACTUAL ===\n" << actual << "\n";
+    std::cout << "\nExpected length: " << expected.str().length() << "\n";
+    std::cout << "Actual length: " << actual.length() << "\n";
+
+    // Find first difference
+    for (size_t i = 0; i < std::min(expected.str().length(), actual.length());
+         ++i) {
+      if (expected.str()[i] != actual[i]) {
+        std::cout << "First difference at position " << i << ":\n";
+        std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
+                  << ")\n";
+        break;
+      }
+    }
+    throw std::runtime_error("Multiple tool outputs template mismatch");
+  }
+
+  std::cout << "✅ Test passed!\n";
+}
+
 int main() {
   std::cout << "\n";
   std::cout << "╔══════════════════════════════════════════════════════════╗\n";
@@ -420,6 +629,8 @@ int main() {
     testChatTemplateWithConversationHistory(config);
     testChatTemplateEmptyTools();
     testToolStructureValidation();
+    testChatTemplateWithToolOutputs(config);
+    testChatTemplateWithMultipleToolOutputs(config);
 
     std::cout << "\n";
     std::cout
