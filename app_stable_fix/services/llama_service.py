@@ -346,7 +346,7 @@ class LlamaService:
                 should_flush = False
                 if sentence_end_pattern.search(sentence_buffer) and len(sentence_buffer.strip()) > 20:
                     should_flush = True
-                elif len(sentence_buffer.strip()) > 120 and re.search(r',\s*$', sentence_buffer):
+                elif len(sentence_buffer.strip()) > 90 and re.search(r',\s*$', sentence_buffer):
                     should_flush = True
 
                 if should_flush:

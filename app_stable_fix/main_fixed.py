@@ -20,7 +20,13 @@ from fastapi.middleware.cors import CORSMiddleware
 # Import SOCKET-based services (connect to running servers)
 from services.face_auth_service_socket import FaceAuthService
 from services.whisper_service_socket import WhisperService
-from services.tts_service_socket import TTSService
+
+# TTS backend: "lv2" (Lightning V2 HTTP) or "speecht5" (SpeechT5 TTNN socket)
+TTS_BACKEND = os.environ.get("TTS_BACKEND", "lv2")
+if TTS_BACKEND == "lv2":
+    from services.tts_service_lv2 import TTSService
+else:
+    from services.tts_service_socket import TTSService
 
 # Llama uses direct loading (not socket)
 from services.llama_service import LlamaService
@@ -398,7 +404,10 @@ async def chat_stream(request: Request):
             history.append({"role": "user", "content": user_message[:200]})
             chat_history = history[:-1]
 
-        PODCAST_SPEAKERS = {"host": 7306, "guest": 1138}
+        if TTS_BACKEND == "lv2":
+            PODCAST_SPEAKERS = {"host": "Emma", "guest": "Carl"}
+        else:
+            PODCAST_SPEAKERS = {"host": 7306, "guest": 1138}
 
         async def generate_stream():
             """Parallel LLM text + TTS audio streaming.
@@ -415,31 +424,57 @@ async def chat_stream(request: Request):
                 """Background worker: pull sentences from queue, generate TTS, push audio events."""
                 current_speaker = PODCAST_SPEAKERS.get("host") if mode == "podcast" else None
                 first_podcast_tag_seen = False
+                TAG_PAT = re.compile(r'(?:\*\*)?[\[\(]?(HOST|GUEST)[\]\)]?(?:\*\*)?:\s*', re.IGNORECASE)
+
+                async def _synth_one(text, speaker, s_num):
+                    tts_kwargs = {"speaker": speaker} if TTS_BACKEND == "lv2" else {"speaker_id": speaker}
+                    result = await asyncio.wait_for(
+                        tts_service.synthesize(text, **tts_kwargs), timeout=60.0
+                    )
+                    audio_path = result.get("audio_path")
+                    audio_b64 = ""
+                    if audio_path and os.path.exists(audio_path):
+                        with open(audio_path, "rb") as af:
+                            audio_b64 = base64.b64encode(af.read()).decode('utf-8')
+                    await output_queue.put(f"data: {json_lib.dumps({'type': 'audio', 'audio_b64': audio_b64, 'sentence_num': s_num})}\n\n")
+
                 while True:
                     item = await tts_queue.get()
                     if item is None:
                         break
                     s_num, s_text = item
                     try:
-                        speaker_id = None
                         if mode == "podcast":
-                            tag_match = re.match(r'^\s*(?:\*\*)?[\[\(]?(HOST|GUEST)[\]\)]?(?:\*\*)?:\s*', s_text, re.IGNORECASE)
-                            if tag_match:
-                                first_podcast_tag_seen = True
-                                role = tag_match.group(1).lower()
-                                current_speaker = PODCAST_SPEAKERS.get(role)
-                                speaker_id = current_speaker
-                                s_text = s_text[tag_match.end():]
-                            elif not first_podcast_tag_seen:
-                                logger.info(f"Skipping podcast preamble: {s_text[:60]}...")
+                            segments = []
+                            remaining = s_text
+                            while remaining:
+                                m = TAG_PAT.search(remaining)
+                                if m:
+                                    before = remaining[:m.start()].strip()
+                                    if before:
+                                        segments.append((before, current_speaker))
+                                    role = m.group(1).lower()
+                                    current_speaker = PODCAST_SPEAKERS.get(role)
+                                    first_podcast_tag_seen = True
+                                    remaining = remaining[m.end():]
+                                else:
+                                    text_clean = remaining.strip()
+                                    if text_clean:
+                                        segments.append((text_clean, current_speaker))
+                                    break
+                            if not segments or not first_podcast_tag_seen:
+                                if not first_podcast_tag_seen:
+                                    logger.info(f"Skipping podcast preamble: {s_text[:60]}...")
                                 await output_queue.put(f"data: {json_lib.dumps({'type': 'audio', 'audio_b64': '', 'sentence_num': s_num})}\n\n")
                                 continue
-                            else:
-                                speaker_id = current_speaker
-                                logger.debug(f"Podcast continuation (same speaker): {s_text[:60]}...")
+                            for chunk_text, chunk_speaker in segments:
+                                await _synth_one(chunk_text, chunk_speaker, s_num)
+                            continue
+                        speaker_val = None
+                        tts_kwargs = {"speaker": speaker_val} if TTS_BACKEND == "lv2" else {"speaker_id": speaker_val}
                         tts_result = await asyncio.wait_for(
-                            tts_service.synthesize(s_text, speaker_id=speaker_id),
-                            timeout=30.0
+                            tts_service.synthesize(s_text, **tts_kwargs),
+                            timeout=60.0
                         )
                         audio_path = tts_result.get("audio_path")
                         audio_b64 = ""
@@ -450,7 +485,7 @@ async def chat_stream(request: Request):
                     except Exception as e:
                         logger.warning(f"TTS failed for sentence {s_num}: {e}")
                         await output_queue.put(f"data: {json_lib.dumps({'type': 'audio', 'audio_b64': '', 'sentence_num': s_num})}\n\n")
-                        if tts_service.restarting:
+                        if getattr(tts_service, 'restarting', False):
                             await output_queue.put(f"data: {json_lib.dumps({'type': 'tts_restarting'})}\n\n")
                             logger.info("Waiting for TTS server restart...")
                             while tts_service.restarting:
@@ -541,7 +576,7 @@ async def text_to_speech(request: Request):
             raise HTTPException(status_code=400, detail="Text is required")
         
         # Podcast mode: detect HOST/GUEST tags in various formats
-        if mode == "podcast" and re.search(r'(?:\*\*)?[\[\(]?HOST[\]\)]?(?:\*\*)?:', text, re.IGNORECASE):
+        if mode == "podcast" and re.search(r'(?:\*\*)?[\[\(]?HOST[\]\)]?(?:\*\*)?:', text, re.IGNORECASE) and TTS_BACKEND != "lv2":
             result = await _synthesize_podcast(text)
         else:
             result = await tts_service.synthesize(text)
@@ -595,7 +630,10 @@ async def text_to_speech_stream(request: Request):
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
 
-    PODCAST_SPEAKERS = {"host": 7306, "guest": 1138}
+    if TTS_BACKEND == "lv2":
+        PODCAST_SPEAKERS = {"host": "Emma", "guest": "Carl"}
+    else:
+        PODCAST_SPEAKERS = {"host": 7306, "guest": 1138}
 
     is_podcast = mode == "podcast" and (
         re.search(r'(?:\*\*)?[\[\(]?(?:HOST|GUEST)[\]\)]?(?:\*\*)?:', text, re.IGNORECASE)
@@ -637,8 +675,9 @@ async def text_to_speech_stream(request: Request):
     async def generate_chunks():
         for i, seg in enumerate(segments):
             try:
-                speaker_id = PODCAST_SPEAKERS.get(seg["role"]) if seg["role"] else None
-                result = await tts_service.synthesize(seg["text"], speaker_id=speaker_id)
+                speaker_val = PODCAST_SPEAKERS.get(seg["role"]) if seg["role"] else None
+                tts_kwargs = {"speaker": speaker_val} if TTS_BACKEND == "lv2" else {"speaker_id": speaker_val}
+                result = await tts_service.synthesize(seg["text"], **tts_kwargs)
                 audio_path = result.get("audio_path")
                 if audio_path and os.path.exists(audio_path):
                     with open(audio_path, "rb") as f:
