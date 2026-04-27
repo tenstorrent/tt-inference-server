@@ -309,7 +309,7 @@ struct ChatCompletionRequest : BaseRequest {
       }
     }
 
-    if (lastAssistantIdx >= req.messages.size()) return;
+    if (lastAssistantIdx == req.messages.size()) return;
 
     const auto& lastAssistant = req.messages[lastAssistantIdx];
 
