@@ -418,7 +418,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             }
             return format_metrics(metrics)
 
-    if params.get("task_type") == "text_to_speech" or params.get("task_type") == "tts":
+    if params.get("task_type") == "text_to_speech":
         logger.info(f"Processing TTS benchmark file: {filename}")
         # For TTS benchmarks, extract data from JSON content
         benchmarks_data = data.get("benchmarks", {})
@@ -433,7 +433,7 @@ def process_benchmark_file(filepath: str) -> Dict[str, Any]:
             "mean_ttft_ms": benchmarks_data.get("ttft", 0)
             * 1000,  # ttft is in seconds, convert to ms
             "filename": filename,
-            "task_type": "tts",
+            "task_type": "text_to_speech",
             "rtr": benchmarks_data.get("rtr", 0),
             "p90_ttft": benchmarks_data.get("ttft_p90", 0) * 1000
             if benchmarks_data.get("ttft_p90")
@@ -1082,7 +1082,7 @@ def generate_report(files, output_dir, report_id, metadata={}, model_spec=None):
     vlm_results = [r for r in results if r.get("task_type") == "vlm"]
     image_results = [r for r in results if r.get("task_type") == "image"]
     audio_results = [r for r in results if r.get("task_type") == "audio"]
-    tts_results = [r for r in results if r.get("task_type") == "tts"]
+    tts_results = [r for r in results if r.get("task_type") == "text_to_speech"]
     embedding_results = [r for r in results if r.get("task_type") == "embedding"]
     cnn_results = [r for r in results if r.get("task_type") == "cnn"]
     video_results = [r for r in results if r.get("task_type") == "video"]

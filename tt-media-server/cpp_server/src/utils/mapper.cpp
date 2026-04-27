@@ -1,5 +1,7 @@
 #include "utils/mapper.hpp"
 
+#include "config/settings.hpp"
+
 namespace tt::utils::mapper {
 
 tt::domain::SamplingParams mapSamplingParams(
@@ -25,7 +27,7 @@ tt::domain::SamplingParams mapSamplingParams(
   params.allowed_token_ids = request.allowed_token_ids;
   params.prompt_logprobs = request.prompt_logprobs;
   params.truncate_prompt_tokens = request.truncate_prompt_tokens;
-  params.fast_mode = request.fast_mode;
+  params.fast_mode = config::useFastMode() || request.fast_mode;
 
   if (request.response_format.has_value()) {
     params.response_format_type = request.response_format->type;

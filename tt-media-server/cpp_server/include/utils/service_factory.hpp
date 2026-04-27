@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "utils/service_container.hpp"
+#include "services/service_container.hpp"
 
 namespace tt::utils::service_factory {
 

@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "utils/service_container.hpp"
+#include "services/service_container.hpp"
 
 #include "config/settings.hpp"
 #include "services/embedding_service.hpp"
 #include "services/llm_service.hpp"
 
-namespace tt::utils {
+namespace tt::services {
 
 void ServiceContainer::initialize(
-    std::shared_ptr<services::LLMService> llm,
-    std::shared_ptr<services::EmbeddingService> embedding,
+    std::shared_ptr<LLMService> llm,
+    std::shared_ptr<EmbeddingService> embedding,
     std::shared_ptr<sockets::InterServerService> socket,
-    std::shared_ptr<services::DisaggregationService> disaggregation,
-    std::shared_ptr<services::SessionManager> sessionMgr) {
+    std::shared_ptr<DisaggregationService> disaggregation,
+    std::shared_ptr<SessionManager> sessionMgr) {
   llm_ = std::move(llm);
   embedding_ = std::move(embedding);
   socket_ = std::move(socket);
@@ -22,8 +22,7 @@ void ServiceContainer::initialize(
   sessionManager_ = std::move(sessionMgr);
 }
 
-std::shared_ptr<services::IService> ServiceContainer::configuredService()
-    const {
+std::shared_ptr<IService> ServiceContainer::configuredService() const {
   switch (tt::config::modelService()) {
     case tt::config::ModelService::LLM:
       return llm_;
@@ -33,4 +32,4 @@ std::shared_ptr<services::IService> ServiceContainer::configuredService()
   return nullptr;
 }
 
-}  // namespace tt::utils
+}  // namespace tt::services

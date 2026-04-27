@@ -6,14 +6,14 @@
 #include <chrono>
 
 #include "config/settings.hpp"
+#include "services/service_container.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
-#include "utils/service_container.hpp"
 
 namespace tt::api {
 
 HealthController::HealthController() {
-  auto& container = tt::utils::ServiceContainer::instance();
+  auto& container = tt::services::ServiceContainer::instance();
   service_ = container.configuredService();
   socket_ = container.socket();
   TT_LOG_INFO("[HealthController] Initialized (service={}, socket={})",
