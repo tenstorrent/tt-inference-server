@@ -1,67 +1,70 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-#include <gtest/gtest.h>
+#include <cassert>
+#include <iostream>
 #include <json/json.h>
-
 #include <stdexcept>
 
 #include "domain/chat_completion_request.hpp"
 
 using namespace tt::domain;
 
-class ChatCompletionRequestToolTest : public ::testing::Test {
- protected:
-  // Helper to create a basic valid request JSON
-  Json::Value createBasicRequestJson() {
-    Json::Value json;
-    json["model"] = "test-model";
+// Helper to create a basic valid request JSON
+Json::Value createBasicRequestJson() {
+  Json::Value json;
+  json["model"] = "test-model";
 
-    Json::Value msg;
-    msg["role"] = "user";
-    msg["content"] = "Hello";
-    json["messages"].append(msg);
+  Json::Value msg;
+  msg["role"] = "user";
+  msg["content"] = "Hello";
+  json["messages"].append(msg);
 
-    return json;
-  }
+  return json;
+}
 
-  // Helper to create a tool
-  Json::Value createToolJson(const std::string& name,
-                             const std::string& description) {
-    Json::Value tool;
-    tool["type"] = "function";
-    tool["function"]["name"] = name;
-    tool["function"]["description"] = description;
+// Helper to create a tool
+Json::Value createToolJson(const std::string& name,
+                           const std::string& description) {
+  Json::Value tool;
+  tool["type"] = "function";
+  tool["function"]["name"] = name;
+  tool["function"]["description"] = description;
 
-    Json::Value params;
-    params["type"] = "object";
-    params["properties"]["location"]["type"] = "string";
-    params["required"].append("location");
-    tool["function"]["parameters"] = params;
+  Json::Value params;
+  params["type"] = "object";
+  params["properties"]["location"]["type"] = "string";
+  params["required"].append("location");
+  tool["function"]["parameters"] = params;
 
-    return tool;
-  }
-};
+  return tool;
+}
 
 // ==================== Tool Parsing Tests ====================
 
-TEST_F(ChatCompletionRequestToolTest, ParseRequestWithTools) {
-  Json::Value json = createBasicRequestJson();
+void testParseRequestWithTools() {
+  std::cout << "\n=== Testing Parse Request With Tools ===\n";
 
+  Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather info"));
   json["tools"].append(createToolJson("get_time", "Get current time"));
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  ASSERT_TRUE(request.tools.has_value());
-  EXPECT_EQ(request.tools->size(), 2);
-  EXPECT_EQ(request.tools->at(0).functionDefinition.name, "get_weather");
-  EXPECT_EQ(request.tools->at(1).functionDefinition.name, "get_time");
+  assert(request.tools.has_value());
+  assert(request.tools->size() == 2);
+  assert(request.tools->at(0).functionDefinition.name == "get_weather");
+  assert(request.tools->at(1).functionDefinition.name == "get_time");
+
+  std::cout << "✓ Request with multiple tools parsed correctly\n";
+  std::cout << "✅ Test passed!\n";
 }
 
 // ==================== tool_choice Tests ====================
 
-TEST_F(ChatCompletionRequestToolTest, ToolChoiceNone) {
+void testToolChoiceNone() {
+  std::cout << "\n=== Testing tool_choice=none ===\n";
+
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather"));
   json["tool_choice"] = "none";
@@ -69,80 +72,166 @@ TEST_F(ChatCompletionRequestToolTest, ToolChoiceNone) {
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
   // When tool_choice is "none", tools should still be parsed
-  ASSERT_TRUE(request.tools.has_value());
-  EXPECT_FALSE(request.tools->empty())
-      << "Tools should be kept when tool_choice is 'none'";
+  assert(request.tools.has_value());
+  assert(!request.tools->empty() &&
+         "Tools should be kept when tool_choice is 'none'");
 
-  ASSERT_TRUE(request.tool_choice.has_value());
-  EXPECT_EQ(request.tool_choice->type, "none");
+  assert(request.tool_choice.has_value());
+  assert(request.tool_choice->type == "none");
 
   // Verify tool_choice_type is copied to LLMRequest
   auto llmRequest = request.toLLMRequest();
-  ASSERT_TRUE(llmRequest.tool_choice_type.has_value());
-  EXPECT_EQ(llmRequest.tool_choice_type.value(), "none");
+  assert(llmRequest.tool_choice_type.has_value());
+  assert(llmRequest.tool_choice_type.value() == "none");
+
+  std::cout << "✓ tool_choice=none parsed correctly\n";
+  std::cout << "✓ Tools retained even with tool_choice=none\n";
+  std::cout << "✓ tool_choice_type propagated to LLMRequest\n";
+  std::cout << "✅ Test passed!\n";
 }
 
-TEST_F(ChatCompletionRequestToolTest, ToolChoiceAuto) {
+void testToolChoiceAuto() {
+  std::cout << "\n=== Testing tool_choice=auto ===\n";
+
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather"));
   json["tool_choice"] = "auto";
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  ASSERT_TRUE(request.tools.has_value());
-  EXPECT_FALSE(request.tools->empty());
+  assert(request.tools.has_value());
+  assert(!request.tools->empty());
+  assert(request.tool_choice.has_value());
+  assert(request.tool_choice->type == "auto");
 
-  ASSERT_TRUE(request.tool_choice.has_value());
-  EXPECT_EQ(request.tool_choice->type, "auto");
+  std::cout << "✓ tool_choice=auto parsed correctly\n";
+  std::cout << "✅ Test passed!\n";
 }
 
-TEST_F(ChatCompletionRequestToolTest, ToolChoiceNoneWithoutTools) {
+void testToolChoiceNoneWithoutTools() {
+  std::cout << "\n=== Testing tool_choice=none Without Tools ===\n";
+
   Json::Value json = createBasicRequestJson();
   json["tool_choice"] = "none";
 
-  EXPECT_NO_THROW({
-    auto request = ChatCompletionRequest::fromJson(json, 1);
-    ASSERT_TRUE(request.tool_choice.has_value());
-    EXPECT_EQ(request.tool_choice->type, "none");
-  });
+  auto request = ChatCompletionRequest::fromJson(json, 1);
+  assert(request.tool_choice.has_value());
+  assert(request.tool_choice->type == "none");
+
+  std::cout << "✓ tool_choice=none without tools accepted\n";
+  std::cout << "✅ Test passed!\n";
 }
 
-TEST_F(ChatCompletionRequestToolTest, ToolChoiceNoneWithEmptyToolsArray) {
+void testToolChoiceNoneWithEmptyToolsArray() {
+  std::cout << "\n=== Testing tool_choice=none With Empty Tools Array ===\n";
+
   Json::Value json = createBasicRequestJson();
   json["tools"] = Json::arrayValue;
   json["tool_choice"] = "none";
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  ASSERT_TRUE(request.tool_choice.has_value());
-  EXPECT_EQ(request.tool_choice->type, "none");
+  assert(request.tool_choice.has_value());
+  assert(request.tool_choice->type == "none");
+
+  std::cout << "✓ tool_choice=none with empty tools array accepted\n";
+  std::cout << "✅ Test passed!\n";
 }
 
-TEST_F(ChatCompletionRequestToolTest, ToolChoiceAutoWithoutToolsRejected) {
+void testToolChoiceAutoWithoutToolsRejected() {
+  std::cout << "\n=== Testing tool_choice=auto Without Tools (Should Reject) "
+               "===\n";
+
   Json::Value json = createBasicRequestJson();
   json["tool_choice"] = "auto";
 
-  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1), std::invalid_argument);
+  bool exceptionThrown = false;
+  try {
+    ChatCompletionRequest::fromJson(json, 1);
+  } catch (const std::invalid_argument&) {
+    exceptionThrown = true;
+  }
+
+  assert(exceptionThrown &&
+         "Should throw invalid_argument for tool_choice=auto without tools");
+
+  std::cout << "✓ tool_choice=auto without tools correctly rejected\n";
+  std::cout << "✅ Test passed!\n";
 }
 
-TEST_F(ChatCompletionRequestToolTest, ToolChoiceRequiredRejectedAsUnsupported) {
+void testToolChoiceRequiredRejectedAsUnsupported() {
+  std::cout << "\n=== Testing tool_choice=required (Unsupported, Should Reject) "
+               "===\n";
+
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather"));
   json["tool_choice"] = "required";
 
-  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1), std::invalid_argument);
+  bool exceptionThrown = false;
+  try {
+    ChatCompletionRequest::fromJson(json, 1);
+  } catch (const std::invalid_argument&) {
+    exceptionThrown = true;
+  }
+
+  assert(exceptionThrown &&
+         "Should throw invalid_argument for unsupported tool_choice=required");
+
+  std::cout << "✓ tool_choice=required correctly rejected as unsupported\n";
+  std::cout << "✅ Test passed!\n";
 }
 
-TEST_F(ChatCompletionRequestToolTest, ToolChoiceUnknownStringRejected) {
+void testToolChoiceUnknownStringRejected() {
+  std::cout << "\n=== Testing tool_choice With Unknown Value (Should Reject) "
+               "===\n";
+
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather"));
   json["tool_choice"] = "bogus";
 
-  EXPECT_THROW(ChatCompletionRequest::fromJson(json, 1), std::invalid_argument);
+  bool exceptionThrown = false;
+  try {
+    ChatCompletionRequest::fromJson(json, 1);
+  } catch (const std::invalid_argument&) {
+    exceptionThrown = true;
+  }
+
+  assert(exceptionThrown &&
+         "Should throw invalid_argument for unknown tool_choice value");
+
+  std::cout << "✓ Unknown tool_choice value correctly rejected\n";
+  std::cout << "✅ Test passed!\n";
 }
 
 // Main function for running tests
-int main(int argc, char** argv) {
-  testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+int main() {
+  std::cout << "\n";
+  std::cout << "╔══════════════════════════════════════════════════════════╗\n";
+  std::cout << "║      Chat Completion Request Tool Test Suite            ║\n";
+  std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+
+  try {
+    testParseRequestWithTools();
+    testToolChoiceNone();
+    testToolChoiceAuto();
+    testToolChoiceNoneWithoutTools();
+    testToolChoiceNoneWithEmptyToolsArray();
+    testToolChoiceAutoWithoutToolsRejected();
+    testToolChoiceRequiredRejectedAsUnsupported();
+    testToolChoiceUnknownStringRejected();
+
+    std::cout << "\n";
+    std::cout
+        << "╔══════════════════════════════════════════════════════════╗\n";
+    std::cout
+        << "║              🎉 ALL TESTS PASSED! 🎉                    ║\n";
+    std::cout
+        << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\n";
+
+    return 0;
+  } catch (const std::exception& e) {
+    std::cerr << "\n❌ TEST FAILED: " << e.what() << "\n";
+    return 1;
+  }
 }
