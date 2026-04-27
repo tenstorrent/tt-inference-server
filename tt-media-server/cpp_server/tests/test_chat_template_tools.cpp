@@ -701,7 +701,7 @@ void runTestSuite(const Tokenizer& tokenizer,
   testChatTemplateWithMultipleToolOutputs(tokenizer, config);
 }
 
-int main(int argc, char* argv[]) {
+int main() {
   std::cout << "\n";
   std::cout << "╔══════════════════════════════════════════════════════════╗\n";
   std::cout << "║      Chat Template with Tools Test Suite                ║\n";
