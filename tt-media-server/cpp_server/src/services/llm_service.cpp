@@ -73,6 +73,16 @@ std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
 void LLMService::preProcess(domain::LLMRequest& request) const {
   BaseService::preProcess(request);
 
+  if (request.tool_choice_type.has_value()) {
+    const auto& type = *request.tool_choice_type;
+    if (type != "auto" && type != "none") {
+      throw std::invalid_argument(
+          "tool_choice='" + type +
+          "' is not yet supported by this server; only 'auto' and 'none' are "
+          "currently implemented");
+    }
+  }
+
   if (std::holds_alternative<std::string>(request.prompt)) {
     auto text = std::get<std::string>(request.prompt);
     static auto cfg = tt::utils::tokenizers::getTokenizerConfig();

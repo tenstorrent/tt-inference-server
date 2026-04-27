@@ -289,17 +289,9 @@ struct ChatCompletionRequest : BaseRequest {
 
     const auto& type = req.tool_choice->type;
     const bool toolsMissing = !req.tools.has_value() || req.tools->empty();
-
-    if (toolsMissing && type != "none") {
+    if (type != "none" && toolsMissing) {
       throw std::invalid_argument(
-          "tool_choice is provided but no tools are specified");
-    }
-
-    const bool supported = type == "auto" || type == "none";
-    if (!supported) {
-      throw std::invalid_argument(
-          "tool_choice '" + type +
-          "' is not yet supported; only 'auto' and 'none' are accepted");
+          "tool_choice='" + type + "' requires non-empty 'tools'");
     }
   }
 };

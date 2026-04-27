@@ -159,25 +159,25 @@ void testToolChoiceAutoWithoutToolsRejected() {
   std::cout << "✅ Test passed!\n";
 }
 
-void testToolChoiceRequiredRejectedAsUnsupported() {
-  std::cout << "\n=== Testing tool_choice=required (Unsupported, Should Reject) "
-               "===\n";
+void testToolChoiceRequiredParsedAtRequestLayer() {
+  std::cout << "\n=== Testing tool_choice=required Parses Successfully ===\n";
+
 
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather"));
   json["tool_choice"] = "required";
 
-  bool exceptionThrown = false;
-  try {
-    ChatCompletionRequest::fromJson(json, 1);
-  } catch (const std::invalid_argument&) {
-    exceptionThrown = true;
-  }
+  auto request = ChatCompletionRequest::fromJson(json, 1);
 
-  assert(exceptionThrown &&
-         "Should throw invalid_argument for unsupported tool_choice=required");
+  assert(request.tool_choice.has_value());
+  assert(request.tool_choice->type == "required");
 
-  std::cout << "✓ tool_choice=required correctly rejected as unsupported\n";
+  auto llmRequest = request.toLLMRequest();
+  assert(llmRequest.tool_choice_type.has_value());
+  assert(llmRequest.tool_choice_type.value() == "required");
+
+  std::cout << "✓ tool_choice=required parsed at request layer\n";
+  std::cout << "✓ tool_choice_type='required' propagated to LLMRequest\n";
   std::cout << "✅ Test passed!\n";
 }
 
@@ -217,7 +217,7 @@ int main() {
     testToolChoiceNoneWithoutTools();
     testToolChoiceNoneWithEmptyToolsArray();
     testToolChoiceAutoWithoutToolsRejected();
-    testToolChoiceRequiredRejectedAsUnsupported();
+    testToolChoiceRequiredParsedAtRequestLayer();
     testToolChoiceUnknownStringRejected();
 
     std::cout << "\n";

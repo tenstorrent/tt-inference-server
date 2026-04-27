@@ -1,6 +1,7 @@
 #pragma once
 
 #include <json/json.h>
+#include <json/value.h>
 
 #include <optional>
 #include <stdexcept>
@@ -11,6 +12,11 @@ namespace tt::domain::tool_calls {
 struct ToolChoice {
   std::string type;
   std::optional<std::string> function;
+
+  static bool isSpecValidType(const std::string& type) {
+    return type == "none" || type == "auto" || type == "required" ||
+           type == "function";
+  }
 
   static ToolChoice fromJson(const Json::Value& json) {
     ToolChoice choice;
@@ -29,11 +35,19 @@ struct ToolChoice {
     } else {
       throw std::invalid_argument("tool_choice must be a string or an object");
     }
+    if (!isSpecValidType(choice.type)) {
+      throw std::invalid_argument(
+          "tool_choice 'type' must be one of 'none', 'auto', 'required', or "
+          "'function' (got '" +
+          choice.type + "')");
+    }
     return choice;
   }
 
   Json::Value toJson() const {
-    if (type == "function") {
+    if (isSpecValidType(type)) {
+      return Json::Value(type);
+    } else if (type == "function") {
       Json::Value json;
       json["type"] = type;
       if (function.has_value()) {
@@ -41,8 +55,7 @@ struct ToolChoice {
       }
       return json;
     }
-    return Json::Value(type);
+    return Json::nullValue;
   }
 };
-
 }  // namespace tt::domain::tool_calls
