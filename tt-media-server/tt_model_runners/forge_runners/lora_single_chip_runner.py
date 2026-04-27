@@ -24,6 +24,9 @@ class LoraSingleChipRunner(BaseDeviceRunner):
     MAX_PROMPT_LENGTH: int = 32
     MAX_CACHE_LENGTH: int = 128
     BATCH_SIZE: int = 1
+    WARMUP_PROMPT: str = "warmup"
+    # prefill + 1 decode step: materializes both compile graphs
+    WARMUP_TOKENS: int = 2
 
     def __init__(self, device_id: str, num_torch_threads: int = 1):
         super().__init__(device_id, num_torch_threads=num_torch_threads)
@@ -34,26 +37,43 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         self._tokenizer = None
 
     async def warmup(self):
-        # single chip setup
+        self._setup_xla_device()
+        if self.settings.lora_adapter:
+            await asyncio.to_thread(self._preload_adapter_and_compile)
+
+    def _setup_xla_device(self):
         xr.set_device_type("TT")
         os.environ["PJRT_DEVICE"] = "TT"
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
         self.device = torch_xla.device()
+
+    def _preload_adapter_and_compile(self):
+        self.logger.info(
+            f"Preloading adapter from settings: {self.settings.lora_adapter}"
+        )
+        adapter_info = resolve_adapter(self.settings.lora_adapter)
+        self._load_adapter(adapter_info)
+        self._compile_model()
+        self._dummy_decode()
+
+    def _dummy_decode(self):
+        self.logger.info("Running warmup decode to trigger compilation")
+        self._generate(self.WARMUP_PROMPT, self.WARMUP_TOKENS)
+        self.logger.info("Warmup decode completed")
 
     @log_execution_time("Lora Inference")
     def run(self, requests: list[CompletionRequest]):
         request = requests[0]
         self._validate_request(request)
 
-        if request.adapter:
-            adapter_info = resolve_adapter(request.adapter)
-            self._load_adapter(adapter_info)
+        if self.settings.lora_adapter:
+            if request.adapter and request.adapter != self.settings.lora_adapter:
+                self.logger.warning(
+                    f"Ignoring request.adapter={request.adapter!r}; runner is "
+                    f"pinned to settings.lora_adapter={self.settings.lora_adapter!r}"
+                )
         else:
-            self._unload_adapter()
-            base_name = request.model or self.settings.model_weights_path
-            self._load_base_model(base_name)
-
-        compiled_model = self._compile_model()
+            self._load_for_request(request)
 
         prompt = (
             request.prompt
@@ -63,28 +83,44 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         # hardcoded for sst2 dataset for now
         prompt = sst2_utils.PROMPT_TEMPLATE.substitute(input=prompt)
 
-        input_args = self._construct_inputs(
-            [prompt], compiled_model.config, self.BATCH_SIZE, self.MAX_CACHE_LENGTH
-        )
-        max_tokens = min(
-            request.max_tokens or 16,
-            self.MAX_CACHE_LENGTH - input_args["input_ids"].shape[1],
-        )
-        if max_tokens < 1:
-            raise ValueError(
-                f"Prompt fills the entire context window ({self.MAX_CACHE_LENGTH} tokens), no room to generate"
-            )
-        input_args = self._transfer_inputs_to_device(input_args, self.device)
-
-        output_tokens = self._run_generate(
-            compiled_model, input_args, self.device, max_tokens
-        )
+        text = "".join(self._generate(prompt, request.max_tokens or 16))
         return [
             CompletionOutput(
                 type="final_result",
-                data=CompletionResult(text="".join(output_tokens)),
+                data=CompletionResult(text=text),
             )
         ]
+
+    def _load_for_request(self, request: CompletionRequest):
+        if request.adapter:
+            self._load_adapter(resolve_adapter(request.adapter))
+        else:
+            self._unload_adapter()
+            self._load_base_model(
+                request.model or self.settings.model_weights_path
+            )
+        self._compile_model()
+
+    def _generate(self, prompt: str, max_tokens: int) -> List[str]:
+        input_args = self._construct_inputs(
+            [prompt],
+            self._compiled_model.config,
+            self.BATCH_SIZE,
+            self.MAX_CACHE_LENGTH,
+        )
+        tokens_to_generate = min(
+            max_tokens,
+            self.MAX_CACHE_LENGTH - input_args["input_ids"].shape[1],
+        )
+        if tokens_to_generate < 1:
+            raise ValueError(
+                f"Prompt fills the entire context window "
+                f"({self.MAX_CACHE_LENGTH} tokens), no room to generate"
+            )
+        input_args = self._transfer_inputs_to_device(input_args, self.device)
+        return self._run_generate(
+            self._compiled_model, input_args, self.device, tokens_to_generate
+        )
 
     async def _run_async(self, requests):
         return self._stream(requests)
