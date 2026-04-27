@@ -266,6 +266,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.length_penalty = length_penalty;
     out.stop_token_ids = stop_token_ids;
     out.parallel_tool_calls = parallel_tool_calls;
+    out.tools = tools;
     out.tool_choice = tool_choice;
     out.include_stop_str_in_output = include_stop_str_in_output;
     out.ignore_eos = ignore_eos;
@@ -278,29 +279,6 @@ struct ChatCompletionRequest : BaseRequest {
     out.fast_mode = fast_mode;
     out.response_format = response_format;
     out.sessionId = sessionId;
-
-    // When tool_choice is "function", create structured output for the
-    // specific function by generating a JSON schema from its parameters.
-    if (tool_choice.has_value() && tool_choice->type == "function" &&
-        tool_choice->function.has_value() && tools.has_value()) {
-      for (const auto& tool : tools.value()) {
-        if (tool.functionDefinition.name == tool_choice->function.value()) {
-          ResponseFormat format;
-          format.type = tt::config::ResponseFormatType::JSON_SCHEMA;
-          format.json_schema_name = tool.functionDefinition.name;
-          format.strict = true;
-
-          Json::StreamWriterBuilder writer;
-          writer["indentation"] = "";
-          format.json_schema_str =
-              Json::writeString(writer, tool.functionDefinition.parameters);
-
-          out.response_format = format;
-          break;
-        }
-      }
-    }
-
     return out;
   }
 
