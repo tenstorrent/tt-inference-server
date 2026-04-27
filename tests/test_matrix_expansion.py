@@ -801,16 +801,16 @@ class TestTtsMatrixExpansion:
     """Validate that the migrated tts.json produces the same suites as before."""
 
     def test_tts_suite_count(self):
-        suites = load_suite_files_by_category("tts")
+        suites = load_suite_files_by_category("text_to_speech")
         assert len(suites) == 2
 
     def test_tts_suite_ids(self):
-        suites = load_suite_files_by_category("tts")
+        suites = load_suite_files_by_category("text_to_speech")
         ids = {s["id"] for s in suites}
         assert ids == {"speecht5-n150", "speecht5-p150"}
 
     def test_tts_test_cases_match(self):
-        suites = load_suite_files_by_category("tts")
+        suites = load_suite_files_by_category("text_to_speech")
         for suite in suites:
             assert len(suite["test_cases"]) == 4
             templates = [tc["template"] for tc in suite["test_cases"]]
@@ -822,7 +822,7 @@ class TestTtsMatrixExpansion:
             ]
 
     def test_tts_health_test_targets(self):
-        suites = load_suite_files_by_category("tts")
+        suites = load_suite_files_by_category("text_to_speech")
         for suite in suites:
             health_test = suite["test_cases"][1]
             assert health_test["targets"] == {
