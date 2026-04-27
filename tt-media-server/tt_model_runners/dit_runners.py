@@ -427,15 +427,13 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
 
     def get_pipeline_device_params(self):
         device_params = {"fabric_config": ttnn.FabricConfig.FABRIC_1D_RING}
-        if is_blackhole():
-            config = ttnn.FabricRouterConfig()
-            config.max_packet_payload_size_bytes = 8192
-            device_params["fabric_router_config"] = config
-            mesh_size = (
-                self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
-            )
-            if mesh_size > 32:  # 4x32 only, not 4x8
+        mesh_size = self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
+        if mesh_size >= 32:
+            if is_blackhole():
                 device_params["trace_region_size"] = 120000000
+                config = ttnn.FabricRouterConfig()
+                config.max_packet_payload_size_bytes = 8192
+                device_params["fabric_router_config"] = config
         return device_params
 
     def create_pipeline(self):
@@ -481,6 +479,7 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
             width=width,
             num_frames=81,
             seed=int(request.seed or 0),
+            traced=True,
         )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         if self.export_in_runner:
