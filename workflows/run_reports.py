@@ -2190,6 +2190,7 @@ def extract_eval_results(files):
 def evals_release_report_data(args, results, meta_data, model_spec):
     eval_config = EVAL_CONFIGS[model_spec.model_name]
 
+    task_type = model_spec.model_type.task_type
     report_rows = []
 
     for task in eval_config.tasks:
@@ -2282,6 +2283,7 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                         "model": model_spec.model_name,
                         "device": args.device,
                         "task_name": t_key,
+                        "task_type": task_type,
                         "accuracy_check": accuracy_check,
                         "score": score,
                         "ratio_to_reference": ratio_to_reference,
@@ -2304,6 +2306,7 @@ def evals_release_report_data(args, results, meta_data, model_spec):
                     "model": model_spec.model_name,
                     "device": args.device,
                     "task_name": task.task_name,
+                    "task_type": task_type,
                     "accuracy_check": accuracy_check,
                     "score": score,
                     "ratio_to_reference": ratio_to_reference,
@@ -3127,7 +3130,7 @@ def benchmarks_release_data_format(
             "inference_steps_per_second", 0
         ),
         "filename": benchmark_summary_data.get("filename", ""),
-        "task_type": model_spec.model_type.name.lower(),
+        "task_type": model_spec.model_type.task_type,
     }
 
     if (
@@ -3184,7 +3187,7 @@ def benchmarks_release_data_format_embedding(
             "tput_prefill": benchmark_summary_data.get("tps_prefill_throughput", 0),
             "e2el_ms": benchmark_summary_data.get("mean_e2el_ms", 0),
             "filename": benchmark_summary_data.get("filename", ""),
-            "task_type": model_spec.model_type.name.lower(),
+            "task_type": model_spec.model_type.task_type,
         }
     ]
 
