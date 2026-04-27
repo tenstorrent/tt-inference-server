@@ -73,8 +73,8 @@ std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
 void LLMService::preProcess(domain::LLMRequest& request) const {
   BaseService::preProcess(request);
 
-  if (request.tool_choice_type.has_value()) {
-    const auto& type = *request.tool_choice_type;
+  if (request.tool_choice.has_value()) {
+    const auto& type = request.tool_choice->type;
     if (type != "auto" && type != "none") {
       throw std::invalid_argument(
           "tool_choice='" + type +
@@ -364,8 +364,8 @@ void LLMService::processStreamingRequest(
   StreamCallbackEntry entry{std::move(callback), request.skip_special_tokens};
   streamCallbacks.insert(taskId, std::move(entry));
 
-  if (request.tool_choice_type.has_value()) {
-    toolChoiceMap.insert(taskId, request.tool_choice_type.value());
+  if (request.tool_choice.has_value()) {
+    toolChoiceMap.insert(taskId, request.tool_choice->type);
   }
 
   if (reasoningParser) {

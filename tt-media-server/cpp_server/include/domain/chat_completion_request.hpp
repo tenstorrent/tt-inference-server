@@ -266,7 +266,7 @@ struct ChatCompletionRequest : BaseRequest {
     out.length_penalty = length_penalty;
     out.stop_token_ids = stop_token_ids;
     out.parallel_tool_calls = parallel_tool_calls;
-    out.tool_choice_type = tool_choice->type;
+    out.tool_choice = tool_choice;
     out.include_stop_str_in_output = include_stop_str_in_output;
     out.ignore_eos = ignore_eos;
     out.min_tokens = min_tokens;
