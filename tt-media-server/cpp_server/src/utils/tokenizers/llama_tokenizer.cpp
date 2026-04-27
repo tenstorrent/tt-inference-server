@@ -68,6 +68,13 @@ std::string LlamaTokenizer::applyChatTemplate(
           "user message!");
     }
 
+    if (filteredMessages[0].role != "user") {
+      throw std::runtime_error(
+          "When tools are provided, the first non-system message must have "
+          "role='user', but got role='" +
+          filteredMessages[0].role + "'");
+    }
+
     // Extract first user message
     auto firstUserMessage = filteredMessages[0].content;
     filteredMessages = std::vector<tt::domain::ChatMessage>(
@@ -104,9 +111,6 @@ std::string LlamaTokenizer::applyChatTemplate(
       out << "{\"name\": \"" << toolCall.functionCall.name << "\", ";
       out << "\"parameters\": ";
 
-      // Serialize arguments as JSON
-      Json::StreamWriterBuilder builder;
-      builder["indentation"] = "";
       out << toolCall.functionCall.arguments;
       out << "}" << llamaEot;
 

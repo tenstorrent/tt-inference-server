@@ -217,9 +217,7 @@ struct LlamaTemplateConfig : public TokenizerTemplateConfig {
       out << "{\"name\": \"" << toolCall.functionCall.name << "\", ";
       out << "\"parameters\": ";
 
-      Json::StreamWriterBuilder builder;
-      builder["indentation"] = "";
-      out << Json::writeString(builder, toolCall.functionCall.arguments);
+      out << toolCall.functionCall.arguments;
       out << "}";
     }
 
