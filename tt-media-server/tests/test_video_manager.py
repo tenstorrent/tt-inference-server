@@ -10,7 +10,7 @@ import pytest
 from utils.video_manager import (
     VideoManager,
     _normalize_channels,
-    _normalize_dtype,
+    _normalize_dtype_single,
     _normalize_shape,
 )
 
@@ -65,56 +65,28 @@ class TestNormalizeChannels:
             _normalize_channels(frames)
 
 
-class TestNormalizeDtype:
-    """Tests for _normalize_dtype uint8 conversion."""
-
-    def test_uint8_passthrough(self):
-        frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
-        result = _normalize_dtype(frames)
-        assert result is frames
+class TestNormalizeDtypeSingle:
+    """Tests for _normalize_dtype_single per-frame uint8 conversion."""
 
     def test_float32_0_to_1_scaled(self):
-        frames = np.full((2, 8, 8, 3), 0.5, dtype=np.float32)
-        result = _normalize_dtype(frames)
+        frame = np.full((8, 8, 3), 0.5, dtype=np.float32)
+        result = _normalize_dtype_single(frame)
         assert result.dtype == np.uint8
         assert np.allclose(result, 128, atol=1)
 
     def test_float64_above_1_clipped(self):
-        frames = np.full((2, 8, 8, 3), 200.0, dtype=np.float64)
-        result = _normalize_dtype(frames)
+        frame = np.full((8, 8, 3), 200.0, dtype=np.float64)
+        result = _normalize_dtype_single(frame)
         assert result.dtype == np.uint8
         assert np.all(result == 200)
 
     def test_int16_clipped(self):
-        frames = np.array([[[[300, -10, 100]]]], dtype=np.int16)
-        result = _normalize_dtype(frames)
+        frame = np.array([[[300, -10, 100]]], dtype=np.int16)
+        result = _normalize_dtype_single(frame)
         assert result.dtype == np.uint8
-        assert result[0, 0, 0, 0] == 255
-        assert result[0, 0, 0, 1] == 0
-        assert result[0, 0, 0, 2] == 100
-
-
-class TestProcessFramesForExport:
-    """Integration tests for the full _process_frames_for_export pipeline."""
-
-    def test_full_pipeline_uint8(self, manager):
-        frames = np.zeros((4, 64, 64, 3), dtype=np.uint8)
-        result = manager._process_frames_for_export(frames)
-        assert result.shape == (4, 64, 64, 3)
-        assert result.dtype == np.uint8
-
-    def test_non_contiguous_made_contiguous(self, manager):
-        frames = np.zeros((4, 8, 8, 3), dtype=np.uint8)
-        frames = frames[::2]
-        assert not frames.flags["C_CONTIGUOUS"]
-        result = manager._process_frames_for_export(frames)
-        assert result.flags["C_CONTIGUOUS"]
-
-    def test_5d_float32_grayscale(self, manager):
-        frames = np.full((1, 2, 8, 8, 1), 0.5, dtype=np.float32)
-        result = manager._process_frames_for_export(frames)
-        assert result.shape == (2, 8, 8, 3)
-        assert result.dtype == np.uint8
+        assert result[0, 0, 0] == 255
+        assert result[0, 0, 1] == 0
+        assert result[0, 0, 2] == 100
 
 
 class TestBuildEncodeCmd:
@@ -200,6 +172,45 @@ class TestRunFfmpeg:
         assert mock_popen.call_args[1]["stdin"] is None
 
 
+class TestStreamToFfmpeg:
+    """Tests for _stream_to_ffmpeg per-frame streaming."""
+
+    @patch("utils.video_manager.subprocess.Popen")
+    def test_writes_each_frame_to_stdin(self, mock_popen):
+        proc = MagicMock()
+        proc.wait.return_value = 0
+        proc.stderr.read.return_value = b""
+        mock_popen.return_value = proc
+        frames = np.zeros((3, 4, 4, 3), dtype=np.uint8)
+        VideoManager._stream_to_ffmpeg(["ffmpeg"], frames)
+        assert proc.stdin.write.call_count == 3
+        proc.stdin.close.assert_called_once()
+
+    @patch("utils.video_manager.subprocess.Popen")
+    def test_nonzero_returncode_raises(self, mock_popen):
+        proc = MagicMock()
+        proc.wait.return_value = 1
+        proc.stderr.read.return_value = b"encoding error"
+        mock_popen.return_value = proc
+        frames = np.zeros((1, 4, 4, 3), dtype=np.uint8)
+        with pytest.raises(RuntimeError, match="FFmpeg failed"):
+            VideoManager._stream_to_ffmpeg(["ffmpeg"], frames)
+
+    @patch("utils.video_manager.subprocess.Popen")
+    def test_timeout_kills_and_raises(self, mock_popen):
+        proc = MagicMock()
+        proc.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd="ffmpeg", timeout=600),
+            0,
+        ]
+        proc.stderr.read.return_value = b""
+        mock_popen.return_value = proc
+        frames = np.zeros((1, 4, 4, 3), dtype=np.uint8)
+        with pytest.raises(RuntimeError, match="timed out"):
+            VideoManager._stream_to_ffmpeg(["ffmpeg"], frames)
+        proc.kill.assert_called_once()
+
+
 class TestExportToMp4:
     """Tests for the top-level export_to_mp4 orchestrator."""
 
@@ -207,8 +218,8 @@ class TestExportToMp4:
     @patch("utils.video_manager.Path.mkdir")
     def test_returns_mp4_path(self, mock_mkdir, mock_popen, manager):
         proc = MagicMock()
-        proc.communicate.return_value = (None, b"")
-        proc.returncode = 0
+        proc.wait.return_value = 0
+        proc.stderr.read.return_value = b""
         mock_popen.return_value = proc
         frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
         path = manager.export_to_mp4(frames, fps=24)
