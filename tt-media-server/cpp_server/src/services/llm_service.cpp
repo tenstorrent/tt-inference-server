@@ -18,6 +18,7 @@
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
+#include "utils/tool_call_id_generator.hpp"
 #include "worker/worker_manager.hpp"
 
 namespace tt::services {
@@ -447,15 +448,19 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
     return;
   }
 
-  for (auto& choice : response.choices) {
+  for (size_t choiceIdx = 0; choiceIdx < response.choices.size(); ++choiceIdx) {
+    auto& choice = response.choices[choiceIdx];
     if (toolChoice.type == "none") {
       choice.text = toolCallParser->stripMarkers(choice.text);
       continue;
     }
 
     if (toolChoice.type == "function") {
+      // Generate unique tool call ID in OpenAI format (call_1, call_2, ...)
+      std::string toolCallId = tt::utils::ToolCallIDGenerator::generate();
+
       Json::Value toolCallJson;
-      toolCallJson["id"] = "call_0";
+      toolCallJson["id"] = toolCallId;
       toolCallJson["type"] = "function";
       toolCallJson["function"]["name"] =
           toolChoice.function.value_or("unknown");
@@ -470,8 +475,8 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
 
       TT_LOG_DEBUG(
           "[LLMService] Created tool_call from structured output "
-          "(tool_choice=function, function={})",
-          toolChoice.function.value_or("unknown"));
+          "(tool_choice=function, function={}, id={})",
+          toolChoice.function.value_or("unknown"), toolCallId);
       continue;
     }
 
