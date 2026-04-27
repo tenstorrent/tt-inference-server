@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "runners/llm_runner/schedulers/scheduler.hpp"
+#include "runners/schedulers/scheduler.hpp"
 
 namespace tt::runners::schedulers {
 
