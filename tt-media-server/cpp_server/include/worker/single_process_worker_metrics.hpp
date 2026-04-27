@@ -45,6 +45,25 @@ class SingleProcessWorkerMetrics {
   void incrementActiveRequests();
   void decrementActiveRequests();
 
+  // Per-LLM-slot lifecycle hooks. All hot-path safe: relaxed atomic stores
+  // only, no syscalls or allocations. Writes are silently dropped if the
+  // slotId is out of range or the worker has no shm attached.
+  //
+  // onTurnStart      — called when a new request enters the slot. Records ISL,
+  //                    turn-start timestamp, resets the in-flight output counter.
+  //                    Also bumps the worker's cumulative prompt-tokens aggregate.
+  // onOutputToken    — called per emitted decode token. Increments OSL counter
+  //                    and on the first token stamps FIRST_TOKEN_EPOCH_MS for
+  //                    later TPOT computation. Also bumps the worker's
+  //                    cumulative generation-tokens aggregate.
+  // onTurnComplete   — called when the slot's turn finishes. Computes per-turn
+  //                    TPOT (from FIRST_TOKEN to now over OSL-1 steps) and
+  //                    acceptance rate, stores them as gauges, and adds the
+  //                    accepts/rejects to the worker aggregates.
+  void onTurnStart(uint32_t slotId, uint32_t inputTokens);
+  void onOutputToken(uint32_t slotId);
+  void onTurnComplete(uint32_t slotId, uint32_t accepts, uint32_t rejects);
+
   // ----- low-level layout-agnostic writers ----------------------------------
   void scratchStoreU64(size_t idx, uint64_t value);
   void scratchAddU64(size_t idx, uint64_t delta);
