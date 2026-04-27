@@ -197,9 +197,7 @@ struct LlamaTemplateConfig : public TokenizerTemplateConfig {
     out << "Do not use variables.\n\n";
 
     for (const auto& tool : tools) {
-      Json::StreamWriterBuilder builder;
-      builder["indentation"] = "    ";
-      out << Json::writeString(builder, tool.toJson()) << "\n\n";
+      out << tool.toJson() << "\n\n";
     }
 
     return out.str();

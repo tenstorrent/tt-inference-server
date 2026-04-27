@@ -3,8 +3,6 @@
 
 #include "utils/tokenizers/llama_tokenizer.hpp"
 
-#include <json/json.h>
-
 #include <sstream>
 #include <stdexcept>
 
@@ -23,13 +21,6 @@ std::string LlamaTokenizer::applyChatTemplate(
     const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools)
     const {
   std::ostringstream out;
-
-  // Helper to serialize tool to JSON string
-  auto toolToJsonString = [](const tt::domain::tool_calls::Tool& tool) {
-    Json::StreamWriterBuilder builder;
-    builder["indentation"] = "    ";
-    return Json::writeString(builder, tool.toJson());
-  };
 
   // Extract system message
   std::string systemContent;
@@ -89,7 +80,7 @@ std::string LlamaTokenizer::applyChatTemplate(
         << "Do not use variables.\n\n";
 
     for (const auto& tool : *tools) {
-      out << toolToJsonString(tool) << "\n\n";
+      out << tool.toJson() << "\n\n";
     }
 
     out << firstUserMessage << llamaEot;
