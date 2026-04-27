@@ -13,7 +13,9 @@
 
 namespace tt::domain {
 
-// Lifecycle state of a Session.  IDLE <--(clearInFlight)--> IN_FLIGHT.
+// Lifecycle state of a Session.  IDLE --(markPrepared)--> PREPARED
+// --(markInFlight)--> IN_FLIGHT --(clearInFlight)--> IDLE.
+// IDLE can also transition directly to IN_FLIGHT via markInFlight (fast path).
 enum class SessionState {
   IDLE,       // no active request
   PREPARED,   // session has been allocated to a slot
