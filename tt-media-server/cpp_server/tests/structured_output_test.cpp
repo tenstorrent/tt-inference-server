@@ -396,6 +396,55 @@ TEST(GuidedDecodingTest, ToolChoiceNoneDoesNotEnableGuidedDecoding) {
   // tool_choice="none" explicitly disables tool calling
 }
 
+TEST(GuidedDecodingTest, ToolChoiceRequiredEnablesGuidedDecodingWithAnyOf) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "Help me with something"}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {"type": "string"},
+            "units": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+          },
+          "required": ["location"],
+          "additionalProperties": false
+        }
+      }
+    }, {
+      "type": "function",
+      "function": {
+        "name": "get_time",
+        "description": "Get current time",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "timezone": {"type": "string"}
+          },
+          "required": ["timezone"],
+          "additionalProperties": false
+        }
+      }
+    }],
+    "tool_choice": "required"
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  ASSERT_TRUE(llmReq.tool_choice.has_value());
+  EXPECT_EQ(llmReq.tool_choice->type, "required");
+  EXPECT_FALSE(llmReq.tool_choice->function.has_value());
+  ASSERT_TRUE(llmReq.tools.has_value());
+  EXPECT_EQ(llmReq.tools->size(), 2);
+
+  // When tool_choice.type == "required", the GuidedDecoderManager should
+  // enable guided decoding using an anyOf schema with all tool parameters
+}
+
 TEST(GuidedDecodingTest, CombinedResponseFormatAndToolsPreserveBoth) {
   auto json = parseJson(R"({
     "messages": [{"role": "user", "content": "What's the weather?"}],

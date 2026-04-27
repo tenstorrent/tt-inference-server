@@ -43,20 +43,29 @@ void GuidedDecoderManager::initRequest(uint32_t taskId,
   ResponseFormatType formatType = params.response_format_type;
   std::optional<std::string> schemaStr = params.json_schema_str;
 
-  if (params.tool_choice.has_value() &&
-      params.tool_choice->type == "function" &&
-      params.tool_choice->function.has_value() && params.tools.has_value()) {
-    const auto& functionName = params.tool_choice->function.value();
-    for (const auto& tool : params.tools.value()) {
-      if (tool.functionDefinition.name == functionName) {
-        formatType = ResponseFormatType::JSON_SCHEMA;
+  if (params.tool_choice.has_value() && params.tools.has_value()) {
+    if (params.tool_choice->type == "function" &&
+        params.tool_choice->function.has_value()) {
+      const auto& functionName = params.tool_choice->function.value();
+      for (const auto& tool : params.tools.value()) {
+        if (tool.functionDefinition.name == functionName) {
+          formatType = ResponseFormatType::JSON_SCHEMA;
 
-        Json::StreamWriterBuilder writer;
-        writer["indentation"] = "";
-        schemaStr =
-            Json::writeString(writer, tool.functionDefinition.parameters);
-        break;
+          schemaStr = tool.functionDefinition.parameters.toStyledString();
+          break;
+        }
       }
+    } else if (params.tool_choice->type == "required") {
+      formatType = ResponseFormatType::JSON_SCHEMA;
+
+      // Build anyOf schema with all tool parameters
+      Json::Value anyOfSchema;
+      anyOfSchema["anyOf"] = Json::arrayValue;
+
+      for (const auto& tool : params.tools.value()) {
+        anyOfSchema["anyOf"].append(tool.functionDefinition.parameters);
+      }
+      schemaStr = anyOfSchema.toStyledString();
     }
   }
 
