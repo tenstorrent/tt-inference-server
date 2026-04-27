@@ -3,7 +3,7 @@
 
 #include "api/sse_stream_writer.hpp"
 
-#include <cmath>
+#include <utility>
 
 #include "config/settings.hpp"
 #include "domain/chat_completion_response.hpp"
@@ -12,24 +12,31 @@
 
 namespace tt::api {
 
-SseStreamWriter::SseStreamWriter(trantor::EventLoop* loop, StreamParams params)
-    : loop_(loop), params_(std::move(params)) {
+SseStreamWriter::SseStreamWriter(trantor::EventLoop* loop,
+                                 StreamSinkParams params, bool includeUsage,
+                                 bool continuousUsage)
+    : StreamSink(std::move(params)),
+      loop(loop),
+      includeUsage(includeUsage),
+      continuousUsage(continuousUsage) {
   if (config::enableAccumulatedStreaming()) {
-    accumulator_ = std::make_shared<tt::utils::ConcurrentQueue<std::string>>();
+    sseBatchQueue = std::make_shared<tt::utils::ConcurrentQueue<std::string>>();
   }
 }
 
 std::shared_ptr<SseStreamWriter> SseStreamWriter::create(
-    trantor::EventLoop* loop, StreamParams params) {
-  return std::shared_ptr<SseStreamWriter>(
-      new SseStreamWriter(loop, std::move(params)));
+    trantor::EventLoop* loop, StreamSinkParams params, bool includeUsage,
+    bool continuousUsage) {
+  return std::shared_ptr<SseStreamWriter>(new SseStreamWriter(
+      loop, std::move(params), includeUsage, continuousUsage));
 }
 
 void SseStreamWriter::sendSse(const std::string& sse,
                               std::function<void()> onDisconnect) {
-  if (!accumulator_) {
-    loop_->queueInLoop([streamPtr = stream_ptr_, earlyBuffer = early_buffer_,
-                        sse, onDisconnect = std::move(onDisconnect)]() {
+  if (!sseBatchQueue) {
+    loop->queueInLoop([streamPtr = this->streamPtr,
+                       earlyBuffer = this->earlyBuffer, sse,
+                       onDisconnect = std::move(onDisconnect)]() {
       if (*streamPtr) {
         bool ok = (*streamPtr)->send(sse);
         if (!ok && onDisconnect) onDisconnect();
@@ -39,14 +46,15 @@ void SseStreamWriter::sendSse(const std::string& sse,
     });
     return;
   }
-  accumulator_->push(sse);
-  if (accumulator_->size() >= config::maxAccumulatedTokens()) {
-    auto accumulated = accumulator_->drain();
+  sseBatchQueue->push(sse);
+  if (sseBatchQueue->size() >= config::maxAccumulatedTokens()) {
+    auto accumulated = sseBatchQueue->drain();
     std::string batch;
     for (auto& s : accumulated) batch.append(s);
-    loop_->queueInLoop([streamPtr = stream_ptr_, earlyBuffer = early_buffer_,
-                        batch = std::move(batch),
-                        onDisconnect = std::move(onDisconnect)]() {
+    loop->queueInLoop([streamPtr = this->streamPtr,
+                       earlyBuffer = this->earlyBuffer,
+                       batch = std::move(batch),
+                       onDisconnect = std::move(onDisconnect)]() {
       if (*streamPtr) {
         bool ok = (*streamPtr)->send(batch);
         if (!ok && onDisconnect) onDisconnect();
@@ -58,145 +66,99 @@ void SseStreamWriter::sendSse(const std::string& sse,
 }
 
 void SseStreamWriter::flushAccumulated() {
-  if (!accumulator_) return;
-  auto accumulated = accumulator_->drain();
+  if (!sseBatchQueue) return;
+  auto accumulated = sseBatchQueue->drain();
   if (!accumulated.empty()) {
     std::string batch;
     for (auto& s : accumulated) batch.append(s);
-    if (*stream_ptr_) (*stream_ptr_)->send(batch);
+    if (*streamPtr) (*streamPtr)->send(batch);
   }
-}
-
-domain::CompletionUsage SseStreamWriter::buildFinalUsage() const {
-  const int completionTokens = completion_tokens_.load();
-  const int totalTokens = params_.promptTokensCount + completionTokens;
-
-  domain::CompletionUsage usage{params_.promptTokensCount,
-                                completionTokens,
-                                totalTokens,
-                                std::nullopt,
-                                std::nullopt,
-                                std::nullopt};
-
-  if (first_token_time_.has_value()) {
-    auto ttftUs = std::chrono::duration_cast<std::chrono::microseconds>(
-        first_token_time_.value() - start_time_);
-    usage.ttft_ms =
-        std::round(static_cast<double>(ttftUs.count()) / 10.0) / 100.0;
-  }
-
-  if (completionTokens > 1 && first_token_time_.has_value()) {
-    auto finalTime = std::chrono::high_resolution_clock::now();
-    auto baseTime = second_token_time_.value_or(first_token_time_.value());
-    auto totalUs = std::chrono::duration_cast<std::chrono::microseconds>(
-        finalTime - baseTime);
-    if (totalUs.count() > 0) {
-      auto secs = static_cast<double>(totalUs.count()) / 1000000.0;
-      usage.tps = std::round((completionTokens - 1) / secs * 1000.0) / 1000.0;
-    }
-  }
-
-  if (params_.sessionId.has_value()) {
-    usage.sessionId = params_.sessionId;
-  }
-  return usage;
 }
 
 void SseStreamWriter::handleTokenChunk(const domain::LLMStreamChunk& chunk) {
-  if (done_.load()) return;
+  if (done.load()) return;
+  if (chunk.choices.empty()) return;
 
-  const int currentTokens = completion_tokens_.fetch_add(1) + 1;
-
-  auto now = std::chrono::high_resolution_clock::now();
-  if (!first_token_time_.has_value()) {
-    first_token_time_ = now;
-  } else if (currentTokens == 2 && !second_token_time_.has_value()) {
-    second_token_time_ = now;
-  }
+  const int currentTokens = noteToken();
 
   std::optional<domain::CompletionUsage> usage;
-  if (params_.continuousUsage) {
-    usage = domain::CompletionUsage{params_.promptTokensCount,
+  if (continuousUsage) {
+    usage = domain::CompletionUsage{params.promptTokensCount,
                                     currentTokens,
-                                    params_.promptTokensCount + currentTokens,
+                                    params.promptTokensCount + currentTokens,
                                     std::nullopt,
                                     std::nullopt,
-                                    params_.sessionId};
+                                    params.sessionId};
   }
 
   auto streamChunk = domain::ChatCompletionStreamChunk::makeContentChunk(
-      params_.completionId, params_.model, params_.created, chunk.choices[0],
+      params.completionId, params.model, params.created, chunk.choices[0],
       usage);
 
   std::string sse;
-  if (first_content_chunk_.exchange(false)) {
+  if (firstContentChunk.exchange(false)) {
     std::optional<domain::CompletionUsage> initialUsage;
-    if (params_.continuousUsage) {
+    if (continuousUsage) {
       initialUsage = domain::CompletionUsage{
-          params_.promptTokensCount, 0, 0, std::nullopt, std::nullopt,
-          params_.sessionId};
+          params.promptTokensCount, 0, 0, std::nullopt, std::nullopt,
+          params.sessionId};
     }
     auto initialChunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
-        params_.completionId, params_.model, params_.created, initialUsage);
+        params.completionId, params.model, params.created, initialUsage);
     sse = initialChunk.toSSE() + streamChunk.toSSE();
   } else {
     sse = streamChunk.toSSE();
   }
 
   if (!sse.empty()) {
-    auto self = shared_from_this();
+    auto self = std::static_pointer_cast<SseStreamWriter>(shared_from_this());
     sendSse(sse, [self]() { self->abort(); });
   }
 }
 
-void SseStreamWriter::finalizeStream() {
-  auto self = shared_from_this();
-  loop_->queueInLoop([self]() {
-    if (!self->done_.exchange(true) && *self->stream_ptr_) {
+void SseStreamWriter::finalize() {
+  auto self = std::static_pointer_cast<SseStreamWriter>(shared_from_this());
+  loop->queueInLoop([self]() {
+    if (!self->done.exchange(true) && *self->streamPtr) {
       self->flushAccumulated();
 
-      if (self->params_.includeUsage) {
-        auto usage = self->buildFinalUsage();
-        (*self->stream_ptr_)
+      if (self->includeUsage) {
+        auto usage = self->buildUsage();
+        (*self->streamPtr)
             ->send(domain::ChatCompletionStreamChunk::makeUsageChunk(
-                       self->params_.completionId, self->params_.model,
-                       self->params_.created, usage)
+                       self->params.completionId, self->params.model,
+                       self->params.created, usage)
                        .toSSE());
       }
 
-      (*self->stream_ptr_)->send("data: [DONE]\n\n");
-      (*self->stream_ptr_)->close();
+      (*self->streamPtr)->send("data: [DONE]\n\n");
+      (*self->streamPtr)->close();
 
-      if (self->params_.sessionId.has_value() && self->params_.sessionManager) {
-        self->params_.sessionManager->releaseInFlight(
-            self->params_.sessionId.value());
-      }
+      self->releaseInFlight();
     }
   });
 }
 
 void SseStreamWriter::abort() {
-  if (!done_.exchange(true)) {
+  if (!done.exchange(true)) {
     TT_LOG_INFO("[SseStreamWriter] Client disconnected, aborting task {}",
-                params_.taskId);
-    params_.service->abortRequest(params_.taskId);
-    if (params_.sessionId.has_value() && params_.sessionManager) {
-      params_.sessionManager->releaseInFlight(params_.sessionId.value());
-    }
+                params.taskId);
+    if (params.service) params.service->abortRequest(params.taskId);
+    releaseInFlight();
   }
 }
 
 drogon::HttpResponsePtr SseStreamWriter::buildResponse() {
-  auto self = shared_from_this();
+  auto self = std::static_pointer_cast<SseStreamWriter>(shared_from_this());
   auto resp = drogon::HttpResponse::newAsyncStreamResponse(
       [self](drogon::ResponseStreamPtr stream) mutable {
-        *self->stream_ptr_ = std::move(stream);
-        for (const auto& event : *self->early_buffer_) {
-          (*self->stream_ptr_)->send(event);
+        *self->streamPtr = std::move(stream);
+        for (const auto& event : *self->earlyBuffer) {
+          (*self->streamPtr)->send(event);
         }
-        self->early_buffer_->clear();
-        if (self->done_.load()) {
-          (*self->stream_ptr_)->close();
+        self->earlyBuffer->clear();
+        if (self->done.load()) {
+          (*self->streamPtr)->close();
         }
       });
 

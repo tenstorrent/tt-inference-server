@@ -231,6 +231,33 @@ void LLMController::chatCompletions(
   }
 }
 
+StreamSinkParams LLMController::makeSinkParams(
+    const domain::LLMRequest& request) const {
+  StreamSinkParams params;
+  params.completionId = "chatcmpl-" + std::to_string(request.task_id);
+  params.model = request.model.value_or("default");
+  params.created = static_cast<int64_t>(
+      std::chrono::duration_cast<std::chrono::seconds>(
+          std::chrono::system_clock::now().time_since_epoch())
+          .count());
+  params.promptTokensCount = request.prompt_tokens_count;
+  params.sessionId = request.sessionId;
+  params.taskId = request.task_id;
+  params.service = service;
+  params.sessionManager = sessionManager;
+  return params;
+}
+
+std::function<void(const domain::LLMStreamChunk&, bool)>
+LLMController::makeStreamingCallback(std::shared_ptr<StreamSink> sink) {
+  return [sink = std::move(sink)](const domain::LLMStreamChunk& chunk,
+                                  bool isFinal) {
+    if (sink->isDone()) return;
+    if (!chunk.choices.empty()) sink->handleTokenChunk(chunk);
+    if (isFinal) sink->finalize();
+  };
+}
+
 drogon::HttpResponsePtr LLMController::makeSessionErrorResponse(
     const SessionError& err) {
   if (err.type == SessionErrorType::RATE_LIMIT) {
@@ -274,36 +301,18 @@ void LLMController::handleStreaming(
           return;
         }
 
-        StreamParams params;
-        params.completionId = "chatcmpl-" + std::to_string(reqPtr->task_id);
-        params.model = reqPtr->model.value_or("default");
-        params.created = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::system_clock::now().time_since_epoch())
-                .count());
-        params.includeUsage = !reqPtr->stream_options.has_value() ||
-                              reqPtr->stream_options->include_usage;
-        params.continuousUsage =
+        const bool includeUsage = !reqPtr->stream_options.has_value() ||
+                                  reqPtr->stream_options->include_usage;
+        const bool continuousUsage =
             reqPtr->stream_options.has_value() &&
             reqPtr->stream_options->continuous_usage_stats;
-        params.promptTokensCount = reqPtr->prompt_tokens_count;
-        params.sessionId = reqPtr->sessionId;
-        params.taskId = reqPtr->task_id;
-        params.service = service;
-        params.sessionManager = sessionManager;
 
-        auto writer = SseStreamWriter::create(loop, std::move(params));
-
-        auto streamingCallback = [writer](const domain::LLMStreamChunk& chunk,
-                                          bool isFinal) {
-          if (writer->isDone()) return;
-          if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
-          if (isFinal) writer->finalizeStream();
-        };
+        auto writer = SseStreamWriter::create(loop, makeSinkParams(*reqPtr),
+                                              includeUsage, continuousUsage);
 
         try {
           dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
-                             streamingCallback);
+                             makeStreamingCallback(writer));
         } catch (const services::QueueFullException& e) {
           releaseSessionInFlight(reqPtr->sessionId);
           (*cb)(errorResponse(drogon::k429TooManyRequests, e.what(),
@@ -357,36 +366,16 @@ void LLMController::handleNonStreaming(
           return;
         }
 
-        AccumulatingResponseParams params;
-        params.completionId = "chatcmpl-" + std::to_string(reqPtr->task_id);
-        params.model = reqPtr->model.value_or("default");
-        params.created = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::system_clock::now().time_since_epoch())
-                .count());
-        params.promptTokensCount = reqPtr->prompt_tokens_count;
-        params.sessionId = reqPtr->sessionId;
-        params.taskId = reqPtr->task_id;
-        params.service = service;
-        params.sessionManager = sessionManager;
-
         // Move the http callback into the builder; from here on out every
         // success/error path goes through builder->finalize / sendError so
         // the response is delivered exactly once and the session in-flight
         // slot is always released.
         auto builder = AccumulatingResponseBuilder::create(
-            std::move(params), std::move(*cb));
-
-        auto streamingCallback = [builder](const domain::LLMStreamChunk& chunk,
-                                           bool isFinal) {
-          if (builder->isDone()) return;
-          if (!chunk.choices.empty()) builder->handleTokenChunk(chunk);
-          if (isFinal) builder->finalize();
-        };
+            makeSinkParams(*reqPtr), std::move(*cb));
 
         try {
           dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
-                             streamingCallback);
+                             makeStreamingCallback(builder));
         } catch (const services::QueueFullException& e) {
           builder->sendError(drogon::k429TooManyRequests, e.what(),
                              "rate_limit_exceeded");

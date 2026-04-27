@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 
+#include "api/stream_sink.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
@@ -148,6 +149,18 @@ class LLMController : public drogon::HttpController<LLMController> {
    */
   static drogon::HttpResponsePtr makeSessionErrorResponse(
       const SessionError& err);
+
+  /**
+   * Build the StreamSinkParams shared by both SSE and accumulating sinks.
+   */
+  StreamSinkParams makeSinkParams(const domain::LLMRequest& request) const;
+
+  /**
+   * Build the streaming callback that pumps LLMStreamChunks into a StreamSink.
+   * Common to both streaming and non-streaming code paths.
+   */
+  static std::function<void(const domain::LLMStreamChunk&, bool)>
+  makeStreamingCallback(std::shared_ptr<StreamSink> sink);
 };
 
 }  // namespace tt::api

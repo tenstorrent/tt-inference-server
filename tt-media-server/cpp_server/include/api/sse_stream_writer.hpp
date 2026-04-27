@@ -7,73 +7,63 @@
 #include <trantor/net/EventLoop.h>
 
 #include <atomic>
-#include <chrono>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
+#include <vector>
 
-#include "domain/llm_response.hpp"
-#include "services/llm_service.hpp"
-#include "services/session_manager.hpp"
+#include "api/stream_sink.hpp"
 #include "utils/concurrent_queue.hpp"
 
 namespace tt::api {
 
-struct StreamParams {
-  std::string completionId;
-  std::string model;
-  int64_t created;
-  bool includeUsage;
-  bool continuousUsage;
-  int promptTokensCount;
-  std::optional<std::string> sessionId;
-  uint32_t taskId;
-  std::shared_ptr<services::LLMService> service;
-  std::shared_ptr<services::SessionManager> sessionManager;
-};
-
-class SseStreamWriter : public std::enable_shared_from_this<SseStreamWriter> {
+/**
+ * Streaming sink that writes Server-Sent Events to the HTTP client.
+ *
+ * Sends an OpenAI-compatible chunked stream: optional initial role-only
+ * chunk, one delta per token (optionally batched via the accumulated-
+ * streaming config), an optional final usage chunk, and a "data: [DONE]\n\n"
+ * terminator. Forwards client-disconnect detection back to the LLM service
+ * via abortRequest.
+ */
+class SseStreamWriter : public StreamSink {
  public:
   static std::shared_ptr<SseStreamWriter> create(trantor::EventLoop* loop,
-                                                 StreamParams params);
+                                                 StreamSinkParams params,
+                                                 bool includeUsage,
+                                                 bool continuousUsage);
 
-  SseStreamWriter(const SseStreamWriter&) = delete;
-  SseStreamWriter& operator=(const SseStreamWriter&) = delete;
+  void handleTokenChunk(const domain::LLMStreamChunk& chunk) override;
+  void finalize() override;
 
-  void handleTokenChunk(const domain::LLMStreamChunk& chunk);
-  void finalizeStream();
+  /**
+   * Cancel the underlying request and tear down the stream. Called when the
+   * client disconnects mid-stream (drogon send() returns false).
+   */
   void abort();
-  bool isDone() const { return done_.load(); }
 
+  /** Build the streaming HTTP response (text/event-stream, async). */
   drogon::HttpResponsePtr buildResponse();
 
  private:
-  explicit SseStreamWriter(trantor::EventLoop* loop, StreamParams params);
+  SseStreamWriter(trantor::EventLoop* loop, StreamSinkParams params,
+                  bool includeUsage, bool continuousUsage);
 
   void sendSse(const std::string& sse,
                std::function<void()> onDisconnect = nullptr);
   void flushAccumulated();
-  domain::CompletionUsage buildFinalUsage() const;
 
-  trantor::EventLoop* loop_;
-  std::shared_ptr<drogon::ResponseStreamPtr> stream_ptr_ =
+  trantor::EventLoop* loop;
+  bool includeUsage;
+  bool continuousUsage;
+
+  std::shared_ptr<drogon::ResponseStreamPtr> streamPtr =
       std::make_shared<drogon::ResponseStreamPtr>();
-  std::shared_ptr<std::vector<std::string>> early_buffer_ =
+  std::shared_ptr<std::vector<std::string>> earlyBuffer =
       std::make_shared<std::vector<std::string>>();
-  std::shared_ptr<tt::utils::ConcurrentQueue<std::string>> accumulator_;
-  std::atomic<bool> done_{false};
+  std::shared_ptr<tt::utils::ConcurrentQueue<std::string>> sseBatchQueue;
 
-  std::atomic<int> completion_tokens_{0};
-  std::chrono::high_resolution_clock::time_point start_time_ =
-      std::chrono::high_resolution_clock::now();
-  std::optional<std::chrono::high_resolution_clock::time_point>
-      first_token_time_;
-  std::optional<std::chrono::high_resolution_clock::time_point>
-      second_token_time_;
-  std::atomic<bool> first_content_chunk_{true};
-
-  StreamParams params_;
+  std::atomic<bool> firstContentChunk{true};
 };
 
 }  // namespace tt::api
