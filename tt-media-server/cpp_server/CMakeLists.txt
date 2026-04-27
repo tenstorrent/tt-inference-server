@@ -452,7 +452,7 @@ target_include_directories(test_tool_call_parser PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
 
-# Chat template with tools test
+# Chat template with tools test (supports both DeepSeek and Llama tokenizers)
 add_executable(test_chat_template_tools tests/test_chat_template_tools.cpp)
 target_link_libraries(test_chat_template_tools PRIVATE
     llm_runner_lib
@@ -461,6 +461,9 @@ target_link_libraries(test_chat_template_tools PRIVATE
 target_include_directories(test_chat_template_tools PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+target_compile_definitions(test_chat_template_tools PRIVATE
+    TOKENIZER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tokenizers"
 )
 
 add_executable(worker_metrics_shm_test
