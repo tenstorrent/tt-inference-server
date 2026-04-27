@@ -6,9 +6,9 @@
 #include <chrono>
 
 #include "config/settings.hpp"
+#include "services/service_container.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
-#include "services/service_container.hpp"
 
 namespace tt::api {
 

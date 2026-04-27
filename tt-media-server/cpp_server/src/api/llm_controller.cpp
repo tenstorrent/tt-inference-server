@@ -18,10 +18,10 @@
 #include "domain/models_response.hpp"
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
+#include "services/service_container.hpp"
 #include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
-#include "services/service_container.hpp"
 
 namespace tt::api {
 
