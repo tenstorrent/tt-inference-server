@@ -466,6 +466,17 @@ target_compile_definitions(test_chat_template_tools PRIVATE
     TOKENIZER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tokenizers"
 )
 
+# Chat completion request test
+add_executable(test_chat_completion_request tests/test_chat_completion_request.cpp)
+target_link_libraries(test_chat_completion_request PRIVATE
+    llm_runner_lib
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+target_include_directories(test_chat_completion_request PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+
 add_executable(worker_metrics_shm_test
     tests/worker_metrics_shm_test.cpp
     src/worker/worker_metrics_shm.cpp
@@ -519,6 +530,7 @@ gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
 
 # Register tool call tests
+add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
 add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
 
