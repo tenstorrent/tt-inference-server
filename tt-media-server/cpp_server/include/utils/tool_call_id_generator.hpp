@@ -8,8 +8,8 @@ namespace tt::utils {
 /**
  * Utility class for generating unique tool call IDs.
  *
- * Tool call IDs are strings in format "call_<N>" where N is a sequential number.
- * This provides:
+ * Tool call IDs are strings in format "call_<N>" where N is a sequential
+ * number. This provides:
  * - Thread-safe generation via atomic counter
  * - Deterministic sequential IDs (call_1, call_2, call_3, ...)
  * - Simple debugging (sequential IDs are easy to track in logs)

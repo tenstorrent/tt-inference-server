@@ -235,9 +235,8 @@ void testValidToolMessageSequence() {
   json["messages"].clear();
 
   json["messages"].append(createUserMessage("What's the weather?"));
-  json["messages"].append(
-      createAssistantWithToolCall("call_abc123", "get_weather",
-                                  "{\"location\":\"NYC\"}"));
+  json["messages"].append(createAssistantWithToolCall(
+      "call_abc123", "get_weather", "{\"location\":\"NYC\"}"));
   json["messages"].append(createToolMessage("call_abc123", "Sunny, 72°F"));
 
   auto request = ChatCompletionRequest::fromJson(json, 1);
@@ -282,8 +281,9 @@ void testToolMessageMissingAfterToolCalls() {
 }
 
 void testToolMessageMissingToolCallId() {
-  std::cout << "\n=== Testing Tool Message Missing tool_call_id (Should Reject) "
-               "===\n";
+  std::cout
+      << "\n=== Testing Tool Message Missing tool_call_id (Should Reject) "
+         "===\n";
 
   Json::Value json = createBasicRequestJson();
   json["messages"].clear();
@@ -317,8 +317,9 @@ void testToolMessageMissingToolCallId() {
 }
 
 void testToolMessageMismatchedCallId() {
-  std::cout << "\n=== Testing Tool Message With Mismatched tool_call_id (Should "
-               "Reject) ===\n";
+  std::cout
+      << "\n=== Testing Tool Message With Mismatched tool_call_id (Should "
+         "Reject) ===\n";
 
   Json::Value json = createBasicRequestJson();
   json["messages"].clear();
@@ -326,7 +327,8 @@ void testToolMessageMismatchedCallId() {
   json["messages"].append(createUserMessage("What's the weather?"));
   json["messages"].append(
       createAssistantWithToolCall("call_abc123", "get_weather", "{}"));
-  json["messages"].append(createToolMessage("call_xyz789", "Sunny"));  // Wrong ID
+  json["messages"].append(
+      createToolMessage("call_xyz789", "Sunny"));  // Wrong ID
 
   bool exceptionThrown = false;
   try {
@@ -338,14 +340,11 @@ void testToolMessageMismatchedCallId() {
            std::string::npos);
   }
 
-  assert(exceptionThrown &&
-         "Should throw when tool_call_id doesn't match");
+  assert(exceptionThrown && "Should throw when tool_call_id doesn't match");
 
   std::cout << "✓ Mismatched tool_call_id correctly rejected\n";
   std::cout << "✅ Test passed!\n";
 }
-
-
 
 // Main function for running tests
 int main() {

@@ -46,7 +46,6 @@ void GuidedDecoderManager::initRequest(uint32_t taskId,
   if (params.tool_choice.has_value() &&
       params.tool_choice->type == "function" &&
       params.tool_choice->function.has_value() && params.tools.has_value()) {
-        
     const auto& functionName = params.tool_choice->function.value();
     for (const auto& tool : params.tools.value()) {
       if (tool.functionDefinition.name == functionName) {

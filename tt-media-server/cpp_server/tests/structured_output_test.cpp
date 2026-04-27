@@ -290,8 +290,7 @@ TEST(GuidedDecodingTest, SamplingParamsNoGuidedDecodingForTextFormat) {
   auto llmReq = req.toLLMRequest();
 
   ASSERT_TRUE(llmReq.response_format.has_value());
-  EXPECT_EQ(llmReq.response_format->type,
-            tt::domain::ResponseFormatType::TEXT);
+  EXPECT_EQ(llmReq.response_format->type, tt::domain::ResponseFormatType::TEXT);
 }
 
 TEST(GuidedDecodingTest, ToolChoiceFunctionEnablesGuidedDecoding) {

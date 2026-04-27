@@ -291,12 +291,11 @@ struct ChatCompletionRequest : BaseRequest {
     const auto& type = toolChoice.type;
     const bool toolsMissing = !req.tools.has_value() || req.tools->empty();
 
-    if (toolsMissing && type != "none") {
+    if (type != "none" && toolsMissing) {
       throw std::invalid_argument("tool_choice='" + type +
                                   "' requires non-empty 'tools'");
     }
   }
-
 
   static void validateToolMessages(const ChatCompletionRequest& req) {
     if (req.messages.size() < 2) return;
