@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include <cassert>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -706,14 +707,19 @@ int main() {
   std::cout << "╚══════════════════════════════════════════════════════════╝\n";
 
   try {
+    // Construct tokenizer paths using TOKENIZER_DIR from CMake
+    const std::string deepseekPath =
+        std::string(TOKENIZER_DIR) + "/deepseek-ai/DeepSeek-R1-0528/tokenizer.json";
+    const std::string llamaPath =
+        std::string(TOKENIZER_DIR) + "/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json";
+
     std::cout
         << "\n"
         << "════════════════════════════════════════════════════════════\n"
         << "  Testing DeepSeek Tokenizer\n"
         << "════════════════════════════════════════════════════════════\n";
 
-    DeepseekTokenizer deepseekTokenizer(
-        "tokenizers/deepseek-ai/DeepSeek-R1-0528/tokenizer.json");
+    DeepseekTokenizer deepseekTokenizer(deepseekPath);
     runTestSuite(deepseekTokenizer, getDeepSeekConfig());
 
     std::cout
@@ -722,9 +728,16 @@ int main() {
         << "  Testing Llama Tokenizer\n"
         << "════════════════════════════════════════════════════════════\n";
 
-    LlamaTokenizer llamaTokenizer(
-        "tokenizers/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json");
-    runTestSuite(llamaTokenizer, getLlamaConfig());
+    // Check if Llama tokenizer file exists (gated model, requires HF_TOKEN)
+    std::ifstream llamaCheck(llamaPath);
+    if (llamaCheck.good()) {
+      llamaCheck.close();
+      LlamaTokenizer llamaTokenizer(llamaPath);
+      runTestSuite(llamaTokenizer, getLlamaConfig());
+    } else {
+      std::cout << "⚠️  Llama tokenizer not found (gated model requires HF_TOKEN)\n";
+      std::cout << "   Skipping Llama tests...\n";
+    }
 
     std::cout << "\n";
     std::cout

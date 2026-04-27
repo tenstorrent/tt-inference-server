@@ -462,6 +462,9 @@ target_include_directories(test_chat_template_tools PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
+target_compile_definitions(test_chat_template_tools PRIVATE
+    TOKENIZER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tokenizers"
+)
 
 add_executable(worker_metrics_shm_test
     tests/worker_metrics_shm_test.cpp
