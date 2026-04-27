@@ -156,6 +156,14 @@ endif()
 # Option for Tracy support
 option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
 
+if(ENABLE_TRACY AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(FATAL_ERROR
+        "Tracy profiling (ENABLE_TRACY=ON) must not be used in Release builds: "
+        "the Tracy client spawns background threads that degrade throughput on "
+        "machines with limited cores. Use a Debug build instead: "
+        "./build.sh --tracy")
+endif()
+
 # Option for Kafka support
 option(KAFKA_ENABLED "Enable Kafka messaging support" OFF)
 
