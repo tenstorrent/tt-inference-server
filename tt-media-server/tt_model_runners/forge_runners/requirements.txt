@@ -1,5 +1,6 @@
 --extra-index-url https://pypi.eng.aws.tenstorrent.com
 tt-forge==1.0.0
+vllm>=0.6.0
 torchvision
 
 tabulate
