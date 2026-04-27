@@ -298,11 +298,7 @@ struct ChatCompletionRequest : BaseRequest {
     }
   }
 
-  /**
-   * Validate that tool messages reference valid tool_call_ids from the most
-   * recent assistant message with tool_calls, and that ALL tool calls are
-   * responded to.
-   */
+
   static void validateToolMessages(const ChatCompletionRequest& req) {
     if (req.messages.empty()) return;
 
@@ -310,7 +306,6 @@ struct ChatCompletionRequest : BaseRequest {
     std::unordered_set<std::string> expectedToolCallIds;
     for (auto it = req.messages.rbegin(); it != req.messages.rend(); ++it) {
       if (it->role == "assistant" && it->tool_calls.has_value()) {
-        // Found the most recent assistant with tool calls
         for (const auto& toolCall : *it->tool_calls) {
           expectedToolCallIds.insert(toolCall.id);
         }
@@ -318,51 +313,26 @@ struct ChatCompletionRequest : BaseRequest {
       }
     }
 
-    // If we found an assistant message with tool_calls, validate tool messages
-    if (!expectedToolCallIds.empty()) {
-      std::unordered_set<std::string> respondedToolCallIds;
-
-      // Collect all tool message responses
-      for (const auto& msg : req.messages) {
-        if (msg.role == "tool") {
-          if (!msg.tool_call_id.has_value()) {
-            throw std::invalid_argument(
-                "Message with role='tool' must include 'tool_call_id' field");
-          }
-
-          const auto& toolCallId = *msg.tool_call_id;
-
-          // Validate the tool_call_id is from the assistant message
-          if (expectedToolCallIds.find(toolCallId) ==
-              expectedToolCallIds.end()) {
-            throw std::invalid_argument(
-                "tool_call_id '" + toolCallId +
-                "' does not match any tool call from the most recent assistant "
-                "message");
-          }
-
-          respondedToolCallIds.insert(toolCallId);
-        }
-      }
-
-      // Check that ALL tool calls have been responded to
-      for (const auto& expectedId : expectedToolCallIds) {
-        if (respondedToolCallIds.find(expectedId) ==
-            respondedToolCallIds.end()) {
-          throw std::invalid_argument(
-              "An assistant message with 'tool_calls' must be followed by "
-              "tool messages responding to each 'tool_call_id'. Missing "
-              "response for: '" +
-              expectedId + "'");
-        }
-      }
-    } else {
-      // No assistant message with tool_calls, but there are tool messages
-      for (const auto& msg : req.messages) {
-        if (msg.role == "tool") {
+    // Validate tool messages reference valid IDs
+    for (const auto& msg : req.messages) {
+      if (msg.role == "tool") {
+        if (expectedToolCallIds.empty()) {
           throw std::invalid_argument(
               "Tool message found but no previous assistant message with "
               "tool_calls");
+        }
+
+        if (!msg.tool_call_id.has_value()) {
+          throw std::invalid_argument(
+              "Message with role='tool' must include 'tool_call_id' field");
+        }
+
+        if (expectedToolCallIds.find(*msg.tool_call_id) ==
+            expectedToolCallIds.end()) {
+          throw std::invalid_argument(
+              "tool_call_id '" + *msg.tool_call_id +
+              "' does not match any tool call from the most recent assistant "
+              "message");
         }
       }
     }
