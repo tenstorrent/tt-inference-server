@@ -82,5 +82,9 @@ race:drogon::ResponseStream::send
 # ── test helper races (not production code) ────────────────────────────────
 # cancellation_test's InMemoryCancelQueue uses std::vector without locking.
 # Pure test infrastructure issue; fix the helper or replace with the
-# production CancelQueue. Track for cleanup separately.
-race:InMemoryCancelQueue
+# production CancelQueue. Tracked for cleanup separately.
+#
+# Match by file because GCC's TSan frames drop the InMemoryCancelQueue
+# namespace and report just `push` / `tryPopAll` symbol names — symbol-
+# based matching only worked under clang locally.
+race:cancellation_test.cpp
