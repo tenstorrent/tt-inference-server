@@ -13,6 +13,12 @@
 #include "utils/tokenizers/llama_tokenizer.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
+// TOKENIZER_DIR is normally injected by CMake (see CMakeLists.txt). Provide a
+// fallback so IDE indexers / non-CMake builds still parse this file.
+#ifndef TOKENIZER_DIR
+#define TOKENIZER_DIR "tokenizers"
+#endif
+
 using namespace tt::domain;
 using namespace tt::domain::tool_calls;
 using namespace tt::utils::tokenizers;
@@ -709,9 +715,11 @@ int main() {
   try {
     // Construct tokenizer paths using TOKENIZER_DIR from CMake
     const std::string deepseekPath =
-        std::string(TOKENIZER_DIR) + "/deepseek-ai/DeepSeek-R1-0528/tokenizer.json";
+        std::string(TOKENIZER_DIR) +
+        "/deepseek-ai/DeepSeek-R1-0528/tokenizer.json";
     const std::string llamaPath =
-        std::string(TOKENIZER_DIR) + "/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json";
+        std::string(TOKENIZER_DIR) +
+        "/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json";
 
     std::cout
         << "\n"
@@ -735,7 +743,8 @@ int main() {
       LlamaTokenizer llamaTokenizer(llamaPath);
       runTestSuite(llamaTokenizer, getLlamaConfig());
     } else {
-      std::cout << "⚠️  Llama tokenizer not found (gated model requires HF_TOKEN)\n";
+      std::cout
+          << "⚠️  Llama tokenizer not found (gated model requires HF_TOKEN)\n";
       std::cout << "   Skipping Llama tests...\n";
     }
 
