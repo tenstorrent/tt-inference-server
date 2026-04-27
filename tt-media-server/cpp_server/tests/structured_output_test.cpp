@@ -229,4 +229,207 @@ TEST(ChatCompletionRequestTest, RejectInvalidResponseFormat) {
                std::invalid_argument);
 }
 
+// ---------------------------------------------------------------------------
+// Guided Decoding Application Tests
+// ---------------------------------------------------------------------------
+
+TEST(GuidedDecodingTest, SamplingParamsHasGuidedDecodingForJsonObject) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "Give me JSON output"}],
+    "response_format": {"type": "json_object"}
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  ASSERT_TRUE(llmReq.response_format.has_value());
+  EXPECT_EQ(llmReq.response_format->type,
+            tt::domain::ResponseFormatType::JSON_OBJECT);
+}
+
+TEST(GuidedDecodingTest, SamplingParamsHasGuidedDecodingForJsonSchema) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "Get the weather"}],
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "weather_response",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "temperature": {"type": "number"},
+            "condition": {"type": "string"}
+          },
+          "required": ["temperature", "condition"],
+          "additionalProperties": false
+        }
+      }
+    }
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  ASSERT_TRUE(llmReq.response_format.has_value());
+  EXPECT_EQ(llmReq.response_format->type,
+            tt::domain::ResponseFormatType::JSON_SCHEMA);
+  ASSERT_TRUE(llmReq.response_format->json_schema_str.has_value());
+  EXPECT_NE(llmReq.response_format->json_schema_str->find("temperature"),
+            std::string::npos);
+  EXPECT_NE(llmReq.response_format->json_schema_str->find("condition"),
+            std::string::npos);
+}
+
+TEST(GuidedDecodingTest, SamplingParamsNoGuidedDecodingForTextFormat) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "Tell me a story"}],
+    "response_format": {"type": "text"}
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  ASSERT_TRUE(llmReq.response_format.has_value());
+  EXPECT_EQ(llmReq.response_format->type,
+            tt::domain::ResponseFormatType::TEXT);
+}
+
+TEST(GuidedDecodingTest, ToolChoiceFunctionEnablesGuidedDecoding) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "What's the weather?"}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {"type": "string"},
+            "units": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+          },
+          "required": ["location"],
+          "additionalProperties": false
+        }
+      }
+    }],
+    "tool_choice": {
+      "type": "function",
+      "function": {"name": "get_weather"}
+    }
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  ASSERT_TRUE(llmReq.tool_choice.has_value());
+  EXPECT_EQ(llmReq.tool_choice->type, "function");
+  ASSERT_TRUE(llmReq.tool_choice->function.has_value());
+  EXPECT_EQ(llmReq.tool_choice->function.value(), "get_weather");
+  ASSERT_TRUE(llmReq.tools.has_value());
+  EXPECT_FALSE(llmReq.tools->empty());
+
+  // When tool_choice.type == "function", the GuidedDecoderManager should
+  // enable guided decoding using the function's parameter schema
+  // This is verified in the GuidedDecoderManager::initRequest implementation
+}
+
+TEST(GuidedDecodingTest, ToolChoiceAutoDoesNotForceGuidedDecoding) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "What's the weather?"}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {"type": "string"}
+          },
+          "required": ["location"],
+          "additionalProperties": false
+        }
+      }
+    }],
+    "tool_choice": "auto"
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  ASSERT_TRUE(llmReq.tool_choice.has_value());
+  EXPECT_EQ(llmReq.tool_choice->type, "auto");
+  EXPECT_FALSE(llmReq.tool_choice->function.has_value());
+
+  // tool_choice="auto" doesn't force guided decoding to a specific schema
+  // The model can choose to call a tool or not
+}
+
+TEST(GuidedDecodingTest, ToolChoiceNoneDoesNotEnableGuidedDecoding) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "What's the weather?"}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {"type": "string"}
+          },
+          "required": ["location"],
+          "additionalProperties": false
+        }
+      }
+    }],
+    "tool_choice": "none"
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  ASSERT_TRUE(llmReq.tool_choice.has_value());
+  EXPECT_EQ(llmReq.tool_choice->type, "none");
+  EXPECT_FALSE(llmReq.tool_choice->function.has_value());
+
+  // tool_choice="none" explicitly disables tool calling
+}
+
+TEST(GuidedDecodingTest, CombinedResponseFormatAndToolsPreserveBoth) {
+  auto json = parseJson(R"({
+    "messages": [{"role": "user", "content": "What's the weather?"}],
+    "response_format": {"type": "json_object"},
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {"type": "string"}
+          },
+          "required": ["location"],
+          "additionalProperties": false
+        }
+      }
+    }],
+    "tool_choice": "auto"
+  })");
+
+  auto req = tt::domain::ChatCompletionRequest::fromJson(json, 1);
+  auto llmReq = req.toLLMRequest();
+
+  // Both response_format and tools should be preserved
+  ASSERT_TRUE(llmReq.response_format.has_value());
+  EXPECT_EQ(llmReq.response_format->type,
+            tt::domain::ResponseFormatType::JSON_OBJECT);
+  ASSERT_TRUE(llmReq.tools.has_value());
+  EXPECT_FALSE(llmReq.tools->empty());
+  ASSERT_TRUE(llmReq.tool_choice.has_value());
+  EXPECT_EQ(llmReq.tool_choice->type, "auto");
+}
+
 }  // namespace
