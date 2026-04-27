@@ -14,7 +14,6 @@
 #include "domain/manage_memory.hpp"
 #include "domain/sequence.hpp"
 #include "ipc/token_push.hpp"
-#include "pipeline_manager/pipeline_simulator.hpp"
 #include "runners/sp_pipeline_runner/blaze_utils.hpp"
 #include "services/memory_services/blaze_memory_manager.hpp"
 #include "utils/logger.hpp"
@@ -38,12 +37,10 @@ BlazeRunner::BlazeRunner(const config::LLMConfig& config,
       .d2h_socket_id = tt::config::blazeSocketDescriptorPrefix() + "_d2h",
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
-  pm::PipelineSimulatorConfig simulatorConfig = {
-      .num_stages = 64, .stage_duration_us = 110, .decode_token_id = 12345};
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
-      std::make_unique<pm::PipelineManager>(simulatorConfig, managerParams);
+      std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
   TT_LOG_INFO("BlazeRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
   TT_LOG_INFO(
@@ -215,6 +212,14 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   auto taskId = context.taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
   if (finished) {
+    uint32_t specAccepts = pipelineManager->get_spec_accepts(output.slot_id) -
+                           context.specAcceptsAtStart;
+    uint32_t specRejects = pipelineManager->get_spec_rejects(output.slot_id) -
+                           context.specRejectsAtStart;
+    uint32_t specTotal = specAccepts + specRejects;
+    double acceptRate = specTotal > 0 ? 100.0 * specAccepts / specTotal : 0.0;
+    TT_LOG_INFO("slot {} turn: accepts={}/{} rate={:.1f}%", output.slot_id,
+                specAccepts, specTotal, acceptRate);
     slotContexts.erase(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
@@ -259,6 +264,7 @@ inline void BlazeRunner::evictSlot(uint32_t slotId) {
 void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
   auto slotId = request->getKVCacheSlot();
   assert(slotId != tt::domain::INVALID_SLOT_ID);
+  assert(slotId < tt::config::pmMaxUsers());
 
   bool isNew = !request->isContinuation() && !request->isDisaggregated();
   if (isNew && request->getSamplingParams().hasGuidedDecoding()) {
@@ -291,7 +297,9 @@ void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
   }
   slotContexts.insert_or_assign(
       slotId, blaze_utils::SlotContext{
-                  request->taskId, request->getSamplingParams().ignore_eos});
+                  request->taskId, request->getSamplingParams().ignore_eos,
+                  pipelineManager->get_spec_accepts(slotId),
+                  pipelineManager->get_spec_rejects(slotId)});
   tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
 }
 

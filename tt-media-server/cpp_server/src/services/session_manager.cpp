@@ -165,7 +165,7 @@ uint32_t SessionManager::acquireInFlight(const std::string& sessionId,
   bool found = sessions.modify(
       sessionId, [&result, &wasInFlight,
                   cancelFn = std::move(cancelFn)](ManagedSession& ms) mutable {
-        wasInFlight = !ms.session.isIdle();
+        wasInFlight = ms.session.isInFlight();
         if (wasInFlight) return;
         ms.session.updateActivityTime();
         ms.session.markInFlight();
@@ -440,6 +440,7 @@ void SessionManager::handleMemoryResult(
                  !result.slotIds.empty();
   if (success) {
     pendingAllocation.session.setSlotId(result.slotIds.front());
+    pendingAllocation.session.markPrepared();
     sessions.insert(pendingAllocation.session.getSessionId(),
                     ManagedSession{pendingAllocation.session, {}});
     if (pendingAllocation.session.getHash() != 0) {
@@ -525,7 +526,7 @@ SessionManager::tryAcquireByPrefixHash(uint64_t prefixHash,
         stale = true;
         return;
       }
-      if (!ms.session.isIdle()) {
+      if (ms.session.isInFlight()) {
         busy = true;
         return;
       }
