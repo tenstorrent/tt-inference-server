@@ -79,24 +79,15 @@ class SlotRingBuffer {
   SlotRingBuffer& operator=(const SlotRingBuffer&) = delete;
 
   void open() {
-    int fd = shm_open(name.c_str(), O_CREAT | O_RDWR, 0666);
-    if (fd < 0) {
-      throw std::runtime_error(
-          "SlotRingBuffer: unable to open shared memory: " + name);
-    }
-    if (ftruncate(fd, Msg::K_TOTAL_SIZE) < 0) {
-      ::close(fd);
-      throw std::runtime_error("SlotRingBuffer: ftruncate failed");
-    }
-
+    int fd = openOrCreateShm(name, Msg::K_TOTAL_SIZE);
     memPointer = mmap(nullptr, Msg::K_TOTAL_SIZE, PROT_READ | PROT_WRITE,
                       MAP_SHARED, fd, 0);
-    if (memPointer == MAP_FAILED) {
-      ::close(fd);
-      throw std::runtime_error("SlotRingBuffer: mmap failed: " + name);
-    }
+    int savedErrno = errno;
     ::close(fd);
-
+    if (memPointer == MAP_FAILED) {
+      throw std::runtime_error("SlotRingBuffer: mmap failed: " + name + ": " +
+                               std::strerror(savedErrno));
+    }
     messages = std::span<Msg>(static_cast<Msg*>(memPointer), SHM_SLOTS);
     openState();
     this->writerIndex = state->writerIndex;
@@ -104,27 +95,18 @@ class SlotRingBuffer {
   }
 
   void openState() {
-    auto name = this->name + "_state";
-    int fd;
-    fd = shm_open(name.c_str(), O_RDWR, 0);
-    if (fd < 0) {
-      fd = shm_open(name.c_str(), O_CREAT | O_RDWR, 0666);
-      if (ftruncate(fd, sizeof(SlotRingBufferState)) < 0) {
-        ::close(fd);
-        throw std::runtime_error("SlotRingBuffer: ftruncate failed");
-      }
-      auto memPointerState = mmap(nullptr, sizeof(SlotRingBufferState),
-                                  PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-      memset(memPointerState, 0, sizeof(SlotRingBufferState));
-      ::close(fd);
-      state = reinterpret_cast<SlotRingBufferState*>(memPointerState);
-      return;
-    }
+    auto stateName = this->name + "_state";
+    int fd = openOrCreateShm(stateName, sizeof(SlotRingBufferState));
     auto memPointerState = mmap(nullptr, sizeof(SlotRingBufferState),
                                 PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    int savedErrno = errno;
     ::close(fd);
+    if (memPointerState == MAP_FAILED) {
+      throw std::runtime_error("SlotRingBuffer: mmap failed: " + stateName +
+                               ": " + std::strerror(savedErrno));
+    }
+    // New segments are zero-filled by ftruncate, so no explicit memset needed.
     state = reinterpret_cast<SlotRingBufferState*>(memPointerState);
-    return;
   }
 
   void write(uint32_t taskId, const std::vector<int64_t>& tokenIds,
@@ -172,6 +154,35 @@ class SlotRingBuffer {
   std::string name;
 
  private:
+  static int openOrCreateShm(const std::string& shmName, size_t size) {
+    int fd = shm_open(shmName.c_str(), O_RDWR, 0);
+    bool created = false;
+    if (fd < 0 && errno == ENOENT) {
+      fd = shm_open(shmName.c_str(), O_CREAT | O_RDWR, 0666);
+      created = (fd >= 0);
+    }
+    if (fd < 0) {
+      int savedErrno = errno;
+      throw std::runtime_error("SlotRingBuffer: unable to open shared memory " +
+                               shmName + ": " + std::strerror(savedErrno));
+    }
+    // fchmod guards against the creating process's umask stripping bits from
+    // the mode passed to shm_open, which would lock out other-UID peers.
+    if (created && fchmod(fd, 0666) < 0) {
+      int savedErrno = errno;
+      ::close(fd);
+      throw std::runtime_error("SlotRingBuffer: fchmod failed for " + shmName +
+                               ": " + std::strerror(savedErrno));
+    }
+    if (ftruncate(fd, size) < 0) {
+      int savedErrno = errno;
+      ::close(fd);
+      throw std::runtime_error("SlotRingBuffer: ftruncate failed for " +
+                               shmName + ": " + std::strerror(savedErrno));
+    }
+    return fd;
+  }
+
   Msg& acquireReaderSlot() { return messages[readerIndex]; }
   Msg& acquireWriterSlot() { return messages[writerIndex]; }
 

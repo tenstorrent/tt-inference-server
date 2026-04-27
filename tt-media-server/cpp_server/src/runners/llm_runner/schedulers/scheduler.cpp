@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/schedulers/scheduler.hpp"
 
 #include <algorithm>
 
 #include "profiling/tracy.hpp"
-#include "runners/llm_runner/max_occupancy_scheduler.hpp"
-#include "runners/llm_runner/prefill_first_scheduler.hpp"
+#include "runners/llm_runner/schedulers/max_occupancy_scheduler.hpp"
+#include "runners/llm_runner/schedulers/prefill_first_scheduler.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::runners::schedulers {
 
 using Sequence = tt::domain::Sequence;
 using SamplingParams = tt::domain::SamplingParams;
@@ -212,4 +212,4 @@ void Scheduler::abortRequest(uint32_t taskId) {
   std::erase_if(decodeQueue, [&](Sequence* s) { return s->taskId == taskId; });
   sequences.erase(taskId);
 }
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::runners::schedulers

@@ -15,7 +15,7 @@
 #include "ipc/task_queue.hpp"
 #include "runners/llm_runner/block_manager.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::runners::schedulers {
 
 /**
  * Schedules prefill and decode batches. Each step returns either a prefill-only
@@ -80,7 +80,7 @@ class Scheduler {
     return stopTokenIds.count(tokenId) > 0;
   }
 
-  BlockManager& getBlockManager() { return this->blockManager; }
+  llm_engine::BlockManager& getBlockManager() { return this->blockManager; }
 
  protected:
   /**
@@ -112,7 +112,7 @@ class Scheduler {
   size_t maxInFlightCount;
   size_t maxNumBatchedTokens;
   std::unordered_set<int64_t> stopTokenIds;
-  BlockManager blockManager;
+  llm_engine::BlockManager blockManager;
   ipc::ITaskQueue* prefillQueue;
   std::unordered_map<uint32_t, std::unique_ptr<tt::domain::Sequence>> sequences;
   std::deque<tt::domain::Sequence*> decodeQueue;
@@ -125,4 +125,4 @@ std::unique_ptr<Scheduler> makeScheduler(const tt::config::LLMConfig& config,
                                          ipc::ITaskQueue* taskQueue,
                                          size_t maxInFlightCount);
 
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::runners::schedulers

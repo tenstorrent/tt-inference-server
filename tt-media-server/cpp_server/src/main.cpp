@@ -23,8 +23,8 @@
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
 #include "services/llm_service.hpp"
+#include "services/service_container.hpp"
 #include "utils/logger.hpp"
-#include "utils/service_container.hpp"
 #include "utils/service_factory.hpp"
 #include "worker/single_process_worker_metrics.hpp"
 #include "worker/sp_pipeline_worker_metrics_renderer.hpp"
@@ -156,7 +156,7 @@ int main(int argc, char* argv[]) {
   if (shm != nullptr) {
     auto& agg = tt::worker::WorkerMetricsAggregator::instance();
     tt::worker::WorkerManager* mgr = nullptr;
-    auto llm = tt::utils::ServiceContainer::instance().llm();
+    auto llm = tt::services::ServiceContainer::instance().llm();
     if (llm) {
       mgr = llm->getWorkerManager();
     }

@@ -73,6 +73,16 @@ std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
 void LLMService::preProcess(domain::LLMRequest& request) const {
   BaseService::preProcess(request);
 
+  if (request.tool_choice.has_value()) {
+    const auto& type = request.tool_choice->type;
+    if (type != "auto" && type != "none") {
+      throw std::invalid_argument(
+          "tool_choice='" + type +
+          "' is not yet supported by this server; only 'auto' and 'none' are "
+          "currently implemented");
+    }
+  }
+
   if (std::holds_alternative<std::string>(request.prompt)) {
     auto text = std::get<std::string>(request.prompt);
     static auto cfg = tt::utils::tokenizers::getTokenizerConfig();
@@ -354,6 +364,10 @@ void LLMService::processStreamingRequest(
   StreamCallbackEntry entry{std::move(callback), request.skip_special_tokens};
   streamCallbacks.insert(taskId, std::move(entry));
 
+  if (request.tool_choice.has_value()) {
+    toolChoiceMap.insert(taskId, request.tool_choice->type);
+  }
+
   if (reasoningParser) {
     reasoningParser->initializeTask(taskId);
   }
@@ -390,9 +404,19 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
     }
   }
 
-  // Parse tool calls from the response
+  auto toolChoiceOpt = toolChoiceMap.take(response.task_id);
+  const bool toolCallsDisabled =
+      toolChoiceOpt.has_value() && toolChoiceOpt.value() == "none";
+  if (toolCallsDisabled) {
+    TT_LOG_DEBUG("[LLMService] Skipping tool call parsing (tool_choice=none)");
+  }
+
   if (toolCallParser) {
     for (auto& choice : response.choices) {
+      if (toolCallsDisabled) {
+        choice.text = toolCallParser->stripMarkers(choice.text);
+        continue;
+      }
       TT_LOG_DEBUG(
           "[LLMService] Parsing text for tool calls (length={}): {}",
           choice.text.length(),

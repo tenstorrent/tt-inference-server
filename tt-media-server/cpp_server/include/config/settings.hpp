@@ -109,6 +109,9 @@ size_t sessionEvictionCount();
  * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
 size_t maxTokensToPrefillOnDecode();
 
+/** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
+bool useFastMode();
+
 /** Kafka broker addresses from KAFKA_BROKERS. Default:
  * defaults::KAFKA_BROKERS. */
 std::string kafkaBrokers();
