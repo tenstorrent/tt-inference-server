@@ -15,11 +15,12 @@
 #include "ipc/cancel_queue.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
-#include "runners/llm_runner/prefill_first_scheduler.hpp"
+#include "runners/llm_runner/schedulers/prefill_first_scheduler.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::runners::schedulers {
 
 using Config = tt::config::LLMConfig;
+using tt::runners::llm_engine::InMemoryTaskQueue;
 
 namespace {
 
@@ -320,4 +321,4 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
 }
 
 }  // namespace
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::runners::schedulers
