@@ -13,12 +13,6 @@
 #include "utils/tokenizers/llama_tokenizer.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
-// TOKENIZER_DIR is normally injected by CMake (see CMakeLists.txt). Provide a
-// fallback so IDE indexers / non-CMake builds still parse this file.
-#ifndef TOKENIZER_DIR
-#define TOKENIZER_DIR "tokenizers"
-#endif
-
 using namespace tt::domain;
 using namespace tt::domain::tool_calls;
 using namespace tt::utils::tokenizers;
