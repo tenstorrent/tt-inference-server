@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+#include <json/json.h>
+
 #include <cassert>
 #include <iostream>
-#include <json/json.h>
 #include <stdexcept>
 
 #include "domain/chat_completion_request.hpp"
@@ -161,7 +162,6 @@ void testToolChoiceAutoWithoutToolsRejected() {
 
 void testToolChoiceRequiredParsedAtRequestLayer() {
   std::cout << "\n=== Testing tool_choice=required Parses Successfully ===\n";
-
 
   Json::Value json = createBasicRequestJson();
   json["tools"].append(createToolJson("get_weather", "Get weather"));
