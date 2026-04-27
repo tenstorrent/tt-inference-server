@@ -63,15 +63,12 @@ def _run_mock_bridge() -> None:
                 if msg is None:
                     break
 
-                task_id_str = msg.task_id.decode("utf-8", errors="ignore").rstrip(
-                    "\x00"
-                )
                 tokens_to_generate = (
                     msg.max_tokens if msg.max_tokens > 0 else len(msg.token_ids)
                 )
 
                 print(
-                    f"Mock runner: Received task_id={task_id_str}, "
+                    f"Mock runner: Received task_id={msg.task_id}, "
                     f"max_tokens={msg.max_tokens}, "
                     f"num_tokens={len(msg.token_ids)}, "
                     f"tokens={msg.token_ids[:5]}{'...' if len(msg.token_ids) > 5 else ''}",
@@ -135,7 +132,7 @@ def _run_mock_bridge() -> None:
                         time.sleep(remaining)
 
                 print(
-                    f"Mock runner: Finished generating {tokens_to_generate} tokens for task {task_id_str}",
+                    f"Mock runner: Finished generating {tokens_to_generate} tokens for task {msg.task_id}",
                     file=sys.stderr,
                 )
     except KeyboardInterrupt:
