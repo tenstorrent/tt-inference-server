@@ -326,6 +326,10 @@ size_t maxTokensToPrefillOnDecode() {
                defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
 }
 
+bool useFastMode() {
+  return envUlong("USE_FAST_MODE", defaults::USE_FAST_MODE);
+}
+
 std::string kafkaBrokers() {
   return envString("KAFKA_BROKERS", defaults::KAFKA_BROKERS);
 }
