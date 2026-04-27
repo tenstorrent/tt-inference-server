@@ -290,22 +290,45 @@ class Settings(BaseSettings):
         model_name_enum = ModelNames(model_to_run)
 
         explicit_runner = os.getenv("MODEL_RUNNER")
-        model_runner_enum = ModelRunners(explicit_runner) if explicit_runner else None
-        if model_runner_enum is None:
+        explicit_runner_enum = (
+            ModelRunners(explicit_runner) if explicit_runner else None
+        )
+
+        # Find the runner that's registered to serve this model. Used both for
+        # the no-override case and to validate any explicit MODEL_RUNNER.
+        expected_runner_enum = None
+        for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
+            if model_name_enum in model_names:
+                expected_runner_enum = runner
+                break
+
+        if explicit_runner_enum is None:
+            if expected_runner_enum is None:
+                logger.warning(
+                    f"MODEL_RUNNER not set for MODEL={model_to_run!r} and no "
+                    f"runner registered for that model; falling back to default."
+                )
+            model_runner_enum = expected_runner_enum
+        elif (
+            expected_runner_enum is not None
+            and model_name_enum
+            not in MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(explicit_runner_enum, set())
+        ):
+            # Explicit override doesn't claim to serve this model. Common cause:
+            # Dockerfile.forge bakes MODEL_RUNNER=tt-xla-resnet as the build-time
+            # default and the launcher passes MODEL=<something else> without
+            # overriding MODEL_RUNNER. Prefer the model's registered runner.
             logger.warning(
-                f"MODEL_RUNNER not set for MODEL={model_to_run!r}; "
-                f"falling back to default runner."
+                f"MODEL_RUNNER={explicit_runner!r} does not serve "
+                f"MODEL={model_to_run!r}; using "
+                f"{expected_runner_enum.value!r} from the model→runner map instead."
             )
+            model_runner_enum = expected_runner_enum
         else:
             logger.info(
                 f"Explicit MODEL_RUNNER={explicit_runner!r} for MODEL={model_to_run!r}"
             )
-
-        for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
-            if model_name_enum in model_names:
-                if not model_runner_enum:
-                    model_runner_enum = runner
-                    break
+            model_runner_enum = explicit_runner_enum
 
         if model_runner_enum:
             device_type_enum = DeviceTypes(device)
