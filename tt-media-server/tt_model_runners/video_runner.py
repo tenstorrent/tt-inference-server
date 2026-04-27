@@ -244,6 +244,8 @@ def run_all_ranks() -> None:
     _log.info(f"Rank {rank}: model={model_runner}")
 
     runner = _create_dit_runner(model_runner, rank)
+    if hasattr(runner, "export_in_runner"):
+        runner.export_in_runner = False
 
     _log.info(f"Rank {rank}: Setting up device...")
     runner.set_device()

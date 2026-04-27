@@ -5,13 +5,14 @@
 import base64
 import os
 import tempfile
+import time
 from typing import Annotated, Optional
 
 from config.constants import JobTypes
 from config.settings import settings
 from domain.video_generate_request import VideoGenerateRequest
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, Security, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
@@ -73,37 +74,32 @@ async def submit_generate_video_request(
     try:
         # Synchronous mode: process and return video directly
         if not settings.use_async_video:
+            t0 = time.perf_counter()
             video_file_path = await service.process_request(request)
+            t1 = time.perf_counter()
 
-            # Verify the video file exists and is valid
             if not video_file_path or not isinstance(video_file_path, str):
-                raise HTTPException(
-                    status_code=500,
-                    detail="Video generation failed: invalid file path returned",
-                )
-
+                raise HTTPException(status_code=500, detail="Video generation failed: invalid file path returned")
             if not os.path.exists(video_file_path):
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Video generation failed: file not found at {video_file_path}",
-                )
-
-            # Verify it's a valid file with size > 0
+                raise HTTPException(status_code=500, detail=f"Video generation failed: file not found at {video_file_path}")
             file_size = os.path.getsize(video_file_path)
             if file_size == 0:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Video generation failed: empty file generated",
-                )
+                raise HTTPException(status_code=500, detail="Video generation failed: empty file generated")
 
-            # File is already encoded with +faststart, serve directly
-            return FileResponse(
-                video_file_path,
+            with open(video_file_path, "rb") as f:
+                video_bytes = f.read()
+            t2 = time.perf_counter()
+
+            import logging
+            logging.getLogger("video_endpoint").info(
+                f"[video] process_request={t1-t0:.3f}s  file_read={t2-t1:.3f}s  "
+                f"file_size={file_size/1024:.1f}KB  task={request._task_id}"
+            )
+
+            return Response(
+                content=video_bytes,
                 media_type="video/mp4",
-                filename=f"video_{request._task_id}.mp4",
-                headers={
-                    "Content-Disposition": f"attachment; filename=video_{request._task_id}.mp4"
-                },
+                headers={"Content-Disposition": f"attachment; filename=video_{request._task_id}.mp4"},
             )
 
         # Async mode: create job and return job metadata

@@ -404,6 +404,7 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.image_manager = ImageManager("img")
+        self.export_in_runner = True
 
     def _make_warmup_video_request(self):
         import base64
@@ -482,6 +483,10 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
             seed=int(request.seed or 0),
         )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
+        if self.export_in_runner:
+            from utils.video_manager import VideoManager
+
+            return [VideoManager().export_to_mp4(frames)]
         return frames
 
 
