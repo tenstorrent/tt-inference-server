@@ -47,13 +47,18 @@ constexpr size_t LLM_SLOT_BASE = 32;
 constexpr size_t MAX_LLM_SLOTS = 128;  // matches defaults::PM_MAX_USERS
 constexpr size_t LLM_SLOT_FIELDS = 7;
 
-constexpr size_t LLM_FIELD_LAST_INPUT_TOKENS = 0;       // ISL of last submitted turn
-constexpr size_t LLM_FIELD_CURRENT_OUTPUT_TOKENS = 1;   // tokens emitted so far in current turn
-constexpr size_t LLM_FIELD_LAST_OUTPUT_TOKENS = 2;      // OSL of last completed turn
+constexpr size_t LLM_FIELD_LAST_INPUT_TOKENS = 0;  // ISL of last submitted turn
+constexpr size_t LLM_FIELD_CURRENT_OUTPUT_TOKENS =
+    1;  // tokens emitted so far in current turn
+constexpr size_t LLM_FIELD_LAST_OUTPUT_TOKENS =
+    2;  // OSL of last completed turn
 constexpr size_t LLM_FIELD_TURN_START_EPOCH_MS = 3;
-constexpr size_t LLM_FIELD_FIRST_TOKEN_EPOCH_MS = 4;    // 0 until first decode token of current turn
-constexpr size_t LLM_FIELD_LAST_TPOT_US = 5;            // (last_token_ms - first_token_ms) * 1000 / (osl - 1)
-constexpr size_t LLM_FIELD_LAST_ACCEPTANCE_RATE_BPS = 6;  // basis points 0-10000
+constexpr size_t LLM_FIELD_FIRST_TOKEN_EPOCH_MS =
+    4;  // 0 until first decode token of current turn
+constexpr size_t LLM_FIELD_LAST_TPOT_US =
+    5;  // (last_token_ms - first_token_ms) * 1000 / (osl - 1)
+constexpr size_t LLM_FIELD_LAST_ACCEPTANCE_RATE_BPS =
+    6;  // basis points 0-10000
 
 inline size_t llmSlotIdx(uint32_t slotId, size_t field) {
   return LLM_SLOT_BASE + static_cast<size_t>(slotId) * LLM_SLOT_FIELDS + field;

@@ -50,8 +50,9 @@ class SingleProcessWorkerMetrics {
   // slotId is out of range or the worker has no shm attached.
   //
   // onTurnStart      — called when a new request enters the slot. Records ISL,
-  //                    turn-start timestamp, resets the in-flight output counter.
-  //                    Also bumps the worker's cumulative prompt-tokens aggregate.
+  //                    turn-start timestamp, resets the in-flight output
+  //                    counter. Also bumps the worker's cumulative
+  //                    prompt-tokens aggregate.
   // onOutputToken    — called per emitted decode token. Increments OSL counter
   //                    and on the first token stamps FIRST_TOKEN_EPOCH_MS for
   //                    later TPOT computation. Also bumps the worker's

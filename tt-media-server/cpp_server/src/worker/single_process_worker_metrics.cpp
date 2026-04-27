@@ -111,10 +111,10 @@ void SingleProcessWorkerMetrics::onTurnStart(uint32_t slotId,
   if (shm_ == nullptr) return;
   if (slotId >= sp_pipeline::MAX_LLM_SLOTS) return;
   const uint64_t now = nowMs();
-  shm_->storeScratch(workerId_,
-                     sp_pipeline::llmSlotIdx(
-                         slotId, sp_pipeline::LLM_FIELD_LAST_INPUT_TOKENS),
-                     inputTokens);
+  shm_->storeScratch(
+      workerId_,
+      sp_pipeline::llmSlotIdx(slotId, sp_pipeline::LLM_FIELD_LAST_INPUT_TOKENS),
+      inputTokens);
   shm_->storeScratch(workerId_,
                      sp_pipeline::llmSlotIdx(
                          slotId, sp_pipeline::LLM_FIELD_CURRENT_OUTPUT_TOKENS),
@@ -184,10 +184,10 @@ void SingleProcessWorkerMetrics::onTurnComplete(uint32_t slotId,
         bps);
   }
 
-  shm_->storeScratch(
-      workerId_,
-      sp_pipeline::llmSlotIdx(slotId, sp_pipeline::LLM_FIELD_LAST_OUTPUT_TOKENS),
-      osl);
+  shm_->storeScratch(workerId_,
+                     sp_pipeline::llmSlotIdx(
+                         slotId, sp_pipeline::LLM_FIELD_LAST_OUTPUT_TOKENS),
+                     osl);
   shm_->fetchAddScratch(workerId_, sp_pipeline::SCRATCH_TOTAL_SPEC_ACCEPTS,
                         accepts);
   shm_->fetchAddScratch(workerId_, sp_pipeline::SCRATCH_TOTAL_SPEC_REJECTS,

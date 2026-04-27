@@ -95,8 +95,9 @@ void SpPipelineWorkerMetricsRenderer::prebuildGauges(
     slot_acceptance_rate_family_ =
         &prometheus::BuildGauge()
              .Name("tt_worker_slot_acceptance_rate")
-             .Help("Speculative-decode acceptance rate of the last completed "
-                   "turn (0..1)")
+             .Help(
+                 "Speculative-decode acceptance rate of the last completed "
+                 "turn (0..1)")
              .Register(registry);
   }
 
@@ -169,24 +170,24 @@ void SpPipelineWorkerMetricsRenderer::render(const WorkerMetricsShm& shm,
 
   for (size_t s = 0; s < g.slots.size(); ++s) {
     const uint64_t isl = shm.loadScratch(
-        slot, sp_pipeline::llmSlotIdx(static_cast<uint32_t>(s),
-                                      sp_pipeline::LLM_FIELD_LAST_INPUT_TOKENS));
+        slot,
+        sp_pipeline::llmSlotIdx(static_cast<uint32_t>(s),
+                                sp_pipeline::LLM_FIELD_LAST_INPUT_TOKENS));
     const uint64_t osl = shm.loadScratch(
-        slot, sp_pipeline::llmSlotIdx(
-                  static_cast<uint32_t>(s),
-                  sp_pipeline::LLM_FIELD_LAST_OUTPUT_TOKENS));
+        slot,
+        sp_pipeline::llmSlotIdx(static_cast<uint32_t>(s),
+                                sp_pipeline::LLM_FIELD_LAST_OUTPUT_TOKENS));
     const uint64_t curOsl = shm.loadScratch(
-        slot, sp_pipeline::llmSlotIdx(
-                  static_cast<uint32_t>(s),
-                  sp_pipeline::LLM_FIELD_CURRENT_OUTPUT_TOKENS));
+        slot,
+        sp_pipeline::llmSlotIdx(static_cast<uint32_t>(s),
+                                sp_pipeline::LLM_FIELD_CURRENT_OUTPUT_TOKENS));
     const uint64_t tpotUs = shm.loadScratch(
         slot, sp_pipeline::llmSlotIdx(static_cast<uint32_t>(s),
                                       sp_pipeline::LLM_FIELD_LAST_TPOT_US));
     const uint64_t bps = shm.loadScratch(
-        slot,
-        sp_pipeline::llmSlotIdx(
-            static_cast<uint32_t>(s),
-            sp_pipeline::LLM_FIELD_LAST_ACCEPTANCE_RATE_BPS));
+        slot, sp_pipeline::llmSlotIdx(
+                  static_cast<uint32_t>(s),
+                  sp_pipeline::LLM_FIELD_LAST_ACCEPTANCE_RATE_BPS));
 
     SlotGauges& sg = g.slots[s];
     sg.input_tokens->Set(static_cast<double>(isl));
