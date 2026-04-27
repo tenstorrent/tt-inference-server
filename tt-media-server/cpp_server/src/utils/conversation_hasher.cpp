@@ -4,9 +4,10 @@
 #include "utils/conversation_hasher.hpp"
 
 #include <algorithm>
-#include <functional>
 
+#define XXH_INLINE_ALL
 #include "utils/tokenizers/tokenizer.hpp"
+#include "xxhash.h"
 
 namespace tt::utils {
 
@@ -73,8 +74,9 @@ uint64_t hashConversationPrefix(
   const auto& tokenizer = tokenizers::activeTokenizer();
   std::string rendered = tokenizer.applyChatTemplate(prefix, false);
 
-  // Compute stable 64-bit hash
-  return std::hash<std::string>()(rendered);
+  // Compute stable 64-bit hash using xxHash64 (deterministic across
+  // platforms/restarts)
+  return XXH64(rendered.data(), rendered.size(), 0);
 }
 
 std::string renderLastUserTurn(

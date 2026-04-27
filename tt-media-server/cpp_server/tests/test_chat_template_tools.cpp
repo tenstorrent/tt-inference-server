@@ -252,7 +252,7 @@ void testChatTemplateWithoutTools(const TokenizerTemplateConfig* config) {
          result.find(config->toolCallsBegin()) == std::string::npos);
 
   // Should contain the user message
-  assert(result.find(content) != std::string::npos);
+  assert(result.find(msg.content) != std::string::npos);
 
   std::cout << "✓ Chat template without tools applied correctly\n";
   std::cout << "✅ Test passed!\n";

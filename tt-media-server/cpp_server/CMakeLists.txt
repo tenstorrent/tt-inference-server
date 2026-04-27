@@ -72,6 +72,17 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# xxHash for stable, cross-platform hashing (conversation prefix caching)
+FetchContent_Declare(
+    xxhash
+    GIT_REPOSITORY https://github.com/Cyan4973/xxHash.git
+    GIT_TAG        v0.8.2
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(xxhash)
+add_library(xxhash_lib INTERFACE)
+target_include_directories(xxhash_lib INTERFACE ${xxhash_SOURCE_DIR})
+
 # xgrammar for structured output / guided decoding (JSON schema constrained generation)
 FetchContent_Declare(xgrammar
     GIT_REPOSITORY https://github.com/mlc-ai/xgrammar.git
@@ -303,8 +314,8 @@ target_include_directories(llm_runner_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
-# Link tokenizers_cpp, JsonCpp, and xgrammar (guided decoding for structured outputs)
-target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar)
+# Link tokenizers_cpp, JsonCpp, xgrammar (guided decoding), and xxhash (stable hashing)
+target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar xxhash_lib)
 
 # Link PipelineManager when ENABLE_BLAZE is ON: prefer Full (SocketPipeline + TT::Metalium),
 # fall back to Core (mock pipeline only).
