@@ -139,6 +139,55 @@ class TestCnnClientStrategyRunEval(unittest.TestCase):
                 with pytest.raises(RuntimeError):
                     strategy.run_eval()
 
+    @patch("utils.media_clients.cnn_client.get_num_calls", return_value=2)
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("pathlib.Path.mkdir")
+    def test_run_eval_vision_eval_path_writes_both_accuracy_and_tput_user(
+        self, mock_mkdir, mock_file, mock_num_calls
+    ):
+        """VisionEvalsTest-supported runner: eval JSON must include the
+        accuracy fields from VisionEvalsTest *and* tput_user computed from
+        the benchmark loop. The latter is what flips tput_check from FAIL
+        to PASS in run_reports.add_target_checks_cnn_image_video."""
+        strategy = self._create_strategy()
+        status_list = [
+            CnnGenerationTestStatus(status=True, elapsed=0.05),
+            CnnGenerationTestStatus(status=True, elapsed=0.05),
+        ]
+        eval_result = {
+            "accuracy_status": 2,
+            "correct": 16,
+            "total": 20,
+            "mismatches_count": 4,
+        }
+
+        with patch.object(
+            strategy, "get_health", return_value=(True, "tt-xla-efficientnet")
+        ):
+            with patch.object(
+                strategy, "_run_image_analysis_benchmark", return_value=status_list
+            ):
+                with patch.object(
+                    strategy, "_run_vision_eval", return_value=eval_result
+                ) as mock_vision_eval:
+                    strategy.run_eval()
+
+        # Vision eval was invoked with the actual runner name
+        mock_vision_eval.assert_called_once_with("tt-xla-efficientnet")
+
+        write_calls = mock_file().write.call_args_list
+        written_content = "".join(call[0][0] for call in write_calls)
+        eval_row = json.loads(written_content)[0]
+
+        # Accuracy fields come from VisionEvalsTest
+        assert eval_row["accuracy_check"] == 2
+        assert eval_row["correct"] == 16
+        assert eval_row["total"] == 20
+        assert eval_row["mismatches_count"] == 4
+        # TTFT/tput_user come from the always-run benchmark loop
+        assert eval_row["score"] == pytest.approx(0.05)
+        assert eval_row["tput_user"] == pytest.approx(1.0 / 0.05)
+
 
 class TestCnnClientStrategyRunBenchmark(unittest.TestCase):
     """Tests for run_benchmark method."""

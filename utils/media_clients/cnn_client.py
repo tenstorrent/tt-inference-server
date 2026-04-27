@@ -59,10 +59,16 @@ class CnnClientStrategy(BaseMediaStrategy):
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
             eval_result = None
+            # Always run the image-analysis benchmark so the eval JSON has
+            # TTFT and tput_user for the benchmark target_checks. workflows/
+            # run_reports.py:add_target_checks_cnn_image_video reads tput_user
+            # from evals data, not benchmark data, so it has to be written here.
+            status_list = self._run_image_analysis_benchmark(num_calls)
+            # Additionally run the runner-specific accuracy eval (CPU-vs-device
+            # on ImageNet) when supported, so accuracy_check reflects real model
+            # quality instead of just API success rate.
             if runner_in_use in VISION_EVAL_SUPPORTED_RUNNERS:
                 eval_result = self._run_vision_eval(runner_in_use)
-            else:
-                status_list = self._run_image_analysis_benchmark(num_calls)
         except Exception as e:
             logger.error(f"Eval execution encountered an error: {e}")
             raise
@@ -79,36 +85,39 @@ class CnnClientStrategy(BaseMediaStrategy):
         benchmark_data["task_name"] = self.all_params.tasks[0].task_name
         benchmark_data["tolerance"] = self.all_params.tasks[0].score.tolerance
 
+        # TTFT and throughput always come from the image-analysis benchmark
+        # loop. Writing them here (in the eval JSON) is what flips tput_check
+        # from FAIL to PASS for any runner — including those that also run
+        # VisionEvalsTest, since run_reports.py reads tput_user from evals.
+        ttft_value = self._calculate_ttft_value(status_list)
+        logger.info(f"Extracted TTFT value: {ttft_value}")
+        benchmark_data["published_score"] = self.all_params.tasks[
+            0
+        ].score.published_score
+        benchmark_data["score"] = ttft_value
+        benchmark_data["published_score_ref"] = self.all_params.tasks[
+            0
+        ].score.published_score_ref
+        # CNN classifiers run a single forward pass, so the LLM-style
+        # inference_steps_per_second is always 0. Report throughput as
+        # images-per-second derived from the mean per-request latency.
+        benchmark_data["tput_user"] = (1.0 / ttft_value) if ttft_value > 0 else 0
+
         if runner_in_use in VISION_EVAL_SUPPORTED_RUNNERS and eval_result:
-            logger.info("Adding eval results from eval spec test to benchmark data")
+            logger.info("Adding eval results from VisionEvalsTest to benchmark data")
             benchmark_data["accuracy_check"] = eval_result.get("accuracy_status", 0)
             benchmark_data["correct"] = eval_result["correct"]
             benchmark_data["total"] = eval_result["total"]
             benchmark_data["mismatches_count"] = eval_result["mismatches_count"]
         else:
-            logger.info("No eval results from eval spec test to add to benchmark data")
-            # Calculate TTFT
-            ttft_value = self._calculate_ttft_value(status_list)
-            logger.info(f"Extracted TTFT value: {ttft_value}")
-
-            benchmark_data["published_score"] = self.all_params.tasks[
-                0
-            ].score.published_score
-            benchmark_data["score"] = ttft_value
-            benchmark_data["published_score_ref"] = self.all_params.tasks[
-                0
-            ].score.published_score_ref
-
-            # CNN classifiers without a labeled-dataset eval pathway derive
-            # accuracy_check from API success rate so acceptance_criteria has
-            # a pass/fail signal. Values match ReportCheckTypes (PASS=2, FAIL=3).
+            # No labeled-dataset accuracy eval available for this runner; derive
+            # accuracy_check from API success rate so acceptance_criteria still
+            # has a pass/fail signal. Values match ReportCheckTypes (PASS=2, FAIL=3).
+            logger.info(
+                "No vision eval results; deriving accuracy_check from API success rate"
+            )
             all_ok = bool(status_list) and all(s.status for s in status_list)
             benchmark_data["accuracy_check"] = 2 if all_ok else 3
-
-            # CNN classifiers run a single forward pass, so the LLM-style
-            # inference_steps_per_second is always 0. Report throughput as
-            # images-per-second derived from the mean per-request latency.
-            benchmark_data["tput_user"] = (1.0 / ttft_value) if ttft_value > 0 else 0
 
         # Make benchmark_data is inside of list as an object
         benchmark_data = [benchmark_data]
