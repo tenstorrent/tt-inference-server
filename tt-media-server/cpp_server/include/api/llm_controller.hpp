@@ -87,6 +87,18 @@ class LLMController : public drogon::HttpController<LLMController> {
     bool validSessionFound = false;
   };
 
+  /**
+   * Unified request dispatch for both streaming and non-streaming paths.
+   * Routes requests based on LLMMode (REGULAR vs DECODE_ONLY) and handles
+   * disaggregation when appropriate. Both streaming and non-streaming
+   * paths use this to ensure consistent mode-routing behavior.
+   */
+  void dispatchRequest(
+      std::shared_ptr<domain::LLMRequest> reqPtr,
+      SessionInfo sessionInfo,
+      const std::function<void(const domain::LLMStreamChunk&, bool)>& callback,
+      std::function<void(const std::string&)> onError) const;
+
   enum class SessionErrorType {
     RATE_LIMIT,      // Returns 429 Too Many Requests
     ALLOCATION_FAIL  // Returns 503 Service Unavailable

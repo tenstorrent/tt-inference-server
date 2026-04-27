@@ -6,8 +6,10 @@
 #include <json/json.h>
 
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 
 #include "api/error_response.hpp"
@@ -232,27 +234,106 @@ void LLMController::chatCompletions(
         std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
             std::move(callback));
 
+    auto cancelFn = [svc = service, taskId = request->task_id]() {
+      svc->abortRequest(taskId);
+    };
+
     resolveSession(
         request, loop,
-        [this, request, cb](SessionInfo) {
+        [this, request, cb](SessionInfo sessionInfo) {
           try {
             auto sessionId = request->sessionId;
             auto startTime = std::chrono::high_resolution_clock::now();
-            auto completion = service->submitRequest(std::move(*request));
+
+            std::mutex mtx;
+            std::condition_variable cv;
+            bool done = false;
+            std::string accumulatedAnswer;
+            std::string accumulatedReasoning;
+            int completionTokens = 0;
+            std::string finishReason = "stop";
+
+            auto accumulatingCallback =
+                [&mtx, &cv, &done, &accumulatedAnswer, &accumulatedReasoning,
+                 &completionTokens,
+                 &finishReason](const domain::LLMStreamChunk& chunk,
+                                bool isFinal) {
+                  if (!chunk.choices.empty()) {
+                    if (chunk.choices[0].reasoning.has_value()) {
+                      accumulatedReasoning.append(
+                          chunk.choices[0].reasoning.value());
+                    }
+                    accumulatedAnswer.append(chunk.choices[0].text);
+                    completionTokens++;
+                    if (chunk.choices[0].finish_reason.has_value()) {
+                      finishReason = chunk.choices[0].finish_reason.value();
+                    }
+                  }
+                  if (isFinal) {
+                    std::lock_guard<std::mutex> lock(mtx);
+                    done = true;
+                    cv.notify_one();
+                  }
+                };
+
+            bool hasError = false;
+            std::string errorMsg;
+
+            dispatchRequest(request, sessionInfo, accumulatingCallback,
+                            [&hasError, &errorMsg](const std::string& msg) {
+                              hasError = true;
+                              errorMsg = msg;
+                            });
+
+            if (hasError) {
+              if (sessionId.has_value() && sessionManager) {
+                sessionManager->releaseInFlight(sessionId.value());
+              }
+              (*cb)(errorResponse(drogon::k500InternalServerError, errorMsg,
+                                  "internal_error"));
+              return;
+            }
+
+            std::unique_lock<std::mutex> lock(mtx);
+            cv.wait(lock, [&done] { return done; });
+
             auto endTime = std::chrono::high_resolution_clock::now();
 
-            completion.id = "chatcmpl-" + completion.id;
+            domain::LLMResponse completion{request->task_id};
+            completion.id =
+                "chatcmpl-" + std::to_string(request->task_id);
+            completion.model = request->model.value_or("default");
+            completion.created =
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count();
+
+            domain::LLMChoice choice;
+            choice.text = std::move(accumulatedAnswer);
+            choice.reasoning =
+                accumulatedReasoning.empty()
+                    ? std::nullopt
+                    : std::optional<std::string>(std::move(accumulatedReasoning));
+            choice.index = 0;
+            choice.finish_reason = finishReason;
+            completion.choices.push_back(std::move(choice));
+
+            completion.usage = {request->prompt_tokens_count,
+                                completionTokens,
+                                request->prompt_tokens_count + completionTokens,
+                                std::nullopt,
+                                std::nullopt,
+                                std::nullopt};
 
             auto totalDuration =
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     endTime - startTime);
-            if (totalDuration.count() > 0 &&
-                completion.usage.completion_tokens > 0) {
+            if (totalDuration.count() > 0 && completionTokens > 0) {
               completion.usage.ttft_ms =
                   static_cast<double>(totalDuration.count());
-              if (completion.usage.completion_tokens > 1) {
-                completion.usage.tps = completion.usage.completion_tokens *
-                                       1000.0 / totalDuration.count();
+              if (completionTokens > 1) {
+                completion.usage.tps =
+                    completionTokens * 1000.0 / totalDuration.count();
               }
             }
 
@@ -293,7 +374,8 @@ void LLMController::chatCompletions(
                     err.message,
                 "service_unavailable"));
           }
-        });
+        },
+        std::move(cancelFn));
   }
 }
 
@@ -315,8 +397,6 @@ void LLMController::handleStreaming(
       reqPtr, loop,
       [this, reqPtr, cb, loop](SessionInfo sessionInfo) {
         try {
-          service->preProcess(*reqPtr);
-
           StreamParams params;
           params.completionId = "chatcmpl-" + std::to_string(reqPtr->task_id);
           params.model = reqPtr->model.value_or("default");
@@ -344,30 +424,18 @@ void LLMController::handleStreaming(
             if (isFinal) writer->finalizeStream();
           };
 
-          if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
-            // preprocess is already called
-            service->submitStreamingRequest(*reqPtr, streamingCallback, true);
-          } else if (tt::config::llmMode() ==
-                     tt::config::LLMMode::DECODE_ONLY) {
-            if (shouldDoPrefillOnDecode(*reqPtr,
-                                        sessionInfo.validSessionFound)) {
-              TT_LOG_DEBUG(
-                  "[LLMController] Using prefill on decode for sessionId: {}",
-                  reqPtr->sessionId.value_or("none"));
-              service->submitStreamingRequest(*reqPtr, streamingCallback);
-            } else {
-              TT_LOG_DEBUG(
-                  "[LLMController] Using disaggregated prefill for request "
-                  "with sessionId: {}",
-                  reqPtr->sessionId.value_or("none"));
-              disaggregationService->handleStreamingRequest(*reqPtr,
-                                                            streamingCallback);
-            }
-          } else {
-            (*cb)(errorResponse(
-                drogon::k500InternalServerError,
-                "LLM Mode must be regular or decode only for streaming",
-                "internal_error"));
+          bool hasError = false;
+          std::string errorMsg;
+
+          dispatchRequest(reqPtr, sessionInfo, streamingCallback,
+                          [&hasError, &errorMsg](const std::string& msg) {
+                            hasError = true;
+                            errorMsg = msg;
+                          });
+
+          if (hasError) {
+            (*cb)(errorResponse(drogon::k500InternalServerError, errorMsg,
+                                "internal_error"));
             return;
           }
 
@@ -404,6 +472,32 @@ bool LLMController::shouldDoPrefillOnDecode(const domain::LLMRequest& request,
   const size_t promptTokens = static_cast<size_t>(request.prompt_tokens_count);
 
   return promptTokens < maxTokens;
+}
+
+void LLMController::dispatchRequest(
+    std::shared_ptr<domain::LLMRequest> reqPtr, SessionInfo sessionInfo,
+    const std::function<void(const domain::LLMStreamChunk&, bool)>& callback,
+    std::function<void(const std::string&)> onError) const {
+  service->preProcess(*reqPtr);
+
+  if (tt::config::llmMode() == tt::config::LLMMode::REGULAR) {
+    service->submitStreamingRequest(*reqPtr, callback, true);
+  } else if (tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY) {
+    if (shouldDoPrefillOnDecode(*reqPtr, sessionInfo.validSessionFound)) {
+      TT_LOG_DEBUG(
+          "[LLMController] Using prefill on decode for sessionId: {}",
+          reqPtr->sessionId.value_or("none"));
+      service->submitStreamingRequest(*reqPtr, callback);
+    } else {
+      TT_LOG_DEBUG(
+          "[LLMController] Using disaggregated prefill for request "
+          "with sessionId: {}",
+          reqPtr->sessionId.value_or("none"));
+      disaggregationService->handleStreamingRequest(*reqPtr, callback);
+    }
+  } else {
+    onError("LLM Mode must be regular or decode only");
+  }
 }
 
 void LLMController::createSession(
