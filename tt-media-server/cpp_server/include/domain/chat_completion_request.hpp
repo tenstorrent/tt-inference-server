@@ -9,7 +9,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include "domain/base_request.hpp"
@@ -300,41 +299,50 @@ struct ChatCompletionRequest : BaseRequest {
 
 
   static void validateToolMessages(const ChatCompletionRequest& req) {
-    if (req.messages.empty()) return;
+    if (req.messages.size() < 2) return;
 
-    // Find the most recent assistant message with tool_calls
-    std::unordered_set<std::string> expectedToolCallIds;
-    for (auto it = req.messages.rbegin(); it != req.messages.rend(); ++it) {
-      if (it->role == "assistant" && it->tool_calls.has_value()) {
-        for (const auto& toolCall : *it->tool_calls) {
-          expectedToolCallIds.insert(toolCall.id);
-        }
+    // Find the last assistant message
+    size_t lastAssistantIdx = req.messages.size();
+    for (size_t i = req.messages.size(); i-- > 0;) {
+      if (req.messages[i].role == "assistant") {
+        lastAssistantIdx = i;
         break;
       }
     }
 
-    // Validate tool messages reference valid IDs
-    for (const auto& msg : req.messages) {
-      if (msg.role == "tool") {
-        if (expectedToolCallIds.empty()) {
-          throw std::invalid_argument(
-              "Tool message found but no previous assistant message with "
-              "tool_calls");
-        }
+    if (lastAssistantIdx >= req.messages.size()) return;
 
-        if (!msg.tool_call_id.has_value()) {
-          throw std::invalid_argument(
-              "Message with role='tool' must include 'tool_call_id' field");
-        }
+    const auto& lastAssistant = req.messages[lastAssistantIdx];
 
-        if (expectedToolCallIds.find(*msg.tool_call_id) ==
-            expectedToolCallIds.end()) {
-          throw std::invalid_argument(
-              "tool_call_id '" + *msg.tool_call_id +
-              "' does not match any tool call from the most recent assistant "
-              "message");
-        }
-      }
+    if (!lastAssistant.tool_calls.has_value() ||
+        lastAssistant.tool_calls->empty()) {
+      return;
+    }
+
+    const std::string& expectedCallId = lastAssistant.tool_calls->at(0).id;
+
+    if (lastAssistantIdx + 1 >= req.messages.size()) {
+      return;
+    }
+
+    const auto& nextMessage = req.messages[lastAssistantIdx + 1];
+
+    if (nextMessage.role != "tool") {
+      throw std::invalid_argument(
+          "Expected message with role='tool' after assistant message with "
+          "tool_calls, but got role='" +
+          nextMessage.role + "'");
+    }
+
+    if (!nextMessage.tool_call_id.has_value()) {
+      throw std::invalid_argument(
+          "Message with role='tool' must include 'tool_call_id' field");
+    }
+
+    if (*nextMessage.tool_call_id != expectedCallId) {
+      throw std::invalid_argument("tool_call_id '" + *nextMessage.tool_call_id +
+                                  "' does not match expected call_id '" +
+                                  expectedCallId + "'");
     }
   }
 };
