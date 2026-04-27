@@ -156,6 +156,14 @@ endif()
 # Option for Tracy support
 option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
 
+if(ENABLE_TRACY AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(FATAL_ERROR
+        "Tracy profiling (ENABLE_TRACY=ON) must not be used in Release builds: "
+        "the Tracy client spawns background threads that degrade throughput on "
+        "machines with limited cores. Use a Debug build instead: "
+        "./build.sh --tracy")
+endif()
+
 # Option for Kafka support
 option(KAFKA_ENABLED "Enable Kafka messaging support" OFF)
 
@@ -444,7 +452,7 @@ target_include_directories(test_tool_call_parser PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
 
-# Chat template with tools test
+# Chat template with tools test (supports both DeepSeek and Llama tokenizers)
 add_executable(test_chat_template_tools tests/test_chat_template_tools.cpp)
 target_link_libraries(test_chat_template_tools PRIVATE
     llm_runner_lib
@@ -453,6 +461,9 @@ target_link_libraries(test_chat_template_tools PRIVATE
 target_include_directories(test_chat_template_tools PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+target_compile_definitions(test_chat_template_tools PRIVATE
+    TOKENIZER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tokenizers"
 )
 
 add_executable(worker_metrics_shm_test
