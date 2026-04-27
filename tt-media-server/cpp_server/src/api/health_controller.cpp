@@ -30,13 +30,16 @@ void HealthController::health(
           .count());
 
   bool hasAliveWorkers = false;
+  bool hasReadyWorkers = false;
   if (service_) {
     try {
       auto status = service_->getSystemStatus();
-      for (const auto& w : status.worker_info) {
+      for (const auto& w : status.workerInfo) {
         if (w.is_alive) {
           hasAliveWorkers = true;
-          break;
+        }
+        if (w.is_ready) {
+          hasReadyWorkers = true;
         }
       }
     } catch (const std::exception& e) {
@@ -51,16 +54,28 @@ void HealthController::health(
     socketHealthy = socket_->isConnected();
   }
 
-  if (hasAliveWorkers && socketHealthy) {
+  if (hasReadyWorkers && hasAliveWorkers && socketHealthy) {
     response["status"] = "healthy";
     callback(drogon::HttpResponse::newHttpJsonResponse(response));
-  } else {
+  } else if (!hasAliveWorkers) {
     response["status"] = "unhealthy";
     if (!hasAliveWorkers) {
       response["error"] = "no workers are alive";
     } else {
       response["error"] = "socket not connected";
     }
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k503ServiceUnavailable);
+    callback(resp);
+  } else if (!hasReadyWorkers) {
+    response["status"] = "unhealthy";
+    response["error"] = "no workers are ready";
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k503ServiceUnavailable);
+    callback(resp);
+  } else {
+    response["status"] = "unhealthy";
+    response["error"] = "socket not connected";
     auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
     resp->setStatusCode(drogon::k503ServiceUnavailable);
     callback(resp);
@@ -86,17 +101,16 @@ void HealthController::ready(
 
     Json::Value response;
     response["status"] = "alive";
-    response["model_ready"] = status.model_ready;
-    response["queue_size"] = static_cast<Json::UInt64>(status.queue_size);
-    response["max_queue_size"] =
-        static_cast<Json::UInt64>(status.max_queue_size);
+    response["model_ready"] = status.modelReady;
+    response["queue_size"] = static_cast<Json::UInt64>(status.queueSize);
+    response["max_queue_size"] = static_cast<Json::UInt64>(status.maxQueueSize);
 
     if (socket_) {
       response["socket_status"] = socket_->getStatus();
     }
 
     Json::Value workers(Json::arrayValue);
-    for (const auto& w : status.worker_info) {
+    for (const auto& w : status.workerInfo) {
       Json::Value wj;
       wj["worker_id"] = w.worker_id;
       wj["is_ready"] = w.is_ready;

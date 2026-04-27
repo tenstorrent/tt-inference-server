@@ -403,8 +403,8 @@ void testChatTemplateWithSingleTool(const Tokenizer& tokenizer,
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
                   << ")\n";
         break;
       }
@@ -457,8 +457,8 @@ void testChatTemplateWithMultipleTools(const Tokenizer& tokenizer,
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
                   << ")\n";
         break;
       }
@@ -517,8 +517,8 @@ void testChatTemplateWithConversationHistory(
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
                   << ")\n";
         break;
       }
@@ -644,8 +644,8 @@ void testChatTemplateWithToolOutputs(const Tokenizer& tokenizer,
       if (expected.str()[i] != actual[i]) {
         std::cout << "First difference at position " << i << ":\n";
         std::cout << "  Expected: '" << expected.str()[i] << "' (ASCII "
-                  << (int)expected.str()[i] << ")\n";
-        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << (int)actual[i]
+                  << int(expected.str()[i]) << ")\n";
+        std::cout << "  Actual: '" << actual[i] << "' (ASCII " << int(actual[i])
                   << ")\n";
         break;
       }

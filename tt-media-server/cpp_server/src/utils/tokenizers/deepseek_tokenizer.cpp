@@ -133,6 +133,7 @@ std::string DeepseekTokenizer::applyChatTemplate(
 
       } else {
         out << dsAssistantTag << m.content;
+        if (cfg_.add_eos_token) out << cfg_.eos_token;
       }
     } else if (m.role == "tool") {
       if (!inToolOutputs) {

@@ -72,6 +72,17 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# xxHash for stable, cross-platform hashing (conversation prefix caching)
+FetchContent_Declare(
+    xxhash
+    GIT_REPOSITORY https://github.com/Cyan4973/xxHash.git
+    GIT_TAG        v0.8.2
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(xxhash)
+add_library(xxhash_lib INTERFACE)
+target_include_directories(xxhash_lib INTERFACE ${xxhash_SOURCE_DIR})
+
 # xgrammar for structured output / guided decoding (JSON schema constrained generation)
 FetchContent_Declare(xgrammar
     GIT_REPOSITORY https://github.com/mlc-ai/xgrammar.git
@@ -144,6 +155,14 @@ endif()
 
 # Option for Tracy support
 option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
+
+if(ENABLE_TRACY AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(FATAL_ERROR
+        "Tracy profiling (ENABLE_TRACY=ON) must not be used in Release builds: "
+        "the Tracy client spawns background threads that degrade throughput on "
+        "machines with limited cores. Use a Debug build instead: "
+        "./build.sh --tracy")
+endif()
 
 # Option for Kafka support
 option(KAFKA_ENABLED "Enable Kafka messaging support" OFF)
@@ -255,9 +274,10 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/llm_runner/model_runner.cpp
     src/runners/llm_runner/mock_model_runner.cpp
     src/runners/llm_runner/scheduler.cpp
-    src/runners/llm_runner/sequence.cpp
-    src/runners/llm_runner/sampling_params.cpp
+    src/domain/sequence.cpp
+    src/domain/sampling_params.cpp
     src/utils/logger.cpp
+    src/utils/conversation_hasher.cpp
     src/config/settings.cpp
     src/utils/tokenizers/tokenizer.cpp
     src/utils/tokenizers/deepseek_tokenizer.cpp
@@ -274,7 +294,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/blaze_prefill_runner/blaze_prefill_runner.cpp
     src/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.cpp
     src/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
-    src/services/guided_decoder_manager.cpp
+    src/runners/guided_decoder_manager.cpp
     src/services/deepseek_tool_call_parser.cpp
 )
 
@@ -302,8 +322,8 @@ target_include_directories(llm_runner_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
-# Link tokenizers_cpp, JsonCpp, and xgrammar (guided decoding for structured outputs)
-target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar)
+# Link tokenizers_cpp, JsonCpp, xgrammar (guided decoding), and xxhash (stable hashing)
+target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar xxhash_lib)
 
 # Link PipelineManager when ENABLE_BLAZE is ON: prefer Full (SocketPipeline + TT::Metalium),
 # fall back to Core (mock pipeline only).
@@ -397,6 +417,9 @@ target_include_directories(lockfree_queue_test PRIVATE
 add_executable(test_tokenizer tests/test_tokenizer.cpp)
 target_link_libraries(test_tokenizer PRIVATE llm_runner_lib GTest::gtest_main)
 
+add_executable(conversation_hasher_test tests/conversation_hasher_test.cpp)
+target_link_libraries(conversation_hasher_test PRIVATE llm_runner_lib GTest::gtest_main)
+
 add_executable(cancel_queue_test tests/cancel_queue_test.cpp)
 target_link_libraries(cancel_queue_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(cancel_queue_test PRIVATE
@@ -449,16 +472,48 @@ target_include_directories(worker_metrics_shm_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(concurrent_map_test tests/concurrent_map_test.cpp)
+target_link_libraries(concurrent_map_test PRIVATE GTest::gtest_main)
+target_include_directories(concurrent_map_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(session_test
+    tests/session_test.cpp
+    src/domain/session.cpp
+)
+target_link_libraries(session_test PRIVATE JsonCpp::JsonCpp GTest::gtest_main)
+target_include_directories(session_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(session_manager_test
+    tests/session_manager_test.cpp
+    src/domain/session.cpp
+    src/services/session_manager.cpp
+    src/metrics/metrics.cpp
+)
+target_link_libraries(session_manager_test PRIVATE
+    llm_runner_lib Drogon::Drogon prometheus-cpp::core GTest::gtest_main)
+target_include_directories(session_manager_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
+gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(cancellation_test)
 gtest_discover_tests(structured_output_test)
 gtest_discover_tests(worker_metrics_shm_test)
+gtest_discover_tests(concurrent_map_test)
+gtest_discover_tests(session_test)
+gtest_discover_tests(session_manager_test)
 
 # Register tool call tests
 add_test(NAME ToolCallParser COMMAND test_tool_call_parser)

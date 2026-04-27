@@ -1,4 +1,8 @@
-# Monitoring stack for TT Media Server (C++ inference server)
+# Monitoring stack for TT Media Server.
+#
+# Covers BOTH the C++ server and the (transitional) Python server.
+# Distinguish them at start time via SERVER_SERVICE (cpp | python). Same
+# stack, different label; one Prometheus scrapes whichever is running.
 #
 # The inference server runs in its own container (a sibling). Connect it to
 # the shared 'tt_net' network so Prometheus can reach it by container name:
@@ -9,9 +13,11 @@
 # Then start the monitoring stack, telling Prometheus which container to scrape:
 #
 #   SERVER_TARGET=$(hostname):8000 \
+#   SERVER_SERVICE=cpp \
 #     docker compose -f monitoring/docker-compose.yml up -d
 #
 # SERVER_TARGET defaults to 'tt-inference-server:8000'.
+# SERVER_SERVICE defaults to 'python' (kept for backwards compat).
 # Open Grafana at http://localhost:3000  (admin / admin)
 
 services:
@@ -23,13 +29,14 @@ services:
       - "9090:9090"
     environment:
       - SERVER_TARGET=${SERVER_TARGET:-tt-inference-server:8000}
+      - SERVER_SERVICE=${SERVER_SERVICE:-python}
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml.tmpl:ro
       - prometheus_data:/prometheus
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
-        sed "s|__SERVER_TARGET__|$$SERVER_TARGET|g"
+        sed "s|__SERVER_TARGET__|$$SERVER_TARGET|g; s|__SERVER_SERVICE__|$$SERVER_SERVICE|g"
         /etc/prometheus/prometheus.yml.tmpl > /tmp/prometheus.yml
         && exec /bin/prometheus
         --config.file=/tmp/prometheus.yml
@@ -40,6 +47,25 @@ services:
       - monitoring
       - tt_net
 
+  # Per-process CPU/memory/threads for the host processes belonging to either
+  # server (cpp main + workers, or python uvicorn). Uses pid: host + read-only
+  # /proc mount so the container sees every host process. No changes needed
+  # on either server's side.
+  process-exporter:
+    image: ncabatoff/process-exporter:0.8.7
+    container_name: tt_process_exporter
+    restart: unless-stopped
+    pid: host
+    privileged: true          # needed to read /proc/<pid> across namespaces
+    command:
+      - "--procfs=/host/proc"
+      - "--config.path=/etc/process-exporter/config.yml"
+    volumes:
+      - /proc:/host/proc:ro
+      - ./process-exporter.yml:/etc/process-exporter/config.yml:ro
+    networks:
+      - monitoring
+
   grafana:
     image: grafana/grafana:10.4.2
     container_name: tt_grafana
@@ -49,7 +75,9 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/tt_media_server.json
+      # Default home dashboard. Override with GF_HOME_DASHBOARD env var to
+      # point at tt_media_server_python.json for python-server deployments.
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=${GF_HOME_DASHBOARD:-/etc/grafana/provisioning/dashboards/tt_media_server_cpp.json}
     volumes:
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
