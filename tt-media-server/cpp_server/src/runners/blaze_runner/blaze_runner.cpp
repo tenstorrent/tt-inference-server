@@ -38,12 +38,10 @@ BlazeRunner::BlazeRunner(const config::LLMConfig& config,
       .connect_timeout_ms = tt::config::pmConnectTimeoutMs(),
       .use_deepseek_md_format = tt::config::useDeepseekMdFormat()};
   // pm::MockConfig mock = {};
-  pm::PipelineSimulatorConfig configSimulator = {
-      .num_stages = 64, .stage_duration_us = 44, .decode_token_id = 12345};
   pm::ManagerParams managerParams{
       .max_users = static_cast<uint32_t>(tt::config::pmMaxUsers())};
   pipelineManager =
-      std::make_unique<pm::PipelineManager>(configSimulator, managerParams);
+      std::make_unique<pm::PipelineManager>(socketConfig, managerParams);
   TT_LOG_INFO("BlazeRunner: PipelineManager constructed, calling start()...");
   pipelineManager->start();
   TT_LOG_INFO(
