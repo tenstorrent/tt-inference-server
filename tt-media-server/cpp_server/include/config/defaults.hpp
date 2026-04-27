@@ -31,13 +31,13 @@ constexpr size_t MAX_IN_FLIGHT_COUNT = 32;
 constexpr size_t MAX_SESSIONS_COUNT = 64;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
 constexpr size_t SESSION_EVICTION_COUNT = 10;
-constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 100;
+constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 1000;
 constexpr const char* KAFKA_BROKERS = "localhost:9092";
 constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
 constexpr const char* KAFKA_GROUP_ID = "migration-workers";
 
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
-constexpr unsigned PREFILL_TIMEOUT_MS = 10000;
+constexpr unsigned PREFILL_TIMEOUT_MS = 20000;
 
 constexpr const char* BLAZE_SOCKET_DESCRIPTOR_PREFIX = "deepseek";
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
