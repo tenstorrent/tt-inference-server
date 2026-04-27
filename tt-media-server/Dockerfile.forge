@@ -13,14 +13,14 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 ARG DEBIAN_FRONTEND=noninteractive
 
 # default model runner, override with --build-arg MODEL_RUNNER=<runner>
-ARG MODEL_RUNNER=tt-xla-resnet
+# ARG MODEL_RUNNER=tt-xla-resnet
 
 # CONTAINER_APP_UID is a random ID, change this and rebuild if it collides with host
 ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
 
 ENV ENVIRONMENT=development
-ENV MODEL_RUNNER=${MODEL_RUNNER}
+# ENV MODEL_RUNNER=${MODEL_RUNNER}
 
 ENV SHELL=/bin/bash
 ENV CONTAINER_APP_USERNAME=container_app_user
