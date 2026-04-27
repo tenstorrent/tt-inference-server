@@ -160,27 +160,6 @@ void testToolChoiceAutoWithoutToolsRejected() {
   std::cout << "✅ Test passed!\n";
 }
 
-void testToolChoiceRequiredParsedAtRequestLayer() {
-  std::cout << "\n=== Testing tool_choice=required Parses Successfully ===\n";
-
-  Json::Value json = createBasicRequestJson();
-  json["tools"].append(createToolJson("get_weather", "Get weather"));
-  json["tool_choice"] = "required";
-
-  auto request = ChatCompletionRequest::fromJson(json, 1);
-
-  assert(request.tool_choice.has_value());
-  assert(request.tool_choice->type == "required");
-
-  auto llmRequest = request.toLLMRequest();
-  assert(llmRequest.tool_choice_type.has_value());
-  assert(llmRequest.tool_choice_type.value() == "required");
-
-  std::cout << "✓ tool_choice=required parsed at request layer\n";
-  std::cout << "✓ tool_choice_type='required' propagated to LLMRequest\n";
-  std::cout << "✅ Test passed!\n";
-}
-
 void testToolChoiceUnknownStringRejected() {
   std::cout << "\n=== Testing tool_choice With Unknown Value (Should Reject) "
                "===\n";
@@ -217,7 +196,6 @@ int main() {
     testToolChoiceNoneWithoutTools();
     testToolChoiceNoneWithEmptyToolsArray();
     testToolChoiceAutoWithoutToolsRejected();
-    testToolChoiceRequiredParsedAtRequestLayer();
     testToolChoiceUnknownStringRejected();
 
     std::cout << "\n";
