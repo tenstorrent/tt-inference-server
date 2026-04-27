@@ -294,30 +294,6 @@ struct ChatCompletionRequest : BaseRequest {
       throw std::invalid_argument("tool_choice='" + type +
                                   "' requires non-empty 'tools'");
     }
-
-    if (type == "function") {
-      if (!toolChoice.function.has_value() ||
-          toolChoice.function.value().empty()) {
-        throw std::invalid_argument(
-            "tool_choice.function.name is required when type is 'function'. "
-            "Expected format: {\"type\": \"function\", \"function\": "
-            "{\"name\": \"function_name\"}}");
-      }
-      bool found = false;
-      if (req.tools.has_value()) {
-        for (const auto& tool : req.tools.value()) {
-          if (tool.functionDefinition.name == toolChoice.function.value()) {
-            found = true;
-            break;
-          }
-        }
-      }
-      if (!found) {
-        throw std::invalid_argument("tool_choice.function.name '" +
-                                    toolChoice.function.value() +
-                                    "' not found in tools");
-      }
-    }
   }
 };
 

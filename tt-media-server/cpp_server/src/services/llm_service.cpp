@@ -81,6 +81,37 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
           "' is not yet supported by this server; only 'auto', 'none', and "
           "'function' are currently implemented");
     }
+
+    // Validate named function call
+    if (type == "function") {
+      if (!request.tool_choice->function.has_value() ||
+          request.tool_choice->function.value().empty()) {
+        throw std::invalid_argument(
+            "tool_choice.function.name is required when type is 'function'. "
+            "Expected format: {\"type\": \"function\", \"function\": "
+            "{\"name\": \"function_name\"}}");
+      }
+
+      if (!request.tools.has_value()) {
+        throw std::invalid_argument(
+            "tools array is required when tool_choice type is 'function'");
+      }
+
+      // Validate function name exists in tools
+      const auto& functionName = request.tool_choice->function.value();
+      bool found = false;
+      for (const auto& tool : request.tools.value()) {
+        if (tool.functionDefinition.name == functionName) {
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        throw std::invalid_argument("tool_choice.function.name '" +
+                                    functionName + "' not found in tools");
+      }
+    }
   }
 
   if (std::holds_alternative<std::string>(request.prompt)) {
@@ -418,14 +449,11 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
 
   for (auto& choice : response.choices) {
     if (toolChoice.type == "none") {
-      // Strip tool-call markers but keep finish_reason (never "tool_calls").
       choice.text = toolCallParser->stripMarkers(choice.text);
       continue;
     }
 
     if (toolChoice.type == "function") {
-      // Response is guided-decoded JSON matching the selected function's
-      // parameter schema. Wrap it in a tool_call directly.
       Json::Value toolCallJson;
       toolCallJson["id"] = "call_0";
       toolCallJson["type"] = "function";
