@@ -460,12 +460,18 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
+        num_frames = 81
         width, height = (1280, 720) if self.pipeline.mesh_device.shape.mesh_size() >= 32 else (832, 480)
         if request.image_frames:
-            first_frame = min(request.image_frames, key=lambda f: f.frame_pos)
-            image = self.image_manager.base64_to_pil_image(
-                first_frame.image, target_size=(width, height), target_mode="RGB"
-            )
+            image = [
+                (
+                    self.image_manager.base64_to_pil_image(
+                        f.image, target_size=(width, height), target_mode="RGB"
+                    ),
+                    f.frame_pos,
+                )
+                for f in request.image_frames
+            ]
         elif request.image:
             image = self.image_manager.base64_to_pil_image(
                 request.image, target_size=(width, height), target_mode="RGB"
@@ -477,7 +483,7 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
             image=image,
             height=height,
             width=width,
-            num_frames=81,
+            num_frames=num_frames,
             seed=int(request.seed or 0),
             traced=True,
         )

@@ -12,13 +12,16 @@ from config.constants import JobTypes
 from config.settings import settings
 from domain.video_generate_request import VideoGenerateRequest
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, Security, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
+from utils.logger import TTLogger
 from utils.video_manager import VideoManager
+
+logger = TTLogger()
 
 router = APIRouter()
 
@@ -71,6 +74,8 @@ async def submit_generate_video_request(
     except Exception:
         raise HTTPException(status_code=405, detail="Model is not ready")
 
+    logger.info(f"[video] mode={'sync' if not settings.use_async_video else 'async'}  task={request._task_id}")
+
     try:
         # Synchronous mode: process and return video directly
         if not settings.use_async_video:
@@ -86,19 +91,14 @@ async def submit_generate_video_request(
             if file_size == 0:
                 raise HTTPException(status_code=500, detail="Video generation failed: empty file generated")
 
-            with open(video_file_path, "rb") as f:
-                video_bytes = f.read()
-            t2 = time.perf_counter()
-
-            import logging
-            logging.getLogger("video_endpoint").info(
-                f"[video] process_request={t1-t0:.3f}s  file_read={t2-t1:.3f}s  "
-                f"file_size={file_size/1024:.1f}KB  task={request._task_id}"
+            logger.info(
+                f"[video] process_request={t1-t0:.3f}s  file_size={file_size/1024:.1f}KB  task={request._task_id}"
             )
 
-            return Response(
-                content=video_bytes,
+            return FileResponse(
+                video_file_path,
                 media_type="video/mp4",
+                filename=f"video_{request._task_id}.mp4",
                 headers={"Content-Disposition": f"attachment; filename=video_{request._task_id}.mp4"},
             )
 
@@ -135,6 +135,64 @@ async def submit_generate_video_upload(
     request = VideoGenerateRequest(
         prompt=prompt,
         image=image_b64,
+        num_inference_steps=num_inference_steps,
+        seed=seed,
+    )
+
+    try:
+        if not settings.use_async_video:
+            video_file_path = await service.process_request(request)
+            if not video_file_path or not isinstance(video_file_path, str):
+                raise HTTPException(status_code=500, detail="Video generation failed: invalid file path returned")
+            if not os.path.exists(video_file_path):
+                raise HTTPException(status_code=500, detail=f"Video generation failed: file not found at {video_file_path}")
+            if os.path.getsize(video_file_path) == 0:
+                raise HTTPException(status_code=500, detail="Video generation failed: empty file generated")
+            return FileResponse(
+                video_file_path,
+                media_type="video/mp4",
+                filename=f"video_{request._task_id}.mp4",
+                headers={"Content-Disposition": f"attachment; filename=video_{request._task_id}.mp4"},
+            )
+        job_data = await service.create_job(JobTypes.VIDEO, request)
+        return JSONResponse(content=job_data, status_code=202)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/generations/start-end-frame")
+async def generate_video_start_end_frame(
+    prompt: str = Form(...),
+    start_frame: UploadFile = File(..., description="Image for the first frame (frame_pos=0)"),
+    end_frame: UploadFile = File(..., description="Image for the last frame (frame_pos=-1)"),
+    num_inference_steps: Optional[int] = Form(12),
+    seed: Optional[int] = Form(None),
+    service: BaseJobService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """
+    Generate a video conditioned on start and end frame images.
+    Accepts multipart/form-data with two image file uploads.
+    The end frame is placed at the last frame position (num_frames - 1).
+    """
+    try:
+        service.scheduler.check_is_model_ready()
+    except Exception:
+        raise HTTPException(status_code=405, detail="Model is not ready")
+
+    start_bytes = await start_frame.read()
+    end_bytes = await end_frame.read()
+
+    from domain.video_generate_request import ImageFrame
+
+    request = VideoGenerateRequest(
+        prompt=prompt,
+        image_frames=[
+            ImageFrame(image=base64.b64encode(start_bytes).decode(), frame_pos=0),
+            ImageFrame(image=base64.b64encode(end_bytes).decode(), frame_pos=-1),
+        ],
         num_inference_steps=num_inference_steps,
         seed=seed,
     )
