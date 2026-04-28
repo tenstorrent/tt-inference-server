@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import re
 from functools import lru_cache
@@ -8,6 +8,7 @@ from pathlib import Path
 
 from huggingface_hub import ModelCard, hf_hub_download, list_repo_files
 from huggingface_hub.utils import EntryNotFoundError, RepositoryNotFoundError
+
 from utils.logger import TTLogger
 
 logger = TTLogger()

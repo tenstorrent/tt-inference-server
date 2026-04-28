@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -52,6 +52,7 @@ struct LLMChoice {
   std::optional<std::string> finish_reason;
   std::optional<int64_t> token_id;
   std::optional<std::string> reasoning;
+  std::optional<Json::Value> tool_calls;
 };
 
 /**

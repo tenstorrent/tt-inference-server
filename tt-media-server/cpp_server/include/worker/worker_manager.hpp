@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -64,6 +64,8 @@ class WorkerManager {
   void startWarmupListener();
   void stopWarmupListener();
   void stopProcesses();
+  void startLivenessChecker();
+  void stopLivenessChecker();
   WorkerConfig makeWorkerConfig(int workerId);
 
   /** Parent: fork/exec worker subprocess; sets worker.pid to child pid. Does
@@ -76,6 +78,8 @@ class WorkerManager {
 
   std::unique_ptr<tt::ipc::IWarmupSignalQueue> warmupQueue;
   std::thread warmupListenerThread;
+  std::thread livenessCheckerThread;
+  std::atomic<bool> livenessCheckerShouldStop{false};
   std::mutex warmupMutex;
   std::condition_variable warmupCv;
   std::atomic<bool> warmupReceived{false};

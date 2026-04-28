@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
-#include "utils/service_container.hpp"
+#include "services/service_container.hpp"
 
 namespace tt::utils::service_factory {
 

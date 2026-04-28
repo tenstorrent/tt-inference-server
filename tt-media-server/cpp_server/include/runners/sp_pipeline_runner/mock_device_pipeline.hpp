@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -15,7 +15,7 @@
 #include <thread>
 #include <vector>
 
-#include "runners/llm_runner/sequence.hpp"
+#include "domain/sequence.hpp"
 #include "runners/sp_pipeline_runner/i_sp_pipeline_model_runner.hpp"
 
 namespace tt::runners::sp_pipeline {
@@ -43,7 +43,7 @@ class MockDevicePipeline {
   void write(uint32_t taskId, const std::vector<int64_t>& tokenIds,
              uint32_t maxTokens, RequestPhase phase);
 
-  std::optional<tt::runners::llm_engine::TokenResult> read();
+  std::optional<tt::domain::TokenResult> read();
 
   void exit();
 
@@ -92,7 +92,7 @@ class MockDevicePipeline {
   std::condition_variable inputNotFull;
 
   // Output queue — read() blocks when empty.
-  std::deque<tt::runners::llm_engine::TokenResult> outputQueue;
+  std::deque<tt::domain::TokenResult> outputQueue;
   std::mutex outputMutex;
   std::condition_variable outputNotEmpty;
 

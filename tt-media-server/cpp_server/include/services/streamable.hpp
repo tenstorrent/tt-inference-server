@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -19,8 +19,11 @@ class Streamable {
 
   void submitStreamingRequest(
       RequestType& request,
-      std::function<void(const ResponseType&, bool isFinal)> callback) {
-    preProcess(request);
+      std::function<void(const ResponseType&, bool isFinal)> callback,
+      bool skipPreProcess = false) {
+    if (!skipPreProcess) {
+      preProcess(request);
+    }
     processStreamingRequest(
         std::move(request),
         [this, cb = std::move(callback)](ResponseType& response, bool isFinal) {

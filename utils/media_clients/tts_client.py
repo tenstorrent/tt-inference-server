@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 
 import asyncio
@@ -215,7 +215,7 @@ class TtsClientStrategy(BaseMediaStrategy):
             "model": self.model_spec.model_name,
             "device": self.device.name,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "task_type": "tts",
+            "task_type": "text_to_speech",
         }
 
         with open(result_filename, "w") as f:

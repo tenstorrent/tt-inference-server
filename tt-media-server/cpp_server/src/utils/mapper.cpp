@@ -1,10 +1,12 @@
 #include "utils/mapper.hpp"
 
+#include "config/settings.hpp"
+
 namespace tt::utils::mapper {
 
-tt::runners::llm_engine::SamplingParams mapSamplingParams(
+tt::domain::SamplingParams mapSamplingParams(
     const tt::domain::LLMRequest& request) {
-  tt::runners::llm_engine::SamplingParams params;
+  tt::domain::SamplingParams params;
   params.temperature = request.temperature.value_or(1.0f);
   params.max_tokens = request.max_tokens;
   params.ignore_eos = request.ignore_eos;
@@ -25,7 +27,13 @@ tt::runners::llm_engine::SamplingParams mapSamplingParams(
   params.allowed_token_ids = request.allowed_token_ids;
   params.prompt_logprobs = request.prompt_logprobs;
   params.truncate_prompt_tokens = request.truncate_prompt_tokens;
-  params.fast_mode = request.fast_mode;
+  params.fast_mode = config::useFastMode() || request.fast_mode;
+
+  if (request.response_format.has_value()) {
+    params.response_format_type = request.response_format->type;
+    params.json_schema_str = request.response_format->json_schema_str;
+  }
+
   return params;
 }
 

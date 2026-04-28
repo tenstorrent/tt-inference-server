@@ -1,21 +1,22 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from threading import Lock
-from typing import Callable, Dict, Optional, Any
-from pathlib import Path
 from multiprocessing import Event
+from pathlib import Path
 from sqlite3 import IntegrityError
+from threading import Lock
+from typing import Any, Callable, Dict, Optional
 
 from config.constants import JobTypes
 from config.settings import get_settings
 from domain.base_request import BaseRequest
+
 from utils.logger import TTLogger
 
 
@@ -34,6 +35,7 @@ class Job:
     job_type: str
     model: str
     request_parameters: dict = field(default_factory=dict)
+    org_id: Optional[str] = None
     status: JobStatus = JobStatus.QUEUED
     created_at: int = None
     completed_at: Optional[int] = None
@@ -95,6 +97,8 @@ class Job:
             "model": self.model,
             "request_parameters": self.request_parameters,
         }
+        if self.org_id:
+            data["org_id"] = self.org_id
         if self.completed_at:
             data["completed_at"] = self.completed_at
         if self.error:
@@ -136,6 +140,7 @@ class JobManager:
         job_metrics: list = None,
         job_logs: list = None,
         job_checkpoints: list = None,
+        org_id: Optional[str] = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
@@ -146,6 +151,7 @@ class JobManager:
                 job_type=job_type.value,
                 model=model,
                 request_parameters=request.model_dump(mode="json"),
+                org_id=org_id,
             )
 
             if result_path:
@@ -170,6 +176,7 @@ class JobManager:
                         request_parameters=job.request_parameters,
                         status=job.status.value,
                         created_at=job.created_at,
+                        org_id=job.org_id,
                     )
                     if result_path:
                         self.db.update_result_path(job_id, result_path)
@@ -187,59 +194,79 @@ class JobManager:
 
         return job.to_public_dict()
 
-    def get_all_jobs_metadata(self, job_type: JobTypes = None) -> list[dict]:
-        """Get metadata for all jobs, optionally filtered by job type."""
+    def _get_job_if_authorized(
+        self, job_id: str, org_id: Optional[str] = None
+    ) -> Optional[Job]:
+        """Retrieve a job by ID, returning None if org_id is set and doesn't match."""
+        job = self._jobs.get(job_id)
+        if job is None or (org_id is not None and job.org_id != org_id):
+            return None
+        return job
+
+    def get_all_jobs_metadata(
+        self, job_type: JobTypes = None, org_id: Optional[str] = None
+    ) -> list[dict]:
+        """Get metadata for all jobs, optionally filtered by job type and org."""
         with self._jobs_lock:
             return [
                 job.to_public_dict()
                 for job in self._jobs.values()
-                if job_type is None or job.job_type == job_type.value
+                if (job_type is None or job.job_type == job_type.value)
+                and (org_id is None or job.org_id == org_id)
             ]
 
-    def get_job_metadata(self, job_id: str) -> Optional[dict]:
+    def get_job_metadata(
+        self, job_id: str, org_id: Optional[str] = None
+    ) -> Optional[dict]:
         """Get job metadata (public fields only)."""
         with self._jobs_lock:
-            job = self._jobs.get(job_id)
+            job = self._get_job_if_authorized(job_id, org_id)
             if job:
                 return job.to_public_dict()
             return None
 
-    def get_job_result_path(self, job_id: str) -> Optional[str]:
+    def get_job_result_path(
+        self, job_id: str, org_id: Optional[str] = None
+    ) -> Optional[str]:
         """Get job result path if completed."""
         with self._jobs_lock:
-            job = self._jobs.get(job_id)
+            job = self._get_job_if_authorized(job_id, org_id)
             if job:
                 if job.job_type != JobTypes.TRAINING.value and job.is_terminal():
                     return job.result_path if job.is_completed() else None
                 else:
-                    return job.result_path  # for training jobs, the result path is set on job creation, so we return it here
+                    return job.result_path
             return None
 
-    def get_job_metrics(self, job_id: str) -> Optional[list]:
+    def get_job_metrics(
+        self, job_id: str, org_id: Optional[str] = None
+    ) -> Optional[list]:
         with self._jobs_lock:
-            job = self._jobs.get(job_id)
+            job = self._get_job_if_authorized(job_id, org_id)
             if job:
                 return job.job_metrics
         return None
 
-    def get_job_logs(self, job_id: str) -> Optional[list]:
+    def get_job_logs(self, job_id: str, org_id: Optional[str] = None) -> Optional[list]:
         with self._jobs_lock:
-            job = self._jobs.get(job_id)
+            job = self._get_job_if_authorized(job_id, org_id)
             if job:
                 return job.job_logs
         return None
 
-    def get_job_checkpoints(self, job_id: str) -> Optional[list]:
+    def get_job_checkpoints(
+        self, job_id: str, org_id: Optional[str] = None
+    ) -> Optional[list]:
         with self._jobs_lock:
-            job = self._jobs.get(job_id)
+            job = self._get_job_if_authorized(job_id, org_id)
             if job:
                 return job.job_checkpoints
         return None
 
-    def cancel_job(self, job_id: str) -> bool:
+    def cancel_job(self, job_id: str, org_id: Optional[str] = None) -> bool:
         """Cancel job, cancel if in progress, and return cancellation confirmation."""
         with self._jobs_lock:
-            job = self._jobs.get(job_id)
+            job = self._get_job_if_authorized(job_id, org_id)
             if not job:
                 self._logger.warning(f"Cancel failed: Job {job_id} not found.")
                 return None
@@ -565,6 +592,7 @@ class JobManager:
                     job_type=db_job["job_type"],
                     model=db_job["model"],
                     request_parameters=db_job["request_parameters"],
+                    org_id=db_job.get("org_id"),
                     status=JobStatus(original_status),
                     created_at=db_job["created_at"],
                     completed_at=db_job.get("completed_at"),

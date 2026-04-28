@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "services/memory_services/memory_manager.hpp"
 
+#include "config/settings.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
 
 MemoryManager::MemoryManager() {
   // Open existing queues created by SessionManager in the main process
-  requestQueue =
-      ipc::MemoryRequestQueue::openExisting(ipc::k_memory_request_queue_name);
-  resultQueue =
-      ipc::MemoryResultQueue::openExisting(ipc::k_memory_result_queue_name);
+  requestQueue = ipc::MemoryRequestQueue::openExisting(
+      tt::config::ttMemoryRequestQueueName());
+  resultQueue = ipc::MemoryResultQueue::openExisting(
+      tt::config::ttMemoryResultQueueName());
 
   if (!requestQueue || !resultQueue) {
     TT_LOG_ERROR(

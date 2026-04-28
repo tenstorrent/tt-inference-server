@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "services/llm_service.hpp"
 
@@ -17,7 +17,7 @@
 #include "profiling/tracy.hpp"
 #include "utils/logger.hpp"
 #include "utils/mapper.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 #include "worker/worker_manager.hpp"
 
 namespace tt::services {
@@ -26,18 +26,20 @@ namespace tt::services {
 using tt::services::ContentType;
 using tt::services::TokenParseResult;
 
-LLMService::LLMService() : tokenizer_(&tt::utils::activeTokenizer()) {
+LLMService::LLMService()
+    : tokenizer(&tt::utils::tokenizers::activeTokenizer()) {
   size_t numWorkers = tt::config::numWorkers();
-  max_queue_size_ = tt::config::maxQueueSize();
+  this->maxQueueSize = tt::config::maxQueueSize();
 
-  const auto stopIds = tokenizer_->stopTokenIds();
-  stop_token_set_ = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
+  const auto stopIds = tokenizer->stopTokenIds();
+  stopTokenSet = std::unordered_set<int64_t>(stopIds.begin(), stopIds.end());
 
-  worker_manager_ = std::make_unique<tt::worker::WorkerManager>(numWorkers);
-  reasoning_parser_ = std::make_unique<ReasoningParser>();
+  workerManager = std::make_unique<tt::worker::WorkerManager>(numWorkers);
+  reasoningParser = std::make_unique<ReasoningParser>();
+  toolCallParser = createToolCallParser(tt::config::modelType());
 
   TT_LOG_INFO("[LLMService] Initialized (workers={})", numWorkers);
-  queue_manager_ =
+  queueManager =
       std::make_unique<tt::ipc::QueueManager>(static_cast<int>(numWorkers));
 }
 
@@ -45,14 +47,14 @@ LLMService::~LLMService() { stop(); }
 
 void LLMService::start() {
   ZoneScopedN("LLMService::start");
-  if (running_.exchange(true)) {
+  if (running.exchange(true)) {
     return;
   }
 
   TT_LOG_INFO("[LLMService] Starting (workers={})",
-              worker_manager_->numWorkers());
+              workerManager->numWorkers());
 
-  worker_manager_->start();
+  workerManager->start();
   tracy_config::tracyStartupSchedulerParent();
   startConsumers();
 
@@ -60,26 +62,36 @@ void LLMService::start() {
   TT_LOG_INFO("[LLMService] Service started");
 }
 
-size_t LLMService::currentQueueSize() const { return pending_tasks_.load(); }
+size_t LLMService::currentQueueSize() const { return pendingTasks.load(); }
 
-bool LLMService::isModelReady() const { return worker_manager_->isReady(); }
+bool LLMService::isModelReady() const { return workerManager->isReady(); }
 
 std::vector<tt::worker::WorkerInfo> LLMService::getWorkerInfo() const {
-  return worker_manager_->getWorkerInfo();
+  return workerManager->getWorkerInfo();
 }
 
 void LLMService::preProcess(domain::LLMRequest& request) const {
   BaseService::preProcess(request);
 
+  if (request.tool_choice.has_value()) {
+    const auto& type = request.tool_choice->type;
+    if (type != "auto" && type != "none") {
+      throw std::invalid_argument(
+          "tool_choice='" + type +
+          "' is not yet supported by this server; only 'auto' and 'none' are "
+          "currently implemented");
+    }
+  }
+
   if (std::holds_alternative<std::string>(request.prompt)) {
     auto text = std::get<std::string>(request.prompt);
-    static auto cfg = tt::utils::getTokenizerConfig();
+    static auto cfg = tt::utils::tokenizers::getTokenizerConfig();
     bool hasBos = text.size() >= cfg.bos_token.size() &&
                   text.compare(0, cfg.bos_token.size(), cfg.bos_token) == 0;
     if (cfg.add_bos_token && !cfg.bos_token.empty() && !hasBos) {
       text = cfg.bos_token + text;
     }
-    request.prompt = tokenizer_->encode(text);
+    request.prompt = tokenizer->encode(text);
   }
   const auto& tokens = std::get<std::vector<int>>(request.prompt);
   if (tokens.size() > tt::config::LLMConfig::MAX_INPUT_TOKENS) {
@@ -92,80 +104,53 @@ void LLMService::preProcess(domain::LLMRequest& request) const {
 }
 
 void LLMService::startConsumers() {
-  size_t n = worker_manager_->numWorkers();
-  consumer_threads_.reserve(n);
+  size_t n = workerManager->numWorkers();
+  consumerThreads.reserve(n);
   for (size_t i = 0; i < n; ++i) {
-    consumer_threads_.emplace_back(&LLMService::consumerLoopForWorker, this, i);
+    consumerThreads.emplace_back(&LLMService::consumerLoopForWorker, this, i);
   }
   TT_LOG_INFO("[LLMService] Started {} consumer threads", n);
 }
 
 void LLMService::stop() {
   ZoneScopedN("LLMService::stop");
-  if (!running_.exchange(false)) {
+  if (!running.exchange(false)) {
     return;
   }
 
   TT_LOG_INFO("[LLMService] Stopping...");
 
-  for (auto& q : queue_manager_->result_queues) {
+  for (auto& q : queueManager->resultQueues) {
     q->shutdown();
   }
 
-  for (auto& thread : consumer_threads_) {
+  for (auto& thread : consumerThreads) {
     if (thread.joinable()) {
       thread.join();
     }
   }
-  consumer_threads_.clear();
+  consumerThreads.clear();
 
-  worker_manager_->stop();
+  workerManager->stop();
 
   TT_LOG_INFO("[LLMService] Stopped");
-  queue_manager_->clear();
+  queueManager->clear();
 }
 
 namespace {
 
-constexpr int K_ITL_SAMPLE_STRIDE = 5;
-
-struct MetricsSamplingState {
-  int token_count = 0;
-  std::chrono::steady_clock::time_point prev_token_time;
-};
-
 std::string decodeToken(
-    std::unordered_map<uint32_t,
-                       std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>&
+    std::unordered_map<
+        uint32_t,
+        std::unique_ptr<tt::utils::tokenizers::Tokenizer::StreamDecoder>>&
         decoders,
-    const tt::utils::Tokenizer* tokenizer, uint32_t taskId, uint32_t tokenId,
-    bool isFinal, bool skipSpecial) {
+    const tt::utils::tokenizers::Tokenizer* tokenizer, uint32_t taskId,
+    uint32_t tokenId, bool isFinal, bool skipSpecial) {
   auto& decoder = decoders[taskId];
   if (!decoder) decoder = tokenizer->createStreamDecoder(skipSpecial);
   std::string delta = decoder->step(static_cast<int>(tokenId));
   if (isFinal) delta += decoder->flush();
   return delta;
-}
-
-// Observe ITL once every K_ITL_SAMPLE_STRIDE tokens. Reported quantiles remain
-// representative; actual ITL values are accurate because elapsed time is
-// divided by the stride (assumes roughly uniform decode step latency).
-void recordTokenMetrics(
-    std::unordered_map<uint32_t, MetricsSamplingState>& sampling,
-    uint32_t taskId) {
-  auto& ms = sampling[taskId];
-  if (ms.token_count == 0) {
-    tt::metrics::ServerMetrics::instance().onToken(taskId);
-    ms.prev_token_time = std::chrono::steady_clock::now();
-  } else if (ms.token_count % K_ITL_SAMPLE_STRIDE == 0) {
-    auto now = std::chrono::steady_clock::now();
-    double itl =
-        std::chrono::duration<double>(now - ms.prev_token_time).count() /
-        K_ITL_SAMPLE_STRIDE;
-    tt::metrics::ServerMetrics::instance().onITLSample(taskId, itl);
-    ms.prev_token_time = now;
-  }
-  ms.token_count++;
 }
 
 domain::LLMStreamChunk buildStreamChunk(
@@ -207,14 +192,14 @@ domain::LLMStreamChunk buildStreamChunk(
 std::optional<LLMService::StreamCallbackEntry> LLMService::resolveCallback(
     uint32_t taskId, bool isFinal) {
   if (isFinal) {
-    auto val = stream_callbacks_.take(taskId);
+    auto val = streamCallbacks.take(taskId);
     if (!val.has_value()) return std::nullopt;
-    pending_tasks_.fetch_sub(1);
+    pendingTasks.fetch_sub(1);
     tt::metrics::ServerMetrics::instance().setQueueDepth(
-        static_cast<double>(pending_tasks_.load()));
+        static_cast<double>(pendingTasks.load()));
     return std::move(val.value());
   }
-  return stream_callbacks_.get(taskId);
+  return streamCallbacks.get(taskId);
 }
 
 void LLMService::consumerLoopForWorker(size_t workerIdx) {
@@ -224,24 +209,18 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
 
   TT_LOG_INFO("[Consumer-{}] Started", workerIdx);
 
-  auto* worker = worker_manager_->worker(workerIdx);
+  auto* worker = workerManager->worker(workerIdx);
   if (!worker->cfg.result_queue) {
     TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", workerIdx);
     return;
   }
 
-  std::unordered_map<uint32_t,
-                     std::unique_ptr<tt::utils::Tokenizer::StreamDecoder>>
+  std::unordered_map<
+      uint32_t,
+      std::unique_ptr<tt::utils::tokenizers::Tokenizer::StreamDecoder>>
       streamDecoders;
-  std::unordered_map<uint32_t, MetricsSamplingState> metricsSampling;
 
-  while (running_) {
-    if (!worker_manager_->checkWorkerAlive(workerIdx)) {
-      TT_LOG_ERROR("[Consumer-{}] Worker process died, exiting consumer",
-                   workerIdx);
-      break;
-    }
-
+  while (running) {
     bool anyActivity = false;
 
     ipc::SharedToken token;
@@ -254,18 +233,17 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
       auto entry = resolveCallback(taskId, isFinal);
       if (!entry.has_value()) {
         streamDecoders.erase(taskId);
-        metricsSampling.erase(taskId);
         continue;
       }
 
       std::string delta =
-          decodeToken(streamDecoders, tokenizer_, taskId, token.token_id,
+          decodeToken(streamDecoders, tokenizer, taskId, token.token_id,
                       isFinal, entry->skip_special_tokens);
-      recordTokenMetrics(metricsSampling, taskId);
+      tt::metrics::ServerMetrics::instance().onToken(taskId);
 
       TokenParseResult parseResult{ContentType::ANSWER, delta, true};
-      if (reasoning_parser_) {
-        parseResult = reasoning_parser_->processToken(
+      if (reasoningParser) {
+        parseResult = reasoningParser->processToken(
             taskId, static_cast<int64_t>(token.token_id), delta);
       }
 
@@ -273,7 +251,7 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
         continue;
       }
 
-      auto response = buildStreamChunk(token, parseResult, stop_token_set_);
+      auto response = buildStreamChunk(token, parseResult, stopTokenSet);
       entry->callback(response, isFinal);
 
       if (isFinal) {
@@ -283,14 +261,12 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
             response.choices[0].finish_reason.has_value()) {
           finishReason = response.choices[0].finish_reason.value();
         }
-        int genTokens = metricsSampling[taskId].token_count;
-        metricsSampling.erase(taskId);
-        tt::metrics::ServerMetrics::instance().onRequestCompleted(
-            taskId, finishReason, genTokens);
-        if (reasoning_parser_) {
-          reasoning_parser_->finalizeTask(taskId);
+        tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId,
+                                                                  finishReason);
+        if (reasoningParser) {
+          reasoningParser->finalizeTask(taskId);
         }
-        TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
+        TRACY_PLOT("pending_tasks", static_cast<double>(pendingTasks.load()));
       }
     }
 
@@ -380,16 +356,20 @@ void LLMService::processStreamingRequest(
   }
   uint32_t taskId = request.task_id;
 
-  pending_tasks_.fetch_add(1);
-  TRACY_PLOT("pending_tasks", static_cast<double>(pending_tasks_.load()));
+  pendingTasks.fetch_add(1);
+  TRACY_PLOT("pending_tasks", static_cast<double>(pendingTasks.load()));
   tt::metrics::ServerMetrics::instance().setQueueDepth(
-      static_cast<double>(pending_tasks_.load()));
+      static_cast<double>(pendingTasks.load()));
 
   StreamCallbackEntry entry{std::move(callback), request.skip_special_tokens};
-  stream_callbacks_.insert(taskId, std::move(entry));
+  streamCallbacks.insert(taskId, std::move(entry));
 
-  if (reasoning_parser_) {
-    reasoning_parser_->initializeTask(taskId);
+  if (request.tool_choice.has_value()) {
+    toolChoiceMap.insert(taskId, request.tool_choice->type);
+  }
+
+  if (reasoningParser) {
+    reasoningParser->initializeTask(taskId);
   }
 
   auto prompt = std::get<std::vector<int>>(request.prompt);
@@ -398,7 +378,7 @@ void LLMService::processStreamingRequest(
   tt::metrics::ServerMetrics::instance().onRequestSubmitted(
       taskId, static_cast<int>(prompt.size()));
 
-  auto sequence = std::make_unique<tt::runners::llm_engine::Sequence>(
+  auto sequence = std::make_unique<tt::domain::Sequence>(
       taskId,
       static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
       std::move(tokenIds));
@@ -406,32 +386,63 @@ void LLMService::processStreamingRequest(
   if (request.slotId.has_value()) {
     sequence->setKVCacheSlot(request.slotId.value());
   }
-  sequence->setSamplingParams(
-      std::make_unique<tt::runners::llm_engine::SamplingParams>(
-          tt::utils::mapper::mapSamplingParams(request)));
-  queue_manager_->task_queue->push(*std::move(sequence));
+  sequence->setContinuation(request.continuation);
+  sequence->setDisaggregated(request.disaggregated);
+  sequence->setSamplingParams(std::make_unique<tt::domain::SamplingParams>(
+      tt::utils::mapper::mapSamplingParams(request)));
+  queueManager->taskQueue->push(*std::move(sequence));
 }
 
 void LLMService::postProcess(domain::LLMResponse& response) const {
   // Parse and strip reasoning blocks from all choices
-  if (reasoning_parser_) {
+  if (reasoningParser) {
     for (auto& choice : response.choices) {
-      auto result = reasoning_parser_->parseComplete(choice.text);
+      auto result = reasoningParser->parseComplete(choice.text);
 
       // Replace text with answer only (reasoning stripped)
       choice.text = std::move(result.answer);
     }
   }
+
+  auto toolChoiceOpt = toolChoiceMap.take(response.task_id);
+  const bool toolCallsDisabled =
+      toolChoiceOpt.has_value() && toolChoiceOpt.value() == "none";
+  if (toolCallsDisabled) {
+    TT_LOG_DEBUG("[LLMService] Skipping tool call parsing (tool_choice=none)");
+  }
+
+  if (toolCallParser) {
+    for (auto& choice : response.choices) {
+      if (toolCallsDisabled) {
+        choice.text = toolCallParser->stripMarkers(choice.text);
+        continue;
+      }
+      TT_LOG_DEBUG(
+          "[LLMService] Parsing text for tool calls (length={}): {}",
+          choice.text.length(),
+          choice.text.substr(0, std::min<size_t>(200, choice.text.length())));
+
+      auto toolCalls = toolCallParser->parseComplete(choice.text);
+      if (toolCalls.has_value() && !toolCalls->empty()) {
+        TT_LOG_DEBUG("[LLMService] Found {} tool calls", toolCalls->size());
+        choice.tool_calls = std::move(toolCalls);
+        choice.text = toolCallParser->stripMarkers(choice.text);
+        choice.finish_reason = "tool_calls";
+      }
+    }
+  }
 }
 
 void LLMService::abortRequest(uint32_t taskId) {
-  // Atomically remove the stream callback and decrement pending_tasks_.
-  auto entry = stream_callbacks_.take(taskId);
+  // Atomically remove the stream callback and decrement pendingTasks.
+  auto entry = streamCallbacks.take(taskId);
   if (entry.has_value()) {
-    pending_tasks_.fetch_sub(1);
+    pendingTasks.fetch_sub(1);
     tt::metrics::ServerMetrics::instance().setQueueDepth(
-        static_cast<double>(pending_tasks_.load()));
+        static_cast<double>(pendingTasks.load()));
   }
+
+  tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId, "abort");
 
   // Invoke the detached callback with isFinal=true so any blocking waiter
   // (e.g. processRequest's cv.wait) is unblocked.  For streaming requests the
@@ -446,14 +457,14 @@ void LLMService::abortRequest(uint32_t taskId) {
   }
 
   // Clean up any reasoning-parser state so task_states_ does not leak.
-  if (reasoning_parser_) {
-    reasoning_parser_->finalizeTask(taskId);
+  if (reasoningParser) {
+    reasoningParser->finalizeTask(taskId);
   }
 
   // Broadcast the cancel signal to every per-worker cancel queue.
   // Each worker's scheduler::abortRequest is idempotent for unknown task IDs.
-  if (queue_manager_) {
-    for (auto& cq : queue_manager_->cancel_queues) {
+  if (queueManager) {
+    for (auto& cq : queueManager->cancelQueues) {
       cq->push(taskId);
     }
   }

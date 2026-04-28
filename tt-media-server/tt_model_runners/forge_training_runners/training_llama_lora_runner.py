@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import math
 import os
@@ -15,23 +15,19 @@ import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.distributed.spmd as xs
 import torch_xla.runtime as xr
+from config.constants import SupportedModels
+from domain.training_request import TrainingRequest
 from peft import LoraConfig, PeftModel, get_peft_model
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM
-
-from domain.training_request import TrainingRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
+from tt_model_runners.forge_training_runners.torch_utils import (
+    OPTIMIZER_MAP,
+    resolve_dtype,
+)
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
 from utils.decorators import log_execution_time
-from config.constants import (
-    TrainingOptimizers,
-    SupportedModels,
-)
-
-OPTIMIZER_MAP = {
-    TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
-}
 
 
 def _transform_labels(labels, ignored_index, vocab_size):
@@ -257,7 +253,7 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
             f"{sum(p.numel() for p in self._peft_model.parameters() if p.requires_grad)}"
         )
 
-        self._peft_model.to(eval(request.dtype))
+        self._peft_model.to(resolve_dtype(request.dtype))
         self._peft_model.to(self.device)
 
         model = torch.compile(
@@ -285,30 +281,12 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
 
         global_step = 0
         running_loss = 0.0
+        avg_loss = None
+        avg_val_loss = None
 
         try:
             for epoch in range(request.num_epochs):
                 for batch in tqdm(train_dataloader, desc="Training"):
-                    if global_step % request.val_steps_freq == 0:
-                        avg_val_loss = self._run_validation(
-                            model, eval_dataloader, mesh, request, vocab_size
-                        )
-                        self.logger.info(
-                            f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}",
-                            extra={"log_type": "info", "step": global_step},
-                        )
-                        if request._training_metrics is not None:
-                            request._training_metrics.append(
-                                {
-                                    "global_step": global_step,
-                                    "epoch": epoch,
-                                    "metric_name": "val_loss",
-                                    "value": round(avg_val_loss, 4),
-                                    "timestamp": time.time(),
-                                }
-                            )
-                        model.train()
-
                     optimizer.zero_grad()
                     torch_xla.sync(wait=True)
 
@@ -359,6 +337,30 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                             )
                         running_loss = 0.0
 
+                    if global_step % request.val_steps_freq == 0:
+                        avg_val_loss = self._run_validation(
+                            model, eval_dataloader, mesh, request, vocab_size
+                        )
+                        if avg_val_loss is not None:
+                            self.logger.info(
+                                f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}",
+                                extra={"log_type": "eval", "step": global_step},
+                            )
+                            if request._training_metrics is not None:
+                                request._training_metrics.append(
+                                    {
+                                        "global_step": global_step,
+                                        "epoch": epoch,
+                                        "metric_name": "val_loss",
+                                        "value": round(avg_val_loss, 4),
+                                        "learning_rate": optimizer.param_groups[0][
+                                            "lr"
+                                        ],
+                                        "timestamp": time.time(),
+                                    }
+                                )
+                        model.train()
+
                     # Checkpoint saving
                     if global_step > 0 and global_step % request.save_interval == 0:
                         checkpoint_path = os.path.join(
@@ -377,12 +379,21 @@ class TrainingLlamaLoraRunner(BaseDeviceRunner):
                                 extra={"log_type": "checkpoint", "step": global_step},
                             )
                             if request._training_checkpoints is not None:
+                                checkpoint_metrics = {}
+                                if avg_loss is not None:
+                                    checkpoint_metrics["train_loss"] = round(
+                                        avg_loss, 4
+                                    )
+                                if avg_val_loss is not None:
+                                    checkpoint_metrics["val_loss"] = round(
+                                        avg_val_loss, 4
+                                    )
                                 request._training_checkpoints.append(
                                     {
                                         "id": f"ckpt-step-{global_step}",
                                         "step": global_step,
                                         "epoch": epoch,
-                                        "metrics": {"train_loss": round(avg_loss, 4)},
+                                        "metrics": checkpoint_metrics,
                                         "created_at": time.time(),
                                     }
                                 )

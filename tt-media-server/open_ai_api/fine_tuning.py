@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-import os
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 import io
+import os
 import zipfile
+
 from config.constants import JobTypes
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
@@ -12,6 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
+from security.org_id_checker import get_org_id
 from utils.build_catalog import build_training_catalog
 
 router = APIRouter()
@@ -38,6 +40,7 @@ async def submit_fine_tuning_request(
     request: TrainingRequest,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
+    org_id: str = Depends(get_org_id),
 ):
     """
     Create a new fine-tuning job.
@@ -61,7 +64,7 @@ async def submit_fine_tuning_request(
         )
 
     try:
-        job_data = await service.create_job(JobTypes.TRAINING, request)
+        job_data = await service.create_job(JobTypes.TRAINING, request, org_id=org_id)
         return JSONResponse(content=job_data, status_code=201)
     except Exception as e:
         raise HTTPException(status_code=500, detail={str(e)})
@@ -71,6 +74,7 @@ async def submit_fine_tuning_request(
 async def list_fine_tuning_jobs(
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
+    org_id: str = Depends(get_org_id),
 ):
     """
     List all fine-tuning jobs.
@@ -82,7 +86,7 @@ async def list_fine_tuning_jobs(
         HTTPException: If listing jobs fails.
     """
     try:
-        jobs = service.get_all_jobs_metadata(JobTypes.TRAINING)
+        jobs = service.get_all_jobs_metadata(JobTypes.TRAINING, org_id=org_id)
         return JSONResponse(content={"jobs": jobs})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list jobs: {str(e)}")
@@ -93,6 +97,7 @@ async def get_fine_tuning_job_metadata(
     job_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
+    org_id: str = Depends(get_org_id),
 ):
     """
     Retrieve details of a fine-tuning job.
@@ -103,7 +108,7 @@ async def get_fine_tuning_job_metadata(
     Raises:
         HTTPException: If fine-tuning job not found.
     """
-    job_data = service.get_job_metadata(job_id)
+    job_data = service.get_job_metadata(job_id, org_id=org_id)
     if job_data is None:
         raise HTTPException(status_code=404, detail="Fine-tuning job not found")
 
@@ -115,6 +120,7 @@ async def get_training_metrics(
     job_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
+    org_id: str = Depends(get_org_id),
 ):
     """
     Retrieve training metrics for a fine-tuning job.
@@ -126,7 +132,7 @@ async def get_training_metrics(
         HTTPException: If job not found.
     """
     try:
-        metrics = service.get_job_metrics(job_id)
+        metrics = service.get_job_metrics(job_id, org_id=org_id)
     except ValueError:
         raise HTTPException(404, "Job not found")
     return JSONResponse(content=metrics)
@@ -137,6 +143,7 @@ async def cancel_fine_tuning_job(
     job_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
+    org_id: str = Depends(get_org_id),
 ):
     """
     Cancel a running fine-tuning job.
@@ -147,7 +154,7 @@ async def cancel_fine_tuning_job(
     Raises:
         HTTPException: If job not found or cannot be cancelled.
     """
-    status = service.cancel_job(job_id)
+    status = service.cancel_job(job_id, org_id=org_id)
     if not status:
         raise HTTPException(
             status_code=400, detail="Job not found or cannot be cancelled"
@@ -161,6 +168,7 @@ async def list_fine_tuning_checkpoints(
     job_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
+    org_id: str = Depends(get_org_id),
 ):
     """
     List available checkpoints for a fine-tuning job.
@@ -172,7 +180,7 @@ async def list_fine_tuning_checkpoints(
         HTTPException: If job not found.
     """
     try:
-        checkpoints = service.get_job_checkpoints(job_id)
+        checkpoints = service.get_job_checkpoints(job_id, org_id=org_id)
     except ValueError:
         raise HTTPException(404, "Job not found")
     return JSONResponse(content={"checkpoints": checkpoints})
@@ -183,6 +191,7 @@ async def get_job_logs(
     job_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
+    org_id: str = Depends(get_org_id),
 ):
     """
     Retrieve log entries for a fine-tuning job.
@@ -194,7 +203,7 @@ async def get_job_logs(
         HTTPException: If job not found.
     """
     try:
-        logs = service.get_job_logs(job_id)
+        logs = service.get_job_logs(job_id, org_id=org_id)
     except ValueError:
         raise HTTPException(404, "Job not found")
     return JSONResponse(content=logs)
@@ -206,6 +215,7 @@ async def download_checkpoint(
     checkpoint_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
+    org_id: str = Depends(get_org_id),
 ):
     """
     Download a checkpoint as a zip archive.
@@ -217,7 +227,9 @@ async def download_checkpoint(
         HTTPException: If job or checkpoint not found.
     """
     try:
-        checkpoint_path = service.get_checkpoint_download_path(job_id, checkpoint_id)
+        checkpoint_path = service.get_checkpoint_download_path(
+            job_id, checkpoint_id, org_id=org_id
+        )
     except ValueError:
         raise HTTPException(404, "Job not found")
     if not checkpoint_path:

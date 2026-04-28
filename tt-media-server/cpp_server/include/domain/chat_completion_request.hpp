@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -14,7 +15,10 @@
 #include "domain/chat_message.hpp"
 #include "domain/json_field.hpp"
 #include "domain/llm_request.hpp"
-#include "utils/tokenizer.hpp"
+#include "domain/response_format.hpp"
+#include "domain/tool_calls/tool.hpp"
+#include "domain/tool_calls/tool_choice.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::domain {
 
@@ -73,8 +77,16 @@ struct ChatCompletionRequest : BaseRequest {
 
   bool fast_mode = false;
 
+  // Structured output constraint
+  std::optional<ResponseFormat> response_format;
+
   // Session management
   std::optional<std::string> sessionId;
+
+  // Tool calling support
+  std::optional<std::vector<tool_calls::Tool>> tools;
+  std::optional<tool_calls::ToolChoice> tool_choice;
+  bool parallel_tool_calls = true;
 
   static ChatCompletionRequest fromJson(const Json::Value& json,
                                         uint32_t taskId) {
@@ -173,9 +185,30 @@ struct ChatCompletionRequest : BaseRequest {
 
     if (json.isMember("fast_mode")) req.fast_mode = json["fast_mode"].asBool();
 
+    if (json.isMember("response_format") && !json["response_format"].isNull()) {
+      req.response_format = ResponseFormat::fromJson(json["response_format"]);
+    }
+
     if (json.isMember("session_id") && !json["session_id"].isNull())
       req.sessionId = getString(json["session_id"], "session_id");
 
+    if (json.isMember("tool_choice") && !json["tool_choice"].isNull()) {
+      req.tool_choice = tool_calls::ToolChoice::fromJson(json["tool_choice"]);
+    }
+
+    if (json.isMember("tools") && json["tools"].isArray()) {
+      std::vector<tool_calls::Tool> toolList;
+      for (const auto& tool : json["tools"]) {
+        toolList.push_back(tool_calls::Tool::fromJson(tool));
+      }
+      req.tools = toolList;
+    }
+    if (json.isMember("parallel_tool_calls") &&
+        !json["parallel_tool_calls"].isNull())
+      req.parallel_tool_calls =
+          getBool(json["parallel_tool_calls"], "parallel_tool_calls");
+
+    validateToolFields(req);
     return req;
   }
 
@@ -208,7 +241,9 @@ struct ChatCompletionRequest : BaseRequest {
   LLMRequest toLLMRequest() const {
     LLMRequest out(task_id);
     out.model = model;
-    out.prompt = tt::utils::activeTokenizer().applyChatTemplate(messages);
+    out.messages = messages;
+    out.prompt = tt::utils::tokenizers::activeTokenizer().applyChatTemplate(
+        messages, true, tools);
 
     out.echo = echo;
     out.max_tokens = max_tokens;
@@ -230,6 +265,8 @@ struct ChatCompletionRequest : BaseRequest {
     out.repetition_penalty = repetition_penalty;
     out.length_penalty = length_penalty;
     out.stop_token_ids = stop_token_ids;
+    out.parallel_tool_calls = parallel_tool_calls;
+    out.tool_choice = tool_choice;
     out.include_stop_str_in_output = include_stop_str_in_output;
     out.ignore_eos = ignore_eos;
     out.min_tokens = min_tokens;
@@ -239,8 +276,21 @@ struct ChatCompletionRequest : BaseRequest {
     out.prompt_logprobs = prompt_logprobs;
     out.truncate_prompt_tokens = truncate_prompt_tokens;
     out.fast_mode = fast_mode;
+    out.response_format = response_format;
     out.sessionId = sessionId;
     return out;
+  }
+
+ private:
+  static void validateToolFields(const ChatCompletionRequest& req) {
+    if (!req.tool_choice.has_value()) return;
+
+    const auto& type = req.tool_choice->type;
+    const bool toolsMissing = !req.tools.has_value() || req.tools->empty();
+    if (type != "none" && toolsMissing) {
+      throw std::invalid_argument("tool_choice='" + type +
+                                  "' requires non-empty 'tools'");
+    }
   }
 };
 

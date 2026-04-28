@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "config/settings.hpp"
 
@@ -14,7 +14,7 @@
 #include "config/defaults.hpp"
 #include "config/runner_config.hpp"
 #include "config/types.hpp"
-#include "utils/tokenizer.hpp"
+#include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::config {
 
@@ -125,7 +125,7 @@ static std::filesystem::path tokenizersDir() {
 std::string tokenizerPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
-  std::string modelDir = utils::tokenizerDirForModel(model);
+  std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
   std::filesystem::path p = base / modelDir / "tokenizer.json";
   if (std::filesystem::exists(p)) {
     return std::filesystem::absolute(p).string();
@@ -138,7 +138,7 @@ std::string tokenizerPath() { return tokenizerPath(modelType()); }
 std::string tokenizerConfigPath(ModelType model) {
   auto base = tokenizersDir();
   if (base.empty()) return "";
-  std::string modelDir = utils::tokenizerDirForModel(model);
+  std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
   std::filesystem::path p = base / modelDir / "tokenizer_config.json";
   if (std::filesystem::exists(p)) {
     return std::filesystem::absolute(p).string();
@@ -154,15 +154,10 @@ std::string visibleDevicesForWorker(size_t workerIndex) {
   return "";
 }
 
-std::string h2dSocketId() {
+std::string blazeSocketDescriptorPrefix() {
   static const std::string cached =
-      envString("H2D_SOCKET_ID", defaults::H2D_SOCKET_ID);
-  return cached;
-}
-
-std::string d2hSocketId() {
-  static const std::string cached =
-      envString("D2H_SOCKET_ID", defaults::D2H_SOCKET_ID);
+      envString("BLAZE_SOCKET_DESCRIPTOR_PREFIX",
+                defaults::BLAZE_SOCKET_DESCRIPTOR_PREFIX);
   return cached;
 }
 
@@ -175,15 +170,55 @@ size_t pmMaxUsers() {
   return static_cast<size_t>(envUlong("PM_MAX_USERS", defaults::PM_MAX_USERS));
 }
 
+unsigned warmupTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("WARMUP_TIMEOUT_MS", defaults::WARMUP_TIMEOUT_MS));
+}
+
+unsigned outputHangTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
+}
+
 bool useDeepseekMdFormat() {
   return static_cast<bool>(
       envUlong("USE_DEEPSEEK_MD_FORMAT", defaults::USE_DEEPSEEK_MD_FORMAT));
 }
 
+std::string ttTaskQueueName() {
+  return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
+}
+
+std::string ttResultQueueName() {
+  return envString("TT_RESULT_QUEUE", defaults::TT_RESULT_QUEUE);
+}
+
+std::string ttCancelQueueName() {
+  return envString("TT_CANCEL_QUEUE", defaults::TT_CANCEL_QUEUE);
+}
+
+std::string ttWarmupSignalsQueueName() {
+  return envString("TT_WARMUP_SIGNALS_QUEUE",
+                   defaults::TT_WARMUP_SIGNALS_QUEUE);
+}
+
+std::string ttMemoryRequestQueueName() {
+  return envString("TT_MEMORY_REQUEST_QUEUE",
+                   defaults::TT_MEMORY_REQUEST_QUEUE);
+}
+
+std::string ttMemoryResultQueueName() {
+  return envString("TT_MEMORY_RESULT_QUEUE", defaults::TT_MEMORY_RESULT_QUEUE);
+}
+
+std::string workerMetricsShmName() {
+  return envString("TT_WORKER_METRICS_SHM", defaults::TT_WORKER_METRICS_SHM);
+}
+
 LLMConfig llmEngineConfig() {
   static const LLMConfig cached = [] {
     LLMConfig cfg;
-    cfg.stop_token_ids = utils::activeTokenizer().stopTokenIds();
+    cfg.stop_token_ids = utils::tokenizers::activeTokenizer().stopTokenIds();
     cfg.max_in_flight_count = maxInFlightCount();
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
@@ -215,6 +250,12 @@ LLMConfig llmEngineConfig() {
 ModelType modelType() {
   static const ModelType cached = modelTypeFromDeviceBackend(
       envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND));
+  return cached;
+}
+
+Model model() {
+  static const Model cached =
+      modelFromString(envString("MODEL", defaults::MODEL));
   return cached;
 }
 
@@ -285,10 +326,31 @@ size_t maxTokensToPrefillOnDecode() {
                defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
 }
 
+bool useFastMode() {
+  return envUlong("USE_FAST_MODE", defaults::USE_FAST_MODE);
+}
+
+std::string kafkaBrokers() {
+  return envString("KAFKA_BROKERS", defaults::KAFKA_BROKERS);
+}
+
+std::string kafkaOffloadTopicName() {
+  return envString("KAFKA_OFFLOAD_TOPIC_NAME",
+                   defaults::KAFKA_OFFLOAD_TOPIC_NAME);
+}
+
+std::string kafkaGroupId() {
+  return envString("KAFKA_GROUP_ID", defaults::KAFKA_GROUP_ID);
+}
 unsigned sessionAllocationMaxRetries() {
   return static_cast<unsigned>(
       envUlong("SESSION_ALLOCATION_MAX_RETRIES",
                defaults::SESSION_ALLOCATION_MAX_RETRIES));
+}
+
+unsigned prefillTimeoutMs() {
+  return static_cast<unsigned>(
+      envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
 }
 
 }  // namespace tt::config

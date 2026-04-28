@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "api/sse_stream_writer.hpp"
 
@@ -68,11 +68,12 @@ void SseStreamWriter::flushAccumulated() {
 }
 
 domain::CompletionUsage SseStreamWriter::buildFinalUsage() const {
-  const int tokens = completion_tokens_.load();
+  const int completionTokens = completion_tokens_.load();
+  const int totalTokens = params_.promptTokensCount + completionTokens;
 
   domain::CompletionUsage usage{params_.promptTokensCount,
-                                tokens,
-                                tokens,
+                                completionTokens,
+                                totalTokens,
                                 std::nullopt,
                                 std::nullopt,
                                 std::nullopt};
@@ -84,14 +85,14 @@ domain::CompletionUsage SseStreamWriter::buildFinalUsage() const {
         std::round(static_cast<double>(ttftUs.count()) / 10.0) / 100.0;
   }
 
-  if (tokens > 1 && first_token_time_.has_value()) {
+  if (completionTokens > 1 && first_token_time_.has_value()) {
     auto finalTime = std::chrono::high_resolution_clock::now();
     auto baseTime = second_token_time_.value_or(first_token_time_.value());
     auto totalUs = std::chrono::duration_cast<std::chrono::microseconds>(
         finalTime - baseTime);
     if (totalUs.count() > 0) {
       auto secs = static_cast<double>(totalUs.count()) / 1000000.0;
-      usage.tps = std::round((tokens - 1) / secs * 1000.0) / 1000.0;
+      usage.tps = std::round((completionTokens - 1) / secs * 1000.0) / 1000.0;
     }
   }
 
@@ -117,7 +118,7 @@ void SseStreamWriter::handleTokenChunk(const domain::LLMStreamChunk& chunk) {
   if (params_.continuousUsage) {
     usage = domain::CompletionUsage{params_.promptTokensCount,
                                     currentTokens,
-                                    currentTokens,
+                                    params_.promptTokensCount + currentTokens,
                                     std::nullopt,
                                     std::nullopt,
                                     params_.sessionId};
@@ -167,8 +168,8 @@ void SseStreamWriter::finalizeStream() {
       (*self->stream_ptr_)->close();
 
       if (self->params_.sessionId.has_value() && self->params_.sessionManager) {
-        self->params_.sessionManager->setSessionInFlight(
-            self->params_.sessionId.value(), false);
+        self->params_.sessionManager->releaseInFlight(
+            self->params_.sessionId.value());
       }
     }
   });
@@ -180,8 +181,7 @@ void SseStreamWriter::abort() {
                 params_.taskId);
     params_.service->abortRequest(params_.taskId);
     if (params_.sessionId.has_value() && params_.sessionManager) {
-      params_.sessionManager->setSessionInFlight(params_.sessionId.value(),
-                                                 false);
+      params_.sessionManager->releaseInFlight(params_.sessionId.value());
     }
   }
 }

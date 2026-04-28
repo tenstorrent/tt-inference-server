@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Union
@@ -1160,6 +1160,96 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        tasks=[
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=45.96,
+                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503#instruction-evals",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=88.41,
+                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=False,
+                max_concurrent=32,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="chartqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=86.24,
+                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "relaxed_overall,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "</s>",
+                    "stream": "False",
+                },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
@@ -2732,7 +2822,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                 },
             ),
             EvalTask(
@@ -2763,7 +2853,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                 },
             ),
             EvalTask(
@@ -2794,7 +2884,7 @@ _eval_config_list = [
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                     "until": ["</s>"],
                 },
             ),
@@ -2831,7 +2921,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                 },
             ),
             EvalTask(
@@ -2862,7 +2952,7 @@ _eval_config_list = [
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                 },
             ),
             EvalTask(
@@ -2893,7 +2983,7 @@ _eval_config_list = [
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 64 * 1024,
                     "until": ["</s>"],
                 },
             ),

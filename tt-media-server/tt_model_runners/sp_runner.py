@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 """Shared-memory pipeline runner (server-side proxy).
 
@@ -20,6 +20,7 @@ Environment variables:
 from __future__ import annotations
 
 import os
+import time
 
 from ipc.video_shm import (
     VideoRequest,
@@ -27,14 +28,15 @@ from ipc.video_shm import (
     VideoStatus,
     cleanup_orphaned_video_files,
 )
+from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_device_runner import BaseDeviceRunner
+from utils.decorators import log_execution_time
 
 DEFAULT_VIDEO_HEIGHT = 480
 DEFAULT_VIDEO_WIDTH = 832
 DEFAULT_VIDEO_NUM_FRAMES = 81
 DEFAULT_VIDEO_GUIDANCE_SCALE = 3.0
 DEFAULT_VIDEO_GUIDANCE_SCALE_2 = 4.0
-RESPONSE_TIMEOUT_S = 300.0
 
 
 class SPRunner(BaseDeviceRunner):
@@ -59,12 +61,42 @@ class SPRunner(BaseDeviceRunner):
         self._output_shm = VideoShm(
             output_name, mode="output", is_shutdown=self._is_shutdown
         )
-        self._input_shm.open(create=False)
-        self._output_shm.open(create=False)
+        self._input_shm.open()
+        self._output_shm.open()
+        # Self-heal any gap left by a previous server instance that crashed
+        # mid-write (on input) or mid-read (on output). Scoped to this
+        # process's own role, so safe to run with a live runner peer.
+        in_repair = self._input_shm.recover(side="writer")
+        out_repair = self._output_shm.recover(side="reader")
+        if any(in_repair.values()) or any(out_repair.values()):
+            self.logger.warning(
+                f"SPRunner {self.device_id}: crash-recovery repaired prior "
+                f"inconsistency: input={in_repair} output={out_repair}"
+            )
+        # Any responses sitting in the output ring at startup are addressed to
+        # tasks whose requester (the previous SPRunner process) is gone. Leaving
+        # them in place would desync ridx by N and every future request would
+        # silently receive the previous task's file_path. Drain + unlink now.
+        self._drain_stale_responses()
         self.logger.info(
             f"SPRunner {self.device_id}: SHM opened (in={input_name}, out={output_name})"
         )
         return {}
+
+    def _drain_stale_responses(self) -> None:
+        depth = self._output_shm.queue_depth()
+        drained = 0
+        for _ in range(depth):
+            resp = self._output_shm.read_response(timeout_s=1.0)
+            if resp is None:
+                break
+            self._try_unlink(resp.file_path)
+            drained += 1
+        if drained:
+            self.logger.warning(
+                f"SPRunner {self.device_id}: drained {drained} stale "
+                f"response(s) left by prior session"
+            )
 
     def close_device(self):
         self._shutdown = True
@@ -86,9 +118,14 @@ class SPRunner(BaseDeviceRunner):
         return True
 
     async def warmup(self) -> bool:
-        self.logger.info(f"SPRunner {self.device_id}: no warmup needed (SHM bridge)")
+        self.logger.info("Skipping warmup since SHM runner has a warm start")
         return True
 
+    @log_execution_time(
+        "SP-Runner inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
     def run(self, requests):
         request = requests[0]
         task_id = request._task_id
@@ -113,11 +150,8 @@ class SPRunner(BaseDeviceRunner):
         self._input_shm.write_request(video_req)
         self.logger.info(f"[SP] Request {task_id} sent to SHM input")
 
-        resp = self._output_shm.read_response(timeout_s=RESPONSE_TIMEOUT_S)
-        if resp is None:
-            raise RuntimeError(
-                f"Response timed out after {RESPONSE_TIMEOUT_S}s for task {task_id}"
-            )
+        timeout_s = self.settings.video_request_timeout_seconds
+        resp = self._read_response_for(task_id, timeout_s)
         if resp.status == VideoStatus.ERROR:
             self._try_unlink(resp.file_path)
             raise RuntimeError(f"Runner error for task {task_id}: {resp.error_message}")
@@ -132,6 +166,34 @@ class SPRunner(BaseDeviceRunner):
         )
         # List so device_worker's responses[i] matches one path per request (str[0] would be wrong).
         return [mp4_path]
+
+    def _read_response_for(self, task_id: str, timeout_s: float):
+        """Read the next output slot that matches ``task_id``.
+
+        Any response whose task_id doesn't match belongs to a task abandoned
+        by a prior SPRunner process (its requester is gone) and is still being
+        flushed out by the runner — drop it and keep reading within the
+        original deadline so the caller's timeout contract is preserved.
+        """
+        deadline = time.monotonic() + timeout_s
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"REQUEST_TIMEOUT: response exceeded {timeout_s}s for task {task_id}"
+                )
+            resp = self._output_shm.read_response(timeout_s=remaining)
+            if resp is None:
+                raise TimeoutError(
+                    f"REQUEST_TIMEOUT: response exceeded {timeout_s}s for task {task_id}"
+                )
+            if resp.task_id == task_id:
+                return resp
+            self.logger.warning(
+                f"[SP] Dropping stale response task_id={resp.task_id!r} "
+                f"(expected {task_id!r}); unlinking {resp.file_path!r}"
+            )
+            self._try_unlink(resp.file_path)
 
     @staticmethod
     def _try_unlink(path: str) -> None:

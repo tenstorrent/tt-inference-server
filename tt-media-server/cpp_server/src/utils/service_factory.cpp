@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "utils/service_factory.hpp"
 
@@ -19,7 +19,7 @@ namespace tt::utils::service_factory {
 void initializeServices() {
   tracy_config::tracyStartMainProcess();
 
-  auto& c = ServiceContainer::instance();
+  auto& c = services::ServiceContainer::instance();
 
   std::shared_ptr<services::LLMService> llm;
   std::shared_ptr<services::EmbeddingService> embedding;

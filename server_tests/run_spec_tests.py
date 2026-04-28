@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #!/usr/bin/env python3
 
@@ -63,99 +63,165 @@ def _configure_logging():
     logging.getLogger("whisper_eval_test").setLevel(logging.INFO)
 
 
-def _load_test_instances_from_suites(test_suites: List[dict]) -> List:
-    """Load test instances from filtered test suites."""
-    test_cases = []
+class TestFrameworkRunner:
+    """Top-level orchestrator for the server_tests framework.
 
-    for suite in test_suites:
-        suite_id = suite.get("id", "unknown")
-        device = suite.get("device", "unknown")
-        weights = suite.get("weights", [])
+    Applies CLI filters to the categorization system, loads test
+    instances from the resulting suites, and delegates execution to
+    ``ServerRunner``. Intended entry point for ``run_spec_tests.py``
+    and the ``spec_tests`` workflow.
+    """
 
-        logger.info(
-            f"Loading tests for suite: {suite_id} (device={device}, models={weights})"
-        )
+    def __init__(self, args: argparse.Namespace) -> None:
+        if args is None:
+            raise ValueError("args must be provided")
+        self._args = args
 
-        for test_case_data in suite.get("test_cases", []):
-            if not test_case_data.get("enabled", True):
-                logger.info(f"  Skipping disabled test: {test_case_data.get('name')}")
-                continue
-
+    def apply_filters(self) -> List[dict]:
+        """Apply CLI filters to get matching test suites."""
+        args = self._args
+        logger.info(f"Applying filters: {args}")
+        if getattr(args, "suite_category", None):
             try:
-                config_dict = test_case_data.get("test_config", {})
-                config = TestConfig(config_dict)
-                targets = test_case_data.get("targets", {})
-                description = test_case_data.get("description", "")
+                logger.info(f"Loading suite category: {args.suite_category}")
+                test_filter = TestFilter.from_category(args.suite_category)
+            except FileNotFoundError as e:
+                logger.error(str(e))
+                return []
+        else:
+            test_filter = TestFilter()
 
-                module_name = test_case_data["module"]
-                class_name = test_case_data["name"]
+        if args.model_category:
+            logger.info(f"Filtering by model categories: {args.model_category}")
+            test_filter.filter_by_model_category(args.model_category)
 
-                module = importlib.import_module(module_name)
-                test_class = getattr(module, class_name)
+        if args.model:
+            logger.info(f"Filtering by model: {args.model}")
+            test_filter.filter_by_model(args.model)
 
-                test_instance = test_class(config, targets)
-                test_instance.config = config
-                test_instance.targets = targets
-                test_instance.description = description
-                test_instance.markers = test_case_data.get("markers", [])
-                test_instance.suite_id = suite_id
+        if args.device:
+            logger.info(f"Filtering by device: {args.device}")
+            test_filter.filter_by_device(args.device)
 
-                test_cases.append(test_instance)
-                logger.info(f"  Loaded: {class_name} - {description}")
+        if args.markers:
+            match_all = args.match_all_markers
+            logger.info(f"Filtering by markers: {args.markers} (match_all={match_all})")
+            test_filter.filter_by_markers(args.markers, match_all=match_all)
 
-            except Exception as e:
-                logger.error(f"  Failed to load test {test_case_data.get('name')}: {e}")
-                continue
+        if args.test_name:
+            logger.info(f"Filtering by test name: {args.test_name}")
+            test_filter.filter_by_test_name(args.test_name)
 
-    return test_cases
+        if args.exclude_markers:
+            logger.info(f"Excluding markers: {args.exclude_markers}")
+            test_filter.exclude_markers(args.exclude_markers)
 
+        if args.skip_prerequisites:
+            logger.info("Skipping prerequisite tests (DeviceLivenessTest)")
+            test_filter.include_prerequisites(False)
 
-def _apply_filters(args) -> List[dict]:
-    """Apply CLI filters to get matching test suites."""
-    logger.info(f"Applying filters: {args}")
-    if hasattr(args, "suite_category") and args.suite_category:
+        test_suites = test_filter.get_tests()
+        test_filter.print_summary(suites=test_suites)
+
+        return test_suites
+
+    @staticmethod
+    def load_test_instances(test_suites: List[dict]) -> List:
+        """Load test instances from filtered test suites."""
+        test_cases = []
+
+        for suite in test_suites:
+            suite_id = suite.get("id", "unknown")
+            device = suite.get("device", "unknown")
+            weights = suite.get("weights", [])
+
+            logger.info(
+                f"Loading tests for suite: {suite_id} (device={device}, models={weights})"
+            )
+
+            for test_case_data in suite.get("test_cases", []):
+                if not test_case_data.get("enabled", True):
+                    logger.info(
+                        f"  Skipping disabled test: {test_case_data.get('name')}"
+                    )
+                    continue
+
+                try:
+                    config_dict = test_case_data.get("test_config", {})
+                    config = TestConfig(config_dict)
+                    targets = test_case_data.get("targets", {})
+                    description = test_case_data.get("description", "")
+
+                    module_name = test_case_data["module"]
+                    class_name = test_case_data["name"]
+
+                    module = importlib.import_module(module_name)
+                    test_class = getattr(module, class_name)
+
+                    test_instance = test_class(config, targets)
+                    test_instance.config = config
+                    test_instance.targets = targets
+                    test_instance.description = description
+                    test_instance.markers = test_case_data.get("markers", [])
+                    test_instance.suite_id = suite_id
+
+                    test_cases.append(test_instance)
+                    logger.info(f"  Loaded: {class_name} - {description}")
+
+                except Exception as e:
+                    logger.error(
+                        f"  Failed to load test {test_case_data.get('name')}: {e}"
+                    )
+                    continue
+
+        return test_cases
+
+    def run(self) -> int:
+        """Execute the full pipeline and return the CLI exit code."""
+        logger.info("Starting server tests...")
+        logger.info(f"Service port: {os.getenv('SERVICE_PORT', '8000')}")
+        logger.info(f"Test timeout: {os.getenv('TEST_TIMEOUT', '60')}s")
+        logger.info(f"Test retries: {os.getenv('TEST_RETRIES', '2')}")
+
         try:
-            logger.info(f"Loading suite category: {args.suite_category}")
-            test_filter = TestFilter.from_category(args.suite_category)
-        except FileNotFoundError as e:
-            logger.error(str(e))
-            return []
-    else:
-        test_filter = TestFilter()
+            test_suites = self.apply_filters()
 
-    if args.model_category:
-        logger.info(f"Filtering by model categories: {args.model_category}")
-        test_filter.filter_by_model_category(args.model_category)
+            if not test_suites:
+                logger.error("No test suites match the specified filters")
+                logger.info("Available options:")
+                test_filter = TestFilter()
+                logger.info(f"  Devices: {test_filter.get_all_devices()}")
+                logger.info(f"  Models: {test_filter.get_all_models()}")
+                return 1
 
-    if args.model:
-        logger.info(f"Filtering by model: {args.model}")
-        test_filter.filter_by_model(args.model)
+            test_cases = self.load_test_instances(test_suites)
 
-    if args.device:
-        logger.info(f"Filtering by device: {args.device}")
-        test_filter.filter_by_device(args.device)
+            if not test_cases:
+                logger.error("No test cases loaded")
+                return 1
 
-    if args.markers:
-        match_all = args.match_all_markers
-        logger.info(f"Filtering by markers: {args.markers} (match_all={match_all})")
-        test_filter.filter_by_markers(args.markers, match_all=match_all)
+            logger.info(f"Created {len(test_cases)} test case(s)")
 
-    if args.test_name:
-        logger.info(f"Filtering by test name: {args.test_name}")
-        test_filter.filter_by_test_name(args.test_name)
+            runner = ServerRunner(test_cases)
 
-    if args.exclude_markers:
-        logger.info(f"Excluding markers: {args.exclude_markers}")
-        test_filter.exclude_markers(args.exclude_markers)
+            start_time = time.perf_counter()
+            reports = runner.run()
+            total_duration = time.perf_counter() - start_time
 
-    if args.skip_prerequisites:
-        logger.info("Skipping prerequisite tests (DeviceLivenessTest)")
-        test_filter.include_prerequisites(False)
+            logger.info(f"All tests completed in {total_duration:.2f}s")
 
-    test_suites = test_filter.get_tests()
-    test_filter.print_summary(suites=test_suites)
+            success = all(report.success for report in reports)
+            return 0 if success else 1
 
-    return test_suites
+        except KeyboardInterrupt:
+            logger.info("Test execution interrupted by user")
+            return 130
+        except Exception as e:
+            logger.error(f"Fatal error during test execution: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return 1
 
 
 def parse_args():
@@ -307,54 +373,10 @@ def parse_args():
 
 
 def main() -> int:
-    """Main entry point."""
+    """CLI entry point."""
     _configure_logging()
     args = parse_args()
-
-    logger.info("Starting server tests...")
-    logger.info(f"Service port: {os.getenv('SERVICE_PORT', '8000')}")
-    logger.info(f"Test timeout: {os.getenv('TEST_TIMEOUT', '60')}s")
-    logger.info(f"Test retries: {os.getenv('TEST_RETRIES', '2')}")
-
-    try:
-        test_suites = _apply_filters(args)
-
-        if not test_suites:
-            logger.error("No test suites match the specified filters")
-            logger.info("Available options:")
-            test_filter = TestFilter()
-            logger.info(f"  Devices: {test_filter.get_all_devices()}")
-            logger.info(f"  Models: {test_filter.get_all_models()}")
-            return 1
-
-        test_cases = _load_test_instances_from_suites(test_suites)
-
-        if not test_cases:
-            logger.error("No test cases loaded")
-            return 1
-
-        logger.info(f"Created {len(test_cases)} test case(s)")
-
-        runner = ServerRunner(test_cases)
-
-        start_time = time.perf_counter()
-        reports = runner.run()
-        total_duration = time.perf_counter() - start_time
-
-        logger.info(f"All tests completed in {total_duration:.2f}s")
-
-        success = all(report.success for report in reports)
-        return 0 if success else 1
-
-    except KeyboardInterrupt:
-        logger.info("Test execution interrupted by user")
-        return 130
-    except Exception as e:
-        logger.error(f"Fatal error during test execution: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return 1
+    return TestFrameworkRunner(args).run()
 
 
 if __name__ == "__main__":

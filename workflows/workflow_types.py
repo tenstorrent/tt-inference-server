@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from enum import Enum, IntEnum, auto
 
@@ -380,3 +380,17 @@ class ModelType(IntEnum):
             ModelType.VIDEO: "Video",
         }
         return short_names[self]
+
+    @property
+    def task_type(self) -> str:
+        task_types = {
+            ModelType.LLM: "text",
+            ModelType.VLM: "vlm",
+            ModelType.AUDIO: "audio",
+            ModelType.IMAGE: "image",
+            ModelType.CNN: "cnn",
+            ModelType.EMBEDDING: "embedding",
+            ModelType.TEXT_TO_SPEECH: "text_to_speech",
+            ModelType.VIDEO: "video",
+        }
+        return task_types[self]

@@ -1,33 +1,85 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include "api/health_controller.hpp"
 
 #include <chrono>
 
 #include "config/settings.hpp"
+#include "services/service_container.hpp"
+#include "sockets/inter_server_service.hpp"
 #include "utils/logger.hpp"
-#include "utils/service_container.hpp"
 
 namespace tt::api {
 
 HealthController::HealthController() {
-  service_ = tt::utils::ServiceContainer::instance().configuredService();
-  TT_LOG_INFO("[HealthController] Initialized (service={})",
-              (service_ ? "yes" : "no"));
+  auto& container = tt::services::ServiceContainer::instance();
+  service_ = container.configuredService();
+  socket_ = container.socket();
+  TT_LOG_INFO("[HealthController] Initialized (service={}, socket={})",
+              (service_ ? "yes" : "no"), (socket_ ? "yes" : "no"));
 }
 
 void HealthController::health(
     const drogon::HttpRequestPtr&,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
   Json::Value response;
-  response["status"] = "healthy";
   response["timestamp"] = static_cast<Json::Int64>(
       std::chrono::duration_cast<std::chrono::seconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count());
 
-  callback(drogon::HttpResponse::newHttpJsonResponse(response));
+  bool hasAliveWorkers = false;
+  bool hasReadyWorkers = false;
+  if (service_) {
+    try {
+      auto status = service_->getSystemStatus();
+      for (const auto& w : status.workerInfo) {
+        if (w.is_alive) {
+          hasAliveWorkers = true;
+        }
+        if (w.is_ready) {
+          hasReadyWorkers = true;
+        }
+      }
+    } catch (const std::exception& e) {
+      TT_LOG_ERROR("[HealthController] Failed to get worker status: {}",
+                   e.what());
+    }
+  }
+
+  bool socketHealthy = true;
+  if (socket_) {
+    response["socket_status"] = socket_->getStatus();
+    socketHealthy = socket_->isConnected();
+  }
+
+  if (hasReadyWorkers && hasAliveWorkers && socketHealthy) {
+    response["status"] = "healthy";
+    callback(drogon::HttpResponse::newHttpJsonResponse(response));
+  } else if (!hasAliveWorkers) {
+    response["status"] = "unhealthy";
+    if (!hasAliveWorkers) {
+      response["error"] = "no workers are alive";
+    } else {
+      response["error"] = "socket not connected";
+    }
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k503ServiceUnavailable);
+    callback(resp);
+  } else if (!hasReadyWorkers) {
+    response["status"] = "unhealthy";
+    response["error"] = "no workers are ready";
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k503ServiceUnavailable);
+    callback(resp);
+  } else {
+    response["status"] = "unhealthy";
+    response["error"] = "socket not connected";
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k503ServiceUnavailable);
+    callback(resp);
+  }
 }
 
 void HealthController::ready(
@@ -49,16 +101,21 @@ void HealthController::ready(
 
     Json::Value response;
     response["status"] = "alive";
-    response["model_ready"] = status.model_ready;
-    response["queue_size"] = static_cast<Json::UInt64>(status.queue_size);
-    response["max_queue_size"] =
-        static_cast<Json::UInt64>(status.max_queue_size);
+    response["model_ready"] = status.modelReady;
+    response["queue_size"] = static_cast<Json::UInt64>(status.queueSize);
+    response["max_queue_size"] = static_cast<Json::UInt64>(status.maxQueueSize);
+
+    if (socket_) {
+      response["socket_status"] = socket_->getStatus();
+    }
 
     Json::Value workers(Json::arrayValue);
-    for (const auto& w : status.worker_info) {
+    for (const auto& w : status.workerInfo) {
       Json::Value wj;
       wj["worker_id"] = w.worker_id;
       wj["is_ready"] = w.is_ready;
+      wj["is_alive"] = w.is_alive;
+      wj["pid"] = static_cast<Json::Int64>(w.pid);
       workers.append(wj);
     }
     response["workers"] = workers;

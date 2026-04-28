@@ -5,7 +5,7 @@
       "ci": {
         "nightly": {
           "devices": [
-            "DUAL_GALAXY"
+            "QUAD_GALAXY"
           ]
         }
       }
@@ -118,6 +118,16 @@
           "devices": [
             "N150",
             "N300"
+          ]
+        }
+      }
+    },
+    "Mistral-Small-3.1-24B-Instruct-2503": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "T3K"
           ]
         }
       }
@@ -260,6 +270,26 @@
         }
       }
     },
+    "Llama-3.2-3B": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "N150"
+          ]
+        }
+      }
+    },
+    "Qwen3-4B": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "N150"
+          ]
+        }
+      }
+    },
     "Qwen3-Embedding-4B": {
       "inference_engine": "FORGE",
       "ci": {
@@ -282,6 +312,19 @@
         "release": {
           "devices": [
             "GALAXY"
+          ]
+        }
+      }
+    },
+    "bge-m3": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "GALAXY",
+            "N150",
+            "N300",
+            "T3K"
           ]
         }
       }

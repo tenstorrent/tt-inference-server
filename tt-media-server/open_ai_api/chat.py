@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import json
 import time
@@ -61,6 +61,7 @@ def _build_completion_request(
         stop=chat_request.stop,
         n=chat_request.n,
         seed=chat_request.seed,
+        adapter=chat_request.adapter,
     )
 
 

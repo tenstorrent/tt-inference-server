@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import json
@@ -198,6 +198,16 @@ class ImageClientStrategy(BaseMediaStrategy):
             json.dump(benchmark_data, f, indent=4)
         logger.info(f"Evaluation data written to: {eval_filename}")
 
+        # If the eval produced metrics but the accuracy check failed, we still
+        # want to persist the report above. Only now do we surface the failure
+        # so upstream callers can treat it as an error.
+        if isinstance(eval_result, dict) and not eval_result.get("success", True):
+            error = eval_result.get(
+                "error", "ImageGenerationEvalsTest ACCURACY_CHECK failed"
+            )
+            logger.error(f"Eval report written despite failure; raising: {error}")
+            raise RuntimeError(error)
+
     def run_benchmark(self, attempt=0) -> list[ImageGenerationTestStatus]:
         """Run benchmarks for the model."""
         logger.info(
@@ -217,10 +227,14 @@ class ImageClientStrategy(BaseMediaStrategy):
             # Get num_calls from benchmark parameters
             num_calls = get_num_calls(self)
 
-            # Override num_calls for SDXL trace model to 100 prompts
-            if runner_in_use == "tt-sdxl-trace":
+            # Override num_calls for SDXL models to 100 prompts
+            if runner_in_use in [
+                "tt-sdxl-trace",
+                "tt-sdxl-image-to-image",
+                "tt-sdxl-edit",
+            ]:
                 logger.info(
-                    f"Overriding num_calls for SDXL trace model to {SDXL_BENCHMARK_NUM_PROMPTS} prompts"
+                    f"Overriding num_calls for SDXL {runner_in_use} model to {SDXL_BENCHMARK_NUM_PROMPTS} prompts"
                 )
                 num_calls = SDXL_BENCHMARK_NUM_PROMPTS
 
@@ -683,10 +697,16 @@ class ImageClientStrategy(BaseMediaStrategy):
         result = await eval_test._run_specific_test_async()
 
         if not result.get("success"):
-            logger.error(
-                f"ImageGenerationEvalsTest ACCURACY_CHECK failed: error={result.get('error')}"
-            )
+            # If eval_results were computed (i.e. accuracy check failed with real
+            # FID/CLIP numbers), return the result so the caller can persist a
+            # report before signaling failure. Only raise when there are no
+            # metrics to report (a genuine execution error).
+            if result.get("eval_results"):
+                logger.error("ImageGenerationEvalsTest ACCURACY_CHECK failed.")
+                return result
+
             error = result.get("error", "ImageGenerationEvalsTest failed")
+            logger.error(f"ImageGenerationEvalsTest failed: error={error}")
             raise RuntimeError(error)
 
         logger.info(f"ImageGenerationEvalsTest completed: {result.get('eval_results')}")

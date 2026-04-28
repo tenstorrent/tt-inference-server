@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import os
 
-from config.constants import ModelRunners, DeviceTypes
+from config.constants import DeviceTypes, ModelRunners
 from config.settings import settings
 from telemetry.telemetry_client import get_telemetry_client
 
@@ -42,8 +42,11 @@ def setup_runner_environment(
         get_telemetry_client()
 
     tt_metal_home = os.environ.get("TT_METAL_HOME", "")
+    # Add MPI rank suffix to the cache path to avoid conflicts between ranks when JiT compiling.
+    mpi_rank = os.environ.get("OMPI_COMM_WORLD_RANK")
+    rank_suffix = f"_rank{mpi_rank}" if mpi_rank is not None else ""
     os.environ["TT_METAL_CACHE"] = (
-        f"{tt_metal_home}/built/{str(device_id).replace(',', '_')}"
+        f"{tt_metal_home}/built/{str(device_id).replace(',', '_')}{rank_suffix}"
     )
 
     _RUNNERS_REQUIRING_MESH_DESCRIPTOR = {

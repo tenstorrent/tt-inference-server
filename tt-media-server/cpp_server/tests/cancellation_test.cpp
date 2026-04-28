@@ -1,29 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "utils/id_generator.hpp"
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
 #include "config/runner_config.hpp"
+#include "domain/sequence.hpp"
+#include "ipc/boost_ipc_result_queue.hpp"
 #include "ipc/cancel_queue.hpp"
-#include "ipc/token_ring_buffer.hpp"
 #include "runners/llm_runner.hpp"
 #include "runners/llm_runner/in_memory_task_queue.hpp"
-#include "runners/llm_runner/prefill_first_scheduler.hpp"
-#include "runners/llm_runner/sequence.hpp"
+#include "runners/llm_runner/schedulers/prefill_first_scheduler.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::runners::schedulers {
 
 using Config = tt::config::LLMConfig;
+using tt::runners::llm_engine::InMemoryTaskQueue;
 
 namespace {
 
-std::shared_ptr<ITaskQueue> makeQueue() {
+std::shared_ptr<tt::ipc::ITaskQueue> makeQueue() {
   return std::make_shared<InMemoryTaskQueue>();
 }
 
@@ -48,18 +50,32 @@ std::vector<int64_t> prompt(size_t len) {
 uint32_t nextId() { return tt::utils::TaskIDGenerator::generate(); }
 
 // ---------- In-memory cancel queue for testing ----------
+//
+// Production uses BoostIpcCancelQueue, which is thread-safe via Boost's
+// IPC message queue. The tests exercise concurrent access (scheduler
+// thread pushing/draining while the main test thread pushes/inspects),
+// so this stub must mirror that thread-safety contract — otherwise the
+// tests race their own helper instead of the code under test.
 
 class InMemoryCancelQueue : public tt::ipc::ICancelQueue {
  public:
-  void push(uint32_t taskId) override { items.push_back(taskId); }
+  void push(uint32_t taskId) override {
+    std::lock_guard<std::mutex> lock(mu_);
+    items.push_back(taskId);
+  }
 
   void tryPopAll(std::vector<uint32_t>& out) override {
+    std::lock_guard<std::mutex> lock(mu_);
     out.insert(out.end(), items.begin(), items.end());
     items.clear();
   }
 
-  void remove() override { items.clear(); }
+  void remove() override {
+    std::lock_guard<std::mutex> lock(mu_);
+    items.clear();
+  }
 
+  std::mutex mu_;
   std::vector<uint32_t> items;
 };
 
@@ -70,7 +86,7 @@ class InMemoryCancelQueue : public tt::ipc::ICancelQueue {
 class SchedulerAbortTest : public ::testing::Test {
  protected:
   Config config = makeConfig(/*numBlocks=*/32, /*blockSize=*/8);
-  std::shared_ptr<ITaskQueue> queue = makeQueue();
+  std::shared_ptr<tt::ipc::ITaskQueue> queue = makeQueue();
   PrefillFirstScheduler sched{config, queue.get(), /*maxInFlightCount=*/4};
 };
 
@@ -97,10 +113,10 @@ TEST_F(SchedulerAbortTest, AbortWaitingSequence) {
 TEST_F(SchedulerAbortTest, AbortDecodingSequence_FreesBlocks) {
   // Use small block count to verify blocks are freed
   Config smallConfig = makeConfig(/*numBlocks=*/4, /*blockSize=*/8);
-  std::shared_ptr<ITaskQueue> q = makeQueue();
+  std::shared_ptr<tt::ipc::ITaskQueue> q = makeQueue();
   PrefillFirstScheduler s{smallConfig, q.get(), 4};
 
-  size_t freeBlocksBefore = s.blockManager().numFreeBlocks();
+  size_t freeBlocksBefore = s.getBlockManager().numFreeBlocks();
 
   uint32_t id = nextId();
   s.addRequest(id, prompt(4), {.max_tokens = 100});
@@ -110,13 +126,13 @@ TEST_F(SchedulerAbortTest, AbortDecodingSequence_FreesBlocks) {
   s.postprocess(seqs, {100});
 
   // Blocks are allocated
-  EXPECT_LT(s.blockManager().numFreeBlocks(), freeBlocksBefore);
+  EXPECT_LT(s.getBlockManager().numFreeBlocks(), freeBlocksBefore);
 
   // Abort frees blocks
   s.abortRequest(id);
 
   // All blocks should be free again
-  EXPECT_EQ(s.blockManager().numFreeBlocks(), freeBlocksBefore);
+  EXPECT_EQ(s.getBlockManager().numFreeBlocks(), freeBlocksBefore);
 }
 
 TEST_F(SchedulerAbortTest, AbortIsIdempotent) {
@@ -141,7 +157,7 @@ TEST_F(SchedulerAbortTest, AbortFinishedSequence_IsNoOp) {
   uint32_t id = nextId();
   // Use stop_token_ids={100} so token 100 triggers finish
   Config cfgWithStop = makeConfig(32, 8, 256, 0, {100});
-  std::shared_ptr<ITaskQueue> q = makeQueue();
+  std::shared_ptr<tt::ipc::ITaskQueue> q = makeQueue();
   PrefillFirstScheduler s{cfgWithStop, q.get(), 4};
 
   s.addRequest(id, prompt(4), {.max_tokens = 10});
@@ -180,7 +196,7 @@ TEST_F(SchedulerAbortTest, AbortEnablesNewRequests) {
   // Use exactly 1 block with block_size=8. A prompt of 8 tokens needs 1 block.
   // With only 1 block total, only one request can be scheduled at a time.
   Config tightConfig = makeConfig(/*numBlocks=*/1, /*blockSize=*/8);
-  std::shared_ptr<ITaskQueue> q = makeQueue();
+  std::shared_ptr<tt::ipc::ITaskQueue> q = makeQueue();
   PrefillFirstScheduler s{tightConfig, q.get(), 4};
 
   uint32_t id1 = nextId();
@@ -191,11 +207,11 @@ TEST_F(SchedulerAbortTest, AbortEnablesNewRequests) {
   s.postprocess(seqs1, {100});
 
   // Record free blocks — should be 0 since id1 is decoding
-  EXPECT_EQ(s.blockManager().numFreeBlocks(), 0);
+  EXPECT_EQ(s.getBlockManager().numFreeBlocks(), 0);
 
   // Abort id1 — frees its block
   s.abortRequest(id1);
-  EXPECT_EQ(s.blockManager().numFreeBlocks(), 1);
+  EXPECT_EQ(s.getBlockManager().numFreeBlocks(), 1);
 
   // Now a new request can be scheduled
   uint32_t id2 = nextId();
@@ -217,18 +233,18 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
   auto taskQueue = makeQueue();
   InMemoryCancelQueue cancelQueue;
 
-  std::string rbName = "/test_cancel_rb_" + std::to_string(getpid()) + "_stop";
-  tt::ipc::TokenRingBuffer<65536> resultQueue(rbName, true);
+  std::string rbName = "test_cancel_rb_" + std::to_string(getpid()) + "_stop";
+  tt::ipc::BoostIpcResultQueue resultQueue(rbName,
+                                           tt::ipc::RESULT_QUEUE_CAPACITY);
 
   tt::runners::LLMRunner runner{config, &resultQueue, taskQueue.get(),
                                 &cancelQueue};
 
-  // Add two requests: one we'll cancel, one we'll let finish
   uint32_t cancelId = nextId();
   uint32_t keepId = nextId();
 
-  runner.scheduler().addRequest(cancelId, prompt(4), {.max_tokens = 100});
-  runner.scheduler().addRequest(keepId, prompt(4), {.max_tokens = 5});
+  runner.getScheduler().addRequest(cancelId, prompt(4), {.max_tokens = 100});
+  runner.getScheduler().addRequest(keepId, prompt(4), {.max_tokens = 5});
 
   std::unordered_map<uint32_t, int> tokenCounts;
   std::atomic<bool> keepFinished{false};
@@ -237,7 +253,7 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
   std::thread consumer([&]() {
     tt::ipc::SharedToken token;
     while (!keepFinished.load()) {
-      if (resultQueue.pop(token)) {
+      if (resultQueue.tryPop(token)) {
         tokenCounts[token.task_id]++;
 
         // After first token from cancelId, push cancel signal
@@ -265,6 +281,7 @@ TEST(LLMRunnerCancelTest, CancelledRequestStopsEmittingTokens) {
   EXPECT_LT(tokenCounts[cancelId], 50);
 
   resultQueue.shutdown();
+  resultQueue.remove();
 }
 
 TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
@@ -274,9 +291,9 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   auto taskQueue = makeQueue();
   InMemoryCancelQueue cancelQueue;
 
-  std::string rbName =
-      "/test_cancel_rb_" + std::to_string(getpid()) + "_before";
-  tt::ipc::TokenRingBuffer<65536> resultQueue(rbName, true);
+  std::string rbName = "test_cancel_rb_" + std::to_string(getpid()) + "_before";
+  tt::ipc::BoostIpcResultQueue resultQueue(rbName,
+                                           tt::ipc::RESULT_QUEUE_CAPACITY);
 
   tt::runners::LLMRunner runner{config, &resultQueue, taskQueue.get(),
                                 &cancelQueue};
@@ -284,10 +301,9 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   uint32_t cancelId = nextId();
   uint32_t keepId = nextId();
 
-  runner.scheduler().addRequest(cancelId, prompt(4), {.max_tokens = 10});
-  runner.scheduler().addRequest(keepId, prompt(4), {.max_tokens = 5});
+  runner.getScheduler().addRequest(cancelId, prompt(4), {.max_tokens = 10});
+  runner.getScheduler().addRequest(keepId, prompt(4), {.max_tokens = 5});
 
-  // Push cancel BEFORE any step runs
   cancelQueue.push(cancelId);
 
   std::unordered_map<uint32_t, int> tokenCounts;
@@ -296,7 +312,7 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   std::thread consumer([&]() {
     tt::ipc::SharedToken token;
     while (!keepFinished.load()) {
-      if (resultQueue.pop(token)) {
+      if (resultQueue.tryPop(token)) {
         tokenCounts[token.task_id]++;
         if (token.task_id == keepId && token.isFinal()) {
           keepFinished.store(true);
@@ -316,7 +332,8 @@ TEST(LLMRunnerCancelTest, CancelBeforeAnyProcessing) {
   EXPECT_EQ(tokenCounts[cancelId], 0);
 
   resultQueue.shutdown();
+  resultQueue.remove();
 }
 
 }  // namespace
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::runners::schedulers

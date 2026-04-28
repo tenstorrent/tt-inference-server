@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
 from functools import lru_cache
@@ -12,8 +12,8 @@ from config.constants import (
     MODEL_SERVICE_RUNNER_MAP,
     SDXL_VALID_IMAGE_RESOLUTIONS,
     AudioTasks,
-    DeviceTypes,
     DeviceIds,
+    DeviceTypes,
     ModelConfigs,
     ModelNames,
     ModelRunners,
@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
     weights_distribution_timeout_seconds: int = 1200
+    # SHM response deadline in SPRunner (server-side proxy to video_runner).
+    # Was hardcoded to 300s; exposed here so it can be tuned per deployment.
+    video_request_timeout_seconds: float = 300.0
 
     # Job management settings
     max_jobs: int = 10000
@@ -102,6 +105,11 @@ class Settings(BaseSettings):
     # Telemetry settings
     enable_telemetry: bool = True
     prometheus_endpoint: str = "/metrics"
+
+    # Video generation settings
+    use_async_video: bool = (
+        True  # If False, video is generated synchronously and returned directly
+    )
 
     model_config = SettingsConfigDict(env_file=".env")
 
@@ -200,7 +208,7 @@ class Settings(BaseSettings):
             return
 
         dm = DeviceManager()
-        devices = None
+        devices = []
         mesh = self.device_mesh_shape
 
         try:
@@ -263,6 +271,7 @@ class Settings(BaseSettings):
             "SD_3_5_FAST": (4, 8),
             "SD_3_5_BASE": (2, 4),
             "TP2": (2, 1),
+            "SP_MESH_4X32": (4, 32),
         }
         for env_var, mesh_shape in env_mesh_map.items():
             value = os.getenv(env_var)
@@ -280,12 +289,23 @@ class Settings(BaseSettings):
     def _set_config_overrides(self, model_to_run: str, device: str):
         model_name_enum = ModelNames(model_to_run)
 
-        # Find the appropriate model runner for this model name
-        model_runner_enum = None
+        explicit_runner = os.getenv("MODEL_RUNNER")
+        model_runner_enum = ModelRunners(explicit_runner) if explicit_runner else None
+        if model_runner_enum is None:
+            logger.warning(
+                f"MODEL_RUNNER not set for MODEL={model_to_run!r}; "
+                f"falling back to default runner."
+            )
+        else:
+            logger.info(
+                f"Explicit MODEL_RUNNER={explicit_runner!r} for MODEL={model_to_run!r}"
+            )
+
         for runner, model_names in MODEL_RUNNER_TO_MODEL_NAMES_MAP.items():
             if model_name_enum in model_names:
-                model_runner_enum = runner
-                break
+                if not model_runner_enum:
+                    model_runner_enum = runner
+                    break
 
         if model_runner_enum:
             device_type_enum = DeviceTypes(device)
