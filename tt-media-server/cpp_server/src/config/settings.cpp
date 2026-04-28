@@ -4,6 +4,7 @@
 #include "config/settings.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstddef>
 #include <cstdlib>
@@ -305,9 +306,21 @@ size_t maxQueueSize() {
   return cached;
 }
 
+namespace {
+std::atomic<size_t> maxSessionsCountOverride{0};
+}
+
 size_t maxSessionsCount() {
+  size_t override_val = maxSessionsCountOverride.load(std::memory_order_relaxed);
+  if (override_val > 0) {
+    return override_val;
+  }
   return static_cast<size_t>(
       envUlong("MAX_SESSIONS_COUNT", defaults::MAX_SESSIONS_COUNT));
+}
+
+void setMaxSessionsCount(size_t count) {
+  maxSessionsCountOverride.store(count, std::memory_order_relaxed);
 }
 
 unsigned sessionEvictionRate() {

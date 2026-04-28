@@ -132,4 +132,64 @@ void HealthController::ready(
   }
 }
 
+void HealthController::getMaxSessionCount(
+    const drogon::HttpRequestPtr&,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
+  Json::Value response;
+  response["max_session_count"] = static_cast<Json::UInt64>(tt::config::maxSessionsCount());
+  callback(drogon::HttpResponse::newHttpJsonResponse(response));
+}
+
+void HealthController::setMaxSessionCount(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+  try {
+    auto json = req->getJsonObject();
+    if (!json) {
+      Json::Value response;
+      response["error"] = "Request body must be JSON";
+      auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+      resp->setStatusCode(drogon::k400BadRequest);
+      callback(resp);
+      return;
+    }
+
+    if (!json->isMember("max_session_count")) {
+      Json::Value response;
+      response["error"] = "Missing required field: max_session_count";
+      auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+      resp->setStatusCode(drogon::k400BadRequest);
+      callback(resp);
+      return;
+    }
+
+    const auto& countValue = (*json)["max_session_count"];
+    if (!countValue.isUInt64() && !countValue.isInt64()) {
+      Json::Value response;
+      response["error"] = "max_session_count must be a non-negative integer";
+      auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+      resp->setStatusCode(drogon::k400BadRequest);
+      callback(resp);
+      return;
+    }
+
+    size_t newCount = static_cast<size_t>(countValue.asUInt64());
+    
+    TT_LOG_INFO("[HealthController] Setting max session count to {}", newCount);
+    tt::config::setMaxSessionsCount(newCount);
+    
+    Json::Value response;
+    response["max_session_count"] = static_cast<Json::UInt64>(newCount);
+    response["status"] = "success";
+    callback(drogon::HttpResponse::newHttpJsonResponse(response));
+  } catch (const std::exception& e) {
+    TT_LOG_ERROR("[HealthController] Failed to set max session count: {}", e.what());
+    Json::Value response;
+    response["error"] = std::string("Failed to set max session count: ") + e.what();
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    resp->setStatusCode(drogon::k500InternalServerError);
+    callback(resp);
+  }
+}
+
 }  // namespace tt::api
