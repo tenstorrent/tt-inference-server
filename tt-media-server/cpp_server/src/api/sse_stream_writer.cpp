@@ -51,17 +51,16 @@ void SseStreamWriter::sendSse(const std::string& sse,
     auto accumulated = sseBatchQueue->drain();
     std::string batch;
     for (auto& s : accumulated) batch.append(s);
-    loop->queueInLoop([streamPtr = this->streamPtr,
-                       earlyBuffer = this->earlyBuffer,
-                       batch = std::move(batch),
-                       onDisconnect = std::move(onDisconnect)]() {
-      if (*streamPtr) {
-        bool ok = (*streamPtr)->send(batch);
-        if (!ok && onDisconnect) onDisconnect();
-      } else if (earlyBuffer) {
-        earlyBuffer->push_back(batch);
-      }
-    });
+    loop->queueInLoop(
+        [streamPtr = this->streamPtr, earlyBuffer = this->earlyBuffer,
+         batch = std::move(batch), onDisconnect = std::move(onDisconnect)]() {
+          if (*streamPtr) {
+            bool ok = (*streamPtr)->send(batch);
+            if (!ok && onDisconnect) onDisconnect();
+          } else if (earlyBuffer) {
+            earlyBuffer->push_back(batch);
+          }
+        });
   }
 }
 

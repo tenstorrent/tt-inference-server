@@ -403,9 +403,8 @@ void LLMController::dispatchGeneration(
 
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     if (shouldDoPrefillOnDecode(request, validSessionFound)) {
-      TT_LOG_DEBUG(
-          "[LLMController] Using prefill on decode for sessionId: {}",
-          request.sessionId.value_or("none"));
+      TT_LOG_DEBUG("[LLMController] Using prefill on decode for sessionId: {}",
+                   request.sessionId.value_or("none"));
       service->submitStreamingRequest(request, cb, /*skipPreProcess=*/true);
     } else {
       TT_LOG_DEBUG(
