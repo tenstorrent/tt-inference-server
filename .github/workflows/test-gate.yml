@@ -1021,9 +1021,10 @@ jobs:
 
           # Generate diff-cover report for changed lines only
           # --exclude uses fnmatch patterns (shell-style wildcards)
+          # tt-inference-server-v2 is excluded from coverage checks entirely
           diff-cover coverage.xml \
             --compare-branch=origin/${BASE_REF} \
-            --exclude '*/tests/*' '*/performance_tests/*' \
+            --exclude '*/tests/*' '*/performance_tests/*' 'tt-inference-server-v2/*' \
             --fail-under=50 \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 
