@@ -19,6 +19,7 @@
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
 #include "services/service_container.hpp"
+#include "sockets/inter_server_service.hpp"
 #include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
@@ -47,6 +48,7 @@ LLMController::LLMController() {
   service = c.llm();
   disaggregationService = c.disaggregation();
   sessionManager = c.sessionManager();
+  socketService = c.socket();
 
   if (!service) {
     throw std::runtime_error(
@@ -407,6 +409,18 @@ void LLMController::handleStreaming(
 bool LLMController::shouldDoPrefillOnDecode(const domain::LLMRequest& request,
                                             bool validSessionFound) const {
   if (validSessionFound) {
+    return true;
+  }
+
+  // In disaggregated decode mode, fall back to running prefill locally if the
+  // prefill server socket is unavailable — otherwise the request would be sent
+  // to a peer that cannot service it.
+  if (tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY &&
+      (!socketService || !socketService->isConnected())) {
+    TT_LOG_WARN(
+        "[LLMController] Prefill server not connected; falling back to "
+        "prefill on decode for taskId={}",
+        request.task_id);
     return true;
   }
 
