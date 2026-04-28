@@ -1,4 +1,4 @@
-# whisper-large-v3 Tenstorrent Support on WH LoudBox/QuietBox
+# whisper-large-v3 Tenstorrent Support on P100/P150
 
 Supported weights variants for this model implementation are:
 
@@ -9,17 +9,17 @@ To use non-default weights, replace `whisper-large-v3` in commands below.
 
 #### Useful links
 
-- [WH LoudBox/QuietBox details](https://tenstorrent.com/hardware/tt-loudbox)
+- [P100/P150 details](https://tenstorrent.com/hardware/blackhole)
 - [Search other audio models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
 `whisper-large-v3` is also supported on hardware:
 
 - [WH Galaxy](whisper-large-v3_galaxy.md)
-- [P100/P150](whisper-large-v3_p100.md)
+- [WH LoudBox/QuietBox](whisper-large-v3_t3k.md)
 - [N150/N300](whisper-large-v3_n150.md)
 
-## Quickstart - Deploy whisper-large-v3 Inference Server on WH LoudBox/QuietBox
+## Quickstart - Deploy whisper-large-v3 Inference Server on p150
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
@@ -28,7 +28,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 **via run.py command**
 
 ```bash
-python3 run.py --model whisper-large-v3 --device t3k --workflow server --docker-server
+python3 run.py --model whisper-large-v3 --device p150 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -37,8 +37,8 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3), [distil-whisper/distil-large-v3](https://huggingface.co/distil-whisper/distil-large-v3) |
-| Model Status | 🛠️ Experimental |
-| Max Batch Size | 4 |
-| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/a8c5af0/models/demos/whisper) |
-| tt-metal Commit | `a8c5af0` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-a8c5af0` |
+| Model Status | 🟢 Complete |
+| Max Batch Size | 1 |
+| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/2508216/models/demos/whisper) |
+| tt-metal Commit | `2508216` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-2508216` |

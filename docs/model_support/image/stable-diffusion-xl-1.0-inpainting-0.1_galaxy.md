@@ -8,6 +8,9 @@
 
 `stable-diffusion-xl-1.0-inpainting-0.1` is also supported on hardware:
 
+- [BH LoudBox](stable-diffusion-xl-1.0-inpainting-0.1_p150x8.md)
+- [BH 4xP150](stable-diffusion-xl-1.0-inpainting-0.1_p150x4.md)
+- [P100/P150](stable-diffusion-xl-1.0-inpainting-0.1_p100.md)
 - [WH LoudBox/QuietBox](stable-diffusion-xl-1.0-inpainting-0.1_t3k.md)
 - [N150/N300](stable-diffusion-xl-1.0-inpainting-0.1_n150.md)
 

@@ -37,8 +37,8 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [black-forest-labs/FLUX.1-dev](https://huggingface.co/black-forest-labs/FLUX.1-dev), [black-forest-labs/FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell) |
-| Model Status | 🟢 Complete |
+| Model Status | 🛠️ Experimental |
 | Max Batch Size | 1 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers) |
-| tt-metal Commit | `555f240` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.1-555f240` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/a8c5af0/models/tt_transformers) |
+| tt-metal Commit | `a8c5af0` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.0-a8c5af0` |

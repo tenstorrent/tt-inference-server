@@ -16,6 +16,9 @@ To use non-default weights, replace `stable-diffusion-xl-base-1.0` in commands b
 `stable-diffusion-xl-base-1.0` is also supported on hardware:
 
 - [WH Galaxy](stable-diffusion-xl-base-1.0_galaxy.md)
+- [BH LoudBox](stable-diffusion-xl-base-1.0_p150x8.md)
+- [BH 4xP150](stable-diffusion-xl-base-1.0_p150x4.md)
+- [P100/P150](stable-diffusion-xl-base-1.0_p100.md)
 - [N150/N300](stable-diffusion-xl-base-1.0_n150.md)
 
 ## Quickstart - Deploy stable-diffusion-xl-base-1.0 Inference Server on WH LoudBox/QuietBox
@@ -36,8 +39,8 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [stabilityai/stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0), [stabilityai/stable-diffusion-xl-base-1.0-img-2-img](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0-img-2-img) |
-| Model Status | 🟢 Complete |
+| Model Status | 🛠️ Experimental |
 | Max Batch Size | 4 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/tt_transformers) |
-| tt-metal Commit | `bac8b34` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/a8c5af0/models/tt_transformers) |
+| tt-metal Commit | `a8c5af0` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-a8c5af0` |

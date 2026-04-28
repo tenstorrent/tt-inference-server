@@ -16,6 +16,7 @@ To use non-default weights, replace `whisper-large-v3` in commands below.
 `whisper-large-v3` is also supported on hardware:
 
 - [WH Galaxy](whisper-large-v3_galaxy.md)
+- [P100/P150](whisper-large-v3_p100.md)
 - [WH LoudBox/QuietBox](whisper-large-v3_t3k.md)
 
 ## Quickstart - Deploy whisper-large-v3 Inference Server on n150
@@ -36,11 +37,11 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Parameter | Value |
 |-----------|-------|
 | Weights | [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3), [distil-whisper/distil-large-v3](https://huggingface.co/distil-whisper/distil-large-v3) |
-| Model Status | 🟢 Complete |
+| Model Status | 🛠️ Experimental |
 | Max Batch Size | 1 |
-| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper) |
-| tt-metal Commit | `bac8b34` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34` |
+| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/a8c5af0/models/demos/whisper) |
+| tt-metal Commit | `a8c5af0` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-a8c5af0` |
 
 ---
 
@@ -59,8 +60,8 @@ python3 run.py --model whisper-large-v3 --device n300 --workflow server --docker
 | Parameter | Value |
 |-----------|-------|
 | Weights | [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3), [distil-whisper/distil-large-v3](https://huggingface.co/distil-whisper/distil-large-v3) |
-| Model Status | 🟢 Complete |
+| Model Status | 🛠️ Experimental |
 | Max Batch Size | 1 |
-| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper) |
-| tt-metal Commit | `bac8b34` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34` |
+| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/a8c5af0/models/demos/whisper) |
+| tt-metal Commit | `a8c5af0` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-a8c5af0` |

@@ -39,12 +39,16 @@ def load_model_spec_json(model_specs_dir: Path) -> Tuple[Optional[dict], Optiona
     """Load model spec JSON from model_specs directory.
 
     Supports both the new model_specs/ directory and legacy run_specs/ as fallback.
+    Handles two file formats:
+    - New: {"runtime_model_spec": {...}, "runtime_config": {...}}
+    - Old: {"model_id": ..., "docker_image": ..., "cli_args": {...}, ...}
 
     Args:
         model_specs_dir: Path to model_specs directory
 
     Returns:
-        Tuple of (model_spec_dict, model_id)
+        Tuple of (model_spec_dict, model_id) where model_spec_dict is normalized to
+        the old flat format (model_id, docker_image, cli_args at top level)
     """
     spec_file = latest_json_by_mtime(model_specs_dir, "*.json")
     if not spec_file:
@@ -55,6 +59,19 @@ def load_model_spec_json(model_specs_dir: Path) -> Tuple[Optional[dict], Optiona
     except Exception as e:
         logger.warning(f"Failed to parse model spec JSON from {spec_file}: {e}")
         return None, None
+
+    # New format: {"runtime_model_spec": {...}, "runtime_config": {...}}
+    if "runtime_model_spec" in data:
+        spec = data["runtime_model_spec"]
+        config = data.get("runtime_config", {})
+        model_id = spec.get("model_id")
+        normalized = dict(spec)
+        override = config.get("override_docker_image")
+        if override:
+            normalized.setdefault("cli_args", {})["override_docker_image"] = override
+        return normalized, model_id
+
+    # Old format: model_id at top level
     model_id = data.get("model_id")
     return data, model_id
 

@@ -31,8 +31,8 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [BAAI/bge-large-en-v1.5](https://huggingface.co/BAAI/bge-large-en-v1.5) |
 | Model Status | 🛠️ Experimental |
 | Max Batch Size | 1 |
-| Implementation Code | [tt-vllm-plugin](https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin/tree/65718bb/tt_vllm_plugin) |
-| tt-metal Commit | `65718bb` |
+| Implementation Code | [tt-vllm-plugin](https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin/tree/a8c5af0/tt_vllm_plugin) |
+| tt-metal Commit | `a8c5af0` |
 | Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756` |
 
 ---
@@ -54,6 +54,6 @@ python3 run.py --model bge-large-en-v1.5 --device n300 --workflow server --docke
 | Weights | [BAAI/bge-large-en-v1.5](https://huggingface.co/BAAI/bge-large-en-v1.5) |
 | Model Status | 🛠️ Experimental |
 | Max Batch Size | 1 |
-| Implementation Code | [tt-vllm-plugin](https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin/tree/65718bb/tt_vllm_plugin) |
-| tt-metal Commit | `65718bb` |
+| Implementation Code | [tt-vllm-plugin](https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin/tree/a8c5af0/tt_vllm_plugin) |
+| tt-metal Commit | `a8c5af0` |
 | Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756` |

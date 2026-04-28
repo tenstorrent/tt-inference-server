@@ -943,8 +943,8 @@ llm_templates = [
         weights=["openai/gpt-oss-20b"],
         impl=gpt_oss_impl,
         version="0.10.0",
-        tt_metal_commit="e867533",
-        vllm_commit="8f36910",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -995,8 +995,8 @@ llm_templates = [
         weights=["openai/gpt-oss-120b"],
         impl=gpt_oss_impl,
         version="0.12.0",
-        tt_metal_commit="805f43d",
-        vllm_commit="a45c614",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1110,8 +1110,8 @@ llm_templates = [
         weights=["Qwen/Qwen3-8B"],
         impl=tt_transformers_impl,
         version="0.10.0",
-        tt_metal_commit="e0e0500",
-        vllm_commit="409b1cd",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1158,7 +1158,7 @@ llm_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.EXPERIMENTAL,
         metadata={
             "Qwen/Qwen3-8B": {
                 "reasoning_parser_name": "qwen3",
@@ -1203,8 +1203,8 @@ llm_templates = [
         weights=["Qwen/Qwen3-32B"],
         impl=qwen3_32b_galaxy_impl,
         version="0.11.1",
-        tt_metal_commit="bac8b34",
-        vllm_commit="7c6685a",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1238,7 +1238,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        status=ModelStatusTypes.COMPLETE,
+        status=ModelStatusTypes.EXPERIMENTAL,
         has_builtin_warmup=True,
         metadata={
             "Qwen/Qwen3-32B": {
@@ -1355,8 +1355,8 @@ llm_templates = [
             ),
         ),
         version="0.10.0",
-        tt_metal_commit="555f240",
-        vllm_commit="22be241",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1366,7 +1366,7 @@ llm_templates = [
                 default_impl=True,
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -1442,8 +1442,8 @@ llm_templates = [
         weights=["Qwen/QwQ-32B"],
         impl=tt_transformers_impl,
         version="0.9.0",
-        tt_metal_commit="e95ffa5",
-        vllm_commit="48eba14",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1479,7 +1479,7 @@ llm_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
         },
@@ -1494,8 +1494,8 @@ llm_templates = [
         weights=["Qwen/Qwen2.5-72B", "Qwen/Qwen2.5-72B-Instruct"],
         impl=tt_transformers_impl,
         version="0.9.0",
-        tt_metal_commit="13f44c5",
-        vllm_commit="0edd242",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1538,7 +1538,7 @@ llm_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.EXPERIMENTAL,
         env_vars={
             "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
             "MAX_PREFILL_CHUNK_SIZE": "16",
@@ -1595,8 +1595,8 @@ llm_templates = [
         ],
         impl=llama3_70b_galaxy_impl,
         version="0.10.0",
-        tt_metal_commit="e867533",
-        vllm_commit="8f36910",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1627,7 +1627,7 @@ llm_templates = [
                 mode=VersionMode.STRICT,
             ),
         ),
-        status=ModelStatusTypes.COMPLETE,
+        status=ModelStatusTypes.EXPERIMENTAL,
         has_builtin_warmup=True,
         metadata={
             "meta-llama/Llama-3.3-70B-Instruct": {
@@ -1773,8 +1773,8 @@ llm_templates = [
         ],
         impl=tt_transformers_impl,
         version="0.10.0",
-        tt_metal_commit="555f240",
-        vllm_commit="22be241",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -1818,7 +1818,7 @@ llm_templates = [
                 ),
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.EXPERIMENTAL,
         metadata={
             "meta-llama/Llama-3.3-70B-Instruct": {
                 "tool_call_parser_name": "llama3_json",
@@ -1986,8 +1986,8 @@ llm_templates = [
         weights=["meta-llama/Llama-3.2-3B", "meta-llama/Llama-3.2-3B-Instruct"],
         impl=tt_transformers_impl,
         version="0.3.0",
-        tt_metal_commit="20edc39",
-        vllm_commit="03cb300",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2107,8 +2107,8 @@ llm_templates = [
         weights=["meta-llama/Llama-3.1-8B", "meta-llama/Llama-3.1-8B-Instruct"],
         impl=tt_transformers_impl,
         version="0.10.0",
-        tt_metal_commit="555f240",
-        vllm_commit="22be241",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2123,7 +2123,7 @@ llm_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.COMPLETE,
+        status=ModelStatusTypes.EXPERIMENTAL,
         metadata={
             "meta-llama/Llama-3.1-8B": {
                 "tool_call_parser_name": "llama3_json",
@@ -2188,8 +2188,8 @@ llm_templates = [
             ),
         ),
         version="0.10.0",
-        tt_metal_commit="555f240",
-        vllm_commit="22be241",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2213,7 +2213,7 @@ llm_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.EXPERIMENTAL,
         metadata={
             "meta-llama/Llama-3.1-8B": {
                 "tool_call_parser_name": "llama3_json",
@@ -2379,8 +2379,8 @@ vlm_templates = [
         ],
         impl=tt_transformers_impl,
         version="0.9.0",
-        tt_metal_commit="aecd1d7",
-        vllm_commit="0da90eb",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2450,8 +2450,8 @@ vlm_templates = [
         inference_engine=InferenceEngine.VLLM.value,
         model_type=ModelType.VLM,
         version="0.10.0",
-        tt_metal_commit="ba32283",
-        vllm_commit="4386a82",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.T3K,
@@ -2638,8 +2638,8 @@ vlm_templates = [
         ],
         impl=tt_transformers_impl,
         version="0.9.0",
-        tt_metal_commit="v0.61.1-rc1",
-        vllm_commit="5cbc982",
+        tt_metal_commit="a8c5af0",
+        vllm_commit="1abfcfc",
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
@@ -2653,7 +2653,7 @@ vlm_templates = [
             ),
         ],
         model_type=ModelType.VLM,
-        status=ModelStatusTypes.FUNCTIONAL,
+        status=ModelStatusTypes.EXPERIMENTAL,
         supported_modalities=["text", "image"],
     ),
 ]
@@ -2665,7 +2665,7 @@ video_templates = [
     ModelSpecTemplate(
         weights=["genmo/mochi-1-preview"],
         version="0.10.0",
-        tt_metal_commit="555f240",
+        tt_metal_commit="a8c5af0",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2712,12 +2712,12 @@ video_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.COMPLETE,
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
         weights=["Wan-AI/Wan2.2-T2V-A14B-Diffusers"],
         version="0.10.0",
-        tt_metal_commit="555f240",
+        tt_metal_commit="a8c5af0",
         impl=tt_transformers_impl,
         min_disk_gb=60,
         min_ram_gb=32,
@@ -2764,7 +2764,7 @@ video_templates = [
                 },
             ),
         ],
-        status=ModelStatusTypes.COMPLETE,
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
 ]
 
@@ -2779,7 +2779,7 @@ image_templates = [
             "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
         ],
         version="0.11.1",
-        tt_metal_commit="bac8b34",
+        tt_metal_commit="a8c5af0",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2837,7 +2837,7 @@ image_templates = [
                 default_impl=True,
             ),
         ],
-        status=ModelStatusTypes.COMPLETE,
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
         weights=["stabilityai/stable-diffusion-3.5-large"],
@@ -2929,7 +2929,7 @@ image_templates = [
     ModelSpecTemplate(
         weights=["black-forest-labs/FLUX.1-dev", "black-forest-labs/FLUX.1-schnell"],
         version="0.10.0",
-        tt_metal_commit="555f240",
+        tt_metal_commit="a8c5af0",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -2973,7 +2973,7 @@ image_templates = [
                 default_impl=True,
             ),
         ],
-        status=ModelStatusTypes.COMPLETE,
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
         weights=["Motif-Technologies/Motif-Image-6B-Preview"],
@@ -3049,7 +3049,7 @@ audio_tts_templates = [
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
         version="0.11.1",
-        tt_metal_commit="2508216",
+        tt_metal_commit="a8c5af0",
         impl=whisper_impl,
         min_disk_gb=15,
         min_ram_gb=6,
@@ -3081,7 +3081,7 @@ audio_tts_templates = [
                 default_impl=True,
             ),
         ],
-        status=ModelStatusTypes.COMPLETE,
+        status=ModelStatusTypes.EXPERIMENTAL,
     ),
     ModelSpecTemplate(
         weights=["openai/whisper-large-v3", "distil-whisper/distil-large-v3"],
@@ -3196,7 +3196,7 @@ audio_tts_templates = [
 embedding_templates = [
     ModelSpecTemplate(
         weights=["BAAI/bge-large-en-v1.5"],
-        tt_metal_commit="65718bb",
+        tt_metal_commit="a8c5af0",
         impl=tt_vllm_plugin_impl,
         min_disk_gb=15,
         min_ram_gb=6,

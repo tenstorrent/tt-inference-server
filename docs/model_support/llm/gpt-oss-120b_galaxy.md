@@ -26,7 +26,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_gpt-oss-120b:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.12.0-805f43d-a45c614 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.12.0-a8c5af0-1abfcfc \
   --model gpt-oss-120b \
   --tt-device galaxy
 ```
@@ -46,7 +46,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🛠️ Experimental |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
-| Implementation Code | [gpt-oss](https://github.com/tenstorrent/tt-metal/tree/805f43d/models/demos/gpt_oss) |
-| tt-metal Commit | `805f43d` |
-| vLLM Commit | `a45c614` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.12.0-805f43d-a45c614` |
+| Implementation Code | [gpt-oss](https://github.com/tenstorrent/tt-metal/tree/a8c5af0/models/demos/gpt_oss) |
+| tt-metal Commit | `a8c5af0` |
+| vLLM Commit | `1abfcfc` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.12.0-a8c5af0-1abfcfc` |
