@@ -25,6 +25,38 @@
 
 namespace tt::api {
 
+namespace {
+
+Json::Value messagesToJson(const std::vector<domain::ChatMessage>& messages) {
+  Json::Value arr(Json::arrayValue);
+  for (const auto& msg : messages) {
+    arr.append(msg.toJson());
+  }
+  return arr;
+}
+
+tt::services::TurnRecord buildTurnRecord(
+    Json::Value inputMessages, const domain::LLMResponse& completion) {
+  tt::services::TurnRecord record;
+  record.inputMessages = std::move(inputMessages);
+  record.outputText =
+      completion.choices.empty() ? "" : completion.choices[0].text;
+  record.ttftMs = completion.usage.ttft_ms;
+  record.tps = completion.usage.tps;
+  record.promptTokens = completion.usage.prompt_tokens;
+  record.completionTokens = completion.usage.completion_tokens;
+  record.finishReason = (!completion.choices.empty() &&
+                         completion.choices[0].finish_reason.has_value())
+                            ? completion.choices[0].finish_reason.value()
+                            : "unknown";
+  record.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::system_clock::now().time_since_epoch())
+                           .count();
+  return record;
+}
+
+}  // namespace
+
 void LLMController::models(
     const drogon::HttpRequestPtr& _,
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) const {
@@ -47,6 +79,7 @@ LLMController::LLMController() {
   service = c.llm();
   disaggregationService = c.disaggregation();
   sessionManager = c.sessionManager();
+  conversationStore = c.conversationStore();
 
   if (!service) {
     throw std::runtime_error(
@@ -232,9 +265,12 @@ void LLMController::chatCompletions(
         std::make_shared<std::function<void(const drogon::HttpResponsePtr&)>>(
             std::move(callback));
 
+    auto inputMessages = messagesToJson(chatReq.messages);
+
     resolveSession(
         request, loop,
-        [this, request, cb](SessionInfo) {
+        [this, request, cb,
+         inputMessages = std::move(inputMessages)](SessionInfo) mutable {
           try {
             auto sessionId = request->sessionId;
             auto startTime = std::chrono::high_resolution_clock::now();
@@ -268,6 +304,12 @@ void LLMController::chatCompletions(
 
             if (sessionId.has_value() && sessionManager) {
               sessionManager->releaseInFlight(sessionId.value());
+            }
+
+            if (sessionId.has_value() && conversationStore) {
+              conversationStore->recordTurn(
+                  sessionId.value(),
+                  buildTurnRecord(std::move(inputMessages), completion));
             }
 
             (*cb)(resp);
@@ -318,9 +360,12 @@ void LLMController::handleStreaming(
     svc->abortRequest(taskId);
   };
 
+  auto inputMessages = messagesToJson(reqPtr->messages);
+
   resolveSession(
       reqPtr, loop,
-      [this, reqPtr, cb, loop](SessionInfo sessionInfo) {
+      [this, reqPtr, cb, loop, inputMessages = std::move(inputMessages)](
+          SessionInfo sessionInfo) mutable {
         try {
           service->preProcess(*reqPtr);
 
@@ -341,6 +386,8 @@ void LLMController::handleStreaming(
           params.taskId = reqPtr->task_id;
           params.service = service;
           params.sessionManager = sessionManager;
+          params.conversationStore = conversationStore;
+          params.inputMessages = std::move(inputMessages);
 
           auto writer = SseStreamWriter::create(loop, std::move(params));
 
@@ -493,6 +540,31 @@ void LLMController::getSlotId(
   response["session_id"] = sessionId;
   response["slot_id"] = slotId;
   auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+  callback(resp);
+}
+
+void LLMController::exportConversation(
+    const drogon::HttpRequestPtr& /*req*/,
+    std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+    const std::string& sessionId) const {
+  if (!conversationStore) {
+    callback(errorResponse(drogon::k503ServiceUnavailable,
+                           "Conversation store not available",
+                           "service_unavailable"));
+    return;
+  }
+
+  auto data = conversationStore->exportSession(sessionId);
+  if (!data.has_value()) {
+    callback(errorResponse(
+        drogon::k404NotFound,
+        "No conversation log found for session id: " + sessionId, "not_found"));
+    return;
+  }
+
+  auto resp = drogon::HttpResponse::newHttpResponse();
+  resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+  resp->setBody(std::move(data.value()));
   callback(resp);
 }
 

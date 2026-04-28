@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "services/conversation_store.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
@@ -28,6 +29,8 @@ class LLMController : public drogon::HttpController<LLMController> {
                 drogon::Delete);
   ADD_METHOD_TO(LLMController::getSlotId, "/v1/sessions/{session_id}/slot",
                 drogon::Get);
+  ADD_METHOD_TO(LLMController::exportConversation,
+                "/v1/sessions/{session_id}/export", drogon::Get);
   ADD_METHOD_TO(LLMController::models, "/v1/models", drogon::Get);
   METHOD_LIST_END
 
@@ -70,10 +73,21 @@ class LLMController : public drogon::HttpController<LLMController> {
                  std::function<void(const drogon::HttpResponsePtr&)>&& callback,
                  const std::string& sessionId) const;
 
+  /**
+   * GET /v1/sessions/{session_id}/export
+   * Download the raw conversation log (input messages, output text, TTFT, TPS)
+   * for a session as a JSON array.
+   */
+  void exportConversation(
+      const drogon::HttpRequestPtr& req,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+      const std::string& sessionId) const;
+
  private:
   std::shared_ptr<services::LLMService> service;
   std::shared_ptr<services::DisaggregationService> disaggregationService;
   std::shared_ptr<services::SessionManager> sessionManager;
+  std::shared_ptr<services::ConversationStore> conversationStore;
 
   /**
    * Handle streaming chat completion (SSE). Emits ChatCompletionStreamChunk

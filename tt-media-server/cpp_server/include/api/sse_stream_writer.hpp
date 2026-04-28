@@ -4,6 +4,7 @@
 #pragma once
 
 #include <drogon/drogon.h>
+#include <json/json.h>
 #include <trantor/net/EventLoop.h>
 
 #include <atomic>
@@ -14,6 +15,7 @@
 #include <string>
 
 #include "domain/llm_response.hpp"
+#include "services/conversation_store.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
 #include "utils/concurrent_queue.hpp"
@@ -31,6 +33,9 @@ struct StreamParams {
   uint32_t taskId;
   std::shared_ptr<services::LLMService> service;
   std::shared_ptr<services::SessionManager> sessionManager;
+  // Conversation logging (optional; null disables logging)
+  std::shared_ptr<services::ConversationStore> conversationStore;
+  Json::Value inputMessages;
 };
 
 class SseStreamWriter : public std::enable_shared_from_this<SseStreamWriter> {
@@ -72,6 +77,12 @@ class SseStreamWriter : public std::enable_shared_from_this<SseStreamWriter> {
   std::optional<std::chrono::high_resolution_clock::time_point>
       second_token_time_;
   std::atomic<bool> first_content_chunk_{true};
+
+  // Accumulated output for conversation logging; written only from the
+  // consumer thread before finalizeStream is called, then read once by the
+  // event-loop lambda — no additional synchronization needed.
+  std::string accumulatedOutput_;
+  std::string finishReason_;
 
   StreamParams params_;
 };

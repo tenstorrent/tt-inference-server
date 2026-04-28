@@ -60,6 +60,8 @@ constexpr unsigned WARMUP_TIMEOUT_MS = 10000;
  */
 constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 10000;
 
+constexpr const char* CONVERSATION_LOG_DIR = "/tmp/tt_conversation_logs";
+
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 
 constexpr const char* SERVER_HOST = "0.0.0.0";

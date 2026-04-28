@@ -366,4 +366,8 @@ unsigned prefillTimeoutMs() {
       envUlong("PREFILL_TIMEOUT_MS", defaults::PREFILL_TIMEOUT_MS));
 }
 
+std::string conversationLogDir() {
+  return envString("CONVERSATION_LOG_DIR", defaults::CONVERSATION_LOG_DIR);
+}
+
 }  // namespace tt::config
