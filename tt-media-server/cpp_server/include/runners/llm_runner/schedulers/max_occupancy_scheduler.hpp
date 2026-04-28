@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "runners/llm_runner/scheduler.hpp"
+#include "runners/llm_runner/schedulers/scheduler.hpp"
 
-namespace tt::runners::llm_engine {
+namespace tt::runners::schedulers {
 
 /**
  * Keeps the device at full occupancy (max_in_flight_count) whenever possible.
@@ -38,4 +38,4 @@ class MaxOccupancyScheduler : public Scheduler {
   }
 };
 
-}  // namespace tt::runners::llm_engine
+}  // namespace tt::runners::schedulers

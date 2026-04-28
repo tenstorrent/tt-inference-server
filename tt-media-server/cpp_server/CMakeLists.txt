@@ -273,7 +273,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
     src/runners/llm_runner/mock_model_runner.cpp
-    src/runners/llm_runner/scheduler.cpp
+    src/runners/llm_runner/schedulers/scheduler.cpp
     src/domain/sequence.cpp
     src/domain/sampling_params.cpp
     src/utils/logger.cpp
@@ -612,7 +612,7 @@ set(SOURCES
     src/worker/single_process_worker.cpp
     src/worker/worker_manager.cpp
     src/utils/service_factory.cpp
-    src/utils/service_container.cpp
+    src/services/service_container.cpp
     src/utils/runner_factory.cpp
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
