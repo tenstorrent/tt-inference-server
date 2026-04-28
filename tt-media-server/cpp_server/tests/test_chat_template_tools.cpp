@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 #include <cassert>
-#include <fstream>
+#include <filesystem>
+#include <functional>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -700,6 +701,12 @@ void runTestSuite(const Tokenizer& tokenizer,
   testChatTemplateWithMultipleToolOutputs(tokenizer, config);
 }
 
+struct TokenizerEntry {
+  std::string path;
+  std::function<std::unique_ptr<Tokenizer>(const std::string&)> factory;
+  const TokenizerTemplateConfig* config;
+};
+
 int main() {
   std::cout << "\n";
   std::cout << "╔══════════════════════════════════════════════════════════╗\n";
@@ -707,7 +714,6 @@ int main() {
   std::cout << "╚══════════════════════════════════════════════════════════╝\n";
 
   try {
-    // Construct tokenizer paths using TOKENIZER_DIR from CMake
     const std::string deepseekPath =
         std::string(TOKENIZER_DIR) +
         "/deepseek-ai/DeepSeek-R1-0528/tokenizer.json";
@@ -715,31 +721,20 @@ int main() {
         std::string(TOKENIZER_DIR) +
         "/meta-llama/Llama-3.1-8B-Instruct/tokenizer.json";
 
-    std::cout
-        << "\n"
-        << "════════════════════════════════════════════════════════════\n"
-        << "  Testing DeepSeek Tokenizer\n"
-        << "════════════════════════════════════════════════════════════\n";
+    std::vector<TokenizerEntry> tokenizers = {
+        {deepseekPath,
+         [](auto p) { return std::make_unique<DeepseekTokenizer>(p); },
+         getDeepSeekConfig()},
+        {llamaPath, [](auto p) { return std::make_unique<LlamaTokenizer>(p); },
+         getLlamaConfig()},
+    };
 
-    DeepseekTokenizer deepseekTokenizer(deepseekPath);
-    runTestSuite(deepseekTokenizer, getDeepSeekConfig());
-
-    std::cout
-        << "\n"
-        << "════════════════════════════════════════════════════════════\n"
-        << "  Testing Llama Tokenizer\n"
-        << "════════════════════════════════════════════════════════════\n";
-
-    // Check if Llama tokenizer file exists (gated model, requires HF_TOKEN)
-    std::ifstream llamaCheck(llamaPath);
-    if (llamaCheck.good()) {
-      llamaCheck.close();
-      LlamaTokenizer llamaTokenizer(llamaPath);
-      runTestSuite(llamaTokenizer, getLlamaConfig());
-    } else {
-      std::cout
-          << "⚠️  Llama tokenizer not found (gated model requires HF_TOKEN)\n";
-      std::cout << "   Skipping Llama tests...\n";
+    for (const auto& entry : tokenizers) {
+      if (!std::filesystem::exists(entry.path)) {
+        continue;
+      }
+      auto tok = entry.factory(entry.path);
+      runTestSuite(*tok, entry.config);
     }
 
     std::cout << "\n";

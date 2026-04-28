@@ -16,13 +16,9 @@ from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
 
-# Path to the Z-Image-Turbo TTNN model implementations.
-# Fetched via: bash scripts/fetch_z_image_turbo.sh
 _ZIT_DEMO_DIR = os.environ.get(
     "Z_IMAGE_TURBO_MODEL_DIR",
-    os.path.join(
-        os.path.dirname(__file__), "..", "models", "z_image_turbo_repo", "z_image_turbo"
-    ),
+    os.path.join(os.environ.get("TT_METAL_HOME", ""), "z_image_turbo"),
 )
 
 MODEL_ID = "Tongyi-MAI/Z-Image-Turbo"
