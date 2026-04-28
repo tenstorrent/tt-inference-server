@@ -1005,6 +1005,9 @@ llm_templates = [
                 max_context=16 * 1024,
                 default_impl=True,
                 tensor_cache_timeout=5400.0,
+                override_tt_config={
+                    "trace_region_size": 134217728,  # 128 MB; vLLM default 50 MB is too small for long prefill
+                },
             ),
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
@@ -1023,6 +1026,7 @@ llm_templates = [
                 },
                 override_tt_config={
                     "sample_on_device_mode": "all",
+                    "trace_region_size": 134217728,  # 128 MB; vLLM default 50 MB is too small for long prefill
                 },
             ),
         ],
