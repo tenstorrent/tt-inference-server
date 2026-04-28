@@ -77,7 +77,6 @@ class ConversationStoreTest : public ::testing::Test {
   std::filesystem::path tmpDir;
 };
 
-
 TEST_F(ConversationStoreTest, ExportUnknownSessionReturnsNullopt) {
   tt::services::ConversationStore store(logDir());
   auto result = store.exportSession("nonexistent-session-id");
