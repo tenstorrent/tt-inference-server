@@ -94,8 +94,13 @@ SchedulingPolicy schedulingPolicy();
 size_t maxInFlightCount();
 
 /** Max sessions count from MAX_SESSIONS_COUNT. Default:
- * defaults::MAX_SESSIONS_COUNT. */
+ * defaults::MAX_SESSIONS_COUNT. Can be overridden at runtime via
+ * setMaxSessionsCount(). */
 size_t maxSessionsCount();
+
+/** Set max sessions count override. Pass 0 to clear the override and use the
+ * environment variable value. */
+void setMaxSessionsCount(size_t count);
 
 /** Session eviction rate percentage from SESSION_EVICTION_RATE. Default:
  * defaults::SESSION_EVICTION_RATE. */
