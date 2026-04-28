@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1a1a2e">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<title>TT-Home Control</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f0e8;--bg-dark:#1a1a2e;--card:#2a2a40;--card-hover:#33334d;
+  --accent:#e87a2e;--accent-glow:#ff8c42;--green:#2ecc71;--red:#e74c3c;
+  --yellow:#f1c40f;--blue:#3498db;--purple:#9b59b6;
+  --text-light:#f5f0e8;--text-muted:#b0aaa0;
+  --radius:16px;--radius-sm:10px;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+}
+html,body{
+  height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:var(--bg-dark);color:var(--text-light);overflow:hidden;
+  -webkit-tap-highlight-color:transparent;
+}
+body{display:flex;flex-direction:column;padding-top:var(--safe-top);padding-bottom:var(--safe-bottom)}
+
+/* ─── Screens ─── */
+.screen{display:none;flex-direction:column;height:100%;overflow:hidden;position:relative}
+.screen.active{display:flex}
+.screen-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px 100px}
+
+/* ─── Top bar ─── */
+.top-bar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;background:rgba(26,26,46,.95);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  position:sticky;top:0;z-index:50;
+}
+.top-bar .logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:16px}
+.top-bar .logo svg{width:28px;height:28px}
+.top-bar .status-dot{width:10px;height:10px;border-radius:50%;background:var(--red);flex-shrink:0}
+.top-bar .status-dot.online{background:var(--green);box-shadow:0 0 8px var(--green)}
+.back-btn{
+  background:none;border:none;color:var(--text-light);font-size:18px;
+  padding:8px;cursor:pointer;display:flex;align-items:center;gap:4px;
+}
+
+/* ─── Device hero ─── */
+.device-hero{
+  background:linear-gradient(135deg,#2a2a40 0%,#1a1a2e 100%);
+  border-radius:var(--radius);padding:24px 20px;margin-bottom:20px;
+  border:1px solid rgba(255,255,255,.06);position:relative;overflow:hidden;
+}
+.device-hero::after{
+  content:'';position:absolute;top:-40%;right:-20%;width:200px;height:200px;
+  background:radial-gradient(circle,rgba(232,122,46,.12) 0%,transparent 70%);
+  pointer-events:none;
+}
+.device-hero .device-name{font-size:22px;font-weight:700;margin-bottom:4px}
+.device-hero .device-sub{color:var(--text-muted);font-size:13px;margin-bottom:16px}
+.chip-bar{display:flex;gap:6px;margin-bottom:14px}
+.chip{
+  width:36px;height:36px;border-radius:8px;
+  background:linear-gradient(135deg,#3a3a5c,#2a2a40);
+  border:1px solid rgba(255,255,255,.1);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:600;color:var(--accent);
+}
+.chip.active{border-color:var(--accent);box-shadow:0 0 10px rgba(232,122,46,.25)}
+.connection-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted)}
+.connection-row .dot{width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0}
+.connection-row .dot.ok{background:var(--green)}
+
+/* ─── Connection toggle ─── */
+.conn-toggle{
+  display:flex;background:rgba(255,255,255,.06);border-radius:10px;
+  padding:3px;margin:14px 0 0;position:relative;z-index:1;
+}
+.conn-toggle button{
+  flex:1;padding:8px 12px;border:none;border-radius:8px;
+  font-size:12px;font-weight:600;cursor:pointer;
+  background:transparent;color:var(--text-muted);transition:all .25s;
+}
+.conn-toggle button.active{background:var(--accent);color:#fff;box-shadow:0 2px 8px rgba(232,122,46,.3)}
+.conn-toggle button.active.cloud-active{background:var(--purple);box-shadow:0 2px 8px rgba(155,89,182,.3)}
+.conn-url{
+  font-size:11px;color:var(--text-muted);margin-top:8px;
+  word-break:break-all;opacity:.7;position:relative;z-index:1;
+}
+
+/* ─── Cloud URL config ─── */
+.cloud-config{
+  margin-top:10px;position:relative;z-index:1;
+  display:none;
+}
+.cloud-config.show{display:block}
+.cloud-info{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;border-radius:8px;
+  background:rgba(155,89,182,.1);border:1px solid rgba(155,89,182,.2);
+}
+.cloud-info-icon{font-size:20px}
+.cloud-info-url{font-size:13px;font-weight:600;color:var(--purple)}
+.cloud-info-hint{font-size:11px;color:var(--text-muted);margin-top:2px}
+
+/* ─── Mode cards ─── */
+.modes-title{font-size:14px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+.mode-grid{display:flex;flex-direction:column;gap:12px}
+.mode-card{
+  background:var(--card);border-radius:var(--radius);padding:18px;
+  display:flex;align-items:center;gap:14px;cursor:pointer;
+  border:2px solid transparent;transition:all .2s;position:relative;overflow:hidden;
+}
+.mode-card:active{transform:scale(.98)}
+.mode-card.selected{border-color:var(--accent);background:var(--card-hover)}
+.mode-card.current::before{
+  content:'ACTIVE';position:absolute;top:10px;right:12px;
+  font-size:9px;font-weight:700;letter-spacing:1px;color:var(--green);
+  background:rgba(46,204,113,.12);padding:3px 8px;border-radius:6px;
+}
+.mode-icon{
+  width:48px;height:48px;border-radius:12px;display:flex;
+  align-items:center;justify-content:center;font-size:24px;flex-shrink:0;
+}
+.mode-icon.kids{background:linear-gradient(135deg,#f093fb,#f5576c)}
+.mode-icon.personal{background:linear-gradient(135deg,#4facfe,#00f2fe)}
+.mode-icon.professional{background:linear-gradient(135deg,#43e97b,#38f9d7)}
+.mode-icon.security{background:linear-gradient(135deg,#fa709a,#fee140)}
+.mode-info{flex:1;min-width:0}
+.mode-info h3{font-size:15px;font-weight:600;margin-bottom:3px}
+.mode-info p{font-size:12px;color:var(--text-muted);line-height:1.4}
+.mode-badge{
+  font-size:10px;padding:2px 7px;border-radius:6px;font-weight:600;
+  background:rgba(255,255,255,.08);color:var(--text-muted);white-space:nowrap;
+}
+.mode-badge.coming{color:var(--yellow);background:rgba(241,196,0,.12)}
+.mode-badge.ready{color:var(--green);background:rgba(46,204,113,.12)}
+
+/* ─── Bottom action bar ─── */
+.action-bar{
+  position:fixed;bottom:0;left:0;right:0;
+  padding:12px 16px calc(12px + var(--safe-bottom));
+  background:rgba(26,26,46,.96);backdrop-filter:blur(12px);
+  display:flex;gap:10px;z-index:50;
+}
+.action-bar button{
+  flex:1;padding:14px;border-radius:var(--radius-sm);border:none;
+  font-size:15px;font-weight:600;cursor:pointer;transition:all .2s;
+}
+.btn-apply{background:var(--accent);color:#fff}
+.btn-apply:active{background:var(--accent-glow)}
+.btn-apply:disabled{opacity:.4;cursor:default}
+.btn-revert{background:rgba(255,255,255,.08);color:var(--text-light)}
+.btn-revert:active{background:rgba(255,255,255,.14)}
+
+/* ─── Coming-soon screen ─── */
+.coming-soon{
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;text-align:center;padding:40px 24px;gap:16px;
+}
+.coming-soon .icon{font-size:64px;margin-bottom:8px}
+.coming-soon h2{font-size:22px;font-weight:700}
+.coming-soon p{color:var(--text-muted);font-size:14px;line-height:1.6;max-width:300px}
+
+/* ─── Security screen ─── */
+.security-header{
+  text-align:center;padding:20px;
+  background:linear-gradient(135deg,rgba(250,112,154,.08),rgba(254,225,64,.08));
+  border-radius:var(--radius);margin-bottom:16px;
+}
+.security-header .shield{font-size:48px;margin-bottom:8px}
+.security-header h2{font-size:20px;font-weight:700;margin-bottom:4px}
+.security-header .armed-badge{
+  display:inline-block;padding:4px 14px;border-radius:20px;
+  font-size:12px;font-weight:700;letter-spacing:1px;
+}
+.armed-badge.armed{background:rgba(46,204,113,.15);color:var(--green)}
+.armed-badge.disarmed{background:rgba(231,76,60,.15);color:var(--red)}
+
+.sensor-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.sensor-card{
+  background:var(--card);border-radius:var(--radius-sm);padding:14px;
+  display:flex;flex-direction:column;gap:6px;
+}
+.sensor-card .sensor-icon{font-size:22px}
+.sensor-card .sensor-name{font-size:12px;color:var(--text-muted)}
+.sensor-card .sensor-val{font-size:14px;font-weight:600}
+.sensor-card .sensor-val.ok{color:var(--green)}
+.sensor-card .sensor-val.warn{color:var(--yellow)}
+
+.section-label{font-size:13px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin:16px 0 10px}
+
+.camera-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.camera-card{
+  background:var(--card);border-radius:var(--radius-sm);
+  aspect-ratio:16/10;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:6px;
+  border:1px solid rgba(255,255,255,.06);
+}
+.camera-card .cam-icon{font-size:28px;opacity:.5}
+.camera-card .cam-label{font-size:11px;color:var(--text-muted)}
+
+.alert-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.alert-item{
+  background:var(--card);border-radius:var(--radius-sm);padding:12px 14px;
+  display:flex;align-items:center;gap:10px;
+  border-left:3px solid var(--green);
+}
+.alert-item.warn{border-left-color:var(--yellow)}
+.alert-item .alert-icon{font-size:18px;flex-shrink:0}
+.alert-item .alert-body{flex:1;min-width:0}
+.alert-item .alert-title{font-size:13px;font-weight:600}
+.alert-item .alert-time{font-size:11px;color:var(--text-muted)}
+
+.panic-btn{
+  display:block;width:100%;padding:16px;border:none;border-radius:var(--radius-sm);
+  background:linear-gradient(135deg,var(--red),#c0392b);color:#fff;
+  font-size:16px;font-weight:700;cursor:pointer;text-align:center;
+  margin-top:10px;
+}
+.panic-btn:active{opacity:.85}
+
+/* ─── Toast ─── */
+.toast{
+  position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-80px);
+  background:var(--card);color:var(--text-light);padding:12px 20px;
+  border-radius:var(--radius-sm);font-size:13px;font-weight:600;
+  box-shadow:0 8px 32px rgba(0,0,0,.4);z-index:200;
+  transition:transform .3s ease;pointer-events:none;
+}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+/* ─── Utility ─── */
+.fade-in{animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+
+<!-- ============ TOAST ============ -->
+<div class="toast" id="toast"></div>
+
+<!-- ============ HOME SCREEN ============ -->
+<div class="screen active" id="screen-home">
+  <div class="top-bar">
+    <div class="logo">
+      <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="120" height="120" rx="24" fill="#e87a2e"/>
+        <path d="M30 45h60v6H30zM30 57h60v6H30zM30 69h60v6H30z" fill="#fff"/>
+      </svg>
+      TT-Home
+    </div>
+    <div class="status-dot" id="statusDot" title="Disconnected"></div>
+  </div>
+
+  <div class="screen-scroll">
+    <!-- Device hero -->
+    <div class="device-hero fade-in">
+      <div class="device-name" id="deviceName">Blackhole Quiet Box 2</div>
+      <div class="device-sub" id="deviceSub">TT-QuietBox 2 &mdash; 4 chips</div>
+      <div class="chip-bar" id="chipBar"></div>
+      <div class="connection-row">
+        <span class="dot" id="connDot"></span>
+        <span id="connLabel">Checking connection&hellip;</span>
+      </div>
+
+      <!-- Local / Cloud toggle -->
+      <div class="conn-toggle">
+        <button id="btnLocal" class="active" onclick="setConnMode('local')">Local</button>
+        <button id="btnCloud" onclick="setConnMode('cloud')">Cloud</button>
+      </div>
+      <div class="conn-url" id="connUrl"></div>
+
+      <div class="cloud-config" id="cloudConfig">
+        <div class="cloud-info">
+          <span class="cloud-info-icon">🔗</span>
+          <div class="cloud-info-text">
+            <div class="cloud-info-url">console.tenstorrent.com</div>
+            <div class="cloud-info-hint">Authenticated via GitHub</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mode grid -->
+    <div class="modes-title">Operation Modes</div>
+    <div class="mode-grid" id="modeGrid"></div>
+  </div>
+
+  <div class="action-bar">
+    <button class="btn-revert" onclick="revertMode()">Revert</button>
+    <button class="btn-apply" id="btnApply" onclick="applyMode()" disabled>Apply Mode</button>
+  </div>
+</div>
+
+<!-- ============ SECURITY SCREEN ============ -->
+<div class="screen" id="screen-security">
+  <div class="top-bar">
+    <button class="back-btn" onclick="goHome()">&#8592; Home</button>
+    <div class="logo" style="font-size:14px">Security / Away</div>
+    <div style="width:40px"></div>
+  </div>
+  <div class="screen-scroll">
+    <div class="security-header fade-in">
+      <div class="shield">🛡️</div>
+      <h2>Home Security</h2>
+      <span class="armed-badge armed" id="armedBadge">ARMED — AWAY</span>
+    </div>
+
+    <div class="sensor-grid fade-in">
+      <div class="sensor-card">
+        <span class="sensor-icon">🚪</span>
+        <span class="sensor-name">Front Door</span>
+        <span class="sensor-val ok">Locked</span>
+      </div>
+      <div class="sensor-card">
+        <span class="sensor-icon">🚪</span>
+        <span class="sensor-name">Back Door</span>
+        <span class="sensor-val ok">Locked</span>
+      </div>
+      <div class="sensor-card">
+        <span class="sensor-icon">🪟</span>
+        <span class="sensor-name">Windows</span>
+        <span class="sensor-val ok">All Closed</span>
+      </div>
+      <div class="sensor-card">
+        <span class="sensor-icon">🌡️</span>
+        <span class="sensor-name">Temperature</span>
+        <span class="sensor-val">72°F</span>
+      </div>
+      <div class="sensor-card">
+        <span class="sensor-icon">🔥</span>
+        <span class="sensor-name">Smoke Detector</span>
+        <span class="sensor-val ok">Normal</span>
+      </div>
+      <div class="sensor-card">
+        <span class="sensor-icon">💧</span>
+        <span class="sensor-name">Water Leak</span>
+        <span class="sensor-val ok">No Leak</span>
+      </div>
+      <div class="sensor-card">
+        <span class="sensor-icon">🏃</span>
+        <span class="sensor-name">Motion</span>
+        <span class="sensor-val ok">Clear</span>
+      </div>
+      <div class="sensor-card">
+        <span class="sensor-icon">⚡</span>
+        <span class="sensor-name">Power</span>
+        <span class="sensor-val ok">Online</span>
+      </div>
+    </div>
+
+    <div class="section-label">Cameras</div>
+    <div class="camera-grid fade-in">
+      <div class="camera-card"><span class="cam-icon">📹</span><span class="cam-label">Front Yard</span></div>
+      <div class="camera-card"><span class="cam-icon">📹</span><span class="cam-label">Back Yard</span></div>
+      <div class="camera-card"><span class="cam-icon">📹</span><span class="cam-label">Garage</span></div>
+      <div class="camera-card"><span class="cam-icon">📹</span><span class="cam-label">Living Room</span></div>
+    </div>
+
+    <div class="section-label">Recent Alerts</div>
+    <div class="alert-list fade-in">
+      <div class="alert-item">
+        <span class="alert-icon">✅</span>
+        <div class="alert-body">
+          <div class="alert-title">System armed — Away mode activated</div>
+          <div class="alert-time">Today, 2:30 PM</div>
+        </div>
+      </div>
+      <div class="alert-item">
+        <span class="alert-icon">🔒</span>
+        <div class="alert-body">
+          <div class="alert-title">All doors auto-locked</div>
+          <div class="alert-time">Today, 2:30 PM</div>
+        </div>
+      </div>
+      <div class="alert-item warn">
+        <span class="alert-icon">📦</span>
+        <div class="alert-body">
+          <div class="alert-title">Motion detected — Front porch (delivery)</div>
+          <div class="alert-time">Today, 1:15 PM</div>
+        </div>
+      </div>
+      <div class="alert-item">
+        <span class="alert-icon">🔋</span>
+        <div class="alert-body">
+          <div class="alert-title">Backup battery check — OK</div>
+          <div class="alert-time">Yesterday, 11:00 PM</div>
+        </div>
+      </div>
+    </div>
+
+    <button class="panic-btn" onclick="showToast('🚨 Emergency services would be contacted')">
+      🚨 Emergency / Panic
+    </button>
+  </div>
+</div>
+
+<!-- ============ COMING SOON SCREEN ============ -->
+<div class="screen" id="screen-coming-soon">
+  <div class="top-bar">
+    <button class="back-btn" onclick="goHome()">&#8592; Home</button>
+    <div class="logo" style="font-size:14px" id="csTitle">Mode</div>
+    <div style="width:40px"></div>
+  </div>
+  <div class="coming-soon">
+    <div class="icon" id="csIcon">🚀</div>
+    <h2 id="csName">Coming Soon</h2>
+    <p id="csDesc">This mode is under development and will be available in a future update.</p>
+  </div>
+</div>
+
+<script>
+/* ─── State ─── */
+let deviceStatus = null;
+let selectedMode = null;
+let currentMode = 'personal';
+
+const MODE_META = {
+  kids:         {icon:'🎮', screenIcon:'🎬', label:'Kids Entertainment'},
+  personal:     {icon:'🏠', screenIcon:'🏠', label:'Personal / Family'},
+  professional: {icon:'💻', screenIcon:'⚙️', label:'Professional Coding'},
+  security:     {icon:'🔒', screenIcon:'🛡️', label:'Security / Away'},
+};
+
+/* ─── Connection mode: local vs cloud ─── */
+let connMode = localStorage.getItem('tt_conn_mode') || 'local';
+const CLOUD_CONSOLE_URL = 'https://console.tenstorrent.com';
+
+function getLocalTTHomeUrl() {
+  const host = window.location.hostname;
+  return `http://${host}:8080`;
+}
+
+function getTTHomeUrl() {
+  if (connMode === 'cloud') return CLOUD_CONSOLE_URL;
+  return getLocalTTHomeUrl();
+}
+
+function setConnMode(mode) {
+  connMode = mode;
+  localStorage.setItem('tt_conn_mode', mode);
+
+  document.getElementById('btnLocal').classList.toggle('active', mode === 'local');
+  document.getElementById('btnCloud').classList.toggle('active', mode === 'cloud');
+  document.getElementById('btnCloud').classList.toggle('cloud-active', mode === 'cloud');
+  document.getElementById('cloudConfig').classList.toggle('show', mode === 'cloud');
+
+  updateConnUrl();
+  refreshStatus();
+}
+
+function updateConnUrl() {
+  const el = document.getElementById('connUrl');
+  if (connMode === 'cloud') {
+    el.textContent = CLOUD_CONSOLE_URL;
+  } else {
+    el.textContent = getLocalTTHomeUrl();
+  }
+}
+
+/* ─── Init ─── */
+document.addEventListener('DOMContentLoaded', async () => {
+  setConnMode(connMode);
+  await refreshStatus();
+  setInterval(refreshStatus, 15000);
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+  }
+});
+
+/* ─── API ─── */
+async function refreshStatus() {
+  try {
+    const r = await fetch('/api/device-status');
+    deviceStatus = await r.json();
+    currentMode = deviceStatus.current_mode;
+    if (!selectedMode) selectedMode = currentMode;
+    renderHome();
+  } catch {
+    document.getElementById('statusDot').classList.remove('online');
+  }
+}
+
+async function applyMode() {
+  if (!selectedMode || selectedMode === currentMode) return;
+  try {
+    const r = await fetch('/api/set-mode', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({mode: selectedMode}),
+    });
+    const d = await r.json();
+    if (d.status === 'ok') {
+      currentMode = d.current_mode;
+      showToast('Mode switched to ' + MODE_META[currentMode].label);
+      renderHome();
+      openModeScreen(currentMode);
+    }
+  } catch(e) {
+    showToast('Failed to apply mode');
+  }
+}
+
+function revertMode() {
+  selectedMode = currentMode;
+  renderHome();
+}
+
+/* ─── Render ─── */
+function renderHome() {
+  const ds = deviceStatus;
+  const dot = document.getElementById('statusDot');
+  const connDot = document.getElementById('connDot');
+  const connLabel = document.getElementById('connLabel');
+
+  if (connMode === 'cloud') {
+    dot.classList.add('online');
+    connDot.classList.add('ok');
+    connLabel.textContent = 'Cloud — via TT Console';
+  } else if (ds && ds.tt_home_connected) {
+    dot.classList.add('online');
+    connDot.classList.add('ok');
+    connLabel.textContent = 'Connected to TT-Home';
+  } else {
+    dot.classList.remove('online');
+    connDot.classList.remove('ok');
+    connLabel.textContent = ds ? 'TT-Home not reachable' : 'Checking…';
+  }
+
+  const chipBar = document.getElementById('chipBar');
+  const chips = ds ? ds.chips : 4;
+  chipBar.innerHTML = '';
+  for (let i = 0; i < chips; i++) {
+    const c = document.createElement('div');
+    c.className = 'chip active';
+    c.textContent = i;
+    chipBar.appendChild(c);
+  }
+
+  const grid = document.getElementById('modeGrid');
+  grid.innerHTML = '';
+  const cloudReady = true;
+  const modeIds = ['kids','personal','professional','security'];
+  for (const mid of modeIds) {
+    const meta = MODE_META[mid];
+    const card = document.createElement('div');
+    card.className = 'mode-card';
+    if (mid === selectedMode && cloudReady) card.classList.add('selected');
+    if (mid === currentMode && cloudReady) card.classList.add('current');
+    card.onclick = () => selectMode(mid);
+
+    const avail = (mid === 'personal' || mid === 'security');
+    let badge;
+    if (!cloudReady) {
+      badge = `<span class="mode-badge coming">Set Cloud URL</span>`;
+    } else if (avail) {
+      badge = `<span class="mode-badge ready">Ready</span>`;
+    } else {
+      badge = `<span class="mode-badge coming">Coming Soon</span>`;
+    }
+
+    card.innerHTML = `
+      <div class="mode-icon ${mid}">${meta.icon}</div>
+      <div class="mode-info">
+        <h3>${meta.label}</h3>
+        <p>${getModeSubtitle(mid)}</p>
+      </div>
+      ${badge}
+    `;
+    grid.appendChild(card);
+  }
+
+  document.getElementById('btnApply').disabled = (selectedMode === currentMode);
+}
+
+function getModeSubtitle(mid) {
+  const subs = {
+    kids: 'Video gen — all 4 chips',
+    personal: 'Chat, voice, docs — balanced',
+    professional: 'LLM/VLM — all 4 chips',
+    security: 'Lockdown — sensors &amp; alerts',
+  };
+  return subs[mid] || '';
+}
+
+function selectMode(mid) {
+  selectedMode = mid;
+  renderHome();
+}
+
+/* ─── Navigation ─── */
+function openModeScreen(mid) {
+  if (mid === 'personal') {
+    if (connMode === 'cloud') {
+      window.location.href = 'https://console.tenstorrent.com';
+    } else {
+      const host = window.location.hostname;
+      window.location.href = `http://${host}:8080/chat`;
+    }
+    return;
+  } else if (mid === 'security') {
+    showScreen('screen-security');
+  } else {
+    const meta = MODE_META[mid];
+    document.getElementById('csTitle').textContent = meta.label;
+    document.getElementById('csIcon').textContent = meta.screenIcon;
+    document.getElementById('csName').textContent = meta.label;
+    document.getElementById('csDesc').textContent = getComingSoonDesc(mid);
+    showScreen('screen-coming-soon');
+  }
+}
+
+function getComingSoonDesc(mid) {
+  if (mid === 'kids') return 'All 4 chips will be dedicated to video generation for kids entertainment content. This mode is under development.';
+  if (mid === 'professional') return 'All 4 chips will power large language models and vision tasks for professional coding and agentic workflows. Coming in a future update.';
+  return 'This mode is coming soon.';
+}
+
+function goHome() {
+  showScreen('screen-home');
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+/* ─── Toast ─── */
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+/* ─── Mode card tap behavior ─── */
+const origSelectMode = selectMode;
+selectMode = function(mid) {
+  if (mid === currentMode) {
+    openModeScreen(mid);
+    return;
+  }
+  origSelectMode(mid);
+};
+
+/* ─── Apply auto-opens the mode screen ─── */
+const origApply = applyMode;
+applyMode = async function() {
+  await origApply();
+};
+</script>
+</body>
+</html>

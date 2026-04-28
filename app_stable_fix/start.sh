@@ -33,7 +33,7 @@ if [ "$TTS_BACKEND" = "lv2" ]; then
             || echo "    ⚠️  TTS API not ready yet (may still be warming up)"
     else
         echo "    ❌ lv2-tts container is NOT running!"
-        echo "    Start it first:  cd /home/ttuser/ssinghal/lv2 && source run_docker"
+        echo "    Start it first:  cd /home/ttuser/ssinghal/lv2 && bash run_docker1"
         exit 1
     fi
 fi

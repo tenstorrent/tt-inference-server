@@ -28,7 +28,7 @@ class TTSService:
         self.server_url = TTS_SERVER_URL
         self.output_dir = "/home/container_app_user/voice-assistant/output"
         self.speakers: List[str] = []
-        self.default_speaker = os.getenv("TTS_DEFAULT_SPEAKER", "Emma")
+        self.default_speaker = os.getenv("TTS_DEFAULT_SPEAKER", "MyVoice")
 
         logger.info(f"TTS service initialized (server: {self.server_url})")
 

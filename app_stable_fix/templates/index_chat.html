@@ -81,11 +81,12 @@
         .logo {
             display: flex;
             align-items: center;
-            gap: 10px;
-            font-size: 1.25rem;
-            font-weight: 600;
+            gap: 8px;
+            font-size: 1.1rem;
+            font-weight: 700;
             color: var(--text-primary);
             text-decoration: none;
+            letter-spacing: -0.02em;
         }
 
         .home-link:hover {
@@ -102,13 +103,13 @@
         }
 
         .header-center svg {
-            width: 22px;
-            height: 22px;
+            width: 28px;
+            height: 28px;
             flex-shrink: 0;
         }
 
         .header-center-title {
-            font-size: 1.1rem;
+            font-size: 1.4rem;
             font-weight: 700;
             background: linear-gradient(135deg, #c4b5fd, var(--accent-purple));
             -webkit-background-clip: text;
@@ -177,10 +178,10 @@
             background: transparent;
             border: 1px solid var(--border-color);
             color: var(--text-secondary);
-            padding: 8px 12px;
+            padding: 10px 16px;
             border-radius: 8px;
             cursor: pointer;
-            font-size: 0.85rem;
+            font-size: 1rem;
             transition: all 0.2s;
         }
 
@@ -562,18 +563,18 @@
         }
 
         .keyboard-hint {
-            font-size: 0.7rem;
+            font-size: 0.85rem;
             color: var(--text-muted);
-            opacity: 0.6;
+            opacity: 0.7;
         }
 
         .keyboard-hint kbd {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 4px;
-            padding: 1px 5px;
+            padding: 2px 6px;
             font-family: inherit;
-            font-size: 0.65rem;
+            font-size: 0.8rem;
         }
 
         /* Toast Notifications */
@@ -729,8 +730,8 @@
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
             border-radius: 10px;
-            padding: 12px 16px;
-            font-size: 0.95rem;
+            padding: 14px 18px;
+            font-size: 1.1rem;
             color: var(--text-secondary);
             cursor: pointer;
             transition: background 0.2s, border-color 0.2s;
@@ -861,30 +862,43 @@
 
         /* Model Status */
         .model-status {
-            display: flex;
-            gap: 8px;
+            display: grid;
+            grid-template-columns: max-content max-content;
+            gap: 2px 10px;
+            align-items: center;
         }
 
         .model-badge {
             display: flex;
             align-items: center;
-            gap: 4px;
-            padding: 4px 8px;
-            background: var(--bg-card);
-            border-radius: 4px;
+            gap: 5px;
+            padding: 2px 0;
             font-size: 0.7rem;
-            color: var(--text-muted);
+            color: #ffffff;
+            white-space: nowrap;
         }
 
         .model-badge .dot {
             width: 6px;
             height: 6px;
             border-radius: 50%;
+            flex-shrink: 0;
         }
 
         .model-badge .dot.ready { background: var(--accent-green); }
         .model-badge .dot.not-ready { background: var(--accent-red); }
         .model-badge .dot.loading { background: var(--accent-yellow); animation: pulse 1s infinite; }
+
+        .model-badge .badge-link {
+            color: #fde68a;
+            text-decoration: none;
+            font-size: 0.7rem;
+            transition: color 0.2s;
+        }
+        .model-badge .badge-link:hover {
+            color: #fef3c7;
+            text-decoration: underline;
+        }
 
         /* Mode Bar */
         .mode-bar {
@@ -1298,7 +1312,7 @@
     <header class="header">
         <div class="header-left">
             <a class="logo home-link" href="/" title="Go to Home">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                 <span>Home</span>
             </a>
             <span class="logo-divider"></span>
@@ -1318,10 +1332,10 @@
 
         <div class="header-right">
             <div class="model-status">
-                <div class="model-badge"><span class="dot loading" id="faceStatus"></span>Face</div>
-                <div class="model-badge"><span class="dot loading" id="whisperStatus"></span>Whisper</div>
-                <div class="model-badge"><span class="dot loading" id="llamaStatus"></span>Llama</div>
-                <div class="model-badge"><span class="dot loading" id="ttsStatus"></span>TTS</div>
+                <div class="model-badge"><span class="dot loading" id="faceStatus"></span>SFace</div>
+                <div class="model-badge"><span class="dot loading" id="whisperStatus"></span>Whisper Distil L</div>
+                <div class="model-badge"><span class="dot loading" id="llamaStatus"></span>Llama3.1-8B</div>
+                <div class="model-badge"><span class="dot loading" id="ttsStatus"></span>Lightning V2 <a href="https://smallest.ai" target="_blank" class="badge-link">(smallest.ai)</a></div>
             </div>
 
             <button class="header-btn clear-chat-btn" id="clearChatBtn" onclick="clearChat()" title="Clear conversation">
@@ -1528,7 +1542,7 @@
                     🎤
                 </button>
                 <span class="status-text" id="controlStatus">Loading voice detection...</span>
-                <span class="keyboard-hint" id="keyboardHint"><kbd>Space</kbd> to talk &middot; <kbd>Esc</kbd> to stop</span>
+                <span class="keyboard-hint" id="keyboardHint"><kbd>Space</kbd> to talk</span>
             </div>
         </div>
     </main>
@@ -2494,7 +2508,7 @@
             {text: "Hey TT, tell me a fun fact", mode: "talk"},
             {text: "Hey TT, tell me a short bedtime story", mode: "story"},
             {text: "Hey TT, what can you help me with?", mode: "talk"},
-            {text: "Create a podcast about AI and the future", mode: "podcast"},
+            {text: "Hey TT, Plan a itinerary of 2 days to Los Angeles", mode: "talk"},
             {text: "Summarize a document for me", mode: "docs"},
         ];
 
@@ -3138,8 +3152,16 @@
 
         async function playAudioBuffer(arrayBuf) {
             if (_audioStopped) return;
+            if (!persistentAudioCtx) unlockAudio();
             if (persistentAudioCtx) {
-                if (persistentAudioCtx.state === 'suspended') await persistentAudioCtx.resume();
+                if (persistentAudioCtx.state === 'suspended') {
+                    try { await persistentAudioCtx.resume(); } catch(e) { console.warn('[Audio] resume failed:', e); }
+                }
+                if (persistentAudioCtx.state !== 'running') {
+                    console.warn('[Audio] Context state:', persistentAudioCtx.state, '— recreating');
+                    persistentAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    await persistentAudioCtx.resume();
+                }
                 const audioBuf = await persistentAudioCtx.decodeAudioData(arrayBuf);
                 return new Promise((resolve) => {
                     const source = persistentAudioCtx.createBufferSource();
@@ -3148,7 +3170,7 @@
                     source.onended = () => { currentAudio = null; resolve(); };
                     currentAudio = source;
                     source.start(0);
-                    console.log('[Audio] Playing chunk via WebAudio API');
+                    console.log('[Audio] Playing chunk via WebAudio API, state:', persistentAudioCtx.state);
                 });
             }
             const blob = new Blob([arrayBuf], { type: 'audio/wav' });

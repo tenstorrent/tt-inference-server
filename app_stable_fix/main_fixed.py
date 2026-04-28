@@ -405,7 +405,7 @@ async def chat_stream(request: Request):
             chat_history = history[:-1]
 
         if TTS_BACKEND == "lv2":
-            PODCAST_SPEAKERS = {"host": "Emma", "guest": "Carl"}
+            PODCAST_SPEAKERS = {"host": "Emma", "guest": "MyVoice"}
         else:
             PODCAST_SPEAKERS = {"host": 7306, "guest": 1138}
 
@@ -631,7 +631,7 @@ async def text_to_speech_stream(request: Request):
         raise HTTPException(status_code=400, detail="Text is required")
 
     if TTS_BACKEND == "lv2":
-        PODCAST_SPEAKERS = {"host": "Emma", "guest": "Carl"}
+        PODCAST_SPEAKERS = {"host": "Emma", "guest": "MyVoice"}
     else:
         PODCAST_SPEAKERS = {"host": 7306, "guest": 1138}
 
@@ -669,7 +669,7 @@ async def text_to_speech_stream(request: Request):
         segments = [{"role": r.lower(), "text": t.strip()} for r, t in matches if t.strip()]
         logger.info(f"Streaming podcast TTS: {len(segments)} segments")
     else:
-        segments = [{"role": "host", "text": s} for s in _split_into_sentences(text)]
+        segments = [{"role": None, "text": s} for s in _split_into_sentences(text)]
         logger.info(f"Streaming TTS: {len(segments)} sentences")
 
     async def generate_chunks():
