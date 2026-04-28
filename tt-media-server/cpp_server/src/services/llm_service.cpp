@@ -459,12 +459,24 @@ void LLMService::postProcess(domain::LLMResponse& response) const {
       // Generate unique tool call ID in OpenAI format (call_1, call_2, ...)
       std::string toolCallId = tt::utils::ToolCallIDGenerator::generate();
 
+      Json::Value decodedOutput;
+      Json::Reader reader;
+      std::string argumentsStr = choice.text;
+
+      if (reader.parse(choice.text, decodedOutput)) {
+        if (decodedOutput.isMember("arguments")) {
+          Json::StreamWriterBuilder writer;
+          writer["indentation"] = "";
+          argumentsStr = Json::writeString(writer, decodedOutput["arguments"]);
+        }
+      }
+
       Json::Value toolCallJson;
       toolCallJson["id"] = toolCallId;
       toolCallJson["type"] = "function";
       toolCallJson["function"]["name"] =
           toolChoice.function.value_or("unknown");
-      toolCallJson["function"]["arguments"] = choice.text;
+      toolCallJson["function"]["arguments"] = argumentsStr;
 
       Json::Value toolCallsArray(Json::arrayValue);
       toolCallsArray.append(toolCallJson);
