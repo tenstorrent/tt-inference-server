@@ -235,10 +235,7 @@ TEST(ChatCompletionRequestTest, RejectInvalidResponseFormat) {
 
 }  // namespace
 
-// ---------------------------------------------------------------------------
-// GuidedDecoderManager — bitmask, token acceptance, and grammar completion
-// ---------------------------------------------------------------------------
-//
+// GuidedDecoderManager — bitmask, token acceptance, and grammar completion.
 // DeepSeek-R1-0528 single-character token IDs verified against tokenizer.json.
 static constexpr int K_JSON_OPEN_BRACE  = 93;  // {
 static constexpr int K_JSON_CLOSE_BRACE = 95;  // }

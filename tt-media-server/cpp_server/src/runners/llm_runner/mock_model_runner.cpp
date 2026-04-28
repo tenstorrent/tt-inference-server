@@ -19,10 +19,8 @@ constexpr int64_t K_WHITESPACE_TOKEN_ID = 223;
 
 // DeepSeek-R1-0528 tokenizer single-character token IDs (stable).
 // Digits 0-9 occupy IDs 18-27; single ASCII letters follow sequentially.
-constexpr int K_QUOTE_TOKEN = 4;         // "  — opens/closes JSON strings
-constexpr int K_LETTER_A_TOKEN = 35;     // A  — first uppercase letter; only
-                                         //   valid inside string values, not
-                                         //   inside numbers or forced key tokens
+constexpr int K_QUOTE_TOKEN = 4;         // '"'
+constexpr int K_LETTER_A_TOKEN = 35;     // 'A' — only valid inside JSON string values
 constexpr int K_FIRST_DIGIT_TOKEN = 18;  // '0'
 constexpr int K_NUM_DIGITS = 10;
 constexpr int K_MINUS_TOKEN = 15;        // '-'
@@ -30,15 +28,10 @@ constexpr int K_COMMA_TOKEN = 14;          // ','
 constexpr int K_CLOSE_BRACKET_TOKEN = 63;  // ']'
 constexpr int K_CLOSE_BRACE_TOKEN = 95;    // '}'
 
-// Mock string content — spells "TT-Inference-Server" using single-char tokens.
-// Space has no single-char token in this tokenizer so hyphens are used instead.
-// T(54) T(54) -(15) I(43) n(80) f(72) e(71) r(84) e(71) n(80)
-// c(69) e(71) -(15) S(53) e(71) r(84) v(88) e(71) r(84)
-// Number of chars emitted = 1 + (taskId % size), producing varied substrings
-// across requests: T / TT / TT- / TT-I / ... / TT-Inference-Server.
+// Token IDs spelling "TT-Inference-Server" (hyphens substituted for spaces).
+// Emitted length scales with max_tokens budget and varies per taskId.
 constexpr std::array<int, 19> K_MOCK_STRING_CHARS = {
     54, 54, 15, 43, 80, 72, 71, 84, 71, 80, 69, 71, 15, 53, 71, 84, 88, 71, 84};
-
 
 class MockModelRunner : public IModelRunner {
  public:
@@ -78,12 +71,8 @@ class MockModelRunner : public IModelRunner {
   uint64_t pickToken(const Sequence* seq, uint64_t defaultToken) const {
     const auto& bitmask = seq->getSamplingParams().token_bitmask;
     if (bitmask.has_value()) {
-      // Detect string-value content state: uppercase 'A' is valid only inside
-      // JSON string values, not inside numbers or grammar-forced key tokens.
+      // 'A' being valid signals we are inside a JSON string value.
       if (isBitmaskSet(*bitmask, K_LETTER_A_TOKEN)) {
-        // Scale string content to max_tokens: larger budgets produce more text.
-        // Use taskId for variation when multiple requests share the same budget.
-        // Fallback to 1 char if max_tokens is not set.
         int& count = stringCharCounts[seq->taskId];
         const auto& maxTok = seq->getSamplingParams().max_tokens;
         int budget = maxTok.has_value() ? *maxTok : 10;
@@ -103,14 +92,10 @@ class MockModelRunner : public IModelRunner {
         if (isBitmaskSet(*bitmask, K_QUOTE_TOKEN)) return K_QUOTE_TOKEN;
       }
 
-      // Follow grammar constraints using the lowest valid token (first set bit).
-      // This naturally emits ',' between object fields and '}' to close objects.
-      // Three exceptions:
-      //   ',' + ']' both valid → prefer ']' so arrays close after one item.
-      //   digit is lowest valid AND '}'/']' also valid → prefer the closing
-      //     structural token to prevent infinite digit repetition for integers.
-      //   '-' is lowest valid → substitute a task-varied digit so integers
-      //     are positive and vary per request.
+      // Pick the lowest valid bitmask token with three overrides:
+      //   ',' + ']' → prefer ']' to close arrays after one item;
+      //   digit + '}'/']' → prefer the closing token to avoid integer repetition;
+      //   '-' → substitute a task-varied digit (positive integers, varied output).
       for (size_t w = 0; w < bitmask->size(); ++w) {
         auto word = static_cast<uint32_t>((*bitmask)[w]);
         if (word != 0) {
@@ -150,8 +135,7 @@ class MockModelRunner : public IModelRunner {
 
   Config config;
   DecodeCallback decodeCallback;
-  // Per-task count of string content characters emitted so far.
-  // Mutable so pickToken (which is logically const) can update it.
+  // Per-task string char count; mutable because pickToken is const.
   mutable std::unordered_map<uint32_t, int> stringCharCounts;
 };
 
