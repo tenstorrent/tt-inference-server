@@ -184,7 +184,7 @@ int main(int argc, char* argv[]) {
 
         if (path == "/health" || path == "/tt-liveness" || path == "/docs" ||
             path == "/swagger" || path == "/openapi.json" ||
-            path == "/metrics") {
+            path == "/metrics" || path == "/max-session-count") {
           chainCallback();
           return;
         }
