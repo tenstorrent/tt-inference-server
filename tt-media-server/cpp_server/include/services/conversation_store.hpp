@@ -60,10 +60,10 @@ class ConversationStore {
   static std::string serializeTurn(const TurnRecord& record);
   std::string logFilePath(const std::string& sessionId) const;
 
-  std::string logDir_;
-  utils::ConcurrentQueue<WriteTask> writeQueue_;
-  std::atomic<bool> stopped_{false};
-  std::thread writerThread_;
+  std::string logDir;
+  utils::ConcurrentQueue<WriteTask> writeQueue;
+  std::atomic<bool> stopped{false};
+  std::thread writerThread;
 };
 
 }  // namespace tt::services

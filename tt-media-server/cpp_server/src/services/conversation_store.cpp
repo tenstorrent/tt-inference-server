@@ -16,27 +16,27 @@
 namespace tt::services {
 
 ConversationStore::ConversationStore(std::string logDir)
-    : logDir_(std::move(logDir)) {
+    : logDir(std::move(logDir)) {
   try {
-    std::filesystem::create_directories(logDir_);
-    TT_LOG_INFO("[ConversationStore] Log directory: {}", logDir_);
+    std::filesystem::create_directories(logDir);
+    TT_LOG_INFO("[ConversationStore] Log directory: {}", logDir);
   } catch (const std::exception& e) {
-    TT_LOG_WARN("[ConversationStore] Failed to create log dir {}: {}", logDir_,
+    TT_LOG_WARN("[ConversationStore] Failed to create log dir {}: {}", logDir,
                 e.what());
   }
-  writerThread_ = std::thread([this] { writerLoop(); });
+  writerThread = std::thread([this] { writerLoop(); });
 }
 
 ConversationStore::~ConversationStore() {
-  stopped_.store(true, std::memory_order_relaxed);
-  if (writerThread_.joinable()) {
-    writerThread_.join();
+  stopped.store(true, std::memory_order_relaxed);
+  if (writerThread.joinable()) {
+    writerThread.join();
   }
 }
 
 void ConversationStore::recordTurn(const std::string& sessionId,
                                    TurnRecord record) {
-  writeQueue_.push(WriteTask{sessionId, std::move(record)});
+  writeQueue.push(WriteTask{sessionId, std::move(record)});
 }
 
 std::optional<std::string> ConversationStore::exportSession(
@@ -69,8 +69,8 @@ std::optional<std::string> ConversationStore::exportSession(
 }
 
 void ConversationStore::writerLoop() {
-  while (!stopped_.load(std::memory_order_relaxed)) {
-    auto tasks = writeQueue_.drain();
+  while (!stopped.load(std::memory_order_relaxed)) {
+    auto tasks = writeQueue.drain();
     if (tasks.empty()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
       continue;
@@ -79,7 +79,7 @@ void ConversationStore::writerLoop() {
       writeTurnToFile(task.sessionId, task.record);
     }
   }
-  for (const auto& task : writeQueue_.drain()) {
+  for (const auto& task : writeQueue.drain()) {
     writeTurnToFile(task.sessionId, task.record);
   }
 }
@@ -113,7 +113,7 @@ std::string ConversationStore::serializeTurn(const TurnRecord& record) {
 }
 
 std::string ConversationStore::logFilePath(const std::string& sessionId) const {
-  return logDir_ + "/" + sessionId + ".jsonl";
+  return logDir + "/" + sessionId + ".jsonl";
 }
 
 }  // namespace tt::services
