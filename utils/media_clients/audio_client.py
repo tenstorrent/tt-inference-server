@@ -31,6 +31,7 @@ from workflows.utils import (
     is_streaming_enabled_for_whisper,
 )
 from workflows.utils_report import get_performance_targets
+from workflows.workflow_types import ReportCheckTypes
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +108,8 @@ class AudioClientStrategy(BaseMediaStrategy):
         benchmark_data["published_score_ref"] = self.all_params.tasks[
             0
         ].score.published_score_ref
-        # For now hardcode accuracy_check to 2
-        benchmark_data["accuracy_check"] = 2
+        # TODO: replace hardcoded PASS with a real accuracy evaluation.
+        benchmark_data["accuracy_check"] = ReportCheckTypes.PASS
         benchmark_data["t/s/u"] = tsu_value
         benchmark_data["rtr"] = rtr_value
 
@@ -506,11 +507,10 @@ class AudioClientStrategy(BaseMediaStrategy):
 
     def _calculate_accuracy_check(
         self, ttft_value: float, tsu_value: float, rtr_value: float
-    ):
+    ) -> ReportCheckTypes:
         """Calculate accuracy check based on TTFT, RTR, T/S/U targets."""
         logger.info("Calculating accuracy check based on TTFT, RTR, T/S/U targets")
 
-        # Get performance targets using the shared utility
         device_str = self.model_spec.cli_args.get("device")
         targets = get_performance_targets(
             self.model_spec.model_name,
@@ -521,7 +521,7 @@ class AudioClientStrategy(BaseMediaStrategy):
 
         if not targets.ttft_ms:
             logger.warning("⚠️ No TTFT target found, skipping accuracy check")
-            return 0  # UNDEFINED
+            return ReportCheckTypes.NA
 
         available_metrics = [
             "TTFT" if targets.ttft_ms else None,
@@ -580,13 +580,12 @@ class AudioClientStrategy(BaseMediaStrategy):
             else:
                 logger.warning(f"❌ RTR FAILED: {rtr_value:.2f} < {rtr_threshold:.2f}")
 
-        # Determine overall result
         if checks_total == 0:  # pragma: no cover
             logger.warning("No targets available for accuracy check")
-            return 0  # UNDEFINED
-        elif checks_passed == checks_total:
+            return ReportCheckTypes.NA
+        if checks_passed == checks_total:
             logger.info(f"🎉 ALL CHECKS PASSED ({checks_passed}/{checks_total})")
-            return 2  # PASS
+            return ReportCheckTypes.PASS
 
         logger.warning(f"⛔️ SOME CHECKS FAILED ({checks_passed}/{checks_total} passed)")
-        return 3  # FAIL
+        return ReportCheckTypes.FAIL
