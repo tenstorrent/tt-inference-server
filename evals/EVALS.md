@@ -50,9 +50,9 @@ scripts are shared internals used by those entrypoints.
 
 | Script | Purpose | Default scope |
 |---|---|---|
-| `evals/scripts/run_deepseek_external.sh quick` | quick smoke mode | AIME24 short (5) + MMLU-Pro sample (32) |
+| `evals/scripts/run_deepseek_external.sh quick` | quick smoke mode | AIME24 short pass@1 x16 + MMLU-Pro sample (32/category) |
 | `evals/scripts/run_deepseek_external.sh single` | single benchmark mode | AIME24 full (30) |
-| `evals/scripts/run_deepseek_external.sh suite` | reporting-grade DeepSeek-aligned suite | AIME24 + GPQA Diamond + MATH-500 + LiveCodeBench + full MMLU-Pro |
+| `evals/scripts/run_deepseek_external.sh suite` | reporting-grade DeepSeek-aligned suite | AIME24 pass@1 x16 + GPQA Diamond + MATH-500 + LiveCodeBench + full MMLU-Pro |
 | `evals/scripts/run_aime24_all_external.sh` | `r1_aime24` | 30 (full AIME24) |
 | `evals/scripts/run_aime24_short_external.sh` | `r1_aime24_short` | 5 (IDs 60, 69, 75, 84, 86) |
 | `evals/scripts/run_aime24_pass1x16_external.sh` | DeepSeek-style AIME24 pass@1 estimate | 16 full AIME24 runs, then aggregate |
@@ -110,7 +110,7 @@ Additional mode-specific knobs:
 |---|---|---|
 | `QUICK_MMLU_PRO_LIMIT` | `mmlu_pro` sample size in `quick` mode | `32` |
 | `MMLU_PRO_LIMIT` | `mmlu_pro` sample size for `run_mmlu_pro_external.sh` | full run |
-| `AIME_PASS1_RUNS` | Number of repeated full-AIME runs for `run_aime24_pass1x16_external.sh` | `16` |
+| `AIME_PASS1_RUNS` | Number of repeated AIME runs for `run_aime24_pass1x16_external.sh`, quick mode, and suite mode | `16` |
 
 ## TT Console key setup
 
@@ -142,8 +142,8 @@ When targeting TT Console, the scripts fail early if no key is available or if
 
 This runs:
 
-- `r1_aime24_short` (5 questions)
-- `mmlu_pro --limit 32`
+- `r1_aime24_short` pass@1 x16 (5 questions per run)
+- `mmlu_pro --limit 32` (32 examples per MMLU-Pro category, 448 requests total)
 
 ### Single mode
 
@@ -198,11 +198,17 @@ Useful options:
 
 This runs:
 
-- `r1_aime24`
+- `r1_aime24` pass@1 x16
 - `r1_gpqa_diamond`
 - `r1_math500`
 - `livecodebench`
 - `mmlu_pro` (full 12,032-question run)
+
+DeepSeek-R1-0528 reports AIME 2024, GPQA-Diamond, and LiveCodeBench as
+`Pass@1`, and their model card says benchmarks requiring sampling use 16
+responses per query. Suite mode currently applies that repeated-sampling
+aggregation to AIME24 only; GPQA-Diamond, MATH-500, and LiveCodeBench still run
+once each until equivalent repeat aggregators are added.
 
 ### Full MMLU-Pro
 
