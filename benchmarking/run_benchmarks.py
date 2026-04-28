@@ -43,10 +43,15 @@ from workflows.workflow_config import (
     WORKFLOW_BENCHMARKS_CONFIG,
 )
 from workflows.workflow_types import (
+    BenchmarkTaskType,
     DeviceTypes,
     EvalLimitMode,
     InferenceEngine,
     ModelType,
+)
+
+STRUCTURED_OUTPUT_SCRIPT = (
+    Path(__file__).resolve().parent / "benchmark_serving_structured_output.py"
 )
 from workflows.workflow_venvs import VENV_CONFIGS
 
@@ -191,6 +196,52 @@ def build_benchmark_command(
                 "--random-mm-bucket-config", str({(params.image_height, params.image_width, 1): 1.0}),
                 "--endpoint", "/v1/chat/completions"
             ])
+    # fmt: on
+    return cmd
+
+
+def build_structured_output_command(
+    venv_python,
+    params,
+    output_path,
+    service_port,
+    model_spec,
+):
+    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    ratio_tag = (
+        "no-so"
+        if params.structured_output_ratio is None
+        else f"so-{params.structured_output_ratio}"
+    )
+    result_filename = (
+        Path(output_path)
+        / f"benchmark_structured_{model_spec.model_id}_{run_timestamp}"
+        f"_dataset-{params.structured_dataset}_{ratio_tag}"
+        f"_osl-{params.osl}_maxcon-{params.max_concurrency}_n-{params.num_prompts}.json"
+    )
+
+    # fmt: off
+    cmd = [
+        str(venv_python),
+        str(STRUCTURED_OUTPUT_SCRIPT),
+        "--backend", "vllm",
+        "--host", "localhost",
+        "--port", str(service_port),
+        "--model", model_spec.hf_model_repo,
+        "--dataset", params.structured_dataset,
+        "--max-concurrency", str(params.max_concurrency),
+        "--num-prompts", str(params.num_prompts),
+        "--output-len", str(params.osl),
+        "--request-rate", "inf",
+        "--percentile-metrics", "ttft,tpot,itl,e2el",
+        "--save-results",
+        "--result-dir", str(output_path),
+        "--result-filename", result_filename.name,
+    ]
+    if params.structured_output_ratio is None:
+        cmd.append("--no-structured-output")
+    else:
+        cmd.extend(["--structured-output-ratio", str(params.structured_output_ratio)])
     # fmt: on
     return cmd
 
@@ -372,16 +423,25 @@ def main():
     return_codes = []
     for task in benchmark_config.tasks:
         venv_config = VENV_CONFIGS[task.workflow_venv_type]
+        is_structured_output_task = (
+            task.task_type
+            == BenchmarkTaskType.HTTP_CLIENT_VLLM_STRUCTURED_OUTPUT_API
+        )
         benchmark_script = venv_config.venv_path / "bin" / "vllm"
         if device in task.param_map:
             params_list = task.param_map[device]
-            context_lens = [(params.isl, params.osl) for params in params_list]
-            # de-dupe
-            context_lens_set = set(context_lens)
+            # Structured-output params have no isl, so they don't participate in
+            # trace capture. The structured-output script generates its own
+            # prompt shapes from the chosen dataset.
+            context_lens_set = {
+                (params.isl, params.osl)
+                for params in params_list
+                if params.isl is not None and params.osl is not None
+            }
             context_lens_set.difference_update(captured_traces)
             # ascending order of input sequence length
             sorted_context_lens_set = sorted(context_lens_set)
-            if not disable_trace_capture:
+            if not disable_trace_capture and sorted_context_lens_set:
                 if "image" in model_spec.supported_modalities:
                     prompt_client.capture_traces(
                         context_lens=list(sorted_context_lens_set),
@@ -408,15 +468,24 @@ def main():
                 )
                 # Add a small delay between runs to ensure system stability
                 time.sleep(2)
-                cmd = build_benchmark_command(
-                    task,
-                    benchmark_script,
-                    params=params,
-                    output_path=args.output_path,
-                    service_port=service_port,
-                    benchmark_config=benchmark_config,
-                    model_spec=model_spec,
-                )
+                if is_structured_output_task:
+                    cmd = build_structured_output_command(
+                        venv_python=venv_config.venv_python,
+                        params=params,
+                        output_path=args.output_path,
+                        service_port=service_port,
+                        model_spec=model_spec,
+                    )
+                else:
+                    cmd = build_benchmark_command(
+                        task,
+                        benchmark_script,
+                        params=params,
+                        output_path=args.output_path,
+                        service_port=service_port,
+                        benchmark_config=benchmark_config,
+                        model_spec=model_spec,
+                    )
                 return_code = run_command(command=cmd, logger=logger, env=env_vars)
                 return_codes.append(return_code)
 
