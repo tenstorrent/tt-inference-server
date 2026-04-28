@@ -60,8 +60,6 @@ void GuidedDecoderManager::initRequest(uint32_t taskId,
         wrappedSchema["required"].append("name");
         wrappedSchema["required"].append("arguments");                                             
                     
-
-        TT_LOG_INFO("LJUBICA Wrapped schema: {}", wrappedSchema.toStyledString());
         schemaStr = wrappedSchema.toStyledString();
         break;
       }                                                                                            
