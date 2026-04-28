@@ -514,6 +514,16 @@ target_include_directories(session_manager_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+add_executable(conversation_store_test
+    tests/conversation_store_test.cpp
+    src/services/conversation_store.cpp
+)
+target_link_libraries(conversation_store_test PRIVATE
+    llm_runner_lib JsonCpp::JsonCpp GTest::gtest_main)
+target_include_directories(conversation_store_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(GoogleTest)
 gtest_discover_tests(scheduler_test)
 gtest_discover_tests(llm_runner_test)
@@ -528,6 +538,7 @@ gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
+gtest_discover_tests(conversation_store_test)
 
 # Register tool call tests
 add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
