@@ -282,6 +282,96 @@
         }
       }
     },
+    "/v1/sessions/{session_id}/export": {
+      "get": {
+        "tags": ["Sessions"],
+        "summary": "Export raw conversation log",
+        "description": "Download all recorded turns for a session as a JSON array. Each turn contains the input messages, output text, TTFT, TPS, token counts, finish reason, and timestamp. The session must have had at least one completed request.",
+        "operationId": "exportConversation",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "description": "The session ID",
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation log exported successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp_ms": {
+                        "type": "integer",
+                        "description": "Unix timestamp in milliseconds when the turn completed"
+                      },
+                      "input_messages": {
+                        "type": "array",
+                        "description": "The input messages sent for this turn",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "role": { "type": "string" },
+                            "content": { "type": "string" }
+                          }
+                        }
+                      },
+                      "output_text": {
+                        "type": "string",
+                        "description": "The generated response text"
+                      },
+                      "ttft_ms": {
+                        "type": "number",
+                        "description": "Time to first token in milliseconds"
+                      },
+                      "tps": {
+                        "type": "number",
+                        "description": "Tokens per second (excluding first token)"
+                      },
+                      "prompt_tokens": {
+                        "type": "integer",
+                        "description": "Number of prompt tokens"
+                      },
+                      "completion_tokens": {
+                        "type": "integer",
+                        "description": "Number of completion tokens"
+                      },
+                      "finish_reason": {
+                        "type": "string",
+                        "description": "Reason the generation stopped"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No conversation log found for this session",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Conversation store not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/models": {
       "get": {
         "tags": ["Models"],
