@@ -15,23 +15,23 @@ namespace tracy_config {
 constexpr int TRACY_MAIN_PORT = 8086;
 constexpr int TRACY_WORKER_PORT_BASE = 8087;
 
-void TracySetPortForMain();
-void TracySetPortForWorker(int worker_id);
+void tracySetPortForMain();
+void tracySetPortForWorker(int workerId);
 /** Start Tracy for the main process. Call once before any Tracy use (e.g. from
  * register_services). */
-void TracyStartMainProcess();
-void TracyStartupSchedulerParent();
-void TracyStartupWorker(int worker_id);
-void TracyRegisterPlots();
+void tracyStartMainProcess();
+void tracyStartupSchedulerParent();
+void tracyStartupWorker(int workerId);
+void tracyRegisterPlots();
 
-inline void TracyFrameMark() { FrameMark; }
-inline void TracyFrameMarkStart(const char* name) { FrameMarkStart(name); }
-inline void TracyFrameMarkEnd(const char* name) { FrameMarkEnd(name); }
-inline void TracySetThreadName(const char* name) { tracy::SetThreadName(name); }
+inline void tracyFrameMark() { FrameMark; }
+inline void tracyFrameMarkStart(const char* name) { FrameMarkStart(name); }
+inline void tracyFrameMarkEnd(const char* name) { FrameMarkEnd(name); }
+inline void tracySetThreadName(const char* name) { tracy::SetThreadName(name); }
 #if defined(TRACY_DELAYED_INIT) && defined(TRACY_MANUAL_LIFETIME)
-inline void TracyStartupProfiler() { tracy::StartupProfiler(); }
+inline void tracyStartupProfiler() { tracy::StartupProfiler(); }
 #else
-inline void TracyStartupProfiler() {}
+inline void tracyStartupProfiler() {}
 #endif
 }  // namespace tracy_config
 

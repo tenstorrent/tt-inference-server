@@ -93,25 +93,69 @@ std::string DeepseekTokenizer::applyChatTemplate(
         "available:\n\n";
 
     out << toolsDescription;
+
     for (const auto& tool : *tools) {
       out << "- `" << tool.functionDefinition.name << "`:\n```json\n"
-          << (tool.toJson()) << "\n```\n";
+          << tool.toJson() << "\n```\n";
     }
   }
+
+  bool inToolOutputs = false;
+  bool isFirstToolOutput = true;
 
   for (const auto& m : messages) {
     if (m.role == "system") continue;
     if (m.role == "user") {
+      if (inToolOutputs) {
+        out << dsToolOutputsEnd;
+        inToolOutputs = false;
+      }
       out << dsUserTag << m.content;
     } else if (m.role == "assistant") {
-      out << dsAssistantTag << m.content;
-      if (cfg_.add_eos_token) out << cfg_.eos_token;
+      if (inToolOutputs) {
+        out << dsToolOutputsEnd;
+        inToolOutputs = false;
+      }
+
+      // Check if this assistant message has tool calls
+      if (m.tool_calls.has_value() && !m.tool_calls->empty()) {
+        if (!m.content.empty()) {
+          out << dsAssistantTag << m.content;
+        }
+
+        out << dsToolCallsBegin;
+        for (const auto& toolCall : m.tool_calls.value()) {
+          out << dsToolCallBegin << "function" << dsToolSep
+              << toolCall.functionCall.name << "\n```json\n"
+              << toolCall.functionCall.arguments << "\n```" << dsToolCallEnd;
+        }
+        out << dsToolCallsEnd << dsEndOfSentence;
+
+      } else {
+        out << dsAssistantTag << m.content;
+        if (cfg_.add_eos_token) out << cfg_.eos_token;
+      }
+    } else if (m.role == "tool") {
+      if (!inToolOutputs) {
+        out << dsToolOutputsBegin;
+        inToolOutputs = true;
+        isFirstToolOutput = true;
+      }
+      if (!isFirstToolOutput) {
+        out << "\n";
+      }
+      out << dsToolOutputBegin << m.content << dsToolOutputEnd;
+      isFirstToolOutput = false;
     }
   }
 
+  if (inToolOutputs) {
+    out << dsToolOutputsEnd;
+  }
   if (addGenerationPrompt) {
     out << dsAssistantTag;
   }
+
   return out.str();
 }
 

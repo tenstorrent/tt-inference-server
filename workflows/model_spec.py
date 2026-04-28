@@ -46,15 +46,19 @@ def generate_default_docker_link(
     version: str,
     tt_metal_commit: str,
     vllm_commit: Optional[str],
+    inference_engine: str = "",
     multihost: bool = False,
 ) -> str:
     _default_docker_tag = generate_docker_tag(version, tt_metal_commit, vllm_commit)
-    if vllm_commit is None:
-        _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server"
-    elif multihost:
-        _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64"
+    if vllm_commit is not None:
+        if multihost:
+            _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-multihost-ubuntu-22.04-amd64"
+        else:
+            _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
+    elif inference_engine == "forge":
+        _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server-forge"
     else:
-        _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
+        _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server"
     return f"{_default_docker_repo}:{_default_docker_tag}"
 
 
@@ -472,6 +476,7 @@ class ModelSpec:
                 self.version,
                 self.tt_metal_commit,
                 self.vllm_commit,
+                inference_engine=self.inference_engine,
                 multihost=self.device_type.is_multihost(),
             )
             object.__setattr__(self, "docker_image", _default_docker_link)
@@ -2808,6 +2813,12 @@ image_templates = [
                 default_impl=True,
             ),
             DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
                 device=DeviceTypes.P300X2,
                 max_concurrency=1,
                 max_context=64 * 1024,
@@ -2885,6 +2896,30 @@ image_templates = [
             DeviceModelSpec(
                 device=DeviceTypes.GALAXY,
                 max_concurrency=32,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P300X2,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150X4,
+                max_concurrency=1,
+                max_context=64 * 1024,
+                default_impl=True,
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.P150X8,
+                max_concurrency=1,
                 max_context=64 * 1024,
                 default_impl=True,
             ),
@@ -3506,13 +3541,14 @@ cnn_templates = [
     ),
     ModelSpecTemplate(
         weights=["resnet-50"],
-        tt_metal_commit="2496be4",
+        version="0.13.0",
+        tt_metal_commit="079a2c2",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.FORGE.value,
+        status=ModelStatusTypes.FUNCTIONAL,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -3530,13 +3566,14 @@ cnn_templates = [
     ),
     ModelSpecTemplate(
         weights=["vovnet"],
-        tt_metal_commit="2496be4",
+        version="0.13.0",
+        tt_metal_commit="079a2c2",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.FORGE.value,
+        status=ModelStatusTypes.COMPLETE,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -3554,13 +3591,14 @@ cnn_templates = [
     ),
     ModelSpecTemplate(
         weights=["mobilenetv2"],
-        tt_metal_commit="2496be4",
+        version="0.13.0",
+        tt_metal_commit="079a2c2",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.FORGE.value,
+        status=ModelStatusTypes.COMPLETE,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -3602,13 +3640,14 @@ cnn_templates = [
     ),
     ModelSpecTemplate(
         weights=["segformer"],
-        tt_metal_commit="2496be4",
+        version="0.13.0",
+        tt_metal_commit="079a2c2",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.FORGE.value,
+        status=ModelStatusTypes.FUNCTIONAL,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,
@@ -3626,13 +3665,14 @@ cnn_templates = [
     ),
     ModelSpecTemplate(
         weights=["vit"],
-        tt_metal_commit="2496be4",
+        version="0.13.0",
+        tt_metal_commit="079a2c2",
         impl=tt_transformers_impl,
         min_disk_gb=15,
         min_ram_gb=6,
-        docker_image="ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
         model_type=ModelType.CNN,
         inference_engine=InferenceEngine.FORGE.value,
+        status=ModelStatusTypes.COMPLETE,
         device_model_specs=[
             DeviceModelSpec(
                 device=DeviceTypes.N150,

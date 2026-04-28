@@ -72,6 +72,17 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# xxHash for stable, cross-platform hashing (conversation prefix caching)
+FetchContent_Declare(
+    xxhash
+    GIT_REPOSITORY https://github.com/Cyan4973/xxHash.git
+    GIT_TAG        v0.8.2
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(xxhash)
+add_library(xxhash_lib INTERFACE)
+target_include_directories(xxhash_lib INTERFACE ${xxhash_SOURCE_DIR})
+
 # xgrammar for structured output / guided decoding (JSON schema constrained generation)
 FetchContent_Declare(xgrammar
     GIT_REPOSITORY https://github.com/mlc-ai/xgrammar.git
@@ -144,6 +155,14 @@ endif()
 
 # Option for Tracy support
 option(ENABLE_TRACY "Enable Tracy profiling instrumentation" OFF)
+
+if(ENABLE_TRACY AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(FATAL_ERROR
+        "Tracy profiling (ENABLE_TRACY=ON) must not be used in Release builds: "
+        "the Tracy client spawns background threads that degrade throughput on "
+        "machines with limited cores. Use a Debug build instead: "
+        "./build.sh --tracy")
+endif()
 
 # Option for Kafka support
 option(KAFKA_ENABLED "Enable Kafka messaging support" OFF)
@@ -254,10 +273,11 @@ set(LLM_RUNNER_LIB_SOURCES
     src/runners/llm_runner.cpp
     src/runners/llm_runner/model_runner.cpp
     src/runners/llm_runner/mock_model_runner.cpp
-    src/runners/llm_runner/scheduler.cpp
+    src/runners/llm_runner/schedulers/scheduler.cpp
     src/domain/sequence.cpp
     src/domain/sampling_params.cpp
     src/utils/logger.cpp
+    src/utils/conversation_hasher.cpp
     src/config/settings.cpp
     src/utils/tokenizers/tokenizer.cpp
     src/utils/tokenizers/deepseek_tokenizer.cpp
@@ -302,8 +322,8 @@ target_include_directories(llm_runner_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
-# Link tokenizers_cpp, JsonCpp, and xgrammar (guided decoding for structured outputs)
-target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar)
+# Link tokenizers_cpp, JsonCpp, xgrammar (guided decoding), and xxhash (stable hashing)
+target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar xxhash_lib)
 
 # Link PipelineManager when ENABLE_BLAZE is ON: prefer Full (SocketPipeline + TT::Metalium),
 # fall back to Core (mock pipeline only).
@@ -397,6 +417,9 @@ target_include_directories(lockfree_queue_test PRIVATE
 add_executable(test_tokenizer tests/test_tokenizer.cpp)
 target_link_libraries(test_tokenizer PRIVATE llm_runner_lib GTest::gtest_main)
 
+add_executable(conversation_hasher_test tests/conversation_hasher_test.cpp)
+target_link_libraries(conversation_hasher_test PRIVATE llm_runner_lib GTest::gtest_main)
+
 add_executable(cancel_queue_test tests/cancel_queue_test.cpp)
 target_link_libraries(cancel_queue_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(cancel_queue_test PRIVATE
@@ -429,13 +452,27 @@ target_include_directories(test_tool_call_parser PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
 
-# Chat template with tools test
+# Chat template with tools test (supports both DeepSeek and Llama tokenizers)
 add_executable(test_chat_template_tools tests/test_chat_template_tools.cpp)
 target_link_libraries(test_chat_template_tools PRIVATE
     llm_runner_lib
     ${CMAKE_THREAD_LIBS_INIT}
 )
 target_include_directories(test_chat_template_tools PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
+)
+target_compile_definitions(test_chat_template_tools PRIVATE
+    TOKENIZER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tokenizers"
+)
+
+# Chat completion request test
+add_executable(test_chat_completion_request tests/test_chat_completion_request.cpp)
+target_link_libraries(test_chat_completion_request PRIVATE
+    llm_runner_lib
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+target_include_directories(test_chat_completion_request PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/runners
 )
@@ -483,6 +520,7 @@ gtest_discover_tests(llm_runner_test)
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(test_tokenizer)
+gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(cancellation_test)
 gtest_discover_tests(structured_output_test)
@@ -492,6 +530,7 @@ gtest_discover_tests(session_test)
 gtest_discover_tests(session_manager_test)
 
 # Register tool call tests
+add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
 add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
 add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
 
@@ -573,7 +612,7 @@ set(SOURCES
     src/worker/single_process_worker.cpp
     src/worker/worker_manager.cpp
     src/utils/service_factory.cpp
-    src/utils/service_container.cpp
+    src/services/service_container.cpp
     src/utils/runner_factory.cpp
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp

@@ -13,23 +13,52 @@
 
 namespace tt::domain {
 
-// Lifecycle state of a Session.  IDLE <--(clearInFlight)--> IN_FLIGHT.
+// Lifecycle state of a Session.  IDLE --(markPrepared)--> PREPARED
+// --(markInFlight)--> IN_FLIGHT --(clearInFlight)--> IDLE.
+// IDLE can also transition directly to IN_FLIGHT via markInFlight (fast path).
 enum class SessionState {
   IDLE,       // no active request
+  PREPARED,   // session has been allocated to a slot
   IN_FLIGHT,  // request actively being processed
 };
 
 class Session {
  public:
-  explicit Session(uint32_t slotId = INVALID_SLOT_ID);
+  /**
+   * Create a new session with a generated UUID.
+   * @param slotId Optional slot ID (max uint32_t means unassigned)
+   * @param initialHash Optional initial content hash (0 if not provided)
+   */
+  explicit Session(uint32_t slotId = INVALID_SLOT_ID, size_t initialHash = 0);
 
+  /**
+   * Get the stable session ID (UUID).
+   */
   const std::string& getSessionId() const { return session_id_; }
+
+  /**
+   * Get the current content hash.
+   */
+  size_t getHash() const { return hash_; }
+
+  /**
+   * Update the content hash (called when conversation state changes).
+   */
+  void setHash(size_t hash) { hash_ = hash; }
+
+  /**
+   * Get the assigned slot ID.
+   * @return Slot ID, or max uint32_t if unassigned
+   */
   uint32_t getSlotId() const { return slot_id_; }
   void setSlotId(uint32_t slotId) { slot_id_ = slotId; }
   bool hasSlot() const { return slot_id_ != INVALID_SLOT_ID; }
 
   bool isIdle() const { return state_ == SessionState::IDLE; }
   bool isInFlight() const { return state_ == SessionState::IN_FLIGHT; }
+
+  bool isPrepared() const { return state_ == SessionState::PREPARED; }
+  bool markPrepared();
 
   SessionState getState() const { return state_; }
 
@@ -54,7 +83,8 @@ class Session {
   }
 
  private:
-  std::string session_id_;
+  std::string session_id_;  // Stable UUID, never changes
+  size_t hash_;             // Current content hash, changes with conversation
   uint32_t slot_id_;
   SessionState state_{SessionState::IDLE};
   std::chrono::system_clock::time_point last_activity_time_;
