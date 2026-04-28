@@ -7,6 +7,7 @@
 
 #include <stdexcept>
 #include <unordered_map>
+#include "utils/logger.hpp"
 
 namespace tt::runners {
 
@@ -48,15 +49,22 @@ void GuidedDecoderManager::initRequest(uint32_t taskId,
       params.tool_choice->function.has_value() && params.tools.has_value()) {
     const auto& functionName = params.tool_choice->function.value();
     for (const auto& tool : params.tools.value()) {
-      if (tool.functionDefinition.name == functionName) {
+      if (tool.functionDefinition.name == functionName) {                                          
         formatType = ResponseFormatType::JSON_SCHEMA;
+                                                                                                   
+        Json::Value wrappedSchema;
+        wrappedSchema["type"] = "object";
+                                                                                                   
+        wrappedSchema["properties"]["name"]["const"] = tool.functionDefinition.name;               
+        wrappedSchema["properties"]["arguments"] = tool.functionDefinition.parameters;             
+        wrappedSchema["required"].append("name");
+        wrappedSchema["required"].append("arguments");                                             
+                    
 
-        Json::StreamWriterBuilder writer;
-        writer["indentation"] = "";
-        schemaStr =
-            Json::writeString(writer, tool.functionDefinition.parameters);
+        TT_LOG_INFO("LJUBICA Wrapped schema: {}", wrappedSchema.toStyledString());
+        schemaStr = wrappedSchema.toStyledString();
         break;
-      }
+      }                                                                                            
     }
   }
 
