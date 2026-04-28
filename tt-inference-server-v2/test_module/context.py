@@ -2,17 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Shared context + health check + tokenizer cache for the v2 test module.
-
-``MediaContext`` is a frozen dataclass that bundles the immutable inputs every
-eval/benchmark function needs (model spec, device, output path, service port).
-Free functions take a ``MediaContext`` instead of living on a strategy class.
-"""
-
 from __future__ import annotations
 
 import logging
 import sys
+import time
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -53,13 +47,9 @@ class MediaContext:
 def get_health(ctx: MediaContext) -> tuple[bool, Optional[str]]:
     """Check server health via DeviceLivenessTest and return (ok, runner_in_use)."""
     logger.info("Checking server health using DeviceLivenessTest...")
-    device_name = (
-        ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
-    )
+    device_name = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
     num_devices = ctx.model_spec.device_model_spec.max_concurrency
-    logger.info(
-        f"Detected device: {device_name} with {num_devices} expected worker(s)"
-    )
+    logger.info(f"Detected device: {device_name} with {num_devices} expected worker(s)")
 
     test_config = TestConfig(
         {
@@ -140,11 +130,54 @@ def count_tokens(hf_model_repo: str, text: str) -> int:
     return len(text.split())
 
 
+def require_health(ctx: MediaContext) -> str:
+    """Run the liveness check and raise on failure; return ``runner_in_use``."""
+    health_status, runner_in_use = get_health(ctx)
+    if not health_status:
+        logger.error("Health check failed.")
+        raise RuntimeError("Health check failed")
+    logger.info(f"Health check passed. Runner in use: {runner_in_use}")
+    return runner_in_use
+
+
+def _now_timestamp() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+
+def common_report_metadata(ctx: MediaContext, task_type: str) -> dict:
+    """Metadata block shared by every benchmark report."""
+    return {
+        "model": ctx.model_spec.model_name,
+        "device": ctx.device.name,
+        "timestamp": _now_timestamp(),
+        "task_type": task_type,
+    }
+
+
+def common_eval_metadata(ctx: MediaContext, task_type: str) -> dict:
+    """Metadata block shared by every eval report.
+
+    Adds ``task_name`` + ``tolerance`` from ``ctx.all_params.tasks[0]`` and
+    lowercases ``device`` to match the legacy eval contract.
+    """
+    return {
+        "model": ctx.model_spec.model_name,
+        "device": ctx.device.name.lower(),
+        "timestamp": _now_timestamp(),
+        "task_type": task_type,
+        "task_name": ctx.all_params.tasks[0].task_name,
+        "tolerance": ctx.all_params.tasks[0].score.tolerance,
+    }
+
+
 __all__ = [
     "DEVICE_LIVENESS_TEST_ALIVE",
     "TEST_PAYLOADS_PATH",
     "MediaContext",
+    "common_eval_metadata",
+    "common_report_metadata",
     "count_tokens",
     "get_health",
     "get_tokenizer",
+    "require_health",
 ]
