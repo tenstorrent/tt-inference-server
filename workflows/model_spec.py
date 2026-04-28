@@ -760,9 +760,12 @@ class ModelSpec:
             object.__setattr__(self.device_model_spec, "vllm_args", merged_vllm_args)
 
         if runtime_config.dev_mode:
-            object.__setattr__(
-                self, "docker_image", self.docker_image.replace("-release-", "-dev-")
-            )
+            if "-release-" in self.docker_image:
+                object.__setattr__(
+                    self, "docker_image", self.docker_image.replace("-release-", "-dev-")
+                )
+            elif not self.docker_image.endswith("-dev"):
+                object.__setattr__(self, "docker_image", self.docker_image + "-dev")
 
         if runtime_config.override_docker_image:
             object.__setattr__(
