@@ -9,42 +9,42 @@
 #include <memory>
 #include <string>
 
-#include "api/stream_sink.hpp"
+#include "api/response_writer.hpp"
 
 namespace tt::api {
 
 /**
- * Streaming sink that accumulates chunks into a single ChatCompletionResponse.
+ * Response writer that accumulates chunks into a single ChatCompletionResponse.
  *
- * The non-streaming counterpart to SseStreamWriter: the controller drives the
- * same Streamable producer (LLMService::submitStreamingRequest or the
- * disaggregation service) and forwards every chunk here instead of out to SSE.
- * On the final chunk we build the full ChatCompletionResponse, run the
+ * The non-streaming counterpart to StreamingResponseWriter: the controller
+ * drives the same Streamable producer (LLMService::submitStreamingRequest or
+ * the disaggregation service) and forwards every chunk here instead of out to
+ * SSE. On the final chunk we build the full ChatCompletionResponse, run the
  * service's postProcess (reasoning strip + tool-call parsing — non-streaming
  * only), release the session in-flight slot, and invoke the http callback
  * exactly once.
  */
-class AccumulatingResponseBuilder : public StreamSink {
+class NonStreamResponseWriter : public ResponseWriter {
  public:
   using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-  static std::shared_ptr<AccumulatingResponseBuilder> create(
-      StreamSinkParams params, HttpCallback httpCallback);
+  static std::shared_ptr<NonStreamResponseWriter> create(
+      ResponseWriterParams params, HttpCallback httpCallback);
 
   void handleTokenChunk(const domain::LLMStreamChunk& chunk) override;
   void finalize() override;
 
   /**
    * Send an OpenAI-compatible error response and tear down. Used for failures
-   * detected after the sink is created but before the response would normally
+   * detected after the writer is created but before the response would normally
    * be built (e.g. dispatch throws).
    */
   void sendError(drogon::HttpStatusCode status, const std::string& message,
                  const std::string& type);
 
  private:
-  AccumulatingResponseBuilder(StreamSinkParams params,
-                              HttpCallback httpCallback);
+  NonStreamResponseWriter(ResponseWriterParams params,
+                          HttpCallback httpCallback);
 
   HttpCallback httpCallback;
 

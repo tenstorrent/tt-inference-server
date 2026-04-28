@@ -601,9 +601,9 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
-    src/api/stream_sink.cpp
-    src/api/sse_stream_writer.cpp
-    src/api/accumulating_response_builder.cpp
+    src/api/response_writer.cpp
+    src/api/streaming_response_writer.cpp
+    src/api/non_stream_response_writer.cpp
     src/api/health_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp

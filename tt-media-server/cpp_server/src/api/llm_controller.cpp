@@ -10,9 +10,9 @@
 #include <memory>
 #include <optional>
 
-#include "api/accumulating_response_builder.hpp"
 #include "api/error_response.hpp"
-#include "api/sse_stream_writer.hpp"
+#include "api/non_stream_response_writer.hpp"
+#include "api/streaming_response_writer.hpp"
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
 #include "domain/models_response.hpp"
@@ -231,16 +231,16 @@ void LLMController::chatCompletions(
   }
 }
 
-StreamSinkParams LLMController::makeSinkParams(
+ResponseWriterParams LLMController::makeWriterParams(
     const domain::LLMRequest& request) const {
-  StreamSinkParams params;
+  ResponseWriterParams params;
   params.completionId = "chatcmpl-" + std::to_string(request.task_id);
   params.model = request.model.value_or("default");
   params.created = static_cast<int64_t>(
       std::chrono::duration_cast<std::chrono::seconds>(
           std::chrono::system_clock::now().time_since_epoch())
           .count());
-  params.promptTokensCount = request.prompt_tokens_count;
+  params.promptTokenCount = request.prompt_tokens_count;
   params.sessionId = request.sessionId;
   params.taskId = request.task_id;
   params.service = service;
@@ -249,12 +249,12 @@ StreamSinkParams LLMController::makeSinkParams(
 }
 
 std::function<void(const domain::LLMStreamChunk&, bool)>
-LLMController::makeStreamingCallback(std::shared_ptr<StreamSink> sink) {
-  return [sink = std::move(sink)](const domain::LLMStreamChunk& chunk,
-                                  bool isFinal) {
-    if (sink->isDone()) return;
-    if (!chunk.choices.empty()) sink->handleTokenChunk(chunk);
-    if (isFinal) sink->finalize();
+LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer) {
+  return [writer = std::move(writer)](const domain::LLMStreamChunk& chunk,
+                                      bool isFinal) {
+    if (writer->isDone()) return;
+    if (!chunk.choices.empty()) writer->handleTokenChunk(chunk);
+    if (isFinal) writer->finalize();
   };
 }
 
@@ -307,8 +307,8 @@ void LLMController::handleStreaming(
             reqPtr->stream_options.has_value() &&
             reqPtr->stream_options->continuous_usage_stats;
 
-        auto writer = SseStreamWriter::create(loop, makeSinkParams(*reqPtr),
-                                              includeUsage, continuousUsage);
+        auto writer = StreamingResponseWriter::create(
+            loop, makeWriterParams(*reqPtr), includeUsage, continuousUsage);
 
         try {
           dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
@@ -366,22 +366,22 @@ void LLMController::handleNonStreaming(
           return;
         }
 
-        // Move the http callback into the builder; from here on out every
-        // success/error path goes through builder->finalize / sendError so
+        // Move the http callback into the writer; from here on out every
+        // success/error path goes through writer->finalize / sendError so
         // the response is delivered exactly once and the session in-flight
         // slot is always released.
-        auto builder = AccumulatingResponseBuilder::create(
-            makeSinkParams(*reqPtr), std::move(*cb));
+        auto writer = NonStreamResponseWriter::create(makeWriterParams(*reqPtr),
+                                                      std::move(*cb));
 
         try {
           dispatchGeneration(*reqPtr, sessionInfo.validSessionFound,
-                             makeStreamingCallback(builder));
+                             makeStreamingCallback(writer));
         } catch (const services::QueueFullException& e) {
-          builder->sendError(drogon::k429TooManyRequests, e.what(),
-                             "rate_limit_exceeded");
+          writer->sendError(drogon::k429TooManyRequests, e.what(),
+                            "rate_limit_exceeded");
         } catch (const std::exception& e) {
-          builder->sendError(drogon::k500InternalServerError, e.what(),
-                             "internal_error");
+          writer->sendError(drogon::k500InternalServerError, e.what(),
+                            "internal_error");
         }
       },
       [cb](const SessionError& err) {

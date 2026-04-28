@@ -12,13 +12,14 @@
 #include <string>
 #include <vector>
 
-#include "api/stream_sink.hpp"
+#include "api/response_writer.hpp"
 #include "utils/concurrent_queue.hpp"
 
 namespace tt::api {
 
 /**
- * Streaming sink that writes Server-Sent Events to the HTTP client.
+ * Response writer that delivers tokens as Server-Sent Events to the HTTP
+ * client.
  *
  * Sends an OpenAI-compatible chunked stream: optional initial role-only
  * chunk, one delta per token (optionally batched via the accumulated-
@@ -26,12 +27,11 @@ namespace tt::api {
  * terminator. Forwards client-disconnect detection back to the LLM service
  * via abortRequest.
  */
-class SseStreamWriter : public StreamSink {
+class StreamingResponseWriter : public ResponseWriter {
  public:
-  static std::shared_ptr<SseStreamWriter> create(trantor::EventLoop* loop,
-                                                 StreamSinkParams params,
-                                                 bool includeUsage,
-                                                 bool continuousUsage);
+  static std::shared_ptr<StreamingResponseWriter> create(
+      trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage,
+      bool continuousUsage);
 
   void handleTokenChunk(const domain::LLMStreamChunk& chunk) override;
   void finalize() override;
@@ -46,8 +46,8 @@ class SseStreamWriter : public StreamSink {
   drogon::HttpResponsePtr buildResponse();
 
  private:
-  SseStreamWriter(trantor::EventLoop* loop, StreamSinkParams params,
-                  bool includeUsage, bool continuousUsage);
+  StreamingResponseWriter(trantor::EventLoop* loop, ResponseWriterParams params,
+                          bool includeUsage, bool continuousUsage);
 
   void sendSse(const std::string& sse,
                std::function<void()> onDisconnect = nullptr);

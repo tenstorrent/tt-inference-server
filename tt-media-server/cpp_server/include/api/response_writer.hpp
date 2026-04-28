@@ -16,15 +16,14 @@
 namespace tt::api {
 
 /**
- * Parameters shared by every chat-completion stream sink (SSE writer or
- * accumulating builder). Wire-format-specific options live on the concrete
- * sink instead.
+ * Parameters shared by every chat-completion response writer (streaming or
+ * non-streaming). Wire-format-specific options live on the concrete writer.
  */
-struct StreamSinkParams {
+struct ResponseWriterParams {
   std::string completionId;
   std::string model;
   int64_t created;
-  int promptTokensCount;
+  int promptTokenCount;
   std::optional<std::string> sessionId;
   uint32_t taskId;
   std::shared_ptr<services::LLMService> service;
@@ -32,23 +31,27 @@ struct StreamSinkParams {
 };
 
 /**
- * Abstract base for chat-completion stream sinks. Owns the bits that are
+ * Abstract base for chat-completion response writers. Owns the bits that are
  * truly shared between the two delivery formats:
  *  - the immutable request/session params,
  *  - the token timing state used to compute TTFT/TPS,
  *  - the idempotent done flag,
  *  - session in-flight release.
  *
- * Concrete subclasses (SseStreamWriter, AccumulatingResponseBuilder) implement
- * the wire format by overriding handleTokenChunk and finalize. The controller
- * can therefore drive both with the same streaming callback shape.
+ * Concrete subclasses (StreamingResponseWriter, NonStreamResponseWriter)
+ * implement the wire format by overriding handleTokenChunk and finalize. The
+ * controller can therefore drive both with the same streaming callback shape.
+ *
+ * Thread safety: Callbacks are serialized by the LLMService consumer thread,
+ * so noteToken() relies on this serialization for timing accuracy. The atomic
+ * done flag protects finalize() and abort() from concurrent invocation.
  */
-class StreamSink : public std::enable_shared_from_this<StreamSink> {
+class ResponseWriter : public std::enable_shared_from_this<ResponseWriter> {
  public:
-  virtual ~StreamSink() = default;
+  virtual ~ResponseWriter() = default;
 
-  StreamSink(const StreamSink&) = delete;
-  StreamSink& operator=(const StreamSink&) = delete;
+  ResponseWriter(const ResponseWriter&) = delete;
+  ResponseWriter& operator=(const ResponseWriter&) = delete;
 
   /** Consume a single LLMStreamChunk produced by the streaming generator. */
   virtual void handleTokenChunk(const domain::LLMStreamChunk& chunk) = 0;
@@ -59,7 +62,7 @@ class StreamSink : public std::enable_shared_from_this<StreamSink> {
   bool isDone() const { return done.load(); }
 
  protected:
-  explicit StreamSink(StreamSinkParams params);
+  explicit ResponseWriter(ResponseWriterParams params);
 
   /**
    * Increment the completion-token counter and stamp first/second-token
@@ -74,7 +77,7 @@ class StreamSink : public std::enable_shared_from_this<StreamSink> {
   /** Release the session in-flight slot if a session is associated. */
   void releaseInFlight();
 
-  StreamSinkParams params;
+  ResponseWriterParams params;
   std::chrono::high_resolution_clock::time_point startTime =
       std::chrono::high_resolution_clock::now();
   std::optional<std::chrono::high_resolution_clock::time_point> firstTokenTime;

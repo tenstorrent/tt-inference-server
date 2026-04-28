@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "api/accumulating_response_builder.hpp"
+#include "api/non_stream_response_writer.hpp"
 
 #include <utility>
 
@@ -12,29 +12,21 @@
 
 namespace tt::api {
 
-AccumulatingResponseBuilder::AccumulatingResponseBuilder(
-    StreamSinkParams params, HttpCallback httpCallback)
-    : StreamSink(std::move(params)), httpCallback(std::move(httpCallback)) {}
-
-std::shared_ptr<AccumulatingResponseBuilder>
-AccumulatingResponseBuilder::create(StreamSinkParams params,
-                                    HttpCallback httpCallback) {
-  return std::shared_ptr<AccumulatingResponseBuilder>(
-      new AccumulatingResponseBuilder(std::move(params),
-                                      std::move(httpCallback)));
+NonStreamResponseWriter::NonStreamResponseWriter(ResponseWriterParams params,
+                                                 HttpCallback httpCallback)
+    : ResponseWriter(std::move(params)), httpCallback(std::move(httpCallback)) {
 }
 
-void AccumulatingResponseBuilder::handleTokenChunk(
+std::shared_ptr<NonStreamResponseWriter> NonStreamResponseWriter::create(
+    ResponseWriterParams params, HttpCallback httpCallback) {
+  return std::shared_ptr<NonStreamResponseWriter>(
+      new NonStreamResponseWriter(std::move(params), std::move(httpCallback)));
+}
+
+void NonStreamResponseWriter::handleTokenChunk(
     const domain::LLMStreamChunk& chunk) {
   if (done.load()) return;
   if (chunk.choices.empty()) return;
-
-  // Streaming callbacks for a single task arrive serialized from the LLMService
-  // consumer thread (or the disaggregation socket thread), so plain access to
-  // the accumulators is safe between handleTokenChunk and finalize on the
-  // success path. Aborts also flow through this same callback (LLMService::
-  // abortRequest invokes the registered streaming callback with isFinal=true),
-  // so finalize handles the abort case uniformly.
 
   const auto& choice = chunk.choices[0];
   if (choice.reasoning.has_value()) {
@@ -49,7 +41,7 @@ void AccumulatingResponseBuilder::handleTokenChunk(
   }
 }
 
-void AccumulatingResponseBuilder::finalize() {
+void NonStreamResponseWriter::finalize() {
   if (done.exchange(true)) return;
 
   domain::LLMResponse llmResponse{params.taskId};
@@ -69,13 +61,11 @@ void AccumulatingResponseBuilder::finalize() {
 
   llmResponse.usage = buildUsage();
 
-  // Tool-call parsing + reasoning strip (non-streaming only). Mirrors the
-  // semantics of LLMService::submitRequest's postProcess step.
   if (params.service) {
     try {
       params.service->finalizeResponse(llmResponse);
     } catch (const std::exception& e) {
-      TT_LOG_WARN("[AccumulatingResponseBuilder] postProcess failed: {}",
+      TT_LOG_WARN("[NonStreamResponseWriter] postProcess failed: {}",
                   e.what());
     }
   }
@@ -95,9 +85,9 @@ void AccumulatingResponseBuilder::finalize() {
   }
 }
 
-void AccumulatingResponseBuilder::sendError(drogon::HttpStatusCode status,
-                                            const std::string& message,
-                                            const std::string& type) {
+void NonStreamResponseWriter::sendError(drogon::HttpStatusCode status,
+                                        const std::string& message,
+                                        const std::string& type) {
   if (done.exchange(true)) return;
   releaseInFlight();
   if (httpCallback) {

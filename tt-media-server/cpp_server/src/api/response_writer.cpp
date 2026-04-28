@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "api/stream_sink.hpp"
+#include "api/response_writer.hpp"
 
 #include <cmath>
 #include <utility>
 
 namespace tt::api {
 
-StreamSink::StreamSink(StreamSinkParams params) : params(std::move(params)) {}
+ResponseWriter::ResponseWriter(ResponseWriterParams params)
+    : params(std::move(params)) {}
 
-int StreamSink::noteToken() {
+int ResponseWriter::noteToken() {
   const int current = completionTokens.fetch_add(1) + 1;
   auto now = std::chrono::high_resolution_clock::now();
   if (!firstTokenTime.has_value()) {
@@ -21,10 +22,10 @@ int StreamSink::noteToken() {
   return current;
 }
 
-domain::CompletionUsage StreamSink::buildUsage() const {
+domain::CompletionUsage ResponseWriter::buildUsage() const {
   const int tokens = completionTokens.load();
-  const int totalTokens = params.promptTokensCount + tokens;
-  domain::CompletionUsage usage{params.promptTokensCount,
+  const int totalTokens = params.promptTokenCount + tokens;
+  domain::CompletionUsage usage{params.promptTokenCount,
                                 tokens,
                                 totalTokens,
                                 std::nullopt,
@@ -55,7 +56,7 @@ domain::CompletionUsage StreamSink::buildUsage() const {
   return usage;
 }
 
-void StreamSink::releaseInFlight() {
+void ResponseWriter::releaseInFlight() {
   if (params.sessionId.has_value() && params.sessionManager) {
     params.sessionManager->releaseInFlight(params.sessionId.value());
   }

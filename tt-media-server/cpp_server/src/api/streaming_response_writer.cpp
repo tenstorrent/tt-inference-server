@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "api/sse_stream_writer.hpp"
+#include "api/streaming_response_writer.hpp"
 
 #include <utility>
 
@@ -12,10 +12,11 @@
 
 namespace tt::api {
 
-SseStreamWriter::SseStreamWriter(trantor::EventLoop* loop,
-                                 StreamSinkParams params, bool includeUsage,
-                                 bool continuousUsage)
-    : StreamSink(std::move(params)),
+StreamingResponseWriter::StreamingResponseWriter(trantor::EventLoop* loop,
+                                                 ResponseWriterParams params,
+                                                 bool includeUsage,
+                                                 bool continuousUsage)
+    : ResponseWriter(std::move(params)),
       loop(loop),
       includeUsage(includeUsage),
       continuousUsage(continuousUsage) {
@@ -24,15 +25,15 @@ SseStreamWriter::SseStreamWriter(trantor::EventLoop* loop,
   }
 }
 
-std::shared_ptr<SseStreamWriter> SseStreamWriter::create(
-    trantor::EventLoop* loop, StreamSinkParams params, bool includeUsage,
+std::shared_ptr<StreamingResponseWriter> StreamingResponseWriter::create(
+    trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage,
     bool continuousUsage) {
-  return std::shared_ptr<SseStreamWriter>(new SseStreamWriter(
+  return std::shared_ptr<StreamingResponseWriter>(new StreamingResponseWriter(
       loop, std::move(params), includeUsage, continuousUsage));
 }
 
-void SseStreamWriter::sendSse(const std::string& sse,
-                              std::function<void()> onDisconnect) {
+void StreamingResponseWriter::sendSse(const std::string& sse,
+                                      std::function<void()> onDisconnect) {
   if (!sseBatchQueue) {
     loop->queueInLoop([streamPtr = this->streamPtr,
                        earlyBuffer = this->earlyBuffer, sse,
@@ -64,7 +65,7 @@ void SseStreamWriter::sendSse(const std::string& sse,
   }
 }
 
-void SseStreamWriter::flushAccumulated() {
+void StreamingResponseWriter::flushAccumulated() {
   if (!sseBatchQueue) return;
   auto accumulated = sseBatchQueue->drain();
   if (!accumulated.empty()) {
@@ -74,7 +75,8 @@ void SseStreamWriter::flushAccumulated() {
   }
 }
 
-void SseStreamWriter::handleTokenChunk(const domain::LLMStreamChunk& chunk) {
+void StreamingResponseWriter::handleTokenChunk(
+    const domain::LLMStreamChunk& chunk) {
   if (done.load()) return;
   if (chunk.choices.empty()) return;
 
@@ -82,9 +84,9 @@ void SseStreamWriter::handleTokenChunk(const domain::LLMStreamChunk& chunk) {
 
   std::optional<domain::CompletionUsage> usage;
   if (continuousUsage) {
-    usage = domain::CompletionUsage{params.promptTokensCount,
+    usage = domain::CompletionUsage{params.promptTokenCount,
                                     currentTokens,
-                                    params.promptTokensCount + currentTokens,
+                                    params.promptTokenCount + currentTokens,
                                     std::nullopt,
                                     std::nullopt,
                                     params.sessionId};
@@ -99,7 +101,7 @@ void SseStreamWriter::handleTokenChunk(const domain::LLMStreamChunk& chunk) {
     std::optional<domain::CompletionUsage> initialUsage;
     if (continuousUsage) {
       initialUsage = domain::CompletionUsage{
-          params.promptTokensCount, 0, 0, std::nullopt, std::nullopt,
+          params.promptTokenCount, 0, 0, std::nullopt, std::nullopt,
           params.sessionId};
     }
     auto initialChunk = domain::ChatCompletionStreamChunk::makeInitialChunk(
@@ -110,13 +112,15 @@ void SseStreamWriter::handleTokenChunk(const domain::LLMStreamChunk& chunk) {
   }
 
   if (!sse.empty()) {
-    auto self = std::static_pointer_cast<SseStreamWriter>(shared_from_this());
+    auto self =
+        std::static_pointer_cast<StreamingResponseWriter>(shared_from_this());
     sendSse(sse, [self]() { self->abort(); });
   }
 }
 
-void SseStreamWriter::finalize() {
-  auto self = std::static_pointer_cast<SseStreamWriter>(shared_from_this());
+void StreamingResponseWriter::finalize() {
+  auto self =
+      std::static_pointer_cast<StreamingResponseWriter>(shared_from_this());
   loop->queueInLoop([self]() {
     if (!self->done.exchange(true) && *self->streamPtr) {
       self->flushAccumulated();
@@ -138,17 +142,19 @@ void SseStreamWriter::finalize() {
   });
 }
 
-void SseStreamWriter::abort() {
+void StreamingResponseWriter::abort() {
   if (!done.exchange(true)) {
-    TT_LOG_INFO("[SseStreamWriter] Client disconnected, aborting task {}",
-                params.taskId);
+    TT_LOG_INFO(
+        "[StreamingResponseWriter] Client disconnected, aborting task {}",
+        params.taskId);
     if (params.service) params.service->abortRequest(params.taskId);
     releaseInFlight();
   }
 }
 
-drogon::HttpResponsePtr SseStreamWriter::buildResponse() {
-  auto self = std::static_pointer_cast<SseStreamWriter>(shared_from_this());
+drogon::HttpResponsePtr StreamingResponseWriter::buildResponse() {
+  auto self =
+      std::static_pointer_cast<StreamingResponseWriter>(shared_from_this());
   auto resp = drogon::HttpResponse::newAsyncStreamResponse(
       [self](drogon::ResponseStreamPtr stream) mutable {
         *self->streamPtr = std::move(stream);
