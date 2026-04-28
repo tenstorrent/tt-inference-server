@@ -508,7 +508,7 @@ class MockLogger:
 
 mock_logger = MockLogger()
 mock_logger_module = type("module", (), {})()
-mock_logger_module.TTLogger = lambda: mock_logger
+mock_logger_module.TTLogger = lambda *_args, **_kwargs: mock_logger
 sys.modules["utils.logger"] = mock_logger_module
 
 
