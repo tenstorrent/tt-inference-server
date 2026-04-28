@@ -98,13 +98,13 @@ void ConversationStore::writeTurnToFile(const std::string& sessionId,
 
 std::string ConversationStore::serializeTurn(const TurnRecord& record) {
   Json::Value json;
-  json["timestamp_ms"] = static_cast<Json::Int64>(record.timestamp_ms);
-  json["input_messages"] = record.input_messages;
-  json["output_text"] = record.output_text;
-  json["prompt_tokens"] = record.prompt_tokens;
-  json["completion_tokens"] = record.completion_tokens;
-  json["finish_reason"] = record.finish_reason;
-  if (record.ttft_ms.has_value()) json["ttft_ms"] = record.ttft_ms.value();
+  json["timestamp_ms"] = static_cast<Json::Int64>(record.timestampMs);
+  json["input_messages"] = record.inputMessages;
+  json["output_text"] = record.outputText;
+  json["prompt_tokens"] = record.promptTokens;
+  json["completion_tokens"] = record.completionTokens;
+  json["finish_reason"] = record.finishReason;
+  if (record.ttftMs.has_value()) json["ttft_ms"] = record.ttftMs.value();
   if (record.tps.has_value()) json["tps"] = record.tps.value();
 
   Json::StreamWriterBuilder writer;

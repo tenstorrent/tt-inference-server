@@ -16,14 +16,14 @@
 namespace tt::services {
 
 struct TurnRecord {
-  Json::Value input_messages;  // JSON array of {role, content} objects
-  std::string output_text;
-  std::optional<double> ttft_ms;
+  Json::Value inputMessages;
+  std::string outputText;
+  std::optional<double> ttftMs;
   std::optional<double> tps;
-  int prompt_tokens = 0;
-  int completion_tokens = 0;
-  int64_t timestamp_ms = 0;
-  std::string finish_reason;
+  int promptTokens = 0;
+  int completionTokens = 0;
+  int64_t timestampMs = 0;
+  std::string finishReason;
 };
 
 /**
@@ -31,9 +31,6 @@ struct TurnRecord {
  * later download. Each session's turns are appended as newline-delimited JSON
  * to {logDir}/{sessionId}.jsonl by a background writer thread so the hot
  * request path is never blocked on I/O.
- *
- * Removal: delete this file, remove it from ServiceContainer, and remove the
- * two recordTurn call-sites in LLMController / SseStreamWriter.
  */
 class ConversationStore {
  public:

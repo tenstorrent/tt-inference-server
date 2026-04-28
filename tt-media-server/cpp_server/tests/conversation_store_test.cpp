@@ -14,12 +14,8 @@
 
 namespace {
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 tt::services::TurnRecord makeTurn(const std::string& userContent,
-                                  const std::string& outputText, double ttft_ms,
+                                  const std::string& outputText, double ttftMs,
                                   double tps, int promptTokens,
                                   int completionTokens,
                                   const std::string& finishReason = "stop") {
@@ -31,16 +27,16 @@ tt::services::TurnRecord makeTurn(const std::string& userContent,
   msg["content"] = userContent;
   messages.append(msg);
 
-  record.input_messages = messages;
-  record.output_text = outputText;
-  record.ttft_ms = ttft_ms;
+  record.inputMessages = messages;
+  record.outputText = outputText;
+  record.ttftMs = ttftMs;
   record.tps = tps;
-  record.prompt_tokens = promptTokens;
-  record.completion_tokens = completionTokens;
-  record.finish_reason = finishReason;
-  record.timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            std::chrono::system_clock::now().time_since_epoch())
-                            .count();
+  record.promptTokens = promptTokens;
+  record.completionTokens = completionTokens;
+  record.finishReason = finishReason;
+  record.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::system_clock::now().time_since_epoch())
+                           .count();
   return record;
 }
 
@@ -64,31 +60,23 @@ bool waitForFile(const std::string& logDir, const std::string& sessionId,
   return false;
 }
 
-// ---------------------------------------------------------------------------
-// Fixture: creates a temp directory and cleans it up after each test.
-// ---------------------------------------------------------------------------
-
 class ConversationStoreTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    tmpDir_ =
-        std::filesystem::temp_directory_path() /
-        ("conversation_store_test_" +
-         std::to_string(
-             std::chrono::steady_clock::now().time_since_epoch().count()));
-    std::filesystem::create_directories(tmpDir_);
+    tmpDir = std::filesystem::temp_directory_path() /
+             ("conversation_store_test_" +
+              std::to_string(
+                  std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(tmpDir);
   }
 
-  void TearDown() override { std::filesystem::remove_all(tmpDir_); }
+  void TearDown() override { std::filesystem::remove_all(tmpDir); }
 
-  std::string logDir() const { return tmpDir_.string(); }
+  std::string logDir() const { return tmpDir.string(); }
 
-  std::filesystem::path tmpDir_;
+  std::filesystem::path tmpDir;
 };
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 TEST_F(ConversationStoreTest, ExportUnknownSessionReturnsNullopt) {
   tt::services::ConversationStore store(logDir());
@@ -111,7 +99,6 @@ TEST_F(ConversationStoreTest, RecordAndExportSingleTurn) {
   auto exported = store.exportSession(sessionId);
   ASSERT_TRUE(exported.has_value());
 
-  // Parse the returned JSON array
   Json::Value turns;
   Json::CharReaderBuilder builder;
   std::istringstream ss(exported.value());
@@ -211,11 +198,11 @@ TEST_F(ConversationStoreTest, TurnWithOptionalFieldsMissing) {
 
   tt::services::TurnRecord record;
   Json::Value messages(Json::arrayValue);
-  record.input_messages = messages;
-  record.output_text = "some output";
-  // ttft_ms and tps deliberately left as nullopt
-  record.finish_reason = "length";
-  record.timestamp_ms = 1000;
+  record.inputMessages = messages;
+  record.outputText = "some output";
+  // ttftMs and tps deliberately left as nullopt
+  record.finishReason = "length";
+  record.timestampMs = 1000;
 
   store.recordTurn(sessionId, record);
 

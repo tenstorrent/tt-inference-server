@@ -35,6 +35,26 @@ Json::Value messagesToJson(const std::vector<domain::ChatMessage>& messages) {
   return arr;
 }
 
+tt::services::TurnRecord buildTurnRecord(
+    Json::Value inputMessages, const domain::LLMResponse& completion) {
+  tt::services::TurnRecord record;
+  record.inputMessages = std::move(inputMessages);
+  record.outputText =
+      completion.choices.empty() ? "" : completion.choices[0].text;
+  record.ttftMs = completion.usage.ttft_ms;
+  record.tps = completion.usage.tps;
+  record.promptTokens = completion.usage.prompt_tokens;
+  record.completionTokens = completion.usage.completion_tokens;
+  record.finishReason = (!completion.choices.empty() &&
+                         completion.choices[0].finish_reason.has_value())
+                            ? completion.choices[0].finish_reason.value()
+                            : "unknown";
+  record.timestampMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::system_clock::now().time_since_epoch())
+                           .count();
+  return record;
+}
+
 }  // namespace
 
 void LLMController::models(
@@ -287,25 +307,9 @@ void LLMController::chatCompletions(
             }
 
             if (sessionId.has_value() && conversationStore) {
-              tt::services::TurnRecord record;
-              record.input_messages = std::move(inputMessages);
-              record.output_text =
-                  completion.choices.empty() ? "" : completion.choices[0].text;
-              record.ttft_ms = completion.usage.ttft_ms;
-              record.tps = completion.usage.tps;
-              record.prompt_tokens = completion.usage.prompt_tokens;
-              record.completion_tokens = completion.usage.completion_tokens;
-              record.finish_reason =
-                  (!completion.choices.empty() &&
-                   completion.choices[0].finish_reason.has_value())
-                      ? completion.choices[0].finish_reason.value()
-                      : "unknown";
-              record.timestamp_ms =
-                  std::chrono::duration_cast<std::chrono::milliseconds>(
-                      std::chrono::system_clock::now().time_since_epoch())
-                      .count();
-              conversationStore->recordTurn(sessionId.value(),
-                                            std::move(record));
+              conversationStore->recordTurn(
+                  sessionId.value(),
+                  buildTurnRecord(std::move(inputMessages), completion));
             }
 
             (*cb)(resp);

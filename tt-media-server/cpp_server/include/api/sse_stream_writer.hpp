@@ -35,7 +35,7 @@ struct StreamParams {
   std::shared_ptr<services::SessionManager> sessionManager;
   // Conversation logging (optional; null disables logging)
   std::shared_ptr<services::ConversationStore> conversationStore;
-  Json::Value inputMessages;  // JSON array of {role, content} objects
+  Json::Value inputMessages;
 };
 
 class SseStreamWriter : public std::enable_shared_from_this<SseStreamWriter> {
@@ -81,8 +81,8 @@ class SseStreamWriter : public std::enable_shared_from_this<SseStreamWriter> {
   // Accumulated output for conversation logging; written only from the
   // consumer thread before finalizeStream is called, then read once by the
   // event-loop lambda — no additional synchronization needed.
-  std::string accumulated_output_;
-  std::string finish_reason_;
+  std::string accumulatedOutput_;
+  std::string finishReason_;
 
   StreamParams params_;
 };
