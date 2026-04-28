@@ -4,6 +4,7 @@
 #pragma once
 
 #include <drogon/drogon.h>
+#include <json/json.h>
 #include <trantor/net/EventLoop.h>
 
 #include <atomic>
@@ -12,8 +13,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-
-#include <json/json.h>
 
 #include "domain/llm_response.hpp"
 #include "services/conversation_store.hpp"

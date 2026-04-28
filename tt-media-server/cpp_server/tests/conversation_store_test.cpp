@@ -19,9 +19,9 @@ namespace {
 // ---------------------------------------------------------------------------
 
 tt::services::TurnRecord makeTurn(const std::string& userContent,
-                                  const std::string& outputText,
-                                  double ttft_ms, double tps,
-                                  int promptTokens, int completionTokens,
+                                  const std::string& outputText, double ttft_ms,
+                                  double tps, int promptTokens,
+                                  int completionTokens,
                                   const std::string& finishReason = "stop") {
   tt::services::TurnRecord record;
 
@@ -71,17 +71,15 @@ bool waitForFile(const std::string& logDir, const std::string& sessionId,
 class ConversationStoreTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    tmpDir_ = std::filesystem::temp_directory_path() /
-              ("conversation_store_test_" +
-               std::to_string(std::chrono::steady_clock::now()
-                                  .time_since_epoch()
-                                  .count()));
+    tmpDir_ =
+        std::filesystem::temp_directory_path() /
+        ("conversation_store_test_" +
+         std::to_string(
+             std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(tmpDir_);
   }
 
-  void TearDown() override {
-    std::filesystem::remove_all(tmpDir_);
-  }
+  void TearDown() override { std::filesystem::remove_all(tmpDir_); }
 
   std::string logDir() const { return tmpDir_.string(); }
 
@@ -102,8 +100,8 @@ TEST_F(ConversationStoreTest, RecordAndExportSingleTurn) {
   tt::services::ConversationStore store(logDir());
 
   const std::string sessionId = "test-session-001";
-  auto turn = makeTurn("Hello, what is 2+2?", "The answer is 4.", 8.3, 120.5,
-                       12, 5);
+  auto turn =
+      makeTurn("Hello, what is 2+2?", "The answer is 4.", 8.3, 120.5, 12, 5);
 
   store.recordTurn(sessionId, turn);
 
@@ -141,9 +139,12 @@ TEST_F(ConversationStoreTest, MultiTurnOrderPreserved) {
   tt::services::ConversationStore store(logDir());
 
   const std::string sessionId = "test-session-002";
-  store.recordTurn(sessionId, makeTurn("Turn 1", "Response 1", 8.0, 100.0, 5, 3));
-  store.recordTurn(sessionId, makeTurn("Turn 2", "Response 2", 9.0, 110.0, 6, 4));
-  store.recordTurn(sessionId, makeTurn("Turn 3", "Response 3", 7.5, 105.0, 4, 2));
+  store.recordTurn(sessionId,
+                   makeTurn("Turn 1", "Response 1", 8.0, 100.0, 5, 3));
+  store.recordTurn(sessionId,
+                   makeTurn("Turn 2", "Response 2", 9.0, 110.0, 6, 4));
+  store.recordTurn(sessionId,
+                   makeTurn("Turn 3", "Response 3", 7.5, 105.0, 4, 2));
 
   ASSERT_TRUE(waitForFile(logDir(), sessionId, 3))
       << "Timed out waiting for 3 turns to be written";
@@ -169,8 +170,10 @@ TEST_F(ConversationStoreTest, MultipleSessionsAreIsolated) {
   const std::string sessionA = "session-aaa";
   const std::string sessionB = "session-bbb";
 
-  store.recordTurn(sessionA, makeTurn("Question A", "Answer A", 8.0, 100.0, 5, 3));
-  store.recordTurn(sessionB, makeTurn("Question B", "Answer B", 9.0, 110.0, 6, 4));
+  store.recordTurn(sessionA,
+                   makeTurn("Question A", "Answer A", 8.0, 100.0, 5, 3));
+  store.recordTurn(sessionB,
+                   makeTurn("Question B", "Answer B", 9.0, 110.0, 6, 4));
 
   ASSERT_TRUE(waitForFile(logDir(), sessionA, 1));
   ASSERT_TRUE(waitForFile(logDir(), sessionB, 1));
@@ -197,10 +200,8 @@ TEST_F(ConversationStoreTest, MultipleSessionsAreIsolated) {
   EXPECT_EQ(turnsB[0]["output_text"].asString(), "Answer B");
 
   // Verify separate files on disk
-  EXPECT_TRUE(
-      std::filesystem::exists(logDir() + "/" + sessionA + ".jsonl"));
-  EXPECT_TRUE(
-      std::filesystem::exists(logDir() + "/" + sessionB + ".jsonl"));
+  EXPECT_TRUE(std::filesystem::exists(logDir() + "/" + sessionA + ".jsonl"));
+  EXPECT_TRUE(std::filesystem::exists(logDir() + "/" + sessionB + ".jsonl"));
 }
 
 TEST_F(ConversationStoreTest, TurnWithOptionalFieldsMissing) {

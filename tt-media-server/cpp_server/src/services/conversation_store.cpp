@@ -112,8 +112,7 @@ std::string ConversationStore::serializeTurn(const TurnRecord& record) {
   return Json::writeString(writer, json);
 }
 
-std::string ConversationStore::logFilePath(
-    const std::string& sessionId) const {
+std::string ConversationStore::logFilePath(const std::string& sessionId) const {
   return logDir_ + "/" + sessionId + ".jsonl";
 }
 

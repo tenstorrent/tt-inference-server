@@ -27,8 +27,7 @@ namespace tt::api {
 
 namespace {
 
-Json::Value messagesToJson(
-    const std::vector<domain::ChatMessage>& messages) {
+Json::Value messagesToJson(const std::vector<domain::ChatMessage>& messages) {
   Json::Value arr(Json::arrayValue);
   for (const auto& msg : messages) {
     arr.append(msg.toJson());
@@ -290,9 +289,8 @@ void LLMController::chatCompletions(
             if (sessionId.has_value() && conversationStore) {
               tt::services::TurnRecord record;
               record.input_messages = std::move(inputMessages);
-              record.output_text = completion.choices.empty()
-                                       ? ""
-                                       : completion.choices[0].text;
+              record.output_text =
+                  completion.choices.empty() ? "" : completion.choices[0].text;
               record.ttft_ms = completion.usage.ttft_ms;
               record.tps = completion.usage.tps;
               record.prompt_tokens = completion.usage.prompt_tokens;
@@ -362,8 +360,8 @@ void LLMController::handleStreaming(
 
   resolveSession(
       reqPtr, loop,
-      [this, reqPtr, cb, loop,
-       inputMessages = std::move(inputMessages)](SessionInfo sessionInfo) mutable {
+      [this, reqPtr, cb, loop, inputMessages = std::move(inputMessages)](
+          SessionInfo sessionInfo) mutable {
         try {
           service->preProcess(*reqPtr);
 
@@ -554,10 +552,9 @@ void LLMController::exportConversation(
 
   auto data = conversationStore->exportSession(sessionId);
   if (!data.has_value()) {
-    callback(errorResponse(drogon::k404NotFound,
-                           "No conversation log found for session id: " +
-                               sessionId,
-                           "not_found"));
+    callback(errorResponse(
+        drogon::k404NotFound,
+        "No conversation log found for session id: " + sessionId, "not_found"));
     return;
   }
 
