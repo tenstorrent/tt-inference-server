@@ -44,9 +44,8 @@ class ConversationStore {
   void recordTurn(const std::string& sessionId, TurnRecord record);
 
   // Return all recorded turns for the session as a JSON array string.
-  // Reads from the .jsonl file on disk.
-  // Note: turns enqueued but not yet flushed by the background thread may not
-  // appear immediately; in practice the writer thread drains within ~5 ms.
+  // Reads from the .jsonl file on disk. Turns enqueued but not yet
+  // flushed by the background thread may not appear immediately
   std::optional<std::string> exportSession(const std::string& sessionId) const;
 
  private:
