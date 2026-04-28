@@ -7,23 +7,23 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 
-# The v2 report_module lives under tt-inference-server-v2/; ensure its
-# parent is importable regardless of how this module is invoked.
-_V2_DIR = Path(__file__).resolve().parents[1] / "tt-inference-server-v2"
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_V2_DIR = _PROJECT_ROOT / "tt-inference-server-v2"
 if _V2_DIR.is_dir() and str(_V2_DIR) not in sys.path:
     sys.path.insert(0, str(_V2_DIR))
 
-from report_module.strategies.test_report import (  # noqa: E402
-    TestRunArtifacts,
-    resolve_test_reports_dir,
-    write_test_report_json,
-)
+from report_module.report_file_saver import ReportFileSaver  # noqa: E402
+
 from server_tests.base_test import BaseTest  # noqa: E402
 from server_tests.test_classes import TestReport  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+TEST_REPORTS_DIRNAME = "test_reports"
+TEST_REPORT_FILE_PREFIX = "test_report_"
+TEST_REPORT_TIMESTAMP_FMT = "%Y%m%d_%H%M%S"
 
 
 class ServerRunner:
@@ -128,15 +128,58 @@ class ServerRunner:
             logger.info("No test reports to generate")
             return
 
-        artifacts = TestRunArtifacts(
-            reports=list(self.reports),
-            total_test_cases=len(self.test_cases),
-            generated_at=datetime.now(),
+        generated_at = datetime.now()
+        timestamp = generated_at.strftime(TEST_REPORT_TIMESTAMP_FMT)
+        json_path = (
+            _PROJECT_ROOT
+            / TEST_REPORTS_DIRNAME
+            / f"{TEST_REPORT_FILE_PREFIX}{timestamp}.json"
         )
-        json_path = write_test_report_json(resolve_test_reports_dir(), artifacts)
+
+        payload = self._build_test_report_data(generated_at)
+        ReportFileSaver.write_json(payload, json_path, indent=2, strict=True)
         logger.info(f"📊 Test report JSON: {json_path}")
 
         self._print_cli_summary()
+
+    def _build_test_report_data(self, generated_at: datetime) -> Dict[str, Any]:
+        reports = self.reports
+        total = len(self.test_cases)
+        attempted = len(reports)
+        passed = sum(1 for r in reports if r.success)
+        failed = sum(1 for r in reports if not r.success)
+        success_rate = (passed / attempted * 100) if attempted else 0.0
+
+        summary = {
+            "total_tests": total,
+            "attempted_tests": attempted,
+            "skipped_tests": total - attempted,
+            "passed": passed,
+            "failed": failed,
+            "success_rate": success_rate,
+            "total_duration": sum(r.duration for r in reports),
+            "total_attempts": sum(r.attempts for r in reports),
+            "generated_at": generated_at.isoformat(),
+        }
+        return {
+            "summary": summary,
+            "tests": [self._report_to_dict(r) for r in reports],
+        }
+
+    @staticmethod
+    def _report_to_dict(report: TestReport) -> Dict[str, Any]:
+        return {
+            "test_name": report.test_name,
+            "success": report.success,
+            "description": report.description,
+            "duration": report.duration,
+            "attempts": report.attempts,
+            "timestamp": report.timestamp,
+            "targets": report.targets,
+            "error": report.error,
+            "result": report.result,
+            "logs": report.logs,
+        }
 
     def _print_cli_summary(self) -> None:
         if not self.reports:
