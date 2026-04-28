@@ -14,8 +14,8 @@ namespace tt::api {
 
 NonStreamResponseWriter::NonStreamResponseWriter(ResponseWriterParams params,
                                                  HttpCallback httpCallback)
-    : ResponseWriter(std::move(params)), httpCallback(std::move(httpCallback)) {
-}
+    : ResponseWriter(std::move(params)),
+      httpCallback(std::move(httpCallback)) {}
 
 std::shared_ptr<NonStreamResponseWriter> NonStreamResponseWriter::create(
     ResponseWriterParams params, HttpCallback httpCallback) {
@@ -65,8 +65,7 @@ void NonStreamResponseWriter::finalize() {
     try {
       params.service->finalizeResponse(llmResponse);
     } catch (const std::exception& e) {
-      TT_LOG_WARN("[NonStreamResponseWriter] postProcess failed: {}",
-                  e.what());
+      TT_LOG_WARN("[NonStreamResponseWriter] postProcess failed: {}", e.what());
     }
   }
 

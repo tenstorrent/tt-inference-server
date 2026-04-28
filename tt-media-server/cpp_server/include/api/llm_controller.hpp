@@ -154,7 +154,8 @@ class LLMController : public drogon::HttpController<LLMController> {
    * Build the ResponseWriterParams shared by both streaming and non-streaming
    * writers.
    */
-  ResponseWriterParams makeWriterParams(const domain::LLMRequest& request) const;
+  ResponseWriterParams makeWriterParams(
+      const domain::LLMRequest& request) const;
 
   /**
    * Build the streaming callback that pumps LLMStreamChunks into a
