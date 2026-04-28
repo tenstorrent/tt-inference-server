@@ -360,6 +360,7 @@ void SessionManager::createSession(
 
 void SessionManager::sendAsyncAllocationRequest(
     PendingAllocation& pendingAllocation) {
+  // Check if max session count is reached
   size_t maxSessions = tt::config::maxSessionsCount();
   size_t activeCount = getActiveSessionCount();
 
@@ -374,12 +375,12 @@ void SessionManager::sendAsyncAllocationRequest(
           "[SessionManager] sendAsyncAllocationRequest: no attempts left, "
           "failing sessionId={}",
           pendingAllocation.session.getSessionId());
-      pendingAllocation.eventLoop->queueInLoop(
-          [onError = std::move(pendingAllocation.onError)]() {
-            onError(
-                "Failed to allocate: max session count reached after all "
-                "attempts");
-          });
+      pendingAllocation.eventLoop->queueInLoop([onError =
+                                                    std::move(pendingAllocation
+                                                                  .onError)]() {
+        onError(
+            "Failed to allocate: max session count reached after all attempts");
+      });
     } else {
       pendingAllocation.attemptsRemaining--;
       pendingAllocation.retryAt =
