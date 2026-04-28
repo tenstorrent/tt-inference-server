@@ -20,8 +20,10 @@ class HealthController : public drogon::HttpController<HealthController> {
   METHOD_LIST_BEGIN
   ADD_METHOD_TO(HealthController::health, "/health", drogon::Get);
   ADD_METHOD_TO(HealthController::ready, "/tt-liveness", drogon::Get);
-  ADD_METHOD_TO(HealthController::getMaxSessionCount, "/max-session-count", drogon::Get);
-  ADD_METHOD_TO(HealthController::setMaxSessionCount, "/max-session-count", drogon::Post);
+  ADD_METHOD_TO(HealthController::getMaxSessionCount, "/max-session-count",
+                drogon::Get);
+  ADD_METHOD_TO(HealthController::setMaxSessionCount, "/max-session-count",
+                drogon::Post);
   METHOD_LIST_END
 
   HealthController();

@@ -363,20 +363,23 @@ void SessionManager::sendAsyncAllocationRequest(
   // Check if max session count is reached
   size_t maxSessions = tt::config::maxSessionsCount();
   size_t activeCount = getActiveSessionCount();
-  
+
   if (activeCount >= maxSessions) {
     TT_LOG_DEBUG(
         "[SessionManager] sendAsyncAllocationRequest: max sessions reached "
         "({}/{}), deferring sessionId={}",
         activeCount, maxSessions, pendingAllocation.session.getSessionId());
-    
+
     if (pendingAllocation.attemptsRemaining == 0) {
       TT_LOG_ERROR(
           "[SessionManager] sendAsyncAllocationRequest: no attempts left, "
           "failing sessionId={}",
           pendingAllocation.session.getSessionId());
-      pendingAllocation.eventLoop->queueInLoop([onError = std::move(pendingAllocation.onError)]() {
-        onError("Failed to allocate: max session count reached after all attempts");
+      pendingAllocation.eventLoop->queueInLoop([onError =
+                                                    std::move(pendingAllocation
+                                                                  .onError)]() {
+        onError(
+            "Failed to allocate: max session count reached after all attempts");
       });
     } else {
       pendingAllocation.attemptsRemaining--;
@@ -385,7 +388,8 @@ void SessionManager::sendAsyncAllocationRequest(
       TT_LOG_DEBUG(
           "[SessionManager] sendAsyncAllocationRequest: queuing retry for "
           "sessionId={}, attemptsRemaining={}, delayMs={}",
-          pendingAllocation.session.getSessionId(), pendingAllocation.attemptsRemaining,
+          pendingAllocation.session.getSessionId(),
+          pendingAllocation.attemptsRemaining,
           IPC_QUEUE_FULL_RETRY_DELAY.count());
       pendingAllocationsRetryQueue.push(std::move(pendingAllocation));
     }

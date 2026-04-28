@@ -311,7 +311,8 @@ std::atomic<size_t> maxSessionsCountOverride{0};
 }
 
 size_t maxSessionsCount() {
-  size_t override_val = maxSessionsCountOverride.load(std::memory_order_relaxed);
+  size_t override_val =
+      maxSessionsCountOverride.load(std::memory_order_relaxed);
   if (override_val > 0) {
     return override_val;
   }
