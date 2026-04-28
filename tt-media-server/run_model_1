@@ -1,0 +1,1 @@
+TT_MESH_GRAPH_DESC_PATH=/home/ttuser/kmabee_demo/tt-xla-2/third_party/tt-mlir/src/tt-mlir/third_party/tt-metal/src/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto DEVICE=p150 DEVICE_IDS="(0)" MAX_NUM_SEQS=2 USE_DYNAMIC_BATCHER=true MODEL=Llama-3.1-8B-Instruct PORT=8000 ./launch_server.sh |& tee apr21_server_8000_llama8b_p150_batch2.log
