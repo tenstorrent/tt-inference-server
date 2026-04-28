@@ -258,6 +258,17 @@ def setup_benchmarks_vllm(
         )
         == 0
     )
+    # Extra deps for benchmarking/benchmark_serving_structured_output.py
+    # (vendored from vllm v0.13.0). The unified `vllm bench serve` CLI does
+    # not pull these in, so install them explicitly.
+    setup_succeeded = (
+        run_command(
+            f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} datasets pandas xgrammar",
+            logger=logger,
+        )
+        == 0
+        and setup_succeeded
+    )
 
     return setup_succeeded
 

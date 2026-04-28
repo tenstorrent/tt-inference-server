@@ -103,14 +103,14 @@ ISL_OSL_IMAGE_RESOLUTION_PAIRS = [
 STRUCTURED_OUTPUT_PAIRS = [
     ("json", 1.0),
     ("json", None),
-    ("grammar", 1.0),
-    ("regex", 1.0),
-    ("choice", 1.0),
-    ("xgrammar_bench", 1.0),
+    # ("grammar", 1.0),
+    # ("regex", 1.0),
+    # ("choice", 1.0),
+    # ("xgrammar_bench", 1.0),
 ]
-STRUCTURED_OUTPUT_NUM_PROMPTS = 1000
+STRUCTURED_OUTPUT_NUM_PROMPTS = 200
 STRUCTURED_OUTPUT_OSL = 128
-STRUCTURED_OUTPUT_MAX_CONCURRENCY = 1
+STRUCTURED_OUTPUT_MAX_CONCURRENCY = 4
 
 
 def _expand_text_sweep_params(
