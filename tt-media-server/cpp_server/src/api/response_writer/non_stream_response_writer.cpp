@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#include "api/non_stream_response_writer.hpp"
+#include "api/response_writer/non_stream_response_writer.hpp"
 
 #include <utility>
 

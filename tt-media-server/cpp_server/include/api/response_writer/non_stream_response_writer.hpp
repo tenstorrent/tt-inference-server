@@ -9,7 +9,7 @@
 #include <memory>
 #include <string>
 
-#include "api/response_writer.hpp"
+#include "api/response_writer/response_writer.hpp"
 
 namespace tt::api {
 

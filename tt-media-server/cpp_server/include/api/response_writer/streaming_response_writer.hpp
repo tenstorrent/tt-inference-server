@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-#include "api/response_writer.hpp"
+#include "api/response_writer/response_writer.hpp"
 #include "utils/concurrent_queue.hpp"
 
 namespace tt::api {

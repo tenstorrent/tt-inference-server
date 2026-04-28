@@ -11,7 +11,7 @@
 #include <optional>
 #include <string>
 
-#include "api/response_writer.hpp"
+#include "api/response_writer/response_writer.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"

@@ -11,8 +11,8 @@
 #include <optional>
 
 #include "api/error_response.hpp"
-#include "api/non_stream_response_writer.hpp"
-#include "api/streaming_response_writer.hpp"
+#include "api/response_writer/non_stream_response_writer.hpp"
+#include "api/response_writer/streaming_response_writer.hpp"
 #include "config/settings.hpp"
 #include "domain/chat_completion_request.hpp"
 #include "domain/models_response.hpp"
