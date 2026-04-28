@@ -1,11 +1,11 @@
-#include "profiling/tracy.hpp"
-#include "runners/llm_runner/model_runner.hpp"
-#include "utils/logger.hpp"
-
 #include <optional>
 #include <random>
 #include <unordered_map>
 #include <unordered_set>
+
+#include "profiling/tracy.hpp"
+#include "runners/llm_runner/model_runner.hpp"
+#include "utils/logger.hpp"
 
 namespace tt::runners::llm_engine {
 
@@ -56,13 +56,15 @@ class MockModelRunner : public IModelRunner {
 
     int vocabSize = seq->getSamplingParams().bitmask_vocab_size;
     int target = static_cast<int>(defaultToken);
-    bool defaultIsAllowed = (target < vocabSize && isBitmaskSet(*bitmask, target));
+    bool defaultIsAllowed =
+        (target < vocabSize && isBitmaskSet(*bitmask, target));
 
     // Track consecutive times we would have picked defaultToken
     if (defaultIsAllowed) {
       consecutiveDefaultPicks[taskId]++;
 
-      // After 2 consecutive default picks, cycle through allowed tokens to find terminators
+      // After 2 consecutive default picks, cycle through allowed tokens to find
+      // terminators
       if (consecutiveDefaultPicks[taskId] >= 2) {
         consecutiveDefaultPicks[taskId] = 0;  // Reset counter
 
@@ -105,7 +107,8 @@ class MockModelRunner : public IModelRunner {
     static const std::unordered_set<uint64_t> whitespace = {9, 10, 13, 32};
     // JSON structural tokens to prefer (helps terminate strings/objects)
     // " { } [ ] : ,
-    static const std::unordered_set<uint64_t> structural = {34, 44, 58, 91, 93, 123, 125};
+    static const std::unordered_set<uint64_t> structural = {34, 44,  58, 91,
+                                                            93, 123, 125};
 
     std::optional<uint64_t> lowestStructural;
     std::optional<uint64_t> lowestNonWhitespace;
@@ -118,15 +121,18 @@ class MockModelRunner : public IModelRunner {
           if ((word >> bit) & 1) {
             uint64_t tokenId = w * 32 + bit;
             if (structural.count(tokenId)) {
-              if (!lowestStructural.has_value() || tokenId < *lowestStructural) {
+              if (!lowestStructural.has_value() ||
+                  tokenId < *lowestStructural) {
                 lowestStructural = tokenId;
               }
             } else if (whitespace.count(tokenId)) {
-              if (!lowestWhitespace.has_value() || tokenId < *lowestWhitespace) {
+              if (!lowestWhitespace.has_value() ||
+                  tokenId < *lowestWhitespace) {
                 lowestWhitespace = tokenId;
               }
             } else {
-              if (!lowestNonWhitespace.has_value() || tokenId < *lowestNonWhitespace) {
+              if (!lowestNonWhitespace.has_value() ||
+                  tokenId < *lowestNonWhitespace) {
                 lowestNonWhitespace = tokenId;
               }
             }
@@ -146,12 +152,14 @@ class MockModelRunner : public IModelRunner {
     return 0;
   }
 
-  static uint64_t pickToken(const Sequence* seq, uint64_t defaultToken, bool forceRandom = false) {
+  static uint64_t pickToken(const Sequence* seq, uint64_t defaultToken,
+                            bool forceRandom = false) {
     const auto& bitmask = seq->getSamplingParams().token_bitmask;
     if (bitmask.has_value()) {
       int vocabSize = seq->getSamplingParams().bitmask_vocab_size;
 
-      // For guided decoding: pick lowest non-whitespace token to find terminators
+      // For guided decoding: pick lowest non-whitespace token to find
+      // terminators
       if (forceRandom) {
         return pickNonWhitespaceToken(*bitmask);
       }
