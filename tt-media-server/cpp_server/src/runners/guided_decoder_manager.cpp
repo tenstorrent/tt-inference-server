@@ -7,7 +7,6 @@
 
 #include <stdexcept>
 #include <unordered_map>
-#include "utils/logger.hpp"
 
 namespace tt::runners {
 
