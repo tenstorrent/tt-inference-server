@@ -7,6 +7,7 @@
 
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
+#include "services/conversation_store.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/embedding_service.hpp"
 #include "services/llm_service.hpp"
@@ -30,6 +31,9 @@ void initializeServices() {
   // Create SessionManager for all modes
   sessionManager = std::make_shared<services::SessionManager>();
 
+  auto conversationStore = std::make_shared<services::ConversationStore>(
+      tt::config::conversationLogDir());
+
   // Only construct services for MODEL_SERVICE (see config::modelService()).
   // Additional modes (e.g. videogen) extend config::ModelService and add cases.
   switch (tt::config::modelService()) {
@@ -50,7 +54,8 @@ void initializeServices() {
   }
 
   c.initialize(std::move(llm), std::move(embedding), std::move(socket),
-               std::move(disaggregation), std::move(sessionManager));
+               std::move(disaggregation), std::move(sessionManager),
+               std::move(conversationStore));
 
   if (c.llm()) {
     c.llm()->start();
@@ -66,6 +71,10 @@ void initializeServices() {
   }
   if (c.sessionManager()) {
     TT_LOG_INFO("[ServiceFactory] Session manager initialized");
+  }
+  if (c.conversationStore()) {
+    TT_LOG_INFO("[ServiceFactory] Conversation store initialized (log dir: {})",
+                tt::config::conversationLogDir());
   }
 }
 

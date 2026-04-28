@@ -198,4 +198,8 @@ LLMConfig llmEngineConfig();
 /** Model from MODEL. Default: defaults::MODEL. */
 Model model();
 
+/** Directory for conversation log files from CONVERSATION_LOG_DIR.
+ *  Default: defaults::CONVERSATION_LOG_DIR. */
+std::string conversationLogDir();
+
 }  // namespace tt::config

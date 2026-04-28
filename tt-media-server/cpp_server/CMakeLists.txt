@@ -608,6 +608,7 @@ set(SOURCES
     src/services/reasoning_parser.cpp
     src/services/deepseek_tool_call_parser.cpp
     src/services/session_manager.cpp
+    src/services/conversation_store.cpp
     src/domain/session.cpp
     src/worker/single_process_worker.cpp
     src/worker/worker_manager.cpp

@@ -107,6 +107,13 @@ void SseStreamWriter::handleTokenChunk(const domain::LLMStreamChunk& chunk) {
 
   const int currentTokens = completion_tokens_.fetch_add(1) + 1;
 
+  if (!chunk.choices.empty()) {
+    accumulated_output_ += chunk.choices[0].text;
+    if (chunk.choices[0].finish_reason.has_value()) {
+      finish_reason_ = chunk.choices[0].finish_reason.value();
+    }
+  }
+
   auto now = std::chrono::high_resolution_clock::now();
   if (!first_token_time_.has_value()) {
     first_token_time_ = now;
@@ -155,8 +162,9 @@ void SseStreamWriter::finalizeStream() {
     if (!self->done_.exchange(true) && *self->stream_ptr_) {
       self->flushAccumulated();
 
+      auto usage = self->buildFinalUsage();
+
       if (self->params_.includeUsage) {
-        auto usage = self->buildFinalUsage();
         (*self->stream_ptr_)
             ->send(domain::ChatCompletionStreamChunk::makeUsageChunk(
                        self->params_.completionId, self->params_.model,
@@ -170,6 +178,24 @@ void SseStreamWriter::finalizeStream() {
       if (self->params_.sessionId.has_value() && self->params_.sessionManager) {
         self->params_.sessionManager->releaseInFlight(
             self->params_.sessionId.value());
+      }
+
+      if (self->params_.conversationStore &&
+          self->params_.sessionId.has_value()) {
+        tt::services::TurnRecord record;
+        record.input_messages = self->params_.inputMessages;
+        record.output_text = self->accumulated_output_;
+        record.ttft_ms = usage.ttft_ms;
+        record.tps = usage.tps;
+        record.prompt_tokens = usage.prompt_tokens;
+        record.completion_tokens = usage.completion_tokens;
+        record.finish_reason = self->finish_reason_;
+        record.timestamp_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch())
+                .count();
+        self->params_.conversationStore->recordTurn(
+            self->params_.sessionId.value(), std::move(record));
       }
     }
   });
