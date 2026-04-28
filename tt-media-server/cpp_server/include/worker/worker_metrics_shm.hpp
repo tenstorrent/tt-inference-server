@@ -26,7 +26,10 @@ namespace tt::worker {
  */
 
 constexpr size_t MAX_WORKER_SLOTS = 32;
-constexpr size_t WORKER_SCRATCH_U64_COUNT = 32;
+// 32 reserved for layout-level aggregates + 128 LLM-slots * 7 fields = 928,
+// rounded up to 1024 to give per-layout headroom. Sized once for all layouts;
+// non-LLM layouts (SDXL, EMBEDDING) just use the lower indices.
+constexpr size_t WORKER_SCRATCH_U64_COUNT = 1024;
 
 /**
  * Names what a slot's scratch area means. Each worker writes its own value
@@ -138,7 +141,7 @@ class WorkerMetricsShm {
     uint32_t reserved;
     std::atomic<uint64_t> scratch[WORKER_SCRATCH_U64_COUNT];
   };
-  static_assert(sizeof(Slot) == 320, "Slot layout drift");
+  static_assert(sizeof(Slot) == 8256, "Slot layout drift");
 
   struct Region {
     std::atomic<uint32_t> magic;

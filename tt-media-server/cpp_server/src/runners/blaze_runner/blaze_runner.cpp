@@ -196,7 +196,8 @@ BlazeRunner::getMemoryRequest() {
 }
 
 void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
-  tt::worker::SingleProcessWorkerMetrics::instance().updateOutputHeartbeat();
+  auto& metrics = tt::worker::SingleProcessWorkerMetrics::instance();
+  metrics.updateOutputHeartbeat();
   lastOutputTime = std::chrono::steady_clock::now();
   auto it = slotContexts.find(output.slot_id);
   if (it == slotContexts.end()) {
@@ -211,6 +212,7 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
   bool finished = output.is_complete || hitStop;
   auto taskId = context.taskId;
   ipc::pushToken(*resultQueue, taskId, output.token_id, finished);
+  metrics.onOutputToken(output.slot_id);
   if (finished) {
     uint32_t specAccepts = pipelineManager->get_spec_accepts(output.slot_id) -
                            context.specAcceptsAtStart;
@@ -220,9 +222,9 @@ void BlazeRunner::handleOutput(const pm::OutputMessage& output) {
     double acceptRate = specTotal > 0 ? 100.0 * specAccepts / specTotal : 0.0;
     TT_LOG_INFO("slot {} turn: accepts={}/{} rate={:.1f}%", output.slot_id,
                 specAccepts, specTotal, acceptRate);
+    metrics.onTurnComplete(output.slot_id, specAccepts, specRejects);
     slotContexts.erase(output.slot_id);
-    tt::worker::SingleProcessWorkerMetrics::instance()
-        .decrementActiveRequests();
+    metrics.decrementActiveRequests();
   }
 }
 
@@ -300,7 +302,14 @@ void BlazeRunner::handleRequest(std::unique_ptr<tt::domain::Sequence> request) {
                   request->taskId, request->getSamplingParams().ignore_eos,
                   pipelineManager->get_spec_accepts(slotId),
                   pipelineManager->get_spec_rejects(slotId)});
-  tt::worker::SingleProcessWorkerMetrics::instance().incrementActiveRequests();
+  auto& metrics = tt::worker::SingleProcessWorkerMetrics::instance();
+  metrics.incrementActiveRequests();
+  // Reset the slot's per-turn counters every time a request is bound to it
+  // (fresh, continuation, or disaggregated). Skipping continuations would
+  // leave the previous turn's OSL counter and first-token timestamp in place,
+  // breaking TPOT/OSL exposure for any multi-turn slot.
+  metrics.onTurnStart(slotId,
+                      static_cast<uint32_t>(request->getTokenIds().size()));
 }
 
 }  // namespace tt::runners
