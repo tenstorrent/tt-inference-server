@@ -41,7 +41,10 @@ from typing import List
 logger = logging.getLogger("server_tests.run")
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, project_root)
+v2_root = os.path.join(project_root, "tt-inference-server-v2")
+for _path in (project_root, v2_root):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 from server_tests.test_categorization_system import TestFilter
 from server_tests.test_classes import TestConfig

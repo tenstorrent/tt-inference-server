@@ -20,6 +20,10 @@ class HealthController : public drogon::HttpController<HealthController> {
   METHOD_LIST_BEGIN
   ADD_METHOD_TO(HealthController::health, "/health", drogon::Get);
   ADD_METHOD_TO(HealthController::ready, "/tt-liveness", drogon::Get);
+  ADD_METHOD_TO(HealthController::getMaxSessionCount, "/max-session-count",
+                drogon::Get);
+  ADD_METHOD_TO(HealthController::setMaxSessionCount, "/max-session-count",
+                drogon::Post);
   METHOD_LIST_END
 
   HealthController();
@@ -31,6 +35,14 @@ class HealthController : public drogon::HttpController<HealthController> {
   void ready(
       const drogon::HttpRequestPtr& req,
       std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+
+  void getMaxSessionCount(
+      const drogon::HttpRequestPtr& req,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback) const;
+
+  void setMaxSessionCount(
+      const drogon::HttpRequestPtr& req,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback);
 
  private:
   std::shared_ptr<services::IService> service_;

@@ -54,6 +54,7 @@ scripts/examples/example_data
 # unignore
 !**/CMakeLists.txt
 !requirements*.txt
+!**/tsan_suppressions.txt
 !workflows/model_performance_reference.json
 !server_tests/test_config.json
 !server_tests/server_tests_config.json
@@ -78,3 +79,4 @@ server_tests/datasets/*
 model_spec.json
 # deprecated
 default_model_spec.json
+tt-inference-server-v2/run_inf_server_v2.py

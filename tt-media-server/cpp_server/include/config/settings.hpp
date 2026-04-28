@@ -94,8 +94,13 @@ SchedulingPolicy schedulingPolicy();
 size_t maxInFlightCount();
 
 /** Max sessions count from MAX_SESSIONS_COUNT. Default:
- * defaults::MAX_SESSIONS_COUNT. */
+ * defaults::MAX_SESSIONS_COUNT. Can be overridden at runtime via
+ * setMaxSessionsCount(). */
 size_t maxSessionsCount();
+
+/** Set max sessions count override. Pass 0 to clear the override and use the
+ * environment variable value. */
+void setMaxSessionsCount(size_t count);
 
 /** Session eviction rate percentage from SESSION_EVICTION_RATE. Default:
  * defaults::SESSION_EVICTION_RATE. */
@@ -108,6 +113,9 @@ size_t sessionEvictionCount();
 /** Max tokens to prefill on decode server from MAX_TOKENS_TO_PREFILL_ON_DECODE.
  * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
 size_t maxTokensToPrefillOnDecode();
+
+/** Use fast mode from USE_FAST_MODE. Default: defaults::USE_FAST_MODE. */
+bool useFastMode();
 
 /** Kafka broker addresses from KAFKA_BROKERS. Default:
  * defaults::KAFKA_BROKERS. */

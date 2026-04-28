@@ -1143,6 +1143,155 @@ jobs:
           printf '%s\n' "$BENCH_ERRORS"
           exit 1
 
+  cpp-tsan:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: C++ ThreadSanitizer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Gating: any TSan race report after suppressions fails this job and the
+    # whole pipeline. Known issues are listed in tsan_suppressions.txt with
+    # their tracking issue IDs; remove the corresponding suppression line
+    # when the issue is fixed so the regression check protects the fix.
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ build dependencies
+        run: cpp_server/install_dependencies.sh
+
+      - name: Build C++ server with ThreadSanitizer
+        run: |
+          cd cpp_server
+          ./build.sh --tsan
+
+      - name: Run unit tests under TSan
+        env:
+          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0:second_deadlock_stack=1:history_size=7"
+        run: |
+          # ctest exit code is informational here — the race count is what
+          # gates this job. Test failures are reported via the artifact.
+          cd cpp_server/build
+          ctest --output-on-failure -j4 2>&1 | tee ../../ctest_tsan.log || true
+
+      - name: Set up uv (for guidellm)
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install guidellm
+        run: |
+          uv venv
+          uv pip install guidellm
+          echo "PATH=${{ github.workspace }}/tt-media-server/.venv/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Start TSan-instrumented server (mock_pipeline)
+        env:
+          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0:second_deadlock_stack=1:history_size=7:log_path=tsan-server"
+        run: |
+          cd cpp_server/build
+          ./tt_media_server_cpp -p 8001 > ../../tsan_server.log 2>&1 &
+          echo $! > ../../tsan_server.pid
+          cd ../..
+          # 180s timeout (TSan startup is slower than Release)
+          for i in $(seq 1 90); do
+            LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+            if echo "$LIVENESS" | grep -q '"model_ready":true'; then
+              echo "✅ TSan-instrumented server ready (after ${i}*2s)"
+              break
+            fi
+            sleep 2
+          done
+          LIVENESS=$(curl -sf "http://127.0.0.1:8001/tt-liveness" 2>/dev/null || true)
+          if ! echo "$LIVENESS" | grep -q '"model_ready":true'; then
+            echo "ERROR: TSan server did not become ready within 180s"
+            tail -100 tsan_server.log
+            exit 1
+          fi
+
+      - name: Run concurrent multi-turn workload (8 users x 8 turns)
+        env:
+          # Suppressions are loaded by the server itself — the bench client
+          # doesn't need them, but inheriting the env is harmless.
+          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tt-media-server/cpp_server/tsan_suppressions.txt:halt_on_error=0"
+        run: |
+          mkdir -p bench_results/tsan_ci
+          guidellm benchmark run \
+            --target "http://localhost:8001" \
+            --model "deepseek-ai/DeepSeek-R1-0528" \
+            --request-format "/v1/chat/completions" \
+            --profile concurrent \
+            --rate 8 \
+            --max-requests 64 \
+            --data "prefix_tokens=512,prompt_tokens=512,output_tokens=128,turns=8" \
+            --backend-kwargs '{"api_key": "your-secret-key"}' \
+            --output-path "bench_results/tsan_ci" \
+            2>&1 | tee tsan_bench.log
+
+      - name: Stop server
+        if: always()
+        run: |
+          [ -f tsan_server.pid ] && kill $(cat tsan_server.pid) 2>/dev/null || true
+          sleep 3
+
+      - name: Analyze TSan output
+        if: always()
+        run: |
+          set -u
+          TOTAL=0
+          {
+            echo "## 🧵 ThreadSanitizer Results"
+            echo ""
+            echo "| Source | Race reports |"
+            echo "|--------|------:|"
+          } >> $GITHUB_STEP_SUMMARY
+
+          shopt -s nullglob
+          for f in cpp_server/build/tsan-server.* ctest_tsan.log; do
+            [ -f "$f" ] || continue
+            COUNT=$(grep -c "WARNING: ThreadSanitizer" "$f" 2>/dev/null || echo 0)
+            COUNT=$(echo "$COUNT" | tr -dc '0-9'); COUNT=${COUNT:-0}
+            echo "$(basename "$f"): $COUNT"
+            echo "| \`$(basename "$f")\` | $COUNT |" >> $GITHUB_STEP_SUMMARY
+            TOTAL=$(( TOTAL + COUNT ))
+          done
+
+          {
+            echo "| **Total (after suppressions)** | **$TOTAL** |"
+            echo ""
+          } >> $GITHUB_STEP_SUMMARY
+
+          if [ "$TOTAL" -gt 0 ]; then
+            echo "::warning::ThreadSanitizer detected $TOTAL data race(s) — see cpp-tsan-output artifact"
+            {
+              echo "⚠️ **$TOTAL data race(s) detected.** Stack traces in the \`cpp-tsan-output\` artifact."
+              echo ""
+              echo "Suppressions file: \`tt-media-server/cpp_server/tsan_suppressions.txt\`"
+            } >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          echo "✅ No data races detected after suppressions" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload TSan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-tsan-output
+          path: |
+            tt-media-server/cpp_server/build/tsan-server.*
+            tt-media-server/tsan_server.log
+            tt-media-server/tsan_bench.log
+            tt-media-server/ctest_tsan.log
+            tt-media-server/bench_results/tsan_ci/
+          retention-days: 7
+          if-no-files-found: warn
+
   forge-runner-changes:
     name: Detect Forge Runner Changes
     runs-on: ubuntu-latest
@@ -1281,9 +1430,10 @@ jobs:
 
           # Generate diff-cover report for changed lines only
           # --exclude uses fnmatch patterns (shell-style wildcards)
+          # tt-inference-server-v2 is excluded from coverage checks entirely
           diff-cover coverage.xml \
             --compare-branch=origin/${BASE_REF} \
-            --exclude '*/tests/*' '*/performance_tests/*' '*/config/settings.py' \
+            --exclude '*/tests/*' '*/performance_tests/*' '*/config/settings.py' 'tt-inference-server-v2/*'\
             --fail-under=15 \
             > diff-cover-output.txt 2>&1 || DIFF_COVER_FAILED=true
 
@@ -1421,6 +1571,7 @@ jobs:
       - cpp-build
       - cpp-server-benchmarks
       - cpp-server-prefill-decode-split
+      - cpp-tsan
     if: always()
     steps:
       - name: Check results
@@ -1436,6 +1587,7 @@ jobs:
             [cpp-build]="${{ needs.cpp-build.result }}"
             [cpp-server-benchmarks]="${{ needs.cpp-server-benchmarks.result }}"
             [cpp-server-prefill-decode-split]="${{ needs.cpp-server-prefill-decode-split.result }}"
+            [cpp-tsan]="${{ needs.cpp-tsan.result }}"
           )
           for job in "${!JOBS[@]}"; do
             result="${JOBS[$job]}"

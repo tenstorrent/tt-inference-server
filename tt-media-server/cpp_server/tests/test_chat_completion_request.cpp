@@ -80,14 +80,14 @@ void testToolChoiceNone() {
   assert(request.tool_choice.has_value());
   assert(request.tool_choice->type == "none");
 
-  // Verify tool_choice_type is copied to LLMRequest
+  // Verify tool_choice is copied to LLMRequest
   auto llmRequest = request.toLLMRequest();
-  assert(llmRequest.tool_choice_type.has_value());
-  assert(llmRequest.tool_choice_type.value() == "none");
+  assert(llmRequest.tool_choice.has_value());
+  assert(llmRequest.tool_choice->type == "none");
 
   std::cout << "✓ tool_choice=none parsed correctly\n";
   std::cout << "✓ Tools retained even with tool_choice=none\n";
-  std::cout << "✓ tool_choice_type propagated to LLMRequest\n";
+  std::cout << "✓ tool_choice propagated to LLMRequest\n";
   std::cout << "✅ Test passed!\n";
 }
 
